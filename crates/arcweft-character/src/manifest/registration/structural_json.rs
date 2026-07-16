@@ -12,6 +12,7 @@ use crate::manifest::diagnostic::{
 #[derive(Clone, Debug)]
 pub(super) struct RawJsonNode {
     pub(super) range: SourceRange,
+    pub(super) string_content: Option<SourceRange>,
     kind: RawJsonKind,
 }
 
@@ -131,9 +132,10 @@ impl<'a> RawJsonParser<'a> {
             Some(b'{') => self.object(path),
             Some(b'[') => self.array(path),
             Some(b'"') => {
-                let (value, range) = self.string_token()?;
+                let (value, range, string_content) = self.string_token()?;
                 Ok(RawJsonNode {
                     range,
+                    string_content: Some(string_content),
                     kind: RawJsonKind::String(value),
                 })
             }
@@ -155,12 +157,13 @@ impl<'a> RawJsonParser<'a> {
         if self.take(b'}') {
             return Ok(RawJsonNode {
                 range: SourceRange::new(start, self.cursor),
+                string_content: None,
                 kind: RawJsonKind::Object(members),
             });
         }
         loop {
             self.whitespace();
-            let (key, key_range) = self.string_token()?;
+            let (key, key_range, _) = self.string_token()?;
             if let Some(first) = keys.get(&key) {
                 return Err(RawJsonError::Duplicate {
                     object: path.clone(),
@@ -190,6 +193,7 @@ impl<'a> RawJsonParser<'a> {
         }
         Ok(RawJsonNode {
             range: SourceRange::new(start, self.cursor),
+            string_content: None,
             kind: RawJsonKind::Object(members),
         })
     }
@@ -202,6 +206,7 @@ impl<'a> RawJsonParser<'a> {
         if self.take(b']') {
             return Ok(RawJsonNode {
                 range: SourceRange::new(start, self.cursor),
+                string_content: None,
                 kind: RawJsonKind::Array(values),
             });
         }
@@ -217,11 +222,12 @@ impl<'a> RawJsonParser<'a> {
         }
         Ok(RawJsonNode {
             range: SourceRange::new(start, self.cursor),
+            string_content: None,
             kind: RawJsonKind::Array(values),
         })
     }
 
-    fn string_token(&mut self) -> Result<(String, SourceRange), RawJsonError> {
+    fn string_token(&mut self) -> Result<(String, SourceRange, SourceRange), RawJsonError> {
         let start = self.cursor;
         if !self.take(b'"') {
             return Err(self.syntax(JsonStructuralErrorKind::UnexpectedToken));
@@ -231,9 +237,10 @@ impl<'a> RawJsonParser<'a> {
                 b'"' => {
                     self.cursor += 1;
                     let range = SourceRange::new(start, self.cursor);
+                    let string_content = SourceRange::new(start + 1, self.cursor - 1);
                     let token = &self.source[range.as_range()];
                     return serde_json::from_str::<String>(token)
-                        .map(|value| (value, range))
+                        .map(|value| (value, range, string_content))
                         .map_err(|_| RawJsonError::Syntax {
                             kind: JsonStructuralErrorKind::InvalidUnicodeEscape,
                             range,
@@ -296,6 +303,7 @@ impl<'a> RawJsonParser<'a> {
         self.cursor += literal.len();
         Ok(RawJsonNode {
             range: SourceRange::new(start, self.cursor),
+            string_content: None,
             kind: RawJsonKind::Scalar,
         })
     }
@@ -318,6 +326,7 @@ impl<'a> RawJsonParser<'a> {
         }
         Ok(RawJsonNode {
             range,
+            string_content: None,
             kind: RawJsonKind::Scalar,
         })
     }

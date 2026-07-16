@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod cascade;
+pub mod character_definition;
 pub mod character_metadata;
 pub mod completion;
 pub mod definition;

@@ -35,6 +35,7 @@ use super::{
         ExternalOwnerRegistry, RegisteredExternalOwner, RegisteredSemanticWorld,
         RegisteredTypeCheckEnv,
     },
+    source_index::CharacterDefinitionIndex,
 };
 
 pub(super) struct ManifestRecord {
@@ -188,9 +189,34 @@ impl CharacterRegistrar {
             character_digest: digest,
             character_revision: revision,
         });
+        let character_definitions =
+            match CharacterDefinitionIndex::try_build(request.facts, &symbols, &environment) {
+                Ok(index) => Arc::new(index),
+                Err(report) => {
+                    let diagnostics = report
+                        .errors()
+                        .iter()
+                        .map(|error| {
+                            CharacterRegistrationDiagnostic::new(
+                                CharacterRegistrationDiagnosticKind::DefinitionIndex {
+                                    error: error.clone(),
+                                },
+                                error
+                                    .primary_span()
+                                    .cloned()
+                                    .unwrap_or_else(|| fallback.clone()),
+                                [],
+                            )
+                        })
+                        .collect();
+                    return Err(CharacterRegistrationReport::from_diagnostics(diagnostics)
+                        .with_omitted(report.omitted_errors()));
+                }
+            };
         Ok(RegisteredSemanticWorld {
             symbols,
             environment,
+            character_definitions,
         })
     }
 }

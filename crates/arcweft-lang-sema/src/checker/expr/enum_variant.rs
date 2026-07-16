@@ -128,6 +128,11 @@ impl TypeChecker<'_> {
     pub(super) fn enum_has_variant(&self, ty: &TypeKind, variant: &str) -> bool {
         self.enum_variant_payload_for_name(ty, variant).is_some()
             || self.env.enum_has_variant(ty, variant)
+            || ty.character_nominal().is_some_and(|nominal| {
+                self.registered_environment
+                    .and_then(|environment| environment.character_enum_variants(nominal))
+                    .is_some_and(|variants| variants.contains(variant))
+            })
     }
 
     pub(super) fn enum_variant_payload_for_path(

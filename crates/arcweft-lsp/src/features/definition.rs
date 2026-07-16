@@ -1,5 +1,8 @@
-use crate::documents::DocumentSnapshot;
+use crate::documents::{DocumentSnapshot, DocumentStore};
 use crate::features::cascade::{effective_dialogue_cascade_at, source_range};
+use crate::features::character_definition::{
+    CharacterDefinitionDispatch, CharacterDefinitionRequestError, character_definition,
+};
 use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::positions::LineIndex;
 use crate::profiles::LspProfile;
@@ -11,10 +14,26 @@ use lsp_types::{GotoDefinitionResponse, Location, Position, Uri};
 pub fn definition(
     profile: &LspProfile,
     uri: &Uri,
+    documents: &DocumentStore,
     document: &DocumentSnapshot,
     position: Position,
+) -> Result<Option<GotoDefinitionResponse>, CharacterDefinitionRequestError> {
+    let offset = document
+        .line_index()
+        .try_byte_offset_from_position(position)?;
+    match character_definition(profile, documents, document, offset)? {
+        CharacterDefinitionDispatch::Character(result) => return Ok(result),
+        CharacterDefinitionDispatch::NotCharacter => {}
+    }
+    Ok(presentation_definition(profile, uri, document, offset))
+}
+
+fn presentation_definition(
+    profile: &LspProfile,
+    uri: &Uri,
+    document: &DocumentSnapshot,
+    offset: usize,
 ) -> Option<GotoDefinitionResponse> {
-    let offset = document.line_index().byte_offset_from_position(position);
     if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
         let locations = metadata
             .definitions(offset)

@@ -5,6 +5,7 @@ mod diagnostic;
 mod limits;
 mod model;
 mod registrar;
+mod source_index;
 #[cfg(test)]
 mod tests;
 
@@ -20,4 +21,10 @@ pub use model::{
     ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredCharacterResolutionError,
     RegisteredExternalOwner, RegisteredExternalOwnerKind, RegisteredSemanticWorld,
     RegisteredTypeCheckEnv,
+};
+pub use source_index::{
+    CharacterDeclarationSet, CharacterDeclarationSource, CharacterDefinitionIndex,
+    CharacterDefinitionIndexBuildError, CharacterDefinitionIndexBuildReport,
+    CharacterDefinitionIndexCode, CharacterDefinitionLimitKind, CharacterDefinitionLimits,
+    CharacterDefinitionSpanError,
 };

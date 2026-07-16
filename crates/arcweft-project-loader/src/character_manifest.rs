@@ -22,6 +22,7 @@ pub const CHARACTER_MANIFEST_FILE_NAME: &str = "character.awchar.json";
 #[derive(Clone, Debug)]
 pub struct LoadedCharacterManifest {
     document: Arc<SourceDocument>,
+    path: PathBuf,
     manifest: SourceBackedCharacterManifest,
 }
 
@@ -49,8 +50,13 @@ impl LoadedCharacterManifest {
         &self.manifest
     }
 
-    pub fn into_parts(self) -> (Arc<SourceDocument>, SourceBackedCharacterManifest) {
-        (self.document, self.manifest)
+    /// Actual manifest file read, including directory-package resolution.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn into_parts(self) -> (Arc<SourceDocument>, PathBuf, SourceBackedCharacterManifest) {
+        (self.document, self.path, self.manifest)
     }
 }
 
@@ -75,7 +81,11 @@ pub fn load(path: &Path) -> Result<LoadedCharacterManifest, LoadError> {
         source,
     )?);
     let manifest = SourceBackedCharacterManifest::decode_registration_json(&document)?;
-    Ok(LoadedCharacterManifest { document, manifest })
+    Ok(LoadedCharacterManifest {
+        document,
+        path,
+        manifest,
+    })
 }
 
 /// Reads one registration manifest with the owning project's canonical document identity.
@@ -92,7 +102,11 @@ pub fn load_for_project(
         source,
     )?);
     let manifest = SourceBackedCharacterManifest::decode_registration_json(&document)?;
-    Ok(LoadedCharacterManifest { document, manifest })
+    Ok(LoadedCharacterManifest {
+        document,
+        path,
+        manifest,
+    })
 }
 
 #[cfg(test)]
@@ -105,5 +119,32 @@ mod tests {
             manifest_path(Path::new("assets/akane.awchar")),
             PathBuf::from("assets/akane.awchar/character.awchar.json")
         );
+    }
+
+    #[test]
+    fn loaded_directory_manifest_retains_the_resolved_file_path() {
+        let root = std::env::temp_dir().join(format!(
+            "arcweft-character-path-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock follows epoch")
+                .as_nanos()
+        ));
+        let package = root.join("akane.awchar");
+        std::fs::create_dir_all(&package).expect("package directory");
+        let path = package.join(CHARACTER_MANIFEST_FILE_NAME);
+        std::fs::write(
+            &path,
+            include_str!(
+                "../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
+            ),
+        )
+        .expect("manifest fixture");
+
+        let loaded = load(&package).expect("directory manifest loads");
+        assert_eq!(loaded.path(), path);
+
+        std::fs::remove_dir_all(root).expect("fixture removes");
     }
 }

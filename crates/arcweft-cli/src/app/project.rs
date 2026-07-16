@@ -21,7 +21,7 @@ use arcweft_launch::{
 };
 use arcweft_project::manifest::AuthoredResourceRoots;
 use arcweft_project_loader::{
-    environment::{ProjectLoadRequest, load_project_registration_facts},
+    environment::{ProjectLoadRequest, load_project_registration},
     project::LoadedProject,
 };
 use arcweft_runtime_accelerator::{
@@ -491,10 +491,11 @@ pub(in crate::app) fn project_compilation_context(
 ) -> Result<ProjectCompilationContext, ExitCode> {
     let request = ProjectLoadRequest::new(loaded, selection.profile(), Vec::new(), Vec::new())
         .with_adapter_manifests(semantic.adapter_manifests().iter().cloned());
-    let facts = load_project_registration_facts(&request).map_err(|error| {
+    let registration = load_project_registration(&request).map_err(|error| {
         eprintln!("error: failed to load project registration facts: {error}");
         ExitCode::FAILURE
     })?;
+    let (facts, _) = registration.into_parts();
     Ok(ProjectCompilationContext::new(
         Arc::new(semantic.base().clone()),
         Arc::new(facts),

@@ -2,18 +2,19 @@ use crate::commands::ArcweftCommand;
 use crate::config::LspConfig;
 use crate::custom::ArcweftCustomRequest;
 use crate::diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis};
-use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore};
+use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore, rebind_overlay};
 use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::{
     LspProfile, LspProfileResolver,
     cache::{AcceptedEnvironmentGeneration, LspProfileState},
+    file_path_from_uri, register_profile_environment_with_overlays,
 };
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
 use arcweft_source::SourceRevision;
 use arcweft_tooling::model::ToolingError;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
-use lsp_server::{ErrorCode, Notification, Request, RequestId, Response};
+use lsp_server::{ErrorCode, Notification, Request, RequestId, Response, ResponseError};
 use lsp_types::notification::{
     DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
     DidOpenTextDocument, DidSaveTextDocument, Notification as LspNotification, PublishDiagnostics,
@@ -188,10 +189,8 @@ impl ArcweftLspSession {
                 )?;
                 let snapshot = self.documents.open(params, self.position_encoding);
                 self.refresh_profile_for_uri(snapshot.uri());
-                let analysis = self.replace_analysis(&snapshot);
-                Ok(vec![
-                    self.publish_diagnostics_notification(&snapshot, &analysis),
-                ])
+                self.rebuild_profiles_affected_by_uri(snapshot.uri());
+                Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidChangeTextDocument::METHOD => {
                 let params = decode::<DidChangeTextDocumentParams>(
@@ -199,25 +198,37 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 let snapshot = self.documents.change(params, self.position_encoding)?;
-                let analysis = self.replace_analysis(&snapshot);
-                Ok(vec![
-                    self.publish_diagnostics_notification(&snapshot, &analysis),
-                ])
+                self.rebuild_profiles_affected_by_uri(snapshot.uri());
+                Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidCloseTextDocument::METHOD => {
                 let params = decode::<DidCloseTextDocumentParams>(
                     DidCloseTextDocument::METHOD,
                     notification.params,
                 )?;
-                if let Some(profile) = self
+                let closed_key = params.text_document.uri.to_string();
+                let affected_profiles = self
                     .profiles_by_uri
-                    .remove(&params.text_document.uri.to_string())
-                {
+                    .iter()
+                    .filter(|(key, profile)| {
+                        *key != &closed_key
+                            && profile.accepted_environment().is_some_and(|accepted| {
+                                accepted
+                                    .sources()
+                                    .by_uri(&params.text_document.uri)
+                                    .is_some()
+                            })
+                    })
+                    .map(|(key, _)| key.clone())
+                    .collect::<Vec<_>>();
+                if let Some(profile) = self.profiles_by_uri.remove(&closed_key) {
                     profile.state().shutdown();
                 }
-                self.analyses_by_uri
-                    .remove(&params.text_document.uri.to_string());
+                self.analyses_by_uri.remove(&closed_key);
                 self.documents.close(&params.text_document.uri);
+                for key in affected_profiles {
+                    self.rebuild_profile_with_current_overlays(&key);
+                }
                 Ok(vec![Notification::new(
                     PublishDiagnostics::METHOD.to_owned(),
                     lsp_types::PublishDiagnosticsParams::new(
@@ -234,13 +245,11 @@ impl ArcweftLspSession {
                 )?;
                 self.invalidate_analysis_cache();
                 self.refresh_profile_for_uri(&params.text_document.uri);
+                self.rebuild_profiles_affected_by_uri(&params.text_document.uri);
                 let Some(snapshot) = self.documents.get(&params.text_document.uri).cloned() else {
                     return Ok(Vec::new());
                 };
-                let analysis = self.replace_analysis(&snapshot);
-                Ok(vec![
-                    self.publish_diagnostics_notification(&snapshot, &analysis),
-                ])
+                Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidChangeWatchedFiles::METHOD => {
                 let _params = decode::<DidChangeWatchedFilesParams>(
@@ -271,7 +280,7 @@ impl ArcweftLspSession {
     }
 
     fn try_handle_request(
-        &self,
+        &mut self,
         request: Request,
         repl: Option<&mut dyn LspReplCommandExecutor>,
     ) -> Result<Response, SessionError> {
@@ -294,22 +303,7 @@ impl ArcweftLspSession {
                     });
                 Ok(Response::new_ok(id, result))
             }
-            GotoDefinition::METHOD => {
-                let (id, params) =
-                    extract::<GotoDefinitionParams>(request, GotoDefinition::METHOD)?;
-                let result = self
-                    .document_for_params(&params.text_document_position_params.text_document.uri)
-                    .and_then(|document| {
-                        let profile = self.profile_for_uri(document.uri());
-                        features::definition::definition(
-                            profile,
-                            &params.text_document_position_params.text_document.uri,
-                            document,
-                            params.text_document_position_params.position,
-                        )
-                    });
-                Ok(Response::new_ok(id, result))
-            }
+            GotoDefinition::METHOD => self.handle_definition_request(request),
             References::METHOD => {
                 let (id, params) = extract::<ReferenceParams>(request, References::METHOD)?;
                 let result = self
@@ -394,6 +388,44 @@ impl ArcweftLspSession {
         Ok(Response::new_ok(id, result))
     }
 
+    fn handle_definition_request(&mut self, request: Request) -> Result<Response, SessionError> {
+        let (id, params) = extract::<GotoDefinitionParams>(request, GotoDefinition::METHOD)?;
+        let Some(document) = self
+            .document_for_params(&params.text_document_position_params.text_document.uri)
+            .cloned()
+        else {
+            return Ok(Response::new_ok(
+                id,
+                Option::<lsp_types::GotoDefinitionResponse>::None,
+            ));
+        };
+        let profile = self.profile_for_uri(document.uri()).clone();
+        let result = features::definition::definition(
+            &profile,
+            &params.text_document_position_params.text_document.uri,
+            &self.documents,
+            &document,
+            params.text_document_position_params.position,
+        );
+        match result {
+            Ok(result) => Ok(Response::new_ok(id, result)),
+            Err(error) => {
+                if error.schedules_profile_rebuild() {
+                    self.rebuild_profiles_affected_by_uri(document.uri());
+                }
+                Ok(Response {
+                    id,
+                    result: None,
+                    error: Some(ResponseError {
+                        code: error.lsp_code(),
+                        message: error.to_string(),
+                        data: Some(serde_json::json!({ "code": error.stable_code() })),
+                    }),
+                })
+            }
+        }
+    }
+
     fn document_for_params(&self, uri: &lsp_types::Uri) -> Option<&DocumentSnapshot> {
         self.documents.get(uri)
     }
@@ -469,12 +501,12 @@ impl ArcweftLspSession {
         for snapshot in &snapshots {
             self.refresh_profile_for_uri(snapshot.uri());
         }
+        for snapshot in &snapshots {
+            self.rebuild_profiles_affected_by_uri(snapshot.uri());
+        }
         snapshots
             .iter()
-            .map(|snapshot| {
-                let analysis = self.replace_analysis(snapshot);
-                self.publish_diagnostics_notification(snapshot, &analysis)
-            })
+            .map(|snapshot| self.refresh_document_diagnostics(snapshot))
             .collect()
     }
 
@@ -482,6 +514,92 @@ impl ArcweftLspSession {
         self.profiles_by_uri
             .get(&uri.to_string())
             .unwrap_or(&self.default_profile)
+    }
+
+    fn rebuild_profiles_affected_by_uri(&mut self, changed: &lsp_types::Uri) {
+        let keys = self
+            .profiles_by_uri
+            .iter()
+            .filter(|(_, profile)| {
+                profile
+                    .accepted_environment()
+                    .is_some_and(|accepted| accepted.sources().by_uri(changed).is_some())
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in keys {
+            self.rebuild_profile_with_current_overlays(&key);
+        }
+    }
+
+    fn rebuild_profile_with_current_overlays(&mut self, key: &str) {
+        let Some(profile) = self.profiles_by_uri.get(key).cloned() else {
+            return;
+        };
+        let Some(resolved) = profile.resolved_profile() else {
+            return;
+        };
+        let Some(previous) = profile.accepted_environment() else {
+            return;
+        };
+        let Ok(manifest_uri) = previous.profile().manifest_uri().parse::<lsp_types::Uri>() else {
+            return;
+        };
+        let Some(manifest_path) = file_path_from_uri(&manifest_uri) else {
+            return;
+        };
+        let mut overlay_documents = Vec::new();
+        let mut overlay_entries = Vec::new();
+        for snapshot in self.documents.snapshots() {
+            let Some(accepted_source) = previous.sources().by_uri(snapshot.uri()) else {
+                continue;
+            };
+            let Ok(document) = rebind_overlay(snapshot, accepted_source) else {
+                return;
+            };
+            overlay_entries.push(crate::profiles::cache::AcceptedOverlayEntry::new(
+                snapshot.uri().to_string(),
+                snapshot.version(),
+                document.identity().clone(),
+            ));
+            overlay_documents.push(document);
+        }
+        let Ok(overlays) = crate::profiles::cache::AcceptedOverlaySet::try_new(overlay_entries)
+        else {
+            return;
+        };
+        let registered = register_profile_environment_with_overlays(
+            &manifest_path,
+            resolved,
+            profile.adapter(),
+            profile.typecheck_env(),
+            overlay_documents,
+            overlays.clone(),
+            Some(previous.world().environment()),
+        );
+        let Ok(registered) = registered else {
+            return;
+        };
+        let current_overlay_uris = self
+            .documents
+            .snapshots()
+            .filter(|snapshot| previous.sources().by_uri(snapshot.uri()).is_some())
+            .map(|snapshot| (snapshot.uri().to_string(), snapshot.version()))
+            .collect::<Vec<_>>();
+        let candidate_overlay_uris = overlays
+            .entries()
+            .map(|entry| (entry.uri().to_owned(), entry.version()))
+            .collect::<Vec<_>>();
+        if current_overlay_uris != candidate_overlay_uris {
+            return;
+        }
+        let (candidate, characters) = registered.into_parts();
+        if profile.state().replace_accepted(candidate).is_err() {
+            return;
+        }
+        if let Some(profile) = self.profiles_by_uri.get_mut(key) {
+            profile.replace_characters(characters);
+        }
     }
 
     fn replace_analysis(&mut self, snapshot: &DocumentSnapshot) -> Arc<DocumentAnalysis> {
@@ -505,6 +623,30 @@ impl ArcweftLspSession {
             },
         );
         analysis
+    }
+
+    fn refresh_document_diagnostics(&mut self, snapshot: &DocumentSnapshot) -> Notification {
+        if file_path_from_uri(snapshot.uri())
+            .and_then(|path| {
+                path.extension()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .map(str::to_owned)
+            })
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("arcw"))
+        {
+            let analysis = self.replace_analysis(snapshot);
+            self.publish_diagnostics_notification(snapshot, &analysis)
+        } else {
+            self.analyses_by_uri.remove(&snapshot.uri().to_string());
+            Notification::new(
+                PublishDiagnostics::METHOD.to_owned(),
+                lsp_types::PublishDiagnosticsParams::new(
+                    snapshot.uri().clone(),
+                    Vec::new(),
+                    snapshot.version(),
+                ),
+            )
+        }
     }
 
     fn cached_analysis(&self, snapshot: &DocumentSnapshot) -> Option<Arc<DocumentAnalysis>> {
@@ -613,5 +755,7 @@ fn decode<P: DeserializeOwned>(method: &'static str, value: Value) -> Result<P, 
     serde_json::from_value(value).map_err(|error| SessionError::InvalidParams { method, error })
 }
 
+#[cfg(test)]
+mod character_definition_tests;
 #[cfg(test)]
 mod tests;

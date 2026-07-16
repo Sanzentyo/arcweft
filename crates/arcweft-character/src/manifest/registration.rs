@@ -14,7 +14,10 @@ use super::{
 };
 use crate::id::{CharacterId, CharacterLookId, CharacterPartId, CharacterVariantId};
 
+mod declaration;
 mod structural_json;
+
+pub use declaration::CharacterManifestDeclarationError;
 
 use structural_json::{RawJsonError, RawJsonMember, RawJsonNode, RawJsonParser};
 
@@ -140,6 +143,7 @@ pub enum CharacterManifestTokenPath {
 pub struct CharacterManifestToken {
     key: SourceSpan,
     value: SourceSpan,
+    string_content: Option<SourceSpan>,
 }
 
 impl CharacterManifestToken {
@@ -149,6 +153,11 @@ impl CharacterManifestToken {
 
     pub const fn value(&self) -> &SourceSpan {
         &self.value
+    }
+
+    /// Returns the exact authored bytes inside a JSON string's quotes.
+    pub const fn string_content(&self) -> Option<&SourceSpan> {
+        self.string_content.as_ref()
     }
 }
 
@@ -541,6 +550,9 @@ impl CharacterManifestSourceMap {
                     CharacterManifestToken {
                         key: bound_span(document, warnings_member.key_range),
                         value: bound_span(document, value.range),
+                        string_content: value
+                            .string_content
+                            .map(|range| bound_span(document, range)),
                     },
                 );
             }
@@ -571,6 +583,10 @@ impl CharacterManifestSourceMap {
             CharacterManifestToken {
                 key: bound_span(document, member.key_range),
                 value: bound_span(document, member.value.range),
+                string_content: member
+                    .value
+                    .string_content
+                    .map(|range| bound_span(document, range)),
             },
         );
     }

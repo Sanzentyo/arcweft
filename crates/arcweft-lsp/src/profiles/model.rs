@@ -109,6 +109,10 @@ impl LspProfile {
         &self.characters
     }
 
+    pub(crate) fn replace_characters(&mut self, characters: CharacterCatalog) {
+        self.characters = characters;
+    }
+
     /// Source-backed launch profile used to construct registration facts.
     pub const fn resolved_profile(&self) -> Option<&ResolvedLaunchProfile> {
         self.resolved_profile.as_ref()

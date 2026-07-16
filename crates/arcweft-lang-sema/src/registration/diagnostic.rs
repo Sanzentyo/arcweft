@@ -22,6 +22,7 @@ use super::{
         CharacterInventoryDigest, CharacterInventoryRevision, RegisteredExternalOwner,
         RegisteredExternalOwnerKind,
     },
+    source_index::{CharacterDefinitionIndexBuildError, CharacterDefinitionIndexCode},
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -54,6 +55,7 @@ pub enum CharacterRegistrationCode {
     DescriptorTamper,
     RevisionOverflow,
     WorkOverflow,
+    DefinitionIndex(CharacterDefinitionIndexCode),
 }
 
 impl CharacterRegistrationCode {
@@ -87,6 +89,7 @@ impl CharacterRegistrationCode {
             Self::DescriptorTamper => "aw.character.registration.descriptor_tamper",
             Self::RevisionOverflow => "aw.character.registration.revision_overflow",
             Self::WorkOverflow => "aw.character.registration.work_overflow",
+            Self::DefinitionIndex(code) => code.as_str(),
         }
     }
 }
@@ -215,6 +218,9 @@ pub enum CharacterRegistrationDiagnosticKind {
         attempted: u64,
         maximum: u64,
     },
+    DefinitionIndex {
+        error: CharacterDefinitionIndexBuildError,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -314,6 +320,9 @@ impl CharacterRegistrationDiagnosticKind {
             }
             CharacterRegistrationDiagnosticKind::WorkOverflow { .. } => {
                 CharacterRegistrationCode::WorkOverflow
+            }
+            CharacterRegistrationDiagnosticKind::DefinitionIndex { error } => {
+                CharacterRegistrationCode::DefinitionIndex(error.code())
             }
         }
     }

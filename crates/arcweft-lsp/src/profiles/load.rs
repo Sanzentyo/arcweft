@@ -94,59 +94,6 @@ pub(super) fn read_rust_metadata(
         .collect()
 }
 
-pub(super) fn read_character_manifests(
-    resources: &[SourceBackedProfileResource],
-    manifest_dir: &Path,
-    profile_id: &str,
-    diagnostics: &mut Vec<LspProfileDiagnostic>,
-) -> CharacterCatalog {
-    let mut manifests = Vec::new();
-    for source_backed in resources {
-        let resource = path_label(source_backed.path(), manifest_dir);
-        match arcweft_project_loader::character_manifest::load(source_backed.path()) {
-            Ok(manifest) => {
-                manifests.push(manifest.manifest().manifest().clone());
-            }
-            Err(error) => {
-                diagnostics.push(
-                    source_backed.bind(character_manifest_diagnostic(&error, resource, profile_id)),
-                );
-            }
-        }
-    }
-    CharacterCatalog::try_from_manifests(manifests).unwrap_or_else(|error| {
-        diagnostics.push(
-            LspProfileDiagnostic::new(
-                LspProfileDiagnosticKind::CharacterCatalog,
-                error.to_string(),
-            )
-            .with_profile_id(profile_id),
-        );
-        CharacterCatalog::default()
-    })
-}
-
-fn character_manifest_diagnostic(
-    error: &arcweft_project_loader::character_manifest::LoadError,
-    resource: String,
-    profile_id: &str,
-) -> LspProfileDiagnostic {
-    let kind = match error {
-        arcweft_project_loader::character_manifest::LoadError::Read(_) => {
-            LspProfileDiagnosticKind::CharacterManifestRead
-        }
-        arcweft_project_loader::character_manifest::LoadError::Parse(_)
-        | arcweft_project_loader::character_manifest::LoadError::DocumentId(_)
-        | arcweft_project_loader::character_manifest::LoadError::Document(_)
-        | arcweft_project_loader::character_manifest::LoadError::ProjectDocument(_) => {
-            LspProfileDiagnosticKind::CharacterManifestParse
-        }
-    };
-    LspProfileDiagnostic::new(kind, format!("{error} `{resource}`"))
-        .with_profile_id(profile_id)
-        .with_resource(resource)
-}
-
 fn adapter_manifest_diagnostic(
     error: &arcweft_project_loader::adapter_manifest::LoadError,
     resource: String,
@@ -386,28 +333,30 @@ impl LspProfileResolver {
             profile_id,
             "character_manifests",
         );
-        let characters = read_character_manifests(
-            &character_resources,
-            manifest_dir,
-            profile_id,
-            &mut diagnostics,
-        );
         let base = adapter.apply_to_env(TypeCheckEnv::standard());
         let accepted = state.current();
         let previous = accepted
             .as_ref()
             .map(|environment| environment.world().environment());
-        match register_profile_environment(manifest_path, profile, &adapter, base, previous) {
-            Ok(world) => {
-                state
-                    .replace_accepted(world)
-                    .expect("a fresh active profile state accepts generation one");
-            }
-            Err(error) => diagnostics.push(
-                LspProfileDiagnostic::new(LspProfileDiagnosticKind::CharacterCatalog, error)
-                    .with_profile_id(profile_id),
-            ),
-        }
+        let characters =
+            match register_profile_environment(manifest_path, profile, &adapter, base, previous) {
+                Ok(registered) => {
+                    let (candidate, characters) = registered.into_parts();
+                    state
+                        .replace_accepted(candidate)
+                        .expect("a fresh active profile state accepts generation one");
+                    characters
+                }
+                Err(error) => {
+                    diagnostics.push(character_environment_diagnostic(
+                        &error,
+                        &character_resources,
+                        manifest_dir,
+                        profile_id,
+                    ));
+                    CharacterCatalog::default()
+                }
+            };
         let declared_manifests = vec![adapter.clone()];
         LspProfile {
             adapter,
@@ -435,6 +384,43 @@ impl LspProfileResolver {
         profile.diagnostics.push(diagnostic);
         profile.with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
     }
+}
+
+fn character_environment_diagnostic(
+    error: &super::environment::RegisterProfileEnvironmentError,
+    resources: &[SourceBackedProfileResource],
+    manifest_dir: &Path,
+    profile_id: &str,
+) -> LspProfileDiagnostic {
+    let Some(
+        arcweft_project_loader::environment::ProjectRegistrationLoadError::CharacterManifest {
+            path,
+            source,
+        },
+    ) = error.registration_load()
+    else {
+        return LspProfileDiagnostic::new(
+            LspProfileDiagnosticKind::CharacterCatalog,
+            error.to_string(),
+        )
+        .with_profile_id(profile_id);
+    };
+    let kind = if matches!(
+        source.as_ref(),
+        arcweft_project_loader::character_manifest::LoadError::Read(_)
+    ) {
+        LspProfileDiagnosticKind::CharacterManifestRead
+    } else {
+        LspProfileDiagnosticKind::CharacterManifestParse
+    };
+    let resource_label = path_label(path, manifest_dir);
+    let diagnostic = LspProfileDiagnostic::new(kind, format!("{source} `{resource_label}`"))
+        .with_profile_id(profile_id)
+        .with_resource(resource_label);
+    resources
+        .iter()
+        .find(|resource| resource.path() == path)
+        .map_or(diagnostic.clone(), |resource| resource.bind(diagnostic))
 }
 
 fn dialogue_defaults_selection(

@@ -1,15 +1,16 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    CharacterManifestRootField, CharacterManifestTokenPath, JsonObjectPathSegment,
-    SourceBackedCharacterManifest,
+    CharacterManifestDeclarationError, CharacterManifestRootField, CharacterManifestTokenPath,
+    JsonObjectPathSegment, SourceBackedCharacterManifest,
 };
-use crate::id::{CharacterId, CharacterLookId, CharacterPartId};
+use crate::id::{CharacterId, CharacterLookId, CharacterPartId, CharacterVariantId};
 use crate::manifest::CharacterManifestError;
 use crate::manifest::diagnostic::{
     CharacterIdentifierDomain, CharacterRegistrationDecodeError, CharacterRuntimeDecodeError,
 };
 use crate::manifest::limits::{CharacterManifestLimitKind, CharacterManifestLimits};
+use crate::symbol::CharacterSymbolDescriptor;
 use arcweft_source::MAX_REGISTRATION_SOURCE_BYTES;
 use serde_json::{Value, json};
 
@@ -107,6 +108,141 @@ fn escaped_value_token_range() {
         &source[token.value().range().as_range()],
         "\"character.z\\u0075ndamon\""
     );
+    assert_eq!(
+        &source[token
+            .string_content()
+            .expect("string content")
+            .range()
+            .as_range()],
+        "character.z\\u0075ndamon"
+    );
+}
+
+#[test]
+fn declaration_projection_retains_exact_string_content_ranges() {
+    let source = include_str!("../../../tests/fixtures/zundamon.awchar/character.awchar.json")
+        .replace('\n', "\r\n");
+    let manifest = SourceBackedCharacterManifest::decode_registration_json(&document(&source))
+        .expect("source-backed manifest");
+    let character = manifest.manifest().character().clone();
+    let look = manifest.manifest().looks()[0].id().clone();
+    let part = manifest.manifest().parts()[0].id().clone();
+    let variant = manifest.manifest().parts()[0].variants()[0].id().clone();
+
+    for descriptor in [
+        CharacterSymbolDescriptor::Owner {
+            character: character.clone(),
+        },
+        CharacterSymbolDescriptor::Look {
+            character: character.clone(),
+            look,
+        },
+        CharacterSymbolDescriptor::Part {
+            character: character.clone(),
+            part: part.clone(),
+        },
+        CharacterSymbolDescriptor::Variant {
+            character,
+            part,
+            variant,
+        },
+    ] {
+        let (_, token) = manifest
+            .declaration_token(&descriptor)
+            .expect("declaration token");
+        let value = &source[token.value().range().as_range()];
+        let content = &source[token
+            .string_content()
+            .expect("identifier is a JSON string")
+            .range()
+            .as_range()];
+        assert_eq!(value, format!("\"{content}\""));
+    }
+}
+
+#[test]
+fn declaration_projection_rejects_foreign_or_unknown_descriptors() {
+    let source = include_str!("../../../tests/fixtures/zundamon.awchar/character.awchar.json");
+    let manifest = SourceBackedCharacterManifest::decode_registration_json(&document(source))
+        .expect("source-backed manifest");
+    let character = manifest.manifest().character().clone();
+    let part = manifest.manifest().parts()[0].id().clone();
+
+    assert!(matches!(
+        manifest
+            .manifest()
+            .declaration_token_path(&CharacterSymbolDescriptor::Owner {
+                character: CharacterId::try_new("character.foreign").expect("character id"),
+            }),
+        Err(CharacterManifestDeclarationError::WrongOwner { .. })
+    ));
+    assert!(matches!(
+        manifest
+            .manifest()
+            .declaration_token_path(&CharacterSymbolDescriptor::Look {
+                character: character.clone(),
+                look: CharacterLookId::try_new("missing").expect("look id"),
+            }),
+        Err(CharacterManifestDeclarationError::UnknownLook { .. })
+    ));
+    assert!(matches!(
+        manifest
+            .manifest()
+            .declaration_token_path(&CharacterSymbolDescriptor::Variant {
+                character,
+                part,
+                variant: CharacterVariantId::try_new("missing").expect("variant id"),
+            }),
+        Err(CharacterManifestDeclarationError::UnknownVariant { .. })
+    ));
+}
+
+#[test]
+fn declaration_projection_fails_closed_on_corrupt_validated_state() {
+    let source = include_str!("../../../tests/fixtures/zundamon.awchar/character.awchar.json");
+    let mut manifest = SourceBackedCharacterManifest::decode_registration_json(&document(source))
+        .expect("source-backed manifest");
+    let character = manifest.manifest().character().clone();
+    let look = manifest.manifest().looks()[0].id().clone();
+    let descriptor = CharacterSymbolDescriptor::Look {
+        character: character.clone(),
+        look: look.clone(),
+    };
+    let duplicate = manifest.manifest.looks()[0].clone();
+    manifest.manifest.looks.push(duplicate);
+    assert!(matches!(
+        manifest.manifest().declaration_token_path(&descriptor),
+        Err(CharacterManifestDeclarationError::DuplicateLook { positions, .. })
+            if positions == vec![0, manifest.manifest().looks().len() - 1]
+    ));
+
+    manifest.manifest.looks.pop();
+    let path = manifest
+        .manifest()
+        .declaration_token_path(&descriptor)
+        .expect("look token path");
+    let removed = manifest
+        .source_map
+        .tokens
+        .remove(&path)
+        .expect("look token");
+    assert!(matches!(
+        manifest.declaration_token(&descriptor),
+        Err(CharacterManifestDeclarationError::MissingToken { .. })
+    ));
+
+    manifest.source_map.tokens.insert(
+        path,
+        super::CharacterManifestToken {
+            key: removed.key,
+            value: removed.value,
+            string_content: None,
+        },
+    );
+    assert!(matches!(
+        manifest.declaration_token(&descriptor),
+        Err(CharacterManifestDeclarationError::NonStringToken { .. })
+    ));
 }
 
 #[test]

@@ -124,22 +124,22 @@ pub(crate) fn checked_inventory_for_document(
     let sources = CanonicalizationSourceSet::try_new(hir_project.package().clone(), identities)
         .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
     let previous = profile.accepted_environment();
-    let registered = crate::profiles::register_loaded_environment(
-        &loaded,
-        &hir_project,
-        profile.resolved_profile(),
-        profile.declared_manifests(),
-        profile.typecheck_env(),
-        additional_documents,
-        previous
-            .as_ref()
-            .map(|accepted| accepted.world().environment()),
-    )
-    .map_err(|error| SemanticDataUnavailable::new(document.clone(), error))?;
-    profile
-        .state()
-        .replace_accepted(Arc::clone(&registered))
+    let registered =
+        crate::profiles::register_loaded_environment(crate::profiles::LoadedEnvironmentRequest {
+            loaded: &loaded,
+            project: &hir_project,
+            profile: profile.resolved_profile(),
+            adapter_manifests: profile.declared_manifests(),
+            base: profile.typecheck_env(),
+            additional_documents,
+            overlays: crate::profiles::cache::AcceptedOverlaySet::default(),
+            previous: previous
+                .as_ref()
+                .map(|accepted| accepted.world().environment()),
+        })
         .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
+    let (candidate, _) = registered.into_parts();
+    let registered = Arc::clone(candidate.world());
     let report =
         analyze_registered_project_types_for_canonicalization(&hir_project, &registered, &sources)?;
     let selected_identity = sources.source(&selected_module).ok_or_else(|| {

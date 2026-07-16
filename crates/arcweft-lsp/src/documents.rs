@@ -1,5 +1,5 @@
 use crate::positions::{LineIndex, PositionEncoding};
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentError, SourceDocumentId, SourceName};
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams, Uri};
 use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
@@ -25,6 +25,41 @@ pub enum DocumentError {
     /// FULL sync requires exactly one full-text content change.
     #[error("Arcweft LSP currently expects exactly one full-text document change")]
     ExpectedFullSyncChange,
+}
+
+/// Failure to bind editor bytes to an accepted project-logical document identity.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum OverlayBindingError {
+    #[error("open URI does not match the accepted source adapter")]
+    UriMismatch { open: String, accepted: String },
+    #[error("failed to bind editor bytes to the accepted logical document: {0}")]
+    Document(#[from] SourceDocumentError),
+}
+
+/// Rebinds one open editor snapshot through an explicit accepted URI adapter.
+pub fn rebind_overlay(
+    snapshot: &DocumentSnapshot,
+    accepted: &crate::profiles::cache::AcceptedSourceDocument,
+) -> Result<Arc<SourceDocument>, OverlayBindingError> {
+    let accepted_uri =
+        accepted
+            .locator()
+            .uri()
+            .ok_or_else(|| OverlayBindingError::UriMismatch {
+                open: snapshot.uri().to_string(),
+                accepted: "unavailable".to_owned(),
+            })?;
+    if accepted_uri != snapshot.uri() {
+        return Err(OverlayBindingError::UriMismatch {
+            open: snapshot.uri().to_string(),
+            accepted: accepted_uri.to_string(),
+        });
+    }
+    Ok(Arc::new(SourceDocument::try_new(
+        accepted.document().identity().id().clone(),
+        accepted.document().display_name().clone(),
+        snapshot.text(),
+    )?))
 }
 
 impl DocumentSnapshot {

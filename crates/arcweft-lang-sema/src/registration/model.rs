@@ -35,6 +35,7 @@ use super::{
         CharacterRegistrationReport, RequiredCharacterToken,
     },
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
+    source_index::CharacterDefinitionIndex,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -96,6 +97,7 @@ pub struct CharacterRegistrationRequest<'a> {
 pub struct RegisteredSemanticWorld {
     pub(crate) symbols: Arc<ProjectSymbolTable>,
     pub(crate) environment: Arc<RegisteredTypeCheckEnv>,
+    pub(crate) character_definitions: Arc<CharacterDefinitionIndex>,
 }
 
 pub struct CharacterRegistrar;
@@ -577,6 +579,10 @@ impl ProjectRegistrationFacts {
         self.documents.get(id).map(AsRef::as_ref)
     }
 
+    pub(crate) fn document_arc(&self, id: &SourceDocumentId) -> Option<&Arc<SourceDocument>> {
+        self.documents.get(id)
+    }
+
     pub(crate) fn manifest_owner_source(
         &self,
         catalog: usize,
@@ -637,8 +643,18 @@ impl RegisteredSemanticWorld {
         &self.environment
     }
 
-    pub fn into_parts(self) -> (Arc<ProjectSymbolTable>, Arc<RegisteredTypeCheckEnv>) {
-        (self.symbols, self.environment)
+    pub fn character_definition_index(&self) -> &CharacterDefinitionIndex {
+        &self.character_definitions
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        Arc<ProjectSymbolTable>,
+        Arc<RegisteredTypeCheckEnv>,
+        Arc<CharacterDefinitionIndex>,
+    ) {
+        (self.symbols, self.environment, self.character_definitions)
     }
 }
 
@@ -682,7 +698,8 @@ impl RegisteredTypeCheckEnv {
         self.base.environment_binding(id)
     }
 
-    pub(crate) fn base(&self) -> &TypeCheckEnv {
+    /// Exact base type-check environment accepted with this registered world.
+    pub fn typecheck_env(&self) -> &TypeCheckEnv {
         &self.base
     }
 

@@ -122,7 +122,7 @@ pub fn analyze_registered_project_types(
     let (style_catalog, style_diagnostics) = check_view_styles(module);
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
     let mut checker = TypeChecker::new_with_project(
-        registered.environment().base(),
+        registered.environment().typecheck_env(),
         None,
         Some(registered.symbols()),
         Some(registered.environment()),
@@ -148,7 +148,7 @@ pub fn analyze_registered_project_types_for_canonicalization(
     let (style_catalog, style_diagnostics) = check_view_styles(&module);
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
     let mut checker = TypeChecker::new_with_project(
-        registered.environment().base(),
+        registered.environment().typecheck_env(),
         Some(sources),
         Some(registered.symbols()),
         Some(registered.environment()),

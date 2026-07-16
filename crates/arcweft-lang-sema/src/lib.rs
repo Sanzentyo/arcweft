@@ -7,6 +7,7 @@
 pub mod assertion;
 pub mod borrow;
 pub mod canonicalization;
+pub mod character_definition;
 pub mod check;
 pub mod checker;
 pub mod diagnostics;

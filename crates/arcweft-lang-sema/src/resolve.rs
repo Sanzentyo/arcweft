@@ -101,7 +101,7 @@ pub fn registry_from_hir_and_registered(
     module: &HirModule,
     registered: &RegisteredSemanticWorld,
 ) -> NameRegistry {
-    registry_from_hir_and_env(module, registered.environment().base())
+    registry_from_hir_and_env(module, registered.environment().typecheck_env())
 }
 
 /// Builds a registry from one HIR module plus an Agent project semantic index.

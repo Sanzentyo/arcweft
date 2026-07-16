@@ -10,6 +10,7 @@ use arcweft_character::{
         },
     },
     registration_catalog::SourceBackedCharacterCatalog,
+    symbol::CharacterSymbolDescriptor,
 };
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
@@ -420,6 +421,20 @@ fn complete_world_commits_once() {
         registered.environment().symbol_revision()
     );
     assert_eq!(registered.environment().characters().len(), 1);
+    let definitions = registered.character_definition_index();
+    assert_eq!(definitions.world(), registered.symbols().world());
+    assert_eq!(
+        definitions.symbol_revision(),
+        registered.symbols().revision()
+    );
+    assert_eq!(definitions.manifest_count(), 1);
+    assert_eq!(definitions.len(), 4);
+    assert_eq!(definitions.documents().len(), 1);
+    let (_, _, consumed_definitions) = registered.clone().into_parts();
+    assert_eq!(
+        consumed_definitions.source_revision(),
+        definitions.source_revision()
+    );
     registered
         .environment()
         .verify_character_inventory(registered.symbols())
@@ -523,33 +538,57 @@ fn limit_catalogs_exact_and_one_over() {
 #[test]
 fn limit_occurrences_exact_and_one_over() {
     let (root, project, world) = root_project("occurrence-limit");
-    let (manifest_documents, manifests) = sourced_manifest_inventory(17);
-    let catalogs = (0..64)
-        .map(|_| {
-            SourceBackedCharacterCatalog::try_new(root.identity().clone(), manifests[..16].to_vec())
-                .expect("catalog with distinct owners")
+    let manifests = (0..17)
+        .map(|index| {
+            sample_manifest_for(
+                &format!("character.owner{index:04}"),
+                &format!("layers/owner{index:04}.png"),
+            )
         })
         .collect::<Vec<_>>();
+    let build_catalogs = |counts: &[usize]| {
+        let mut documents = Vec::new();
+        let catalogs = counts
+            .iter()
+            .enumerate()
+            .map(|(catalog, &count)| {
+                let backed = manifests[..count]
+                    .iter()
+                    .enumerate()
+                    .map(|(owner, manifest)| {
+                        let (document, backed) = backed_manifest(
+                            &format!(
+                                "arcweft-project://registration-tests/characters/occurrence-{catalog:02}-owner-{owner:02}.awchar.json"
+                            ),
+                            manifest,
+                        );
+                        documents.push(document);
+                        backed
+                    })
+                    .collect();
+                SourceBackedCharacterCatalog::try_new(root.identity().clone(), backed)
+                    .expect("catalog with distinct owners and source occurrences")
+            })
+            .collect::<Vec<_>>();
+        (documents, catalogs)
+    };
+    let (manifest_documents, catalogs) = build_catalogs(&vec![16; 64]);
     let mut documents = vec![Arc::clone(&root)];
-    documents.extend(manifest_documents.iter().cloned());
+    documents.extend(manifest_documents);
     let exact =
         ProjectRegistrationFacts::try_new(world.clone(), documents.clone(), Vec::new(), catalogs)
             .expect("exact occurrence facts");
     register(&project, &exact, TypeCheckEnv::standard(), None)
         .expect("exact occurrence limit is accepted");
 
-    let mut one_over_catalogs = (0..63)
-        .map(|_| {
-            SourceBackedCharacterCatalog::try_new(root.identity().clone(), manifests[..16].to_vec())
-                .expect("catalog with sixteen owners")
-        })
-        .collect::<Vec<_>>();
-    one_over_catalogs.push(
-        SourceBackedCharacterCatalog::try_new(root.identity().clone(), manifests)
-            .expect("catalog with seventeen owners"),
-    );
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), one_over_catalogs)
-        .expect("occurrence count is enforced by registrar");
+    let mut one_over_counts = vec![16; 63];
+    one_over_counts.push(17);
+    let (manifest_documents, one_over_catalogs) = build_catalogs(&one_over_counts);
+    let mut one_over_documents = vec![root];
+    one_over_documents.extend(manifest_documents);
+    let facts =
+        ProjectRegistrationFacts::try_new(world, one_over_documents, Vec::new(), one_over_catalogs)
+            .expect("occurrence count is enforced by registrar");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect_err("one-over occurrence limit is rejected");
     assert_registration_limit(
@@ -1500,6 +1539,12 @@ fn equal_cross_catalog_occurrences_coalesce() {
 
     assert_eq!(registered.environment().characters().len(), 1);
     assert_eq!(registered.symbols().external_symbols().count(), 1);
+    let declarations = registered
+        .character_definition_index()
+        .declaration(&CharacterSymbolDescriptor::Owner { character: owner })
+        .expect("owner declarations");
+    assert_eq!(declarations.sources().len(), 2);
+    assert_eq!(registered.character_definition_index().documents().len(), 2);
 }
 
 #[test]
