@@ -167,23 +167,194 @@ fn emit_logical_lines(
     tokens: &[LexToken],
     events: &mut Vec<SyntaxEvent>,
 ) -> Result<(), GrammarBuildError> {
+    let lines = logical_token_ranges(source, tokens);
+    let mut line = 0_usize;
+    let mut ordinal = 0_u32;
+    while line < lines.len() {
+        let range = lines[line];
+        let line_tokens = &tokens[range.start..range.end];
+        let kind = classify_top_level_item(source, line_tokens);
+        if let Some(kind @ (SyntaxKind::PredicateItem | SyntaxKind::ProofItem)) = kind {
+            let last = declaration_group_end(source, tokens, &lines, line);
+            let grouped = &tokens[range.start..lines[last].end];
+            emit_declaration_item(source, grouped, kind, ordinal, events);
+            line = last + 1;
+        } else {
+            emit_logical_line(source, line_tokens, ordinal, events);
+            line += 1;
+        }
+        ordinal = ordinal
+            .checked_add(1)
+            .ok_or(GrammarBuildError::ChildIndexExhausted)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LogicalTokenRange {
+    start: usize,
+    end: usize,
+}
+
+fn logical_token_ranges(source: &str, tokens: &[LexToken]) -> Vec<LogicalTokenRange> {
+    let mut ranges = Vec::new();
     let mut start = 0;
     let mut delimiter_depth = 0_usize;
-    let mut ordinal = 0_u32;
     for (index, token) in tokens.iter().enumerate() {
-        delimiter_depth = delimiter_depth_after(source, *token, delimiter_depth);
+        delimiter_depth = delimiter_depth_after(source, token.kind, token.range, delimiter_depth);
         if token.kind == SyntaxKind::NewlineToken && delimiter_depth == 0 {
-            emit_logical_line(source, &tokens[start..=index], ordinal, events);
+            ranges.push(LogicalTokenRange {
+                start,
+                end: index + 1,
+            });
             start = index + 1;
-            ordinal = ordinal
-                .checked_add(1)
-                .ok_or(GrammarBuildError::ChildIndexExhausted)?;
         }
     }
     if start < tokens.len() {
-        emit_logical_line(source, &tokens[start..], ordinal, events);
+        ranges.push(LogicalTokenRange {
+            start,
+            end: tokens.len(),
+        });
     }
-    Ok(())
+    ranges
+}
+
+fn declaration_group_end(
+    source: &str,
+    tokens: &[LexToken],
+    lines: &[LogicalTokenRange],
+    first: usize,
+) -> usize {
+    let mut last = first;
+    loop {
+        let grouped = &tokens[lines[first].start..lines[last].end];
+        if declaration_has_body(source, grouped) {
+            return last;
+        }
+        let Some(next) = lines.get(last + 1).copied() else {
+            return last;
+        };
+        let next_tokens = &tokens[next.start..next.end];
+        if declaration_header_angle_is_open(source, grouped)
+            || declaration_continuation_line(source, next_tokens)
+        {
+            last += 1;
+        } else {
+            return last;
+        }
+    }
+}
+
+fn declaration_has_body(source: &str, tokens: &[LexToken]) -> bool {
+    let mut depth = 0_usize;
+    for token in tokens {
+        if token.kind != SyntaxKind::PunctuationToken {
+            continue;
+        }
+        let text = &source[token.range.as_range()];
+        if depth == 0 && matches!(text, "=" | "{") {
+            return true;
+        }
+        match text {
+            "(" | "[" | "<" => depth += 1,
+            ")" | "]" | ">" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
+fn declaration_header_angle_is_open(source: &str, tokens: &[LexToken]) -> bool {
+    let mut angle = 0_usize;
+    for token in tokens {
+        if token.kind != SyntaxKind::PunctuationToken {
+            continue;
+        }
+        match &source[token.range.as_range()] {
+            "(" if angle == 0 => return false,
+            "<" => angle += 1,
+            ">" => angle = angle.saturating_sub(1),
+            _ => {}
+        }
+    }
+    angle != 0
+}
+
+fn declaration_continuation_line(source: &str, tokens: &[LexToken]) -> bool {
+    tokens
+        .iter()
+        .find(|token| !is_trivia_kind(token.kind))
+        .is_none_or(|token| {
+            matches!(
+                &source[token.range.as_range()],
+                "where" | "requires" | "ensures" | "=" | "{" | "->"
+            )
+        })
+}
+
+fn emit_declaration_item(
+    source: &str,
+    tokens: &[LexToken],
+    kind: SyntaxKind,
+    ordinal: u32,
+    events: &mut Vec<SyntaxEvent>,
+) {
+    let item_start = events.len();
+    super::predicate_proof::emit_declaration(
+        source,
+        tokens,
+        kind,
+        SyntaxRole::Element(ordinal),
+        events,
+    );
+    wrap_declaration_logical_lines(source, item_start, events);
+}
+
+fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut Vec<SyntaxEvent>) {
+    let finish = events.pop().expect("declaration finish event");
+    debug_assert_eq!(finish, SyntaxEvent::FinishNode);
+    let inner = events.split_off(item_start + 1);
+    let mut line_open = false;
+    let mut line_ordinal = 0_u32;
+    let mut nested_depth = 0_usize;
+    let mut delimiter_depth = 0_usize;
+    let mut pending_boundary = false;
+
+    for event in inner {
+        if !line_open && !matches!(event, SyntaxEvent::Diagnostic(_)) {
+            events.push(SyntaxEvent::start(
+                SyntaxKind::LogicalLine,
+                SyntaxRole::Element(line_ordinal),
+            ));
+            line_open = true;
+        }
+
+        match &event {
+            SyntaxEvent::StartNode { .. } => nested_depth += 1,
+            SyntaxEvent::FinishNode => nested_depth = nested_depth.saturating_sub(1),
+            SyntaxEvent::Token { kind, range } => {
+                if *kind == SyntaxKind::PunctuationToken {
+                    delimiter_depth = delimiter_depth_after(source, *kind, *range, delimiter_depth);
+                }
+                if *kind == SyntaxKind::NewlineToken && delimiter_depth == 0 {
+                    pending_boundary = true;
+                }
+            }
+            SyntaxEvent::MissingToken { .. } | SyntaxEvent::Diagnostic(_) => {}
+        }
+        events.push(event);
+
+        if pending_boundary && nested_depth == 0 && line_open {
+            events.push(SyntaxEvent::FinishNode);
+            line_open = false;
+            line_ordinal = line_ordinal.saturating_add(1);
+            pending_boundary = false;
+        }
+    }
+    if line_open {
+        events.push(SyntaxEvent::FinishNode);
+    }
+    events.push(finish);
 }
 
 fn emit_logical_line(
@@ -198,17 +369,6 @@ fn emit_logical_line(
     ));
     let item = classify_top_level_item(source, tokens);
     if let Some(kind) = item {
-        if matches!(kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem) {
-            super::predicate_proof::emit_declaration(
-                source,
-                tokens,
-                kind,
-                SyntaxRole::Element(ordinal),
-                events,
-            );
-            events.push(SyntaxEvent::FinishNode);
-            return;
-        }
         events.push(SyntaxEvent::start(kind, SyntaxRole::Element(ordinal)));
     }
     events.extend(
@@ -222,11 +382,16 @@ fn emit_logical_line(
     events.push(SyntaxEvent::FinishNode);
 }
 
-fn delimiter_depth_after(source: &str, token: LexToken, depth: usize) -> usize {
-    if token.kind != SyntaxKind::PunctuationToken {
+fn delimiter_depth_after(
+    source: &str,
+    kind: SyntaxKind,
+    range: SourceRange,
+    depth: usize,
+) -> usize {
+    if kind != SyntaxKind::PunctuationToken {
         return depth;
     }
-    match &source[token.range.as_range()] {
+    match &source[range.as_range()] {
         "(" | "[" | "{" => depth + 1,
         ")" | "]" | "}" => depth.saturating_sub(1),
         _ => depth,

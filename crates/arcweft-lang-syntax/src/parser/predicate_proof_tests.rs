@@ -48,6 +48,81 @@ fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
 }
 
 #[test]
+fn canonical_multiline_contract_header_and_block_form_one_declaration() {
+    let source = "pub predicate ordered<T>(pair: (T, T), cmp: Comparator<T>)\nwhere T: Ord\nrequires cmp.is_total()\nensures result\n{\n    let (left, right): (T, T) = pair\n    cmp.compare(left, right) <= 0\n}\nproof next() = ()\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::PredicateItem)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        1
+    );
+    for expected in [
+        SyntaxKind::WhereClause,
+        SyntaxKind::RequiresClause,
+        SyntaxKind::EnsuresClause,
+        SyntaxKind::PredicateBlock,
+        SyntaxKind::LetStatement,
+        SyntaxKind::BinaryExpression,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert!(!kinds.contains(&SyntaxKind::ErrorItem));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn missing_body_does_not_consume_following_clean_declaration() {
+    let source = "predicate missing(x: Bool)\nproof next() = ()\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::PredicateItem)
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ProofItem)
+            .count(),
+        1
+    );
+    assert!(kinds.contains(&SyntaxKind::MissingBody));
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_body")
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
     let with_tail = "proof p() -> Int { let x: Int = 1; lemma(x); assert.prove(x == 1); x }\n";
     let built = parse_shadow_document(&document(with_tail)).unwrap();
