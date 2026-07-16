@@ -75,6 +75,24 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         self.events.push(SyntaxEvent::start(kind, role));
     }
 
+    pub(super) fn event_position(&self) -> usize {
+        self.events.len()
+    }
+
+    pub(super) fn insert_start(&mut self, position: usize, kind: SyntaxKind, role: SyntaxRole) {
+        self.events.insert(position, SyntaxEvent::start(kind, role));
+    }
+
+    pub(super) fn set_start_role(&mut self, position: usize, role: SyntaxRole) {
+        let Some(SyntaxEvent::StartNode {
+            role: current_role, ..
+        }) = self.events.get_mut(position)
+        else {
+            panic!("completed grammar marker must point to a node start event");
+        };
+        *current_role = role;
+    }
+
     pub(super) fn finish(&mut self) {
         self.events.push(SyntaxEvent::FinishNode);
     }

@@ -92,11 +92,14 @@ syntax switch; this cut adds only private module declarations to it.
 ## Remaining work
 
 The private parser still needs complete descendant grammar for every existing
-item, statement, expression, pattern, and type family, plus documentation and
+item, statement, pattern, and type family, plus documentation and
 attribute attachment, multiline declaration ownership, exact inclusive
 transaction limits, and full recovery/synchronization matrices. Expression,
-pattern, and type modules currently classify the outer family and do not yet
-emit every nested child required by the final attachment gate.
+pattern, and type modules at this cut classify the outer family and do not yet
+emit every nested child required by the final attachment gate. Nested Pratt
+expression events are implemented by the immediately following
+[expression-event slice](2026-07-16-proof-concurrency-v6-1-1-stage-1-expression-events.md);
+pattern and type descendants remain open.
 
 Only after that complete private Stage 1 gate may Stage 2 reconciliation and
 typed attachment start. Public syntax/HIR switches, final predicate/proof sema,

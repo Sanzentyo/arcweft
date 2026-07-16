@@ -48,7 +48,7 @@ fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
 
 #[test]
 fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
-    let with_tail = "proof p() -> Int { let x: Int = 1; assert.prove(x == 1); x }\n";
+    let with_tail = "proof p() -> Int { let x: Int = 1; lemma(x); assert.prove(x == 1); x }\n";
     let built = parse_shadow_document(&document(with_tail)).unwrap();
     let kinds = built
         .index()
@@ -60,6 +60,8 @@ fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
     assert!(kinds.contains(&SyntaxKind::OpenBraceNode));
     assert!(kinds.contains(&SyntaxKind::CloseBraceNode));
     assert!(kinds.contains(&SyntaxKind::LetStatement));
+    assert!(kinds.contains(&SyntaxKind::ProofCallStatement));
+    assert!(kinds.contains(&SyntaxKind::CallExpression));
     assert!(kinds.contains(&SyntaxKind::AssertionStatement));
     assert!(kinds.contains(&SyntaxKind::PathExpression));
     assert!(!kinds.contains(&SyntaxKind::OmittedBlockTail));
@@ -74,6 +76,43 @@ fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
             .any(|entry| entry.kind() == SyntaxKind::OmittedBlockTail)
     );
     assert_eq!(empty.green().to_string(), "proof unit() {}\n");
+}
+
+#[test]
+fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
+    let source =
+        "proof p(a: Int, b: Int, c: Int, list: List<Int>) = lemma(a + b * c, list[0]?.field)?\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::BinaryExpression)
+            .count(),
+        2
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::CallArgument)
+            .count(),
+        2
+    );
+    for expected in [
+        SyntaxKind::CallExpression,
+        SyntaxKind::IndexExpression,
+        SyntaxKind::SelectExpression,
+        SyntaxKind::TryExpression,
+        SyntaxKind::Path,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(built.green().to_string(), source);
 }
 
 #[test]
