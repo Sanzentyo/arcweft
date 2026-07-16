@@ -1,6 +1,6 @@
 //! Thin bundle wrapper around canonical native Style product data.
 
-use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
+use crate::resource_codec::types::{CrossSectionRef, ProductSourceRef, SourceRangeRef};
 pub use arcweft_view::style::{
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePatch,
     ViewStylePatchId, ViewStyleProgram, ViewStyleRule, ViewStyleSheet, ViewStyleSheetId,
@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 pub struct ViewStyleResource {
     pub style_program_id: String,
     pub program: ViewStyleProgram,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_refs: Vec<ProductSourceRef>,
     pub source_map_refs: Vec<SourceRangeRef>,
     pub adapter_requirements: Vec<CrossSectionRef>,
 }

@@ -4,7 +4,10 @@ use arcweft_bundle::resource_codec::view::{
     ViewProgramStyleResources, ViewStyleApplicationTarget, ViewStyleContractError,
     ViewStyleResource,
 };
-use arcweft_bundle::resource_codec::{CrossSectionRef, PublicIdRef, SourceRangeRef};
+use arcweft_bundle::resource_codec::{
+    CrossSectionRef, ProductSourceRef, SourceMapSection, SourceRangeRef,
+};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
     ViewBoxAxisMode, ViewPropertyKind, ViewRatioMilli, ViewSpecifiedValue, ViewStyleAssignOp,
     ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule,
@@ -64,6 +67,9 @@ fn style_program_contract_rejects_dangling_targets_and_inline_definition_roots()
 fn style_merge_rebases_patch_and_source_ids_as_one_canonical_program() {
     let left = style_resource("view.style.left", "style.left", 0);
     let right = style_resource("view.style.right", "style.right", 0);
+    let right_patch_source = right.program.patches()[0].declarations()[0].source();
+    let expected_range = right.source_map_refs[right_patch_source.value() as usize];
+    let expected_source = right.source_refs[expected_range.source().value() as usize].clone();
     let merged = ViewProgramStyleResources::new(None, Some(left))
         .merge(ViewProgramStyleResources::new(None, Some(right)))
         .expect("native Style resources merge");
@@ -78,12 +84,14 @@ fn style_merge_rebases_patch_and_source_ids_as_one_canonical_program() {
             .collect::<Vec<_>>(),
         [ViewStylePatchId::new(0), ViewStylePatchId::new(1)]
     );
+    let merged_patch_source = style.program.patches()[1].declarations()[0].source();
+    let merged_range = style.source_map_refs[merged_patch_source.value() as usize];
     assert_eq!(
-        style.program.patches()[1].declarations()[0]
-            .source()
-            .value(),
-        3
+        style.source_refs[merged_range.source().value() as usize],
+        expected_source
     );
+    assert_eq!(merged_range.start_byte(), expected_range.start_byte());
+    assert_eq!(merged_range.end_byte(), expected_range.end_byte());
     style
         .encode_canonical_section()
         .expect("merged Style remains canonical");
@@ -106,8 +114,8 @@ fn style_metadata_inventory_order_does_not_change_canonical_bytes() {
     let decoded =
         ViewStyleResource::decode_canonical_section(&canonical_bytes).expect("Style decodes");
     assert!(decoded.source_map_refs.windows(2).all(|pair| {
-        (pair[0].source, pair[0].start_byte, pair[0].end_byte)
-            <= (pair[1].source, pair[1].start_byte, pair[1].end_byte)
+        (pair[0].source(), pair[0].start_byte(), pair[0].end_byte())
+            <= (pair[1].source(), pair[1].start_byte(), pair[1].end_byte())
     }));
     assert_eq!(
         decoded.adapter_requirements,
@@ -195,34 +203,50 @@ fn style_resource_with_source_inventory(
             .expect("valid axis declaration"),
         ],
     );
+    let sheet_document = source_document(&format!("style-sheet:{sheet_name}"));
+    let patch_document = source_document(&format!("style-patch:{program_id}"));
+    let section = SourceMapSection::try_from_documents(&[&sheet_document, &patch_document])
+        .expect("source map");
+    let sheet_ref = ProductSourceRef::from_document(
+        section
+            .documents()
+            .find(|document| document.document_id() == sheet_document.identity().id())
+            .expect("sheet source"),
+    );
+    let patch_ref = ProductSourceRef::from_document(
+        section
+            .documents()
+            .find(|document| document.document_id() == patch_document.identity().id())
+            .expect("patch source"),
+    );
+    let mut source_refs = vec![sheet_ref.clone(), patch_ref.clone()];
+    if reversed_sources {
+        source_refs.reverse();
+    }
     let mut source_map_refs = vec![
-        SourceRangeRef {
-            source: PublicIdRef::default(),
-            start_byte: 0,
-            end_byte: 1,
-        },
-        SourceRangeRef {
-            source: PublicIdRef::default(),
-            start_byte: 2,
-            end_byte: 3,
-        },
+        SourceRangeRef::try_for_source(&source_refs, &sheet_ref, 0, 1).expect("sheet range"),
+        SourceRangeRef::try_for_source(&source_refs, &patch_ref, 2, 3).expect("patch range"),
     ];
     if reversed_sources {
         source_map_refs.reverse();
     }
-    let mut resource = ViewStyleResource {
+    let resource = ViewStyleResource {
         style_program_id: program_id.to_owned(),
         program: ViewStyleProgram::try_new(vec![sheet], vec![patch]).expect("valid Style program"),
+        source_refs,
         source_map_refs,
         adapter_requirements: Vec::new(),
     };
-    let ids = resource.public_id_table().expect("valid public IDs");
-    resource.source_map_refs[sheet_source.value() as usize].source = ids
-        .id_for(sheet_id.public_id().as_str())
-        .expect("sheet source owner exists");
-    resource.source_map_refs[patch_source.value() as usize].source =
-        ids.id_for(program_id).expect("patch source owner exists");
     resource
+}
+
+fn source_document(id: &str) -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new(id).expect("source ID"),
+        SourceName::Memory,
+        "a b",
+    )
+    .expect("source document")
 }
 
 fn adapter_requirement(seed: u8) -> CrossSectionRef {

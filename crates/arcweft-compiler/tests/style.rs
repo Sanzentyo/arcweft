@@ -70,11 +70,11 @@ pub view Example() {
         resource.program.sheets()[1].tokens()[0].id(),
         "same token tail remains valid under different sheet owners"
     );
-    let public_ids = resource.public_id_table().expect("canonical public IDs");
     for source_range in &resource.source_map_refs {
-        public_ids
-            .get(source_range.source)
-            .expect("compiler source ref uses the final bundle table");
+        resource
+            .source_refs
+            .get(source_range.source().value() as usize)
+            .expect("compiler source ref uses the final product-source table");
     }
     let encoded = resource
         .encode_canonical_section()
@@ -140,12 +140,12 @@ fn style_compiler_lowers_flattened_environment_guard_with_exact_sources() {
 
     let condition_source = resource.source_map_refs[environment.source().value() as usize];
     assert_eq!(
-        &source[condition_source.start_byte as usize..condition_source.end_byte as usize],
+        &source[condition_source.start_byte() as usize..condition_source.end_byte() as usize],
         "(text-scale >= 125.5%)"
     );
     for clause in environment.clauses() {
         let range = resource.source_map_refs[clause.source().value() as usize];
-        let authored = &source[range.start_byte as usize..range.end_byte as usize];
+        let authored = &source[range.start_byte() as usize..range.end_byte() as usize];
         assert!(
             authored == "text-scale >= 125.5%" || authored == "color-scheme == dark",
             "unexpected clause source: {authored}"

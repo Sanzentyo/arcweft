@@ -7,6 +7,7 @@ use arcweft_bundle::resource_codec::{
 fn program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.program.focus".to_owned(),
+        source_refs: Vec::new(),
         definitions: Vec::new(),
         value_programs: Vec::new(),
         value_inputs: Vec::new(),

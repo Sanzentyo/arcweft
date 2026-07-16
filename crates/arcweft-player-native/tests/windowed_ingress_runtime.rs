@@ -1,8 +1,7 @@
 use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{BundlePatchArtifact, decode_patch_bundle, encode_patch_bundle};
-use arcweft_bundle::{
-    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
-};
+use arcweft_bundle::resource_codec::SourceMapSection;
+use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
@@ -14,6 +13,7 @@ use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument,
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -205,7 +205,6 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
     let stats = bytecode.stats();
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "windowed-ingress.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -221,12 +220,19 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: "windowed-ingress.arcw".to_owned(),
-            text: "flow @flow.main main { ... }".to_owned(),
-        },
+        source_map("windowed-ingress.arcw", "flow @flow.main main { ... }"),
         bytecode,
         display,
     )
     .with_product_awbc(product_awbc)
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }

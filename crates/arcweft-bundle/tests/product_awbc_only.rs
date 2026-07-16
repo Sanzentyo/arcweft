@@ -1,6 +1,7 @@
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleAwbcProgram, BundleCodecError, BundleFormat, BundleManifest,
-    BundleRuntimeSummary, BundleSource,
+    BundleRuntimeSummary,
     container::{BundleSectionKind, BundleView, ReadBudget, SectionInput, encode_bundle},
 };
 use arcweft_core::awbc::schema::{
@@ -11,6 +12,7 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 #[test]
 fn product_awbc_requires_executable() {
@@ -100,7 +102,6 @@ fn product_awbc_decode_rejects_old_structured_product_bytecode_tag() {
 fn minimal_bundle() -> ArcweftBundle {
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "awbc-only.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -116,13 +117,20 @@ fn minimal_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "awbc-only.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("awbc-only.arcw", ""),
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn minimal_awbc_program() -> AwbcProgram {

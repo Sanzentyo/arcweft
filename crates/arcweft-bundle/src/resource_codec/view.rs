@@ -14,6 +14,7 @@ mod merge;
 mod model;
 mod runtime_control_style;
 mod style_contract;
+mod validated;
 
 pub use codec::{
     ViewExportValidationError, ViewResourceBudget, ViewResourceExport,
@@ -25,3 +26,7 @@ pub use merge::{ViewProgramStyleResources, ViewResourceMergeError};
 pub use model::*;
 pub use runtime_control_style::*;
 pub use style_contract::ViewStyleContractError;
+pub use validated::{
+    ValidatedViewProduct, ValidatedViewProgramResource, ViewProductValidationError,
+    ViewProductValidationLimits,
+};

@@ -17,6 +17,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-source = { path = "../arcweft-source" }
 
 [lints]
 workspace = true

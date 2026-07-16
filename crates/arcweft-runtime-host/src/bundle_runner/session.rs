@@ -109,7 +109,7 @@ impl BundleRunnerSession {
 
         Ok(Self {
             _workspace: workspace,
-            source: bundle.manifest.source_label.clone(),
+            source: bundle.source_display_name().to_owned(),
             bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
             adapter_manifests: bundle.adapter_manifests.len(),
             phases,

@@ -1,6 +1,6 @@
 //! Typed product identities and provenance for exported View parts.
 
-use crate::resource_codec::{SourceMapSourceId, SourceRangeRef};
+use crate::resource_codec::SourceRangeRef;
 use arcweft_id::{IdError, PublicId};
 use arcweft_view::{ViewPartLocalName, ViewPartName};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -21,7 +21,6 @@ pub struct ViewOwnedPartRef {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewPartExportSourceRef {
-    pub source_id: SourceMapSourceId,
     pub declaration: SourceRangeRef,
     pub local_name: SourceRangeRef,
     pub public_name: SourceRangeRef,

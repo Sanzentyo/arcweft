@@ -1231,7 +1231,7 @@ flow test {
         )
         .expect("source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
+    let parsed = parse_document_with_source(document.clone(), ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources_from_source(&hir, &[], "test.arcw", source)
@@ -1243,21 +1243,29 @@ flow test {
     assert_eq!(export.target.view.public_id().as_str(), "view.Card");
     assert_eq!(export.target.part.as_public_id().as_str(), "title");
     assert_eq!(export.public_name.as_public_id().as_str(), "heading");
-    assert_eq!(export.source.source_id.as_str(), "test.arcw");
-    assert!(export.source.declaration.start_byte < export.source.local_name.start_byte);
-    assert!(export.source.local_name.end_byte < export.source.public_name.start_byte);
-    let table = program
-        .public_id_table()
-        .expect("canonical public-ID table");
-    let source = table
-        .id_for("test.arcw")
-        .expect("source identity is indexed");
+    let expected_source = arcweft_bundle::resource_codec::ProductSourceId::try_for_document_id(
+        document.identity().id(),
+    )
+    .expect("product source identity");
+    assert_eq!(program.source_refs.len(), 1);
+    assert_eq!(program.source_refs[0].id(), &expected_source);
+    assert_eq!(
+        program.source_refs[0].revision(),
+        document.identity().revision()
+    );
+    assert_eq!(
+        program.source_refs[0].source_len(),
+        document.identity().source_len()
+    );
+    assert!(export.source.declaration.start_byte() < export.source.local_name.start_byte());
+    assert!(export.source.local_name.end_byte() < export.source.public_name.start_byte());
+    let source = export.source.declaration.source();
     assert!(
         export
             .source
             .ranges()
             .iter()
-            .all(|range| range.source == source)
+            .all(|range| range.source() == source)
     );
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
@@ -1394,13 +1402,11 @@ fn assert_linked_style_sources_are_valid(
             assert!((declaration.source().value() as usize) < source_count);
         }
     }
-    let public_ids = style
-        .public_id_table()
-        .expect("linked Style public IDs remain canonical");
     for range in &style.source_map_refs {
-        public_ids
-            .get(range.source)
-            .expect("every linked Style source range has a valid public ID");
+        style
+            .source_refs
+            .get(range.source().value() as usize)
+            .expect("every linked Style source range has a valid product source");
     }
     style
         .encode_canonical_section()
@@ -1918,7 +1924,6 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
     let stats = program.stats();
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -1934,10 +1939,15 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label.to_owned(),
-            text: format!("flow test {{ return \"{return_value}\" }}"),
-        },
+        arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[
+            &SourceDocument::try_new(
+                SourceDocumentId::try_new(source_label).expect("source ID"),
+                SourceName::path(source_label),
+                format!("flow test {{ return \"{return_value}\" }}"),
+            )
+            .expect("source document"),
+        ])
+        .expect("source map"),
         program,
         display,
     )

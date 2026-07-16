@@ -6,7 +6,10 @@ use arcweft_bundle::resource_codec::view::{
     ViewStylePatchId, ViewStyleProgram, ViewStyleSheet, ViewStyleSheetId, ViewSurfaceResource,
     ViewTextBlockBounds, ViewTextBlockResource,
 };
-use arcweft_bundle::resource_codec::{CrossSectionRef, PublicIdRef, SourceRangeRef};
+use arcweft_bundle::resource_codec::{
+    CrossSectionRef, ProductSourceRef, SourceMapSection, SourceRangeRef,
+};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::fs;
 
 fn unique_root(label: &str) -> std::path::PathBuf {
@@ -43,8 +46,22 @@ fn assert_direct_json_sidecar_is_rejected(
 }
 
 fn strict_style_resource_fixture() -> ViewStyleResource {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("strict-style.arcw").expect("source ID"),
+        SourceName::path("strict-style.arcw"),
+        "x",
+    )
+    .expect("source document");
+    let source_map = SourceMapSection::try_from_documents(&[&document]).expect("source map");
+    let source_refs = source_map
+        .documents()
+        .map(ProductSourceRef::from_document)
+        .collect::<Vec<_>>();
+    let source_range =
+        SourceRangeRef::try_for_source(&source_refs, &source_refs[0], 0, 1).expect("source range");
     ViewStyleResource {
         style_program_id: "view.style.strict".to_owned(),
+        source_refs,
         program: ViewStyleProgram::try_new(
             vec![
                 ViewStyleSheet::new(
@@ -57,11 +74,7 @@ fn strict_style_resource_fixture() -> ViewStyleResource {
             vec![ViewStylePatch::new(ViewStylePatchId::new(0), Vec::new())],
         )
         .expect("strict native Style program is valid"),
-        source_map_refs: vec![SourceRangeRef {
-            source: PublicIdRef::default(),
-            start_byte: 0,
-            end_byte: 1,
-        }],
+        source_map_refs: vec![source_range],
         adapter_requirements: vec![CrossSectionRef {
             section_kind: SectionKindCode::new(0x5354_594C),
             section_id: SectionId::from_bytes([7; 16]),

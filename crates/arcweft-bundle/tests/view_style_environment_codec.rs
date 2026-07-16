@@ -1,9 +1,9 @@
-use arcweft_bundle::BundleSource;
 use arcweft_bundle::resource_codec::view::{ViewStyleEnvironmentSourceError, ViewStyleResource};
 use arcweft_bundle::resource_codec::{
-    PublicIdRef, SectionCodecError, SourceMapIndex, SourceMapSourceId, SourceRangeRef,
+    ProductSourceRef, SectionCodecError, SourceMapSection, SourceRangeRef,
 };
 use arcweft_presentation::appearance::ColorScheme;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::ViewElementKind;
 use arcweft_view::style::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewPropertyKind, ViewRatioMilli,
@@ -14,7 +14,7 @@ use arcweft_view::style::{
 
 #[test]
 fn environment_product_round_trips_canonical_json_cbor_msgpack() {
-    let (_, _, resource) = fixture();
+    let (_, resource) = fixture();
     let condition = resource.program.sheets()[0].rules()[0]
         .environment()
         .expect("fixture guard");
@@ -48,31 +48,32 @@ fn environment_product_round_trips_canonical_json_cbor_msgpack() {
 }
 
 #[test]
-fn environment_sources_resolve_in_final_source_index() {
-    let (source, source_id, resource) = fixture();
-    let index = SourceMapIndex::from_source(&source).expect("source index");
+fn environment_sources_resolve_in_complete_source_map() {
+    let (source_map, resource) = fixture();
 
     resource
-        .validate_environment_sources(&index, &source_id)
+        .validate_environment_sources(&source_map)
         .expect("condition, clause, and rule ranges resolve");
     let bytes = resource.encode_canonical_section().expect("Style encodes");
     let decoded = ViewStyleResource::decode_canonical_section(&bytes).expect("Style decodes");
     decoded
-        .validate_environment_sources(&index, &source_id)
+        .validate_environment_sources(&source_map)
         .expect("decoded ranges retain final source identities");
 }
 
 #[test]
-fn environment_source_owner_mismatch_rejects_complete_product() {
-    let (source, source_id, mut resource) = fixture();
-    let table = resource.public_id_table().expect("public IDs");
-    resource.source_map_refs[1].source = table
-        .id_for(&resource.style_program_id)
-        .expect("program identity");
-    let index = SourceMapIndex::from_source(&source).expect("source index");
+fn environment_cross_source_relation_rejects_complete_product() {
+    let (source_map, mut resource) = fixture();
+    let other = source_document("other.arcw", "other source");
+    let other_map = SourceMapSection::try_from_documents(&[&other]).expect("other source map");
+    let other_ref = ProductSourceRef::from_document(
+        other_map.documents().next().expect("other source document"),
+    );
+    resource.source_refs.push(other_ref.clone());
+    resource.source_map_refs[1] = range(&resource.source_refs, &other_ref, 0, 1);
 
     assert!(matches!(
-        resource.validate_environment_sources(&index, &source_id),
+        resource.validate_environment_sources(&source_map),
         Err(SectionCodecError::ViewStyleEnvironmentSource(
             ViewStyleEnvironmentSourceError::WrongOwner
         ))
@@ -81,23 +82,29 @@ fn environment_source_owner_mismatch_rejects_complete_product() {
 
 #[test]
 fn environment_source_range_out_of_bounds_or_utf8_boundary_rejects() {
-    let (source, source_id, resource) = fixture();
-    let index = SourceMapIndex::from_source(&source).expect("source index");
+    let (source_map, resource) = fixture();
+    let source = resource.source_refs[0].clone();
 
     let mut out_of_bounds = resource.clone();
-    out_of_bounds.source_map_refs[0].end_byte =
-        u32::try_from(source.text.len() + 1).expect("small fixture");
+    out_of_bounds.source_map_refs[0] = range(
+        &out_of_bounds.source_refs,
+        &source,
+        0,
+        u32::try_from(source_map.documents().next().expect("source").text().len() + 1)
+            .expect("small fixture"),
+    );
     assert!(matches!(
-        out_of_bounds.validate_environment_sources(&index, &source_id),
+        out_of_bounds.validate_environment_sources(&source_map),
         Err(SectionCodecError::ViewStyleEnvironmentSource(
             ViewStyleEnvironmentSourceError::SourceOutOfBounds
         ))
     ));
 
     let mut split_code_point = resource;
-    split_code_point.source_map_refs[0].start_byte = 1;
+    let end = split_code_point.source_map_refs[0].end_byte();
+    split_code_point.source_map_refs[0] = range(&split_code_point.source_refs, &source, 1, end);
     assert!(matches!(
-        split_code_point.validate_environment_sources(&index, &source_id),
+        split_code_point.validate_environment_sources(&source_map),
         Err(SectionCodecError::ViewStyleEnvironmentSource(
             ViewStyleEnvironmentSourceError::InvalidUtf8Boundary
         ))
@@ -106,26 +113,31 @@ fn environment_source_range_out_of_bounds_or_utf8_boundary_rejects() {
 
 #[test]
 fn condition_must_contain_clause_ranges() {
-    let (source, source_id, mut resource) = fixture();
-    let condition_end = resource.source_map_refs[0].end_byte;
-    resource.source_map_refs[1].end_byte = condition_end + 1;
-    let index = SourceMapIndex::from_source(&source).expect("source index");
+    let (source_map, mut resource) = fixture();
+    let source = resource.source_refs[0].clone();
+    let condition_end = resource.source_map_refs[0].end_byte();
+    let clause_start = resource.source_map_refs[1].start_byte();
+    resource.source_map_refs[1] = range(
+        &resource.source_refs,
+        &source,
+        clause_start,
+        condition_end + 1,
+    );
 
     assert!(matches!(
-        resource.validate_environment_sources(&index, &source_id),
+        resource.validate_environment_sources(&source_map),
         Err(SectionCodecError::ViewStyleEnvironmentSource(
             ViewStyleEnvironmentSourceError::ClauseNotContained
         ))
     ));
 }
 
-fn fixture() -> (BundleSource, SourceMapSourceId, ViewStyleResource) {
+fn fixture() -> (SourceMapSection, ViewStyleResource) {
     let text = "éwhen environment(color-scheme == dark) { Button { opacity = 1 } }";
-    let source = BundleSource {
-        label: "main.arcw".to_owned(),
-        text: text.to_owned(),
-    };
-    let source_id = SourceMapSourceId::try_new(source.label.clone()).expect("source identity");
+    let document = source_document("main.arcw", text);
+    let source_map = SourceMapSection::try_from_documents(&[&document]).expect("source map");
+    let source = ProductSourceRef::from_document(source_map.documents().next().expect("source"));
+    let source_refs = vec![source.clone()];
     let condition_start = text.find('(').expect("condition start");
     let condition_end = text.find(')').expect("condition end") + 1;
     let clause_start = condition_start + 1;
@@ -166,32 +178,52 @@ fn fixture() -> (BundleSource, SourceMapSourceId, ViewStyleResource) {
     )
     .expect("rule");
     let sheet_id = ViewStyleSheetId::try_new("style.adaptive").expect("sheet ID");
-    let sheet = ViewStyleSheet::new(sheet_id.clone(), Vec::new(), vec![rule]).expect("sheet");
-    let mut resource = ViewStyleResource {
+    let sheet = ViewStyleSheet::new(sheet_id, Vec::new(), vec![rule]).expect("sheet");
+    let resource = ViewStyleResource {
         style_program_id: "view.style.program".to_owned(),
         program: ViewStyleProgram::try_new(vec![sheet], Vec::new()).expect("program"),
+        source_refs,
         source_map_refs: vec![
-            range(condition_start, condition_end),
-            range(clause_start, clause_end),
-            range(rule_start, rule_end),
-            range(declaration_start, declaration_end),
+            range_from_usize(&source, &source_map, condition_start, condition_end),
+            range_from_usize(&source, &source_map, clause_start, clause_end),
+            range_from_usize(&source, &source_map, rule_start, rule_end),
+            range_from_usize(&source, &source_map, declaration_start, declaration_end),
         ],
         adapter_requirements: Vec::new(),
     };
-    let table = resource.public_id_table().expect("public IDs");
-    let owner = table
-        .id_for(sheet_id.public_id().as_str())
-        .expect("sheet owner");
-    for range in &mut resource.source_map_refs {
-        range.source = owner;
-    }
-    (source, source_id, resource)
+    (source_map, resource)
 }
 
-fn range(start: usize, end: usize) -> SourceRangeRef {
-    SourceRangeRef {
-        source: PublicIdRef::default(),
-        start_byte: u32::try_from(start).expect("fixture range"),
-        end_byte: u32::try_from(end).expect("fixture range"),
-    }
+fn source_document(id: &str, text: &str) -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new(id).expect("source ID"),
+        SourceName::path(id),
+        text,
+    )
+    .expect("source document")
+}
+
+fn range_from_usize(
+    source: &ProductSourceRef,
+    source_map: &SourceMapSection,
+    start: usize,
+    end: usize,
+) -> SourceRangeRef {
+    let refs = vec![source.clone()];
+    debug_assert_eq!(source_map.documents().count(), 1);
+    range(
+        &refs,
+        source,
+        u32::try_from(start).expect("fixture range"),
+        u32::try_from(end).expect("fixture range"),
+    )
+}
+
+fn range(
+    source_refs: &[ProductSourceRef],
+    source: &ProductSourceRef,
+    start: u32,
+    end: u32,
+) -> SourceRangeRef {
+    SourceRangeRef::try_for_source(source_refs, source, start, end).expect("fixture source range")
 }

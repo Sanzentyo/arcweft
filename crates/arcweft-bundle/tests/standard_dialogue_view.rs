@@ -144,13 +144,21 @@ fn dialogue_primary_action_requires_a_declared_typed_parameter() {
 }
 
 fn test_bundle() -> arcweft_bundle::ArcweftBundle {
-    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
+    use arcweft_bundle::resource_codec::SourceMapSection;
+    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("test.arcw").expect("source ID"),
+        SourceName::path("test.arcw"),
+        "",
+    )
+    .expect("source document");
 
     arcweft_bundle::ArcweftBundle::new(
         BundleManifest {
-            source_label: "standard-dialogue-view-test".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -166,10 +174,7 @@ fn test_bundle() -> arcweft_bundle::ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "test.arcw".to_owned(),
-            text: String::new(),
-        },
+        SourceMapSection::try_from_documents(&[&document]).expect("source map"),
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )

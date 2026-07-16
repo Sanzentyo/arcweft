@@ -204,15 +204,15 @@ impl NativeCaptureFormat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_bundle::{
-        ARCWEFT_BUNDLE_SCHEMA_VERSION, BundleManifest, BundleRuntimeSummary, BundleSource,
-    };
+    use arcweft_bundle::resource_codec::SourceMapSection;
+    use arcweft_bundle::{ARCWEFT_BUNDLE_SCHEMA_VERSION, BundleManifest, BundleRuntimeSummary};
     use arcweft_core::{
         bytecode::BytecodeProgram,
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
     };
     use arcweft_render_text::LineDisplayCatalog;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::{
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -333,7 +333,6 @@ mod tests {
         let bytecode = BytecodeProgram::from_runtime_plan(plan);
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "bundle-mode-runs.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -349,14 +348,24 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "bundle-mode-runs.arcw".to_owned(),
-                text: "flow @flow.main main { return \"done\" }".to_owned(),
-            },
+            source_map(
+                "bundle-mode-runs.arcw",
+                "flow @flow.main main { return \"done\" }",
+            ),
             bytecode,
             display,
         )
         .with_product_awbc(product_awbc)
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn temp_awfb_path(label: &str) -> PathBuf {

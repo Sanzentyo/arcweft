@@ -784,8 +784,9 @@ fn build_digest(digest: BundleDigest) -> BuildDigest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
-        ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
+        ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary,
         container::{
             BundleKind, BundleSectionKind, BundleView, ContentResidency, ReadBudget, SectionId,
             SectionInput, encode_bundle,
@@ -804,6 +805,7 @@ mod tests {
     };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::{
         io::{Read, Write},
         net::{Shutdown, TcpListener},
@@ -1410,7 +1412,6 @@ mod tests {
     fn game_bundle() -> ArcweftBundle {
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "main.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: Some("main".to_owned()),
@@ -1426,14 +1427,21 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "main.arcw".to_owned(),
-                text: "flow @flow.main main { return \"ok\" }".to_owned(),
-            },
+            source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
         .with_product_awbc(minimal_awbc_program())
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn minimal_awbc_program() -> AwbcProgram {

@@ -14,8 +14,6 @@ use crate::resource_codec::budget::{SectionCodecBudget, check_budget};
 use crate::resource_codec::error::SectionCodecError;
 use crate::resource_codec::kind::ProductSectionCodecKind;
 use crate::resource_codec::table::PublicIdTable;
-use crate::resource_codec::types::SourceRangeRef;
-use crate::resource_codec::{SourceMapIndex, SourceMapSourceId};
 
 use super::compat::ViewResourceCompatibility;
 use super::model::{
@@ -206,29 +204,8 @@ impl ViewProgramResource {
         PublicIdTable::new(self.public_ids())
     }
 
-    /// Validates mandatory export provenance against the decoded product source map.
-    pub fn validate_export_sources(
-        &self,
-        sources: &SourceMapIndex,
-    ) -> Result<(), SectionCodecError> {
-        part::validate_export_source_extents(self, sources).map_err(Into::into)
-    }
-
-    /// Binds authored export ranges to this section's canonical source-ID table.
-    pub fn bind_export_source_refs(&mut self) -> Result<(), SectionCodecError> {
-        let table = self.public_id_table()?;
-        for exported in &mut self.exported_parts {
-            let source = table
-                .id_for(exported.source.source_id.as_str())
-                .ok_or(ViewExportValidationError::UnknownSource)?;
-            for range in exported.source.ranges_mut() {
-                range.source = source;
-            }
-        }
-        Ok(())
-    }
-
     fn canonicalize(&mut self) {
+        self.canonicalize_source_table();
         self.value_programs
             .sort_by_key(arcweft_view::ViewValueProgram::id);
         self.value_inputs
@@ -422,7 +399,7 @@ impl ViewProgramResource {
             "view_focus_edges",
         )?;
         check_budget(
-            self.source_refs().count(),
+            self.source_ranges().count(),
             budget.source_map_refs,
             "view_program_source_ranges",
         )?;
@@ -979,63 +956,20 @@ impl ViewProgramResource {
         Ok(())
     }
 
-    fn source_refs(&self) -> impl Iterator<Item = &SourceRangeRef> {
-        self.instructions
-            .iter()
-            .filter_map(ViewProgramInstruction::source)
-            .chain(
-                self.semantic_targets
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
-            .chain(
-                self.layout_bounds
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
-            .chain(
-                self.scroll_regions
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
-            .chain(self.surfaces.iter().filter_map(|item| item.source.as_ref()))
-            .chain(
-                self.text_blocks
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
-            .chain(
-                self.action_buttons
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
-            .chain(
-                self.focus_groups
-                    .iter()
-                    .filter_map(|item| item.source.as_ref()),
-            )
-            .chain(self.focus_navigation.iter().flat_map(|item| {
-                item.source
-                    .iter()
-                    .chain(item.edges.iter().filter_map(|edge| edge.source.as_ref()))
-            }))
-            .chain(
-                self.exported_parts
-                    .iter()
-                    .flat_map(|part| part.source.ranges()),
-            )
-    }
-
     fn validate_source_refs(&self) -> Result<(), SectionCodecError> {
-        let public_ids = self.public_id_table()?;
-        self.source_refs()
-            .try_for_each(|source| public_ids.get(source.source).map(|_| ()))
+        self.validate_source_table()
+            .map_err(|_| SectionCodecError::NonCanonicalTable("view_program_source_refs"))
     }
 
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
             [self.program_id.clone()]
                 .into_iter()
+                .chain(
+                    self.source_refs
+                        .iter()
+                        .map(|source| source.id().as_str().to_owned()),
+                )
                 .chain(self.definitions.iter().flat_map(|definition| {
                     std::iter::once(definition.public_id.clone())
                         .chain(
@@ -1057,7 +991,6 @@ impl ViewProgramResource {
                         part.target.view.public_id().as_str().to_owned(),
                         part.target.part.as_public_id().as_str().to_owned(),
                         part.public_name.as_public_id().as_str().to_owned(),
-                        part.source.source_id.as_str().to_owned(),
                     ]
                 }))
                 .chain(

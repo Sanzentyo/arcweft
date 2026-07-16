@@ -1,8 +1,7 @@
 use arcweft_bundle::container::{BundleView, ReadBudget};
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::{
-    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
-};
+use arcweft_bundle::resource_codec::SourceMapSection;
+use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::{
     awbc::{
         fiber::{FiberScope, FiberScopeCleanup},
@@ -40,6 +39,7 @@ use arcweft_runtime_driver::{
     },
     swap::GenerationId,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 #[test]
 fn awbc_product_bundle_session_from_awfb_requires_and_uses_product_awbc() {
@@ -597,7 +597,6 @@ fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
 fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -613,14 +612,21 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "awbc-session.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map(source_label, ""),
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
     .with_product_awbc(minimal_awbc_program(entry))
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn fx_definition() -> FxDefinition {

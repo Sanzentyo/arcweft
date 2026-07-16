@@ -55,6 +55,7 @@ windows = { workspace = true, features = ["Win32_Foundation"] }
 
 [dev-dependencies]
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+arcweft-source = { path = "../arcweft-source" }
 
 [lib]
 path = "src/lib.rs"

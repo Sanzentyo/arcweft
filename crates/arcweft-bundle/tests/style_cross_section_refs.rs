@@ -1,13 +1,12 @@
 use arcweft_bundle::{
     ArcweftBundle, BundleCodecError, BundleFormat, BundleManifest, BundleRuntimeSummary,
-    BundleSource,
     container::{
         BundleDigest, BundleSectionKind, BundleView, ReadBudget, SectionId, SectionInput,
         encode_bundle,
     },
     resource_codec::{
         CrossSectionRef, ProductResourceEnvelope, ProductSectionCodecKind, PublicIdRef,
-        SectionCodecBudget, ViewStyleResource,
+        SectionCodecBudget, SourceMapSection, ViewStyleResource,
     },
 };
 use arcweft_core::{
@@ -20,6 +19,7 @@ use arcweft_core::{
     bytecode::BytecodeProgram,
 };
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 type ReferenceSelector = for<'a> fn(&'a mut ViewStyleResource) -> &'a mut CrossSectionRef;
 type ReferenceMutation = fn(&mut CrossSectionRef);
@@ -277,7 +277,6 @@ fn assert_awfb_error(error: BundleCodecError, encode: bool, label: &str, expecte
 fn minimal_bundle() -> ArcweftBundle {
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "style-cross-section.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -293,14 +292,21 @@ fn minimal_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "style-cross-section.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("style-cross-section.arcw", ""),
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
     .with_product_awbc(minimal_awbc_program())
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn minimal_awbc_program() -> AwbcProgram {

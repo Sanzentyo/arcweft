@@ -1,6 +1,6 @@
 use super::runtime_control_style::ViewRuntimeControlVisualStyle;
 use crate::container::BundleDigest;
-use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
+use crate::resource_codec::types::{CrossSectionRef, ProductSourceRef, SourceRangeRef};
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor, SystemPalette,
     SystemPaletteSet,
@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 mod part;
 pub use part::*;
 
+mod source;
+
 mod input;
 pub use input::*;
 
@@ -29,6 +31,8 @@ pub use style::*;
 #[serde(deny_unknown_fields)]
 pub struct ViewProgramResource {
     pub program_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_refs: Vec<ProductSourceRef>,
     pub definitions: Vec<ViewDefinitionResource>,
     pub value_programs: Vec<ViewValueProgram>,
     pub value_inputs: Vec<ViewValueInputResource>,

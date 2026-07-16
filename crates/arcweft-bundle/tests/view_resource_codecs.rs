@@ -22,11 +22,10 @@ use arcweft_bundle::resource_codec::view::{
 };
 use arcweft_render_text::{RichTextDocument, RichTextNode};
 
-use arcweft_bundle::BundleSource;
 use arcweft_bundle::resource_codec::{
-    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, PublicIdRef, PublicIdTable,
-    ResourceField, ResourceWireType, SectionCodecBudget, SourceMapIndex, SourceMapSourceId,
-    SourceRangeRef,
+    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ProductSourceRef, PublicIdTable,
+    ResourceField, ResourceWireType, SectionCodecBudget, SourceMapSection, SourceRangeRef,
+    ValidatedViewProduct, ViewProductValidationError, ViewProductValidationLimits,
 };
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor,
@@ -34,6 +33,7 @@ use arcweft_presentation::appearance::{
 use arcweft_presentation::fx::{
     FiniteF32, FxId, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
     ViewColorValue, ViewElementState, ViewPropertyKind, ViewSpecifiedValue, ViewStylePredicate,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
@@ -280,17 +280,14 @@ fn view_style_codec_rejects_missing_and_ambiguous_inline_token_owners() {
 }
 
 #[test]
-fn view_resource_merge_remaps_program_source_public_ids() {
-    let merged = ViewProgramStyleResources::new(Some(sourced_program("view.z_left")), None)
-        .merge(ViewProgramStyleResources::new(
-            Some(sourced_program("view.a_right")),
-            None,
-        ))
+fn view_resource_merge_remaps_program_source_indexes() {
+    let left = sourced_program("view.z_left");
+    let right = sourced_program("view.a_right");
+    let expected = vec![left.source_refs[0].clone(), right.source_refs[0].clone()];
+    let merged = ViewProgramStyleResources::new(Some(left), None)
+        .merge(ViewProgramStyleResources::new(Some(right), None))
         .expect("program resources merge atomically");
     let program = merged.program.expect("merged program is retained");
-    let public_ids = program
-        .public_id_table()
-        .expect("merged program public IDs are canonical");
     let resolved = program
         .instructions
         .iter()
@@ -302,12 +299,16 @@ fn view_resource_merge_remaps_program_source_public_ids() {
             else {
                 panic!("sourced fixture contains only custom node producers");
             };
-            public_ids.get(source.source)
+            program
+                .source_refs
+                .get(source.source().value() as usize)
+                .cloned()
+                .ok_or(source.source().value())
         })
         .collect::<Result<Vec<_>, _>>()
         .expect("merged source refs stay in bounds");
 
-    assert_eq!(resolved, vec!["view.z_left", "view.a_right"]);
+    assert_eq!(resolved, expected);
 }
 
 #[test]
@@ -545,45 +546,52 @@ fn exported_part_references_are_validated_by_the_program_codec() {
 }
 
 #[test]
-fn exported_part_source_provenance_is_validated_without_source_io() {
-    let sources = SourceMapIndex::from_source(&BundleSource {
-        label: "main.arcw".to_owned(),
-        text: "x".repeat(128),
-    })
-    .expect("source-map index");
-    exported_part_program()
-        .validate_export_sources(&sources)
-        .expect("canonical export ranges fit encoded source metadata");
+fn exported_part_source_provenance_is_validated_as_a_complete_product() {
+    let sources = source_map("main.arcw", &"x".repeat(128));
+    ValidatedViewProduct::try_new(
+        Some(sources.clone()),
+        Some(exported_part_program()),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("canonical export ranges fit their exact source revision");
 
     let mut unknown = exported_part_program();
-    unknown.exported_parts[0].source.source_id =
-        SourceMapSourceId::try_new("other.arcw").expect("source identity");
-    assert_eq!(
-        unknown
-            .validate_export_sources(&sources)
-            .expect_err("unknown encoded source identity must fail"),
-        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
-            ViewExportValidationError::UnknownSource,
-        ),
-    );
+    let other_sources = source_map("other.arcw", &"x".repeat(128));
+    unknown.source_refs = source_refs(&other_sources);
+    assert!(matches!(
+        ValidatedViewProduct::try_new(
+            Some(sources.clone()),
+            Some(unknown),
+            ViewProductValidationLimits::default(),
+        )
+        .expect_err("unknown encoded source identity must fail"),
+        ViewProductValidationError::MissingSource { .. }
+    ));
 
     let mut out_of_bounds = exported_part_program();
-    out_of_bounds.exported_parts[0].source.declaration.end_byte = 129;
+    let source = out_of_bounds.source_refs[0].clone();
+    out_of_bounds.exported_parts[0].source.declaration =
+        SourceRangeRef::try_for_source(&out_of_bounds.source_refs, &source, 0, 129)
+            .expect("range source");
     assert_eq!(
-        out_of_bounds
-            .validate_export_sources(&sources)
-            .expect_err("range outside encoded normalized extent must fail"),
-        arcweft_bundle::resource_codec::SectionCodecError::ViewExport(
-            ViewExportValidationError::SourceOutOfBounds,
-        ),
+        ValidatedViewProduct::try_new(
+            Some(sources),
+            Some(out_of_bounds),
+            ViewProductValidationLimits::default(),
+        )
+        .expect_err("range outside encoded normalized extent must fail"),
+        ViewProductValidationError::OutOfBoundsRange,
     );
 }
 
 #[test]
 fn exported_part_source_ranges_reject_structural_tampering() {
     let mut empty = exported_part_program();
-    empty.exported_parts[0].source.local_name.end_byte =
-        empty.exported_parts[0].source.local_name.start_byte;
+    let source = empty.source_refs[0].clone();
+    let start = empty.exported_parts[0].source.local_name.start_byte();
+    empty.exported_parts[0].source.local_name =
+        SourceRangeRef::try_for_source(&empty.source_refs, &source, start, start)
+            .expect("range source");
     assert_eq!(
         empty
             .encode_canonical_section()
@@ -594,10 +602,15 @@ fn exported_part_source_ranges_reject_structural_tampering() {
     );
 
     let mut outside = exported_part_program();
-    outside.exported_parts[0].source.local_name.start_byte =
-        outside.exported_parts[0].source.declaration.end_byte;
-    outside.exported_parts[0].source.local_name.end_byte =
-        outside.exported_parts[0].source.declaration.end_byte + 1;
+    let source = outside.source_refs[0].clone();
+    let declaration_end = outside.exported_parts[0].source.declaration.end_byte();
+    outside.exported_parts[0].source.local_name = SourceRangeRef::try_for_source(
+        &outside.source_refs,
+        &source,
+        declaration_end,
+        declaration_end + 1,
+    )
+    .expect("range source");
     assert_eq!(
         outside
             .encode_canonical_section()
@@ -608,8 +621,12 @@ fn exported_part_source_ranges_reject_structural_tampering() {
     );
 
     let mut overlap = exported_part_program();
-    overlap.exported_parts[0].source.public_name.start_byte =
-        overlap.exported_parts[0].source.local_name.end_byte - 1;
+    let source = overlap.source_refs[0].clone();
+    let start = overlap.exported_parts[0].source.local_name.end_byte() - 1;
+    let end = overlap.exported_parts[0].source.public_name.end_byte();
+    overlap.exported_parts[0].source.public_name =
+        SourceRangeRef::try_for_source(&overlap.source_refs, &source, start, end)
+            .expect("range source");
     assert_eq!(
         overlap
             .encode_canonical_section()
@@ -620,7 +637,12 @@ fn exported_part_source_ranges_reject_structural_tampering() {
     );
 
     let mut cross_source = exported_part_program();
-    cross_source.exported_parts[0].source.public_name.source = PublicIdRef(u32::MAX);
+    let other_sources = source_map("other.arcw", &"y".repeat(128));
+    let other = source_refs(&other_sources).remove(0);
+    cross_source.source_refs.push(other.clone());
+    cross_source.exported_parts[0].source.public_name =
+        SourceRangeRef::try_for_source(&cross_source.source_refs, &other, 24, 31)
+            .expect("other source range");
     assert_eq!(
         cross_source
             .encode_canonical_section()
@@ -1167,8 +1189,12 @@ fn view_program_bytes_without_scroll_region_field(field_name: &str) -> Vec<u8> {
 }
 
 fn exported_part_program() -> ViewProgramResource {
-    let mut program = ViewProgramResource {
+    let sources = source_map("main.arcw", &"x".repeat(128));
+    let source_refs = source_refs(&sources);
+    let source = source_refs[0].clone();
+    ViewProgramResource {
         program_id: "program.exported-parts".to_owned(),
+        source_refs: source_refs.clone(),
         definitions: vec![
             ViewDefinitionResource {
                 public_id: "view.Left".to_owned(),
@@ -1206,45 +1232,42 @@ fn exported_part_program() -> ViewProgramResource {
             },
         ],
         exported_parts: vec![
-            exported_part("view.Left", "part.shared", "part.public", 0),
-            exported_part("view.Right", "part.shared", "part.public", 40),
+            exported_part(
+                "view.Left",
+                "part.shared",
+                "part.public",
+                &source_refs,
+                &source,
+                0,
+            ),
+            exported_part(
+                "view.Right",
+                "part.shared",
+                "part.public",
+                &source_refs,
+                &source,
+                40,
+            ),
         ],
         ..ViewProgramResource::default()
-    };
-    let source = program
-        .public_id_table()
-        .expect("exported-part public IDs")
-        .id_for("main.arcw")
-        .expect("source identity is retained in the View table");
-    for exported in &mut program.exported_parts {
-        for range in exported.source.ranges_mut() {
-            range.source = source;
-        }
     }
-    program
 }
 
-fn exported_part(owner: &str, local: &str, public: &str, start: u32) -> ViewExportedPart {
+fn exported_part(
+    owner: &str,
+    local: &str,
+    public: &str,
+    source_refs: &[ProductSourceRef],
+    source: &ProductSourceRef,
+    start: u32,
+) -> ViewExportedPart {
     ViewExportedPart {
         target: ViewOwnedPartRef::new(view_ref(owner), local_part(local)),
         public_name: part_public(public),
         source: ViewPartExportSourceRef {
-            source_id: SourceMapSourceId::try_new("main.arcw").expect("valid source identity"),
-            declaration: SourceRangeRef {
-                source: PublicIdRef(0),
-                start_byte: start,
-                end_byte: start + 32,
-            },
-            local_name: SourceRangeRef {
-                source: PublicIdRef(0),
-                start_byte: start + 12,
-                end_byte: start + 20,
-            },
-            public_name: SourceRangeRef {
-                source: PublicIdRef(0),
-                start_byte: start + 24,
-                end_byte: start + 31,
-            },
+            declaration: source_range(source_refs, source, start, start + 32),
+            local_name: source_range(source_refs, source, start + 12, start + 20),
+            public_name: source_range(source_refs, source, start + 24, start + 31),
         },
     }
 }
@@ -1262,8 +1285,12 @@ fn part_public(value: &str) -> ViewPartName {
 }
 
 fn sourced_program(view_id: &str) -> ViewProgramResource {
-    let mut program = ViewProgramResource {
+    let sources = source_map(&format!("{view_id}.arcw"), "x");
+    let source_refs = source_refs(&sources);
+    let source = source_refs[0].clone();
+    ViewProgramResource {
         program_id: format!("program.{view_id}"),
+        source_refs: source_refs.clone(),
         definitions: vec![ViewDefinitionResource {
             public_id: view_id.to_owned(),
             body: ViewInstructionSpan::new(0, 1),
@@ -1275,33 +1302,16 @@ fn sourced_program(view_id: &str) -> ViewProgramResource {
             element: format!("{view_id}.element"),
             styles: Vec::new(),
             part: None,
-            source: None,
+            source: Some(source_range(&source_refs, &source, 0, 1)),
         }],
         ..ViewProgramResource::default()
-    };
-    let source = program
-        .public_id_table()
-        .expect("fixture program public IDs are canonical")
-        .id_for(view_id)
-        .expect("definition ID is retained in the program public-ID table");
-    let ViewProgramInstruction::EmitCustom {
-        source: instruction_source,
-        ..
-    } = &mut program.instructions[0]
-    else {
-        unreachable!("fixture instruction was constructed as EmitCustom");
-    };
-    *instruction_source = Some(SourceRangeRef {
-        source,
-        start_byte: 0,
-        end_byte: 1,
-    });
-    program
+    }
 }
 
 fn fixture_program() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.program.dialogue".to_owned(),
+        source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
             public_id: "view.dialogue".to_owned(),
             body: ViewInstructionSpan::new(0, 4),
@@ -1470,31 +1480,46 @@ fn fixture_style() -> ViewStyleResource {
             .expect("valid patch declaration"),
         ],
     );
-    let mut resource = ViewStyleResource {
+    let sources = source_map("style.arcw", "abcd");
+    let source_refs = source_refs(&sources);
+    let source = source_refs[0].clone();
+    ViewStyleResource {
         style_program_id: "view.style.program".to_owned(),
+        source_refs: source_refs.clone(),
         program: ViewStyleProgram::try_new(vec![sheet], vec![patch]).expect("valid Style program"),
         source_map_refs: vec![
-            SourceRangeRef {
-                source: PublicIdRef::default(),
-                start_byte: 0,
-                end_byte: 1,
-            },
-            SourceRangeRef {
-                source: PublicIdRef::default(),
-                start_byte: 2,
-                end_byte: 3,
-            },
+            source_range(&source_refs, &source, 0, 1),
+            source_range(&source_refs, &source, 2, 3),
         ],
         adapter_requirements: Vec::new(),
-    };
-    let public_ids = resource.public_id_table().expect("valid public IDs");
-    resource.source_map_refs[0].source = public_ids
-        .id_for(sheet_id.public_id().as_str())
-        .expect("sheet owner exists");
-    resource.source_map_refs[1].source = public_ids
-        .id_for(&resource.style_program_id)
-        .expect("program owner exists");
-    resource
+    }
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
+}
+
+fn source_refs(source_map: &SourceMapSection) -> Vec<ProductSourceRef> {
+    source_map
+        .documents()
+        .map(ProductSourceRef::from_document)
+        .collect()
+}
+
+fn source_range(
+    source_refs: &[ProductSourceRef],
+    source: &ProductSourceRef,
+    start_byte: u32,
+    end_byte: u32,
+) -> SourceRangeRef {
+    SourceRangeRef::try_for_source(source_refs, source, start_byte, end_byte)
+        .expect("source is present")
 }
 
 fn named_style(id: &str) -> ViewStyleApplicationTarget {

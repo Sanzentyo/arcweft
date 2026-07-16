@@ -39,7 +39,7 @@ use arcweft_bundle::{
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectFit, BundleImageObjectParam,
     BundleImageObjectPlayback, BundleImageObjectProxy, BundleImageObjectTransform,
-    BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
+    BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleVirtualFile,
     BundleVirtualFileRef, BundleVirtualFileSpace,
     container::{BundleDigest, BundleView, ReadBudget},
     fx_definitions::FxDefinitions,
@@ -52,7 +52,6 @@ use arcweft_bundle::{
     },
 };
 use arcweft_compiler::style::CompiledViewStyleArtifact;
-use arcweft_compiler::view_part::ViewPartSourceContext;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
@@ -71,6 +70,8 @@ use arcweft_runtime_host::{
 };
 use arcweft_runtime_plan::fx::lower_fx_definitions_for_package;
 use arcweft_source::SourceDocument;
+#[cfg(test)]
+use arcweft_source::{SourceDocumentId, SourceName};
 use arcweft_verify::{VerificationPolicy, VerificationReport, verify_module_with_env};
 use clap::Args;
 use serde::de::DeserializeOwned;
@@ -241,7 +242,7 @@ pub(super) fn bundle_command(options: &BundleOptions) -> Result<(), ExitCode> {
         println!(
             "ok: {} (source={}, {} virtual file(s))",
             options.output.display(),
-            bundle.manifest.source_label,
+            bundle_source_display_name(&bundle),
             bundle.virtual_files.len()
         );
         Ok(())
@@ -292,7 +293,6 @@ pub(in crate::app) fn compile_bundle_for_selection(
         );
         ExitCode::FAILURE
     })?;
-    let source_label = report_path(selection.path());
     let required_host_calls = bundle_required_host_calls(&compiled.plan);
     let adapter_manifest = adapter_manifest_for_selection(selection, None)?;
     let adapter_manifest_ids = bundle_adapter_manifest_ids(
@@ -331,8 +331,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
             &image_objects,
             &package,
             &compiled.typecheck_report.view_part_catalog,
-            &source_label,
-            &source,
+            &compiled.source_map,
         )?,
     )?;
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
@@ -341,15 +340,11 @@ pub(in crate::app) fn compile_bundle_for_selection(
         ArcweftBundle::new(
             bundle_manifest(
                 selection,
-                source_label.clone(),
                 &compiled,
                 adapter_manifest_ids,
                 required_host_calls,
             ),
-            BundleSource {
-                label: source_label,
-                text: source,
-            },
+            compiled.source_map,
             compiled.bytecode,
             compiled.line_display_catalog,
         )
@@ -529,20 +524,40 @@ fn collect_bundle_dsl_view_resources_from_source_for_package(
         eprintln!("error: test View HIR did not typecheck: {error}");
         ExitCode::FAILURE
     })?;
-    let style_artifact =
-        arcweft_compiler::style::lower_source_view_styles(module, &typecheck.style_catalog, source)
+    let source_document = SourceDocument::try_new(
+        SourceDocumentId::try_new(source_id).map_err(|error| {
+            eprintln!("error: invalid test source identity: {error}");
+            ExitCode::FAILURE
+        })?,
+        SourceName::path(source_id),
+        source,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to build test source document: {error}");
+        ExitCode::FAILURE
+    })?;
+    let style_artifact = arcweft_compiler::style::lower_source_view_styles(
+        module,
+        &typecheck.style_catalog,
+        &source_document,
+    )
+    .map_err(|error| {
+        eprintln!("error: test View Style lowering failed: {error}");
+        ExitCode::FAILURE
+    })?;
+    let source_map =
+        arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[&source_document])
             .map_err(|error| {
-                eprintln!("error: test View Style lowering failed: {error}");
-                ExitCode::FAILURE
-            })?;
+            eprintln!("error: failed to build test source map: {error}");
+            ExitCode::FAILURE
+        })?;
     collect_bundle_dsl_view_resources_with_style_for_package(
         module,
         &style_artifact,
         image_objects,
         package,
         &typecheck.view_part_catalog,
-        source_id,
-        source,
+        &source_map,
     )
 }
 
@@ -552,8 +567,7 @@ fn collect_bundle_dsl_view_resources_with_style_for_package(
     image_objects: &[BundleImageObject],
     package: &str,
     view_part_catalog: &arcweft_lang_sema::view_part::CheckedViewPartCatalog,
-    source_id: &str,
-    source: &str,
+    source_map: &arcweft_bundle::resource_codec::SourceMapSection,
 ) -> Result<BundleViewSidecars, ExitCode> {
     let mounted_views = mounted_view_ids(module);
     let views = module
@@ -582,12 +596,6 @@ fn collect_bundle_dsl_view_resources_with_style_for_package(
         eprintln!("error: failed to compile View-visible Fx definitions: {error}");
         ExitCode::FAILURE
     })?;
-    let source_id =
-        arcweft_bundle::resource_codec::SourceMapSourceId::try_new(source_id).map_err(|error| {
-            eprintln!("error: invalid View source-map identity: {error}");
-            ExitCode::FAILURE
-        })?;
-    let source_context = ViewPartSourceContext::from_source(source_id, source);
     let view_sidecars = view_sidecars(
         &views,
         &dialogue_view_models,
@@ -595,7 +603,7 @@ fn collect_bundle_dsl_view_resources_with_style_for_package(
         image_objects,
         &fx_definitions,
         view_part_catalog,
-        &source_context,
+        source_map,
     )
     .map_err(|error| {
         eprintln!("{error}");
@@ -686,13 +694,11 @@ fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
 
 fn bundle_manifest(
     selection: &SourceSelection,
-    source_label: String,
     compiled: &ProfileCompiledRuntimePlan,
     adapter_manifest_ids: Vec<String>,
     required_host_calls: Vec<String>,
 ) -> BundleManifest {
     BundleManifest {
-        source_label,
         profile_id: selection
             .profile()
             .map(|profile| profile.id().as_str().to_owned()),
@@ -752,7 +758,7 @@ fn bundle_command_report(
 ) -> BundleCommandReport {
     BundleCommandReport {
         bundle: report_path(output),
-        source: bundle.manifest.source_label.clone(),
+        source: bundle_source_display_name(bundle).to_owned(),
         required_host_calls: bundle.manifest.required_host_calls.clone(),
         adapter_manifests: bundle.adapter_manifests.len(),
         bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
@@ -761,6 +767,14 @@ fn bundle_command_report(
         phases,
         runtime: bundle.manifest.runtime.clone(),
     }
+}
+
+fn bundle_source_display_name(bundle: &ArcweftBundle) -> &str {
+    bundle
+        .source_map
+        .documents()
+        .next()
+        .map_or("<no source>", |source| source.display_name().display_name())
 }
 
 pub(super) fn run_bundle_command(

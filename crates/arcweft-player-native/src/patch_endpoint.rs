@@ -500,9 +500,8 @@ mod tests {
     use super::*;
     use arcweft_bundle::container::{BundleView, ReadBudget};
     use arcweft_bundle::patch::{BundlePatchArtifact, encode_patch_bundle};
-    use arcweft_bundle::{
-        ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
-    };
+    use arcweft_bundle::resource_codec::SourceMapSection;
+    use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
@@ -513,6 +512,7 @@ mod tests {
     use arcweft_runtime_driver::session::{BundleEntryStart, BundleStepInput};
     use arcweft_runtime_driver::swap::SwapCompatibility;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -594,7 +594,7 @@ mod tests {
     fn native_prepared_patch_rejects_same_root_from_a_different_artifact() {
         let base = fixture_bundle_with("Old text", false);
         let mut other_base = base.clone();
-        other_base.manifest.source_label = "other-base.arcw".to_owned();
+        other_base.manifest.profile_id = Some("other-base".to_owned());
         let target = fixture_bundle_with("New text", false);
         let base_bytes = awfb_bytes(&base);
         let other_base_bytes = awfb_bytes(&other_base);
@@ -659,7 +659,7 @@ mod tests {
     fn native_manifest_only_patch_replaces_the_active_artifact() {
         let base = fixture_bundle_with("Dialogue text", false);
         let mut target = base.clone();
-        target.manifest.source_label = "renamed-source.arcw".to_owned();
+        target.manifest.profile_id = Some("renamed-source".to_owned());
         let base_bytes = awfb_bytes(&base);
         let target_bytes = awfb_bytes(&target);
         let base_view = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
@@ -989,7 +989,6 @@ mod tests {
         let stats = bytecode.stats();
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "native-patch.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -1005,13 +1004,20 @@ mod tests {
                     source_plans: stats.source_plans,
                 },
             },
-            BundleSource {
-                label: "native-patch.arcw".to_owned(),
-                text: "flow @flow.main main { ... }".to_owned(),
-            },
+            source_map("native-patch.arcw", "flow @flow.main main { ... }"),
             bytecode,
             display,
         )
         .with_product_awbc(product_awbc)
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 }

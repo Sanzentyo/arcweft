@@ -2,7 +2,8 @@ use arcweft_agent_protocol::artifact::{
     AgentArtifactManifest, AgentBudget, AgentBundleKind, ProjectBinding, ProjectBindingMode,
 };
 use arcweft_agent_protocol::ids::{PublicId as AgentPublicId, StableHash};
-use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
+use arcweft_bundle::resource_codec::SourceMapSection;
+use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_lang_hir::model::{HirAgent, HirModule};
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_types};
@@ -87,10 +88,9 @@ pub fn compile_agent_bundle_with_project(
     let bytecode = BytecodeProgram::from_runtime_plan(runtime_report.plan);
     let bytecode_stats = bytecode.stats();
     let manifest = agent_artifact_manifest(agent, source_hash, project, &typecheck_report)?;
-    let source_label = format!("{}.awfagent", manifest.agent_id.as_str());
+    let source_map = SourceMapSection::try_from_documents(&[parsed.document().as_ref()])?;
     let bundle = ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.clone(),
             profile_id: None,
             profile_kind: None,
             entry: Some(format!("entry.{}", manifest.agent_id.as_str())),
@@ -109,10 +109,7 @@ pub fn compile_agent_bundle_with_project(
                 source_plans: bytecode_stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label,
-            text: source,
-        },
+        source_map,
         bytecode,
         runtime_report.line_display_catalog,
     )

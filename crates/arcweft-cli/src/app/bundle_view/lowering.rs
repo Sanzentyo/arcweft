@@ -21,13 +21,14 @@ use arcweft_bundle::{
     BundleImageObject, BundleImageObjectBounds,
     container::BundleDigest,
     resource_codec::{
-        ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
-        ViewActionTextControlPayloadField, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
-        ViewDefinitionResource, ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource,
-        ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
-        ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy,
-        ViewFxArgumentBindingRef, ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource,
-        ViewLogicalRect, ViewParameterResource, ViewProgramResource, ViewRuntimeButtonBounds,
+        ProductSourceRef, SourceMapSection, ViewActionButtonActionResource,
+        ViewActionButtonResource, ViewActionPayloadResource, ViewActionTextControlPayloadField,
+        ViewAwaitBranchSpan, ViewCallArgumentBindingRef, ViewDefinitionResource,
+        ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusGroupResource, ViewFocusInitialPolicy,
+        ViewFocusNavigationEdge, ViewFocusNavigationResource, ViewFocusSkipPolicy,
+        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewFxArgumentBindingRef,
+        ViewInputResource, ViewInstructionSpan, ViewLayoutBoundsResource, ViewLogicalRect,
+        ViewParameterResource, ViewProgramResource, ViewRuntimeButtonBounds,
         ViewRuntimeSurfaceBounds, ViewScrollAxis, ViewScrollIndicatorsPolicy,
         ViewScrollOverflowPolicy, ViewScrollOverscrollPolicy, ViewScrollRegionResource,
         ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
@@ -43,9 +44,7 @@ use arcweft_bundle::{
     },
 };
 use arcweft_compiler::style::ViewStyleApplicationLookup;
-use arcweft_compiler::view_part::{
-    ViewPartLowerError, ViewPartSourceContext, lower_view_part_exports,
-};
+use arcweft_compiler::view_part::{ViewPartLowerError, lower_view_part_exports};
 use arcweft_id::{IdError, PublicId};
 use arcweft_lang_sema::dialogue_view::{
     DialogueViewModel, DialogueViewModelRegistry,
@@ -141,6 +140,7 @@ struct ViewLoweringState {
     value_compiler: ViewValueProgramCompiler,
     instructions: Vec<ViewProgramInstruction>,
     exported_parts: Vec<ViewExportedPart>,
+    source_refs: Vec<ProductSourceRef>,
     text_sources: Vec<ViewTextSourceRecord>,
     input_options: Vec<ViewInputOptions>,
     semantic_targets: Vec<ViewSemanticTarget>,
@@ -207,7 +207,7 @@ pub(in crate::app) fn view_sidecars(
     source_image_objects: &[BundleImageObject],
     fx_definitions: &[FxDefinition],
     view_part_catalog: &CheckedViewPartCatalog,
-    source_context: &ViewPartSourceContext,
+    source_map: &SourceMapSection,
 ) -> Result<ViewBundleSidecars, ViewSidecarError> {
     let mut state = ViewLoweringState {
         fx_definitions: view_fx_definitions(fx_definitions),
@@ -284,8 +284,8 @@ pub(in crate::app) fn view_sidecars(
             })
         })
         .collect::<Result<BTreeSet<_>, _>>()?;
-    state.exported_parts =
-        lower_view_part_exports(view_part_catalog, &emitted_owners, source_context)?;
+    (state.source_refs, state.exported_parts) =
+        lower_view_part_exports(view_part_catalog, &emitted_owners, source_map)?.into_parts();
     finish_view_sidecars(first, state)
 }
 
@@ -310,13 +310,14 @@ fn finish_view_sidecars(
     {
         return Ok(ViewBundleSidecars::default());
     }
-    let mut program = ViewProgramResource {
+    let program = ViewProgramResource {
         program_id: format!("view.program.{}", first.id().body()),
         definitions: state.definitions,
         value_programs: compiled_values.programs,
         value_inputs: compiled_values.inputs,
         instructions: state.instructions,
         handlers: Vec::new(),
+        source_refs: state.source_refs,
         exported_parts: state.exported_parts,
         semantic_targets: state.semantic_targets,
         layout_bounds: state.layout_bounds,
@@ -328,7 +329,6 @@ fn finish_view_sidecars(
         focus_navigation: state.focus_navigation,
         adapter_requirements: Vec::new(),
     };
-    program.bind_export_source_refs()?;
     Ok(ViewBundleSidecars {
         program: Some(program),
         text: (!state.text_sources.is_empty()).then(|| ViewTextResource {

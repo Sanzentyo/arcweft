@@ -108,7 +108,7 @@ impl BundleSession {
 
         match compatibility {
             SwapCompatibility::ContentOnly => {
-                self.source_label.clone_from(&bundle.manifest.source_label);
+                self.source_label = bundle.source_display_name().to_owned();
                 self.display = bundle.display.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);

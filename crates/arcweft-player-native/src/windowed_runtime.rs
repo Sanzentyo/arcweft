@@ -578,12 +578,15 @@ impl WindowedRuntimeWorkspace {
                 .map_or(0, |duration| duration.as_nanos())
         ));
         fs::create_dir_all(&root).map_err(WindowedRuntimeOwnerError::CreateWorkspace)?;
-        let source_name = bundle_source_file_name(&bundle.source.label);
+        let source = bundle.primary_source_document();
+        let source_name = bundle_source_file_name(
+            source.map_or("bundle.arcw", |source| source.display_name().display_name()),
+        );
         let source_path = root.join(source_name);
         if let Some(parent) = source_path.parent() {
             fs::create_dir_all(parent).map_err(WindowedRuntimeOwnerError::CreateSourceDirectory)?;
         }
-        fs::write(&source_path, &bundle.source.text)
+        fs::write(&source_path, source.map_or("", |source| source.text()))
             .map_err(WindowedRuntimeOwnerError::MaterializeSource)?;
         materialize_bundle_virtual_files(&root, &bundle.virtual_files)?;
         Ok(Self { root, source_path })
@@ -675,12 +678,13 @@ mod tests {
     use crate::windowed_patch::{WindowedPatchEvent, WindowedPatchState};
     use arcweft_bundle::container::{BundleView, ReadBudget};
     use arcweft_bundle::patch::{BundlePatchArtifact, encode_patch_bundle};
+    use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
         BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
         BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds,
         BundleImageObjectFit, BundleImageObjectPlayback, BundleImageObjectTransform,
-        BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
-        BundleVirtualFileRef, BundleVirtualFileSpace,
+        BundleManifest, BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileRef,
+        BundleVirtualFileSpace,
     };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::line_task::LineTaskGroup;
@@ -692,6 +696,7 @@ mod tests {
     use arcweft_runtime_driver::clock::RuntimeClockStep;
     use arcweft_runtime_driver::session::BundleStepInput;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     const RED_PNG: &[u8] = &[
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
@@ -877,7 +882,6 @@ mod tests {
         let stats = bytecode.stats();
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "windowed-runtime-owner.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -893,10 +897,10 @@ mod tests {
                     source_plans: stats.source_plans,
                 },
             },
-            BundleSource {
-                label: "windowed-runtime-owner.arcw".to_owned(),
-                text: "flow @flow.main main { ... }".to_owned(),
-            },
+            source_map(
+                "windowed-runtime-owner.arcw",
+                "flow @flow.main main { ... }",
+            ),
             bytecode,
             display,
         )
@@ -920,6 +924,16 @@ mod tests {
             }),
         }])
         .with_image_objects([fixture_image_object()])
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn fixture_image_object() -> BundleImageObject {

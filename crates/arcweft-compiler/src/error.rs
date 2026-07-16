@@ -45,6 +45,8 @@ pub enum CompileAgentError {
     EffectManifest(#[from] effect_manifest::VerifiedEffectBuildError),
     #[error("agent budget attribute error: {0}")]
     Budget(String),
+    #[error("agent product source-map error: {0}")]
+    SourceMap(#[from] arcweft_bundle::resource_codec::SourceMapBuildError),
 }
 
 /// HIR semantic validation diagnostics for the shared compiler driver.

@@ -22,8 +22,7 @@ pub(crate) struct ViewPartRuntimeCatalog {
 }
 
 impl AcceptedViewProgram {
-    pub(crate) fn try_new(mut resource: ViewProgramResource) -> Result<Self, SectionCodecError> {
-        resource.bind_export_source_refs()?;
+    pub(crate) fn try_new(resource: ViewProgramResource) -> Result<Self, SectionCodecError> {
         let _ = resource.encode_canonical_section()?;
         let program_id = ViewProgramId::try_new(resource.program_id.clone())
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_program_identities"))?;

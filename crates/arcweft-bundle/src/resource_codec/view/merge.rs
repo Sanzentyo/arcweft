@@ -5,7 +5,7 @@ use super::model::{
     ViewProgramInstruction, ViewProgramResource, ViewStyleApplicationTarget, ViewStyleResource,
     ViewValueInputNamespace,
 };
-use crate::resource_codec::{PublicIdTable, SectionCodecError, SourceRangeRef};
+use crate::resource_codec::{SectionCodecError, ViewProductBuildError};
 use arcweft_presentation::fx::{FxRuntimeType, ValueInstruction, ValueProgramSchema};
 use arcweft_view::{
     ViewValueProgram, ViewValueProgramId,
@@ -40,6 +40,8 @@ pub enum ViewResourceMergeError {
     UnownedInlinePatch(ViewStylePatchId),
     #[error("View value-program merge failed: {0}")]
     ValueProgram(String),
+    #[error("invalid product source reference during View resource merge: {0}")]
+    ProductSource(#[from] ViewProductBuildError),
 }
 
 impl ViewProgramStyleResources {
@@ -106,8 +108,6 @@ fn merge_styles(
             right.canonicalize()?;
             left.encode_canonical_section()?;
             right.encode_canonical_section()?;
-            let left_table = left.public_id_table()?;
-            let right_table = right.public_id_table()?;
             let source_offset = u32::try_from(left.source_map_refs.len())
                 .map_err(|_| ViewResourceMergeError::Overflow("Style source IDs"))?;
             let patch_offset = left
@@ -141,26 +141,11 @@ fn merge_styles(
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             );
-            let left_range_count = left.source_map_refs.len();
             left.program = ViewStyleProgram::try_new(sheets, patches)?;
+            right.offset_source_indexes(left.source_refs.len())?;
+            left.source_refs.append(&mut right.source_refs);
             left.source_map_refs.append(&mut right.source_map_refs);
             left.adapter_requirements.extend(right.adapter_requirements);
-            let merged_table = left.public_id_table()?;
-            let no_identity_rebase = BTreeMap::new();
-            remap_range_public_ids(
-                &mut left.source_map_refs[..left_range_count],
-                &left_table,
-                &merged_table,
-                &no_identity_rebase,
-            )?;
-            let right_program_rebase =
-                BTreeMap::from([(right.style_program_id, left.style_program_id.clone())]);
-            remap_range_public_ids(
-                &mut left.source_map_refs[left_range_count..],
-                &right_table,
-                &merged_table,
-                &right_program_rebase,
-            )?;
             left.canonicalize()?;
             left.encode_canonical_section()?;
             Ok((Some(left), patch_rebase))
@@ -256,44 +241,6 @@ fn rebase_source(
         .ok_or(ViewResourceMergeError::Overflow("Style source IDs"))
 }
 
-fn remap_range_public_ids(
-    ranges: &mut [SourceRangeRef],
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-    identity_rebase: &BTreeMap<String, String>,
-) -> Result<(), ViewResourceMergeError> {
-    for range in ranges {
-        remap_source_ref_with_identity_rebase(range, old, merged, identity_rebase)?;
-    }
-    Ok(())
-}
-
-fn remap_source_ref(
-    source: &mut SourceRangeRef,
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    remap_source_ref_with_identity_rebase(source, old, merged, &BTreeMap::new())
-}
-
-fn remap_source_ref_with_identity_rebase(
-    source: &mut SourceRangeRef,
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-    identity_rebase: &BTreeMap<String, String>,
-) -> Result<(), ViewResourceMergeError> {
-    let public_id = old.get(source.source)?;
-    let public_id = identity_rebase
-        .get(public_id)
-        .map_or(public_id, String::as_str);
-    source.source = merged
-        .id_for(public_id)
-        .ok_or(SectionCodecError::NonCanonicalTable(
-            "view_resource_source_public_ids",
-        ))?;
-    Ok(())
-}
-
 fn merge_programs(
     left: Option<ViewProgramResource>,
     right: Option<ViewProgramResource>,
@@ -312,14 +259,14 @@ fn merge_programs(
         (Some(mut left), Some(mut right)) => {
             left.encode_canonical_section()?;
             right.encode_canonical_section()?;
-            let left_table = left.public_id_table()?;
-            let right_table = right.public_id_table()?;
-            let source_splits = ProgramSourceSplits::capture(&left);
             for definition in &mut right.definitions {
                 rebase_style_list(&mut definition.styles, patch_rebase)?;
             }
             rebase_style_references(&mut right.instructions, patch_rebase)?;
             merge_value_inventories(&mut left, &mut right)?;
+            let right_source_offset = left.source_refs.len();
+            right.offset_source_indexes(right_source_offset)?;
+            left.source_refs.append(&mut right.source_refs);
             let instruction_offset = u32::try_from(left.instructions.len())
                 .map_err(|_| ViewResourceMergeError::Overflow("View instruction spans"))?;
             for definition in &mut right.definitions {
@@ -349,202 +296,11 @@ fn merge_programs(
             left.focus_groups.extend(right.focus_groups);
             left.focus_navigation.extend(right.focus_navigation);
             left.adapter_requirements.extend(right.adapter_requirements);
-            let merged_table = left.public_id_table()?;
-            remap_program_source_refs(
-                &mut left,
-                source_splits,
-                &left_table,
-                &right_table,
-                &merged_table,
-            )?;
+            left.canonicalize_source_table();
             left.encode_canonical_section()?;
             Ok(Some(left))
         }
     }
-}
-
-#[derive(Clone, Copy)]
-struct ProgramSourceSplits {
-    instructions: usize,
-    exported_parts: usize,
-    semantic_targets: usize,
-    layout_bounds: usize,
-    scroll_regions: usize,
-    surfaces: usize,
-    text_blocks: usize,
-    action_buttons: usize,
-    focus_groups: usize,
-    focus_navigation: usize,
-}
-
-impl ProgramSourceSplits {
-    fn capture(program: &ViewProgramResource) -> Self {
-        Self {
-            instructions: program.instructions.len(),
-            exported_parts: program.exported_parts.len(),
-            semantic_targets: program.semantic_targets.len(),
-            layout_bounds: program.layout_bounds.len(),
-            scroll_regions: program.scroll_regions.len(),
-            surfaces: program.surfaces.len(),
-            text_blocks: program.text_blocks.len(),
-            action_buttons: program.action_buttons.len(),
-            focus_groups: program.focus_groups.len(),
-            focus_navigation: program.focus_navigation.len(),
-        }
-    }
-}
-
-fn remap_program_source_refs(
-    program: &mut ViewProgramResource,
-    splits: ProgramSourceSplits,
-    left: &PublicIdTable,
-    right: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    remap_instruction_sources(
-        &mut program.instructions[..splits.instructions],
-        left,
-        merged,
-    )?;
-    let (left_exports, right_exports) = program.exported_parts.split_at_mut(splits.exported_parts);
-    remap_export_sources(left_exports, left, merged)?;
-    remap_export_sources(right_exports, right, merged)?;
-    remap_instruction_sources(
-        &mut program.instructions[splits.instructions..],
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.semantic_targets,
-        splits.semantic_targets,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.layout_bounds,
-        splits.layout_bounds,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.scroll_regions,
-        splits.scroll_regions,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.surfaces,
-        splits.surfaces,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.text_blocks,
-        splits.text_blocks,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.action_buttons,
-        splits.action_buttons,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    remap_partitioned_sources(
-        &mut program.focus_groups,
-        splits.focus_groups,
-        |item| &mut item.source,
-        left,
-        right,
-        merged,
-    )?;
-    let (left_navigation, right_navigation) = program
-        .focus_navigation
-        .split_at_mut(splits.focus_navigation);
-    remap_focus_navigation_sources(left_navigation, left, merged)?;
-    remap_focus_navigation_sources(right_navigation, right, merged)
-}
-
-fn remap_export_sources(
-    exports: &mut [super::model::ViewExportedPart],
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    for source in exports
-        .iter_mut()
-        .flat_map(|export| export.source.ranges_mut())
-    {
-        remap_source_ref(source, old, merged)?;
-    }
-    Ok(())
-}
-
-fn remap_partitioned_sources<T>(
-    items: &mut [T],
-    split: usize,
-    source: impl for<'a> Fn(&'a mut T) -> &'a mut Option<SourceRangeRef> + Copy,
-    left: &PublicIdTable,
-    right: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    let (left_items, right_items) = items.split_at_mut(split);
-    remap_optional_sources(left_items.iter_mut().map(source), left, merged)?;
-    remap_optional_sources(right_items.iter_mut().map(source), right, merged)
-}
-
-fn remap_instruction_sources(
-    instructions: &mut [ViewProgramInstruction],
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    for source in instructions
-        .iter_mut()
-        .filter_map(ViewProgramInstruction::source_mut)
-    {
-        remap_source_ref(source, old, merged)?;
-    }
-    Ok(())
-}
-
-fn remap_optional_sources<'a>(
-    sources: impl Iterator<Item = &'a mut Option<SourceRangeRef>>,
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    for source in sources.flatten() {
-        remap_source_ref(source, old, merged)?;
-    }
-    Ok(())
-}
-
-fn remap_focus_navigation_sources(
-    navigation: &mut [super::model::ViewFocusNavigationResource],
-    old: &PublicIdTable,
-    merged: &PublicIdTable,
-) -> Result<(), ViewResourceMergeError> {
-    for item in navigation {
-        if let Some(source) = &mut item.source {
-            remap_source_ref(source, old, merged)?;
-        }
-        remap_optional_sources(
-            item.edges.iter_mut().map(|edge| &mut edge.source),
-            old,
-            merged,
-        )?;
-    }
-    Ok(())
 }
 
 fn rebase_style_references(

@@ -7,6 +7,7 @@ use arcweft_bundle::patch::{
     SectionChangeDerivation, SectionChangeOperation, SectionCompatibilityFingerprint,
     SectionOperation, encode_patch_bundle,
 };
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
     ViewDefinitionResource, ViewElementKind, ViewInputKind, ViewInputOptions, ViewInputPurpose,
@@ -19,9 +20,7 @@ use arcweft_bundle::resource_codec::{
     ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewThemeResource,
     ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
 };
-use arcweft_bundle::{
-    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
-};
+use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::awbc::schema::{
     AwbcEntry, AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcProgram, AwbcRoute, AwbcStringId,
 };
@@ -77,6 +76,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewTextValue,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
 use arcweft_view::{
@@ -239,7 +239,6 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         .program;
     let mut bundle = ArcweftBundle::new(
         BundleManifest {
-            source_label: "view-runtime.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -255,10 +254,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "view-runtime.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("view-runtime.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
@@ -570,7 +566,6 @@ fn fixture_bundle_from_parts(
     }]);
     let bundle = ArcweftBundle::new(
         BundleManifest {
-            source_label: "web-demo.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -586,10 +581,7 @@ fn fixture_bundle_from_parts(
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "web-demo.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("web-demo.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
         display.clone(),
     );
@@ -642,7 +634,6 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         .program;
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "await-demo.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -658,10 +649,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "await-demo.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("await-demo.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
@@ -698,7 +686,6 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     let display = LineDisplayCatalog::default();
     let bundle = ArcweftBundle::new(
         BundleManifest {
-            source_label: "action-receive.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -714,10 +701,7 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "action-receive.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("action-receive.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
         display.clone(),
     );
@@ -779,7 +763,6 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
     }]);
     let bundle = ArcweftBundle::new(
         BundleManifest {
-            source_label: "action-receive-after-dialogue.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -795,10 +778,7 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "action-receive-after-dialogue.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("action-receive-after-dialogue.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
         display.clone(),
     );
@@ -885,7 +865,6 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
         .program;
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "await-replacement.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -901,14 +880,21 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "await-replacement.arcw".to_owned(),
-            text: String::new(),
-        },
+        source_map("await-replacement.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
     .with_product_awbc(product_awbc)
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn bundle_with_route_entry() -> ArcweftBundle {
@@ -2601,7 +2587,7 @@ fn patch_readiness_accepts_noop_patch_for_active_generation() {
 fn patch_readiness_rejects_same_root_from_a_different_base_artifact() {
     let expected_base = fixture_bundle();
     let mut active_base = expected_base.clone();
-    active_base.manifest.source_label = "active-base.arcw".to_owned();
+    active_base.manifest.profile_id = Some("active-base".to_owned());
     let target = fixture_bundle_with("Updated text", false, false);
     let expected_base_bytes = awfb_bytes(&expected_base);
     let active_base_bytes = awfb_bytes(&active_base);
@@ -2842,7 +2828,7 @@ fn hot_swap_patch_bytes_materializes_noop_before_reporting_success() {
 fn hot_swap_patch_bytes_applies_manifest_only_target() {
     let old_bundle = fixture_bundle();
     let mut new_bundle = old_bundle.clone();
-    new_bundle.manifest.source_label = "manifest-only-target.arcw".to_owned();
+    new_bundle.manifest.profile_id = Some("manifest-only-target".to_owned());
     let old_bytes = awfb_bytes(&old_bundle);
     let new_bytes = awfb_bytes(&new_bundle);
     let old_view = BundleView::parse(&old_bytes, ReadBudget::default()).expect("old AWFB parses");

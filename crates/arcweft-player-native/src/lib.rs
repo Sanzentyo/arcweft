@@ -197,10 +197,12 @@ fn append_display_frames(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::resource_codec::SourceMapSection;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     #[test]
     fn bundle_headless_uses_runtime_host_flow_events_for_display_frames() {
-        use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
+        use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
         use arcweft_core::bytecode::BytecodeProgram;
         use arcweft_core::line_task::LineTaskGroup;
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
@@ -247,7 +249,6 @@ mod tests {
             .program;
         let bundle = ArcweftBundle::new(
             BundleManifest {
-                source_label: "bundle-display.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -263,10 +264,7 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "bundle-display.arcw".to_owned(),
-                text: "flow main { dialogue }".to_owned(),
-            },
+            source_map("bundle-display.arcw", "flow main { dialogue }"),
             BytecodeProgram::from_runtime_plan(plan),
             display,
         )
@@ -300,7 +298,7 @@ mod tests {
 
     #[cfg(not(feature = "dev-capture"))]
     fn return_only_bundle() -> ArcweftBundle {
-        use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
+        use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
         use arcweft_core::bytecode::BytecodeProgram;
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
         use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -321,7 +319,6 @@ mod tests {
             .program;
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "return-only.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -337,14 +334,21 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "return-only.arcw".to_owned(),
-                text: "flow main { return \"done\" }".to_owned(),
-            },
+            source_map("return-only.arcw", "flow main { return \"done\" }"),
             BytecodeProgram::from_runtime_plan(plan),
             display,
         )
         .with_product_awbc(product_awbc)
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     #[cfg(feature = "dev-capture")]

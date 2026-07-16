@@ -1,10 +1,11 @@
 use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{BundlePatchArtifact, PatchCompatibility, encode_patch_bundle};
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
     BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest, BundleRuntimeSummary,
-    BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::line_task::LineTaskGroup;
@@ -26,6 +27,7 @@ use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::swap::GenerationId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use serde::Serialize;
 use std::fmt::Write as _;
 
@@ -1076,7 +1078,6 @@ fn bundle_from_runtime_parts(
     let stats = bytecode.stats();
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -1092,10 +1093,7 @@ fn bundle_from_runtime_parts(
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label.to_owned(),
-            text: source.to_owned(),
-        },
+        source_map(source_label, source),
         bytecode,
         display,
     )
@@ -1164,7 +1162,6 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let stats = bytecode.stats();
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -1180,10 +1177,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label.to_owned(),
-            text: source.to_owned(),
-        },
+        source_map(source_label, source),
         bytecode,
         display,
     )
@@ -1209,7 +1203,6 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let stats = bytecode.stats();
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -1225,14 +1218,21 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label.to_owned(),
-            text: source.to_owned(),
-        },
+        source_map(source_label, source),
         bytecode,
         display,
     )
     .with_product_awbc(product_awbc)
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn fixture_image_object() -> BundleImageObject {

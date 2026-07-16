@@ -1,7 +1,8 @@
 use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest};
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat, BundleManifest,
-    BundleRuntimeSummary, BundleSource,
+    BundleRuntimeSummary,
 };
 use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
 use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
@@ -16,6 +17,7 @@ use arcweft_runtime_host::{
     NativeAdapterRegistrar, run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -249,7 +251,6 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
     let stats = program.stats();
     let bundle = ArcweftBundle::new(
         BundleManifest {
-            source_label: "custom.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -265,12 +266,10 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: "custom.arcw".to_owned(),
-            text:
-                "flow @flow.custom custom { await custom.echo(\"hello\") return \"custom-done\" }"
-                    .to_owned(),
-        },
+        source_map(
+            "custom.arcw",
+            "flow @flow.custom custom { await custom.echo(\"hello\") return \"custom-done\" }",
+        ),
         program,
         display,
     )
@@ -289,6 +288,16 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
     } else {
         bundle
     }
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn temp_bundle_path(label: &str, extension: &str) -> PathBuf {

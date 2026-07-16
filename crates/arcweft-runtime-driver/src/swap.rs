@@ -636,9 +636,9 @@ impl SwapSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
-        BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleSource,
-        BundleVirtualFileSpace,
+        BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleVirtualFileSpace,
     };
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -652,6 +652,7 @@ mod tests {
     use arcweft_core::plan::{
         EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget,
     };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     fn digest(value: &[u8]) -> BundleDigest {
         BundleDigest::of(value)
@@ -862,7 +863,6 @@ mod tests {
         let stats = bytecode.stats();
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "test.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: Some(BundleLaunchKind::Game),
                 entry: Some("entry.main".to_owned()),
@@ -881,10 +881,7 @@ mod tests {
                     source_plans: stats.source_plans,
                 },
             },
-            BundleSource {
-                label: "test.arcw".to_owned(),
-                text: "flow main { return \"ok\" }".to_owned(),
-            },
+            source_map("test.arcw", "flow main { return \"ok\" }"),
             bytecode,
             LineDisplayCatalog::default(),
         )
@@ -893,6 +890,16 @@ mod tests {
             path: "asset.bin".to_owned(),
             bytes: asset_bytes.to_vec(),
         }])
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn test_awbc_program(revision: &str) -> AwbcProgram {

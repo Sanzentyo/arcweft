@@ -7,7 +7,7 @@
 - Production base for this increment after final validation rebase: Jujutsu
   change `mytryolq` / Git `8a6d4a62a138`
 - Working change: Jujutsu change `rqmwxyuq`
-- Status: Increments 1 and 2 are implemented; the complete correction remains open
+- Status: Increments 1 through 3 are implemented; the complete correction remains open
 
 ## Package intake
 
@@ -149,22 +149,58 @@ After rebasing onto Git `8a6d4a62a138`, the increment was verified again with
 - `cargo clippy -p arcweft-view -p arcweft-runtime-driver --all-targets
   --all-features -- -D warnings` — passed.
 
+## Increment 3 implementation
+
+The bundle product boundary now owns one complete multi-source product rather
+than a selected `BundleSource`. Every `ViewProgramResource` and
+`ViewStyleResource` carries a canonical table of `ProductSourceRef` values;
+all stored ranges point through an opaque product-local source index and are
+rebased whenever resources are merged. The old `BundleSource`,
+`SourceMapIndex`, `SourceMapSourceId`, manifest `source_label`, and
+single-document decode projection have been deleted rather than retained as
+compatibility readers.
+
+`ValidatedViewProduct` is the only public proof that a View program and its
+`SourceMapSection` agree. Candidate-first validation checks every referenced
+source identity, revision, extent, range order, UTF-8 boundary, containment,
+cross-source relation, and exact shared limit before exposing the validated
+program. AWFB decode and bundle validation construct that typestate instead of
+accepting a source-bearing product piecemeal. Compiler and CLI lowering now
+carry `SourceDocument`/`SourceSpan` ownership from the loaded project source
+map, including style environment guards and exported-part ranges; no path or
+source string is reparsed to reconstruct provenance.
+
+The standard dialogue program uses the valid public identity
+`view.standard.dialogue.program`. This is a correction of an unpublished
+reserved-prefix value, not an alias or dual spelling.
+
+Increment 3 verification on Jujutsu change `lktlozot`:
+
+- `cargo fmt --all -- --check` — passed;
+- `cargo check --workspace --all-targets` — passed;
+- `cargo test -p arcweft-bundle --tests` — every unit and integration target
+  passed, including five complete-product acceptance/negative/limit tests;
+- `cargo test -p arcweft-compiler --test style` — four passed;
+- the focused CLI authored exported-part lowering test — passed; and
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .` — scanned 3,083
+  files, 1,545 Rust files, and 708,347 Rust physical LOC with 0 errors and 128
+  repository-wide warnings.
+
 ## Remaining correction increments
 
 The following package requirements are explicitly not complete:
 
-1. bundle complete-product typestate and source-index validation;
-2. typed product definition/call tables and immutable runtime
+1. typed product definition/call tables and immutable runtime
    `ViewProgramCatalog`/`ViewDefinitionIndex` authority;
-3. typed static instruction inventory, canonical semantic transcript, and
+2. typed static instruction inventory, canonical semantic transcript, and
    accepted program revision derivation;
-4. semantic occurrence reconciliation, opaque direct-boundary capability, and
+3. semantic occurrence reconciliation, opaque direct-boundary capability, and
    persistent-owner rejection for anonymous Rust Views;
-5. six-phase candidate-first replacement with exact rollback, generation, and
+4. six-phase candidate-first replacement with exact rollback, generation, and
    targeted cache/trace invalidation;
-6. final ordinary-parser rejection accounting with no historical recognizer;
+5. final ordinary-parser rejection accounting with no historical recognizer;
    and
-7. contextual Style application edges plus atomic LSP rename, symbols,
+6. contextual Style application edges plus atomic LSP rename, symbols,
    semantic tokens, limits, and the remaining test matrix.
 
 The correction must remain open until those increments and their Tier-0/Tier-1,

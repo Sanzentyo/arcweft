@@ -17,8 +17,9 @@ use crate::resource_codec::view::{
     DialogueViewContractError, ViewStyleContractError, ViewTextSourceKind,
 };
 use crate::resource_codec::{
-    ViewInputResource, ViewProgramResource, ViewProgramStyleResources, ViewResourceMergeError,
-    ViewStyleResource, ViewTextResource, ViewThemeResource,
+    SourceMapSection, ValidatedViewProduct, ViewInputResource, ViewProductValidationError,
+    ViewProductValidationLimits, ViewProgramResource, ViewProgramStyleResources,
+    ViewResourceMergeError, ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
@@ -53,7 +54,7 @@ pub struct ArcweftBundle {
     pub manifest: BundleManifest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentArtifactManifest>,
-    pub source: BundleSource,
+    pub source_map: SourceMapSection,
     pub bytecode: BundleBytecodeProgram,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_awbc: Option<BundleAwbcProgram>,
@@ -86,7 +87,6 @@ pub struct ArcweftBundle {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BundleManifest {
-    pub source_label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -100,12 +100,6 @@ pub struct BundleManifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub required_host_calls: Vec<String>,
     pub runtime: BundleRuntimeSummary,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct BundleSource {
-    pub label: String,
-    pub text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -441,6 +435,8 @@ pub enum BundleCodecError {
     InvalidDialogueViewContract(#[from] DialogueViewContractError),
     #[error(transparent)]
     InvalidViewStyleContract(#[from] ViewStyleContractError),
+    #[error(transparent)]
+    InvalidViewProduct(#[from] ViewProductValidationError),
 }
 
 #[cfg(feature = "format-yaml")]
@@ -536,7 +532,7 @@ fn bundle_yaml_to_value(yaml: &Yaml) -> Result<Value, String> {
 impl ArcweftBundle {
     pub fn new(
         manifest: BundleManifest,
-        source: BundleSource,
+        source_map: SourceMapSection,
         bytecode: BytecodeProgram,
         display: LineDisplayCatalog,
     ) -> Self {
@@ -545,7 +541,7 @@ impl ArcweftBundle {
             bundle_kind: BundleKind::Game,
             manifest,
             agent: None,
-            source,
+            source_map,
             bytecode: BundleBytecodeProgram {
                 encoding: BundleBytecodeEncoding::StructuredJson,
                 program: bytecode,
@@ -565,6 +561,19 @@ impl ArcweftBundle {
             view_input: None,
             view_theme: None,
         }
+    }
+
+    /// Human-readable label projected from the canonical source map.
+    pub fn source_display_name(&self) -> &str {
+        self.source_map
+            .documents()
+            .next()
+            .map_or("<no source>", |source| source.display_name().display_name())
+    }
+
+    /// First canonical source document used by adapters that need a workspace anchor.
+    pub fn primary_source_document(&self) -> Option<&crate::resource_codec::SourceMapDocument> {
+        self.source_map.documents().next()
     }
 
     #[must_use]
@@ -1077,6 +1086,16 @@ impl ArcweftBundle {
                 .encode_canonical_section()
                 .map_err(ViewStyleContractError::InvalidResource)?;
         }
+        ValidatedViewProduct::try_new(
+            Some(self.source_map.clone()),
+            self.view_program.clone(),
+            ViewProductValidationLimits::default(),
+        )?;
+        if let Some(style) = &self.view_style {
+            style
+                .validate_environment_sources(&self.source_map)
+                .map_err(ViewStyleContractError::InvalidResource)?;
+        }
         Ok(())
     }
 
@@ -1472,12 +1491,12 @@ mod tests {
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     #[test]
     fn bundle_json_round_trips_without_paths() {
         let bundle = ArcweftBundle::new(
             BundleManifest {
-                source_label: "main.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: Some("main".to_owned()),
@@ -1493,10 +1512,7 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "main.arcw".to_owned(),
-                text: "flow @flow.main main { return \"ok\" }".to_owned(),
-            },
+            source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
@@ -2027,7 +2043,6 @@ mod tests {
     fn empty_test_bundle() -> ArcweftBundle {
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "main.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: Some("main".to_owned()),
@@ -2043,14 +2058,21 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "main.arcw".to_owned(),
-                text: "flow @flow.main main { return \"ok\" }".to_owned(),
-            },
+            source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
         .with_product_awbc(minimal_awbc_program())
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn minimal_awbc_program() -> AwbcProgram {

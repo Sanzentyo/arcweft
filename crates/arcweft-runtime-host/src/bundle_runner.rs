@@ -260,7 +260,7 @@ fn execute_bundle_with_native_adapters(
         )
     })?;
     Ok(BundleRunnerReport {
-        source: bundle.manifest.source_label.clone(),
+        source: bundle.source_display_name().to_owned(),
         bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
         adapter_manifests: bundle.adapter_manifests.len(),
         phases: std::mem::take(phases),
@@ -782,12 +782,15 @@ impl MaterializedBundleWorkspace {
                 .map_or(0, |duration| duration.as_nanos())
         ));
         fs::create_dir_all(&root).map_err(BundleRunnerError::CreateWorkspace)?;
-        let source_name = bundle_source_file_name(&bundle.source.label);
+        let source = bundle.primary_source_document();
+        let source_name = bundle_source_file_name(
+            source.map_or("bundle.arcw", |source| source.display_name().display_name()),
+        );
         let source_path = root.join(source_name);
         if let Some(parent) = source_path.parent() {
             fs::create_dir_all(parent).map_err(BundleRunnerError::CreateSourceDirectory)?;
         }
-        fs::write(&source_path, &bundle.source.text)
+        fs::write(&source_path, source.map_or("", |source| source.text()))
             .map_err(BundleRunnerError::MaterializeSource)?;
         materialize_bundle_virtual_files(&root, &bundle.virtual_files)?;
         Ok(Self { root, source_path })
@@ -893,9 +896,10 @@ fn effect_label(effect: &LineEffectRequest) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{
         ArcweftBundle, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
-        BundleImageFormat, BundleManifest, BundleRuntimeSummary, BundleSource, BundleVirtualFile,
+        BundleImageFormat, BundleManifest, BundleRuntimeSummary, BundleVirtualFile,
         BundleVirtualFileRef, BundleVirtualFileSpace,
     };
     use arcweft_core::bytecode::BytecodeProgram;
@@ -903,6 +907,7 @@ mod tests {
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId};
     use arcweft_render_text::LineDisplayCatalog;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     #[test]
     fn bundle_runner_session_captures_per_run_host_state_and_steps_incrementally() {
@@ -1130,7 +1135,6 @@ mod tests {
         let bytecode = BytecodeProgram::from_runtime_plan(plan);
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "dialogue-bundle.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -1146,14 +1150,21 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "dialogue-bundle.arcw".to_owned(),
-                text: "flow main { dialogue }".to_owned(),
-            },
+            source_map("dialogue-bundle.arcw", "flow main { dialogue }"),
             bytecode,
             display,
         )
         .with_product_awbc(product_awbc)
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn flow_id(value: &str) -> FlowRuntimeId {

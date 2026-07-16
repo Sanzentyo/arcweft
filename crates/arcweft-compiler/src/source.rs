@@ -28,7 +28,7 @@ pub fn compile_source_with_env(
         ValidateHirError::Readiness(errors) => CompileSourceError::Readiness(errors),
         ValidateHirError::Type(errors) => CompileSourceError::Type(errors),
     })?;
-    let style = lower_source_view_styles(&hir, &typecheck_report.style_catalog, source)?;
+    let style = lower_source_view_styles(&hir, &typecheck_report.style_catalog, parsed.document())?;
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck_report,

@@ -1,21 +1,20 @@
 use super::{
     BTreeSet, BundleDigest, ProductSectionCodecKind, PublicIdTable, SectionCodecError,
-    SourceMapIndex, SourceMapSourceId, ViewResourceBudget, ViewResourceCompatibility,
-    ViewSpecifiedValue, ViewStyleDeclaration, ViewStylePatch, ViewStyleProgram, ViewStyleResource,
-    ViewStyleRule, ViewStyleSelector, ViewStyleSheet, ViewStyleSourceId, ViewStyleToken,
-    check_budget, decode_view_section, encode_view_section, export_json_bytes, reject_duplicates,
-    saturating_u32, style_environment, unique_strings, valid_resource_identity,
-    validate_canonical_view_transcript,
+    ViewResourceBudget, ViewResourceCompatibility, ViewSpecifiedValue, ViewStyleDeclaration,
+    ViewStylePatch, ViewStyleProgram, ViewStyleResource, ViewStyleRule, ViewStyleSelector,
+    ViewStyleSheet, ViewStyleSourceId, ViewStyleToken, check_budget, decode_view_section,
+    encode_view_section, export_json_bytes, reject_duplicates, saturating_u32, style_environment,
+    unique_strings, valid_resource_identity, validate_canonical_view_transcript,
 };
+use crate::resource_codec::SourceMapSection;
 
 impl ViewStyleResource {
     /// Validates guarded-rule provenance against the decoded product source map.
     pub fn validate_environment_sources(
         &self,
-        sources: &SourceMapIndex,
-        source_id: &SourceMapSourceId,
+        sources: &SourceMapSection,
     ) -> Result<(), SectionCodecError> {
-        style_environment::validate_source_extents(self, sources, source_id).map_err(Into::into)
+        style_environment::validate_source_extents(self, sources).map_err(Into::into)
     }
 
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
@@ -89,10 +88,11 @@ impl ViewStyleResource {
     pub(in crate::resource_codec::view) fn canonicalize(
         &mut self,
     ) -> Result<(), SectionCodecError> {
+        self.canonicalize_source_table();
         let mut source_order = (0..self.source_map_refs.len()).collect::<Vec<_>>();
         source_order.sort_by_key(|index| {
             let range = self.source_map_refs[*index];
-            (range.source, range.start_byte, range.end_byte)
+            (range.source(), range.start_byte(), range.end_byte())
         });
 
         if source_order
@@ -222,9 +222,10 @@ impl ViewStyleResource {
                 .windows(2)
                 .all(|pair| pair[0].id() < pair[1].id())
             && self.source_map_refs.windows(2).all(|pair| {
-                (pair[0].source, pair[0].start_byte, pair[0].end_byte)
-                    <= (pair[1].source, pair[1].start_byte, pair[1].end_byte)
+                (pair[0].source(), pair[0].start_byte(), pair[0].end_byte())
+                    <= (pair[1].source(), pair[1].start_byte(), pair[1].end_byte())
             })
+            && self.source_refs.windows(2).all(|pair| pair[0] < pair[1])
             && self.adapter_requirements.windows(2).all(|pair| {
                 (
                     pair[0].section_kind,
@@ -372,6 +373,11 @@ impl ViewStyleResource {
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
             std::iter::once(self.style_program_id.clone())
+                .chain(
+                    self.source_refs
+                        .iter()
+                        .map(|source| source.id().as_str().to_owned()),
+                )
                 .chain(self.program.sheets().iter().flat_map(|sheet| {
                     std::iter::once(sheet.id().public_id().as_str().to_owned())
                         .chain(sheet.tokens().iter().flat_map(|token| {
@@ -406,75 +412,17 @@ impl ViewStyleResource {
     }
 
     fn validate_source_maps(&self) -> Result<(), SectionCodecError> {
+        self.validate_source_table()
+            .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_product_source_refs"))?;
         style_environment::validate_structure(self)?;
-        let public_ids = self.public_id_table()?;
-        let valid_owners = std::iter::once(self.style_program_id.as_str())
-            .chain(
-                self.program
-                    .sheets()
-                    .iter()
-                    .map(|sheet| sheet.id().public_id().as_str()),
-            )
-            .collect::<BTreeSet<_>>();
-
         for range in &self.source_map_refs {
-            if range.start_byte > range.end_byte {
+            if range.start_byte() > range.end_byte() {
                 return Err(SectionCodecError::NonCanonicalTable(
                     "view_style_source_range_order",
                 ));
             }
-            if !valid_owners.contains(public_ids.get(range.source)?) {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_style_source_range_owners",
-                ));
-            }
-        }
-
-        for sheet in self.program.sheets() {
-            let owner = sheet.id().public_id().as_str();
-            let sources = sheet.tokens().iter().map(ViewStyleToken::source).chain(
-                sheet.rules().iter().flat_map(|rule| {
-                    std::iter::once(rule.source()).chain(
-                        rule.declarations()
-                            .iter()
-                            .map(arcweft_view::style::ViewStyleDeclaration::source),
-                    )
-                }),
-            );
-            for source in sources {
-                if self.source_owner(&public_ids, source)? != owner {
-                    return Err(SectionCodecError::NonCanonicalTable(
-                        "view_style_sheet_source_map_owner",
-                    ));
-                }
-            }
-        }
-
-        for patch in self.program.patches() {
-            for source in patch
-                .declarations()
-                .iter()
-                .map(arcweft_view::style::ViewStyleDeclaration::source)
-            {
-                if self.source_owner(&public_ids, source)? != self.style_program_id {
-                    return Err(SectionCodecError::NonCanonicalTable(
-                        "view_style_patch_source_map_owner",
-                    ));
-                }
-            }
         }
         Ok(())
-    }
-
-    fn source_owner<'a>(
-        &self,
-        public_ids: &'a PublicIdTable,
-        source: ViewStyleSourceId,
-    ) -> Result<&'a str, SectionCodecError> {
-        let range = self.source_map_refs.get(source.value() as usize).ok_or(
-            SectionCodecError::NonCanonicalTable("view_style_source_ids"),
-        )?;
-        public_ids.get(range.source)
     }
 }
 

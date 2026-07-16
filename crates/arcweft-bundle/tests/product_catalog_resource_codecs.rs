@@ -11,7 +11,7 @@ use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
     BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest, BundleRuntimeSummary,
-    BundleSource, BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
+    BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -56,7 +56,7 @@ fn product_catalog_compact_codecs_round_trip_current_bundle_resources() {
         display
     );
 
-    let source = source_map(&bundle);
+    let source = bundle.source_map.clone();
     let source_bytes = source.encode_canonical_section().expect("source encodes");
     assert_eq!(
         source_bytes[..8],
@@ -124,13 +124,13 @@ fn product_awfb_uses_compact_sections_for_migrated_catalog_families() {
     assert_eq!(decoded.virtual_files, bundle.virtual_files);
     assert_eq!(decoded.image_assets, bundle.image_assets);
     assert_eq!(decoded.image_objects, bundle.image_objects);
-    assert_eq!(decoded.source, bundle.source);
+    assert_eq!(decoded.source_map, bundle.source_map);
     assert_eq!(decoded.audio, bundle.audio);
 }
 
 #[test]
 fn canonical_source_map_rejects_unknown_optional_and_required_fields() {
-    let source = source_map(&fixture_bundle());
+    let source = fixture_bundle().source_map;
     let bytes = source.encode_canonical_section().expect("source encodes");
     let envelope = ProductResourceEnvelope::decode_all_fields(
         &bytes,
@@ -160,7 +160,7 @@ fn canonical_source_map_rejects_unknown_optional_and_required_fields() {
 
 #[test]
 fn product_catalog_common_budget_failures_are_reported() {
-    let source = source_map(&fixture_bundle());
+    let source = fixture_bundle().source_map;
     let bytes = source.encode_canonical_section().expect("source encodes");
     let tiny_budget = SectionCodecBudget {
         bytes: 1,
@@ -222,7 +222,6 @@ fn fixture_bundle() -> ArcweftBundle {
     let master_bus = AudioBusId::new("bus.master").expect("bus id");
     ArcweftBundle::new(
         BundleManifest {
-            source_label: "main.arcw".to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: Some("main".to_owned()),
@@ -238,10 +237,7 @@ fn fixture_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "main.arcw".to_owned(),
-            text: "flow @flow.main main { return \"ok\" }".to_owned(),
-        },
+        source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
@@ -278,11 +274,11 @@ fn fixture_bundle() -> ArcweftBundle {
     })
 }
 
-fn source_map(bundle: &ArcweftBundle) -> SourceMapSection {
+fn source_map(label: &str, text: &str) -> SourceMapSection {
     let document = SourceDocument::try_new(
-        SourceDocumentId::try_new(bundle.source.label.clone()).expect("source document id"),
-        SourceName::path(bundle.source.label.clone()),
-        bundle.source.text.clone(),
+        SourceDocumentId::try_new(label).expect("source document id"),
+        SourceName::path(label),
+        text,
     )
     .expect("source document");
     SourceMapSection::try_from_documents(&[&document]).expect("source map")

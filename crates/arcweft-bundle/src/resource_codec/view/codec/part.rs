@@ -1,7 +1,6 @@
 //! Canonical exported-part inventory and provenance validation.
 
 use super::super::model::{ViewExportedPart, ViewProgramInstruction, ViewProgramResource};
-use crate::resource_codec::{PublicIdTable, SourceMapIndex};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -41,9 +40,6 @@ pub(super) fn validate_exports(
 ) -> Result<(), ViewExportValidationError> {
     validate_canonical_order(&program.exported_parts)?;
     let targets = owner_targets(program)?;
-    let table = program
-        .public_id_table()
-        .map_err(|_| ViewExportValidationError::UnknownSource)?;
     let mut exported_targets = BTreeSet::new();
     let mut public_names = BTreeSet::new();
 
@@ -69,29 +65,7 @@ pub(super) fn validate_exports(
         if !public_names.insert((owner, exported.public_name.as_public_id().as_str())) {
             return Err(ViewExportValidationError::DuplicatePublicName);
         }
-        validate_source_structure(exported, &table)?;
-    }
-    Ok(())
-}
-
-pub(super) fn validate_export_source_extents(
-    program: &ViewProgramResource,
-    sources: &SourceMapIndex,
-) -> Result<(), ViewExportValidationError> {
-    for exported in &program.exported_parts {
-        let entry = sources
-            .entry(&exported.source.source_id)
-            .ok_or(ViewExportValidationError::UnknownSource)?;
-        let extent = u32::try_from(entry.utf8_len())
-            .map_err(|_| ViewExportValidationError::SourceOutOfBounds)?;
-        if exported
-            .source
-            .ranges()
-            .iter()
-            .any(|range| range.end_byte > extent)
-        {
-            return Err(ViewExportValidationError::SourceOutOfBounds);
-        }
+        validate_source_structure(exported)?;
     }
     Ok(())
 }
@@ -137,32 +111,27 @@ fn owner_targets(
     Ok(owners)
 }
 
-fn validate_source_structure(
-    exported: &ViewExportedPart,
-    table: &PublicIdTable,
-) -> Result<(), ViewExportValidationError> {
+fn validate_source_structure(exported: &ViewExportedPart) -> Result<(), ViewExportValidationError> {
     let ranges = exported.source.ranges();
-    let source = table
-        .id_for(exported.source.source_id.as_str())
-        .ok_or(ViewExportValidationError::UnknownSource)?;
-    if ranges.iter().any(|range| range.source != source) {
+    let source = ranges[0].source();
+    if ranges.iter().any(|range| range.source() != source) {
         return Err(ViewExportValidationError::UnknownSource);
     }
     if ranges
         .iter()
-        .any(|range| range.start_byte >= range.end_byte)
+        .any(|range| range.start_byte() >= range.end_byte())
     {
         return Err(ViewExportValidationError::InvalidSourceRange);
     }
     let declaration = *ranges[0];
     if ranges[1..].iter().any(|range| {
-        range.start_byte < declaration.start_byte || range.end_byte > declaration.end_byte
+        range.start_byte() < declaration.start_byte() || range.end_byte() > declaration.end_byte()
     }) {
         return Err(ViewExportValidationError::SourceNotContained);
     }
     let local = *ranges[1];
     let public = *ranges[2];
-    if local.start_byte < public.end_byte && public.start_byte < local.end_byte {
+    if local.start_byte() < public.end_byte() && public.start_byte() < local.end_byte() {
         return Err(ViewExportValidationError::SourceOverlap);
     }
     Ok(())

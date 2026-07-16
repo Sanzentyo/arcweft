@@ -321,7 +321,7 @@ pub(super) fn build_session_runtime(
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
     SessionRuntime::new(
-        bundle.manifest.source_label.clone(),
+        bundle.source_display_name().to_owned(),
         program,
         launch_target,
         SessionRuntimeResources {

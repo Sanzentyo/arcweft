@@ -1,5 +1,9 @@
 use super::table::PublicIdRef;
+use super::{ProductSourceId, SourceMapDocument};
 use crate::container::{BundleDigest, SectionId, SectionKindCode};
+use arcweft_source::SourceRevision;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
 /// Stable 128-bit resource identity derived from an owner-defined stable key.
 #[derive(
@@ -24,14 +28,38 @@ pub struct DigestRef {
     pub digest: BundleDigest,
 }
 
+/// Revision-bound reference to one source document in a product source table.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProductSourceRef {
+    id: ProductSourceId,
+    revision: SourceRevision,
+    source_len: u64,
+}
+
+/// Opaque index into one resource's canonical product-source table.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ProductSourceRefIndex(u32);
+
 /// Source range reference. Byte offsets are UTF-8 byte positions in the
 /// referenced normalized source, not character or line-column pairs.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceRangeRef {
-    pub source: PublicIdRef,
-    pub start_byte: u32,
-    pub end_byte: u32,
+    source: ProductSourceRefIndex,
+    start_byte: u32,
+    end_byte: u32,
+}
+
+/// Failure to construct a typed product source table or range.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum ViewProductBuildError {
+    #[error("product source table contains more entries than a u32 index can address")]
+    TooManySourceRefs,
+    #[error("source range references a source absent from its product source table")]
+    UnknownSource,
+    #[error("source reference index {index} is out of bounds for {count} sources")]
+    InvalidSourceIndex { index: u32, count: usize },
 }
 
 /// Cross-section reference. The section kind code is raw so future optional
@@ -59,5 +87,122 @@ impl StableId {
 
     pub const fn as_bytes(self) -> [u8; 16] {
         self.0
+    }
+}
+
+impl ProductSourceRef {
+    pub fn from_document(document: &SourceMapDocument) -> Self {
+        Self {
+            id: document.id().clone(),
+            revision: document.revision(),
+            source_len: document.source_len(),
+        }
+    }
+
+    pub const fn id(&self) -> &ProductSourceId {
+        &self.id
+    }
+
+    pub const fn revision(&self) -> SourceRevision {
+        self.revision
+    }
+
+    pub const fn source_len(&self) -> u64 {
+        self.source_len
+    }
+}
+
+impl ProductSourceRefIndex {
+    pub(crate) fn try_from_index(index: usize) -> Result<Self, ViewProductBuildError> {
+        u32::try_from(index)
+            .map(Self)
+            .map_err(|_| ViewProductBuildError::TooManySourceRefs)
+    }
+
+    pub const fn value(self) -> u32 {
+        self.0
+    }
+
+    pub(crate) const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl SourceRangeRef {
+    pub fn try_for_source(
+        source_refs: &[ProductSourceRef],
+        source: &ProductSourceRef,
+        start_byte: u32,
+        end_byte: u32,
+    ) -> Result<Self, ViewProductBuildError> {
+        let index = source_refs
+            .iter()
+            .position(|candidate| candidate == source)
+            .ok_or(ViewProductBuildError::UnknownSource)?;
+        Ok(Self::new(
+            ProductSourceRefIndex::try_from_index(index)?,
+            start_byte,
+            end_byte,
+        ))
+    }
+
+    pub(crate) const fn new(source: ProductSourceRefIndex, start_byte: u32, end_byte: u32) -> Self {
+        Self {
+            source,
+            start_byte,
+            end_byte,
+        }
+    }
+
+    pub const fn source(&self) -> ProductSourceRefIndex {
+        self.source
+    }
+
+    pub const fn start_byte(&self) -> u32 {
+        self.start_byte
+    }
+
+    pub const fn end_byte(&self) -> u32 {
+        self.end_byte
+    }
+
+    pub(crate) fn set_source(&mut self, source: ProductSourceRefIndex) {
+        self.source = source;
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProductSourceRefWire {
+    id: ProductSourceId,
+    revision: [u8; 32],
+    source_len: u64,
+}
+
+impl Serialize for ProductSourceRef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ProductSourceRefWire {
+            id: self.id.clone(),
+            revision: *self.revision.as_bytes(),
+            source_len: self.source_len,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ProductSourceRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = ProductSourceRefWire::deserialize(deserializer)?;
+        Ok(Self {
+            id: wire.id,
+            revision: SourceRevision::from_bytes(wire.revision),
+            source_len: wire.source_len,
+        })
     }
 }

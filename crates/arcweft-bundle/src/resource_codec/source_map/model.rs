@@ -6,6 +6,7 @@ use arcweft_source::{
     MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentId, SourceName, SourceRevision,
     SourceSetRevision, SourceSetRevisionError,
 };
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::SourceMapBuildError;
 
@@ -73,6 +74,24 @@ impl ProductSourceId {
 
     pub(crate) fn try_from_encoded(value: String) -> Result<Self, IdError> {
         PublicId::try_new(value).map(Self)
+    }
+}
+
+impl Serialize for ProductSourceId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ProductSourceId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::try_from_encoded(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -215,6 +234,27 @@ impl SourceMapSection {
             .binary_search_by(|document| document.id.cmp(id))
             .ok()
             .map(|index| &self.documents[index])
+    }
+}
+
+impl Serialize for SourceMapSection {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.encode_canonical_section()
+            .map_err(serde::ser::Error::custom)?
+            .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceMapSection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = Vec::<u8>::deserialize(deserializer)?;
+        Self::decode_canonical_section(&bytes).map_err(serde::de::Error::custom)
     }
 }
 

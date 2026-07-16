@@ -243,7 +243,8 @@ fn capture_content_stats(rgba: &[u8], width: u32, height: u32) -> CaptureContent
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary, BundleSource};
+    use arcweft_bundle::resource_codec::SourceMapSection;
+    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
     use arcweft_core::{
         bytecode::BytecodeProgram,
         line_task::LineTaskGroup,
@@ -253,6 +254,7 @@ mod tests {
         LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode,
     };
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     #[test]
     fn content_stats_are_derived_from_shared_capture_pixels() {
@@ -339,7 +341,6 @@ mod tests {
             .program;
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "capture.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: None,
@@ -355,13 +356,20 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "capture.arcw".to_owned(),
-                text: "flow @flow.main main { dialogue }".to_owned(),
-            },
+            source_map("capture.arcw", "flow @flow.main main { dialogue }"),
             BytecodeProgram::from_runtime_plan(plan),
             display,
         )
         .with_product_awbc(product_awbc)
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 }

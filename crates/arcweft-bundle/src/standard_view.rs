@@ -8,8 +8,9 @@ use crate::resource_codec::view::{
     ViewTextBlockResource, ViewTextResource, ViewTextSourceKind, ViewTextSourceRecord,
     ViewTextSurface,
 };
-use crate::resource_codec::{SourceRangeRef, table::PublicIdRef};
+use crate::resource_codec::{ProductSourceRef, SourceMapSection, SourceRangeRef};
 use arcweft_presentation::appearance::PresentationColor;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
     ViewColorValue, ViewLengthMilli, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleProgram,
@@ -39,7 +40,7 @@ const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";
 #[must_use]
 pub fn dialogue_program() -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "std.view.program".to_owned(),
+        program_id: "view.standard.dialogue.program".to_owned(),
         definitions: vec![ViewDefinitionResource {
             public_id: DIALOGUE_VIEW_ID.to_owned(),
             body: ViewInstructionSpan::new(0, 6),
@@ -173,6 +174,30 @@ pub fn dialogue_text() -> ViewTextResource {
 /// typed declarations violate their compile-time invariants.
 #[must_use]
 pub fn dialogue_style() -> ViewStyleResource {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft:standard/dialogue-style")
+            .expect("standard dialogue Style source ID is canonical"),
+        SourceName::Generated,
+        DIALOGUE_STYLE_SOURCE,
+    )
+    .expect("standard dialogue Style source is representable");
+    let section = SourceMapSection::try_from_documents(&[&document])
+        .expect("standard dialogue Style source map is canonical");
+    let source_ref = ProductSourceRef::from_document(
+        &section
+            .documents()
+            .next()
+            .expect("standard dialogue Style source map is non-empty"),
+    );
+    let source_refs = vec![source_ref.clone()];
+    let source_range = SourceRangeRef::try_for_source(
+        &source_refs,
+        &source_ref,
+        0,
+        u32::try_from(DIALOGUE_STYLE_SOURCE.len())
+            .expect("standard dialogue Style source length fits u32"),
+    )
+    .expect("standard dialogue Style source reference is canonical");
     let source = ViewStyleSourceId::new(0);
     let sheet = ViewStyleSheet::new(
         style_sheet_id(),
@@ -221,24 +246,17 @@ pub fn dialogue_style() -> ViewStyleResource {
         ],
     )
     .expect("standard dialogue Style sheet is statically valid");
-    let mut resource = ViewStyleResource {
+    let resource = ViewStyleResource {
         style_program_id: "std.view.style.program".to_owned(),
         program: ViewStyleProgram::try_new(vec![sheet], Vec::new())
             .expect("standard dialogue Style program is statically valid"),
-        source_map_refs: vec![SourceRangeRef {
-            source: PublicIdRef::default(),
-            start_byte: 0,
-            end_byte: u32::try_from(DIALOGUE_STYLE_SOURCE.len())
-                .expect("standard dialogue Style source length fits u32"),
-        }],
+        source_refs,
+        source_map_refs: vec![source_range],
         adapter_requirements: Vec::new(),
     };
-    let source_ref = resource
-        .public_id_table()
-        .expect("standard dialogue Style public IDs are valid")
-        .id_for(DIALOGUE_STYLE_ID)
-        .expect("standard dialogue Style sheet is in its public-ID table");
-    resource.source_map_refs[0].source = source_ref;
+    resource
+        .encode_canonical_section()
+        .expect("standard dialogue Style resource is canonical");
     resource
 }
 

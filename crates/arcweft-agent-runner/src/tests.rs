@@ -37,7 +37,8 @@ use arcweft_agent_protocol::{
     value::AgentValue,
     verified_effects::VerifiedEffectSummary,
 };
-use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary, BundleSource};
+use arcweft_bundle::resource_codec::SourceMapSection;
+use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::{
     bytecode::BytecodeProgram,
     effect::{LineEffectRequest, RuntimeCall},
@@ -54,6 +55,7 @@ use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
     sink::{DebugEventSink, NullDebugEventSink},
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
@@ -492,7 +494,6 @@ fn agent_controller_test_bundle(
     );
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: Some(format!("entry.{agent_id}")),
@@ -511,10 +512,7 @@ fn agent_controller_test_bundle(
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label.to_owned(),
-            text: source_text.to_owned(),
-        },
+        source_map(source_label, source_text),
         program,
         display,
     )
@@ -534,6 +532,16 @@ fn agent_controller_test_bundle(
         budget,
         debug_map_hash: None,
     })
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn capture_binding_program() -> BytecodeProgram {

@@ -5,6 +5,7 @@ use crate::app::project::{
     project_compilation_context, runtime_plan_options_for_selection, source_document_for_path,
 };
 use crate::output::RuntimeProfilePhase;
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_compiler::{
     hir, lower, parse,
     project::compile_project,
@@ -49,6 +50,7 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) bytecode_stats: BytecodeStats,
     pub(in crate::app) aot_stats: AotProgramStats,
     pub(in crate::app) source_document: Arc<SourceDocument>,
+    pub(in crate::app) source_map: SourceMapSection,
 }
 
 struct ProfileParsedSource {
@@ -106,6 +108,11 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         eprintln!("error: {error}");
         ExitCode::FAILURE
     })?;
+    let source_map =
+        SourceMapSection::try_from_documents(&[parsed.document.as_ref()]).map_err(|error| {
+            eprintln!("error: failed to build product source map: {error}");
+            ExitCode::FAILURE
+        })?;
     Ok(ProfileCompiledRuntimePlan {
         hir: checked.hir,
         style: checked.style,
@@ -122,6 +129,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
         bytecode_stats,
         aot_stats,
         source_document: Arc::clone(&parsed.document),
+        source_map,
     })
 }
 
@@ -190,15 +198,12 @@ fn profile_lower_checked_source(
     let hir = profile_lower_hir(&parsed.document, &parsed.tree, phases)?;
     let typecheck_report = profile_validate_hir(&hir, env, phases)?;
     let style = run_profile_phase(phases, "style_lower", || {
-        lower_source_view_styles(
-            &hir,
-            &typecheck_report.style_catalog,
-            parsed.document.text(),
+        lower_source_view_styles(&hir, &typecheck_report.style_catalog, &parsed.document).map_err(
+            |error| {
+                eprintln!("error: failed to lower checked View Style: {error}");
+                ExitCode::FAILURE
+            },
         )
-        .map_err(|error| {
-            eprintln!("error: failed to lower checked View Style: {error}");
-            ExitCode::FAILURE
-        })
     })?;
     let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
         lower::lower_source_line_tasks(&hir).map_err(|errors| {
@@ -306,6 +311,17 @@ fn compile_project_runtime_plan(
             .module_document(loaded.sources().root_module().module())
             .expect("loaded projects retain their root source document"),
     );
+    let source_map = SourceMapSection::try_from_documents(
+        &loaded
+            .sources()
+            .modules()
+            .map(|source| source.document().as_ref())
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to build project source map: {error}");
+        ExitCode::FAILURE
+    })?;
     let runtime_options = runtime_plan_options_for_selection(selection)?;
     let context = project_compilation_context(&loaded, selection, semantic)?;
     let compiled = run_profile_phase(phases, "project_compile", || {
@@ -366,6 +382,7 @@ fn compile_project_runtime_plan(
         bytecode_stats,
         aot_stats,
         source_document,
+        source_map,
     })
 }
 

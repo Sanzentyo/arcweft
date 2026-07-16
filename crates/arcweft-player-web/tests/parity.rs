@@ -1,4 +1,5 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
     ViewActionButtonActionResource, ViewActionButtonResource, ViewActionPayloadResource,
@@ -12,7 +13,7 @@ use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
     BundleImageFormat, BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds,
     BundleImageObjectFit, BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest,
-    BundleRuntimeSummary, BundleSource, BundleVirtualFile, BundleVirtualFileSpace,
+    BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileSpace,
 };
 use arcweft_core::{bytecode::BytecodeProgram, plan::RuntimePlan};
 use arcweft_lang_hir::lower::lower_to_hir;
@@ -44,6 +45,7 @@ use arcweft_runtime_plan::{
     flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
     fx::lower_fx_definitions,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::collections::BTreeMap;
 
 mod support;
@@ -826,7 +828,6 @@ fn bundle_from_runtime_plan(plan: &RuntimePlan, source: &str, source_label: &str
         .program;
     ArcweftBundle::new(
         BundleManifest {
-            source_label: source_label.to_owned(),
             profile_id: None,
             profile_kind: None,
             entry: None,
@@ -842,14 +843,21 @@ fn bundle_from_runtime_plan(plan: &RuntimePlan, source: &str, source_label: &str
                 source_plans: stats.source_plans,
             },
         },
-        BundleSource {
-            label: source_label.to_owned(),
-            text: source.to_owned(),
-        },
+        source_map(source_label, source),
         bytecode,
         display,
     )
     .with_product_awbc(product_awbc)
+}
+
+fn source_map(label: &str, text: &str) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn authored_view_text_resource() -> ViewTextResource {
@@ -882,6 +890,7 @@ fn literal_text_source(public_id: &str, value: &str) -> ViewTextSourceRecord {
 fn authored_view_program_resource() -> ViewProgramResource {
     ViewProgramResource {
         program_id: "view.web_panel".to_owned(),
+        source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
             public_id: "view.WebPanel".to_owned(),
             body: ViewInstructionSpan::new(0, 6),

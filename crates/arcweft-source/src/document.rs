@@ -51,6 +51,11 @@ impl SourceRevision {
         &self.0
     }
 
+    /// Reconstructs a revision retained by a typed product reference.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     /// Lowercase hexadecimal spelling used by content-addressed identities.
     pub fn to_hex(self) -> String {
         self.0

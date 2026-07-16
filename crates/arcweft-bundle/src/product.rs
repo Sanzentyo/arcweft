@@ -18,7 +18,7 @@ use crate::resource_codec::{
 };
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
-    BundleBytecodeProgram, BundleCodecError, BundleKind, BundleManifest, BundleSource,
+    BundleBytecodeProgram, BundleCodecError, BundleKind, BundleManifest,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
@@ -26,7 +26,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 mod source_projection;
 mod style_cross_section;
-use source_projection::{bundle_source_from_map, source_map_for_bundle, validate_view_sources};
+use source_projection::validate_view_sources;
 use style_cross_section::{validate_style_bundle_view, validate_style_section_inputs};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
@@ -75,7 +75,6 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
         agent: bundle.agent.clone(),
     };
     let manifest = encode_json(&product_manifest)?;
-    let source_map = source_map_for_bundle(bundle)?;
     let sections = vec![
         required_section(
             BundleSectionKind::ProgramBytecode,
@@ -117,11 +116,12 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
         ),
         optional_section(
             BundleSectionKind::SourceMap,
-            source_map.encode_canonical_section().map_err(|error| {
-                BundleCodecError::EncodeAwfb {
+            bundle
+                .source_map
+                .encode_canonical_section()
+                .map_err(|error| BundleCodecError::EncodeAwfb {
                     message: error.to_string(),
-                }
-            })?,
+                })?,
         ),
     ]
     .into_iter()
@@ -186,22 +186,17 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let _content = required_content_catalog(&view, external_sections)?;
     let assets = optional_asset_catalog(&view, external_sections)?.unwrap_or_default();
     let display = optional_display_catalog(&view, external_sections)?.unwrap_or_default();
-    let source_map = optional_source_map(&view, external_sections)?;
+    let source_map = optional_source_map(&view, external_sections)?.ok_or_else(|| {
+        BundleCodecError::DecodeAwfb {
+            message: "AWFB bundle is missing its canonical SourceMap section".to_owned(),
+        }
+    })?;
     let view_program = optional_view_program(&view, external_sections)?;
     let view_style = optional_view_style(&view, external_sections)?;
     validate_view_sources(
         view_program.as_ref(),
         view_style.as_ref(),
-        source_map.as_ref(),
-    )?;
-    let source = source_map.as_ref().map_or_else(
-        || {
-            Ok(BundleSource {
-                label: product_manifest.manifest.source_label.clone(),
-                text: String::new(),
-            })
-        },
-        bundle_source_from_map,
+        Some(&source_map),
     )?;
     let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
     let view_text = optional_view_text(&view, external_sections)?;
@@ -219,7 +214,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         bundle_kind: product_manifest.bundle_kind,
         manifest: product_manifest.manifest,
         agent: product_manifest.agent,
-        source,
+        source_map,
         bytecode: BundleBytecodeProgram {
             encoding: BundleBytecodeEncoding::StructuredJson,
             program: BytecodeProgram {
@@ -751,17 +746,18 @@ mod tests {
         AWFB_SECTION_SCHEMA_VERSION, CompactAdapterRequirementsSection, CompactEntrypointsSection,
         CompactRuntimeTypesSection, ProductExecutablePayload, ProductManifest, container_kind,
         encode_json, optional_asset_catalog_section, optional_audio_graph_section,
-        optional_section, required_section, section_id, source_map_for_bundle,
+        optional_section, required_section, section_id,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
         SectionInput, encode_bundle,
     };
     use crate::fx_definitions::FxDefinitions;
-    use crate::resource_codec::{CompactContentCatalogSection, CompactDisplayCatalogSection};
+    use crate::resource_codec::{
+        CompactContentCatalogSection, CompactDisplayCatalogSection, SourceMapSection,
+    };
     use crate::{
         ArcweftBundle, BundleCodecError, BundleFormat, BundleManifest, BundleRuntimeSummary,
-        BundleSource,
     };
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -772,6 +768,7 @@ mod tests {
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_presentation::fx::{FxDefinition, FxGraph, FxId, FxNode};
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::path::Path;
 
     #[test]
@@ -1073,8 +1070,8 @@ mod tests {
             ),
             optional_section(
                 BundleSectionKind::SourceMap,
-                source_map_for_bundle(bundle)
-                    .expect("source map builds")
+                bundle
+                    .source_map
                     .encode_canonical_section()
                     .expect("source encode"),
             ),
@@ -1108,7 +1105,6 @@ mod tests {
     fn empty_bundle() -> ArcweftBundle {
         ArcweftBundle::new(
             BundleManifest {
-                source_label: "main.arcw".to_owned(),
                 profile_id: None,
                 profile_kind: None,
                 entry: Some("main".to_owned()),
@@ -1124,14 +1120,21 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            BundleSource {
-                label: "main.arcw".to_owned(),
-                text: "flow @flow.main main { return \"ok\" }".to_owned(),
-            },
+            source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
         .with_product_awbc(minimal_awbc_program())
+    }
+
+    fn source_map(label: &str, text: &str) -> SourceMapSection {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(label).expect("source ID"),
+            SourceName::path(label),
+            text,
+        )
+        .expect("source document");
+        SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
     fn minimal_awbc_program() -> AwbcProgram {

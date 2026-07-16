@@ -6,7 +6,7 @@
 //! lowering. No source parser is reopened at the bundle or runtime boundary.
 
 use arcweft_bundle::resource_codec::view::ViewStyleResource;
-use arcweft_bundle::resource_codec::{PublicIdTable, SourceRangeRef};
+use arcweft_bundle::resource_codec::{ProductSourceRef, SourceMapSection, SourceRangeRef};
 use arcweft_id::{IdError, PublicId};
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_hir::project::HirProject;
@@ -21,6 +21,7 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::ast::style::StylePatch as SyntaxStylePatch;
 use arcweft_lang_syntax::ast::view::{ViewBody, ViewExpr, ViewModifier, ViewStyleModifier};
 use arcweft_project::sources::ProjectSources;
+use arcweft_source::SourceDocument;
 use arcweft_view::style::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleModelError,
@@ -82,8 +83,10 @@ pub enum ViewStyleLowerError {
     SourceRangeTooLarge { range: TextRange },
     #[error("Style resource contains more source ranges than a u32 ID can address")]
     TooManySourceRanges,
-    #[error("Style source identity `{0}` is absent from the canonical public-ID table")]
-    MissingSourcePublicId(String),
+    #[error(transparent)]
+    ProductSource(#[from] arcweft_bundle::resource_codec::ViewProductBuildError),
+    #[error(transparent)]
+    SourceMap(#[from] arcweft_bundle::resource_codec::SourceMapBuildError),
     #[error("View Style application references missing sheet `{sheet}` at {range:?}")]
     UnknownSheetApplication { sheet: String, range: TextRange },
     #[error(
@@ -181,7 +184,7 @@ impl ViewStyleApplicationLookup {
 pub fn lower_source_view_styles(
     hir: &HirModule,
     catalog: &CheckedViewStyleCatalog,
-    source: &str,
+    source: &SourceDocument,
 ) -> Result<CompiledViewStyleArtifact, ViewStyleLowerError> {
     let origins = StyleSourceOrigins::for_source(hir, source)?;
     let module = CanonicalModulePath::crate_root();
@@ -227,6 +230,7 @@ fn lower_view_styles(
 
 #[derive(Clone, Debug)]
 struct StyleSourceDocument {
+    source: ProductSourceRef,
     len: usize,
 }
 
@@ -237,14 +241,22 @@ struct StyleSourceOrigins {
 }
 
 impl StyleSourceDocument {
-    const fn new(source: &str) -> Self {
-        Self { len: source.len() }
+    fn new(source: &SourceDocument) -> Result<Self, ViewStyleLowerError> {
+        let section = SourceMapSection::try_from_documents(&[source])?;
+        let document = section
+            .documents()
+            .next()
+            .expect("a one-document source map retains its input");
+        Ok(Self {
+            source: ProductSourceRef::from_document(document),
+            len: source.text().len(),
+        })
     }
 }
 
 impl StyleSourceOrigins {
-    fn for_source(hir: &HirModule, source: &str) -> Result<Self, ViewStyleLowerError> {
-        let document = StyleSourceDocument::new(source);
+    fn for_source(hir: &HirModule, source: &SourceDocument) -> Result<Self, ViewStyleLowerError> {
+        let document = StyleSourceDocument::new(source)?;
         let mut origins = Self::default();
         origins.register_module(hir, &document)?;
         Ok(origins)
@@ -275,7 +287,7 @@ impl StyleSourceOrigins {
         let source = project
             .module(path)
             .ok_or_else(|| ViewStyleLowerError::MissingProjectSource(path.to_string()))?;
-        self.register_module(hir, &StyleSourceDocument::new(source.source()))
+        self.register_module(hir, &StyleSourceDocument::new(source.document())?)
     }
 
     fn register_module(
@@ -303,7 +315,7 @@ impl StyleSourceOrigins {
 }
 
 struct PendingSourceRange {
-    owner: String,
+    source: ProductSourceRef,
     range: TextRange,
 }
 
@@ -315,7 +327,7 @@ struct StyleSourceRangeBuilder {
 impl StyleSourceRangeBuilder {
     fn add(
         &mut self,
-        owner: &str,
+        _owner: &str,
         document: &StyleSourceDocument,
         range: TextRange,
     ) -> Result<ViewStyleSourceId, ViewStyleLowerError> {
@@ -329,22 +341,24 @@ impl StyleSourceRangeBuilder {
             .map(ViewStyleSourceId::new)
             .map_err(|_| ViewStyleLowerError::TooManySourceRanges)?;
         self.ranges.push(PendingSourceRange {
-            owner: owner.to_owned(),
+            source: document.source.clone(),
             range,
         });
         Ok(id)
     }
 
-    fn finish(
-        self,
-        public_ids: &PublicIdTable,
-    ) -> Result<Vec<SourceRangeRef>, ViewStyleLowerError> {
-        self.ranges
+    fn finish(self) -> Result<(Vec<ProductSourceRef>, Vec<SourceRangeRef>), ViewStyleLowerError> {
+        let mut source_refs = self
+            .ranges
+            .iter()
+            .map(|pending| pending.source.clone())
+            .collect::<Vec<_>>();
+        source_refs.sort();
+        source_refs.dedup();
+        let ranges = self
+            .ranges
             .into_iter()
             .map(|pending| {
-                let source = public_ids.id_for(&pending.owner).ok_or_else(|| {
-                    ViewStyleLowerError::MissingSourcePublicId(pending.owner.clone())
-                })?;
                 let start_byte = u32::try_from(pending.range.start()).map_err(|_| {
                     ViewStyleLowerError::SourceRangeTooLarge {
                         range: pending.range,
@@ -355,13 +369,11 @@ impl StyleSourceRangeBuilder {
                         range: pending.range,
                     }
                 })?;
-                Ok(SourceRangeRef {
-                    source,
-                    start_byte,
-                    end_byte,
-                })
+                SourceRangeRef::try_for_source(&source_refs, &pending.source, start_byte, end_byte)
+                    .map_err(ViewStyleLowerError::from)
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((source_refs, ranges))
     }
 }
 
@@ -385,11 +397,11 @@ fn lower_style_resource(
     let mut resource = ViewStyleResource {
         style_program_id: VIEW_STYLE_PROGRAM_ID.to_owned(),
         program: ViewStyleProgram::try_new(sheets, patches)?,
+        source_refs: Vec::new(),
         source_map_refs: Vec::new(),
         adapter_requirements: Vec::new(),
     };
-    let public_ids = resource.public_id_table()?;
-    resource.source_map_refs = ranges.finish(&public_ids)?;
+    (resource.source_refs, resource.source_map_refs) = ranges.finish()?;
     Ok(resource)
 }
 

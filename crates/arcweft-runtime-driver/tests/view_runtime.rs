@@ -5,7 +5,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
-    PublicIdRef, SourceMapSourceId, SourceRangeRef, ViewCallArgumentBindingRef,
+    ProductSourceRef, SourceMapSection, SourceRangeRef, ViewCallArgumentBindingRef,
     ViewDefinitionResource, ViewDisplayFrameResource, ViewInstructionSpan,
     ViewLocalizedTextResource, ViewParameterResource, ViewProgramResource,
     ViewRichTextDocumentResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
@@ -31,6 +31,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewPaintItem, BundleViewRuntime, BundleViewStyleNode, BundleViewStyleNodeKind,
     BundleViewTextValue,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{
     DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
     ViewPartLocalName, ViewPartName,
@@ -85,7 +86,13 @@ fn public_part(value: &str) -> ViewPartName {
     ViewPartName::try_new(value).expect("valid public part identity")
 }
 
-fn exported_part(owner: &str, local: &str, public: &str) -> ViewExportedPart {
+fn exported_part(
+    owner: &str,
+    local: &str,
+    public: &str,
+    source_refs: &[ProductSourceRef],
+) -> ViewExportedPart {
+    let source = &source_refs[0];
     ViewExportedPart {
         target: ViewOwnedPartRef::new(
             ViewDefinitionRef::try_new(owner).expect("valid View owner"),
@@ -93,25 +100,34 @@ fn exported_part(owner: &str, local: &str, public: &str) -> ViewExportedPart {
         ),
         public_name: public_part(public),
         source: ViewPartExportSourceRef {
-            source_id: SourceMapSourceId::try_new("view-runtime.arcw")
-                .expect("valid source identity"),
-            declaration: SourceRangeRef {
-                source: PublicIdRef(0),
-                start_byte: 0,
-                end_byte: 32,
-            },
-            local_name: SourceRangeRef {
-                source: PublicIdRef(0),
-                start_byte: 12,
-                end_byte: 20,
-            },
-            public_name: SourceRangeRef {
-                source: PublicIdRef(0),
-                start_byte: 24,
-                end_byte: 31,
-            },
+            declaration: source_range(source_refs, source, 0, 32),
+            local_name: source_range(source_refs, source, 12, 20),
+            public_name: source_range(source_refs, source, 24, 31),
         },
     }
+}
+
+fn view_source_refs() -> Vec<ProductSourceRef> {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("view-runtime.arcw").expect("source ID"),
+        SourceName::path("view-runtime.arcw"),
+        "x".repeat(64),
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document])
+        .expect("source map")
+        .documents()
+        .map(ProductSourceRef::from_document)
+        .collect()
+}
+
+fn source_range(
+    source_refs: &[ProductSourceRef],
+    source: &ProductSourceRef,
+    start_byte: u32,
+    end_byte: u32,
+) -> SourceRangeRef {
+    SourceRangeRef::try_for_source(source_refs, source, start_byte, end_byte).expect("source range")
 }
 
 fn value_program(
@@ -259,8 +275,10 @@ fn call_boundary_style_program(
     child_sheet: &ViewStyleSheetId,
     inline_patch: ViewStylePatchId,
 ) -> ViewProgramResource {
+    let source_refs = view_source_refs();
     ViewProgramResource {
         program_id: "view.program.style-call-boundary".to_owned(),
+        source_refs: source_refs.clone(),
         definitions: vec![
             ViewDefinitionResource {
                 public_id: "view.Parent".to_owned(),
@@ -321,6 +339,7 @@ fn call_boundary_style_program(
             "view.Child",
             "part.child-exported",
             "part.public-child",
+            &source_refs,
         )],
         ..ViewProgramResource::default()
     }
@@ -450,8 +469,10 @@ fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
 #[test]
 fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
     let external_sheet = ViewStyleSheetId::try_new("style.external.owner").unwrap();
+    let source_refs = view_source_refs();
     let program = ViewProgramResource {
         program_id: "view.program.non-transitive-export".to_owned(),
+        source_refs: source_refs.clone(),
         definitions: vec![
             ViewDefinitionResource {
                 public_id: "view.A".to_owned(),
@@ -499,7 +520,12 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
                 source: None,
             },
         ],
-        exported_parts: vec![exported_part("view.C", "part.c.exported", "part.public-c")],
+        exported_parts: vec![exported_part(
+            "view.C",
+            "part.c.exported",
+            "part.public-c",
+            &source_refs,
+        )],
         ..ViewProgramResource::default()
     };
     let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
