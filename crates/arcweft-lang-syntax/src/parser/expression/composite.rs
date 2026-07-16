@@ -6,7 +6,7 @@ use crate::parser::document::ShadowDocumentParser;
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_open_delimiter, find_matching_close,
-    find_top_level_boundary, first_significant, trimmed_end,
+    find_top_level_boundary, first_significant, range_contains, trimmed_end,
 };
 use crate::parser::type_ref::emit_type;
 
@@ -81,6 +81,155 @@ fn emit_tuple(
     );
     parser.finish();
     CompletedNode { start_event }
+}
+
+pub(super) fn emit_bracket_sequence(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) -> CompletedNode {
+    let start_event = parser.event_position();
+    let close = find_matching_close(parser, parser.cursor() + 1, "[")
+        .unwrap_or(end)
+        .min(end);
+    let content_start = parser.cursor() + 1;
+    let kind = if range_contains(parser, content_start, close, ";") {
+        SyntaxKind::ArrayRepeatExpression
+    } else if is_compact_integer_sequence(parser, content_start, close) {
+        SyntaxKind::NumericBracketSequenceExpression
+    } else {
+        SyntaxKind::BracketSequenceExpression
+    };
+    parser.start(kind, role);
+    emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
+    parser.start(SyntaxKind::ExpressionList, SyntaxRole::Element(0));
+    if kind == SyntaxKind::NumericBracketSequenceExpression {
+        bump_until(parser, close);
+    } else {
+        emit_bracket_elements(parser, close);
+    }
+    parser.finish();
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseBracketNode,
+        "]",
+        "syntax.expression.missing_bracket_close",
+    );
+    parser.finish();
+    CompletedNode { start_event }
+}
+
+fn emit_bracket_elements(parser: &mut ShadowDocumentParser<'_, '_>, close: usize) {
+    let mut ordinal = 0_u32;
+    loop {
+        parser.bump_trivia();
+        if parser.cursor() >= close || parser.at("]") {
+            break;
+        }
+        let element_end =
+            find_top_level_boundary(parser, parser.cursor(), &[",", ";", "]"]).min(close);
+        emit_expression(parser, element_end, SyntaxRole::Element(ordinal));
+        bump_until(parser, element_end);
+        ordinal = ordinal.saturating_add(1);
+        if matches!(parser.current_text(), Some("," | ";")) {
+            parser.bump();
+        } else {
+            break;
+        }
+    }
+}
+
+fn is_compact_integer_sequence(
+    parser: &ShadowDocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> bool {
+    let mut common_suffix = None;
+    let mut saw_literal = false;
+    let mut expect_literal = true;
+    for index in start..end {
+        let Some(token) = parser.token_at(index) else {
+            return false;
+        };
+        if matches!(
+            token.kind(),
+            SyntaxKind::WhitespaceToken | SyntaxKind::NewlineToken | SyntaxKind::CommentToken
+        ) {
+            continue;
+        }
+        let text = parser.text_of(token);
+        if expect_literal {
+            if token.kind() != SyntaxKind::NumberToken {
+                return false;
+            }
+            let Some(suffix) = integer_suffix(text) else {
+                return false;
+            };
+            if saw_literal && common_suffix != Some(suffix) {
+                return false;
+            }
+            common_suffix = Some(suffix);
+            saw_literal = true;
+            expect_literal = false;
+        } else if text == "," {
+            expect_literal = true;
+        } else {
+            return false;
+        }
+    }
+    saw_literal
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum IntegerSuffix {
+    None,
+    Explicit(&'static str),
+}
+
+fn integer_suffix(source: &str) -> Option<IntegerSuffix> {
+    #[derive(Clone, Copy)]
+    enum Digits {
+        Binary,
+        Octal,
+        Decimal,
+        Hexadecimal,
+    }
+
+    const SUFFIXES: [&str; 12] = [
+        "isize", "usize", "i128", "u128", "i64", "u64", "i32", "u32", "i16", "u16", "i8", "u8",
+    ];
+    let suffix = SUFFIXES.into_iter().find(|suffix| source.ends_with(suffix));
+    let digits = suffix.map_or(source, |suffix| {
+        source
+            .strip_suffix(suffix)
+            .unwrap_or(source)
+            .trim_end_matches('_')
+    });
+    let (body, digit_kind) = if let Some(body) = digits.strip_prefix("0x") {
+        (body, Digits::Hexadecimal)
+    } else if let Some(body) = digits.strip_prefix("0X") {
+        (body, Digits::Hexadecimal)
+    } else if let Some(body) = digits.strip_prefix("0b") {
+        (body, Digits::Binary)
+    } else if let Some(body) = digits.strip_prefix("0B") {
+        (body, Digits::Binary)
+    } else if let Some(body) = digits.strip_prefix("0o") {
+        (body, Digits::Octal)
+    } else if let Some(body) = digits.strip_prefix("0O") {
+        (body, Digits::Octal)
+    } else {
+        (digits, Digits::Decimal)
+    };
+    let mut meaningful = body.chars().filter(|ch| *ch != '_').peekable();
+    meaningful.peek()?;
+    meaningful
+        .all(|ch| match digit_kind {
+            Digits::Binary => matches!(ch, '0' | '1'),
+            Digits::Octal => matches!(ch, '0'..='7'),
+            Digits::Decimal => ch.is_ascii_digit(),
+            Digits::Hexadecimal => ch.is_ascii_hexdigit(),
+        })
+        .then_some(suffix.map_or(IntegerSuffix::None, IntegerSuffix::Explicit))
 }
 
 pub(super) fn emit_closure(

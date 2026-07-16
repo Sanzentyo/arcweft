@@ -534,6 +534,63 @@ fn zero_parameter_closure_is_not_a_binary_or_expression() {
 }
 
 #[test]
+fn bracket_families_and_call_argument_shapes_are_independently_typed() {
+    let source = "proof containers(value: Int, count: Int, rest: [Int]) = consume([1, 2, 3], [value, count], [value; count], first = value, rest...)\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::NumericBracketSequenceExpression,
+        SyntaxKind::BracketSequenceExpression,
+        SyntaxKind::ArrayRepeatExpression,
+        SyntaxKind::CallExpression,
+        SyntaxKind::CallArgument,
+        SyntaxKind::NameReference,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::CallArgument)
+            .count(),
+        5
+    );
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn mixed_integer_suffixes_remain_an_ordinary_bracket_sequence() {
+    let source = "proof mixed() = [1u8, 2u16]\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert!(kinds.contains(&SyntaxKind::BracketSequenceExpression));
+    assert!(!kinds.contains(&SyntaxKind::NumericBracketSequenceExpression));
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::LiteralExpression)
+            .count(),
+        2
+    );
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn nested_type_and_pattern_families_have_independent_events() {
     let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
     let built = parse_shadow_document(&document(source)).unwrap();

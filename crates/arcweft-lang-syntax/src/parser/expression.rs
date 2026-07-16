@@ -6,8 +6,7 @@ mod control;
 use super::document::ShadowDocumentParser;
 use super::path::emit_path;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_open_delimiter, find_top_level_boundary, range_contains,
-    trimmed_end,
+    bump_until, emit_close_delimiter, emit_open_delimiter, find_top_level_boundary, trimmed_end,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -142,7 +141,7 @@ fn parse_prefix(
         "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
         "thread" => emit_prefix_operand(parser, end, SyntaxKind::ThreadExpression, role, false),
         "(" => composite::emit_parenthesized(parser, end, role),
-        "[" => emit_bracket_sequence(parser, end, role),
+        "[" => composite::emit_bracket_sequence(parser, end, role),
         "." => emit_short_variant(parser, end, role),
         "{" => control::emit_block_expression(parser, end, role),
         "if" => control::emit_if_expression(parser, end, role),
@@ -189,49 +188,6 @@ fn emit_prefix_operand(
         parser.start(SyntaxKind::MissingExpression, SyntaxRole::Operand);
         parser.finish();
     }
-    parser.finish();
-    CompletedNode { start_event }
-}
-
-fn emit_bracket_sequence(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    role: SyntaxRole,
-) -> CompletedNode {
-    let start_event = parser.event_position();
-    let close = find_top_level_boundary(parser, parser.cursor() + 1, &["]"]).min(end);
-    let kind = if range_contains(parser, parser.cursor() + 1, close, ";") {
-        SyntaxKind::ArrayRepeatExpression
-    } else {
-        SyntaxKind::BracketSequenceExpression
-    };
-    parser.start(kind, role);
-    emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
-    parser.start(SyntaxKind::ExpressionList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u32;
-    loop {
-        parser.bump_trivia();
-        if parser.cursor() >= end || parser.at("]") {
-            break;
-        }
-        let element_end =
-            find_top_level_boundary(parser, parser.cursor(), &[",", ";", "]"]).min(end);
-        emit_expression(parser, element_end, SyntaxRole::Element(ordinal));
-        bump_until(parser, element_end);
-        ordinal = ordinal.saturating_add(1);
-        if matches!(parser.current_text(), Some("," | ";")) {
-            parser.bump();
-        } else {
-            break;
-        }
-    }
-    parser.finish();
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseBracketNode,
-        "]",
-        "syntax.expression.missing_bracket_close",
-    );
     parser.finish();
     CompletedNode { start_event }
 }
@@ -320,10 +276,7 @@ fn emit_call(
             break;
         }
         let argument_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(end);
-        parser.start(SyntaxKind::CallArgument, SyntaxRole::Argument(ordinal));
-        emit_expression(parser, argument_end, SyntaxRole::Operand);
-        bump_until(parser, argument_end);
-        parser.finish();
+        emit_call_argument(parser, argument_end, ordinal);
         ordinal = ordinal.saturating_add(1);
         if parser.at(",") {
             parser.bump();
@@ -342,6 +295,29 @@ fn emit_call(
     CompletedNode {
         start_event: left.start_event,
     }
+}
+
+fn emit_call_argument(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+    parser.start(SyntaxKind::CallArgument, SyntaxRole::Argument(ordinal));
+    let assignment = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
+    if assignment < end {
+        parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
+        bump_until(parser, trimmed_end(parser, parser.cursor(), assignment));
+        parser.finish();
+        bump_until(parser, assignment);
+        parser.bump();
+        parser.bump_trivia();
+        emit_expression(parser, end, SyntaxRole::Operand);
+    } else {
+        let spread = find_top_level_boundary(parser, parser.cursor(), &["..."]).min(end);
+        emit_expression(parser, spread, SyntaxRole::Operand);
+        bump_until(parser, spread);
+        if parser.at("...") {
+            parser.bump();
+        }
+    }
+    bump_until(parser, end);
+    parser.finish();
 }
 
 fn emit_index(
