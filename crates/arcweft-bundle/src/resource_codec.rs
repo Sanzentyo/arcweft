@@ -36,14 +36,18 @@ pub use product_catalog::{
     AudioGraphSection as CompactAudioGraphSection,
     ContentCatalogSection as CompactContentCatalogSection,
     DisplayCatalogSection as CompactDisplayCatalogSection,
-    SourceMapSection as CompactSourceMapSection,
 };
 pub use runtime::{
     AdapterRequirementsSection as CompactAdapterRequirementsSection,
     EntrypointsSection as CompactEntrypointsSection,
     RuntimeTypesSection as CompactRuntimeTypesSection,
 };
-pub use source_map::{SourceMapEntry, SourceMapIndex, SourceMapSourceId, SourceMapSourceIdError};
+pub use source_map::{
+    MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, MAX_SOURCE_BYTES_PER_DOCUMENT,
+    MAX_SOURCE_DISPLAY_NAME_BYTES, MAX_SOURCE_MAP_DOCUMENTS, MAX_SOURCE_MAP_TOTAL_UTF8_BYTES,
+    ProductSourceId, SourceMapBuildError, SourceMapCodecError, SourceMapDocument, SourceMapEntry,
+    SourceMapIndex, SourceMapSection, SourceMapSourceId, SourceMapSourceIdError,
+};
 pub use table::{EnumRegistry, EnumSymbol, PublicIdRef, PublicIdTable, StringId, StringTable};
 pub use types::{CrossSectionRef, DigestRef, SourceRangeRef, StableId};
 pub use view::{

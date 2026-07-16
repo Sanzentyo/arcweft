@@ -17,6 +17,7 @@ arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-serde-bridge = { workspace = true, optional = true }
+arcweft-source = { path = "../arcweft-source" }
 arcweft-view = { path = "../arcweft-view" }
 apache-avro = { workspace = true, optional = true }
 blake3.workspace = true

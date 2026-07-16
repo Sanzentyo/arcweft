@@ -11,7 +11,7 @@ use crate::resource_codec::runtime::{
 };
 use crate::resource_codec::{
     CompactAssetCatalogSection, CompactAudioGraphSection, CompactContentCatalogSection,
-    CompactDisplayCatalogSection, CompactSourceMapSection, SourceMapIndex, SourceMapSourceId,
+    CompactDisplayCatalogSection, SourceMapSection,
 };
 use crate::resource_codec::{
     ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
@@ -24,7 +24,9 @@ use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
 use serde::{Deserialize, Deserializer, Serialize};
 
+mod source_projection;
 mod style_cross_section;
+use source_projection::{bundle_source_from_map, source_map_for_bundle, validate_view_sources};
 use style_cross_section::{validate_style_bundle_view, validate_style_section_inputs};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
@@ -73,6 +75,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
         agent: bundle.agent.clone(),
     };
     let manifest = encode_json(&product_manifest)?;
+    let source_map = source_map_for_bundle(bundle)?;
     let sections = vec![
         required_section(
             BundleSectionKind::ProgramBytecode,
@@ -114,9 +117,11 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
         ),
         optional_section(
             BundleSectionKind::SourceMap,
-            CompactSourceMapSection::from_bundle(bundle)
-                .encode_canonical_section()
-                .map_err(|error| compact_encode_error(&error))?,
+            source_map.encode_canonical_section().map_err(|error| {
+                BundleCodecError::EncodeAwfb {
+                    message: error.to_string(),
+                }
+            })?,
         ),
     ]
     .into_iter()
@@ -189,13 +194,15 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         view_style.as_ref(),
         source_map.as_ref(),
     )?;
-    let source = source_map.map_or_else(
-        || BundleSource {
-            label: product_manifest.manifest.source_label.clone(),
-            text: String::new(),
+    let source = source_map.as_ref().map_or_else(
+        || {
+            Ok(BundleSource {
+                label: product_manifest.manifest.source_label.clone(),
+                text: String::new(),
+            })
         },
-        |section| section.source,
-    );
+        bundle_source_from_map,
+    )?;
     let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
     let view_text = optional_view_text(&view, external_sections)?;
     let view_input = optional_view_input(&view, external_sections)?;
@@ -237,50 +244,6 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     };
     bundle.validate_schema_and_kind()?;
     Ok(bundle)
-}
-
-fn validate_view_sources(
-    view_program: Option<&ViewProgramResource>,
-    view_style: Option<&ViewStyleResource>,
-    source_map: Option<&CompactSourceMapSection>,
-) -> Result<(), BundleCodecError> {
-    let program = view_program.filter(|program| !program.exported_parts.is_empty());
-    let style = view_style.filter(|style| {
-        style
-            .program
-            .sheets()
-            .iter()
-            .flat_map(arcweft_view::style::ViewStyleSheet::rules)
-            .any(|rule| rule.environment().is_some())
-    });
-    if program.is_none() && style.is_none() {
-        return Ok(());
-    }
-    let source = source_map.ok_or_else(|| BundleCodecError::DecodeAwfb {
-        message: "source-provenanced View data requires a product source-map section".to_owned(),
-    })?;
-    let index = SourceMapIndex::from_source(&source.source).map_err(|error| {
-        BundleCodecError::DecodeAwfb {
-            message: error.to_string(),
-        }
-    })?;
-    if let Some(program) = program {
-        program
-            .validate_export_sources(&index)
-            .map_err(|error| compact_decode_error(&error))?;
-    }
-    if let Some(style) = style {
-        let source_id =
-            SourceMapSourceId::try_new(source.source.label.clone()).map_err(|error| {
-                BundleCodecError::DecodeAwfb {
-                    message: error.to_string(),
-                }
-            })?;
-        style
-            .validate_environment_sources(&index, &source_id)
-            .map_err(|error| compact_decode_error(&error))?;
-    }
-    Ok(())
 }
 
 fn required_runtime_types(
@@ -473,12 +436,12 @@ fn optional_display_catalog(
 fn optional_source_map(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactSourceMapSection>, BundleCodecError> {
+) -> Result<Option<SourceMapSection>, BundleCodecError> {
     optional_compact_payload(
         view,
         external_sections,
         BundleSectionKind::SourceMap,
-        CompactSourceMapSection::decode_canonical_section,
+        SourceMapSection::decode_canonical_section,
     )
 }
 
@@ -604,12 +567,15 @@ fn required_compact_payload<T>(
     decode(&bytes).map_err(|error| compact_decode_error(&error))
 }
 
-fn optional_compact_payload<T>(
+fn optional_compact_payload<T, E>(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
     kind: BundleSectionKind,
-    decode: fn(&[u8]) -> Result<T, crate::resource_codec::SectionCodecError>,
-) -> Result<Option<T>, BundleCodecError> {
+    decode: fn(&[u8]) -> Result<T, E>,
+) -> Result<Option<T>, BundleCodecError>
+where
+    E: std::fmt::Display,
+{
     let mut matches = view
         .sections()
         .iter()
@@ -634,7 +600,9 @@ fn optional_compact_payload<T>(
     };
     decode(&bytes)
         .map(Some)
-        .map_err(|error| compact_decode_error(&error))
+        .map_err(|error| BundleCodecError::DecodeAwfb {
+            message: error.to_string(),
+        })
 }
 
 fn compact_encode_error(error: &crate::resource_codec::SectionCodecError) -> BundleCodecError {
@@ -783,16 +751,14 @@ mod tests {
         AWFB_SECTION_SCHEMA_VERSION, CompactAdapterRequirementsSection, CompactEntrypointsSection,
         CompactRuntimeTypesSection, ProductExecutablePayload, ProductManifest, container_kind,
         encode_json, optional_asset_catalog_section, optional_audio_graph_section,
-        optional_section, required_section, section_id,
+        optional_section, required_section, section_id, source_map_for_bundle,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
         SectionInput, encode_bundle,
     };
     use crate::fx_definitions::FxDefinitions;
-    use crate::resource_codec::{
-        CompactContentCatalogSection, CompactDisplayCatalogSection, CompactSourceMapSection,
-    };
+    use crate::resource_codec::{CompactContentCatalogSection, CompactDisplayCatalogSection};
     use crate::{
         ArcweftBundle, BundleCodecError, BundleFormat, BundleManifest, BundleRuntimeSummary,
         BundleSource,
@@ -1107,7 +1073,8 @@ mod tests {
             ),
             optional_section(
                 BundleSectionKind::SourceMap,
-                CompactSourceMapSection::from_bundle(bundle)
+                source_map_for_bundle(bundle)
+                    .expect("source map builds")
                     .encode_canonical_section()
                     .expect("source encode"),
             ),

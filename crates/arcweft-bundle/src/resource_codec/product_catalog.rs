@@ -7,7 +7,7 @@
 
 use crate::container::{BundleDigest, BundleSectionKind};
 use crate::patch::PatchCompatibility;
-use crate::{ArcweftBundle, BundleImageAsset, BundleImageObject, BundleSource, BundleVirtualFile};
+use crate::{ArcweftBundle, BundleImageAsset, BundleImageObject, BundleVirtualFile};
 use arcweft_audio_core::graph::AudioGraph;
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
@@ -17,6 +17,7 @@ use super::budget::{SectionCodecBudget, check_budget};
 use super::error::SectionCodecError;
 use super::field::{FieldId, FieldRegistry, FieldSpec, ResourceField, ResourceWireType};
 use super::kind::ProductSectionCodecKind;
+use super::source_map::SourceMapSection;
 use super::table::{EnumRegistry, EnumSymbol, PublicIdTable, StringTable};
 use super::wire::ProductResourceEnvelope;
 
@@ -53,12 +54,6 @@ pub struct AssetCatalogSection {
 pub struct DisplayCatalogSection {
     pub display: LineDisplayCatalog,
     pub image_objects: Vec<BundleImageObject>,
-}
-
-/// Optional source-map section for the current source bundle payload.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SourceMapSection {
-    pub source: BundleSource,
 }
 
 /// Optional audio graph section.
@@ -255,33 +250,6 @@ impl DisplayCatalogSection {
     }
 }
 
-impl SourceMapSection {
-    pub fn from_bundle(bundle: &ArcweftBundle) -> Self {
-        Self {
-            source: bundle.source.clone(),
-        }
-    }
-
-    pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
-        encode_family_section(
-            ProductSectionCodecKind::SourceMap,
-            "source_map",
-            self,
-            [self.source.label.clone()],
-            ProductCatalogBudget::default(),
-        )
-    }
-
-    pub fn decode_canonical_section(bytes: &[u8]) -> Result<Self, SectionCodecError> {
-        decode_family_section(
-            bytes,
-            ProductSectionCodecKind::SourceMap,
-            "source_map",
-            ProductCatalogBudget::default(),
-        )
-    }
-}
-
 impl AudioGraphSection {
     pub fn from_graph(graph: AudioGraph) -> Self {
         Self { graph }
@@ -371,8 +339,10 @@ pub fn migrated_product_catalog_section_compatibility(
             Ok(Some(PatchCompatibility::ContentOnly))
         }
         ProductSectionCodecKind::SourceMap => {
-            let _old = SourceMapSection::decode_canonical_section(old_bytes)?;
-            let _new = SourceMapSection::decode_canonical_section(new_bytes)?;
+            let _old = SourceMapSection::decode_canonical_section(old_bytes)
+                .map_err(|_| SectionCodecError::NonCanonicalTable("source_map"))?;
+            let _new = SourceMapSection::decode_canonical_section(new_bytes)
+                .map_err(|_| SectionCodecError::NonCanonicalTable("source_map"))?;
             Ok(Some(PatchCompatibility::ContentOnly))
         }
         ProductSectionCodecKind::AudioGraph => {

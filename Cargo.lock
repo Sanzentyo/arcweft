@@ -453,6 +453,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-serde-bridge",
+ "arcweft-source",
  "arcweft-view",
  "blake3",
  "ciborium",

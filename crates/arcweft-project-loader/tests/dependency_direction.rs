@@ -11,16 +11,20 @@ fn project_loader_has_required_direct_construction_dependencies() {
         .expect("resolved nodes array");
 
     let source = package_id(packages, "arcweft-source");
+    let bundle = package_id(packages, "arcweft-bundle");
     let character = package_id(packages, "arcweft-character");
     let launch = package_id(packages, "arcweft-launch");
     let project = package_id(packages, "arcweft-project");
     let hir = package_id(packages, "arcweft-lang-hir");
     let sema = package_id(packages, "arcweft-lang-sema");
+    let view = package_id(packages, "arcweft-view");
     let loader = package_id(packages, "arcweft-project-loader");
     let blake3 = package_id(packages, "blake3");
 
     let direct = |id: &str| normal_dependencies(nodes, id);
     assert!(direct(source).contains(blake3));
+    assert!(direct(bundle).contains(source));
+    assert!(direct(view).contains(blake3));
     assert!(direct(character).contains(source));
     assert!(direct(character).contains(blake3));
     assert!(direct(launch).contains(source));
@@ -31,6 +35,8 @@ fn project_loader_has_required_direct_construction_dependencies() {
 
     assert!(!has_non_dev_path(nodes, sema, loader));
     assert!(!has_non_dev_path(nodes, hir, loader));
+    assert!(!has_non_dev_path(nodes, source, bundle));
+    assert!(!has_non_dev_path(nodes, sema, bundle));
     assert!(has_non_dev_path(nodes, loader, sema));
 }
 

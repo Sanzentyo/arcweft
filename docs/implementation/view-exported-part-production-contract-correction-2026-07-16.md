@@ -7,7 +7,7 @@
 - Production base for this increment after final validation rebase: Jujutsu
   change `mytryolq` / Git `8a6d4a62a138`
 - Working change: Jujutsu change `rqmwxyuq`
-- Status: Increment 1 is implemented; the complete correction remains open
+- Status: Increments 1 and 2 are implemented; the complete correction remains open
 
 ## Package intake
 
@@ -153,21 +153,103 @@ After rebasing onto Git `8a6d4a62a138`, the increment was verified again with
 
 The following package requirements are explicitly not complete:
 
-1. multi-source schema-v2 SourceMap ownership and direct
-   `arcweft-bundle -> arcweft-source` dependency;
-2. bundle complete-product typestate and source-index validation;
-3. typed product definition/call tables and immutable runtime
+1. bundle complete-product typestate and source-index validation;
+2. typed product definition/call tables and immutable runtime
    `ViewProgramCatalog`/`ViewDefinitionIndex` authority;
-4. typed static instruction inventory, canonical semantic transcript, and
+3. typed static instruction inventory, canonical semantic transcript, and
    accepted program revision derivation;
-5. semantic occurrence reconciliation, opaque direct-boundary capability, and
+4. semantic occurrence reconciliation, opaque direct-boundary capability, and
    persistent-owner rejection for anonymous Rust Views;
-6. six-phase candidate-first replacement with exact rollback, generation, and
+5. six-phase candidate-first replacement with exact rollback, generation, and
    targeted cache/trace invalidation;
-7. final ordinary-parser rejection accounting with no historical recognizer;
+6. final ordinary-parser rejection accounting with no historical recognizer;
    and
-8. contextual Style application edges plus atomic LSP rename, symbols,
+7. contextual Style application edges plus atomic LSP rename, symbols,
    semantic tokens, limits, and the remaining test matrix.
 
 The correction must remain open until those increments and their Tier-0/Tier-1,
 codec, runtime, replacement, tooling, structural, and migration gates pass.
+
+## Increment 2 implementation
+
+`arcweft-bundle` now directly depends on `arcweft-source` and owns the one
+canonical multi-source `SourceMapSection`. `ProductSourceId` is derived only
+from `SourceDocumentId`; the section retains exact UTF-8, typed display name,
+source revision and extent, sorts by product source identity, and computes the
+order-independent `SourceSetRevision`.
+
+The compact SourceMap payload is schema 2. Its fixed transcript references the
+common public-ID and string tables, and the decoder independently verifies the
+derived product identity, exact source revision, exact extent, UTF-8,
+source-set revision, record count, limits, and canonical byte-for-byte
+re-encoding. The old serde single-source transcript and
+`SourceMapSection::from_bundle` are deleted; schema 1 and unknown optional
+fields are rejected rather than creating a second accepted byte spelling.
+
+Construction preflights document count, duplicate logical documents,
+cryptographic identity collisions, ID/display/source/total byte budgets, and
+checked arithmetic before copying source text into the candidate. The exact
+limit and one-over tests exercise 65,536 documents, 8 MiB per document, and 64
+MiB aggregate source text.
+
+The existing `BundleSource` and `SourceMapIndex::from_source` remain only at
+the explicit Increment 3 migration boundary selected by the package. Product
+AWFB encoding constructs the new section through `try_from_documents`;
+decoding can temporarily project exactly one accepted document back into the
+current in-memory bundle model. A multi-document section is never truncated or
+silently selected: that projection rejects until Increment 3 removes the
+single-source bundle boundary and introduces complete-product typestate.
+
+Focused verification with `CARGO_INCREMENTAL=0`:
+
+- `cargo test -p arcweft-bundle --test source_map -- --nocapture` — 7 passed;
+- `cargo test -p arcweft-bundle --test product_catalog_resource_codecs` — 4
+  passed;
+- `cargo test -p arcweft-bundle` — all unit, integration, and doc tests passed;
+- the exact Cargo metadata dependency-contract test — passed; and
+- `cargo clippy -p arcweft-bundle -p arcweft-project-loader --all-targets
+  --all-features -- -D warnings` — passed after splitting transcript and
+  per-document decode responsibilities.
+
+The final Increment 2 checkout also passed:
+
+- `cargo check --workspace --all-targets --all-features`;
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`;
+- `cargo test -p arcweft-bundle`, including 90 unit tests and every bundle
+  integration/doc-test target; and
+- `cargo fmt --all -- --check`.
+
+The first workspace check attempt stopped because the linked worktree did not
+contain the gitignored `web/assets/noto-sans-jp-vf.ttf` test fixture. The exact
+fixture already present in the primary checkout was copied into this worktree
+for validation only; it is ignored and is not part of the change. The rerun
+passed.
+
+## Increment 2 structural audit
+
+The canonical audit ran on working change `yozwpppm` after rebasing onto Git
+`bacf6c5a71c0`:
+
+```bash
+cargo +nightly -Zscript tools/structure-audit.rs --root . \
+  --write docs/implementation/structure-audits/view-exported-part-correction-increment2-2026-07-17
+```
+
+It scanned 3,081 files, 1,543 Rust files, 707,496 Rust physical LOC, and 90
+package manifests. The result was 0 errors and 128 repository-wide warnings.
+Exact reports are checked in under
+`docs/implementation/structure-audits/view-exported-part-correction-increment2-2026-07-17/`.
+
+The new SourceMap responsibility modules are 14-270 physical LOC and the new
+boundary test is 299 LOC. `product.rs` initially crossed the 1,200 LOC review
+threshold, so SourceMap validation and temporary single-source projection were
+moved into `product/source_projection.rs`; the production orchestrator is now
+1,174 LOC and no longer triggers the size or embedded-test warning. The direct
+`arcweft-bundle -> arcweft-source` edge is intentional, while metadata tests
+prove there is no reverse `arcweft-source -> arcweft-bundle` path and no
+`arcweft-lang-sema -> arcweft-bundle` path.
+
+After that rebase, the focused SourceMap tests, product-catalog codec tests,
+exact dependency-direction test, bundle/project-loader check and clippy, and
+workspace check and clippy all passed again with the same feature sets listed
+above.

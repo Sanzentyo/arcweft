@@ -3,9 +3,9 @@ use arcweft_audio_core::graph::{
 };
 use arcweft_bundle::container::{BundleSectionKind, BundleView, ReadBudget};
 use arcweft_bundle::resource_codec::{
-    CompactAssetCatalogSection, CompactAudioGraphSection, CompactDisplayCatalogSection,
-    CompactSourceMapSection, FieldId, ProductResourceEnvelope, ProductSectionCodecKind,
-    ResourceField, ResourceWireType, SectionCodecBudget,
+    CompactAssetCatalogSection, CompactAudioGraphSection, CompactDisplayCatalogSection, FieldId,
+    ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
+    SectionCodecBudget, SourceMapSection,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
@@ -22,6 +22,7 @@ use arcweft_core::awbc::schema::{
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_interaction_model::audio::{AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli};
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 #[test]
 fn product_catalog_compact_codecs_round_trip_current_bundle_resources() {
@@ -55,14 +56,14 @@ fn product_catalog_compact_codecs_round_trip_current_bundle_resources() {
         display
     );
 
-    let source = CompactSourceMapSection::from_bundle(&bundle);
+    let source = source_map(&bundle);
     let source_bytes = source.encode_canonical_section().expect("source encodes");
     assert_eq!(
         source_bytes[..8],
         ProductSectionCodecKind::SourceMap.magic()
     );
     assert_eq!(
-        CompactSourceMapSection::decode_canonical_section(&source_bytes).expect("source decodes"),
+        SourceMapSection::decode_canonical_section(&source_bytes).expect("source decodes"),
         source
     );
 
@@ -128,8 +129,8 @@ fn product_awfb_uses_compact_sections_for_migrated_catalog_families() {
 }
 
 #[test]
-fn product_catalog_unknown_optional_fields_skip_and_unknown_required_reject() {
-    let source = CompactSourceMapSection::from_bundle(&fixture_bundle());
+fn canonical_source_map_rejects_unknown_optional_and_required_fields() {
+    let source = source_map(&fixture_bundle());
     let bytes = source.encode_canonical_section().expect("source encodes");
     let envelope = ProductResourceEnvelope::decode_all_fields(
         &bytes,
@@ -142,10 +143,9 @@ fn product_catalog_unknown_optional_fields_skip_and_unknown_required_reject() {
         &envelope,
         ResourceField::optional(FieldId(30_000), ResourceWireType::Bytes, b"future"),
     );
-    assert_eq!(
-        CompactSourceMapSection::decode_canonical_section(&optional_bytes)
-            .expect("unknown optional field skips"),
-        source
+    assert!(
+        SourceMapSection::decode_canonical_section(&optional_bytes).is_err(),
+        "canonical source maps reject unknown optional fields rather than accepting a second byte spelling"
     );
 
     let required_bytes = envelope_with_extra_field(
@@ -153,14 +153,14 @@ fn product_catalog_unknown_optional_fields_skip_and_unknown_required_reject() {
         ResourceField::required(FieldId(30_001), ResourceWireType::Bytes, b"future"),
     );
     assert!(
-        CompactSourceMapSection::decode_canonical_section(&required_bytes).is_err(),
+        SourceMapSection::decode_canonical_section(&required_bytes).is_err(),
         "unknown required field must reject"
     );
 }
 
 #[test]
 fn product_catalog_common_budget_failures_are_reported() {
-    let source = CompactSourceMapSection::from_bundle(&fixture_bundle());
+    let source = source_map(&fixture_bundle());
     let bytes = source.encode_canonical_section().expect("source encodes");
     let tiny_budget = SectionCodecBudget {
         bytes: 1,
@@ -276,6 +276,16 @@ fn fixture_bundle() -> ArcweftBundle {
         }],
         snapshots: Vec::new(),
     })
+}
+
+fn source_map(bundle: &ArcweftBundle) -> SourceMapSection {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(bundle.source.label.clone()).expect("source document id"),
+        SourceName::path(bundle.source.label.clone()),
+        bundle.source.text.clone(),
+    )
+    .expect("source document");
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn fixture_image_object() -> BundleImageObject {
