@@ -599,7 +599,11 @@ mod tests {
             .parse::<Uri>()
             .expect("manifest URI");
         AcceptedProfileCandidate::try_new(
-            AcceptedProfileKey::new(&workspace_uri, &manifest_uri, ProfileId::new("test")),
+            AcceptedProfileKey::new(
+                &workspace_uri,
+                &manifest_uri,
+                ProfileId::new("test").expect("valid test profile ID"),
+            ),
             world,
             project,
             AcceptedOverlaySet::default(),
