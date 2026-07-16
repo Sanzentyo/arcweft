@@ -64,6 +64,16 @@ pub(super) fn emit_dialogue_context_expression(
     }
 }
 
+/// Emits one owner-provided named plan section through the shared expression
+/// block grammar without teaching ordinary expression dispatch owner names.
+pub(super) fn emit_named_plan_block(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) {
+    composite::emit_named_block(parser, end, role);
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct DialogueSurface {
     open: usize,

@@ -256,6 +256,8 @@ fn structured_declaration_after_outer_prefixes(
             | SyntaxKind::TraitItem
             | SyntaxKind::ImplItem
             | SyntaxKind::ResourceDeclarationItem
+            | SyntaxKind::TestItem
+            | SyntaxKind::BenchItem
     )
     .then_some((declaration, kind))
 }
@@ -532,6 +534,16 @@ fn emit_declaration_item(
             events,
             budget,
         ),
+        SyntaxKind::TestItem | SyntaxKind::BenchItem => {
+            super::test_bench_grammar::emit_declaration(
+                source,
+                tokens,
+                kind,
+                SyntaxRole::Element(ordinal),
+                events,
+                budget,
+            );
+        }
         _ => unreachable!("only structured declaration kinds are grouped"),
     }
     budget_failure(budget)?;
