@@ -13,6 +13,7 @@ use crate::{
 use arcweft_presentation::{
     appearance::PresentationEnvironment, interaction::InteractionState, semantic::SemanticRole,
 };
+use std::sync::Arc;
 
 /// Frame-local display item identifier.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -65,7 +66,7 @@ pub struct DisplayList {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedDisplayItem {
     item: DisplayItem,
-    style: ComputedViewStyle,
+    style: Arc<ComputedViewStyle>,
 }
 
 /// Ordered display list after canonical Style resolution.
@@ -145,7 +146,7 @@ impl DisplayList {
             .iter()
             .map(|node| style_facts(node, semantics, interaction))
             .collect::<Result<Vec<_>, ViewError>>()?;
-        let mut computed: Vec<Option<ComputedViewStyle>> = vec![None; self.style_nodes.len()];
+        let mut computed: Vec<Option<Arc<ComputedViewStyle>>> = vec![None; self.style_nodes.len()];
         // Detached fragment rendering is projection-only. Mounted player paths
         // supply their root's runtime-owned seed and participate in provider
         // invalidation; this path deliberately does neither.
@@ -174,7 +175,8 @@ impl DisplayList {
             let parent = style_node
                 .parent
                 .and_then(|parent| computed.get(parent.0 as usize))
-                .and_then(Option::as_ref);
+                .and_then(Option::as_ref)
+                .map(Arc::as_ref);
             let parent_node_key = style_node
                 .parent
                 .map(|parent| {
@@ -235,7 +237,7 @@ impl ResolvedDisplayItem {
         self.item
     }
 
-    pub const fn style(&self) -> &ComputedViewStyle {
+    pub fn style(&self) -> &ComputedViewStyle {
         &self.style
     }
 }

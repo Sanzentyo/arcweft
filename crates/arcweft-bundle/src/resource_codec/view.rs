@@ -15,7 +15,10 @@ mod model;
 mod runtime_control_style;
 mod style_contract;
 
-pub use codec::{ViewExportValidationError, ViewResourceBudget, ViewResourceExport};
+pub use codec::{
+    ViewExportValidationError, ViewResourceBudget, ViewResourceExport,
+    ViewStyleEnvironmentSourceError,
+};
 pub use compat::{ViewResourceCompatibility, migrated_view_section_compatibility};
 pub use dialogue_contract::DialogueViewContractError;
 pub use merge::{ViewProgramStyleResources, ViewResourceMergeError};

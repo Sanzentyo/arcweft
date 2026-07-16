@@ -59,6 +59,7 @@ fn style_rule(
     .unwrap();
     ViewStyleRule::new(
         selector,
+        None,
         vec![
             ViewStyleDeclaration::new(
                 ViewPropertyKind::BackgroundColor,

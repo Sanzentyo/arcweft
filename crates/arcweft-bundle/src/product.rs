@@ -11,7 +11,7 @@ use crate::resource_codec::runtime::{
 };
 use crate::resource_codec::{
     CompactAssetCatalogSection, CompactAudioGraphSection, CompactContentCatalogSection,
-    CompactDisplayCatalogSection, CompactSourceMapSection, SourceMapIndex,
+    CompactDisplayCatalogSection, CompactSourceMapSection, SourceMapIndex, SourceMapSourceId,
 };
 use crate::resource_codec::{
     ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
@@ -183,7 +183,12 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let display = optional_display_catalog(&view, external_sections)?.unwrap_or_default();
     let source_map = optional_source_map(&view, external_sections)?;
     let view_program = optional_view_program(&view, external_sections)?;
-    validate_view_export_sources(view_program.as_ref(), source_map.as_ref())?;
+    let view_style = optional_view_style(&view, external_sections)?;
+    validate_view_sources(
+        view_program.as_ref(),
+        view_style.as_ref(),
+        source_map.as_ref(),
+    )?;
     let source = source_map.map_or_else(
         || BundleSource {
             label: product_manifest.manifest.source_label.clone(),
@@ -192,7 +197,6 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         |section| section.source,
     );
     let audio = optional_audio_graph(&view, external_sections)?.map(|section| section.graph);
-    let view_style = optional_view_style(&view, external_sections)?;
     let view_text = optional_view_text(&view, external_sections)?;
     let view_input = optional_view_input(&view, external_sections)?;
     let view_theme = optional_view_theme(&view, external_sections)?;
@@ -235,24 +239,48 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     Ok(bundle)
 }
 
-fn validate_view_export_sources(
+fn validate_view_sources(
     view_program: Option<&ViewProgramResource>,
+    view_style: Option<&ViewStyleResource>,
     source_map: Option<&CompactSourceMapSection>,
 ) -> Result<(), BundleCodecError> {
-    let Some(program) = view_program.filter(|program| !program.exported_parts.is_empty()) else {
+    let program = view_program.filter(|program| !program.exported_parts.is_empty());
+    let style = view_style.filter(|style| {
+        style
+            .program
+            .sheets()
+            .iter()
+            .flat_map(arcweft_view::style::ViewStyleSheet::rules)
+            .any(|rule| rule.environment().is_some())
+    });
+    if program.is_none() && style.is_none() {
         return Ok(());
-    };
+    }
     let source = source_map.ok_or_else(|| BundleCodecError::DecodeAwfb {
-        message: "exported View parts require a product source-map section".to_owned(),
+        message: "source-provenanced View data requires a product source-map section".to_owned(),
     })?;
     let index = SourceMapIndex::from_source(&source.source).map_err(|error| {
         BundleCodecError::DecodeAwfb {
             message: error.to_string(),
         }
     })?;
-    program
-        .validate_export_sources(&index)
-        .map_err(|error| compact_decode_error(&error))
+    if let Some(program) = program {
+        program
+            .validate_export_sources(&index)
+            .map_err(|error| compact_decode_error(&error))?;
+    }
+    if let Some(style) = style {
+        let source_id =
+            SourceMapSourceId::try_new(source.source.label.clone()).map_err(|error| {
+                BundleCodecError::DecodeAwfb {
+                    message: error.to_string(),
+                }
+            })?;
+        style
+            .validate_environment_sources(&index, &source_id)
+            .map_err(|error| compact_decode_error(&error))?;
+    }
+    Ok(())
 }
 
 fn required_runtime_types(

@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-source = { path = "../arcweft-source" }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

@@ -17,8 +17,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewTextBlockBounds,
     ViewTextBlockResource, ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy,
     ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
-    ViewThemeEnvironmentDefaults, ViewThemeResource, ViewValueInputNamespace,
-    ViewValueInputResource, ViewValueInputSource, migrated_view_section_compatibility,
+    ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
+    migrated_view_section_compatibility,
 };
 use arcweft_render_text::{RichTextDocument, RichTextNode};
 
@@ -29,7 +29,7 @@ use arcweft_bundle::resource_codec::{
     SourceRangeRef,
 };
 use arcweft_presentation::appearance::{
-    ColorSchemePreference, ContrastPreference, PresentationColor, SystemColor,
+    PresentationColor, PresentationEnvironmentOverrides, SystemColor,
 };
 use arcweft_presentation::fx::{
     FiniteF32, FxId, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
@@ -117,7 +117,12 @@ fn emit_text_requires_a_one_to_one_owned_text_block_graph() {
     );
 
     let mut duplicate = fixture_program();
-    duplicate.instructions[2] = duplicate.instructions[1].clone();
+    let mut duplicate_emit = duplicate.instructions[1].clone();
+    let ViewProgramInstruction::EmitText { part, .. } = &mut duplicate_emit else {
+        panic!("fixture instruction 1 emits text");
+    };
+    *part = None;
+    duplicate.instructions[2] = duplicate_emit;
     assert_eq!(
         duplicate
             .encode_canonical_section()
@@ -1448,7 +1453,7 @@ fn fixture_style() -> ViewStyleResource {
     )
     .expect("valid declaration");
     let rule =
-        ViewStyleRule::new(selector, vec![declaration], 0, sheet_source).expect("valid rule");
+        ViewStyleRule::new(selector, None, vec![declaration], 0, sheet_source).expect("valid rule");
     let sheet =
         ViewStyleSheet::new(sheet_id.clone(), vec![token], vec![rule]).expect("valid sheet");
     let patch = ViewStylePatch::new(
@@ -1582,12 +1587,7 @@ fn fixture_theme(accent: PresentationColor) -> ViewThemeResource {
             dark: Some(PresentationColor::rgb(0x58, 0xA6, 0xFF)),
             source: None,
         }],
-        defaults: ViewThemeEnvironmentDefaults {
-            color_scheme: ColorSchemePreference::default(),
-            contrast: ContrastPreference::Standard,
-            reduce_motion: false,
-            text_scale_milli: 1_000,
-        },
+        environment: PresentationEnvironmentOverrides::empty(),
         dark_mode_visual_golden_ids: vec!["golden.view.dialogue.dark".to_owned()],
     }
 }

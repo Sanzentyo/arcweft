@@ -19,7 +19,6 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewStyleNode, BundleViewStyleNodeKind,
 };
 use arcweft_view::ViewMountId;
-use arcweft_view::ViewPartName;
 use arcweft_view::style::{
     ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes,
     ViewLengthMilli, ViewPropertyKind, ViewShadow, ViewSpecifiedValue, ViewStyleApplication,
@@ -27,6 +26,7 @@ use arcweft_view::style::{
     ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;
@@ -269,7 +269,7 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
                 element: ViewElementKind::Panel,
                 target: Some((*part).to_owned()),
             },
-            part: Some((*part).to_owned()),
+            part: Some(ViewPartLocalName::try_new(*part).expect("fixture part is valid")),
             exported_part: None,
             applications: vec![ViewStyleApplication::new(
                 ViewStyleApplicationTarget::named(exact_style_sheet_id()),
@@ -357,7 +357,7 @@ fn panel_part(public_id: &str) -> ViewProgramInstruction {
         element: ViewElementKind::Panel,
         target: None,
         styles: Vec::new(),
-        part: Some(public_id.to_owned()),
+        part: Some(ViewPartLocalName::try_new(public_id).expect("fixture part is valid")),
         key: None,
         source: None,
     }
@@ -455,6 +455,7 @@ fn surface_rule<const N: usize>(
     .expect("element-and-part selector is non-empty");
     ViewStyleRule::new(
         ViewStyleSelector::new(vec![sequence]).expect("single selector sequence is valid"),
+        None,
         declarations.into(),
         source_order,
         source,

@@ -12,7 +12,10 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::appearance::{
-    PresentationColor, PresentationEnvironment, SystemPaletteSet,
+    ColorScheme, ContrastPreference, PresentationColor, PresentationEnvironment,
+    PresentationEnvironmentField, PresentationEnvironmentFieldSet,
+    PresentationEnvironmentOverrides, PresentationEnvironmentValue, PresentationEnvironmentValues,
+    SystemColor, SystemPaletteSet, TextScaleMilli,
 };
 use arcweft_presentation::hover::HoverPath;
 use arcweft_presentation::input::{InteractionTarget, PointerId};
@@ -23,6 +26,7 @@ use arcweft_render_text::{
 };
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
+use arcweft_runtime_driver::session::SessionEnvironmentState;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewInstancePathSegment, BundleViewMountOutput,
     BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOutput,
@@ -31,14 +35,15 @@ use arcweft_runtime_driver::view_runtime::{
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
     ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedGeneration,
-    ViewColorValue, ViewElementState, ViewInheritedBoxAxes, ViewInteractionSelector,
-    ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewScalarMilli, ViewSpecifiedValue,
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
-    ViewStyleContribution, ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleNodeFacts,
-    ViewStyleNodeKey, ViewStylePatchId, ViewStylePriority, ViewStyleProgram,
-    ViewStyleResolveContext, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSourceId, ViewStyleTraceMode,
+    ViewColorValue, ViewElementState, ViewEnvironmentClause, ViewEnvironmentCondition,
+    ViewInheritedBoxAxes, ViewInteractionSelector, ViewLengthMilli, ViewOverflow, ViewPropertyKind,
+    ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStylePatchId, ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext,
+    ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleTraceMode,
 };
 use arcweft_view::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
 
@@ -491,7 +496,7 @@ fn native_web_and_headless_style_states_match_for_default_and_every_explicit_see
     clippy::too_many_lines,
     reason = "the non-inference contract compares one retained node across rich-text, locale, and palette-only mutations before checking cache identity"
 )]
-fn locale_rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
+fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
     let mut mount = empty_mount();
     let inherited = mount.host_axis_seed.unwrap();
     mount.text = vec![BundleViewTextOutput {
@@ -565,19 +570,6 @@ fn locale_rich_text_direction_and_theme_never_infer_a_different_axis_provider() 
         .unwrap();
     let target = "view_mount_1.text.no-axis-inference.target";
     assert_eq!(baseline.text(target), changed_text.text(target));
-
-    let localized_environment = PresentationEnvironment::ENGINE_DEFAULT
-        .with_locale(PublicId::try_new("locale.ja_jp").expect("locale identity is valid"));
-    let localized = state
-        .resolve(
-            &InputController::default(),
-            &presentation,
-            Some(&program),
-            &localized_environment,
-            &SystemPaletteSet::ENGINE_DEFAULT,
-        )
-        .unwrap();
-    assert_eq!(baseline.text(target), localized.text(target));
 
     let mut changed_theme = SystemPaletteSet::ENGINE_DEFAULT;
     changed_theme.light.accent = PresentationColor::rgb(250, 17, 99);
@@ -904,6 +896,212 @@ fn targetless_image_binds_its_mount_scoped_image_identity() {
     assert_eq!(bindings[0].keys[0].id, "view_mount_1.image.hero");
 }
 
+#[test]
+fn planner_receives_exact_session_changed_set() {
+    let (program, presentation) = environment_style_fixture(
+        Some(
+            ViewEnvironmentCondition::try_new(
+                ViewStyleSourceId::new(1),
+                vec![ViewEnvironmentClause::color_scheme(
+                    ColorScheme::Light,
+                    ViewStyleSourceId::new(2),
+                )],
+            )
+            .unwrap(),
+        ),
+        ViewSpecifiedValue::Ratio {
+            value: ViewRatioMilli::new(900).unwrap(),
+        },
+    );
+    let mut session = SessionEnvironmentState::new(
+        Some(light_environment_values()),
+        PresentationEnvironmentOverrides::empty(),
+    );
+    let mut state = super::PlayerViewStyleState::default();
+    state
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&program),
+            &session.effective(),
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+    assert_eq!(
+        state.environment_fields(),
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme)
+    );
+
+    let unrelated = session
+        .set_session_override(PresentationEnvironmentValue::Contrast(
+            ContrastPreference::More,
+        ))
+        .unwrap();
+    let unrelated = state.apply_environment_update(unrelated);
+    assert_eq!(unrelated.selected, 0);
+    assert_eq!(unrelated.projected, 0);
+    assert_eq!(unrelated.unchanged, 1);
+
+    let selected = session
+        .set_session_override(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark))
+        .unwrap();
+    assert_eq!(
+        selected.effective_changed_fields(),
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme)
+    );
+    let selected = state.apply_environment_update(selected);
+    assert_eq!(selected.selected, 1);
+    assert_eq!(selected.projected, 0);
+    assert_eq!(selected.unchanged, 0);
+}
+
+#[test]
+fn prepared_environment_stamp_is_field_local() {
+    let mut session = SessionEnvironmentState::new(
+        Some(light_environment_values()),
+        PresentationEnvironmentOverrides::empty(),
+    );
+    let fields =
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme);
+    let stamp = super::super::PreparedEnvironmentStamp::new(session.effective(), fields);
+    assert_eq!(stamp.generation(), session.effective().revision());
+    assert_eq!(stamp.fields(), fields);
+    assert_eq!(
+        stamp.field_revisions(),
+        session.effective().field_revisions()
+    );
+
+    let unrelated = session
+        .set_session_override(PresentationEnvironmentValue::Contrast(
+            ContrastPreference::More,
+        ))
+        .unwrap();
+    assert!(stamp.is_current(unrelated.current()));
+
+    let used = session
+        .set_session_override(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark))
+        .unwrap();
+    assert!(!stamp.is_current(used.current()));
+}
+
+#[test]
+fn used_field_change_discards_prepared_work_but_unrelated_change_keeps_it() {
+    let mut session = SessionEnvironmentState::new(
+        Some(light_environment_values()),
+        PresentationEnvironmentOverrides::empty(),
+    );
+    let fields =
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme);
+    let stamp = super::super::PreparedEnvironmentStamp::new(session.effective(), fields);
+    let mut planner = super::super::PlayerFramePlannerState {
+        prepared_environment: Some(stamp),
+        ..super::super::PlayerFramePlannerState::default()
+    };
+
+    let unrelated = session
+        .set_session_override(PresentationEnvironmentValue::Contrast(
+            ContrastPreference::More,
+        ))
+        .unwrap();
+    let unrelated = planner.apply_environment_update(unrelated).unwrap();
+    assert!(!unrelated.prepared_work_discarded());
+    assert_eq!(planner.prepared_environment_stamp(), Some(stamp));
+
+    let used = session
+        .set_session_override(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark))
+        .unwrap();
+    let used = planner.apply_environment_update(used).unwrap();
+    assert!(used.prepared_work_discarded());
+    assert_eq!(planner.prepared_environment_stamp(), None);
+}
+
+#[test]
+fn projection_only_update_reprojects_palette_and_requests_redraw() {
+    let (program, presentation) = environment_style_fixture(
+        None,
+        ViewSpecifiedValue::Color {
+            value: ViewColorValue::System {
+                role: SystemColor::Accent,
+            },
+        },
+    );
+    let mut session = SessionEnvironmentState::new(
+        Some(light_environment_values()),
+        PresentationEnvironmentOverrides::empty(),
+    );
+    let mut state = super::PlayerViewStyleState::default();
+    let light = state
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&program),
+            &session.effective(),
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+    let light_fill = light
+        .control("view_mount_1.control.environment")
+        .unwrap()
+        .visual()
+        .fill;
+
+    let update = session
+        .set_session_override(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark))
+        .unwrap();
+    let mut planner = super::super::PlayerFramePlannerState {
+        view_style: state,
+        ..super::super::PlayerFramePlannerState::default()
+    };
+    let invalidation = planner.apply_environment_update(update).unwrap();
+    assert_eq!(invalidation.selection_nodes(), 0);
+    assert_eq!(invalidation.projection_nodes(), 1);
+    assert_eq!(invalidation.unchanged_nodes(), 0);
+    assert!(invalidation.redraw_requested());
+
+    let dark = planner
+        .view_style
+        .resolve(
+            &InputController::default(),
+            &presentation,
+            Some(&program),
+            &update.current(),
+            &SystemPaletteSet::ENGINE_DEFAULT,
+        )
+        .unwrap();
+    let dark_fill = dark
+        .control("view_mount_1.control.environment")
+        .unwrap()
+        .visual()
+        .fill;
+    assert_ne!(light_fill, dark_fill);
+}
+
+#[test]
+fn same_value_update_does_not_invalidate_prepared_frame() {
+    let mut session = SessionEnvironmentState::new(
+        Some(light_environment_values()),
+        PresentationEnvironmentOverrides::empty(),
+    );
+    let fields =
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme);
+    let stamp = super::super::PreparedEnvironmentStamp::new(session.effective(), fields);
+    let mut planner = super::super::PlayerFramePlannerState {
+        prepared_environment: Some(stamp),
+        ..super::super::PlayerFramePlannerState::default()
+    };
+
+    let update = session
+        .set_session_override(PresentationEnvironmentValue::ColorScheme(
+            ColorScheme::Light,
+        ))
+        .unwrap();
+    assert!(!update.effective_changed());
+    let invalidation = planner.apply_environment_update(update).unwrap();
+    assert!(!invalidation.redraw_requested());
+    assert!(!invalidation.prepared_work_discarded());
+    assert_eq!(planner.prepared_environment_stamp(), Some(stamp));
+}
+
 fn cross_mount_style_program(
     color: PresentationColor,
 ) -> (
@@ -933,7 +1131,7 @@ fn cross_mount_style_program(
         source,
     )
     .unwrap();
-    let rule = ViewStyleRule::new(selector, vec![declaration], 0, source).unwrap();
+    let rule = ViewStyleRule::new(selector, None, vec![declaration], 0, source).unwrap();
     let sheet = ViewStyleSheet::new(sheet_id.clone(), Vec::new(), vec![rule]).unwrap();
     let axis_sheet_id = ViewStyleSheetId::try_new("style.exported-axis").unwrap();
     let axis_selector = ViewStyleSelector::new(vec![
@@ -948,6 +1146,7 @@ fn cross_mount_style_program(
     .unwrap();
     let axis_rule = ViewStyleRule::new(
         axis_selector,
+        None,
         vec![
             ViewStyleDeclaration::new(
                 ViewPropertyKind::BoxAxes,
@@ -989,6 +1188,64 @@ fn cross_mount_style_program(
         ViewStyleBoundaryFacts::SAME_VIEW,
     );
     (program, parent, child, exported_axis)
+}
+
+fn environment_style_fixture(
+    environment: Option<ViewEnvironmentCondition>,
+    value: ViewSpecifiedValue,
+) -> (ViewStyleProgram, BundlePresentationSnapshot) {
+    let sheet_id = ViewStyleSheetId::try_new("style.environment.player").unwrap();
+    let property = if matches!(value, ViewSpecifiedValue::Color { .. }) {
+        ViewPropertyKind::BackgroundColor
+    } else {
+        ViewPropertyKind::Opacity
+    };
+    let declaration = ViewStyleDeclaration::new(
+        property,
+        value,
+        ViewStyleAssignOp::Replace,
+        ViewStyleSourceId::new(3),
+    )
+    .unwrap();
+    let selector = ViewStyleSelector::new(vec![
+        ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, Vec::new())
+            .unwrap(),
+    ])
+    .unwrap();
+    let rule = ViewStyleRule::new(
+        selector,
+        environment,
+        vec![declaration],
+        0,
+        ViewStyleSourceId::new(4),
+    )
+    .unwrap();
+    let sheet = ViewStyleSheet::new(sheet_id.clone(), Vec::new(), vec![rule]).unwrap();
+    let program = ViewStyleProgram::try_new(vec![sheet], Vec::new()).unwrap();
+    let application = ViewStyleApplication::new(
+        ViewStyleApplicationTarget::named(sheet_id),
+        ViewStyleScopeId::new(1),
+        0,
+        0,
+        ViewStyleBoundaryFacts::SAME_VIEW,
+    );
+    let mut mount = empty_mount();
+    let mut node = style_root_node(0, "control.environment");
+    node.applications = vec![application];
+    mount.style_nodes = vec![node];
+    let mut presentation = BundlePresentationSnapshot::default();
+    presentation.view.mounts = vec![mount];
+    presentation.surfaces = vec![surface("view_mount_1.control.environment", 0, 20_000)];
+    (program, presentation)
+}
+
+fn light_environment_values() -> PresentationEnvironmentValues {
+    PresentationEnvironmentValues::new(
+        ColorScheme::Light,
+        ContrastPreference::Standard,
+        false,
+        TextScaleMilli::ONE,
+    )
 }
 
 fn projected_style(

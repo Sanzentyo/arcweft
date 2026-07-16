@@ -1,8 +1,7 @@
 //! Canonical native Style selector state inventory.
 
-use super::value::{ViewLengthMilli, ViewRatioMilli};
+use super::value::ViewLengthMilli;
 use crate::{ViewElementKind, ViewPartName};
-use arcweft_presentation::appearance::{ColorScheme, ContrastPreference};
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_presentation::interaction::InteractionState;
 use serde::{Deserialize, Serialize};
@@ -39,22 +38,13 @@ pub enum ViewStyleCombinator {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ViewStyleComparison {
+pub enum ViewContainerComparison {
     Equal,
     NotEqual,
     Less,
     LessOrEqual,
     Greater,
     GreaterOrEqual,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ViewEnvironmentPredicate {
-    ReduceMotion(bool),
-    ColorScheme(ViewStyleComparison, ColorScheme),
-    Contrast(ViewStyleComparison, ContrastPreference),
-    TextScale(ViewStyleComparison, ViewRatioMilli),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -68,7 +58,7 @@ pub enum ViewContainerAxis {
 #[serde(deny_unknown_fields)]
 pub struct ViewContainerPredicate {
     axis: ViewContainerAxis,
-    comparison: ViewStyleComparison,
+    comparison: ViewContainerComparison,
     threshold: ViewLengthMilli,
 }
 
@@ -77,7 +67,6 @@ pub struct ViewContainerPredicate {
 pub enum ViewStylePredicate {
     Interaction(ViewInteractionSelector),
     ElementState(ViewElementState),
-    Environment(ViewEnvironmentPredicate),
     Container(ViewContainerPredicate),
 }
 
@@ -168,7 +157,7 @@ impl ViewElementState {
 impl ViewContainerPredicate {
     pub const fn new(
         axis: ViewContainerAxis,
-        comparison: ViewStyleComparison,
+        comparison: ViewContainerComparison,
         threshold: ViewLengthMilli,
     ) -> Self {
         Self {
@@ -182,7 +171,7 @@ impl ViewContainerPredicate {
         self.axis
     }
 
-    pub const fn comparison(self) -> ViewStyleComparison {
+    pub const fn comparison(self) -> ViewContainerComparison {
         self.comparison
     }
 

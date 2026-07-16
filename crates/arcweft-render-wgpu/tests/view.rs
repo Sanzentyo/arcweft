@@ -64,6 +64,7 @@ fn focused_button_style_program(sheet_id: ViewStyleSheetId) -> ViewStyleProgram 
     let rules = vec![
         ViewStyleRule::new(
             selector(None),
+            None,
             vec![declaration(
                 ViewPropertyKind::BackgroundColor,
                 color(30, 60, 90, 255),
@@ -75,6 +76,7 @@ fn focused_button_style_program(sheet_id: ViewStyleSheetId) -> ViewStyleProgram 
         .unwrap(),
         ViewStyleRule::new(
             selector(Some(ViewInteractionSelector::Focused)),
+            None,
             vec![
                 declaration(
                     ViewPropertyKind::OutlineColor,

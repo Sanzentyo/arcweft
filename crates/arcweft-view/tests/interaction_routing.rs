@@ -111,6 +111,7 @@ fn style_rule(
     .unwrap();
     ViewStyleRule::new(
         selector,
+        None,
         declarations
             .into_iter()
             .enumerate()
@@ -340,6 +341,7 @@ fn ancestry_program(sheet_id: ViewStyleSheetId, patch_id: ViewStylePatchId) -> V
         vec![
             ViewStyleRule::new(
                 box_selector,
+                None,
                 vec![
                     ViewStyleDeclaration::new(
                         ViewPropertyKind::Color,
@@ -355,6 +357,7 @@ fn ancestry_program(sheet_id: ViewStyleSheetId, patch_id: ViewStylePatchId) -> V
             .unwrap(),
             ViewStyleRule::new(
                 child_selector,
+                None,
                 vec![
                     ViewStyleDeclaration::new(
                         ViewPropertyKind::BackgroundColor,

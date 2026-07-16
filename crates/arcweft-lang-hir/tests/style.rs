@@ -23,14 +23,23 @@ fn named_style_lowers_to_hir_owned_selector_and_expression_nodes() {
     let sheet = style.sheet();
     assert_eq!(sheet.tokens()[0].public_id(), "metric.radius");
     assert_eq!(
-        sheet.rules()[0].selector().sequences()[0]
+        sheet.body()[0]
+            .as_rule()
+            .expect("top-level rule")
+            .selector()
+            .sequences()[0]
             .element()
             .expect("element")
             .text(),
         "Button"
     );
     assert!(matches!(
-        sheet.rules()[0].declarations()[0].value().expr(),
+        sheet.body()[0]
+            .as_rule()
+            .expect("top-level rule")
+            .declarations()[0]
+            .value()
+            .expr(),
         Expr::Call { .. }
     ));
 }

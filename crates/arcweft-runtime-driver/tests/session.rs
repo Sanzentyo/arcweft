@@ -16,9 +16,8 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
 use arcweft_bundle::resource_codec::{
-    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewThemeEnvironmentDefaults,
-    ViewThemeEnvironmentError, ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource,
-    ViewValueInputSource,
+    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewThemeResource,
+    ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
@@ -45,7 +44,11 @@ use arcweft_interaction_model::{
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
-use arcweft_presentation::appearance::{ColorScheme, ColorSchemePreference};
+use arcweft_presentation::appearance::{
+    ColorScheme, ContrastPreference, PresentationEnvironmentField, PresentationEnvironmentFieldSet,
+    PresentationEnvironmentOverrides, PresentationEnvironmentValue, PresentationEnvironmentValues,
+    TextScaleMilli,
+};
 use arcweft_presentation::fx::{FxRuntimeType, ValueInstruction, ValueProgramSchema};
 use arcweft_presentation::input::{
     Action, ActionTarget, InteractionTarget as PresentationInteractionTarget,
@@ -950,49 +953,299 @@ fn add_awbc_strings<const N: usize>(
 }
 
 #[test]
-fn session_resolves_system_theme_from_the_explicit_host_scheme() {
+fn session_uses_the_explicit_complete_provider_snapshot() {
     let mut bundle = fixture_bundle();
-    bundle.view_theme = Some(ViewThemeResource {
-        defaults: ViewThemeEnvironmentDefaults {
-            color_scheme: ColorSchemePreference::System,
-            ..ViewThemeEnvironmentDefaults::default()
-        },
-        ..ViewThemeResource::default()
-    });
+    bundle.view_theme = Some(ViewThemeResource::default());
     let session = BundleSession::new(
         &bundle,
         BundleSessionOptions {
-            system_color_scheme: ColorScheme::Light,
+            presentation_environment: Some(PresentationEnvironmentValues::new(
+                ColorScheme::Light,
+                ContrastPreference::Standard,
+                false,
+                TextScaleMilli::ONE,
+            )),
             ..BundleSessionOptions::default()
         },
     )
-    .expect("session resolves the host system scheme");
+    .expect("session accepts a complete provider snapshot");
 
     assert_eq!(
-        session.view_style_environment().color_scheme(),
+        session.presentation_environment().color_scheme(),
         ColorScheme::Light
     );
 }
 
 #[test]
-fn session_propagates_invalid_theme_environment_as_a_typed_error() {
+fn session_theme_override_precedes_the_provider_snapshot() {
     let mut bundle = fixture_bundle();
+    let mut environment = PresentationEnvironmentOverrides::empty();
+    environment.insert(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark));
     bundle.view_theme = Some(ViewThemeResource {
-        defaults: ViewThemeEnvironmentDefaults {
-            text_scale_milli: u32::from(u16::MAX) + 1,
-            ..ViewThemeEnvironmentDefaults::default()
-        },
+        environment,
         ..ViewThemeResource::default()
     });
-
-    let error = BundleSession::new(&bundle, BundleSessionOptions::default())
-        .expect_err("out-of-range theme scale rejects session construction");
-
+    let session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::new(
+                ColorScheme::Light,
+                ContrastPreference::Standard,
+                false,
+                TextScaleMilli::ONE,
+            )),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("checked theme override starts");
     assert_eq!(
-        error,
-        BundleSessionError::ViewThemeEnvironment(ViewThemeEnvironmentError::TextScaleOutOfRange {
-            value: u32::from(u16::MAX) + 1,
-        })
+        session.presentation_environment().color_scheme(),
+        ColorScheme::Dark
+    );
+}
+
+#[test]
+fn same_provider_snapshot_changes_nothing() {
+    let values = PresentationEnvironmentValues::new(
+        ColorScheme::Light,
+        ContrastPreference::Standard,
+        false,
+        TextScaleMilli::ONE,
+    );
+    let mut session = BundleSession::new(
+        &fixture_bundle(),
+        BundleSessionOptions {
+            presentation_environment: Some(values),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+
+    let update = session
+        .update_presentation_environment_provider(values)
+        .expect("equal provider update succeeds");
+    assert_eq!(
+        update.source_changed_fields(),
+        PresentationEnvironmentFieldSet::NONE
+    );
+    assert_eq!(
+        update.effective_changed_fields(),
+        PresentationEnvironmentFieldSet::NONE
+    );
+    assert_eq!(update.current().revision().value(), 0);
+}
+
+#[test]
+fn one_field_provider_update_advances_global_and_one_field() {
+    let mut session = BundleSession::new(
+        &fixture_bundle(),
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::new(
+                ColorScheme::Dark,
+                ContrastPreference::Standard,
+                false,
+                TextScaleMilli::ONE,
+            )),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+
+    let update = session
+        .update_presentation_environment_provider(PresentationEnvironmentValues::new(
+            ColorScheme::Light,
+            ContrastPreference::Standard,
+            false,
+            TextScaleMilli::ONE,
+        ))
+        .expect("provider update succeeds");
+    let expected =
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme);
+    assert_eq!(update.source_changed_fields(), expected);
+    assert_eq!(update.effective_changed_fields(), expected);
+    assert_eq!(update.current().revision().value(), 1);
+    assert_eq!(
+        update
+            .current()
+            .field_revision(PresentationEnvironmentField::ColorScheme)
+            .value(),
+        1
+    );
+    assert_eq!(
+        update
+            .current()
+            .field_revision(PresentationEnvironmentField::Contrast)
+            .value(),
+        0
+    );
+}
+
+#[test]
+fn multi_field_provider_update_advances_global_once() {
+    let mut session = BundleSession::new(
+        &fixture_bundle(),
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::ENGINE_DEFAULT),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+
+    let update = session
+        .update_presentation_environment_provider(PresentationEnvironmentValues::new(
+            ColorScheme::Light,
+            ContrastPreference::More,
+            true,
+            TextScaleMilli::try_from(1_250_u16).expect("checked scale"),
+        ))
+        .expect("multi-field provider update succeeds");
+    assert_eq!(
+        update.effective_changed_fields(),
+        PresentationEnvironmentFieldSet::ALL
+    );
+    assert_eq!(update.current().revision().value(), 1);
+    for field in PresentationEnvironmentFieldSet::ALL.iter() {
+        assert_eq!(update.current().field_revision(field).value(), 1);
+    }
+}
+
+#[test]
+fn provider_change_hidden_by_theme_is_stored_without_effective_revision() {
+    let mut environment = PresentationEnvironmentOverrides::empty();
+    environment.insert(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark));
+    let mut bundle = fixture_bundle();
+    bundle.view_theme = Some(ViewThemeResource {
+        environment,
+        ..ViewThemeResource::default()
+    });
+    let mut session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::new(
+                ColorScheme::Light,
+                ContrastPreference::Standard,
+                false,
+                TextScaleMilli::ONE,
+            )),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+
+    let update = session
+        .update_presentation_environment_provider(PresentationEnvironmentValues::ENGINE_DEFAULT)
+        .expect("hidden provider update succeeds");
+    assert_eq!(
+        update.source_changed_fields(),
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme)
+    );
+    assert_eq!(
+        update.effective_changed_fields(),
+        PresentationEnvironmentFieldSet::NONE
+    );
+    assert_eq!(update.current().revision().value(), 0);
+
+    let reveal = session
+        .remove_presentation_environment_override(PresentationEnvironmentField::ColorScheme)
+        .expect("removing an absent session override succeeds");
+    assert_eq!(
+        reveal.effective_changed_fields(),
+        PresentationEnvironmentFieldSet::NONE
+    );
+}
+
+#[test]
+fn session_override_precedes_theme_and_provider() {
+    let mut environment = PresentationEnvironmentOverrides::empty();
+    environment.insert(PresentationEnvironmentValue::ColorScheme(ColorScheme::Dark));
+    let mut bundle = fixture_bundle();
+    bundle.view_theme = Some(ViewThemeResource {
+        environment,
+        ..ViewThemeResource::default()
+    });
+    let mut session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::new(
+                ColorScheme::Light,
+                ContrastPreference::Standard,
+                false,
+                TextScaleMilli::ONE,
+            )),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+
+    let update = session
+        .set_presentation_environment_override(PresentationEnvironmentValue::ColorScheme(
+            ColorScheme::Light,
+        ))
+        .expect("session override succeeds");
+    assert_eq!(update.current().color_scheme(), ColorScheme::Light);
+    assert_eq!(update.current().revision().value(), 1);
+}
+
+#[test]
+fn override_removal_reveals_lower_value() {
+    let mut session = BundleSession::new(
+        &fixture_bundle(),
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::ENGINE_DEFAULT),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+    session
+        .set_presentation_environment_override(PresentationEnvironmentValue::ColorScheme(
+            ColorScheme::Light,
+        ))
+        .expect("session override succeeds");
+
+    let update = session
+        .remove_presentation_environment_override(PresentationEnvironmentField::ColorScheme)
+        .expect("session override removal succeeds");
+    assert_eq!(update.current().color_scheme(), ColorScheme::Dark);
+    assert_eq!(update.current().revision().value(), 2);
+    assert_eq!(
+        update.effective_changed_fields(),
+        PresentationEnvironmentFieldSet::from_field(PresentationEnvironmentField::ColorScheme)
+    );
+}
+
+#[test]
+fn clear_provider_uses_engine_default() {
+    let mut session = BundleSession::new(
+        &fixture_bundle(),
+        BundleSessionOptions {
+            presentation_environment: Some(PresentationEnvironmentValues::new(
+                ColorScheme::Light,
+                ContrastPreference::Standard,
+                false,
+                TextScaleMilli::ONE,
+            )),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("session starts");
+
+    let update = session
+        .clear_presentation_environment_provider()
+        .expect("provider removal succeeds");
+    assert_eq!(
+        update.current().values(),
+        PresentationEnvironmentValues::ENGINE_DEFAULT
+    );
+    assert_eq!(update.current().revision().value(), 1);
+}
+
+#[test]
+fn bundle_session_options_none_is_documented_engine_default() {
+    let session = BundleSession::new(&fixture_bundle(), BundleSessionOptions::default())
+        .expect("session starts without a provider");
+    assert_eq!(
+        session.presentation_environment().values(),
+        PresentationEnvironmentValues::ENGINE_DEFAULT
     );
 }
 

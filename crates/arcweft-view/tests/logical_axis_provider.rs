@@ -1,17 +1,38 @@
-use arcweft_presentation::appearance::{ColorScheme, EnvironmentRevision, PresentationEnvironment};
+use arcweft_presentation::appearance::{
+    ColorScheme, ContrastPreference, EnvironmentRevision, PresentationEnvironment,
+    PresentationEnvironmentFieldRevisions, PresentationEnvironmentValues, TextScaleMilli,
+};
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode,
-    ViewBoxAxisSeedGeneration, ViewContainerAxis, ViewContainerPredicate, ViewEnvironmentPredicate,
-    ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewLengthMilli,
-    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
-    ViewStyleBoundaryFacts, ViewStyleComparison, ViewStyleDeclaration, ViewStyleNodeFacts,
-    ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStyleProgram,
-    ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
-    ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewStyleTraceMode, ViewStyleValueKind,
+    ViewBoxAxisSeedGeneration, ViewContainerAxis, ViewContainerComparison, ViewContainerPredicate,
+    ViewEnvironmentClause, ViewEnvironmentCondition, ViewInheritedBoxAxes, ViewInteractionSelector,
+    ViewInteractionStateSet, ViewLengthMilli, ViewSpecifiedValue, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration,
+    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId, ViewStylePredicate,
+    ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult,
+    ViewStyleResolver, ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule,
+    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewStyleTraceMode,
+    ViewStyleValueKind,
 };
 use arcweft_view::{ViewElementKind, ViewMountId};
+
+fn environment_with_revision(
+    color_scheme: ColorScheme,
+    revision: EnvironmentRevision,
+) -> PresentationEnvironment {
+    PresentationEnvironment::try_from_parts(
+        PresentationEnvironmentValues::new(
+            color_scheme,
+            ContrastPreference::Standard,
+            false,
+            TextScaleMilli::ONE,
+        ),
+        revision,
+        PresentationEnvironmentFieldRevisions::ZERO,
+    )
+    .expect("test environment revision is consistent")
+}
 
 fn node(mount: u64, instruction: u32) -> ViewStyleNodeKey {
     ViewStyleNodeKey::new(ViewMountId::from_raw(mount), Vec::new(), instruction)
@@ -43,7 +64,7 @@ fn resolve(
     participation: ViewAxisProviderParticipation,
     applications: &[ViewStyleApplication],
     revisions: ViewStyleRevisionSet,
-) -> Result<ViewStyleResolution, ViewStyleResolveError> {
+) -> Result<ViewStyleResolveResult, ViewStyleResolveError> {
     let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
     resolve_with_facts(
         resolver,
@@ -76,7 +97,7 @@ fn resolve_with_facts(
     revisions: ViewStyleRevisionSet,
     facts: &ViewStyleNodeFacts,
     environment: &PresentationEnvironment,
-) -> Result<ViewStyleResolution, ViewStyleResolveError> {
+) -> Result<ViewStyleResolveResult, ViewStyleResolveError> {
     resolver.resolve(
         program,
         &ViewStyleResolveContext {
@@ -138,12 +159,22 @@ fn axis_rule(
     predicates: Vec<ViewStylePredicate>,
     value: ViewSpecifiedValue,
 ) -> ViewStyleRule {
+    axis_rule_with_environment(source, predicates, None, value)
+}
+
+fn axis_rule_with_environment(
+    source: u32,
+    predicates: Vec<ViewStylePredicate>,
+    environment: Option<ViewEnvironmentCondition>,
+    value: ViewSpecifiedValue,
+) -> ViewStyleRule {
     ViewStyleRule::new(
         ViewStyleSelector::new(vec![
             ViewStyleSelectorSequence::new(None, Some(ViewElementKind::Panel), None, predicates)
                 .unwrap(),
         ])
         .unwrap(),
+        environment,
         vec![
             ViewStyleDeclaration::new(
                 arcweft_view::style::ViewPropertyKind::BoxAxes,
@@ -362,7 +393,7 @@ fn ancestor_change_evicts_descendant_projection_entries_and_mount_cleanup_is_ide
         );
     }
     let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
-    let environment_revision_only = resolve_with_facts(
+    let unused_environment_change = resolve_with_facts(
         &mut resolver,
         &program,
         &root,
@@ -373,12 +404,12 @@ fn ancestor_change_evicts_descendant_projection_entries_and_mount_cleanup_is_ide
         &[],
         ViewStyleRevisionSet::default(),
         &facts,
-        &PresentationEnvironment::new(ColorScheme::Light).with_revision(EnvironmentRevision(99)),
+        &environment_with_revision(ColorScheme::Light, EnvironmentRevision::from_value(99)),
     )
     .unwrap();
-    assert!(!environment_revision_only.cache_hit());
+    assert!(unused_environment_change.cache_hit());
     assert_eq!(
-        environment_revision_only.computed().axes().revision(),
+        unused_environment_change.computed().axes().revision(),
         root_computed.axes().revision()
     );
     assert!(
@@ -1955,7 +1986,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
                     1,
                     vec![ViewStylePredicate::Container(ViewContainerPredicate::new(
                         ViewContainerAxis::InlineSize,
-                        ViewStyleComparison::GreaterOrEqual,
+                        ViewContainerComparison::GreaterOrEqual,
                         ViewLengthMilli::new(100),
                     ))],
                     ViewSpecifiedValue::BoxAxes {
@@ -2010,14 +2041,19 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
         let program = ViewStyleProgram::try_new(
             vec![make_sheet(
                 "axis.sheet.environment",
-                axis_rule(
+                axis_rule_with_environment(
                     1,
-                    vec![ViewStylePredicate::Environment(
-                        ViewEnvironmentPredicate::ColorScheme(
-                            ViewStyleComparison::Equal,
-                            ColorScheme::Dark,
-                        ),
-                    )],
+                    Vec::new(),
+                    Some(
+                        ViewEnvironmentCondition::try_new(
+                            ViewStyleSourceId::new(10),
+                            vec![ViewEnvironmentClause::color_scheme(
+                                ColorScheme::Dark,
+                                ViewStyleSourceId::new(11),
+                            )],
+                        )
+                        .unwrap(),
+                    ),
                     ViewSpecifiedValue::BoxAxes {
                         value: ViewBoxAxisMode::HorizontalRtl,
                     },
@@ -2029,9 +2065,8 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
         let application = named_application("axis.sheet.environment", 0);
         let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
         let light =
-            PresentationEnvironment::new(ColorScheme::Light).with_revision(EnvironmentRevision(1));
-        let dark =
-            PresentationEnvironment::new(ColorScheme::Dark).with_revision(EnvironmentRevision(2));
+            environment_with_revision(ColorScheme::Light, EnvironmentRevision::from_value(1));
+        let dark = environment_with_revision(ColorScheme::Dark, EnvironmentRevision::from_value(2));
         let key = node(57, 0);
         let seed = host_seed(&key, 0, ViewBoxAxisHostSeed::Default);
         let mut resolver = ViewStyleResolver::default();

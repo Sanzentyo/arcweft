@@ -139,7 +139,9 @@ pub(super) fn native_player_runtime_state_for_options(
             mode: options.mode.into(),
             max_ops: options.max_ops,
             root_bindings: options.values.clone(),
-            system_color_scheme: arcweft_presentation::appearance::ColorScheme::Dark,
+            presentation_environment: Some(
+                arcweft_presentation::appearance::PresentationEnvironmentValues::ENGINE_DEFAULT,
+            ),
         },
     )
     .map_err(|error| {
@@ -372,6 +374,7 @@ fn prepare_player_runtime_frame(
         eprintln!("error: player-backed observe font registration failed: {error}");
         ExitCode::FAILURE
     })?;
+    let style_environment = runtime.session.presentation_environment();
     let prepared = planner
         .prepare(
             &mut runtime.input,
@@ -380,7 +383,7 @@ fn prepare_player_runtime_frame(
                 fx_definitions: runtime.session.fx_definitions(),
                 images: &runtime.images,
                 style_program: runtime.session.view_style_program(),
-                style_environment: runtime.session.view_style_environment(),
+                style_environment: &style_environment,
                 style_palettes: runtime.session.view_style_palettes(),
                 viewport: player_observe_viewport(options),
                 fit: PlayerFrameFit::raw(),

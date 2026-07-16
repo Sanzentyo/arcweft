@@ -216,12 +216,13 @@ pub fn prepare_bundle_parity_frame(
         });
     }
 
+    let style_environment = session.presentation_environment();
     let request = PlayerFrameRequest {
         presentation: &presentation,
         fx_definitions: &bundle.fx_definitions,
         images: &images,
         style_program: session.view_style_program(),
-        style_environment: session.view_style_environment(),
+        style_environment: &style_environment,
         style_palettes: session.view_style_palettes(),
         viewport: options.viewport,
         fit: PlayerFrameFit::raw(),

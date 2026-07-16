@@ -137,6 +137,7 @@ fn prepare_bundle_frame(
         let clock = RuntimeClockStep::from_millis(tick, CAPTURE_STEP_MILLIS)?;
         let step = session.step_with_clock(clock, BundleStepInput::default());
         let visual_time_millis = tick.saturating_mul(u64::from(CAPTURE_STEP_MILLIS));
+        let style_environment = session.presentation_environment();
         let prepared = planner.prepare(
             &mut input,
             PlayerFrameRequest {
@@ -144,7 +145,7 @@ fn prepare_bundle_frame(
                 fx_definitions: session.fx_definitions(),
                 images: &images,
                 style_program: session.view_style_program(),
-                style_environment: session.view_style_environment(),
+                style_environment: &style_environment,
                 style_palettes: session.view_style_palettes(),
                 viewport,
                 fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),

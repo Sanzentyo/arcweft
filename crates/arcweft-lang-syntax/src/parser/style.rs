@@ -12,9 +12,12 @@ use crate::{
         common::TextRange,
         ids::EntityRef,
         style::{
-            StyleAssignOp, StyleCombinator, StyleDecl, StyleDeclarationDecl, StyleExpr, StyleName,
-            StylePatch, StylePredicate, StyleRuleDecl, StyleSelector, StyleSelectorSequence,
-            StyleSheet, StyleTokenDecl,
+            StyleAssignOp, StyleBodyItem, StyleCombinator, StyleDecl, StyleDeclarationDecl,
+            StyleEnvironmentBlock, StyleEnvironmentClause, StyleEnvironmentComparisonSyntax,
+            StyleEnvironmentFieldSyntax, StyleEnvironmentPercentageLiteral,
+            StyleEnvironmentUnsupportedValue, StyleEnvironmentUnsupportedValueKind,
+            StyleEnvironmentValueSyntax, StyleExpr, StyleName, StylePatch, StylePredicate,
+            StyleRuleDecl, StyleSelector, StyleSelectorSequence, StyleSheet, StyleTokenDecl,
         },
     },
     expr::parse_expr,
@@ -88,8 +91,8 @@ pub(crate) fn parse_inline_native_style(
 
 fn parse_native_sheet(source: &str, range: TextRange, errors: &mut Vec<ParseError>) -> StyleSheet {
     let mut parser = NativeStyleParser::new(source, range.start(), errors);
-    let (tokens, rules) = parser.parse_sheet();
-    StyleSheet::new(tokens, rules, range)
+    let (tokens, body) = parser.parse_sheet(true);
+    StyleSheet::new(tokens, body, range)
 }
 
 struct NativeStyleParser<'a, 'errors> {
@@ -103,6 +106,15 @@ struct NativeStyleParser<'a, 'errors> {
 enum StyleDeclarationContext {
     InlinePatch,
     RuleBody,
+}
+
+struct StyleEnvironmentHead {
+    when_range: TextRange,
+    intrinsic_range: TextRange,
+    condition_range: TextRange,
+    condition_closed: bool,
+    clauses: Vec<StyleEnvironmentClause>,
+    body_open: usize,
 }
 
 impl StyleDeclarationContext {
@@ -131,27 +143,197 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         }
     }
 
-    fn parse_sheet(&mut self) -> (Vec<StyleTokenDecl>, Vec<StyleRuleDecl>) {
+    fn parse_sheet(&mut self, allow_tokens: bool) -> (Vec<StyleTokenDecl>, Vec<StyleBodyItem>) {
         let mut tokens = Vec::new();
-        let mut rules = Vec::new();
+        let mut body = Vec::new();
         while self.skip_trivia() {
             let item_start = self.cursor;
             if self.starts_keyword("token") {
                 if let Some(statement) = self.take_statement()
                     && let Some(token) = self.parse_token(statement, item_start)
                 {
-                    tokens.push(token);
+                    if allow_tokens {
+                        tokens.push(token);
+                    } else {
+                        self.errors.push(ParseError::coded(
+                            "syntax.parse.style_environment.token_not_allowed",
+                            token.range(),
+                            "style tokens are sheet-owned and cannot appear in an environment wrapper",
+                        ));
+                    }
+                }
+                continue;
+            }
+            if self.starts_environment_block() {
+                if let Some(environment) = self.take_environment_block() {
+                    body.push(StyleBodyItem::Environment(environment));
                 }
                 continue;
             }
             let error_count = self.errors.len();
             match self.take_rule() {
-                Some(rule) => rules.push(rule),
+                Some(rule) => body.push(StyleBodyItem::Rule(rule)),
                 None if self.errors.len() == error_count => self.recover_line(item_start),
                 None => {}
             }
         }
-        (tokens, rules)
+        (tokens, body)
+    }
+
+    fn starts_environment_block(&self) -> bool {
+        let Some(after_when) = self.source[self.cursor..].strip_prefix("when") else {
+            return false;
+        };
+        if !after_when.starts_with(char::is_whitespace) {
+            return false;
+        }
+        let after_when = after_when.trim_start();
+        after_when.strip_prefix("environment").is_some_and(|tail| {
+            tail.is_empty() || tail.starts_with(char::is_whitespace) || tail.starts_with('(')
+        })
+    }
+
+    fn take_environment_block(&mut self) -> Option<StyleEnvironmentBlock> {
+        let block_start = self.cursor;
+        let head = self.take_environment_head(block_start)?;
+        let Some(body_close) = matching_brace(self.source, head.body_open) else {
+            self.errors.push(environment_parse_error(
+                "expected_open_brace",
+                self.base + head.body_open,
+                self.source.len().saturating_sub(head.body_open),
+                "unclosed environment style body",
+            ));
+            self.cursor = self.source.len();
+            return Some(StyleEnvironmentBlock::new(
+                head.when_range,
+                head.intrinsic_range,
+                head.condition_range,
+                head.condition_closed,
+                head.clauses,
+                Vec::new(),
+                TextRange::new(self.base + block_start, self.base + self.cursor),
+            ));
+        };
+        let nested_start = head.body_open + '{'.len_utf8();
+        let mut nested = NativeStyleParser::new(
+            &self.source[nested_start..body_close],
+            self.base + nested_start,
+            self.errors,
+        );
+        let (_, body) = nested.parse_sheet(false);
+        self.cursor = body_close + '}'.len_utf8();
+        Some(StyleEnvironmentBlock::new(
+            head.when_range,
+            head.intrinsic_range,
+            head.condition_range,
+            head.condition_closed,
+            head.clauses,
+            body,
+            TextRange::new(self.base + block_start, self.base + self.cursor),
+        ))
+    }
+
+    /// Parses the fixed `when environment(...) {` grammar prefix and leaves
+    /// body parsing to `take_environment_block` so recovery remains local to
+    /// the grammar component that owns each delimiter.
+    fn take_environment_head(&mut self, block_start: usize) -> Option<StyleEnvironmentHead> {
+        let when_range = TextRange::new(
+            self.base + block_start,
+            self.base + block_start + "when".len(),
+        );
+        self.cursor += "when".len();
+        self.cursor +=
+            self.source[self.cursor..].len() - self.source[self.cursor..].trim_start().len();
+        let environment_start = self.cursor;
+        let Some(after_environment) = self.source[self.cursor..].strip_prefix("environment") else {
+            self.errors.push(environment_parse_error(
+                "expected_field",
+                self.base + self.cursor,
+                0,
+                "expected `environment` after `when`",
+            ));
+            self.recover_line(block_start);
+            return None;
+        };
+        let intrinsic_range = TextRange::new(
+            self.base + environment_start,
+            self.base + environment_start + "environment".len(),
+        );
+        self.cursor += self.source[self.cursor..].len() - after_environment.len();
+        self.cursor +=
+            self.source[self.cursor..].len() - self.source[self.cursor..].trim_start().len();
+        if !self.source[self.cursor..].starts_with('(') {
+            self.errors.push(environment_parse_error(
+                "expected_open_paren",
+                self.base + self.cursor,
+                0,
+                "environment guard needs an opening `(`",
+            ));
+            self.recover_line(block_start);
+            return None;
+        }
+        let condition_open = self.cursor;
+        let boundary = environment_condition_boundary(self.source, condition_open);
+        let (condition_close, body_open) = match boundary {
+            EnvironmentConditionBoundary::CloseParen(close) => {
+                let after_close = skip_style_trivia(self.source, close + ')'.len_utf8());
+                if !self.source[after_close..].starts_with('{') {
+                    self.errors.push(environment_parse_error(
+                        "expected_open_brace",
+                        self.base + after_close,
+                        0,
+                        "environment guard needs an opening `{` after its condition",
+                    ));
+                    self.cursor = after_close;
+                    self.recover_line(block_start);
+                    return None;
+                }
+                (close, after_close)
+            }
+            EnvironmentConditionBoundary::OpenBrace(open) => {
+                self.errors.push(environment_parse_error(
+                    "unterminated_condition",
+                    self.base + condition_open,
+                    open.saturating_sub(condition_open),
+                    "environment condition is missing a closing `)`",
+                ));
+                (open, open)
+            }
+            EnvironmentConditionBoundary::End => {
+                self.errors.push(environment_parse_error(
+                    "unterminated_condition",
+                    self.base + condition_open,
+                    self.source.len().saturating_sub(condition_open),
+                    "unterminated environment condition",
+                ));
+                self.cursor = self.source.len();
+                return None;
+            }
+        };
+        let clauses_end = condition_close;
+        let clauses = parse_environment_clauses(
+            &self.source[condition_open + 1..clauses_end],
+            self.base + condition_open + 1,
+            self.errors,
+        );
+        let condition_range = TextRange::new(
+            self.base + condition_open,
+            self.base
+                + if condition_close == body_open {
+                    condition_close
+                } else {
+                    condition_close + ')'.len_utf8()
+                },
+        );
+        let condition_closed = condition_close != body_open;
+        Some(StyleEnvironmentHead {
+            when_range,
+            intrinsic_range,
+            condition_range,
+            condition_closed,
+            clauses,
+            body_open,
+        })
     }
 
     fn parse_declarations(
@@ -400,6 +582,382 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         ));
         self.cursor = end;
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EnvironmentConditionBoundary {
+    CloseParen(usize),
+    OpenBrace(usize),
+    End,
+}
+
+fn environment_condition_boundary(source: &str, open: usize) -> EnvironmentConditionBoundary {
+    let mut state = StyleDelimiterState::default();
+    let mut chars = source[open..].char_indices().peekable();
+    while let Some((offset, ch)) = chars.next() {
+        let index = open + offset;
+        if !state.observe(ch, chars.peek().map(|(_, next)| *next)) {
+            continue;
+        }
+        if ch == '{' && state.delimiters == ['('] {
+            return EnvironmentConditionBoundary::OpenBrace(index);
+        }
+        if ch == ')' && state.delimiters.last() == Some(&'(') {
+            state.update_delimiters(ch);
+            if state.is_top_level() {
+                return EnvironmentConditionBoundary::CloseParen(index);
+            }
+            continue;
+        }
+        state.update_delimiters(ch);
+    }
+    EnvironmentConditionBoundary::End
+}
+
+fn skip_style_trivia(source: &str, mut cursor: usize) -> usize {
+    loop {
+        cursor += source[cursor..]
+            .find(|ch: char| !ch.is_whitespace())
+            .unwrap_or(source.len() - cursor);
+        if cursor >= source.len() || !source[cursor..].starts_with("//") {
+            return cursor;
+        }
+        cursor = source[cursor..]
+            .find('\n')
+            .map_or(source.len(), |offset| cursor + offset + 1);
+    }
+}
+
+fn parse_environment_clauses(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Vec<StyleEnvironmentClause> {
+    let mut clauses = Vec::new();
+    let mut state = StyleDelimiterState::default();
+    let mut segment_start = 0;
+    let mut chars = source.char_indices().peekable();
+    while let Some((index, ch)) = chars.next() {
+        if !state.observe(ch, chars.peek().map(|(_, next)| *next)) {
+            continue;
+        }
+        if ch == ',' && state.is_top_level() {
+            if let Some(clause) = parse_environment_clause(
+                &source[segment_start..index],
+                base + segment_start,
+                errors,
+            ) {
+                clauses.push(clause);
+            } else if !source[segment_start..index].trim().is_empty() {
+                // The clause parser already emitted a precise diagnostic.
+            } else if source[..index].trim().is_empty()
+                || source[index + ','.len_utf8()..].trim().is_empty()
+            {
+                // Empty condition and a canonical trailing comma are handled below.
+            } else {
+                errors.push(environment_parse_error(
+                    "expected_field",
+                    base + index,
+                    0,
+                    "environment condition contains an empty clause",
+                ));
+            }
+            segment_start = index + ','.len_utf8();
+            continue;
+        }
+        state.update_delimiters(ch);
+    }
+    if let Some(clause) =
+        parse_environment_clause(&source[segment_start..], base + segment_start, errors)
+    {
+        clauses.push(clause);
+    }
+    if source.trim().is_empty() {
+        errors.push(environment_parse_error(
+            "expected_field",
+            base,
+            0,
+            "environment condition needs at least one field",
+        ));
+    }
+    clauses
+}
+
+fn parse_environment_clause(
+    source: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<StyleEnvironmentClause> {
+    let leading = source.len() - source.trim_start().len();
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let clause_base = base + leading;
+    let field_len = trimmed
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '=' | '!' | '<' | '>'))
+        .unwrap_or(trimmed.len());
+    let field_source = &trimmed[..field_len];
+    let field_range = TextRange::new(clause_base, clause_base + field_len);
+    let field = match field_source {
+        "color-scheme" => StyleEnvironmentFieldSyntax::ColorScheme,
+        "contrast" => StyleEnvironmentFieldSyntax::Contrast,
+        "reduced-motion" => StyleEnvironmentFieldSyntax::ReducedMotion,
+        "text-scale" => StyleEnvironmentFieldSyntax::TextScale,
+        _ => {
+            errors.push(environment_parse_error(
+                "expected_field",
+                field_range.start(),
+                field_range.end().saturating_sub(field_range.start()),
+                "unknown presentation-environment field",
+            ));
+            StyleEnvironmentFieldSyntax::Unknown
+        }
+    };
+
+    let mut cursor = field_len;
+    cursor += trimmed[cursor..].len() - trimmed[cursor..].trim_start().len();
+    let comparison_start = cursor;
+    cursor += trimmed[cursor..]
+        .find(|ch: char| !matches!(ch, '=' | '!' | '<' | '>'))
+        .unwrap_or(trimmed.len() - cursor);
+    let comparison_source = &trimmed[comparison_start..cursor];
+    let comparison_range = TextRange::new(clause_base + comparison_start, clause_base + cursor);
+    let comparison = match comparison_source {
+        "==" => StyleEnvironmentComparisonSyntax::Equal,
+        "!=" => StyleEnvironmentComparisonSyntax::NotEqual,
+        "<" => StyleEnvironmentComparisonSyntax::Less,
+        "<=" => StyleEnvironmentComparisonSyntax::LessOrEqual,
+        ">" => StyleEnvironmentComparisonSyntax::Greater,
+        ">=" => StyleEnvironmentComparisonSyntax::GreaterOrEqual,
+        _ => {
+            errors.push(environment_parse_error(
+                "expected_comparison",
+                comparison_range.start(),
+                comparison_range
+                    .end()
+                    .saturating_sub(comparison_range.start()),
+                "environment clause needs one comparison token",
+            ));
+            StyleEnvironmentComparisonSyntax::Unsupported
+        }
+    };
+
+    cursor += trimmed[cursor..].len() - trimmed[cursor..].trim_start().len();
+    let value_source = trimmed[cursor..].trim_end();
+    let value_range = TextRange::new(
+        clause_base + cursor,
+        clause_base + cursor + value_source.len(),
+    );
+    let value = parse_environment_value(value_source, value_range);
+    if let StyleEnvironmentValueSyntax::Unsupported(unsupported) = &value {
+        errors.push(environment_parse_error(
+            match unsupported.kind() {
+                StyleEnvironmentUnsupportedValueKind::Missing => "expected_value",
+                StyleEnvironmentUnsupportedValueKind::TrailingTokens => {
+                    "expected_comma_or_close_paren"
+                }
+                _ => "unsupported_value",
+            },
+            unsupported.range().start(),
+            unsupported
+                .range()
+                .end()
+                .saturating_sub(unsupported.range().start()),
+            environment_unsupported_value_message(unsupported.kind()),
+        ));
+    }
+    Some(StyleEnvironmentClause::new(
+        field,
+        comparison,
+        value,
+        field_range,
+        comparison_range,
+        value_range,
+        TextRange::new(clause_base, clause_base + trimmed.len()),
+    ))
+}
+
+fn parse_environment_value(source: &str, range: TextRange) -> StyleEnvironmentValueSyntax {
+    if source.is_empty() {
+        return unsupported_environment_value(StyleEnvironmentUnsupportedValueKind::Missing, range);
+    }
+    if source
+        .chars()
+        .any(|ch| matches!(ch, '(' | ')' | '[' | ']' | '{' | '}'))
+    {
+        return unsupported_environment_value(
+            StyleEnvironmentUnsupportedValueKind::NestedDelimiter,
+            range,
+        );
+    }
+    if source.starts_with('"') || source.starts_with('\'') {
+        return unsupported_environment_value(
+            StyleEnvironmentUnsupportedValueKind::StringLiteral,
+            range,
+        );
+    }
+    if source.chars().any(char::is_whitespace) {
+        return unsupported_environment_value(
+            StyleEnvironmentUnsupportedValueKind::TrailingTokens,
+            range,
+        );
+    }
+    if matches!(source, "true" | "false") {
+        return StyleEnvironmentValueSyntax::Boolean {
+            value: source == "true",
+            range,
+        };
+    }
+    if (source.starts_with('+') || source.starts_with('-')) && source.ends_with('%') {
+        return unsupported_environment_value(
+            StyleEnvironmentUnsupportedValueKind::SignedPercentage,
+            range,
+        );
+    }
+    if source.ends_with('%') && source.bytes().any(|byte| matches!(byte, b'e' | b'E')) {
+        return unsupported_environment_value(
+            StyleEnvironmentUnsupportedValueKind::ExponentPercentage,
+            range,
+        );
+    }
+    if let Some(number) = source.strip_suffix('%') {
+        let mut parts = number.split('.');
+        let integer = parts.next().unwrap_or_default();
+        let fractional = parts.next();
+        if parts.next().is_some()
+            || integer.is_empty()
+            || !integer.bytes().all(|byte| byte.is_ascii_digit())
+            || fractional.is_some_and(|digits| {
+                digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        {
+            return unsupported_environment_value(
+                StyleEnvironmentUnsupportedValueKind::MalformedPercentage,
+                range,
+            );
+        }
+        if fractional.is_some_and(|digits| digits.len() > 1) {
+            return unsupported_environment_value(
+                StyleEnvironmentUnsupportedValueKind::FractionalPrecision,
+                range,
+            );
+        }
+        let integer_range = TextRange::new(range.start(), range.start() + integer.len());
+        let fractional_range = fractional.map(|digits| {
+            let start = integer_range.end() + '.'.len_utf8();
+            TextRange::new(start, start + digits.len())
+        });
+        let percent_start = range.end() - '%'.len_utf8();
+        return StyleEnvironmentValueSyntax::Percentage(StyleEnvironmentPercentageLiteral::new(
+            integer_range,
+            fractional_range,
+            TextRange::new(percent_start, range.end()),
+            range,
+        ));
+    }
+    if is_unsigned_decimal(source) {
+        return unsupported_environment_value(
+            StyleEnvironmentUnsupportedValueKind::IntegerWithoutPercent,
+            range,
+        );
+    }
+    if is_environment_identifier(source) {
+        return StyleEnvironmentValueSyntax::Identifier { range };
+    }
+    unsupported_environment_value(
+        StyleEnvironmentUnsupportedValueKind::UnknownIdentifier,
+        range,
+    )
+}
+
+fn is_unsigned_decimal(source: &str) -> bool {
+    let mut parts = source.split('.');
+    let integer = parts.next().unwrap_or_default();
+    let fractional = parts.next();
+    parts.next().is_none()
+        && !integer.is_empty()
+        && integer.bytes().all(|byte| byte.is_ascii_digit())
+        && fractional.is_none_or(|digits| {
+            !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+fn is_environment_identifier(source: &str) -> bool {
+    source
+        .bytes()
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+        && source
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn unsupported_environment_value(
+    kind: StyleEnvironmentUnsupportedValueKind,
+    range: TextRange,
+) -> StyleEnvironmentValueSyntax {
+    StyleEnvironmentValueSyntax::Unsupported(StyleEnvironmentUnsupportedValue::new(kind, range))
+}
+
+const fn environment_unsupported_value_message(
+    kind: StyleEnvironmentUnsupportedValueKind,
+) -> &'static str {
+    match kind {
+        StyleEnvironmentUnsupportedValueKind::Missing => "environment clause needs a value",
+        StyleEnvironmentUnsupportedValueKind::UnknownIdentifier => {
+            "environment value is not a supported identifier"
+        }
+        StyleEnvironmentUnsupportedValueKind::StringLiteral => {
+            "environment values cannot be string literals"
+        }
+        StyleEnvironmentUnsupportedValueKind::IntegerWithoutPercent => {
+            "text-scale values need a trailing `%`"
+        }
+        StyleEnvironmentUnsupportedValueKind::SignedPercentage => {
+            "text-scale percentages cannot have a sign"
+        }
+        StyleEnvironmentUnsupportedValueKind::ExponentPercentage => {
+            "text-scale percentages cannot use exponent notation"
+        }
+        StyleEnvironmentUnsupportedValueKind::FractionalPrecision => {
+            "text-scale percentages allow at most one fractional digit"
+        }
+        StyleEnvironmentUnsupportedValueKind::MalformedPercentage => {
+            "malformed text-scale percentage"
+        }
+        StyleEnvironmentUnsupportedValueKind::NestedDelimiter => {
+            "environment values cannot contain nested delimiters"
+        }
+        StyleEnvironmentUnsupportedValueKind::TrailingTokens => {
+            "environment values cannot contain trailing tokens"
+        }
+    }
+}
+
+fn environment_parse_error(
+    suffix: &'static str,
+    start: usize,
+    len: usize,
+    message: impl Into<String>,
+) -> ParseError {
+    ParseError::coded(
+        match suffix {
+            "expected_open_paren" => "syntax.parse.style_environment.expected_open_paren",
+            "expected_field" => "syntax.parse.style_environment.expected_field",
+            "expected_comparison" => "syntax.parse.style_environment.expected_comparison",
+            "expected_value" => "syntax.parse.style_environment.expected_value",
+            "expected_comma_or_close_paren" => {
+                "syntax.parse.style_environment.expected_comma_or_close_paren"
+            }
+            "expected_open_brace" => "syntax.parse.style_environment.expected_open_brace",
+            "unterminated_condition" => "syntax.parse.style_environment.unterminated_condition",
+            "unsupported_value" => "syntax.parse.style_environment.unsupported_value",
+            _ => "syntax.parse.style_environment",
+        },
+        TextRange::new(start, start + len),
+        message,
+    )
 }
 
 fn parse_selector(

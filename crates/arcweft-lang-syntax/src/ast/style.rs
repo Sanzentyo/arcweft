@@ -26,8 +26,101 @@ pub struct StyleDecl {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StyleSheet {
     tokens: Vec<StyleTokenDecl>,
-    rules: Vec<StyleRuleDecl>,
+    body: Vec<StyleBodyItem>,
     range: TextRange,
+}
+
+/// One ordered item in a named native style sheet or environment wrapper.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StyleBodyItem {
+    Rule(StyleRuleDecl),
+    Environment(StyleEnvironmentBlock),
+}
+
+/// One native presentation-environment guard and its nested style body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleEnvironmentBlock {
+    when_range: TextRange,
+    intrinsic_range: TextRange,
+    condition_range: TextRange,
+    condition_closed: bool,
+    clauses: Vec<StyleEnvironmentClause>,
+    body: Vec<StyleBodyItem>,
+    range: TextRange,
+}
+
+/// One retained operand triple in an environment guard.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StyleEnvironmentClause {
+    field: StyleEnvironmentFieldSyntax,
+    comparison: StyleEnvironmentComparisonSyntax,
+    value: StyleEnvironmentValueSyntax,
+    field_range: TextRange,
+    comparison_range: TextRange,
+    value_range: TextRange,
+    range: TextRange,
+}
+
+/// Closed presentation-environment field spelling recognized by the parser.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StyleEnvironmentFieldSyntax {
+    ColorScheme,
+    Contrast,
+    ReducedMotion,
+    TextScale,
+    Unknown,
+}
+
+/// Comparison token retained before field-specific semantic checking.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StyleEnvironmentComparisonSyntax {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+    Unsupported,
+}
+
+/// Closed lexical value families accepted by the environment parser.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StyleEnvironmentValueSyntax {
+    Identifier { range: TextRange },
+    Boolean { value: bool, range: TextRange },
+    Percentage(StyleEnvironmentPercentageLiteral),
+    Unsupported(StyleEnvironmentUnsupportedValue),
+}
+
+/// Lossless source ranges for one percentage operand.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StyleEnvironmentPercentageLiteral {
+    integer_range: TextRange,
+    fractional_range: Option<TextRange>,
+    percent_range: TextRange,
+    range: TextRange,
+}
+
+/// One unsupported environment value retained for recovery and tooling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StyleEnvironmentUnsupportedValue {
+    kind: StyleEnvironmentUnsupportedValueKind,
+    range: TextRange,
+}
+
+/// Closed lexical recovery categories for environment operands.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum StyleEnvironmentUnsupportedValueKind {
+    Missing,
+    UnknownIdentifier,
+    StringLiteral,
+    IntegerWithoutPercent,
+    SignedPercentage,
+    ExponentPercentage,
+    FractionalPrecision,
+    MalformedPercentage,
+    NestedDelimiter,
+    TrailingTokens,
 }
 
 /// A named native style token.
@@ -158,12 +251,12 @@ impl StyleDecl {
 impl StyleSheet {
     pub(crate) const fn new(
         tokens: Vec<StyleTokenDecl>,
-        rules: Vec<StyleRuleDecl>,
+        body: Vec<StyleBodyItem>,
         range: TextRange,
     ) -> Self {
         Self {
             tokens,
-            rules,
+            body,
             range,
         }
     }
@@ -172,11 +265,181 @@ impl StyleSheet {
         &self.tokens
     }
 
-    pub fn rules(&self) -> &[StyleRuleDecl] {
-        &self.rules
+    pub fn body(&self) -> &[StyleBodyItem] {
+        &self.body
     }
 
     pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleBodyItem {
+    pub const fn as_rule(&self) -> Option<&StyleRuleDecl> {
+        match self {
+            Self::Rule(rule) => Some(rule),
+            Self::Environment(_) => None,
+        }
+    }
+
+    pub const fn as_environment(&self) -> Option<&StyleEnvironmentBlock> {
+        match self {
+            Self::Rule(_) => None,
+            Self::Environment(environment) => Some(environment),
+        }
+    }
+
+    pub const fn range(&self) -> TextRange {
+        match self {
+            Self::Rule(rule) => rule.range(),
+            Self::Environment(environment) => environment.range(),
+        }
+    }
+}
+
+impl StyleEnvironmentBlock {
+    pub(crate) const fn new(
+        when_range: TextRange,
+        intrinsic_range: TextRange,
+        condition_range: TextRange,
+        condition_closed: bool,
+        clauses: Vec<StyleEnvironmentClause>,
+        body: Vec<StyleBodyItem>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            when_range,
+            intrinsic_range,
+            condition_range,
+            condition_closed,
+            clauses,
+            body,
+            range,
+        }
+    }
+
+    pub const fn when_range(&self) -> TextRange {
+        self.when_range
+    }
+
+    pub const fn intrinsic_range(&self) -> TextRange {
+        self.intrinsic_range
+    }
+
+    pub const fn condition_range(&self) -> TextRange {
+        self.condition_range
+    }
+
+    pub const fn condition_closed(&self) -> bool {
+        self.condition_closed
+    }
+
+    pub fn clauses(&self) -> &[StyleEnvironmentClause] {
+        &self.clauses
+    }
+
+    pub fn body(&self) -> &[StyleBodyItem] {
+        &self.body
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleEnvironmentClause {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) const fn new(
+        field: StyleEnvironmentFieldSyntax,
+        comparison: StyleEnvironmentComparisonSyntax,
+        value: StyleEnvironmentValueSyntax,
+        field_range: TextRange,
+        comparison_range: TextRange,
+        value_range: TextRange,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            field,
+            comparison,
+            value,
+            field_range,
+            comparison_range,
+            value_range,
+            range,
+        }
+    }
+
+    pub const fn field(&self) -> StyleEnvironmentFieldSyntax {
+        self.field
+    }
+
+    pub const fn comparison(&self) -> StyleEnvironmentComparisonSyntax {
+        self.comparison
+    }
+
+    pub const fn value(&self) -> &StyleEnvironmentValueSyntax {
+        &self.value
+    }
+
+    pub const fn field_range(&self) -> TextRange {
+        self.field_range
+    }
+
+    pub const fn comparison_range(&self) -> TextRange {
+        self.comparison_range
+    }
+
+    pub const fn value_range(&self) -> TextRange {
+        self.value_range
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleEnvironmentPercentageLiteral {
+    pub(crate) const fn new(
+        integer_range: TextRange,
+        fractional_range: Option<TextRange>,
+        percent_range: TextRange,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            integer_range,
+            fractional_range,
+            percent_range,
+            range,
+        }
+    }
+
+    pub const fn integer_range(self) -> TextRange {
+        self.integer_range
+    }
+
+    pub const fn fractional_range(self) -> Option<TextRange> {
+        self.fractional_range
+    }
+
+    pub const fn percent_range(self) -> TextRange {
+        self.percent_range
+    }
+
+    pub const fn range(self) -> TextRange {
+        self.range
+    }
+}
+
+impl StyleEnvironmentUnsupportedValue {
+    pub(crate) const fn new(kind: StyleEnvironmentUnsupportedValueKind, range: TextRange) -> Self {
+        Self { kind, range }
+    }
+
+    pub const fn kind(self) -> StyleEnvironmentUnsupportedValueKind {
+        self.kind
+    }
+
+    pub const fn range(self) -> TextRange {
         self.range
     }
 }

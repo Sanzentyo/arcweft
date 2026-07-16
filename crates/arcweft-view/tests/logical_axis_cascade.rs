@@ -1,4 +1,7 @@
-use arcweft_presentation::appearance::{ColorScheme, PresentationEnvironment};
+use arcweft_presentation::appearance::{
+    ColorScheme, ContrastPreference, PresentationEnvironment, PresentationEnvironmentValues,
+    TextScaleMilli,
+};
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewAxisUsageSet, ViewBoxAxisHostSeed,
     ViewBoxAxisMode, ViewBoxAxisSeedGeneration, ViewBoxAxisSource, ViewInheritedBoxAxes,
@@ -12,6 +15,15 @@ use arcweft_view::style::{
 use arcweft_view::{
     ViewDisplay, ViewElementKind, ViewMountId, ViewPhysicalFlow, ViewPosition, ViewScalarMilli,
 };
+
+fn environment(color_scheme: ColorScheme) -> PresentationEnvironment {
+    PresentationEnvironment::initial(PresentationEnvironmentValues::new(
+        color_scheme,
+        ContrastPreference::Standard,
+        false,
+        TextScaleMilli::ONE,
+    ))
+}
 
 fn declaration(
     property: ViewPropertyKind,
@@ -66,7 +78,7 @@ fn resolve_program(
     let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
     let key = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![1], 1);
     let parent_key = parent.map(|_| ViewStyleNodeKey::new(ViewMountId::from_raw(1), Vec::new(), 0));
-    let environment = PresentationEnvironment::new(ColorScheme::Light);
+    let environment = environment(ColorScheme::Light);
     ViewStyleResolver::default()
         .resolve(
             program,
@@ -93,7 +105,7 @@ fn resolve_program(
                 trace: ViewStyleTraceMode::Off,
             },
         )
-        .map(arcweft_view::style::ViewStyleResolution::into_computed)
+        .map(|result| std::sync::Arc::unwrap_or_clone(result.into_computed()))
 }
 
 #[test]

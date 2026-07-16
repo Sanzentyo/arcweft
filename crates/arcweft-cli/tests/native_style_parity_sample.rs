@@ -2,7 +2,10 @@ use std::fs;
 use std::path::Path;
 
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_lang_syntax::{ast::items::Item, expr::Expr};
+use arcweft_lang_syntax::{
+    ast::{items::Item, style::StyleBodyItem},
+    expr::Expr,
+};
 
 #[test]
 fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
@@ -35,30 +38,19 @@ fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
                     if callee.dotted_selector_label().as_deref() == Some("rgba")
             )
     }));
-    assert!(
-        sheet
-            .rules()
-            .iter()
-            .any(|rule| style_rule_has_predicate(rule, "hover"))
-    );
-    assert!(
-        sheet
-            .rules()
-            .iter()
-            .any(|rule| style_rule_has_predicate(rule, "active"))
-    );
-    assert!(
-        sheet
-            .rules()
-            .iter()
-            .any(|rule| style_rule_has_predicate(rule, "focus-visible"))
-    );
-    assert!(
-        sheet
-            .rules()
-            .iter()
-            .any(|rule| style_rule_has_predicate(rule, "composing"))
-    );
+    assert!(style_body_has_predicate(sheet.body(), "hover"));
+    assert!(style_body_has_predicate(sheet.body(), "active"));
+    assert!(style_body_has_predicate(sheet.body(), "focus-visible"));
+    assert!(style_body_has_predicate(sheet.body(), "composing"));
+}
+
+fn style_body_has_predicate(body: &[StyleBodyItem], expected: &str) -> bool {
+    body.iter().any(|item| match item {
+        StyleBodyItem::Rule(rule) => style_rule_has_predicate(rule, expected),
+        StyleBodyItem::Environment(environment) => {
+            style_body_has_predicate(environment.body(), expected)
+        }
+    })
 }
 
 fn style_rule_has_predicate(

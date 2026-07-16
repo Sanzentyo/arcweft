@@ -204,13 +204,14 @@ fn prepare_frame(
         planner.register_font_bytes(font_bytes.to_vec())?;
     }
     let mut input = InputController::default();
+    let style_environment = session.presentation_environment();
     planner
         .prepare(
             &mut input,
             PlayerFrameRequest {
                 presentation: &presentation,
                 style_program: session.view_style_program(),
-                style_environment: session.view_style_environment(),
+                style_environment: &style_environment,
                 style_palettes: session.view_style_palettes(),
                 fx_definitions: &bundle.fx_definitions,
                 images: &images,

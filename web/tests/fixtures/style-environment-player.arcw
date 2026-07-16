@@ -1,0 +1,44 @@
+pub character narrator {
+    display = "Environment test narrator"
+    default_voice = auto
+}
+
+pub style environment_panel {
+    .environment_panel {
+        background-color = rgba(240, 240, 240, 255)
+    }
+    when environment(color-scheme == dark) {
+        .environment_panel {
+            background-color = rgba(12, 14, 18, 255)
+        }
+    }
+}
+
+pub view EnvironmentPanel(dialogue: DialogueView) {
+    Panel(x = 0px, y = 0px, width = 1280px, height = 720px) {
+        Text(dialogue.speaker)
+            .x(40px)
+            .y(40px)
+            .width(1200px)
+            .height(40px)
+        RichText(dialogue.content)
+            .x(40px)
+            .y(100px)
+            .width(1200px)
+            .height(560px)
+    }
+        .part(environment_panel)
+        .style(@style.environment_panel)
+}
+
+pub dialogue defaults {
+    view = @view.EnvironmentPanel
+}
+
+entry game @entry.main { goto @flow.main }
+
+flow main {
+    narrator(id=@say.environment.browser, voice=auto):
+        Browser environment condition fixture.
+    return "done"
+}

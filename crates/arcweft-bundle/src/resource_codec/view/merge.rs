@@ -191,6 +191,11 @@ fn rebase_sheet(
         .map(|rule| {
             ViewStyleRule::new(
                 rule.selector().clone(),
+                rule.environment()
+                    .map(|condition| {
+                        condition.try_map_sources(|source| rebase_source(source, source_offset))
+                    })
+                    .transpose()?,
                 rebase_declarations(rule.declarations(), source_offset)?,
                 rule.source_order(),
                 rebase_source(rule.source(), source_offset)?,

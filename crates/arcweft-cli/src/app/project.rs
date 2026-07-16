@@ -91,10 +91,13 @@ impl SourceSelection {
         }
     }
 
-    pub(in crate::app) fn manifest(&self) -> Option<&Path> {
+    /// Returns the manifest only when this selection owns a project source
+    /// graph. Launch profiles retain their manifest for package/resources but
+    /// compile the explicitly selected source.
+    pub(in crate::app) fn project_manifest(&self) -> Option<&Path> {
         match self {
-            Self::Project { manifest, .. } | Self::Profile { manifest, .. } => Some(manifest),
-            Self::Direct { .. } => None,
+            Self::Project { manifest, .. } => Some(manifest),
+            Self::Direct { .. } | Self::Profile { .. } => None,
         }
     }
 
@@ -442,7 +445,7 @@ pub(in crate::app) fn load_and_check_selection(
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, adapter_override, &mut phases)?;
-    if let Some(manifest) = selection.manifest() {
+    if let Some(manifest) = selection.project_manifest() {
         return load_and_check_project_with_env(manifest, selection, &semantic, phases);
     }
     load_and_check_with_env(selection.path(), semantic.base(), phases)

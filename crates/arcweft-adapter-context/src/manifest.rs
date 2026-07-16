@@ -32,7 +32,6 @@ use arcweft_source::{
 };
 #[cfg(feature = "sema")]
 use std::{fmt::Write as _, sync::Arc};
-#[cfg(feature = "sema")]
 use thiserror::Error;
 
 /// Stable adapter identifier used by launch profiles and tooling.

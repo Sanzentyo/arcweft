@@ -1,11 +1,20 @@
 use arcweft_bundle::resource_codec::{
-    SystemColorOverride, ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError,
-    ViewThemeEnvironmentDefaults, ViewThemeEnvironmentError, ViewThemeResource,
+    SystemColorOverride, ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError, ViewThemeResource,
 };
 use arcweft_presentation::appearance::{
-    ColorScheme, ColorSchemePreference, EnvironmentRevision, PresentationColor,
-    PresentationEnvironment, SystemColor, SystemPaletteSet,
+    ColorScheme, ContrastPreference, PresentationColor, PresentationEnvironment,
+    PresentationEnvironmentOverrides, PresentationEnvironmentValue, PresentationEnvironmentValues,
+    SystemColor, SystemPaletteSet, TextScaleMilli,
 };
+
+fn environment(color_scheme: ColorScheme) -> PresentationEnvironment {
+    PresentationEnvironment::initial(PresentationEnvironmentValues::new(
+        color_scheme,
+        ContrastPreference::Standard,
+        false,
+        TextScaleMilli::ONE,
+    ))
+}
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewAlignment,
     ViewAngleMilliDegrees, ViewBlendMode, ViewBoxAxisMode, ViewClip, ViewColorValue, ViewDisplay,
@@ -112,7 +121,7 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
     );
     let projected = ViewRuntimeNodeStyle::try_from_computed(
         &computed,
-        &PresentationEnvironment::new(ColorScheme::Dark),
+        &environment(ColorScheme::Dark),
         &SystemPaletteSet::ENGINE_DEFAULT,
     )
     .unwrap();
@@ -178,7 +187,7 @@ fn projection_uses_the_supplied_environment_palette_for_system_colors() {
 
     let projected = ViewRuntimeNodeStyle::try_from_computed(
         &computed,
-        &PresentationEnvironment::new(ColorScheme::Dark),
+        &environment(ColorScheme::Dark),
         &palettes,
     )
     .unwrap();
@@ -200,7 +209,7 @@ fn malformed_computed_property_value_is_a_typed_error() {
     assert_eq!(
         ViewRuntimeNodeStyle::try_from_computed(
             &computed,
-            &PresentationEnvironment::new(ColorScheme::Light),
+            &environment(ColorScheme::Light),
             &SystemPaletteSet::ENGINE_DEFAULT,
         ),
         Err(ViewRuntimeStyleProjectionError::ValueKindMismatch {
@@ -214,6 +223,10 @@ fn malformed_computed_property_value_is_a_typed_error() {
 #[test]
 fn theme_owns_checked_environment_and_palette_resolution() {
     let accent = PresentationColor::rgb(41, 42, 43);
+    let mut environment_overrides = PresentationEnvironmentOverrides::empty();
+    environment_overrides.insert(PresentationEnvironmentValue::TextScale(
+        TextScaleMilli::try_new(1_250).unwrap(),
+    ));
     let theme = ViewThemeResource {
         palette_overrides: vec![SystemColorOverride {
             color: SystemColor::Accent,
@@ -221,20 +234,20 @@ fn theme_owns_checked_environment_and_palette_resolution() {
             dark: Some(accent),
             source: None,
         }],
-        defaults: ViewThemeEnvironmentDefaults {
-            color_scheme: ColorSchemePreference::System,
-            text_scale_milli: 1_250,
-            ..ViewThemeEnvironmentDefaults::default()
-        },
+        environment: environment_overrides,
         dark_mode_visual_golden_ids: Vec::new(),
     };
-    let environment = theme
-        .presentation_environment(ColorScheme::Dark, None, EnvironmentRevision(9))
-        .unwrap();
+    let effective = theme
+        .environment_overrides()
+        .apply_to(PresentationEnvironmentValues::new(
+            ColorScheme::Dark,
+            ContrastPreference::Standard,
+            false,
+            TextScaleMilli::ONE,
+        ));
 
-    assert_eq!(environment.color_scheme(), ColorScheme::Dark);
-    assert_eq!(environment.text_scale().value(), 1_250);
-    assert_eq!(environment.revision(), EnvironmentRevision(9));
+    assert_eq!(effective.color_scheme(), ColorScheme::Dark);
+    assert_eq!(effective.text_scale().value(), 1_250);
     assert_eq!(
         theme
             .system_palette_set()
@@ -242,17 +255,10 @@ fn theme_owns_checked_environment_and_palette_resolution() {
         accent
     );
 
-    let invalid = ViewThemeResource {
-        defaults: ViewThemeEnvironmentDefaults {
-            text_scale_milli: u32::from(u16::MAX) + 1,
-            ..ViewThemeEnvironmentDefaults::default()
-        },
-        ..ViewThemeResource::default()
-    };
-    assert_eq!(
-        invalid.presentation_environment(ColorScheme::Light, None, EnvironmentRevision::default(),),
-        Err(ViewThemeEnvironmentError::TextScaleOutOfRange {
-            value: u32::from(u16::MAX) + 1,
-        })
-    );
+    let invalid = r#"{
+        "palette_overrides": [],
+        "environment": { "text_scale": 65536 },
+        "dark_mode_visual_golden_ids": []
+    }"#;
+    assert!(serde_json::from_str::<ViewThemeResource>(invalid).is_err());
 }

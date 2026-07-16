@@ -1,7 +1,8 @@
 //! Canonical native Style sheet, patch, and application ownership.
 
 use super::{
-    ViewAlignment, ViewPropertyKind, ViewSpecifiedValue, ViewStyleSelector, ViewStyleValueKind,
+    ViewAlignment, ViewEnvironmentCondition, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleSelector, ViewStyleValueKind,
 };
 use crate::ViewElementKind;
 use crate::{ViewPartLocalName, ViewPartName};
@@ -93,6 +94,7 @@ pub struct ViewStyleDeclaration {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ViewStyleRule {
     selector: ViewStyleSelector,
+    environment: Option<ViewEnvironmentCondition>,
     declarations: Vec<ViewStyleDeclaration>,
     source_order: u32,
     source: ViewStyleSourceId,
@@ -532,6 +534,7 @@ impl ViewStyleDeclaration {
 impl ViewStyleRule {
     pub fn new(
         selector: ViewStyleSelector,
+        environment: Option<ViewEnvironmentCondition>,
         declarations: Vec<ViewStyleDeclaration>,
         source_order: u32,
         source: ViewStyleSourceId,
@@ -541,6 +544,7 @@ impl ViewStyleRule {
         }
         Ok(Self {
             selector,
+            environment,
             declarations,
             source_order,
             source,
@@ -549,6 +553,10 @@ impl ViewStyleRule {
 
     pub const fn selector(&self) -> &ViewStyleSelector {
         &self.selector
+    }
+
+    pub const fn environment(&self) -> Option<&ViewEnvironmentCondition> {
+        self.environment.as_ref()
     }
 
     pub fn declarations(&self) -> &[ViewStyleDeclaration] {

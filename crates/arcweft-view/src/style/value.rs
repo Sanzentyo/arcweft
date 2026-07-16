@@ -803,6 +803,19 @@ impl ViewSpecifiedValue {
         }
     }
 
+    /// Whether paint projection must resolve a system color for this value.
+    pub fn uses_system_color(&self) -> bool {
+        match self {
+            Self::Color {
+                value: ViewColorValue::System { .. },
+            } => true,
+            Self::ShadowList { value } => value
+                .iter()
+                .any(|shadow| matches!(shadow.color, ViewColorValue::System { .. })),
+            _ => false,
+        }
+    }
+
     /// Interpolates canonical computed values for one transitionable property.
     pub fn interpolate(
         &self,

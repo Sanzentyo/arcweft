@@ -11,8 +11,9 @@ use arcweft_id::{IdError, PublicId};
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_sema::style::{
-    CheckedViewStyleCatalog, CheckedViewStyleDeclaration, CheckedViewStylePatch,
-    CheckedViewStyleRule, CheckedViewStyleSheet,
+    CheckedStyleEnvironmentClause, CheckedStyleEnvironmentPath, CheckedViewStyleCatalog,
+    CheckedViewStyleDeclaration, CheckedViewStylePatch, CheckedViewStyleRule,
+    CheckedViewStyleSheet,
 };
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::ids::EntityRefSyntax;
@@ -21,6 +22,7 @@ use arcweft_lang_syntax::ast::style::StylePatch as SyntaxStylePatch;
 use arcweft_lang_syntax::ast::view::{ViewBody, ViewExpr, ViewModifier, ViewStyleModifier};
 use arcweft_project::sources::ProjectSources;
 use arcweft_view::style::{
+    ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleModelError,
     ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule, ViewStyleSheet,
     ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken,
@@ -125,6 +127,8 @@ pub enum ViewStyleLowerError {
     UnreferencedInlinePatches { remaining: usize },
     #[error(transparent)]
     Model(#[from] ViewStyleModelError),
+    #[error(transparent)]
+    EnvironmentCondition(#[from] ViewEnvironmentConditionError),
     #[error(transparent)]
     Bundle(#[from] arcweft_bundle::resource_codec::SectionCodecError),
 }
@@ -427,6 +431,10 @@ fn lower_rule(
     ranges: &mut StyleSourceRangeBuilder,
 ) -> Result<ViewStyleRule, ViewStyleLowerError> {
     let source = ranges.add(owner, document, checked.range())?;
+    let environment = checked
+        .environment()
+        .map(|environment| lower_environment(environment, owner, document, ranges))
+        .transpose()?;
     let declarations = checked
         .declarations()
         .iter()
@@ -434,11 +442,43 @@ fn lower_rule(
         .collect::<Result<Vec<_>, _>>()?;
     ViewStyleRule::new(
         checked.selector().clone(),
+        environment,
         declarations,
         checked.source_order(),
         source,
     )
     .map_err(ViewStyleLowerError::from)
+}
+
+fn lower_environment(
+    checked: &CheckedStyleEnvironmentPath,
+    owner: &str,
+    document: &StyleSourceDocument,
+    ranges: &mut StyleSourceRangeBuilder,
+) -> Result<ViewEnvironmentCondition, ViewStyleLowerError> {
+    let source = ranges.add(owner, document, checked.source_range())?;
+    let clauses = checked
+        .clauses()
+        .iter()
+        .map(|clause| {
+            let clause_source = ranges.add(owner, document, clause.range())?;
+            Ok(match clause {
+                CheckedStyleEnvironmentClause::ColorScheme { value, .. } => {
+                    ViewEnvironmentClause::color_scheme(*value, clause_source)
+                }
+                CheckedStyleEnvironmentClause::Contrast { value, .. } => {
+                    ViewEnvironmentClause::contrast(*value, clause_source)
+                }
+                CheckedStyleEnvironmentClause::ReducedMotion { value, .. } => {
+                    ViewEnvironmentClause::reduced_motion(*value, clause_source)
+                }
+                CheckedStyleEnvironmentClause::TextScale {
+                    comparison, value, ..
+                } => ViewEnvironmentClause::text_scale(*comparison, *value, clause_source),
+            })
+        })
+        .collect::<Result<Vec<_>, ViewStyleLowerError>>()?;
+    ViewEnvironmentCondition::try_new(source, clauses).map_err(ViewStyleLowerError::from)
 }
 
 fn lower_declaration(

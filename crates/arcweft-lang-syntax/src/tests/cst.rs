@@ -267,7 +267,14 @@ style native_text_input_sample {
     assert_eq!(style.id().body(), "style.native_text_input_sample");
     let sheet = style.sheet();
     assert_eq!(sheet.tokens().len(), 1);
-    assert_eq!(sheet.rules().len(), 2);
+    assert_eq!(
+        sheet
+            .body()
+            .iter()
+            .filter(|item| item.as_rule().is_some())
+            .count(),
+        2
+    );
 }
 
 #[test]

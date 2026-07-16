@@ -16,6 +16,7 @@ pub mod id_context;
 mod line_sugar;
 pub mod model;
 mod path_sugar;
+pub mod style_environment;
 
 pub use canonicalization::canonicalize_source;
 

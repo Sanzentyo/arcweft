@@ -69,8 +69,7 @@ pub use view::{
     ViewScrollAxis, ViewScrollIndicatorsPolicy, ViewScrollOverflowPolicy,
     ViewScrollOverscrollPolicy, ViewScrollRegionResource, ViewStyleContractError,
     ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds, ViewTextBlockResource,
-    ViewTextResource, ViewTextStyleBinding, ViewThemeEnvironmentDefaults,
-    ViewThemeEnvironmentError, ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource,
-    ViewValueInputSource, migrated_view_section_compatibility,
+    ViewTextResource, ViewTextStyleBinding, ViewThemeResource, ViewValueInputNamespace,
+    ViewValueInputResource, ViewValueInputSource, migrated_view_section_compatibility,
 };
 pub use wire::{DecodedResourceSection, ProductResourceEnvelope};

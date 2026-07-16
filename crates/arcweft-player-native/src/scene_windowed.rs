@@ -6,11 +6,18 @@ use crate::text_input_bridge::{
     NativeTextInputFocusReason, NativeTextInputFocusedControl,
 };
 use crate::window_driver::{WindowCloseSignal, WinitOwnedWindowDriver};
+use crate::windowed_environment_ingress::{
+    WindowedEnvironmentIngress, WindowedEnvironmentIngressCommand,
+    WindowedEnvironmentIngressCompletion, WindowedEnvironmentIngressConfig,
+    WindowedEnvironmentIngressEnvelope, WindowedEnvironmentIngressReceiver,
+    WindowedEnvironmentUpdateError,
+};
 use crate::windowed_ingress::{
     WindowedPatchIngress, WindowedPatchIngressCompletion, WindowedPatchIngressConfig,
     WindowedPatchIngressMessage, WindowedPatchIngressReceiver,
 };
 use crate::windowed_patch::FrameBoundary;
+use crate::windowed_player_ingress::WindowedPlayerIngress;
 use crate::windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
 };
@@ -43,7 +50,6 @@ use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
-use arcweft_runtime_host::clipboard_host::SyncTextClipboardHostAdapter;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -63,6 +69,9 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
     ImeRequestError, ImeSurroundingText, Window, WindowAttributes, WindowId,
 };
+
+mod frame_cycle;
+mod input_cycle;
 
 const EVENT_LOOP_TICK: Duration = Duration::from_millis(16);
 const NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.native_player_session";
@@ -147,7 +156,7 @@ pub fn run_bundle_windowed_with_options(
 pub fn run_bundle_windowed_with_ingress(
     bundle: ArcweftBundle,
     _max_steps: usize,
-    configure_ingress: impl FnOnce(WindowedPatchIngress),
+    configure_ingress: impl FnOnce(WindowedPlayerIngress),
 ) -> Result<(), NativePlayerError> {
     run_shared_scene_window_with_ingress("Arcweft Player", bundle, configure_ingress)
         .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
@@ -157,7 +166,7 @@ pub fn run_bundle_windowed_with_ingress_and_text_input_options(
     bundle: ArcweftBundle,
     _max_steps: usize,
     text_input_options: NativeTextInputBridgeOptions,
-    configure_ingress: impl FnOnce(WindowedPatchIngress),
+    configure_ingress: impl FnOnce(WindowedPlayerIngress),
 ) -> Result<(), NativePlayerError> {
     run_shared_scene_window_with_options(
         "Arcweft Player",
@@ -172,7 +181,7 @@ pub fn run_bundle_windowed_with_ingress_and_options(
     bundle: ArcweftBundle,
     _max_steps: usize,
     options: NativePlayerOptions,
-    configure_ingress: impl FnOnce(WindowedPatchIngress),
+    configure_ingress: impl FnOnce(WindowedPlayerIngress),
 ) -> Result<(), NativePlayerError> {
     run_shared_scene_window_with_options("Arcweft Player", bundle, options, configure_ingress)
         .map_err(|error| NativePlayerError::SceneWindow(error.to_string()))
@@ -247,6 +256,9 @@ struct NativeSceneApp {
     ingress: WindowedPatchIngressReceiver,
     ingress_completion: WindowedPatchIngressCompletion,
     pending_ingress: VecDeque<WindowedPatchIngressMessage>,
+    environment_ingress: WindowedEnvironmentIngressReceiver,
+    environment_completion: WindowedEnvironmentIngressCompletion,
+    pending_environment: VecDeque<WindowedEnvironmentIngressEnvelope>,
     error: Arc<Mutex<Option<String>>>,
 }
 
@@ -262,6 +274,7 @@ struct NativeSceneState {
     runtime: WindowedRuntimeOwner,
     audio: Option<NativeAudioRuntime>,
     ingress_completion: WindowedPatchIngressCompletion,
+    environment_completion: WindowedEnvironmentIngressCompletion,
     input: InputController,
     clipboard: NativeClipboardAdapter,
     keyboard_modifiers: ModifiersState,
@@ -273,6 +286,7 @@ struct NativeSceneState {
     session_save_out: Option<PathBuf>,
     session_save_on_exit_completed: bool,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
+    pending_environment: VecDeque<WindowedEnvironmentIngressEnvelope>,
     dialogue_visual_clock: DialogueVisualClock,
     started_at: Instant,
     next_tick: u64,
@@ -300,7 +314,7 @@ fn run_shared_scene_window(
 fn run_shared_scene_window_with_ingress(
     title: &str,
     bundle: ArcweftBundle,
-    configure_ingress: impl FnOnce(WindowedPatchIngress),
+    configure_ingress: impl FnOnce(WindowedPlayerIngress),
 ) -> Result<(), NativeSceneWindowError> {
     run_shared_scene_window_with_options(
         title,
@@ -314,7 +328,7 @@ fn run_shared_scene_window_with_options(
     title: &str,
     bundle: ArcweftBundle,
     options: NativePlayerOptions,
-    configure_ingress: impl FnOnce(WindowedPatchIngress),
+    configure_ingress: impl FnOnce(WindowedPlayerIngress),
 ) -> Result<(), NativeSceneWindowError> {
     let event_loop =
         EventLoop::new().map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
@@ -322,8 +336,13 @@ fn run_shared_scene_window_with_options(
         event_loop.create_proxy(),
         WindowedPatchIngressConfig::default(),
     );
+    let (environment_ingress, environment_ingress_rx) = WindowedEnvironmentIngress::channel(
+        event_loop.create_proxy(),
+        WindowedEnvironmentIngressConfig::default(),
+    );
     let ingress_completion = ingress.completion();
-    configure_ingress(ingress);
+    let environment_completion = environment_ingress.completion();
+    configure_ingress(WindowedPlayerIngress::new(ingress, environment_ingress));
     let error = Arc::new(Mutex::new(None));
     event_loop
         .run_app(NativeSceneApp {
@@ -334,10 +353,14 @@ fn run_shared_scene_window_with_options(
             ingress: ingress_rx,
             ingress_completion: ingress_completion.clone(),
             pending_ingress: VecDeque::new(),
+            environment_ingress: environment_ingress_rx,
+            environment_completion: environment_completion.clone(),
+            pending_environment: VecDeque::new(),
             error: Arc::clone(&error),
         })
         .map_err(|error| NativeSceneWindowError::EventLoop(error.to_string()))?;
     ingress_completion.close("native player event loop exited");
+    environment_completion.close();
     let error = error
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -349,14 +372,30 @@ fn run_shared_scene_window_with_options(
 }
 
 impl NativeSceneApp {
-    fn fail(&self, event_loop: &dyn ActiveEventLoop, error: String) {
+    fn fail(&mut self, event_loop: &dyn ActiveEventLoop, error: String) {
         self.ingress_completion
             .close(format!("native scene failed: {error}"));
+        self.close_environment_ingress();
         *self
             .error
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(error);
         event_loop.exit();
+    }
+
+    fn close_environment_ingress(&mut self) {
+        self.environment_completion.close();
+        for envelope in self.environment_ingress.drain() {
+            envelope.close();
+        }
+        for envelope in self.pending_environment.drain(..) {
+            envelope.close();
+        }
+        if let Some(state) = self.state.as_mut() {
+            for envelope in state.pending_environment.drain(..) {
+                envelope.close();
+            }
+        }
     }
 
     fn drain_ingress_messages(&mut self) {
@@ -370,6 +409,30 @@ impl NativeSceneApp {
         let pending = std::mem::take(&mut self.pending_ingress);
         for message in pending {
             self.apply_ingress_message(message);
+        }
+    }
+
+    fn drain_environment_messages(&mut self) {
+        let messages = self.environment_ingress.drain();
+        for message in messages {
+            self.environment_completion
+                .accepted_by_event_loop(message.sequence(), message.command());
+            self.apply_environment_message(message);
+        }
+    }
+
+    fn drain_pending_environment(&mut self) {
+        let pending = std::mem::take(&mut self.pending_environment);
+        for message in pending {
+            self.apply_environment_message(message);
+        }
+    }
+
+    fn apply_environment_message(&mut self, message: WindowedEnvironmentIngressEnvelope) {
+        if let Some(state) = self.state.as_mut() {
+            state.pending_environment.push_back(message);
+        } else {
+            self.pending_environment.push_back(message);
         }
     }
 
@@ -413,12 +476,15 @@ impl ApplicationHandler for NativeSceneApp {
             self.title.clone(),
             bundle,
             self.ingress_completion.clone(),
+            self.environment_completion.clone(),
             self.options.clone(),
         )) {
             Ok(state) => {
                 self.state = Some(state);
                 self.drain_pending_ingress();
                 self.drain_ingress_messages();
+                self.drain_pending_environment();
+                self.drain_environment_messages();
             }
             Err(error) => {
                 self.fail(event_loop, error.to_string());
@@ -444,6 +510,7 @@ impl ApplicationHandler for NativeSceneApp {
             WindowEvent::CloseRequested => match state.save_session_on_exit() {
                 Ok(()) => {
                     self.ingress_completion.close("native player closed");
+                    self.environment_completion.close();
                     event_loop.exit();
                     Ok(())
                 }
@@ -487,10 +554,12 @@ impl ApplicationHandler for NativeSceneApp {
 
     fn proxy_wake_up(&mut self, _event_loop: &dyn ActiveEventLoop) {
         self.drain_ingress_messages();
+        self.drain_environment_messages();
     }
 
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.drain_ingress_messages();
+        self.drain_environment_messages();
         if let Some(state) = self.state.as_mut() {
             if state.take_close_requested() {
                 if let Err(error) = state.save_session_on_exit() {
@@ -499,750 +568,13 @@ impl ApplicationHandler for NativeSceneApp {
                 }
                 self.ingress_completion
                     .close("native player requested close from owned-window adapter");
+                self.environment_completion.close();
                 event_loop.exit();
                 return;
             }
             state.window.request_redraw();
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + EVENT_LOOP_TICK));
-    }
-}
-
-impl NativeSceneState {
-    async fn new(
-        window: Arc<dyn Window>,
-        title: String,
-        bundle: ArcweftBundle,
-        ingress_completion: WindowedPatchIngressCompletion,
-        options: NativePlayerOptions,
-    ) -> Result<Self, NativeSceneWindowError> {
-        let instance = wgpu::Instance::default();
-        let surface = instance
-            .create_surface(Arc::clone(&window))
-            .map_err(|error| NativeSceneWindowError::SurfaceCreation(error.to_string()))?;
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                force_fallback_adapter: false,
-                compatible_surface: Some(&surface),
-            })
-            .await
-            .map_err(|_| NativeSceneWindowError::AdapterUnavailable)?;
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("arcweft-native-scene-device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                ..Default::default()
-            })
-            .await
-            .map_err(|error| NativeSceneWindowError::DeviceRequest(error.to_string()))?;
-        let capabilities = surface.get_capabilities(&adapter);
-        let format = capabilities
-            .formats
-            .iter()
-            .copied()
-            .find(wgpu::TextureFormat::is_srgb)
-            .or_else(|| capabilities.formats.first().copied())
-            .ok_or(NativeSceneWindowError::NoSurfaceFormat)?;
-        let size = scene_aspect_size(window.surface_size(), options.frame_fit);
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format,
-            width: size.width,
-            height: size.height,
-            present_mode: capabilities
-                .present_modes
-                .iter()
-                .copied()
-                .find(|mode| *mode == wgpu::PresentMode::Fifo)
-                .unwrap_or(wgpu::PresentMode::AutoVsync),
-            desired_maximum_frame_latency: 2,
-            alpha_mode: capabilities
-                .alpha_modes
-                .first()
-                .copied()
-                .unwrap_or(wgpu::CompositeAlphaMode::Auto),
-            view_formats: Vec::new(),
-        };
-        surface.configure(&device, &config);
-        let mut renderer = SharedRenderer::new(&device, &queue, format);
-        let mut frame_planner = PlayerFramePlannerState::new();
-        PlayerFontSet::bundled_default()
-            .register_with_renderer_and_planner(&mut renderer, &mut frame_planner)
-            .map_err(|error| NativeSceneWindowError::Font(error.to_string()))?;
-        let close_signal = WindowCloseSignal::default();
-        let owned_window = Arc::new(
-            WinitOwnedWindowDriver::try_new(Arc::clone(&window), title, close_signal.clone())
-                .map_err(NativeSceneWindowError::Window)?,
-        );
-        let backend = NativeDesktopBackend::builder()
-            .with_owned_window_driver(owned_window)
-            .build();
-        let audio = NativeAudioRuntime::from_bundle(&bundle)?;
-        let (runtime, input, dialogue_visual_clock) =
-            restored_windowed_runtime_and_input(&bundle, backend, options.session_load.as_deref())?;
-        let text_input = NativeTextInputBridge::new(options.text_input.clone());
-        Ok(Self {
-            window,
-            close_signal,
-            surface,
-            device,
-            queue,
-            config,
-            renderer,
-            frame_planner,
-            runtime,
-            audio,
-            ingress_completion,
-            input,
-            clipboard: NativeClipboardAdapter::default(),
-            keyboard_modifiers: ModifiersState::default(),
-            text_input,
-            window_ime_supported: true,
-            window_ime_enabled: false,
-            next_window_ime_serial: 1,
-            frame_fit: options.frame_fit,
-            session_save_out: options.session_save_out.clone(),
-            session_save_on_exit_completed: false,
-            prepared: None,
-            dialogue_visual_clock,
-            started_at: Instant::now(),
-            next_tick: 1,
-        })
-    }
-
-    fn take_close_requested(&self) -> bool {
-        self.close_signal.take()
-    }
-
-    fn save_session_on_exit(&mut self) -> Result<(), NativeSceneWindowError> {
-        if self.session_save_on_exit_completed {
-            return Ok(());
-        }
-        let Some(path) = self.session_save_out.clone() else {
-            return Ok(());
-        };
-        save_native_player_session(
-            &path,
-            &self.runtime,
-            &self.input,
-            &self.dialogue_visual_clock,
-            self.elapsed_millis(),
-        )?;
-        self.session_save_on_exit_completed = true;
-        Ok(())
-    }
-
-    fn resize(&mut self, size: PhysicalSize<u32>) {
-        let requested = non_zero_size(size);
-        let size = scene_aspect_size(requested, self.frame_fit);
-        if size != requested {
-            let _ = self.window.request_surface_size(Size::Physical(size));
-        }
-        if self.config.width == size.width && self.config.height == size.height {
-            return;
-        }
-        self.config.width = size.width;
-        self.config.height = size.height;
-        self.surface.configure(&self.device, &self.config);
-    }
-
-    fn redraw(&mut self) -> Result<(), NativeSceneWindowError> {
-        self.runtime.pump_main_thread()?;
-        self.step_runtime()?;
-        let prepared = self.prepare_frame()?;
-        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
-        self.sync_window_ime(&prepared.frame);
-        self.render(&prepared.frame)?;
-        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
-        if patch_outcomes
-            .iter()
-            .any(WindowedRuntimeOutcome::invalidates_prepared_frame)
-        {
-            self.prepared = None;
-        } else {
-            self.prepared = Some(prepared.frame);
-        }
-        Ok(())
-    }
-
-    fn step_runtime(&mut self) -> Result<(), NativeSceneWindowError> {
-        if self.runtime.session().is_finished() {
-            return Ok(());
-        }
-        if let Some(audio) = &mut self.audio {
-            let mut events = Vec::new();
-            audio.drain_events(&mut events);
-            self.runtime.push_audio_events(events);
-        }
-        let clock = RuntimeClockStep::from_millis(self.next_tick, 16)?;
-        self.next_tick = self.next_tick.saturating_add(1);
-        let step = self
-            .runtime
-            .step_with_clock(clock, BundleStepInput::default());
-        if let Some(audio) = &mut self.audio {
-            let mut command_events = Vec::new();
-            audio.submit_commands(step.audio_commands, &mut command_events);
-            self.runtime.push_audio_events(command_events);
-        }
-        Ok(())
-    }
-
-    fn apply_ingress_message(&mut self, message: WindowedPatchIngressMessage) {
-        match message {
-            WindowedPatchIngressMessage::Enqueue(envelope) => {
-                let source = envelope.event.source();
-                self.ingress_completion
-                    .accepted_by_event_loop(envelope.sequence, source);
-                self.runtime.push_patch_event(envelope.event);
-            }
-            WindowedPatchIngressMessage::RetainRejected { source, message } => {
-                self.runtime.retain_patch_ingress_rejection(source, message);
-            }
-        }
-        self.window.request_redraw();
-    }
-
-    fn prepare_frame(
-        &mut self,
-    ) -> Result<arcweft_player_scene::frame::PlayerPreparedFrame, NativeSceneWindowError> {
-        let viewport = self.viewport();
-        let elapsed = self.elapsed_millis();
-        let session = self.runtime.session();
-        let presentation = session.presentation();
-        let fx_definitions = session.fx_definitions();
-        let dialogue_visual = self.dialogue_visual_clock.progress(
-            presentation.dialogue.latest_active(),
-            elapsed,
-            None,
-        );
-        Ok(self.frame_planner.prepare(
-            &mut self.input,
-            PlayerFrameRequest {
-                presentation,
-                fx_definitions,
-                images: self.runtime.images(),
-                style_program: session.view_style_program(),
-                style_environment: session.view_style_environment(),
-                style_palettes: session.view_style_palettes(),
-                viewport,
-                fit: self.frame_fit,
-                image_time_millis: elapsed,
-                visual_time_millis: dialogue_visual.elapsed_millis(),
-                dialogue_reveal_complete: dialogue_visual.is_complete(),
-                preferences: RenderPreferences::default(),
-            },
-        )?)
-    }
-
-    fn render(
-        &mut self,
-        prepared: &arcweft_render_wgpu::geometry::PreparedFrame,
-    ) -> Result<(), NativeSceneWindowError> {
-        let surface_frame = match surface_texture(self.surface.get_current_texture()) {
-            Ok(texture) => texture,
-            Err(NativeSceneWindowError::SurfaceLost | NativeSceneWindowError::SurfaceOutdated) => {
-                self.surface.configure(&self.device, &self.config);
-                self.window.request_redraw();
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
-        let view = surface_frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        self.renderer
-            .render_to_view(&self.device, &self.queue, &view, prepared)?;
-        surface_frame.present();
-        Ok(())
-    }
-
-    fn drain_patch_events_after_render_submitted(
-        &mut self,
-    ) -> Result<Vec<WindowedRuntimeOutcome>, NativeSceneWindowError> {
-        let outcomes = self
-            .runtime
-            .drain_patch_boundary(FrameBoundary::AfterRenderSubmitted)?;
-        self.ingress_completion
-            .completed_at_frame_boundary(outcomes.len());
-        if !outcomes.is_empty() {
-            self.window.request_redraw();
-        }
-        Ok(outcomes)
-    }
-
-    fn viewport(&self) -> RenderViewport {
-        let size = PhysicalSize::new(self.config.width, self.config.height);
-        let scale_factor = self.window.scale_factor().max(f64::EPSILON);
-        let logical_width = (f64::from(size.width) / scale_factor)
-            .to_f32()
-            .unwrap_or(f32::MAX);
-        let logical_height = (f64::from(size.height) / scale_factor)
-            .to_f32()
-            .unwrap_or(f32::MAX);
-        RenderViewport {
-            logical_width,
-            logical_height,
-            physical_width: size.width,
-            physical_height: size.height,
-            scale_factor,
-        }
-    }
-
-    fn elapsed_millis(&self) -> u64 {
-        u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
-    }
-
-    fn pointer_move(&mut self, position: PhysicalPosition<f64>) {
-        if let Some(frame) = self.prepared.clone() {
-            self.input
-                .pointer_move(&frame, PointerId(0), self.logical_position(position));
-            self.window.request_redraw();
-        }
-    }
-
-    fn pointer_button(
-        &mut self,
-        button: &ButtonSource,
-        element_state: ElementState,
-        position: PhysicalPosition<f64>,
-    ) -> Result<(), NativeSceneWindowError> {
-        let Some(frame) = self.prepared.clone() else {
-            return Ok(());
-        };
-        let pointer = pointer_id(button);
-        let position = self.logical_position(position);
-        let modifiers = arcweft_player_scene::input::InputPointerModifiers::new(
-            self.keyboard_modifiers.shift_key(),
-        );
-        let outcome = match element_state {
-            ElementState::Pressed if button.clone().mouse_button() == Some(MouseButton::Right) => {
-                self.input
-                    .pointer_context_menu(&frame, pointer, position, modifiers)
-            }
-            ElementState::Pressed => self
-                .input
-                .pointer_down(&frame, pointer, position, modifiers),
-            ElementState::Released => self.input.pointer_up(&frame, pointer, position, modifiers),
-        };
-        self.apply_outcome(outcome)?;
-        let prepared = self.prepare_frame()?;
-        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::Pointer)?;
-        self.sync_window_ime(&prepared.frame);
-        self.prepared = Some(prepared.frame);
-        self.window.request_redraw();
-        Ok(())
-    }
-
-    fn wheel(&mut self, delta: MouseScrollDelta) -> Result<(), NativeSceneWindowError> {
-        let Some(frame) = self.prepared.clone() else {
-            return Ok(());
-        };
-        let delta = match delta {
-            MouseScrollDelta::LineDelta(x, y) => WheelDelta::lines(f64::from(x), f64::from(y)),
-            MouseScrollDelta::PixelDelta(position) => WheelDelta::from_physical_pixels(
-                position.x,
-                position.y,
-                self.window.scale_factor(),
-            )?,
-        };
-        let delta = WheelNormalizationPolicy::default().normalize(delta)?;
-        let outcome = self
-            .input
-            .precision_scroll(&frame, delta.horizontal(), delta.vertical());
-        self.apply_outcome(outcome)?;
-        let prepared = self.prepare_frame()?;
-        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
-        self.sync_window_ime(&prepared.frame);
-        self.prepared = Some(prepared.frame);
-        self.window.request_redraw();
-        Ok(())
-    }
-
-    fn keyboard(&mut self, event: &KeyEvent) -> Result<(), NativeSceneWindowError> {
-        let Some(frame) = self.prepared.clone() else {
-            return Ok(());
-        };
-        let phase = match event.state {
-            ElementState::Pressed => KeyPhase::Down,
-            ElementState::Released => KeyPhase::Up,
-        };
-        if phase == KeyPhase::Down
-            && let Some(operation) =
-                self.text_input_operation_from_key_event(event, self.keyboard_modifiers)
-        {
-            self.apply_window_ime_operations(vec![operation])?;
-            return Ok(());
-        }
-        let key = &event.logical_key;
-        let label = key_label(key);
-        let disposition = self.text_input.backend_key_disposition(&label);
-        let player_disposition = if self.text_input.shortcuts_allowed(disposition) {
-            disposition
-        } else {
-            arcweft_presentation::text_input::TextInputKeyDisposition::ImeConsumed
-        };
-        let outcome = self.input.keyboard_with_modifiers_and_ime(
-            &frame,
-            &label,
-            phase,
-            self.keyboard_modifiers.shift_key(),
-            player_disposition,
-        );
-        self.apply_outcome(outcome)?;
-        self.window.request_redraw();
-        Ok(())
-    }
-
-    fn text_input_operation_from_key_event(
-        &self,
-        event: &KeyEvent,
-        modifiers: ModifiersState,
-    ) -> Option<TextInputOperation> {
-        let editor = self.input.focused_text_editor()?;
-        let selecting = modifiers.shift_key() && editor.options().selection_enabled();
-        if editor.options().shortcuts_enabled()
-            && let Some(command) = shortcut_command_from_key(&event.logical_key, modifiers)
-        {
-            return Some(TextInputOperation::Command(command));
-        }
-        match &event.logical_key {
-            Key::Named(NamedKey::Backspace) if modifiers.control_key() || modifiers.alt_key() => {
-                Some(TextInputOperation::Command(TextEditCommand::DeleteWordLeft))
-            }
-            Key::Named(NamedKey::Backspace) => {
-                Some(TextInputOperation::Command(TextEditCommand::Backspace))
-            }
-            Key::Named(NamedKey::Delete) if modifiers.control_key() || modifiers.alt_key() => Some(
-                TextInputOperation::Command(TextEditCommand::DeleteWordRight),
-            ),
-            Key::Named(NamedKey::Delete) => {
-                Some(TextInputOperation::Command(TextEditCommand::Delete))
-            }
-            Key::Named(NamedKey::ArrowLeft) => Some(TextInputOperation::Command(
-                left_arrow_text_command(modifiers, selecting),
-            )),
-            Key::Named(NamedKey::ArrowRight) => Some(TextInputOperation::Command(
-                right_arrow_text_command(modifiers, selecting),
-            )),
-            Key::Named(NamedKey::ArrowUp) => {
-                Some(TextInputOperation::Command(TextEditCommand::MoveUp {
-                    selecting,
-                }))
-            }
-            Key::Named(NamedKey::ArrowDown) => {
-                Some(TextInputOperation::Command(TextEditCommand::MoveDown {
-                    selecting,
-                }))
-            }
-            Key::Named(NamedKey::PageUp) => {
-                Some(TextInputOperation::Command(TextEditCommand::MovePageUp {
-                    selecting,
-                }))
-            }
-            Key::Named(NamedKey::PageDown) => {
-                Some(TextInputOperation::Command(TextEditCommand::MovePageDown {
-                    selecting,
-                }))
-            }
-            Key::Named(NamedKey::Home) => {
-                let command = if modifiers.control_key() || modifiers.meta_key() {
-                    TextEditCommand::MoveDocumentStart { selecting }
-                } else {
-                    TextEditCommand::MoveLineStart { selecting }
-                };
-                Some(TextInputOperation::Command(command))
-            }
-            Key::Named(NamedKey::End) => {
-                let command = if modifiers.control_key() || modifiers.meta_key() {
-                    TextEditCommand::MoveDocumentEnd { selecting }
-                } else {
-                    TextEditCommand::MoveLineEnd { selecting }
-                };
-                Some(TextInputOperation::Command(command))
-            }
-            Key::Named(NamedKey::Tab) if editor.options().tab_inserts_text() => {
-                Some(TextInputOperation::Commit(TextCommit::new("\t")))
-            }
-            Key::Named(NamedKey::Enter) => {
-                if editor.options().is_multiline() {
-                    Some(TextInputOperation::Commit(TextCommit::new("\n")))
-                } else {
-                    Some(TextInputOperation::Command(TextEditCommand::Submit))
-                }
-            }
-            Key::Named(NamedKey::Escape) => {
-                Some(TextInputOperation::Command(TextEditCommand::Cancel))
-            }
-            _ if shortcut_modifier_active(modifiers) => None,
-            _ => event
-                .text
-                .as_ref()
-                .and_then(|text| text_input_commit_from_key_text(text.as_str())),
-        }
-    }
-
-    fn ime(&mut self, event: Ime) -> Result<(), NativeSceneWindowError> {
-        match event {
-            Ime::Enabled => {
-                self.window_ime_supported = true;
-                self.window_ime_enabled = true;
-                if self.input.window_focused()
-                    && let Some(frame) = self.prepared.clone()
-                {
-                    self.sync_window_ime(&frame);
-                }
-                Ok(())
-            }
-            Ime::Preedit(preedit, selection) => {
-                if !self.input.window_focused() {
-                    return Ok(());
-                }
-                let selection = window_ime_composition_selection(&preedit, selection);
-                let update = TextCompositionUpdate::new(preedit, selection);
-                self.apply_window_ime_operations(vec![TextInputOperation::SetComposition(update)])
-            }
-            Ime::Commit(text) => {
-                if !self.input.window_focused() {
-                    return Ok(());
-                }
-                self.apply_window_ime_operations(vec![TextInputOperation::Commit(TextCommit::new(
-                    text,
-                ))])
-            }
-            Ime::DeleteSurrounding {
-                before_bytes,
-                after_bytes,
-            } => {
-                if !self.input.window_focused() {
-                    return Ok(());
-                }
-                self.apply_window_ime_operations(vec![TextInputOperation::DeleteSurrounding {
-                    before: u32::try_from(before_bytes).unwrap_or(u32::MAX),
-                    after: u32::try_from(after_bytes).unwrap_or(u32::MAX),
-                    unit: TextDeleteUnit::Utf8Byte,
-                }])
-            }
-            Ime::Disabled => {
-                self.window_ime_enabled = false;
-                if !self.input.window_focused() {
-                    return Ok(());
-                }
-                self.apply_window_ime_operations(vec![TextInputOperation::EndComposition {
-                    reason: CompositionEndReason::PlatformDisabled,
-                }])
-            }
-        }
-    }
-
-    fn focus_changed(&mut self, focused: bool) -> Result<(), NativeSceneWindowError> {
-        let outcome = self.input.focus_changed(focused);
-        self.apply_outcome(outcome)?;
-        if !focused {
-            self.text_input.blur_active();
-            self.disable_window_ime();
-        }
-        Ok(())
-    }
-
-    fn apply_window_ime_operations(
-        &mut self,
-        operations: Vec<TextInputOperation>,
-    ) -> Result<(), NativeSceneWindowError> {
-        if operations.is_empty() {
-            return Ok(());
-        }
-        let Some(frame) = self.prepared.clone() else {
-            return Ok(());
-        };
-        let Some(editor) = self.input.focused_text_editor() else {
-            return Ok(());
-        };
-        let session = editor.session();
-        let privacy = if editor.options().is_secure() {
-            TextInputPrivacy::Sensitive
-        } else {
-            TextInputPrivacy::Plain
-        };
-        let input = TextInput::new(session, self.next_window_ime_serial(), operations)
-            .with_privacy(privacy);
-        self.text_input
-            .record_window_ime_text_input(&input, TextInputKeyDisposition::ImeConsumed);
-        let outcome = self.input.text_input(&frame, input)?;
-        self.apply_outcome(outcome)?;
-        let prepared = self.prepare_frame()?;
-        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
-        self.sync_window_ime(&prepared.frame);
-        self.prepared = Some(prepared.frame);
-        self.window.request_redraw();
-        Ok(())
-    }
-
-    fn next_window_ime_serial(&mut self) -> TextInputSerial {
-        let serial = TextInputSerial(self.next_window_ime_serial);
-        self.next_window_ime_serial = self.next_window_ime_serial.saturating_add(1);
-        serial
-    }
-
-    fn sync_text_input_bridge(
-        &mut self,
-        frame: &PreparedFrame,
-        reason: NativeTextInputFocusReason,
-    ) -> Result<(), NativeSceneWindowError> {
-        self.text_input
-            .sync_focus(focused_text_input_control(frame, reason))?;
-        Ok(())
-    }
-
-    fn sync_window_ime(&mut self, frame: &PreparedFrame) {
-        if !self.window_ime_supported {
-            return;
-        }
-        if !self.input.window_focused() {
-            return;
-        }
-        let Some(PreparedTextInputTarget { snapshot, geometry }) =
-            frame.focused_text_input_target()
-        else {
-            self.disable_window_ime();
-            return;
-        };
-        let request = window_ime_request_data(&snapshot, &geometry);
-        if self.window_ime_enabled {
-            self.update_window_ime(request);
-        } else {
-            self.enable_window_ime(request);
-        }
-    }
-
-    fn enable_window_ime(&mut self, request: ImeRequestData) {
-        let capabilities = window_ime_capabilities_for_request(&request);
-        let Some(enable) = ImeEnableRequest::new(capabilities, request.clone()) else {
-            self.window_ime_supported = false;
-            return;
-        };
-        match self.window.request_ime_update(ImeRequest::Enable(enable)) {
-            Ok(()) | Err(ImeRequestError::AlreadyEnabled) => {
-                self.window_ime_enabled = true;
-                self.update_window_ime(request);
-            }
-            Err(ImeRequestError::NotEnabled) => {
-                self.window_ime_enabled = false;
-            }
-            Err(_) => {
-                self.mark_window_ime_unsupported();
-            }
-        }
-    }
-
-    fn update_window_ime(&mut self, request: ImeRequestData) {
-        match self
-            .window
-            .request_ime_update(ImeRequest::Update(request.clone()))
-        {
-            Ok(()) | Err(ImeRequestError::AlreadyEnabled) => {
-                self.window_ime_enabled = true;
-            }
-            Err(ImeRequestError::NotEnabled) => {
-                self.window_ime_enabled = false;
-                self.enable_window_ime(request);
-            }
-            Err(_) => {
-                self.mark_window_ime_unsupported();
-            }
-        }
-    }
-
-    fn disable_window_ime(&mut self) {
-        if self.window_ime_enabled {
-            let _ = self.window.request_ime_update(ImeRequest::Disable);
-        }
-        self.window_ime_enabled = false;
-    }
-
-    fn mark_window_ime_unsupported(&mut self) {
-        self.window_ime_supported = false;
-        self.window_ime_enabled = false;
-    }
-
-    fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
-        let InputOutcome {
-            actions,
-            text_control_write_backs,
-            clipboard_requests,
-            diagnostics: _,
-            dialogue_progress,
-            cancel: _,
-            redraw: _,
-        } = outcome;
-        self.apply_dialogue_progress(dialogue_progress);
-        for action in actions {
-            self.runtime.session_mut().queue_semantic_action(&action)?;
-        }
-        self.text_input
-            .record_runtime_write_backs(&text_control_write_backs);
-        self.runtime
-            .session_mut()
-            .queue_text_control_write_backs(text_control_write_backs)?;
-        self.apply_clipboard_requests(clipboard_requests)?;
-        Ok(())
-    }
-
-    fn apply_clipboard_requests(
-        &mut self,
-        clipboard_requests: Vec<arcweft_presentation::clipboard::TextClipboardRequest>,
-    ) -> Result<(), NativeSceneWindowError> {
-        let Some(frame) = self.prepared.clone() else {
-            return Ok(());
-        };
-        for request in clipboard_requests {
-            let host_outcome = self.clipboard.apply_clipboard_request_sync(request);
-            let outcome = self.input.apply_clipboard_outcome(&frame, host_outcome)?;
-            let InputOutcome {
-                actions,
-                text_control_write_backs,
-                clipboard_requests,
-                diagnostics: _,
-                dialogue_progress,
-                cancel: _,
-                redraw: _,
-            } = outcome;
-            self.apply_dialogue_progress(dialogue_progress);
-            for action in actions {
-                self.runtime.session_mut().queue_semantic_action(&action)?;
-            }
-            self.text_input
-                .record_runtime_write_backs(&text_control_write_backs);
-            self.runtime
-                .session_mut()
-                .queue_text_control_write_backs(text_control_write_backs)?;
-            if !clipboard_requests.is_empty() {
-                self.apply_clipboard_requests(clipboard_requests)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn apply_dialogue_progress(&mut self, progress: DialogueProgress) {
-        match progress {
-            DialogueProgress::None => {}
-            DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_stage(),
-            DialogueProgress::Advance { target } => {
-                self.runtime.session_mut().queue_dialogue_advance(target);
-            }
-        }
-    }
-
-    fn logical_position(&self, position: PhysicalPosition<f64>) -> ViewportPoint {
-        ViewportPoint::new(
-            (position.x / self.window.scale_factor())
-                .to_f32()
-                .unwrap_or(0.0),
-            (position.y / self.window.scale_factor())
-                .to_f32()
-                .unwrap_or(0.0),
-        )
     }
 }
 

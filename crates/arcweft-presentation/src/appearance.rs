@@ -4,8 +4,17 @@
 //! resolve OS/browser preferences into `PresentationEnvironment` and pass that
 //! pure data into Arcweft presentation and View evaluation.
 
-use arcweft_id::PublicId;
 use serde::{Deserialize, Serialize};
+
+pub mod environment;
+
+pub use self::environment::{
+    EnvironmentRevision, PresentationEnvironment, PresentationEnvironmentField,
+    PresentationEnvironmentFieldRevisions, PresentationEnvironmentFieldSet,
+    PresentationEnvironmentFieldSetError, PresentationEnvironmentOverrides,
+    PresentationEnvironmentSnapshotError, PresentationEnvironmentValue,
+    PresentationEnvironmentValues, TextScaleMilli, TextScaleMilliError,
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -30,22 +39,6 @@ pub enum ContrastPreference {
     #[default]
     Standard,
     More,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct TextScaleMilli(pub u16);
-
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct EnvironmentRevision(pub u64);
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PresentationEnvironment {
-    color_scheme: ColorScheme,
-    contrast: ContrastPreference,
-    reduce_motion: bool,
-    text_scale: TextScaleMilli,
-    locale: Option<PublicId>,
-    revision: EnvironmentRevision,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -100,100 +93,6 @@ pub struct SystemPalette {
 pub struct SystemPaletteSet {
     pub light: SystemPalette,
     pub dark: SystemPalette,
-}
-
-impl Default for TextScaleMilli {
-    fn default() -> Self {
-        Self::ONE
-    }
-}
-
-impl TextScaleMilli {
-    pub const ONE: Self = Self(1_000);
-
-    pub const fn new(value: u16) -> Self {
-        Self(value)
-    }
-
-    pub const fn value(self) -> u16 {
-        self.0
-    }
-}
-
-impl PresentationEnvironment {
-    pub const ENGINE_DEFAULT: Self = Self {
-        color_scheme: ColorScheme::Dark,
-        contrast: ContrastPreference::Standard,
-        reduce_motion: false,
-        text_scale: TextScaleMilli::ONE,
-        locale: None,
-        revision: EnvironmentRevision(0),
-    };
-
-    pub fn new(color_scheme: ColorScheme) -> Self {
-        Self {
-            color_scheme,
-            contrast: ContrastPreference::Standard,
-            reduce_motion: false,
-            text_scale: TextScaleMilli::ONE,
-            locale: None,
-            revision: EnvironmentRevision::default(),
-        }
-    }
-
-    #[must_use]
-    pub const fn with_contrast(mut self, contrast: ContrastPreference) -> Self {
-        self.contrast = contrast;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_reduce_motion(mut self, reduce_motion: bool) -> Self {
-        self.reduce_motion = reduce_motion;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_text_scale(mut self, text_scale: TextScaleMilli) -> Self {
-        self.text_scale = text_scale;
-        self
-    }
-
-    #[must_use]
-    pub fn with_locale(mut self, locale: PublicId) -> Self {
-        self.locale = Some(locale);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_revision(mut self, revision: EnvironmentRevision) -> Self {
-        self.revision = revision;
-        self
-    }
-
-    pub const fn color_scheme(&self) -> ColorScheme {
-        self.color_scheme
-    }
-
-    pub const fn contrast(&self) -> ContrastPreference {
-        self.contrast
-    }
-
-    pub const fn reduce_motion(&self) -> bool {
-        self.reduce_motion
-    }
-
-    pub const fn text_scale(&self) -> TextScaleMilli {
-        self.text_scale
-    }
-
-    pub const fn locale(&self) -> Option<&PublicId> {
-        self.locale.as_ref()
-    }
-
-    pub const fn revision(&self) -> EnvironmentRevision {
-        self.revision
-    }
 }
 
 impl PresentationColor {
@@ -375,29 +274,7 @@ impl SystemPaletteSet {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ColorScheme, ContrastPreference, EnvironmentRevision, PresentationEnvironment, SystemColor,
-        SystemPaletteSet, TextScaleMilli,
-    };
-    use arcweft_id::PublicId;
-
-    #[test]
-    fn presentation_environment_carries_accessibility_and_locale_inputs() {
-        let locale = PublicId::try_new("locale.ja_jp").expect("locale id");
-        let environment = PresentationEnvironment::new(ColorScheme::Dark)
-            .with_contrast(ContrastPreference::More)
-            .with_reduce_motion(true)
-            .with_text_scale(TextScaleMilli::new(1_250))
-            .with_locale(locale.clone())
-            .with_revision(EnvironmentRevision(7));
-
-        assert_eq!(environment.color_scheme(), ColorScheme::Dark);
-        assert_eq!(environment.contrast(), ContrastPreference::More);
-        assert!(environment.reduce_motion());
-        assert_eq!(environment.text_scale().value(), 1_250);
-        assert_eq!(environment.locale(), Some(&locale));
-        assert_eq!(environment.revision(), EnvironmentRevision(7));
-    }
+    use super::{ColorScheme, SystemColor, SystemPaletteSet};
 
     #[test]
     fn default_system_palette_resolves_scheme_specific_roles() {

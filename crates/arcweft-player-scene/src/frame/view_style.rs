@@ -2,6 +2,7 @@
 
 mod axis_seed;
 mod consumer;
+mod environment;
 mod layout;
 
 use super::PlayerFrameError;
@@ -21,11 +22,12 @@ use arcweft_view::ViewMountId;
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewElementState, ViewElementStateSet,
     ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleProgram,
-    ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
-    ViewStyleRevisionSet, ViewStyleTraceMode,
+    ViewStyleApplicationTarget, ViewStyleEnvironmentUsage, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult,
+    ViewStyleResolver, ViewStyleRevisionSet, ViewStyleTraceMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use axis_seed::{inherited_axes, validate_mount_seed_shape};
 use consumer::validate_supported_properties;
@@ -68,7 +70,8 @@ struct CallerKey {
 struct ResolvedNode {
     facts: ViewStyleNodeFacts,
     ancestors: Vec<ViewStyleNodeFacts>,
-    computed: ComputedViewStyle,
+    computed: Arc<ComputedViewStyle>,
+    environment_usage: ViewStyleEnvironmentUsage,
 }
 
 struct LiveStyleResolveContext<'a> {
@@ -89,11 +92,12 @@ struct LiveStyleFrameState {
 
 struct PrimaryNodeStyle {
     parent_id: Option<RuntimeNodeId>,
-    parent_computed: Option<ComputedViewStyle>,
+    parent_computed: Option<Arc<ComputedViewStyle>>,
     ancestors: Vec<ViewStyleNodeFacts>,
     bindings: Vec<NodeBinding>,
     facts: ViewStyleNodeFacts,
-    computed: ComputedViewStyle,
+    computed: Arc<ComputedViewStyle>,
+    environment_usage: ViewStyleEnvironmentUsage,
     projected: ViewRuntimeNodeStyle,
     inherited_axes: ViewInheritedBoxAxes,
 }
@@ -121,6 +125,7 @@ pub(super) struct PlayerViewStyleState {
     program: Option<ViewStyleProgram>,
     program_revision: u64,
     live_mounts: BTreeSet<ViewMountId>,
+    environment_usage: BTreeMap<ViewStyleNodeKey, ViewStyleEnvironmentUsage>,
 }
 
 impl ResolvedViewStyleFrame {
@@ -197,6 +202,7 @@ impl PlayerViewStyleState {
             if has_applications {
                 return Err(PlayerFrameError::MissingStyleProgram);
             }
+            self.environment_usage.clear();
             return Ok(ResolvedViewStyleFrame::default());
         };
         self.synchronize_program(program);
@@ -214,6 +220,11 @@ impl PlayerViewStyleState {
             }
         }
         frame.output.layout_offsets = resolve_layout_offsets(presentation, &frame.layout_nodes);
+        self.environment_usage = frame
+            .resolved
+            .iter()
+            .map(|(node, resolved)| (node.style_key(), resolved.environment_usage))
+            .collect();
         Ok(frame.output)
     }
 
@@ -231,8 +242,9 @@ impl PlayerViewStyleState {
                 instruction: node.instruction,
             });
         }
-        let primary = self.resolve_primary_style(context, mount, node, &node_id, frame)?;
-        self.resolve_bound_styles(context, mount, node, &node_id, &primary, &mut frame.output)?;
+        let mut primary = self.resolve_primary_style(context, mount, node, &node_id, frame)?;
+        primary.environment_usage =
+            self.resolve_bound_styles(context, mount, node, &node_id, &primary, &mut frame.output)?;
         retain_resolved_node(frame, mount, node, node_id, primary)
     }
 
@@ -276,7 +288,7 @@ impl PlayerViewStyleState {
             placeholder_shown: false,
         });
         let facts = node_facts(context.input, node, &primary_binding);
-        let computed = self.resolve_node(
+        let resolution = self.resolve_node(
             context.program,
             context.presentation,
             context.environment,
@@ -284,11 +296,13 @@ impl PlayerViewStyleState {
             node_id,
             &facts,
             &ancestors,
-            parent_computed.as_ref(),
+            parent_computed.as_deref(),
             parent_id.as_ref(),
             inherited_axes,
             ViewAxisProviderParticipation::RetainedPrimary,
         )?;
+        let environment_usage = resolution.environment_usage();
+        let computed = resolution.into_computed();
         validate_supported_properties(context.presentation, mount, node, &bindings, &computed)?;
         let projected = ViewRuntimeNodeStyle::try_from_computed(
             &computed,
@@ -302,6 +316,7 @@ impl PlayerViewStyleState {
             bindings,
             facts,
             computed,
+            environment_usage,
             projected,
             inherited_axes,
         })
@@ -315,13 +330,14 @@ impl PlayerViewStyleState {
         node_id: &RuntimeNodeId,
         primary: &PrimaryNodeStyle,
         output: &mut ResolvedViewStyleFrame,
-    ) -> Result<(), PlayerFrameError> {
+    ) -> Result<ViewStyleEnvironmentUsage, PlayerFrameError> {
+        let mut environment_usage = primary.environment_usage;
         for binding in &primary.bindings {
             let facts = node_facts(context.input, node, binding);
-            let computed = if facts == primary.facts {
-                primary.computed.clone()
+            let (computed, binding_usage) = if facts == primary.facts {
+                (primary.computed.clone(), primary.environment_usage)
             } else {
-                self.resolve_node(
+                let resolution = self.resolve_node(
                     context.program,
                     context.presentation,
                     context.environment,
@@ -329,12 +345,15 @@ impl PlayerViewStyleState {
                     node_id,
                     &facts,
                     &primary.ancestors,
-                    primary.parent_computed.as_ref(),
+                    primary.parent_computed.as_deref(),
                     primary.parent_id.as_ref(),
                     primary.inherited_axes,
                     ViewAxisProviderParticipation::ProjectionOnly,
-                )?
+                )?;
+                let usage = resolution.environment_usage();
+                (resolution.into_computed(), usage)
             };
+            environment_usage = environment_usage.union(binding_usage);
             validate_supported_properties(
                 context.presentation,
                 mount,
@@ -355,7 +374,7 @@ impl PlayerViewStyleState {
                 output.insert(key.clone(), projected.clone())?;
             }
         }
-        Ok(())
+        Ok(environment_usage)
     }
 
     fn synchronize_program(&mut self, program: &ViewStyleProgram) {
@@ -363,6 +382,7 @@ impl PlayerViewStyleState {
             self.program = Some(program.clone());
             self.program_revision = self.program_revision.saturating_add(1);
             self.resolver.clear();
+            self.environment_usage.clear();
         }
     }
 
@@ -376,6 +396,8 @@ impl PlayerViewStyleState {
         for removed in self.live_mounts.difference(&current) {
             self.resolver.invalidate_mount(*removed);
         }
+        self.environment_usage
+            .retain(|node, _| current.contains(&node.mount()));
         self.live_mounts = current;
     }
 
@@ -396,34 +418,32 @@ impl PlayerViewStyleState {
         parent_id: Option<&RuntimeNodeId>,
         inherited_axes: ViewInheritedBoxAxes,
         axis_provider_participation: ViewAxisProviderParticipation,
-    ) -> Result<ComputedViewStyle, ViewStyleResolveError> {
+    ) -> Result<ViewStyleResolveResult, ViewStyleResolveError> {
         let key = node_id.style_key();
         let parent_key = parent_id.map(RuntimeNodeId::style_key);
-        self.resolver
-            .resolve(
-                program,
-                &ViewStyleResolveContext {
-                    node_key: &key,
-                    node: facts,
-                    ancestors,
-                    applications: &node.applications,
-                    parent,
-                    parent_node_key: parent_key.as_ref(),
-                    inherited_axes,
-                    axis_provider_participation,
-                    environment,
-                    revisions: ViewStyleRevisionSet {
-                        sheets: self.program_revision,
-                        patches: self.program_revision,
-                        tokens: self.program_revision,
-                        applications: presentation.revision,
-                        interactions: 0,
-                        containers: 0,
-                    },
-                    trace: ViewStyleTraceMode::Off,
+        self.resolver.resolve(
+            program,
+            &ViewStyleResolveContext {
+                node_key: &key,
+                node: facts,
+                ancestors,
+                applications: &node.applications,
+                parent,
+                parent_node_key: parent_key.as_ref(),
+                inherited_axes,
+                axis_provider_participation,
+                environment,
+                revisions: ViewStyleRevisionSet {
+                    sheets: self.program_revision,
+                    patches: self.program_revision,
+                    tokens: self.program_revision,
+                    applications: presentation.revision,
+                    interactions: 0,
+                    containers: 0,
                 },
-            )
-            .map(ViewStyleResolution::into_computed)
+                trace: ViewStyleTraceMode::Off,
+            },
+        )
     }
 }
 
@@ -441,6 +461,7 @@ fn retain_resolved_node(
         bindings,
         facts,
         computed,
+        environment_usage,
         projected,
         inherited_axes: _,
     } = primary;
@@ -480,6 +501,7 @@ fn retain_resolved_node(
             facts,
             ancestors,
             computed,
+            environment_usage,
         },
     );
     Ok(())

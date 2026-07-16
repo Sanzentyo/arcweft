@@ -14,6 +14,7 @@ pub struct SourceMapSourceId(String);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceMapIndex {
     entries: BTreeMap<SourceMapSourceId, SourceMapEntry>,
+    utf8_boundaries: BTreeMap<SourceMapSourceId, Box<[usize]>>,
 }
 
 /// Digest and normalized UTF-8 extent for one source document.
@@ -56,13 +57,27 @@ impl SourceMapIndex {
             digest: BundleDigest::of(source.text.as_bytes()),
             utf8_len: source.text.len(),
         };
+        let boundaries = source
+            .text
+            .char_indices()
+            .map(|(offset, _)| offset)
+            .chain(std::iter::once(source.text.len()))
+            .collect::<Box<[_]>>();
         Ok(Self {
-            entries: BTreeMap::from([(id, entry)]),
+            entries: BTreeMap::from([(id.clone(), entry)]),
+            utf8_boundaries: BTreeMap::from([(id, boundaries)]),
         })
     }
 
     pub fn entry(&self, id: &SourceMapSourceId) -> Option<SourceMapEntry> {
         self.entries.get(id).copied()
+    }
+
+    /// Returns whether an offset is a UTF-8 code-point boundary in the indexed source.
+    pub fn is_utf8_boundary(&self, id: &SourceMapSourceId, offset: usize) -> Option<bool> {
+        self.utf8_boundaries
+            .get(id)
+            .map(|boundaries| boundaries.binary_search(&offset).is_ok())
     }
 }
 

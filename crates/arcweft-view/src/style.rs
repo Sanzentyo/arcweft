@@ -14,6 +14,7 @@ pub struct ValueSourceId(pub u32);
 pub mod axis;
 pub mod cascade;
 pub mod computed;
+pub mod environment;
 pub mod property;
 pub mod resolver;
 pub mod selector;
@@ -35,19 +36,24 @@ pub use computed::{
     ComputedViewAxes, ComputedViewProperty, ComputedViewStyle, ComputedViewStyleRevision,
     ComputedViewTransition,
 };
+pub use environment::{
+    ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
+    ViewEnvironmentMatch, ViewEnvironmentTest, ViewTextScaleComparison,
+};
 pub use property::{
     ViewComputedPropertyKind, ViewPropertyExpansion, ViewPropertyKind, ViewPropertyResolution,
     ViewPropertyValueTransform, ViewStyleInvalidationSet, ViewStyleValueKind,
 };
 pub use resolver::{
-    ViewAxisProviderParticipation, ViewElementStateSet, ViewInteractionStateSet,
-    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleResolution, ViewStyleResolveContext,
-    ViewStyleResolveError, ViewStyleResolver, ViewStyleResolverLimits, ViewStyleRevisionSet,
+    ViewAxisProviderParticipation, ViewElementStateSet, ViewInheritedStyleIdentity,
+    ViewInteractionStateSet, ViewStyleEnvironmentUsage, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult, ViewStyleResolver,
+    ViewStyleResolverLimits, ViewStyleRevisionSet,
 };
 pub use selector::{
-    ViewContainerAxis, ViewContainerPredicate, ViewElementState, ViewEnvironmentPredicate,
-    ViewInteractionSelector, ViewStyleCombinator, ViewStyleComparison, ViewStylePredicate,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSpecificity,
+    ViewContainerAxis, ViewContainerComparison, ViewContainerPredicate, ViewElementState,
+    ViewInteractionSelector, ViewStyleCombinator, ViewStylePredicate, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSpecificity,
 };
 pub use sheet::{
     ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,

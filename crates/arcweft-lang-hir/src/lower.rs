@@ -29,6 +29,7 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
         attributes: tree.attrs().to_vec(),
         uses: tree.uses().to_vec(),
         module_path,
+        source: tree.source().to_owned(),
         source_len: Some(tree.source().len()),
         top_level_ranges: tree.items().iter().filter_map(Item::range).collect(),
         ..HirLoweringState::default()
@@ -62,6 +63,7 @@ struct HirLoweringState {
     attributes: Vec<Attribute>,
     uses: Vec<arcweft_lang_syntax::ast::common::UseItem>,
     module_path: Option<CanonicalModulePath>,
+    source: String,
     source_len: Option<usize>,
     top_level_ranges: Vec<arcweft_lang_syntax::ast::common::TextRange>,
     flows: Vec<crate::model::HirFlow>,
@@ -156,7 +158,10 @@ impl HirLoweringState {
             }
             Item::Style(item) => {
                 self.declarations
-                    .push(HirTopLevelDecl::Style(HirStyleDecl::from(item)));
+                    .push(HirTopLevelDecl::Style(HirStyleDecl::from_syntax(
+                        item,
+                        &self.source,
+                    )));
             }
             Item::State(item) => {
                 self.declarations.push(HirTopLevelDecl::State(item.clone()));

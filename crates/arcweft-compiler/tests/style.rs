@@ -16,7 +16,10 @@ use arcweft_project::manifest::ProjectManifest;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
+use arcweft_view::style::{
+    ViewEnvironmentTest, ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId,
+    ViewTextScaleComparison,
+};
 
 fn project_context(project: &ProjectSources) -> ProjectCompilationContext {
     let documents = project
@@ -106,6 +109,48 @@ pub view Example() {
             ViewStyleApplicationTarget::inline(ViewStylePatchId::new(0)),
         ]
     );
+}
+
+#[test]
+fn style_compiler_lowers_flattened_environment_guard_with_exact_sources() {
+    let source = r"pub style adaptive {
+    when environment(text-scale >= 125.5%) {
+        when environment(color-scheme == dark) {
+            Button { opacity = 900milli }
+        }
+    }
+}
+";
+    let compiled = compile_source(source).expect("typed environment Style source compiles");
+    let resource = compiled.style.resource();
+    let rule = &resource.program.sheets()[0].rules()[0];
+    let environment = rule.environment().expect("lowered environment guard");
+    assert_eq!(environment.clauses().len(), 2);
+    assert!(matches!(
+        environment.clauses()[0].test(),
+        ViewEnvironmentTest::ColorScheme(_)
+    ));
+    assert!(matches!(
+        environment.clauses()[1].test(),
+        ViewEnvironmentTest::TextScale {
+            comparison: ViewTextScaleComparison::GreaterOrEqual,
+            value,
+        } if value.value() == 1_255
+    ));
+
+    let condition_source = resource.source_map_refs[environment.source().value() as usize];
+    assert_eq!(
+        &source[condition_source.start_byte as usize..condition_source.end_byte as usize],
+        "(text-scale >= 125.5%)"
+    );
+    for clause in environment.clauses() {
+        let range = resource.source_map_refs[clause.source().value() as usize];
+        let authored = &source[range.start_byte as usize..range.end_byte as usize];
+        assert!(
+            authored == "text-scale >= 125.5%" || authored == "color-scheme == dark",
+            "unexpected clause source: {authored}"
+        );
+    }
 }
 
 #[test]

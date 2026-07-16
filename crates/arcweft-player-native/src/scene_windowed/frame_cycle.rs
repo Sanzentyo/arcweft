@@ -1,0 +1,344 @@
+//! Window-owned frame preparation, rendering, and boundary update order.
+
+use super::{
+    Arc, ArcweftBundle, BundleStepInput, FrameBoundary, Instant, ModifiersState,
+    NativeAudioRuntime, NativeClipboardAdapter, NativeDesktopBackend, NativePlayerOptions,
+    NativeSceneState, NativeSceneWindowError, NativeTextInputBridge, NativeTextInputFocusReason,
+    PhysicalSize, PlayerFontSet, PlayerFramePlannerState, PlayerFrameRequest, RenderPreferences,
+    RenderViewport, RuntimeClockStep, SharedRenderer, Size, ToPrimitive, VecDeque, Window,
+    WindowCloseSignal, WindowedEnvironmentIngressCommand, WindowedEnvironmentIngressCompletion,
+    WindowedEnvironmentUpdateError, WindowedPatchIngressCompletion, WindowedPatchIngressMessage,
+    WindowedRuntimeOutcome, WinitOwnedWindowDriver, non_zero_size,
+    restored_windowed_runtime_and_input, save_native_player_session, scene_aspect_size,
+    surface_texture,
+};
+
+impl NativeSceneState {
+    pub(super) async fn new(
+        window: Arc<dyn Window>,
+        title: String,
+        bundle: ArcweftBundle,
+        ingress_completion: WindowedPatchIngressCompletion,
+        environment_completion: WindowedEnvironmentIngressCompletion,
+        options: NativePlayerOptions,
+    ) -> Result<Self, NativeSceneWindowError> {
+        let instance = wgpu::Instance::default();
+        let surface = instance
+            .create_surface(Arc::clone(&window))
+            .map_err(|error| NativeSceneWindowError::SurfaceCreation(error.to_string()))?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+            })
+            .await
+            .map_err(|_| NativeSceneWindowError::AdapterUnavailable)?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("arcweft-native-scene-device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                ..Default::default()
+            })
+            .await
+            .map_err(|error| NativeSceneWindowError::DeviceRequest(error.to_string()))?;
+        let capabilities = surface.get_capabilities(&adapter);
+        let format = capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(wgpu::TextureFormat::is_srgb)
+            .or_else(|| capabilities.formats.first().copied())
+            .ok_or(NativeSceneWindowError::NoSurfaceFormat)?;
+        let size = scene_aspect_size(window.surface_size(), options.frame_fit);
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: size.width,
+            height: size.height,
+            present_mode: capabilities
+                .present_modes
+                .iter()
+                .copied()
+                .find(|mode| *mode == wgpu::PresentMode::Fifo)
+                .unwrap_or(wgpu::PresentMode::AutoVsync),
+            desired_maximum_frame_latency: 2,
+            alpha_mode: capabilities
+                .alpha_modes
+                .first()
+                .copied()
+                .unwrap_or(wgpu::CompositeAlphaMode::Auto),
+            view_formats: Vec::new(),
+        };
+        surface.configure(&device, &config);
+        let mut renderer = SharedRenderer::new(&device, &queue, format);
+        let mut frame_planner = PlayerFramePlannerState::new();
+        PlayerFontSet::bundled_default()
+            .register_with_renderer_and_planner(&mut renderer, &mut frame_planner)
+            .map_err(|error| NativeSceneWindowError::Font(error.to_string()))?;
+        let close_signal = WindowCloseSignal::default();
+        let owned_window = Arc::new(
+            WinitOwnedWindowDriver::try_new(Arc::clone(&window), title, close_signal.clone())
+                .map_err(NativeSceneWindowError::Window)?,
+        );
+        let backend = NativeDesktopBackend::builder()
+            .with_owned_window_driver(owned_window)
+            .build();
+        let audio = NativeAudioRuntime::from_bundle(&bundle)?;
+        let (runtime, input, dialogue_visual_clock) =
+            restored_windowed_runtime_and_input(&bundle, backend, options.session_load.as_deref())?;
+        let text_input = NativeTextInputBridge::new(options.text_input.clone());
+        Ok(Self {
+            window,
+            close_signal,
+            surface,
+            device,
+            queue,
+            config,
+            renderer,
+            frame_planner,
+            runtime,
+            audio,
+            ingress_completion,
+            environment_completion,
+            input,
+            clipboard: NativeClipboardAdapter::default(),
+            keyboard_modifiers: ModifiersState::default(),
+            text_input,
+            window_ime_supported: true,
+            window_ime_enabled: false,
+            next_window_ime_serial: 1,
+            frame_fit: options.frame_fit,
+            session_save_out: options.session_save_out.clone(),
+            session_save_on_exit_completed: false,
+            prepared: None,
+            pending_environment: VecDeque::new(),
+            dialogue_visual_clock,
+            started_at: Instant::now(),
+            next_tick: 1,
+        })
+    }
+
+    pub(super) fn take_close_requested(&self) -> bool {
+        self.close_signal.take()
+    }
+
+    pub(super) fn save_session_on_exit(&mut self) -> Result<(), NativeSceneWindowError> {
+        if self.session_save_on_exit_completed {
+            return Ok(());
+        }
+        let Some(path) = self.session_save_out.clone() else {
+            return Ok(());
+        };
+        save_native_player_session(
+            &path,
+            &self.runtime,
+            &self.input,
+            &self.dialogue_visual_clock,
+            self.elapsed_millis(),
+        )?;
+        self.session_save_on_exit_completed = true;
+        Ok(())
+    }
+
+    pub(super) fn resize(&mut self, size: PhysicalSize<u32>) {
+        let requested = non_zero_size(size);
+        let size = scene_aspect_size(requested, self.frame_fit);
+        if size != requested {
+            let _ = self.window.request_surface_size(Size::Physical(size));
+        }
+        if self.config.width == size.width && self.config.height == size.height {
+            return;
+        }
+        self.config.width = size.width;
+        self.config.height = size.height;
+        self.surface.configure(&self.device, &self.config);
+    }
+
+    pub(super) fn redraw(&mut self) -> Result<(), NativeSceneWindowError> {
+        self.runtime.pump_main_thread()?;
+        self.step_runtime()?;
+        let prepared = self.prepare_frame()?;
+        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
+        self.sync_window_ime(&prepared.frame);
+        self.render(&prepared.frame)?;
+        let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
+        let environment_invalidated = self.drain_environment_boundary();
+        if environment_invalidated
+            || patch_outcomes
+                .iter()
+                .any(WindowedRuntimeOutcome::invalidates_prepared_frame)
+        {
+            self.prepared = None;
+        } else {
+            self.prepared = Some(prepared.frame);
+        }
+        Ok(())
+    }
+
+    fn drain_environment_boundary(&mut self) -> bool {
+        let mut invalidated = false;
+        while let Some(envelope) = self.pending_environment.pop_front() {
+            let sequence = envelope.sequence();
+            let command = envelope.command();
+            let result = match command {
+                WindowedEnvironmentIngressCommand::ReplaceProvider(values) => self
+                    .runtime
+                    .session_mut()
+                    .update_presentation_environment_provider(values),
+                WindowedEnvironmentIngressCommand::ClearProvider => self
+                    .runtime
+                    .session_mut()
+                    .clear_presentation_environment_provider(),
+            }
+            .map_err(WindowedEnvironmentUpdateError::from)
+            .and_then(|update| {
+                let player = self
+                    .frame_planner
+                    .apply_environment_update(update)
+                    .map_err(WindowedEnvironmentUpdateError::from)?;
+                if player.prepared_work_discarded() {
+                    self.prepared = None;
+                }
+                invalidated |= player.prepared_work_discarded() || player.redraw_requested();
+                Ok(update)
+            });
+            self.environment_completion
+                .completed_at_frame_boundary(sequence, command, &result);
+            envelope.complete(result);
+        }
+        if invalidated {
+            self.window.request_redraw();
+        }
+        invalidated
+    }
+
+    fn step_runtime(&mut self) -> Result<(), NativeSceneWindowError> {
+        if self.runtime.session().is_finished() {
+            return Ok(());
+        }
+        if let Some(audio) = &mut self.audio {
+            let mut events = Vec::new();
+            audio.drain_events(&mut events);
+            self.runtime.push_audio_events(events);
+        }
+        let clock = RuntimeClockStep::from_millis(self.next_tick, 16)?;
+        self.next_tick = self.next_tick.saturating_add(1);
+        let step = self
+            .runtime
+            .step_with_clock(clock, BundleStepInput::default());
+        if let Some(audio) = &mut self.audio {
+            let mut command_events = Vec::new();
+            audio.submit_commands(step.audio_commands, &mut command_events);
+            self.runtime.push_audio_events(command_events);
+        }
+        Ok(())
+    }
+
+    pub(super) fn apply_ingress_message(&mut self, message: WindowedPatchIngressMessage) {
+        match message {
+            WindowedPatchIngressMessage::Enqueue(envelope) => {
+                let source = envelope.event.source();
+                self.ingress_completion
+                    .accepted_by_event_loop(envelope.sequence, source);
+                self.runtime.push_patch_event(envelope.event);
+            }
+            WindowedPatchIngressMessage::RetainRejected { source, message } => {
+                self.runtime.retain_patch_ingress_rejection(source, message);
+            }
+        }
+        self.window.request_redraw();
+    }
+
+    pub(super) fn prepare_frame(
+        &mut self,
+    ) -> Result<arcweft_player_scene::frame::PlayerPreparedFrame, NativeSceneWindowError> {
+        let viewport = self.viewport();
+        let elapsed = self.elapsed_millis();
+        let session = self.runtime.session();
+        let presentation = session.presentation();
+        let fx_definitions = session.fx_definitions();
+        let dialogue_visual = self.dialogue_visual_clock.progress(
+            presentation.dialogue.latest_active(),
+            elapsed,
+            None,
+        );
+        let style_environment = session.presentation_environment();
+        Ok(self.frame_planner.prepare(
+            &mut self.input,
+            PlayerFrameRequest {
+                presentation,
+                fx_definitions,
+                images: self.runtime.images(),
+                style_program: session.view_style_program(),
+                style_environment: &style_environment,
+                style_palettes: session.view_style_palettes(),
+                viewport,
+                fit: self.frame_fit,
+                image_time_millis: elapsed,
+                visual_time_millis: dialogue_visual.elapsed_millis(),
+                dialogue_reveal_complete: dialogue_visual.is_complete(),
+                preferences: RenderPreferences::default(),
+            },
+        )?)
+    }
+
+    fn render(
+        &mut self,
+        prepared: &arcweft_render_wgpu::geometry::PreparedFrame,
+    ) -> Result<(), NativeSceneWindowError> {
+        let surface_frame = match surface_texture(self.surface.get_current_texture()) {
+            Ok(texture) => texture,
+            Err(NativeSceneWindowError::SurfaceLost | NativeSceneWindowError::SurfaceOutdated) => {
+                self.surface.configure(&self.device, &self.config);
+                self.window.request_redraw();
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        let view = surface_frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.renderer
+            .render_to_view(&self.device, &self.queue, &view, prepared)?;
+        surface_frame.present();
+        Ok(())
+    }
+
+    fn drain_patch_events_after_render_submitted(
+        &mut self,
+    ) -> Result<Vec<WindowedRuntimeOutcome>, NativeSceneWindowError> {
+        let outcomes = self
+            .runtime
+            .drain_patch_boundary(FrameBoundary::AfterRenderSubmitted)?;
+        self.ingress_completion
+            .completed_at_frame_boundary(outcomes.len());
+        if !outcomes.is_empty() {
+            self.window.request_redraw();
+        }
+        Ok(outcomes)
+    }
+
+    fn viewport(&self) -> RenderViewport {
+        let size = PhysicalSize::new(self.config.width, self.config.height);
+        let scale_factor = self.window.scale_factor().max(f64::EPSILON);
+        let logical_width = (f64::from(size.width) / scale_factor)
+            .to_f32()
+            .unwrap_or(f32::MAX);
+        let logical_height = (f64::from(size.height) / scale_factor)
+            .to_f32()
+            .unwrap_or(f32::MAX);
+        RenderViewport {
+            logical_width,
+            logical_height,
+            physical_width: size.width,
+            physical_height: size.height,
+            scale_factor,
+        }
+    }
+
+    pub(super) fn elapsed_millis(&self) -> u64 {
+        u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+}

@@ -1,0 +1,270 @@
+use arcweft_lang_syntax::{
+    ast::{
+        items::Item,
+        style::{
+            StyleEnvironmentComparisonSyntax, StyleEnvironmentFieldSyntax,
+            StyleEnvironmentUnsupportedValueKind, StyleEnvironmentValueSyntax,
+        },
+    },
+    parser::parse_source,
+    source::ParsedSource,
+};
+
+fn style(parsed: &ParsedSource) -> &arcweft_lang_syntax::ast::style::StyleDecl {
+    parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::Style(style) => Some(style),
+            _ => None,
+        })
+        .expect("style declaration")
+}
+
+#[test]
+fn environment_wrapper_parses_all_four_fields() {
+    let source = r"pub style adaptive {
+    when environment(
+        color-scheme == dark,
+        contrast == more,
+        reduced-motion == true,
+        text-scale >= 125.5%,
+    ) {
+        Button:hover { opacity = 900milli }
+    }
+}
+";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let environment = style(&parsed).sheet().body()[0]
+        .as_environment()
+        .expect("environment wrapper");
+    assert_eq!(environment.clauses().len(), 4);
+    assert_eq!(
+        environment
+            .clauses()
+            .iter()
+            .map(arcweft_lang_syntax::ast::style::StyleEnvironmentClause::field)
+            .collect::<Vec<_>>(),
+        vec![
+            StyleEnvironmentFieldSyntax::ColorScheme,
+            StyleEnvironmentFieldSyntax::Contrast,
+            StyleEnvironmentFieldSyntax::ReducedMotion,
+            StyleEnvironmentFieldSyntax::TextScale,
+        ]
+    );
+    assert_eq!(
+        environment.clauses()[3].comparison(),
+        StyleEnvironmentComparisonSyntax::GreaterOrEqual
+    );
+    let StyleEnvironmentValueSyntax::Percentage(percentage) = environment.clauses()[3].value()
+    else {
+        panic!("typed percentage")
+    };
+    assert_eq!(&source[percentage.integer_range().as_range()], "125");
+    assert_eq!(
+        &source[percentage
+            .fractional_range()
+            .expect("fractional digit")
+            .as_range()],
+        "5"
+    );
+    assert_eq!(&source[percentage.percent_range().as_range()], "%");
+    assert!(environment.body()[0].as_rule().is_some());
+}
+
+#[test]
+fn environment_wrapper_parses_nested_implicit_conjunction() {
+    let source = r"pub style adaptive {
+    when environment(color-scheme == dark) {
+        when environment(text-scale < 100%) {
+            Button { opacity = 800milli }
+        }
+    }
+}
+";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let outer = style(&parsed).sheet().body()[0]
+        .as_environment()
+        .expect("outer environment");
+    let inner = outer.body()[0].as_environment().expect("inner environment");
+    assert_eq!(
+        outer.clauses()[0].field(),
+        StyleEnvironmentFieldSyntax::ColorScheme
+    );
+    assert_eq!(
+        inner.clauses()[0].field(),
+        StyleEnvironmentFieldSyntax::TextScale
+    );
+    assert!(inner.body()[0].as_rule().is_some());
+}
+
+#[test]
+fn text_scale_parses_all_six_comparisons() {
+    let source = r"pub style adaptive {
+    when environment(text-scale == 100%) { Button { opacity = 1 } }
+    when environment(text-scale != 100%) { Button { opacity = 1 } }
+    when environment(text-scale < 100%) { Button { opacity = 1 } }
+    when environment(text-scale <= 100%) { Button { opacity = 1 } }
+    when environment(text-scale > 100%) { Button { opacity = 1 } }
+    when environment(text-scale >= 100%) { Button { opacity = 1 } }
+}
+";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let comparisons = style(&parsed)
+        .sheet()
+        .body()
+        .iter()
+        .map(|item| item.as_environment().expect("environment").clauses()[0].comparison())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        comparisons,
+        vec![
+            StyleEnvironmentComparisonSyntax::Equal,
+            StyleEnvironmentComparisonSyntax::NotEqual,
+            StyleEnvironmentComparisonSyntax::Less,
+            StyleEnvironmentComparisonSyntax::LessOrEqual,
+            StyleEnvironmentComparisonSyntax::Greater,
+            StyleEnvironmentComparisonSyntax::GreaterOrEqual,
+        ]
+    );
+}
+
+#[test]
+fn arbitrarily_long_percentage_integer_never_overflows_ast() {
+    let digits = "9".repeat(20_000);
+    let source = format!(
+        "pub style adaptive {{\n when environment(text-scale >= {digits}%) {{ Button {{ opacity = 1 }} }}\n}}\n"
+    );
+    let parsed = parse_source(&source);
+    assert_eq!(parsed.errors(), &[]);
+    let value = style(&parsed).sheet().body()[0]
+        .as_environment()
+        .expect("environment")
+        .clauses()[0]
+        .value();
+    let StyleEnvironmentValueSyntax::Percentage(percentage) = value else {
+        panic!("lossless percentage")
+    };
+    assert_eq!(
+        percentage.integer_range().end() - percentage.integer_range().start(),
+        digits.len()
+    );
+    assert_eq!(&source[percentage.integer_range().as_range()], digits);
+}
+
+#[test]
+fn unsupported_percentage_families_are_typed_without_expression_fallback() {
+    let cases = [
+        (
+            "+125%",
+            StyleEnvironmentUnsupportedValueKind::SignedPercentage,
+        ),
+        (
+            "1e2%",
+            StyleEnvironmentUnsupportedValueKind::ExponentPercentage,
+        ),
+        (
+            "125",
+            StyleEnvironmentUnsupportedValueKind::IntegerWithoutPercent,
+        ),
+        (
+            "125.55%",
+            StyleEnvironmentUnsupportedValueKind::FractionalPrecision,
+        ),
+        (
+            "clamp(50%, 100%)",
+            StyleEnvironmentUnsupportedValueKind::NestedDelimiter,
+        ),
+    ];
+    for (value, expected) in cases {
+        let source = format!(
+            "pub style adaptive {{\n when environment(text-scale == {value}) {{ Button {{ opacity = 1 }} }}\n}}\n"
+        );
+        let parsed = parse_source(source);
+        assert!(
+            parsed
+                .errors()
+                .iter()
+                .any(|error| error.code() == "syntax.parse.style_environment.unsupported_value")
+        );
+        let value = style(&parsed).sheet().body()[0]
+            .as_environment()
+            .expect("environment")
+            .clauses()[0]
+            .value();
+        assert!(matches!(
+            value,
+            StyleEnvironmentValueSyntax::Unsupported(unsupported)
+                if unsupported.kind() == expected
+        ));
+    }
+}
+
+#[test]
+fn arbitrarily_long_fraction_never_overflows_ast() {
+    let fractional = "7".repeat(20_000);
+    let source = format!(
+        "pub style adaptive {{\n when environment(text-scale == 125.{fractional}%) {{ Button {{ opacity = 1 }} }}\n}}\n"
+    );
+    let parsed = parse_source(source);
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .any(|error| { error.code() == "syntax.parse.style_environment.unsupported_value" })
+    );
+    let value = style(&parsed).sheet().body()[0]
+        .as_environment()
+        .expect("environment")
+        .clauses()[0]
+        .value();
+    assert!(matches!(
+        value,
+        StyleEnvironmentValueSyntax::Unsupported(unsupported)
+            if unsupported.kind() == StyleEnvironmentUnsupportedValueKind::FractionalPrecision
+    ));
+}
+
+#[test]
+fn missing_clause_comma_has_dedicated_code() {
+    let source = r"pub style adaptive {
+    when environment(color-scheme == dark contrast == more) {
+        Button { opacity = 900milli }
+    }
+}
+";
+    let parsed = parse_source(source);
+    let error = parsed
+        .errors()
+        .iter()
+        .find(|error| {
+            error.code() == "syntax.parse.style_environment.expected_comma_or_close_paren"
+        })
+        .expect("comma diagnostic");
+    assert_eq!(&source[error.range().as_range()], "dark contrast == more");
+}
+
+#[test]
+fn unterminated_condition_recovers_at_matching_wrapper_brace() {
+    let source = r"pub style adaptive {
+    when environment(text-scale >= 125% {
+        Button { opacity = 900milli }
+    }
+    Panel { opacity = 800milli }
+}
+";
+    let parsed = parse_source(source);
+    let error = parsed
+        .errors()
+        .iter()
+        .find(|error| error.code() == "syntax.parse.style_environment.unterminated_condition")
+        .expect("unterminated condition diagnostic");
+    assert_eq!(&source[error.range().as_range()], "(text-scale >= 125% ");
+    let body = style(&parsed).sheet().body();
+    assert!(body[0].as_environment().is_some());
+    assert!(body[1].as_rule().is_some(), "next sibling rule survives");
+}

@@ -1,26 +1,34 @@
 //! Single native computed-Style resolver for retained and control nodes.
 
 mod axis;
+mod cache;
+mod environment;
+mod matching;
 mod provider;
 
 use super::trace::ViewStyleTraceRecorder;
 use super::{
-    ComputedViewAxes, ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
-    ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSeedSource, ViewComputedPropertyKind,
-    ViewElementState, ViewEnvironmentPredicate, ViewInheritedBoxAxes, ViewInteractionSelector,
-    ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget,
-    ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution, ViewStyleContributionSource,
-    ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStylePriority, ViewStyleProgram,
-    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceMode,
-    ViewStyleTraceRejection,
+    ComputedViewAxes, ComputedViewStyle, ComputedViewStyleBuilder, ViewBoxAxisMode,
+    ViewBoxAxisRevision, ViewBoxAxisSeedSource, ViewComputedPropertyKind, ViewElementState,
+    ViewInheritedBoxAxes, ViewInteractionSelector, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStylePatch, ViewStylePatchId, ViewStylePriority,
+    ViewStyleProgram, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleTokenId, ViewStyleTraceMode, ViewStyleTraceRejection,
 };
 use crate::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
-use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, PresentationEnvironment};
+use arcweft_presentation::appearance::{PresentationEnvironment, PresentationEnvironmentFieldSet};
 use axis::{PendingViewStyleContribution, resolve_axes, resolve_contribution, resolve_transitions};
-use provider::{ViewAxisProviderIndex, ViewAxisProviderUpdatePlan};
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use cache::{ViewStyleCacheEntry, ViewStyleCacheKey, ViewStyleSelectionStamp, computed_revision};
+use environment::projection_environment_usage;
+use matching::{consume_selector_steps, scoped_ancestors, selector_matches};
+use provider::ViewAxisProviderIndex;
+use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 use thiserror::Error;
+
+pub use cache::{ViewInheritedStyleIdentity, ViewStyleResolveResult};
+pub use environment::ViewStyleEnvironmentUsage;
 
 /// Stable runtime identity used by the bounded computed-style cache.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -106,19 +114,11 @@ pub enum ViewAxisProviderParticipation {
     ProjectionOnly,
 }
 
-/// Computed result and optional deterministic trace.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewStyleResolution {
-    computed: ComputedViewStyle,
-    trace: ViewStyleTrace,
-    cache_hit: bool,
-}
-
 /// One native resolver with deterministic FIFO cache eviction.
 #[derive(Clone, Debug)]
 pub struct ViewStyleResolver {
     limits: ViewStyleResolverLimits,
-    cache: BTreeMap<ViewStyleCacheKey, ComputedViewStyle>,
+    cache: BTreeMap<ViewStyleCacheKey, ViewStyleCacheEntry>,
     cache_order: VecDeque<ViewStyleCacheKey>,
     axis_providers: ViewAxisProviderIndex,
 }
@@ -209,27 +209,12 @@ pub enum ViewStyleResolveError {
     },
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct ViewStyleCacheKey {
-    node: ViewStyleNodeKey,
-    facts: Vec<ViewStyleNodeFacts>,
-    revisions: ViewStyleRevisionSet,
-    parent_revision: Option<ComputedViewStyleRevision>,
-    color_scheme: u8,
-    contrast: u8,
-    reduce_motion: bool,
-    text_scale: u16,
-    locale: Option<String>,
-    environment_revision: u64,
-    axis_mode: u8,
-    axis_revision: ViewBoxAxisRevision,
-}
-
 #[derive(Default)]
 struct ResolveBudget {
     rules: usize,
     selector_steps: usize,
     selector_exhausted: bool,
+    environment_selection: PresentationEnvironmentFieldSet,
 }
 
 #[derive(Clone, Debug)]
@@ -253,12 +238,6 @@ impl Default for ViewStyleResolverLimits {
             max_cache_entries: 1_024,
             max_axis_invalidation_nodes: 65_536,
         }
-    }
-}
-
-impl Default for ViewStyleResolver {
-    fn default() -> Self {
-        Self::new(ViewStyleResolverLimits::default())
     }
 }
 
@@ -407,24 +386,6 @@ impl ViewStyleNodeFacts {
     }
 }
 
-impl ViewStyleResolution {
-    pub const fn computed(&self) -> &ComputedViewStyle {
-        &self.computed
-    }
-
-    pub const fn trace(&self) -> &ViewStyleTrace {
-        &self.trace
-    }
-
-    pub const fn cache_hit(&self) -> bool {
-        self.cache_hit
-    }
-
-    pub fn into_computed(self) -> ComputedViewStyle {
-        self.computed
-    }
-}
-
 impl ViewStyleResolver {
     pub fn new(limits: ViewStyleResolverLimits) -> Self {
         Self {
@@ -439,35 +400,14 @@ impl ViewStyleResolver {
         self.limits
     }
 
-    pub fn clear(&mut self) {
-        self.cache.clear();
-        self.cache_order.clear();
-        self.axis_providers.clear();
-    }
-
-    pub fn invalidate_node(&mut self, node: &ViewStyleNodeKey) {
-        self.cache.retain(|key, _| &key.node != node);
-        self.cache_order.retain(|key| &key.node != node);
-    }
-
-    /// Removes retained provider and cache state owned by one dead View mount.
-    ///
-    /// The returned count is the number of provider records removed. Repeating
-    /// the operation for an already absent mount returns zero.
-    pub fn invalidate_mount(&mut self, mount: ViewMountId) -> usize {
-        let removed = self.axis_providers.invalidate_mount(mount);
-        self.cache.retain(|key, _| key.node.mount() != mount);
-        self.cache_order.retain(|key| key.node.mount() != mount);
-        removed
-    }
-
     pub fn resolve(
         &mut self,
         program: &ViewStyleProgram,
         context: &ViewStyleResolveContext<'_>,
-    ) -> Result<ViewStyleResolution, ViewStyleResolveError> {
+    ) -> Result<ViewStyleResolveResult, ViewStyleResolveError> {
         let mut trace = ViewStyleTraceRecorder::new(context.trace);
-        let contributions = self.collect_contributions(program, context, &mut trace)?;
+        let (contributions, environment_selection) =
+            self.collect_contributions(program, context, &mut trace)?;
         let resolved_axes = resolve_axes(context.node_key, context.inherited_axes, &contributions);
         let provider_update = self.axis_providers.prepare(
             context,
@@ -476,20 +416,28 @@ impl ViewStyleResolver {
             self.limits.max_axis_invalidation_nodes,
         )?;
         let cache_key = ViewStyleCacheKey::new(context, &resolved_axes.axes);
+        let parent_identity = context
+            .parent
+            .map(ViewInheritedStyleIdentity::from_computed);
         if context.trace != ViewStyleTraceMode::Full
-            && let Some(computed) = self.cache.get(&cache_key).cloned()
+            && let Some(cached) = self.cache.get(&cache_key).cloned()
+            && cached.selection_stamp.matches(*context.environment)
+            && cached.parent_identity == parent_identity
         {
-            let trace = trace.finish(&computed);
+            let trace = trace.finish(&cached.computed);
             self.commit_provider_update(provider_update);
-            self.insert_cache(cache_key, computed.clone());
-            return Ok(ViewStyleResolution {
-                computed,
+            self.insert_cache(cache_key, cached.clone());
+            return Ok(ViewStyleResolveResult {
+                computed: cached.computed,
+                environment_usage: cached.environment_usage,
                 trace,
                 cache_hit: true,
             });
         }
 
-        let revision = computed_revision(&cache_key);
+        let selection_stamp =
+            ViewStyleSelectionStamp::new(environment_selection, *context.environment);
+        let revision = computed_revision(&cache_key, selection_stamp, parent_identity.as_ref());
         let mode = resolved_axes.axes.mode();
         let mut builder = ComputedViewStyleBuilder::inherit(context.parent, resolved_axes.axes);
         let mut resolved_contribution_count = 0_usize;
@@ -520,14 +468,27 @@ impl ViewStyleResolver {
             resolve_transitions(builder.value(ViewPropertyKind::Transition), mode);
         builder.include_axis_usage(usage);
         builder.set_transitions(transitions);
-        let computed = builder.finish(revision);
+        let computed = Arc::new(builder.finish(revision));
+        let environment_usage = ViewStyleEnvironmentUsage::new(
+            environment_selection,
+            projection_environment_usage(&computed),
+        );
         let trace = trace.finish(&computed);
         self.commit_provider_update(provider_update);
         if context.trace != ViewStyleTraceMode::Full {
-            self.insert_cache(cache_key, computed.clone());
+            self.insert_cache(
+                cache_key,
+                ViewStyleCacheEntry {
+                    computed: Arc::clone(&computed),
+                    environment_usage,
+                    selection_stamp,
+                    parent_identity,
+                },
+            );
         }
-        Ok(ViewStyleResolution {
+        Ok(ViewStyleResolveResult {
             computed,
+            environment_usage,
             trace,
             cache_hit: false,
         })
@@ -538,7 +499,13 @@ impl ViewStyleResolver {
         program: &ViewStyleProgram,
         context: &ViewStyleResolveContext<'_>,
         trace: &mut ViewStyleTraceRecorder,
-    ) -> Result<Vec<PendingViewStyleContribution>, ViewStyleResolveError> {
+    ) -> Result<
+        (
+            Vec<PendingViewStyleContribution>,
+            PresentationEnvironmentFieldSet,
+        ),
+        ViewStyleResolveError,
+    > {
         if context.applications.len() > self.limits.max_applications {
             return Err(ViewStyleResolveError::ApplicationBudget {
                 actual: context.applications.len(),
@@ -581,7 +548,7 @@ impl ViewStyleResolver {
             }
         }
         contributions.sort_by_key(|contribution| contribution.priority);
-        Ok(contributions)
+        Ok((contributions, budget.environment_selection))
     }
 
     #[expect(
@@ -683,7 +650,6 @@ impl ViewStyleResolver {
                 scoped_ancestors,
                 context.node,
                 application,
-                context.environment,
                 budget,
                 self.limits.max_selector_steps,
             );
@@ -695,6 +661,20 @@ impl ViewStyleResolver {
             if let Err(reason) = matched {
                 trace.rule_rejected(sheet.id(), rule.source_order(), reason);
                 continue;
+            }
+            if let Some(condition) = rule.environment() {
+                let environment_match = condition.matches(*context.environment);
+                budget.environment_selection = budget
+                    .environment_selection
+                    .union(environment_match.usage());
+                if !environment_match.matched() {
+                    trace.rule_rejected(
+                        sheet.id(),
+                        rule.source_order(),
+                        ViewStyleTraceRejection::EnvironmentMismatch,
+                    );
+                    continue;
+                }
             }
             for (declaration_order, declaration) in rule.declarations().iter().enumerate() {
                 if context
@@ -738,60 +718,6 @@ impl ViewStyleResolver {
         }
         Ok(())
     }
-
-    fn insert_cache(&mut self, key: ViewStyleCacheKey, computed: ComputedViewStyle) {
-        if self.limits.max_cache_entries == 0 {
-            return;
-        }
-        if !self.cache.contains_key(&key) {
-            while self.cache.len() >= self.limits.max_cache_entries {
-                if let Some(oldest) = self.cache_order.pop_front() {
-                    self.cache.remove(&oldest);
-                } else {
-                    break;
-                }
-            }
-            self.cache_order.push_back(key.clone());
-        }
-        self.cache.insert(key, computed);
-    }
-
-    fn commit_provider_update(&mut self, update: Option<ViewAxisProviderUpdatePlan>) {
-        let Some(plan) = update else {
-            return;
-        };
-        if plan.provider_changed() {
-            let invalidated: BTreeSet<_> = plan.invalidated_nodes().cloned().collect();
-            self.cache.retain(|key, _| !invalidated.contains(&key.node));
-            self.cache_order
-                .retain(|key| !invalidated.contains(&key.node));
-        }
-        self.axis_providers.commit(plan);
-    }
-}
-
-impl ViewStyleCacheKey {
-    fn new(context: &ViewStyleResolveContext<'_>, axes: &ComputedViewAxes) -> Self {
-        let mut facts = context.ancestors.to_vec();
-        facts.push(context.node.clone());
-        Self {
-            node: context.node_key.clone(),
-            facts,
-            revisions: context.revisions,
-            parent_revision: context.parent.map(ComputedViewStyle::revision),
-            color_scheme: color_scheme_rank(context.environment.color_scheme()),
-            contrast: contrast_rank(context.environment.contrast()),
-            reduce_motion: context.environment.reduce_motion(),
-            text_scale: context.environment.text_scale().value(),
-            locale: context
-                .environment
-                .locale()
-                .map(|locale| locale.as_str().to_owned()),
-            environment_revision: context.environment.revision().0,
-            axis_mode: axes.mode().canonical_tag(),
-            axis_revision: axes.revision(),
-        }
-    }
 }
 
 fn apply_contribution(
@@ -820,183 +746,6 @@ fn push_contribution(
     }
     contributions.push(contribution);
     Ok(())
-}
-
-fn selector_matches(
-    selector: &ViewStyleSelector,
-    ancestors: &[ViewStyleNodeFacts],
-    node: &ViewStyleNodeFacts,
-    application: &ViewStyleApplication,
-    environment: &PresentationEnvironment,
-    budget: &mut ResolveBudget,
-    selector_limit: usize,
-) -> Result<(), ViewStyleTraceRejection> {
-    let sequences = selector.sequences();
-    let last_index = sequences
-        .len()
-        .checked_sub(1)
-        .ok_or(ViewStyleTraceRejection::SelectorMismatch)?;
-    if application.boundary().is_nested_view_boundary() {
-        let target = &sequences[last_index];
-        let targets_inherited_root = application.boundary().allows_inherited_root();
-        let targets_exported_part = application.boundary().is_exported_part()
-            && target.part().is_some()
-            && application.boundary().matches_part(
-                target.part().expect("checked above"),
-                node.implementation_part(),
-                node.exported_part(),
-            );
-        // A public part is one target capability, not permission to expose the
-        // private child ancestry. Until facts carry explicit boundary segments,
-        // structural selectors stop at every crossed View boundary.
-        if !(targets_inherited_root || targets_exported_part) || last_index != 0 {
-            return Err(ViewStyleTraceRejection::BoundaryTraversalBlocked);
-        }
-    }
-    match_sequence(
-        &sequences[last_index],
-        node,
-        Some(application),
-        environment,
-        budget,
-        selector_limit,
-    )?;
-    let mut ancestor_limit = ancestors.len();
-    for index in (0..last_index).rev() {
-        let sequence = &sequences[index];
-        match sequences[index + 1]
-            .relation_to_previous()
-            .unwrap_or(ViewStyleCombinator::Descendant)
-        {
-            ViewStyleCombinator::Child => {
-                ancestor_limit = ancestor_limit
-                    .checked_sub(1)
-                    .ok_or(ViewStyleTraceRejection::SelectorMismatch)?;
-                match_sequence(
-                    sequence,
-                    &ancestors[ancestor_limit],
-                    application
-                        .boundary()
-                        .is_nested_view_boundary()
-                        .then_some(application),
-                    environment,
-                    budget,
-                    selector_limit,
-                )?;
-            }
-            ViewStyleCombinator::Descendant => {
-                let mut matched = None;
-                for candidate in (0..ancestor_limit).rev() {
-                    let result = match_sequence(
-                        sequence,
-                        &ancestors[candidate],
-                        application
-                            .boundary()
-                            .is_nested_view_boundary()
-                            .then_some(application),
-                        environment,
-                        budget,
-                        selector_limit,
-                    );
-                    if budget.selector_exhausted {
-                        return Err(ViewStyleTraceRejection::BoundaryTraversalBlocked);
-                    }
-                    if result.is_ok() {
-                        matched = Some(candidate);
-                        break;
-                    }
-                }
-                ancestor_limit = matched.ok_or(ViewStyleTraceRejection::SelectorMismatch)?;
-            }
-        }
-    }
-    Ok(())
-}
-
-fn scoped_ancestors(
-    ancestors: &[ViewStyleNodeFacts],
-    scope: ViewStyleScopeId,
-) -> &[ViewStyleNodeFacts] {
-    ancestors
-        .iter()
-        .position(|facts| facts.active_scopes().contains(&scope))
-        .map_or(&[][..], |scope_root| &ancestors[scope_root..])
-}
-
-fn match_sequence(
-    sequence: &ViewStyleSelectorSequence,
-    node: &ViewStyleNodeFacts,
-    application: Option<&ViewStyleApplication>,
-    environment: &PresentationEnvironment,
-    budget: &mut ResolveBudget,
-    selector_limit: usize,
-) -> Result<(), ViewStyleTraceRejection> {
-    if !consume_selector_step(budget, selector_limit) {
-        return Err(ViewStyleTraceRejection::BoundaryTraversalBlocked);
-    }
-    if sequence
-        .element()
-        .is_some_and(|element| node.element() != Some(element))
-    {
-        return Err(ViewStyleTraceRejection::SelectorMismatch);
-    }
-    let part_matches = sequence.part().is_none_or(|part| {
-        application.map_or_else(
-            || {
-                node.implementation_part()
-                    .is_some_and(|local| local.as_str() == part.as_str())
-            },
-            |application| {
-                application.boundary().matches_part(
-                    part,
-                    node.implementation_part(),
-                    node.exported_part(),
-                )
-            },
-        )
-    });
-    if !part_matches {
-        return Err(ViewStyleTraceRejection::SelectorMismatch);
-    }
-    for predicate in sequence.predicates() {
-        if !consume_selector_step(budget, selector_limit) {
-            return Err(ViewStyleTraceRejection::BoundaryTraversalBlocked);
-        }
-        match predicate {
-            ViewStylePredicate::Interaction(state) if !node.interactions().contains(*state) => {
-                return Err(ViewStyleTraceRejection::InteractionStateMismatch);
-            }
-            ViewStylePredicate::ElementState(state) if !node.element_states().contains(*state) => {
-                return Err(ViewStyleTraceRejection::ElementStateMismatch);
-            }
-            ViewStylePredicate::Environment(predicate)
-                if !environment_matches(*predicate, environment) =>
-            {
-                return Err(ViewStyleTraceRejection::EnvironmentMismatch);
-            }
-            ViewStylePredicate::Container(_) => {
-                return Err(ViewStyleTraceRejection::ContainerFactsUnavailable);
-            }
-            ViewStylePredicate::Interaction(_)
-            | ViewStylePredicate::ElementState(_)
-            | ViewStylePredicate::Environment(_) => {}
-        }
-    }
-    Ok(())
-}
-
-fn consume_selector_step(budget: &mut ResolveBudget, limit: usize) -> bool {
-    consume_selector_steps(budget, limit, 1)
-}
-
-fn consume_selector_steps(budget: &mut ResolveBudget, limit: usize, steps: usize) -> bool {
-    if steps > limit.saturating_sub(budget.selector_steps) {
-        budget.selector_exhausted = true;
-        false
-    } else {
-        budget.selector_steps += steps;
-        true
-    }
 }
 
 fn resolve_sheet_value(
@@ -1030,41 +779,6 @@ fn resolve_inline_value(
     resolve_sheet_value(program, owners.unique_owner(token)?, value, max_depth)
 }
 
-const fn environment_matches(
-    predicate: ViewEnvironmentPredicate,
-    environment: &PresentationEnvironment,
-) -> bool {
-    match predicate {
-        ViewEnvironmentPredicate::ReduceMotion(expected) => environment.reduce_motion() == expected,
-        ViewEnvironmentPredicate::ColorScheme(comparison, expected) => compare_u16(
-            comparison,
-            color_scheme_rank(environment.color_scheme()) as u16,
-            color_scheme_rank(expected) as u16,
-        ),
-        ViewEnvironmentPredicate::Contrast(comparison, expected) => compare_u16(
-            comparison,
-            contrast_rank(environment.contrast()) as u16,
-            contrast_rank(expected) as u16,
-        ),
-        ViewEnvironmentPredicate::TextScale(comparison, expected) => compare_u16(
-            comparison,
-            environment.text_scale().value(),
-            expected.value(),
-        ),
-    }
-}
-
-const fn compare_u16(comparison: ViewStyleComparison, actual: u16, expected: u16) -> bool {
-    match comparison {
-        ViewStyleComparison::Equal => actual == expected,
-        ViewStyleComparison::NotEqual => actual != expected,
-        ViewStyleComparison::Less => actual < expected,
-        ViewStyleComparison::LessOrEqual => actual <= expected,
-        ViewStyleComparison::Greater => actual > expected,
-        ViewStyleComparison::GreaterOrEqual => actual >= expected,
-    }
-}
-
 const fn interaction_bit(state: ViewInteractionSelector) -> u8 {
     match state {
         ViewInteractionSelector::Hovered => 1 << 0,
@@ -1082,96 +796,4 @@ const fn element_state_bit(state: ViewElementState) -> u8 {
         ViewElementState::Composing => 1 << 3,
         ViewElementState::PlaceholderShown => 1 << 4,
     }
-}
-
-const fn color_scheme_rank(value: ColorScheme) -> u8 {
-    match value {
-        ColorScheme::Light => 0,
-        ColorScheme::Dark => 1,
-    }
-}
-
-const fn contrast_rank(value: ContrastPreference) -> u8 {
-    match value {
-        ContrastPreference::Standard => 0,
-        ContrastPreference::More => 1,
-    }
-}
-
-fn computed_revision(key: &ViewStyleCacheKey) -> ComputedViewStyleRevision {
-    let mut revision = 0xcbf2_9ce4_8422_2325_u64;
-    for value in [
-        key.node.mount.get(),
-        u64::from(key.node.instruction),
-        key.revisions.sheets,
-        key.revisions.patches,
-        key.revisions.tokens,
-        key.revisions.applications,
-        key.revisions.interactions,
-        key.revisions.containers,
-        key.environment_revision,
-        u64::from(key.text_scale),
-        u64::from(key.axis_mode),
-        key.axis_revision.value(),
-    ] {
-        revision ^= value;
-        revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    revision ^= u64::from(key.parent_revision.is_some());
-    revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-    if let Some(parent_revision) = key.parent_revision {
-        revision ^= parent_revision.value();
-        revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    for segment in &key.node.path {
-        revision ^= *segment;
-        revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    for facts in &key.facts {
-        revision ^= facts
-            .element
-            .and_then(|element| {
-                ViewElementKind::ALL
-                    .into_iter()
-                    .position(|candidate| candidate == element)
-            })
-            .and_then(|index| u64::try_from(index).ok())
-            .unwrap_or(u64::MAX);
-        revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-        for part in [
-            facts
-                .implementation_part
-                .as_ref()
-                .map(|part| part.as_public_id().as_str()),
-            facts
-                .exported_part
-                .as_ref()
-                .map(|part| part.as_public_id().as_str()),
-        ] {
-            revision ^= u64::from(part.is_some());
-            revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-            if let Some(part) = part {
-                for byte in part.bytes() {
-                    revision ^= u64::from(byte);
-                    revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-                }
-            }
-        }
-        revision ^= u64::from(facts.interactions.0) | (u64::from(facts.element_states.0) << 8);
-        revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-        for scope in &facts.active_scopes {
-            revision ^= scope.value();
-            revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    }
-    revision ^= u64::from(key.color_scheme)
-        | (u64::from(key.contrast) << 8)
-        | (u64::from(key.reduce_motion) << 16);
-    if let Some(locale) = &key.locale {
-        for byte in locale.bytes() {
-            revision ^= u64::from(byte);
-            revision = revision.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-    }
-    ComputedViewStyleRevision::new(revision)
 }

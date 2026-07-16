@@ -1,10 +1,21 @@
 //! Catalog construction and semantic checks for HIR Style.
 
-use std::collections::{BTreeSet, btree_map::Entry};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet, btree_map::Entry},
+};
 
 use arcweft_lang_hir::{
     model::{HirModule, HirTopLevelDecl},
-    style::{HirStyleAssignOp, HirStyleDecl, HirStylePatch, HirStyleSelector},
+    style::{
+        HirStyleAssignOp, HirStyleBodyItem, HirStyleDecl, HirStyleEnvironmentBlock,
+        HirStyleEnvironmentClause, HirStyleEnvironmentComparison, HirStyleEnvironmentField,
+        HirStyleEnvironmentPercentage, HirStyleEnvironmentRecovery, HirStyleEnvironmentValue,
+        HirStylePatch, HirStyleSelector,
+    },
+};
+use arcweft_presentation::appearance::{
+    ColorScheme, ContrastPreference, PresentationEnvironmentField, TextScaleMilli,
 };
 use arcweft_view::{
     ViewElementKind, ViewPartName,
@@ -12,13 +23,15 @@ use arcweft_view::{
         ViewAlignment, ViewElementState, ViewInteractionSelector, ViewOverflow, ViewPropertyKind,
         ViewSpecifiedValue, ViewStyleCombinator, ViewStylePatchId, ViewStylePredicate,
         ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId, ViewStyleTokenId,
+        ViewTextScaleComparison,
     },
 };
 
 use super::{
     catalog::{
-        CheckedViewStyleCatalog, CheckedViewStyleDeclaration, CheckedViewStylePatch,
-        CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleToken,
+        CheckedStyleEnvironmentClause, CheckedStyleEnvironmentPath, CheckedViewStyleCatalog,
+        CheckedViewStyleDeclaration, CheckedViewStylePatch, CheckedViewStyleRule,
+        CheckedViewStyleSheet, CheckedViewStyleToken,
     },
     diagnostic::{StyleDiagnostic, StyleDiagnosticCode},
     token_graph::token_dependency_order,
@@ -88,41 +101,415 @@ fn check_sheet(
     };
     let sheet = style.sheet();
     let (tokens, token_kinds) = check_tokens(id.public_id().as_str(), sheet.tokens(), diagnostics);
-    let rules = sheet
-        .rules()
-        .iter()
-        .enumerate()
-        .filter_map(|(source_order, rule)| {
-            let selector = check_selector(rule.selector(), diagnostics);
-            let target = selector.as_ref().and_then(|selector| {
-                selector
-                    .sequences()
-                    .last()
-                    .and_then(ViewStyleSelectorSequence::element)
-            });
-            let declarations = rule
-                .declarations()
-                .iter()
-                .filter_map(|declaration| {
-                    check_declaration(
-                        declaration,
-                        &token_kinds,
-                        target,
-                        Some(id.public_id().as_str()),
-                        diagnostics,
-                    )
-                })
-                .collect();
-            let selector = selector?;
-            Some(CheckedViewStyleRule::new(
-                selector,
-                declarations,
-                u32::try_from(source_order).unwrap_or(u32::MAX),
-                rule.range(),
-            ))
-        })
-        .collect();
+    let mut rules = Vec::new();
+    let mut source_order = 0usize;
+    check_style_body(
+        sheet.body(),
+        &token_kinds,
+        id.public_id().as_str(),
+        &EnvironmentPathState::default(),
+        &mut source_order,
+        &mut rules,
+        diagnostics,
+    );
     Some(CheckedViewStyleSheet::new(id, tokens, rules, style.range()))
+}
+
+#[derive(Clone, Debug, Default)]
+struct EnvironmentPathState {
+    source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
+    clauses: Vec<CheckedStyleEnvironmentClause>,
+    fields: BTreeMap<PresentationEnvironmentField, arcweft_lang_syntax::ast::common::TextRange>,
+    invalid: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_style_body(
+    body: &[HirStyleBodyItem],
+    token_kinds: &CheckedTokenKinds,
+    owner_sheet: &str,
+    path: &EnvironmentPathState,
+    source_order: &mut usize,
+    rules: &mut Vec<CheckedViewStyleRule>,
+    diagnostics: &mut Vec<StyleDiagnostic>,
+) {
+    for item in body {
+        match item {
+            HirStyleBodyItem::Rule(rule) => {
+                let rule_source_order = *source_order;
+                *source_order = source_order.saturating_add(1);
+                if path.invalid {
+                    diagnostics.push(StyleDiagnostic::new(
+                        StyleDiagnosticCode::EnvironmentInvalidPath,
+                        "invalid environment ancestor prevents executable Style lowering",
+                        rule.range(),
+                    ));
+                    continue;
+                }
+                let selector = check_selector(rule.selector(), diagnostics);
+                let target = selector.as_ref().and_then(|selector| {
+                    selector
+                        .sequences()
+                        .last()
+                        .and_then(ViewStyleSelectorSequence::element)
+                });
+                let declarations = rule
+                    .declarations()
+                    .iter()
+                    .filter_map(|declaration| {
+                        check_declaration(
+                            declaration,
+                            token_kinds,
+                            target,
+                            Some(owner_sheet),
+                            diagnostics,
+                        )
+                    })
+                    .collect();
+                let Some(selector) = selector else {
+                    continue;
+                };
+                let environment = path.source_range.map(|source_range| {
+                    CheckedStyleEnvironmentPath::new(source_range, path.clauses.clone())
+                });
+                rules.push(CheckedViewStyleRule::new(
+                    selector,
+                    environment,
+                    declarations,
+                    u32::try_from(rule_source_order).unwrap_or(u32::MAX),
+                    rule.range(),
+                ));
+            }
+            HirStyleBodyItem::Environment(environment) => {
+                let mut nested = path.clone();
+                nested
+                    .source_range
+                    .get_or_insert(environment.condition_range());
+                if !check_environment_block(environment, &mut nested, diagnostics) {
+                    nested.invalid = true;
+                }
+                check_style_body(
+                    environment.body(),
+                    token_kinds,
+                    owner_sheet,
+                    &nested,
+                    source_order,
+                    rules,
+                    diagnostics,
+                );
+            }
+        }
+    }
+}
+
+fn check_environment_block(
+    environment: &HirStyleEnvironmentBlock,
+    path: &mut EnvironmentPathState,
+    diagnostics: &mut Vec<StyleDiagnostic>,
+) -> bool {
+    let mut valid = true;
+    if environment.clauses().is_empty() {
+        diagnostics.push(StyleDiagnostic::new(
+            StyleDiagnosticCode::EnvironmentEmptyCondition,
+            "environment wrapper condition cannot be empty",
+            environment.condition_range(),
+        ));
+        valid = false;
+    }
+    if environment.clauses().len() > 4 {
+        diagnostics.push(StyleDiagnostic::new(
+            StyleDiagnosticCode::EnvironmentConditionLimit,
+            "environment wrapper contains more than four clauses",
+            environment.condition_range(),
+        ));
+        valid = false;
+    }
+
+    let mut local_fields = BTreeMap::new();
+    for clause in environment.clauses() {
+        let field = match clause.field() {
+            HirStyleEnvironmentField::ColorScheme => PresentationEnvironmentField::ColorScheme,
+            HirStyleEnvironmentField::Contrast => PresentationEnvironmentField::Contrast,
+            HirStyleEnvironmentField::ReducedMotion => PresentationEnvironmentField::ReducedMotion,
+            HirStyleEnvironmentField::TextScale => PresentationEnvironmentField::TextScale,
+            HirStyleEnvironmentField::Recovered { spelling } => {
+                diagnostics.push(
+                    StyleDiagnostic::new(
+                        StyleDiagnosticCode::EnvironmentExpectedField,
+                        format!("unknown presentation-environment field `{spelling}`"),
+                        clause.ranges().field(),
+                    )
+                    .with_subject(spelling.as_ref()),
+                );
+                valid = false;
+                continue;
+            }
+        };
+
+        if let Some(first) = local_fields.get(&field).copied() {
+            diagnostics.push(
+                StyleDiagnostic::new(
+                    StyleDiagnosticCode::EnvironmentDuplicateField,
+                    format!("environment condition repeats field {field:?}"),
+                    clause.ranges().field(),
+                )
+                .with_related_range(first),
+            );
+            valid = false;
+            continue;
+        }
+        local_fields.insert(field, clause.ranges().field());
+        if let Some(ancestor) = path.fields.get(&field).copied() {
+            diagnostics.push(
+                StyleDiagnostic::new(
+                    StyleDiagnosticCode::EnvironmentDuplicateFieldOnPath,
+                    format!("nested environment path repeats field {field:?}"),
+                    clause.ranges().field(),
+                )
+                .with_related_range(ancestor),
+            );
+            valid = false;
+            continue;
+        }
+
+        match check_environment_clause(field, clause, diagnostics) {
+            Some(checked) => {
+                path.fields.insert(field, clause.ranges().field());
+                path.clauses.push(checked);
+            }
+            None => valid = false,
+        }
+    }
+    valid
+}
+
+fn check_environment_clause(
+    field: PresentationEnvironmentField,
+    clause: &HirStyleEnvironmentClause,
+    diagnostics: &mut Vec<StyleDiagnostic>,
+) -> Option<CheckedStyleEnvironmentClause> {
+    if clause.comparison() == HirStyleEnvironmentComparison::Recovered {
+        let code = if clause.ranges().comparison().start() == clause.ranges().comparison().end() {
+            StyleDiagnosticCode::EnvironmentExpectedComparison
+        } else {
+            StyleDiagnosticCode::EnvironmentInvalidComparison
+        };
+        diagnostics.push(StyleDiagnostic::new(
+            code,
+            "environment clause has an invalid comparison",
+            clause.ranges().comparison(),
+        ));
+        return None;
+    }
+    if field != PresentationEnvironmentField::TextScale
+        && clause.comparison() != HirStyleEnvironmentComparison::Equal
+    {
+        diagnostics.push(StyleDiagnostic::new(
+            StyleDiagnosticCode::EnvironmentInvalidComparison,
+            "enum and boolean environment fields support only `==`",
+            clause.ranges().comparison(),
+        ));
+        return None;
+    }
+
+    match (field, clause.value()) {
+        (
+            PresentationEnvironmentField::ColorScheme,
+            HirStyleEnvironmentValue::Identifier { spelling },
+        ) => match spelling.as_ref() {
+            "light" => Some(CheckedStyleEnvironmentClause::ColorScheme {
+                value: ColorScheme::Light,
+                range: clause.ranges().clause(),
+            }),
+            "dark" => Some(CheckedStyleEnvironmentClause::ColorScheme {
+                value: ColorScheme::Dark,
+                range: clause.ranges().clause(),
+            }),
+            _ => {
+                invalid_environment_value(spelling, clause, diagnostics);
+                None
+            }
+        },
+        (
+            PresentationEnvironmentField::Contrast,
+            HirStyleEnvironmentValue::Identifier { spelling },
+        ) => match spelling.as_ref() {
+            "standard" => Some(CheckedStyleEnvironmentClause::Contrast {
+                value: ContrastPreference::Standard,
+                range: clause.ranges().clause(),
+            }),
+            "more" => Some(CheckedStyleEnvironmentClause::Contrast {
+                value: ContrastPreference::More,
+                range: clause.ranges().clause(),
+            }),
+            _ => {
+                invalid_environment_value(spelling, clause, diagnostics);
+                None
+            }
+        },
+        (PresentationEnvironmentField::ReducedMotion, HirStyleEnvironmentValue::Boolean(value)) => {
+            Some(CheckedStyleEnvironmentClause::ReducedMotion {
+                value: *value,
+                range: clause.ranges().clause(),
+            })
+        }
+        (
+            PresentationEnvironmentField::TextScale,
+            HirStyleEnvironmentValue::Percentage(percentage),
+        ) => check_text_scale(percentage, clause, diagnostics).map(|value| {
+            CheckedStyleEnvironmentClause::TextScale {
+                comparison: checked_text_scale_comparison(clause.comparison()),
+                value,
+                range: clause.ranges().clause(),
+            }
+        }),
+        (_, HirStyleEnvironmentValue::Recovered(recovery)) => {
+            recovered_environment_value(recovery, clause, diagnostics);
+            None
+        }
+        (_, value) => {
+            diagnostics.push(
+                StyleDiagnostic::new(
+                    StyleDiagnosticCode::EnvironmentInvalidValue,
+                    "environment value does not belong to the selected field",
+                    clause.ranges().value(),
+                )
+                .with_subject(format!("{value:?}")),
+            );
+            None
+        }
+    }
+}
+
+fn invalid_environment_value(
+    spelling: &str,
+    clause: &HirStyleEnvironmentClause,
+    diagnostics: &mut Vec<StyleDiagnostic>,
+) {
+    diagnostics.push(
+        StyleDiagnostic::new(
+            StyleDiagnosticCode::EnvironmentInvalidValue,
+            format!("unsupported environment value `{spelling}`"),
+            clause.ranges().value(),
+        )
+        .with_subject(spelling),
+    );
+}
+
+fn recovered_environment_value(
+    recovery: &HirStyleEnvironmentRecovery,
+    clause: &HirStyleEnvironmentClause,
+    diagnostics: &mut Vec<StyleDiagnostic>,
+) {
+    let (code, message) = match recovery {
+        HirStyleEnvironmentRecovery::MissingValue => (
+            StyleDiagnosticCode::EnvironmentExpectedValue,
+            "environment clause needs a value",
+        ),
+        HirStyleEnvironmentRecovery::UnsupportedValue(
+            arcweft_lang_syntax::ast::style::StyleEnvironmentUnsupportedValueKind::FractionalPrecision,
+        ) => (
+            StyleDiagnosticCode::EnvironmentTextScalePrecision,
+            "text-scale permits at most one fractional digit",
+        ),
+        HirStyleEnvironmentRecovery::TextScaleOutOfRange => (
+            StyleDiagnosticCode::EnvironmentTextScaleRange,
+            "text-scale is outside 50%..=400%",
+        ),
+        HirStyleEnvironmentRecovery::InvalidComparison => (
+            StyleDiagnosticCode::EnvironmentInvalidComparison,
+            "environment comparison is invalid",
+        ),
+        HirStyleEnvironmentRecovery::UnknownField { .. } => (
+            StyleDiagnosticCode::EnvironmentExpectedField,
+            "environment field is unknown",
+        ),
+        HirStyleEnvironmentRecovery::InvalidEnumValue { .. } => (
+            StyleDiagnosticCode::EnvironmentInvalidValue,
+            "environment enum value is invalid",
+        ),
+        HirStyleEnvironmentRecovery::DuplicateField => (
+            StyleDiagnosticCode::EnvironmentDuplicateField,
+            "environment condition repeats a field",
+        ),
+        HirStyleEnvironmentRecovery::DuplicateFieldOnEffectivePath => (
+            StyleDiagnosticCode::EnvironmentDuplicateFieldOnPath,
+            "environment path repeats a field",
+        ),
+        HirStyleEnvironmentRecovery::UnsupportedValue(_) => (
+            StyleDiagnosticCode::EnvironmentUnsupportedValue,
+            "environment value uses an unsupported lexical form",
+        ),
+    };
+    diagnostics.push(StyleDiagnostic::new(code, message, clause.ranges().value()));
+}
+
+const fn checked_text_scale_comparison(
+    comparison: HirStyleEnvironmentComparison,
+) -> ViewTextScaleComparison {
+    match comparison {
+        HirStyleEnvironmentComparison::Equal | HirStyleEnvironmentComparison::Recovered => {
+            ViewTextScaleComparison::Equal
+        }
+        HirStyleEnvironmentComparison::NotEqual => ViewTextScaleComparison::NotEqual,
+        HirStyleEnvironmentComparison::Less => ViewTextScaleComparison::Less,
+        HirStyleEnvironmentComparison::LessOrEqual => ViewTextScaleComparison::LessOrEqual,
+        HirStyleEnvironmentComparison::Greater => ViewTextScaleComparison::Greater,
+        HirStyleEnvironmentComparison::GreaterOrEqual => ViewTextScaleComparison::GreaterOrEqual,
+    }
+}
+
+fn check_text_scale(
+    percentage: &HirStyleEnvironmentPercentage,
+    clause: &HirStyleEnvironmentClause,
+    diagnostics: &mut Vec<StyleDiagnostic>,
+) -> Option<TextScaleMilli> {
+    let fractional_digits = percentage.fractional_digits().unwrap_or("");
+    if fractional_digits.len() > 1 {
+        diagnostics.push(StyleDiagnostic::new(
+            StyleDiagnosticCode::EnvironmentTextScalePrecision,
+            "text-scale permits at most one fractional digit",
+            clause.ranges().value(),
+        ));
+        return None;
+    }
+    let normalized = percentage.integer_digits().trim_start_matches('0');
+    let normalized = if normalized.is_empty() {
+        "0"
+    } else {
+        normalized
+    };
+    let fractional = fractional_digits
+        .bytes()
+        .next()
+        .map_or(0, |digit| digit.saturating_sub(b'0'));
+    if compare_decimal_percentage(normalized, fractional, "50", 0) == Ordering::Less
+        || compare_decimal_percentage(normalized, fractional, "400", 0) == Ordering::Greater
+    {
+        diagnostics.push(StyleDiagnostic::new(
+            StyleDiagnosticCode::EnvironmentTextScaleRange,
+            "text-scale is outside 50%..=400%",
+            clause.ranges().value(),
+        ));
+        return None;
+    }
+    let integer = normalized
+        .bytes()
+        .fold(0u16, |value, digit| value * 10 + u16::from(digit - b'0'));
+    TextScaleMilli::try_new(integer * 10 + u16::from(fractional)).ok()
+}
+
+fn compare_decimal_percentage(
+    integer: &str,
+    fractional: u8,
+    bound_integer: &str,
+    bound_fractional: u8,
+) -> Ordering {
+    integer
+        .len()
+        .cmp(&bound_integer.len())
+        .then_with(|| integer.cmp(bound_integer))
+        .then_with(|| fractional.cmp(&bound_fractional))
 }
 
 fn check_tokens(

@@ -1,9 +1,9 @@
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_view::{
-    ViewAlignment, ViewBorderRadii, ViewColorValue, ViewContainerAxis, ViewContainerPredicate,
-    ViewElementKind, ViewFilter, ViewFontFamily, ViewFontFamilyList, ViewLengthMilli,
-    ViewPropertyKind, ViewRatioMilli, ViewShadow, ViewSpecifiedValue, ViewStyleApplicationTarget,
-    ViewStyleAssignOp, ViewStyleCombinator, ViewStyleComparison, ViewStyleDeclaration,
+    ViewAlignment, ViewBorderRadii, ViewColorValue, ViewContainerAxis, ViewContainerComparison,
+    ViewContainerPredicate, ViewElementKind, ViewFilter, ViewFontFamily, ViewFontFamilyList,
+    ViewLengthMilli, ViewPropertyKind, ViewRatioMilli, ViewShadow, ViewSpecifiedValue,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleCombinator, ViewStyleDeclaration,
     ViewStyleModelError, ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStyleProgram,
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewStyleTransition, ViewStyleValueKind,
@@ -67,6 +67,7 @@ fn checked_sheet_owns_id_tokens_rules_and_round_trips() {
     .expect("checked declaration");
     let rule = ViewStyleRule::new(
         button_selector(),
+        None,
         vec![declaration],
         7,
         ViewStyleSourceId::new(2),
@@ -221,6 +222,7 @@ fn rule_token_references_must_resolve_in_the_owning_sheet_with_the_same_kind() {
     .expect("locally checked declaration");
     let remote_rule = ViewStyleRule::new(
         button_selector(),
+        None,
         vec![remote_declaration],
         3,
         ViewStyleSourceId::new(0),
@@ -262,6 +264,7 @@ fn rule_token_references_must_resolve_in_the_owning_sheet_with_the_same_kind() {
     .expect("the declaration's annotated kind matches its property");
     let mismatched_rule = ViewStyleRule::new(
         button_selector(),
+        None,
         vec![mismatched_declaration],
         4,
         ViewStyleSourceId::new(0),
@@ -359,8 +362,14 @@ fn declaration_and_rule_validation_rejects_malformed_combinations() {
         Err(ViewStyleModelError::InvalidAlignment { .. })
     ));
     assert_eq!(
-        ViewStyleRule::new(button_selector(), Vec::new(), 9, ViewStyleSourceId::new(0),)
-            .expect_err("empty rule must fail"),
+        ViewStyleRule::new(
+            button_selector(),
+            None,
+            Vec::new(),
+            9,
+            ViewStyleSourceId::new(0),
+        )
+        .expect_err("empty rule must fail"),
         ViewStyleModelError::EmptyRule { source_order: 9 }
     );
 
@@ -375,6 +384,7 @@ fn declaration_and_rule_validation_rejects_malformed_combinations() {
     .expect("property/value pair is locally valid");
     let rule = ViewStyleRule::new(
         button_selector(),
+        None,
         vec![not_for_button],
         0,
         ViewStyleSourceId::new(0),
@@ -456,15 +466,21 @@ fn checked_style_records_reject_unknown_fields_at_every_nested_boundary() {
             None,
             vec![ViewStylePredicate::Container(ViewContainerPredicate::new(
                 ViewContainerAxis::InlineSize,
-                ViewStyleComparison::GreaterOrEqual,
+                ViewContainerComparison::GreaterOrEqual,
                 ViewLengthMilli::new(1_000),
             ))],
         )
         .expect("non-empty selector sequence"),
     ])
     .expect("valid selector");
-    let rule = ViewStyleRule::new(selector, vec![declaration], 7, ViewStyleSourceId::new(2))
-        .expect("checked rule");
+    let rule = ViewStyleRule::new(
+        selector,
+        None,
+        vec![declaration],
+        7,
+        ViewStyleSourceId::new(2),
+    )
+    .expect("checked rule");
     let sheet = ViewStyleSheet::new(
         ViewStyleSheetId::try_new("style.strict").expect("sheet ID"),
         vec![token],
@@ -606,6 +622,7 @@ fn duplicate_rule_source_order_is_rejected() {
     let rule = || {
         ViewStyleRule::new(
             button_selector(),
+            None,
             vec![declaration()],
             2,
             ViewStyleSourceId::new(0),
@@ -637,6 +654,7 @@ fn sheet_constructor_canonicalizes_token_and_rule_order() {
     let rule = |source_order| {
         ViewStyleRule::new(
             button_selector(),
+            None,
             vec![
                 ViewStyleDeclaration::new(
                     ViewPropertyKind::Opacity,
@@ -692,6 +710,7 @@ fn canonical_sheet_decode_rejects_unsorted_token_and_rule_arrays() {
     let rule = |source_order| {
         ViewStyleRule::new(
             button_selector(),
+            None,
             vec![
                 ViewStyleDeclaration::new(
                     ViewPropertyKind::Opacity,

@@ -8,8 +8,10 @@ mod patch_endpoint;
 mod scene_windowed;
 mod text_input_bridge;
 mod window_driver;
+mod windowed_environment_ingress;
 mod windowed_ingress;
 pub mod windowed_patch;
+mod windowed_player_ingress;
 mod windowed_runtime;
 
 #[cfg(feature = "dev-capture")]
@@ -28,11 +30,19 @@ pub use scene_windowed::{
     run_bundle_windowed_with_text_input_options,
 };
 pub use text_input_bridge::{NativeTextInputBridgeOptions, NativeTextInputTraceOptions};
+pub use windowed_environment_ingress::{
+    DEFAULT_WINDOWED_ENVIRONMENT_INGRESS_CAPACITY, WindowedEnvironmentIngress,
+    WindowedEnvironmentIngressCommand, WindowedEnvironmentIngressConfig,
+    WindowedEnvironmentIngressReceipt, WindowedEnvironmentIngressReport,
+    WindowedEnvironmentIngressReportState, WindowedEnvironmentUpdateError,
+    WindowedEnvironmentUpdateErrorKind,
+};
 pub use windowed_ingress::{
     WindowedLocalSidecar, WindowedPatchIngress, WindowedPatchIngressAccepted,
     WindowedPatchIngressConfig, WindowedPatchIngressError, WindowedPatchIngressErrorKind,
     WindowedPatchIngressReport, WindowedPatchIngressReportState, WindowedPatchTransportActionSet,
 };
+pub use windowed_player_ingress::WindowedPlayerIngress;
 pub use windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
 };

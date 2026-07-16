@@ -1,9 +1,12 @@
 //! Checked native Style catalog consumed by compiler lowering.
 
 use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_presentation::appearance::{
+    ColorScheme, ContrastPreference, PresentationEnvironmentField, TextScaleMilli,
+};
 use arcweft_view::style::{
     ViewPropertyKind, ViewSpecifiedValue, ViewStylePatchId, ViewStyleSelector, ViewStyleSheetId,
-    ViewStyleTokenId, ViewStyleValueKind,
+    ViewStyleTokenId, ViewStyleValueKind, ViewTextScaleComparison,
 };
 
 /// Complete checked style output for one HIR module.
@@ -35,9 +38,39 @@ pub struct CheckedViewStyleToken {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedViewStyleRule {
     selector: ViewStyleSelector,
+    environment: Option<CheckedStyleEnvironmentPath>,
     declarations: Vec<CheckedViewStyleDeclaration>,
     source_order: u32,
     range: TextRange,
+}
+
+/// One valid flattened environment path guarding a checked Style rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedStyleEnvironmentPath {
+    source_range: TextRange,
+    clauses: Vec<CheckedStyleEnvironmentClause>,
+}
+
+/// One semantically checked environment clause with authored provenance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedStyleEnvironmentClause {
+    ColorScheme {
+        value: ColorScheme,
+        range: TextRange,
+    },
+    Contrast {
+        value: ContrastPreference,
+        range: TextRange,
+    },
+    ReducedMotion {
+        value: bool,
+        range: TextRange,
+    },
+    TextScale {
+        comparison: ViewTextScaleComparison,
+        value: TextScaleMilli,
+        range: TextRange,
+    },
 }
 
 /// One checked native property assignment.
@@ -148,12 +181,14 @@ impl CheckedViewStyleToken {
 impl CheckedViewStyleRule {
     pub(crate) const fn new(
         selector: ViewStyleSelector,
+        environment: Option<CheckedStyleEnvironmentPath>,
         declarations: Vec<CheckedViewStyleDeclaration>,
         source_order: u32,
         range: TextRange,
     ) -> Self {
         Self {
             selector,
+            environment,
             declarations,
             source_order,
             range,
@@ -162,6 +197,10 @@ impl CheckedViewStyleRule {
 
     pub const fn selector(&self) -> &ViewStyleSelector {
         &self.selector
+    }
+
+    pub const fn environment(&self) -> Option<&CheckedStyleEnvironmentPath> {
+        self.environment.as_ref()
     }
 
     pub fn declarations(&self) -> &[CheckedViewStyleDeclaration] {
@@ -174,6 +213,46 @@ impl CheckedViewStyleRule {
 
     pub const fn range(&self) -> TextRange {
         self.range
+    }
+}
+
+impl CheckedStyleEnvironmentPath {
+    pub(crate) const fn new(
+        source_range: TextRange,
+        clauses: Vec<CheckedStyleEnvironmentClause>,
+    ) -> Self {
+        Self {
+            source_range,
+            clauses,
+        }
+    }
+
+    pub const fn source_range(&self) -> TextRange {
+        self.source_range
+    }
+
+    pub fn clauses(&self) -> &[CheckedStyleEnvironmentClause] {
+        &self.clauses
+    }
+}
+
+impl CheckedStyleEnvironmentClause {
+    pub const fn field(self) -> PresentationEnvironmentField {
+        match self {
+            Self::ColorScheme { .. } => PresentationEnvironmentField::ColorScheme,
+            Self::Contrast { .. } => PresentationEnvironmentField::Contrast,
+            Self::ReducedMotion { .. } => PresentationEnvironmentField::ReducedMotion,
+            Self::TextScale { .. } => PresentationEnvironmentField::TextScale,
+        }
+    }
+
+    pub const fn range(self) -> TextRange {
+        match self {
+            Self::ColorScheme { range, .. }
+            | Self::Contrast { range, .. }
+            | Self::ReducedMotion { range, .. }
+            | Self::TextScale { range, .. } => range,
+        }
     }
 }
 

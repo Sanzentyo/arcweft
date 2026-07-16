@@ -5,7 +5,8 @@ use super::{
     ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId,
 };
 use crate::style::{
-    ViewPropertyKind, ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleSelector, ViewStyleValueKind,
+    ViewEnvironmentCondition, ViewPropertyKind, ViewSpecifiedValue, ViewStyleAssignOp,
+    ViewStyleSelector, ViewStyleValueKind,
 };
 use serde::{Deserialize, Deserializer};
 
@@ -31,6 +32,7 @@ struct EncodedDeclaration {
 #[serde(deny_unknown_fields)]
 struct EncodedRule {
     selector: ViewStyleSelector,
+    environment: Option<ViewEnvironmentCondition>,
     declarations: Vec<ViewStyleDeclaration>,
     source_order: u32,
     source: ViewStyleSourceId,
@@ -93,6 +95,7 @@ impl<'de> Deserialize<'de> for ViewStyleRule {
         let encoded = EncodedRule::deserialize(deserializer)?;
         Self::new(
             encoded.selector,
+            encoded.environment,
             encoded.declarations,
             encoded.source_order,
             encoded.source,

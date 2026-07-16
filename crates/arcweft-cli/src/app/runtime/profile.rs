@@ -70,7 +70,7 @@ pub(in crate::app) fn compile_profile_runtime_plan(
     semantic: &SelectionSemanticContext,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
-    if let Some(manifest) = selection.manifest() {
+    if let Some(manifest) = selection.project_manifest() {
         return compile_project_runtime_plan(manifest, selection, semantic, phases);
     }
     let env = semantic.base();

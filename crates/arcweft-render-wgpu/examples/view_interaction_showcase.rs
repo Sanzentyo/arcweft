@@ -224,6 +224,7 @@ fn style_rule(
         .collect::<Result<Vec<_>, String>>()?;
     ViewStyleRule::new(
         selector,
+        None,
         declarations,
         source_order,
         ViewStyleSourceId::new(source_order),

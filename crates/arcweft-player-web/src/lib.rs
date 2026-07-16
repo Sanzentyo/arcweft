@@ -20,6 +20,10 @@ mod clipboard;
 mod inset_shadow_exact_capture;
 
 #[cfg(target_arch = "wasm32")]
-pub use app::start_arcweft_player;
+pub use app::{
+    ArcweftWebPlayerHandle, arcweft_player_handle, create_arcweft_player,
+    create_arcweft_player_with_options, start_arcweft_player, start_arcweft_player_with_options,
+    stop_arcweft_player,
+};
 #[cfg(target_arch = "wasm32")]
 pub use inset_shadow_exact_capture::capture_seq06_13e1_inset_box_shadow_exact_png;

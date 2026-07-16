@@ -7,7 +7,10 @@ use crate::text_controls::{RuntimeTextControlLowerer, RuntimeTextControlLowering
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::ViewRuntimeStyleProjectionError;
 use arcweft_layout::{ContentRect, LayoutError, LayoutSize, ScalePolicy};
-use arcweft_presentation::appearance::{PresentationEnvironment, SystemPaletteSet};
+use arcweft_presentation::appearance::{
+    EnvironmentRevision, PresentationEnvironment, PresentationEnvironmentFieldRevisions,
+    PresentationEnvironmentFieldSet, SystemPaletteSet,
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::text_editor::TextEditorError;
 use arcweft_render_wgpu::geometry::{
@@ -17,6 +20,7 @@ use arcweft_render_wgpu::geometry::{
     SharedFramePlanContext, SharedFramePlanStats,
 };
 use arcweft_runtime_driver::display::{BundlePresentationSnapshot, BundleViewportFit};
+use arcweft_runtime_driver::session::PresentationEnvironmentUpdate;
 use arcweft_view::ViewMountId;
 use arcweft_view::style::{ViewPropertyKind, ViewStyleProgram, ViewStyleResolveError};
 use num_traits::ToPrimitive;
@@ -122,6 +126,25 @@ pub struct PlayerFramePlanner;
 pub struct PlayerFramePlannerState {
     shared: SharedFramePlanContext,
     view_style: PlayerViewStyleState,
+    prepared_environment: Option<PreparedEnvironmentStamp>,
+}
+
+/// Exact environment fields and revisions used by the latest prepared work.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedEnvironmentStamp {
+    generation: EnvironmentRevision,
+    fields: PresentationEnvironmentFieldSet,
+    field_revisions: PresentationEnvironmentFieldRevisions,
+}
+
+/// Field-local effect of applying one committed session environment update.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlayerEnvironmentInvalidation {
+    selection_nodes: usize,
+    projection_nodes: usize,
+    unchanged_nodes: usize,
+    prepared_work_discarded: bool,
+    redraw_requested: bool,
 }
 
 struct ResolvedPlayerScene {
@@ -182,6 +205,56 @@ impl PlayerFrameFit {
             self.scale_policy,
         )
         .map(Some)
+    }
+}
+
+impl PreparedEnvironmentStamp {
+    fn new(environment: PresentationEnvironment, fields: PresentationEnvironmentFieldSet) -> Self {
+        Self {
+            generation: environment.revision(),
+            fields,
+            field_revisions: environment.field_revisions(),
+        }
+    }
+
+    pub const fn generation(self) -> EnvironmentRevision {
+        self.generation
+    }
+
+    pub const fn fields(self) -> PresentationEnvironmentFieldSet {
+        self.fields
+    }
+
+    pub const fn field_revisions(self) -> PresentationEnvironmentFieldRevisions {
+        self.field_revisions
+    }
+
+    pub fn is_current(self, environment: PresentationEnvironment) -> bool {
+        self.fields.iter().all(|field| {
+            self.field_revisions.field_revision(field) == environment.field_revision(field)
+        })
+    }
+}
+
+impl PlayerEnvironmentInvalidation {
+    pub const fn selection_nodes(self) -> usize {
+        self.selection_nodes
+    }
+
+    pub const fn projection_nodes(self) -> usize {
+        self.projection_nodes
+    }
+
+    pub const fn unchanged_nodes(self) -> usize {
+        self.unchanged_nodes
+    }
+
+    pub const fn prepared_work_discarded(self) -> bool {
+        self.prepared_work_discarded
+    }
+
+    pub const fn redraw_requested(self) -> bool {
+        self.redraw_requested
     }
 }
 
@@ -475,6 +548,32 @@ impl PlayerFramePlannerState {
         self.shared.stats()
     }
 
+    pub const fn prepared_environment_stamp(&self) -> Option<PreparedEnvironmentStamp> {
+        self.prepared_environment
+    }
+
+    pub fn apply_environment_update(
+        &mut self,
+        update: PresentationEnvironmentUpdate,
+    ) -> Result<PlayerEnvironmentInvalidation, PlayerFrameError> {
+        let style = self.view_style.apply_environment_update(update);
+        let prepared_work_discarded = self
+            .prepared_environment
+            .is_some_and(|stamp| !stamp.is_current(update.current()));
+        if prepared_work_discarded {
+            self.prepared_environment = None;
+        }
+        let redraw_requested =
+            update.effective_changed() && (style.selected > 0 || style.projected > 0);
+        Ok(PlayerEnvironmentInvalidation {
+            selection_nodes: style.selected,
+            projection_nodes: style.projected,
+            unchanged_nodes: style.unchanged,
+            prepared_work_discarded,
+            redraw_requested,
+        })
+    }
+
     pub fn prepare(
         &mut self,
         input: &mut InputController,
@@ -494,13 +593,13 @@ impl PlayerFramePlannerState {
             frame = self.prepare_mapped_frame(&resolved, input, request, content_rect)?;
         }
         if input.apply_pending_text_pointer_selection(&frame)? {
-            let resolved = resolve_player_scene(&mut self.view_style, input, design_request)?;
-            let frame = self.prepare_mapped_frame(&resolved, input, request, content_rect)?;
-            return Ok(PlayerPreparedFrame {
-                scene: resolved.scene,
-                frame,
-            });
+            resolved = resolve_player_scene(&mut self.view_style, input, design_request)?;
+            frame = self.prepare_mapped_frame(&resolved, input, request, content_rect)?;
         }
+        self.prepared_environment = Some(PreparedEnvironmentStamp::new(
+            *request.style_environment,
+            self.view_style.environment_fields(),
+        ));
         Ok(PlayerPreparedFrame {
             scene: resolved.scene,
             frame,

@@ -319,7 +319,7 @@ flow test {
 }
 
 #[test]
-fn profile_bundle_package_identity_does_not_require_default_source_root() {
+fn launch_profile_compiles_without_enumerating_default_source_root() {
     let unique = format!(
         "arcweft-bundle-package-identity-{}-{}",
         std::process::id(),
@@ -362,6 +362,8 @@ source = "demo.arcw"
             .expect("package identity resolves"),
         "launch-only"
     );
+    super::super::project::load_and_check_selection(&selection, None)
+        .expect("launch profile compiles its selected source directly");
 
     fs::remove_dir_all(root).expect("fixture root removes");
 }

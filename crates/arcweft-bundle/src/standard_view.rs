@@ -304,7 +304,7 @@ fn rule(
         .expect("standard dialogue selector sequence is non-empty");
     let selector = ViewStyleSelector::new(vec![sequence])
         .expect("standard dialogue selector has a valid relation shape");
-    ViewStyleRule::new(selector, declarations, source_order, source)
+    ViewStyleRule::new(selector, None, declarations, source_order, source)
         .expect("standard dialogue rule is statically valid")
 }
 

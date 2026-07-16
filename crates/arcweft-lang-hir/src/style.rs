@@ -6,13 +6,43 @@ use arcweft_lang_syntax::{
         ids::EntityRef,
         items::Attribute,
         style::{
-            StyleAssignOp, StyleCombinator, StyleDecl, StyleDeclarationDecl, StylePatch,
-            StyleSelector, StyleSelectorSequence,
+            StyleAssignOp, StyleBodyItem, StyleCombinator, StyleDecl, StyleDeclarationDecl,
+            StyleEnvironmentBlock, StyleEnvironmentClause, StyleEnvironmentComparisonSyntax,
+            StyleEnvironmentFieldSyntax, StyleEnvironmentUnsupportedValueKind,
+            StyleEnvironmentValueSyntax, StylePatch, StyleSelector, StyleSelectorSequence,
         },
     },
     expr::Expr,
     types::TypeRef,
 };
+
+/// Stable caller-assigned identity for one lowered Style declaration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirStyleId(u32);
+
+/// Stable caller-assigned identity for one environment wrapper in a Style tree.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirStyleEnvironmentId(u32);
+
+impl HirStyleId {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> u32 {
+        self.0
+    }
+}
+
+impl HirStyleEnvironmentId {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> u32 {
+        self.0
+    }
+}
 
 /// One lowered top-level style declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -28,8 +58,93 @@ pub struct HirStyleDecl {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirStyleSheet {
     tokens: Vec<HirStyleTokenDecl>,
-    rules: Vec<HirStyleRuleDecl>,
+    body: Vec<HirStyleBodyItem>,
     range: TextRange,
+}
+
+/// One ordered rule or environment wrapper in Style HIR.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirStyleBodyItem {
+    Rule(HirStyleRuleDecl),
+    Environment(HirStyleEnvironmentBlock),
+}
+
+/// One retained environment wrapper in Style HIR.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirStyleEnvironmentBlock {
+    clauses: Vec<HirStyleEnvironmentClause>,
+    body: Vec<HirStyleBodyItem>,
+    condition_range: TextRange,
+    range: TextRange,
+}
+
+/// One retained environment operand triple in Style HIR.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirStyleEnvironmentClause {
+    field: HirStyleEnvironmentField,
+    comparison: HirStyleEnvironmentComparison,
+    value: HirStyleEnvironmentValue,
+    ranges: HirStyleEnvironmentClauseRanges,
+}
+
+/// Closed environment field, including a typed unknown-field recovery.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirStyleEnvironmentField {
+    ColorScheme,
+    Contrast,
+    ReducedMotion,
+    TextScale,
+    Recovered { spelling: Box<str> },
+}
+
+/// Comparison token retained until field-specific semantic checking.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum HirStyleEnvironmentComparison {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+    Recovered,
+}
+
+/// One source-backed environment operand.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirStyleEnvironmentValue {
+    Identifier { spelling: Box<str> },
+    Boolean(bool),
+    Percentage(HirStyleEnvironmentPercentage),
+    Recovered(HirStyleEnvironmentRecovery),
+}
+
+/// Authored percentage digits retained without integer accumulation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirStyleEnvironmentPercentage {
+    integer_digits: Box<str>,
+    fractional_digits: Option<Box<str>>,
+}
+
+/// Typed recovery states that can never enter executable semantic output.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirStyleEnvironmentRecovery {
+    MissingValue,
+    UnsupportedValue(StyleEnvironmentUnsupportedValueKind),
+    UnknownField { spelling: Box<str> },
+    InvalidComparison,
+    InvalidEnumValue { spelling: Box<str> },
+    TextScaleOutOfRange,
+    DuplicateField,
+    DuplicateFieldOnEffectivePath,
+}
+
+/// Exact source ranges for all parts of one environment clause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirStyleEnvironmentClauseRanges {
+    field: TextRange,
+    comparison: TextRange,
+    value: TextRange,
+    clause: TextRange,
 }
 
 /// One lowered native token declaration.
@@ -112,8 +227,9 @@ pub struct HirStylePatch {
     range: TextRange,
 }
 
-impl From<&StyleDecl> for HirStyleDecl {
-    fn from(value: &StyleDecl) -> Self {
+impl HirStyleDecl {
+    /// Lowers one parser-owned Style declaration against its exact source.
+    pub fn from_syntax(value: &StyleDecl, source: &str) -> Self {
         let sheet = value.sheet();
         Self {
             attrs: value.attrs().to_vec(),
@@ -121,12 +237,132 @@ impl From<&StyleDecl> for HirStyleDecl {
             id: value.id().clone(),
             sheet: HirStyleSheet {
                 tokens: sheet.tokens().iter().map(HirStyleTokenDecl::from).collect(),
-                rules: sheet.rules().iter().map(HirStyleRuleDecl::from).collect(),
+                body: sheet
+                    .body()
+                    .iter()
+                    .map(|item| HirStyleBodyItem::from_syntax(item, source))
+                    .collect(),
                 range: sheet.range(),
             },
             range: *value.range(),
         }
     }
+}
+
+impl HirStyleBodyItem {
+    fn from_syntax(value: &StyleBodyItem, source: &str) -> Self {
+        match value {
+            StyleBodyItem::Rule(rule) => Self::Rule(HirStyleRuleDecl::from(rule)),
+            StyleBodyItem::Environment(environment) => {
+                Self::Environment(HirStyleEnvironmentBlock::from_syntax(environment, source))
+            }
+        }
+    }
+}
+
+impl HirStyleEnvironmentBlock {
+    fn from_syntax(value: &StyleEnvironmentBlock, source: &str) -> Self {
+        Self {
+            clauses: value
+                .clauses()
+                .iter()
+                .map(|clause| HirStyleEnvironmentClause::from_syntax(clause, source))
+                .collect(),
+            body: value
+                .body()
+                .iter()
+                .map(|item| HirStyleBodyItem::from_syntax(item, source))
+                .collect(),
+            condition_range: value.condition_range(),
+            range: value.range(),
+        }
+    }
+}
+
+impl HirStyleEnvironmentClause {
+    fn from_syntax(value: &StyleEnvironmentClause, source: &str) -> Self {
+        let ranges = HirStyleEnvironmentClauseRanges {
+            field: value.field_range(),
+            comparison: value.comparison_range(),
+            value: value.value_range(),
+            clause: value.range(),
+        };
+        let field_spelling = source_slice(source, value.field_range());
+        let field = match value.field() {
+            StyleEnvironmentFieldSyntax::ColorScheme => HirStyleEnvironmentField::ColorScheme,
+            StyleEnvironmentFieldSyntax::Contrast => HirStyleEnvironmentField::Contrast,
+            StyleEnvironmentFieldSyntax::ReducedMotion => HirStyleEnvironmentField::ReducedMotion,
+            StyleEnvironmentFieldSyntax::TextScale => HirStyleEnvironmentField::TextScale,
+            StyleEnvironmentFieldSyntax::Unknown => HirStyleEnvironmentField::Recovered {
+                spelling: field_spelling.clone(),
+            },
+        };
+        let comparison = match value.comparison() {
+            StyleEnvironmentComparisonSyntax::Equal => HirStyleEnvironmentComparison::Equal,
+            StyleEnvironmentComparisonSyntax::NotEqual => HirStyleEnvironmentComparison::NotEqual,
+            StyleEnvironmentComparisonSyntax::Less => HirStyleEnvironmentComparison::Less,
+            StyleEnvironmentComparisonSyntax::LessOrEqual => {
+                HirStyleEnvironmentComparison::LessOrEqual
+            }
+            StyleEnvironmentComparisonSyntax::Greater => HirStyleEnvironmentComparison::Greater,
+            StyleEnvironmentComparisonSyntax::GreaterOrEqual => {
+                HirStyleEnvironmentComparison::GreaterOrEqual
+            }
+            StyleEnvironmentComparisonSyntax::Unsupported => {
+                HirStyleEnvironmentComparison::Recovered
+            }
+        };
+        let lowered_value = if matches!(value.field(), StyleEnvironmentFieldSyntax::Unknown) {
+            HirStyleEnvironmentValue::Recovered(HirStyleEnvironmentRecovery::UnknownField {
+                spelling: field_spelling,
+            })
+        } else if matches!(
+            value.comparison(),
+            StyleEnvironmentComparisonSyntax::Unsupported
+        ) {
+            HirStyleEnvironmentValue::Recovered(HirStyleEnvironmentRecovery::InvalidComparison)
+        } else {
+            match value.value() {
+                StyleEnvironmentValueSyntax::Identifier { range } => {
+                    HirStyleEnvironmentValue::Identifier {
+                        spelling: source_slice(source, *range),
+                    }
+                }
+                StyleEnvironmentValueSyntax::Boolean { value, .. } => {
+                    HirStyleEnvironmentValue::Boolean(*value)
+                }
+                StyleEnvironmentValueSyntax::Percentage(percentage) => {
+                    HirStyleEnvironmentValue::Percentage(HirStyleEnvironmentPercentage {
+                        integer_digits: source_slice(source, percentage.integer_range()),
+                        fractional_digits: percentage
+                            .fractional_range()
+                            .map(|range| source_slice(source, range)),
+                    })
+                }
+                StyleEnvironmentValueSyntax::Unsupported(unsupported) => {
+                    HirStyleEnvironmentValue::Recovered(match unsupported.kind() {
+                        StyleEnvironmentUnsupportedValueKind::Missing => {
+                            HirStyleEnvironmentRecovery::MissingValue
+                        }
+                        kind => HirStyleEnvironmentRecovery::UnsupportedValue(kind),
+                    })
+                }
+            }
+        };
+        Self {
+            field,
+            comparison,
+            value: lowered_value,
+            ranges,
+        }
+    }
+}
+
+fn source_slice(source: &str, range: TextRange) -> Box<str> {
+    source
+        .get(range.as_range())
+        .expect("parser-owned Style range belongs to the exact source")
+        .into()
 }
 
 impl From<&arcweft_lang_syntax::ast::style::StyleTokenDecl> for HirStyleTokenDecl {
@@ -300,12 +536,99 @@ impl HirStyleSheet {
         &self.tokens
     }
 
-    pub fn rules(&self) -> &[HirStyleRuleDecl] {
-        &self.rules
+    pub fn body(&self) -> &[HirStyleBodyItem] {
+        &self.body
     }
 
     pub const fn range(&self) -> TextRange {
         self.range
+    }
+}
+
+impl HirStyleBodyItem {
+    pub const fn as_rule(&self) -> Option<&HirStyleRuleDecl> {
+        match self {
+            Self::Rule(rule) => Some(rule),
+            Self::Environment(_) => None,
+        }
+    }
+
+    pub const fn as_environment(&self) -> Option<&HirStyleEnvironmentBlock> {
+        match self {
+            Self::Rule(_) => None,
+            Self::Environment(environment) => Some(environment),
+        }
+    }
+
+    pub const fn range(&self) -> TextRange {
+        match self {
+            Self::Rule(rule) => rule.range(),
+            Self::Environment(environment) => environment.range(),
+        }
+    }
+}
+
+impl HirStyleEnvironmentBlock {
+    pub fn clauses(&self) -> &[HirStyleEnvironmentClause] {
+        &self.clauses
+    }
+
+    pub fn body(&self) -> &[HirStyleBodyItem] {
+        &self.body
+    }
+
+    pub const fn condition_range(&self) -> TextRange {
+        self.condition_range
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
+    }
+}
+
+impl HirStyleEnvironmentClause {
+    pub const fn field(&self) -> &HirStyleEnvironmentField {
+        &self.field
+    }
+
+    pub const fn comparison(&self) -> HirStyleEnvironmentComparison {
+        self.comparison
+    }
+
+    pub const fn value(&self) -> &HirStyleEnvironmentValue {
+        &self.value
+    }
+
+    pub const fn ranges(&self) -> HirStyleEnvironmentClauseRanges {
+        self.ranges
+    }
+}
+
+impl HirStyleEnvironmentPercentage {
+    pub fn integer_digits(&self) -> &str {
+        &self.integer_digits
+    }
+
+    pub fn fractional_digits(&self) -> Option<&str> {
+        self.fractional_digits.as_deref()
+    }
+}
+
+impl HirStyleEnvironmentClauseRanges {
+    pub const fn field(self) -> TextRange {
+        self.field
+    }
+
+    pub const fn comparison(self) -> TextRange {
+        self.comparison
+    }
+
+    pub const fn value(self) -> TextRange {
+        self.value
+    }
+
+    pub const fn clause(self) -> TextRange {
+        self.clause
     }
 }
 

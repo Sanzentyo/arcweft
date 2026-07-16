@@ -630,6 +630,22 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
                 source: None,
             },
         ],
+        text_blocks: vec![
+            ViewTextBlockResource::new(
+                "text.block.yes",
+                Some("view.Root".to_owned()),
+                None,
+                "text.yes",
+                ViewTextBlockBounds::from_px(0, 0, 100, 20),
+            ),
+            ViewTextBlockResource::new(
+                "text.block.no",
+                Some("view.Root".to_owned()),
+                None,
+                "text.no",
+                ViewTextBlockBounds::from_px(0, 0, 100, 20),
+            ),
+        ],
         ..ViewProgramResource::default()
     };
     let mut text = text_resource([
@@ -952,6 +968,13 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
                 source: None,
             },
         ],
+        text_blocks: vec![ViewTextBlockResource::new(
+            "text.block.item",
+            Some("view.Repeat".to_owned()),
+            None,
+            "text.item",
+            ViewTextBlockBounds::from_px(0, 0, 100, 20),
+        )],
         ..ViewProgramResource::default()
     };
     let text = text_resource([(
@@ -1108,6 +1131,13 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
                 source: None,
             },
         ],
+        text_blocks: vec![ViewTextBlockResource::new(
+            "text.block.elapsed",
+            Some("view.Time".to_owned()),
+            None,
+            "text.elapsed",
+            ViewTextBlockBounds::from_px(0, 0, 100, 20),
+        )],
         ..ViewProgramResource::default()
     };
     let text = text_resource([(

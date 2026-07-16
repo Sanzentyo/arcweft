@@ -540,7 +540,12 @@ fn run_native_windowed_watch_target(
         move |ingress| {
             thread::spawn(move || {
                 if let Err(code) = native_windowed_watch_producer_loop(
-                    &options, &selection, &output, base_bytes, inputs, &ingress,
+                    &options,
+                    &selection,
+                    &output,
+                    base_bytes,
+                    inputs,
+                    ingress.patches(),
                 ) {
                     eprintln!("watch: native windowed producer stopped with {code:?}");
                 }
@@ -801,7 +806,7 @@ pub(in crate::app) fn watch_inputs(
 
 fn watch_input_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCode> {
     let mut paths = vec![selection.path().to_path_buf()];
-    if let Some(manifest) = selection.manifest() {
+    if let Some(manifest) = selection.project_manifest() {
         paths.push(manifest.to_path_buf());
         paths.extend(watch_project_source_paths(manifest)?);
     } else if let Some(profile) = selection.profile() {
@@ -976,7 +981,7 @@ fn run_native_bundle_with_ingress<F>(
     ingress_ready: F,
 ) -> Result<(), ExitCode>
 where
-    F: FnOnce(arcweft_player_native::WindowedPatchIngress) + Send + 'static,
+    F: FnOnce(arcweft_player_native::WindowedPlayerIngress) + Send + 'static,
 {
     arcweft_player_native::run_bundle_windowed_with_ingress_and_options(
         bundle,

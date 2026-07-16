@@ -170,7 +170,7 @@ fn style_resource_with_source_inventory(
     ])
     .expect("valid selector");
     let rule =
-        ViewStyleRule::new(selector, vec![declaration], 0, sheet_source).expect("valid rule");
+        ViewStyleRule::new(selector, None, vec![declaration], 0, sheet_source).expect("valid rule");
     let sheet = ViewStyleSheet::new(sheet_id.clone(), Vec::new(), vec![rule]).expect("valid sheet");
     let patch = ViewStylePatch::new(
         ViewStylePatchId::new(patch_id),

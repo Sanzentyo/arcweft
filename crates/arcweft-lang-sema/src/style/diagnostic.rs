@@ -22,6 +22,19 @@ pub enum StyleDiagnosticCode {
     InteractiveOverflowRequiresScroll,
     InlineSelectorNotSupported,
     ScopeReferenceNotFound,
+    EnvironmentExpectedField,
+    EnvironmentExpectedComparison,
+    EnvironmentInvalidComparison,
+    EnvironmentExpectedValue,
+    EnvironmentUnsupportedValue,
+    EnvironmentInvalidValue,
+    EnvironmentTextScalePrecision,
+    EnvironmentTextScaleRange,
+    EnvironmentDuplicateField,
+    EnvironmentDuplicateFieldOnPath,
+    EnvironmentConditionLimit,
+    EnvironmentInvalidPath,
+    EnvironmentEmptyCondition,
 }
 
 /// Source-addressed Style diagnostic with typed comparison context.
@@ -68,6 +81,19 @@ impl StyleDiagnosticCode {
             Self::InteractiveOverflowRequiresScroll => "view::interactive_overflow_requires_scroll",
             Self::InlineSelectorNotSupported => "style::inline_selector_not_supported",
             Self::ScopeReferenceNotFound => "style::scope_reference_not_found",
+            Self::EnvironmentExpectedField => "style.environment.expected_field",
+            Self::EnvironmentExpectedComparison => "style.environment.expected_comparison",
+            Self::EnvironmentInvalidComparison => "style.environment.invalid_comparison",
+            Self::EnvironmentExpectedValue => "style.environment.expected_value",
+            Self::EnvironmentUnsupportedValue => "style.environment.unsupported_value",
+            Self::EnvironmentInvalidValue => "style.environment.invalid_value",
+            Self::EnvironmentTextScalePrecision => "style.environment.text_scale_precision",
+            Self::EnvironmentTextScaleRange => "style.environment.text_scale_range",
+            Self::EnvironmentDuplicateField => "style.environment.duplicate_field",
+            Self::EnvironmentDuplicateFieldOnPath => "style.environment.duplicate_field_on_path",
+            Self::EnvironmentConditionLimit => "style.environment.condition_limit",
+            Self::EnvironmentInvalidPath => "style.environment.invalid_path",
+            Self::EnvironmentEmptyCondition => "style.environment.empty_condition",
         }
     }
 }

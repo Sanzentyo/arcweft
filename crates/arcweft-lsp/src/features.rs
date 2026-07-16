@@ -13,4 +13,5 @@ pub mod references;
 pub mod rename;
 pub mod semantic_tokens;
 pub mod signature;
+pub mod style_environment;
 mod view_part_metadata;

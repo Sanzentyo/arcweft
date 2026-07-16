@@ -1,6 +1,7 @@
 use crate::dialogue_sugar::{DialogueSugarContext, DialogueSugarMode, dialogue_text_sugar_edits};
 use crate::edit::report_from_edits;
 use crate::model::{FormatOptions, TextEdit, ToolingDiagnostic, ToolingEditReport, ToolingError};
+use crate::style_environment::canonical_environment_edits;
 use arcweft_lang_syntax::parser::{ParseOptions, SourceDialect, parse_document, parse_source};
 
 mod view;
@@ -29,6 +30,9 @@ pub fn format_source_with_dialect(
     let mut edits = parsed
         .as_ref()
         .map_or_else(Vec::new, |parsed| view::canonical_edits(source, parsed));
+    if let Some(parsed) = parsed.as_ref() {
+        edits.extend(canonical_environment_edits(parsed));
+    }
     if options.canonical_rich_text
         && let Some(parsed) = parsed.as_ref()
     {

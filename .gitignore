@@ -5,6 +5,7 @@
 /web/test-results/
 /web/playwright-report/
 /web/pkg/
+/web/generated/
 /web/local/
 /web/assets/noto-sans-jp-vf.ttf
 /samples/zundamon-stand-switch/assets/zundamon/*.png

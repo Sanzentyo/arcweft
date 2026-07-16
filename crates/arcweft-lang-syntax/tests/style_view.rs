@@ -51,7 +51,10 @@ pub style danger_button {
     assert_eq!(styles[0].id().body(), "style.hoge.primary_button");
     assert_eq!(styles[1].id().body(), "style.hoge.secondary_button");
     assert_eq!(styles[2].id().body(), "style.hoge.danger_button");
-    let active_declarations = styles[1].sheet().rules()[0].declarations();
+    let active_declarations = styles[1].sheet().body()[0]
+        .as_rule()
+        .expect("top-level rule")
+        .declarations();
     assert!(matches!(
         active_declarations[0].value().expr(),
         Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Milli })
@@ -66,7 +69,14 @@ pub style danger_button {
         Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Px })
             if raw == "12px"
     ));
-    assert_eq!(styles[2].sheet().rules()[0].declarations().len(), 1);
+    assert_eq!(
+        styles[2].sheet().body()[0]
+            .as_rule()
+            .expect("top-level rule")
+            .declarations()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -105,7 +115,10 @@ fn native_style_multiline_values_keep_expression_and_source_ranges() {
         &source[token.value().range().as_range()],
         token.value().source()
     );
-    let declaration = &sheet.rules()[0].declarations()[0];
+    let declaration = &sheet.body()[0]
+        .as_rule()
+        .expect("top-level rule")
+        .declarations()[0];
     assert!(matches!(declaration.value().expr(), Expr::Call { .. }));
     assert_eq!(
         &source[declaration.value().range().as_range()],
@@ -217,7 +230,10 @@ pub view Example() {
             _ => None,
         })
         .expect("named style");
-    let declarations = named.sheet().rules()[0].declarations();
+    let declarations = named.sheet().body()[0]
+        .as_rule()
+        .expect("top-level rule")
+        .declarations();
     assert!(matches!(
         declarations[0].value().expr(),
         Expr::RecordLiteral(fields) if fields.len() == 2
@@ -415,7 +431,12 @@ pub view Example() {
             _ => None,
         })
         .expect("named style");
-    let named_expr = named.sheet().rules()[0].declarations()[0].value().expr();
+    let named_expr = named.sheet().body()[0]
+        .as_rule()
+        .expect("top-level rule")
+        .declarations()[0]
+        .value()
+        .expr();
     let inline_expr = parsed
         .typed_tree()
         .items()
