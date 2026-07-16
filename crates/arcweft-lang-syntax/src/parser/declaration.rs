@@ -280,6 +280,13 @@ fn emit_parameter(
     parser.start(SyntaxKind::Parameter, SyntaxRole::Parameter(ordinal));
     let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]);
     let colon = (colon < end && token_text(parser, colon) == Some(":")).then_some(colon);
+    if let (None, Some(kind)) = (colon, receiver_pattern_kind(parser, parser.cursor(), end)) {
+        parser.start(kind, SyntaxRole::ParameterPattern);
+        bump_until(parser, end);
+        parser.finish();
+        parser.finish();
+        return;
+    }
     let pattern_end = colon.unwrap_or(end);
     emit_pattern(parser, pattern_end, SyntaxRole::ParameterPattern);
     bump_until(parser, pattern_end);
@@ -300,6 +307,31 @@ fn emit_parameter(
     }
     bump_until(parser, end);
     parser.finish();
+}
+
+fn receiver_pattern_kind(
+    parser: &ShadowDocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<SyntaxKind> {
+    let spellings = (start..end)
+        .filter_map(|index| {
+            let token = parser.token_at(index)?;
+            (!matches!(
+                token.kind(),
+                SyntaxKind::WhitespaceToken
+                    | SyntaxKind::NewlineToken
+                    | SyntaxKind::CommentToken
+                    | SyntaxKind::DocCommentToken
+            ))
+            .then(|| parser.text_of(token))
+        })
+        .collect::<Vec<_>>();
+    match spellings.as_slice() {
+        ["self"] | ["&", "self"] | ["&", "mut", "self"] => Some(SyntaxKind::BindingPattern),
+        ["mut", "self"] => Some(SyntaxKind::MutableBindingPattern),
+        _ => None,
+    }
 }
 
 pub(super) fn emit_return_type(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind) {

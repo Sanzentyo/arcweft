@@ -68,6 +68,9 @@ mod statement;
 pub mod statements;
 pub mod style;
 pub mod top_level;
+mod trait_impl_grammar;
+#[cfg(test)]
+mod trait_impl_grammar_tests;
 mod type_declaration_grammar;
 #[cfg(test)]
 mod type_declaration_grammar_tests;

@@ -217,6 +217,8 @@ fn structured_declaration_after_outer_prefixes(
             | SyntaxKind::EnumItem
             | SyntaxKind::StructItem
             | SyntaxKind::TypeAliasItem
+            | SyntaxKind::TraitItem
+            | SyntaxKind::ImplItem
     )
     .then_some((declaration, kind))
 }
@@ -430,6 +432,15 @@ fn emit_declaration_item(
         }
         SyntaxKind::EnumItem | SyntaxKind::StructItem | SyntaxKind::TypeAliasItem => {
             super::type_declaration_grammar::emit_declaration(
+                source,
+                tokens,
+                kind,
+                SyntaxRole::Element(ordinal),
+                events,
+            );
+        }
+        SyntaxKind::TraitItem | SyntaxKind::ImplItem => {
+            super::trait_impl_grammar::emit_declaration(
                 source,
                 tokens,
                 kind,
