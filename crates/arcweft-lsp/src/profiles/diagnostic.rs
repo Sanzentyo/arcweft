@@ -1,6 +1,5 @@
-use arcweft_launch::{LaunchDocumentError, LaunchProfileError};
 use arcweft_source::SourceSpan;
-use std::fmt;
+use std::{fmt, path::Path};
 use thiserror::Error;
 
 /// One profile metadata diagnostic with exact source provenance when available.
@@ -48,14 +47,12 @@ pub(super) enum LspProfileLoadError {
     NonFileDocumentUri,
     #[error("no arcw.toml manifest was found for this document")]
     WorkspaceManifestNotFound,
-    #[error("failed to read arcw.toml: {0}")]
-    ManifestRead(std::io::Error),
-    #[error("failed to bind arcw.toml source: {0}")]
-    ManifestSource(String),
-    #[error("{0}")]
-    ManifestParse(LaunchDocumentError),
-    #[error("{0}")]
-    ProfileResolve(LaunchProfileError),
+    #[error("{source}")]
+    Environment {
+        profile_id: Option<String>,
+        #[source]
+        source: Box<super::environment::RegisterProfileEnvironmentError>,
+    },
 }
 
 impl LspProfileDiagnostic {
@@ -142,13 +139,96 @@ impl LspProfileLoadError {
         let kind = match self {
             Self::NonFileDocumentUri => LspProfileDiagnosticKind::NonFileDocumentUri,
             Self::WorkspaceManifestNotFound => LspProfileDiagnosticKind::WorkspaceManifestNotFound,
-            Self::ManifestRead(_) => LspProfileDiagnosticKind::ManifestRead,
-            Self::ManifestSource(_) | Self::ManifestParse(_) => {
-                LspProfileDiagnosticKind::ManifestParse
+            Self::Environment { profile_id, source } => {
+                return environment_diagnostic(*source, profile_id);
             }
-            Self::ProfileResolve(_) => LspProfileDiagnosticKind::ProfileResolve,
         };
         LspProfileDiagnostic::new(kind, self.to_string())
+    }
+}
+
+fn environment_diagnostic(
+    error: super::environment::RegisterProfileEnvironmentError,
+    profile_id: Option<String>,
+) -> LspProfileDiagnostic {
+    let mut diagnostic = match error {
+        super::environment::RegisterProfileEnvironmentError::Topology(error) => {
+            topology_diagnostic(error.as_ref())
+        }
+        super::environment::RegisterProfileEnvironmentError::RegistrationLoad(error) => {
+            LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::CharacterCatalog,
+                error.to_string(),
+            )
+        }
+        error => LspProfileDiagnostic::new(
+            LspProfileDiagnosticKind::CharacterCatalog,
+            error.to_string(),
+        ),
+    };
+    if let Some(profile_id) = profile_id {
+        diagnostic = diagnostic.with_profile_id(profile_id);
+    }
+    diagnostic
+}
+
+fn topology_diagnostic(
+    error: &arcweft_project_loader::topology::ProfileTopologyLoadError,
+) -> LspProfileDiagnostic {
+    use arcweft_project_loader::topology::ProfileTopologyLoadError as Error;
+
+    match error {
+        Error::ResourceRead { id, .. } => {
+            let resource = id.path().as_str();
+            let kind = if resource == "arcw.toml" {
+                LspProfileDiagnosticKind::ManifestRead
+            } else if resource.contains(".awchar") {
+                LspProfileDiagnosticKind::CharacterManifestRead
+            } else if Path::new(resource)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+            {
+                LspProfileDiagnosticKind::RustMetadataRead
+            } else {
+                LspProfileDiagnosticKind::AdapterManifestRead
+            };
+            LspProfileDiagnostic::new(kind, format!("failed to read `{resource}`"))
+                .with_resource(resource)
+        }
+        Error::CharacterManifest { id, source, .. } => {
+            let resource = id.path().as_str();
+            LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::CharacterManifestParse,
+                format!("invalid character manifest `{resource}`: {source}"),
+            )
+            .with_resource(resource)
+        }
+        Error::AdapterManifest { id, source, .. } => {
+            let resource = id.path().as_str();
+            LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::AdapterManifestParse,
+                format!("invalid adapter manifest `{resource}`: {source}"),
+            )
+            .with_resource(resource)
+        }
+        Error::RustMetadata { id, source, .. } => {
+            let resource = id.path().as_str();
+            LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::RustMetadataParse,
+                format!("invalid Rust metadata `{resource}`: {source}"),
+            )
+            .with_resource(resource)
+        }
+        Error::ProjectManifest { .. } | Error::LaunchManifest { .. } => {
+            LspProfileDiagnostic::new(LspProfileDiagnosticKind::ManifestParse, error.to_string())
+        }
+        Error::ProfileSelection { .. } | Error::AdapterSelection { .. } => {
+            LspProfileDiagnostic::new(LspProfileDiagnosticKind::ProfileResolve, error.to_string())
+        }
+        _ => LspProfileDiagnostic::new(
+            LspProfileDiagnosticKind::CharacterCatalog,
+            format!("exact profile topology was rejected ({:?})", error.code()),
+        ),
     }
 }
 

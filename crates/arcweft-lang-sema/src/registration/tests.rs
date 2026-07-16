@@ -168,11 +168,12 @@ fn root_project_source(
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
     let project = HirProject::new(
         PACKAGE,
-        [HirProjectModule::new(
+        [HirProjectModule::try_new(
             CanonicalModulePath::crate_root(),
             document.identity().clone(),
             hir,
-        )],
+        )
+        .expect("registration fixture module binding")],
     )
     .expect("HIR project");
     let world = ProjectSymbolWorldId::try_new(
@@ -211,7 +212,8 @@ fn project_modules(
                 .fold(CanonicalModulePath::crate_root(), |module, segment| {
                     module.join(ModuleSegment::new(segment).expect("module segment"))
                 });
-            let module = HirProjectModule::new(path, document.identity().clone(), hir);
+            let module = HirProjectModule::try_new(path, document.identity().clone(), hir)
+                .expect("registration fixture module binding");
             documents.push(document);
             module
         })

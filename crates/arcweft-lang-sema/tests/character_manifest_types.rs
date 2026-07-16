@@ -88,11 +88,12 @@ fn register(manifests: &[CharacterManifest]) -> RegisteredSemanticWorld {
     let hir = lower_document_to_hir(&source, parsed.typed_tree()).expect("source lowers");
     let project = HirProject::new(
         package.as_str(),
-        [HirProjectModule::new(
+        [HirProjectModule::try_new(
             CanonicalModulePath::crate_root(),
             source.identity().clone(),
             hir,
-        )],
+        )
+        .expect("character manifest fixture module binding")],
     )
     .expect("HIR project");
     let world = ProjectSymbolWorldId::try_new(package, source.identity().id().clone(), "default")

@@ -1,5 +1,6 @@
 //! Filesystem adapter for Arcweft package discovery and module graph loading.
 
+use crate::project_limits::ProjectLoadLimits;
 use arcweft_lang_syntax::{
     ast::{
         common::UseTreeKind,
@@ -19,7 +20,8 @@ use arcweft_source::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    fs::{self, File},
+    io::Read,
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
@@ -46,6 +48,12 @@ pub enum ProjectLoadError {
         path: PathBuf,
         #[source]
         source: std::io::Error,
+    },
+    #[error("project source `{path}` is not valid UTF-8: {source}")]
+    InvalidUtf8 {
+        path: PathBuf,
+        #[source]
+        source: std::string::FromUtf8Error,
     },
     #[error("failed to enumerate source directory `{path}`: {source}")]
     Enumerate {
@@ -100,6 +108,87 @@ pub enum ProjectLoadError {
     },
     #[error(transparent)]
     Sources(#[from] arcweft_project::sources::ProjectSourcesError),
+    #[error("project load exceeded the {kind} limit: observed {observed}, maximum {maximum}")]
+    LimitExceeded {
+        kind: ProjectLoadLimitKind,
+        observed: u64,
+        maximum: u64,
+    },
+    #[error("project load {counter} counter overflowed")]
+    ArithmeticOverflow { counter: ProjectLoadLimitKind },
+}
+
+/// Counter reported by bounded project loading failures.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectLoadLimitKind {
+    Documents,
+    SourceBytes,
+}
+
+impl ProjectLoadLimitKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Documents => "document",
+            Self::SourceBytes => "source-byte",
+        }
+    }
+}
+
+impl std::fmt::Display for ProjectLoadLimitKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug)]
+struct ProjectLoadBudget {
+    limits: ProjectLoadLimits,
+    documents: u64,
+    source_bytes: u64,
+}
+
+impl ProjectLoadBudget {
+    const fn new(limits: ProjectLoadLimits) -> Self {
+        Self {
+            limits,
+            documents: 0,
+            source_bytes: 0,
+        }
+    }
+
+    fn read_document(&mut self, path: &Path) -> Result<String, ProjectLoadError> {
+        let documents =
+            self.documents
+                .checked_add(1)
+                .ok_or(ProjectLoadError::ArithmeticOverflow {
+                    counter: ProjectLoadLimitKind::Documents,
+                })?;
+        if documents > self.limits.documents() {
+            return Err(ProjectLoadError::LimitExceeded {
+                kind: ProjectLoadLimitKind::Documents,
+                observed: documents,
+                maximum: self.limits.documents(),
+            });
+        }
+
+        let (source, observed) =
+            read_utf8_bounded(path, self.source_bytes, self.limits.source_bytes())?;
+        let source_bytes = self.source_bytes.checked_add(observed).ok_or(
+            ProjectLoadError::ArithmeticOverflow {
+                counter: ProjectLoadLimitKind::SourceBytes,
+            },
+        )?;
+        if source_bytes > self.limits.source_bytes() {
+            return Err(ProjectLoadError::LimitExceeded {
+                kind: ProjectLoadLimitKind::SourceBytes,
+                observed: source_bytes,
+                maximum: self.limits.source_bytes(),
+            });
+        }
+        self.documents = documents;
+        self.source_bytes = source_bytes;
+        Ok(source)
+    }
 }
 
 impl LoadedProject {
@@ -172,6 +261,14 @@ pub fn load_discovered(start: &Path) -> Result<LoadedProject, ProjectLoadError> 
     load(&discover_manifest(start)?)
 }
 
+/// Discovers and loads a project while enforcing one inclusive input budget.
+pub fn load_discovered_with_limits(
+    start: &Path,
+    limits: ProjectLoadLimits,
+) -> Result<LoadedProject, ProjectLoadError> {
+    load_with_limits(&discover_manifest(start)?, limits)
+}
+
 /// Loads only the authored asset/content roots from an explicit `arcw.toml`.
 ///
 /// This accepts launch-only manifests without requiring a package source tree.
@@ -197,7 +294,16 @@ pub fn load_project_manifest(manifest_path: &Path) -> Result<ProjectManifest, Pr
 
 /// Loads one explicit `arcw.toml` and all `.arcw` sources under its source root.
 pub fn load(manifest_path: &Path) -> Result<LoadedProject, ProjectLoadError> {
-    let manifest_source = read_to_string(manifest_path)?;
+    load_with_limits(manifest_path, ProjectLoadLimits::new(u64::MAX, u64::MAX))
+}
+
+/// Loads one explicit project while bounding all accepted UTF-8 documents before parsing.
+pub fn load_with_limits(
+    manifest_path: &Path,
+    limits: ProjectLoadLimits,
+) -> Result<LoadedProject, ProjectLoadError> {
+    let mut budget = ProjectLoadBudget::new(limits);
+    let manifest_source = budget.read_document(manifest_path)?;
     let manifest = ProjectManifest::parse_toml(&manifest_source)?;
     let project_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
     let package = manifest.package().name().as_str();
@@ -208,10 +314,10 @@ pub fn load(manifest_path: &Path) -> Result<LoadedProject, ProjectLoadError> {
     )?);
     let launch = SourceBackedLaunchManifest::parse_document(&manifest_document)?;
     let source_root = manifest.source_root(project_root);
-    let source_paths = collect_arcw_files(&source_root)?;
+    let source_paths = collect_arcw_files(&source_root, limits.documents(), budget.documents)?;
     let scanned = source_paths
         .into_iter()
-        .map(|path| scan_source(package, project_root, &source_root, path))
+        .map(|path| scan_source(package, project_root, &source_root, path, &mut budget))
         .collect::<Result<Vec<_>, _>>()?;
     let module_paths = scanned
         .iter()
@@ -285,8 +391,9 @@ fn scan_source(
     project_root: &Path,
     source_root: &Path,
     path: PathBuf,
+    budget: &mut ProjectLoadBudget,
 ) -> Result<ScannedSource, ProjectLoadError> {
-    let source = read_to_string(&path)?;
+    let source = budget.read_document(&path)?;
     let parsed = parse_source(&source);
     if !parsed.errors().is_empty() {
         return Err(ProjectLoadError::Syntax {
@@ -459,8 +566,17 @@ pub(crate) fn inferred_module_path(
     Ok(CanonicalModulePath::from_segments(segments))
 }
 
-fn collect_arcw_files(source_root: &Path) -> Result<Vec<PathBuf>, ProjectLoadError> {
-    fn visit(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), ProjectLoadError> {
+fn collect_arcw_files(
+    source_root: &Path,
+    maximum_documents: u64,
+    already_observed: u64,
+) -> Result<Vec<PathBuf>, ProjectLoadError> {
+    fn visit(
+        directory: &Path,
+        output: &mut Vec<PathBuf>,
+        observed: &mut u64,
+        maximum: u64,
+    ) -> Result<(), ProjectLoadError> {
         let entries = fs::read_dir(directory).map_err(|source| ProjectLoadError::Enumerate {
             path: directory.to_path_buf(),
             source,
@@ -478,12 +594,25 @@ fn collect_arcw_files(source_root: &Path) -> Result<Vec<PathBuf>, ProjectLoadErr
                     source,
                 })?;
             if file_type.is_dir() {
-                visit(&path, output)?;
+                visit(&path, output, observed, maximum)?;
             } else if file_type.is_file()
                 && path
                     .extension()
                     .is_some_and(|extension| extension == "arcw")
             {
+                *observed =
+                    observed
+                        .checked_add(1)
+                        .ok_or(ProjectLoadError::ArithmeticOverflow {
+                            counter: ProjectLoadLimitKind::Documents,
+                        })?;
+                if *observed > maximum {
+                    return Err(ProjectLoadError::LimitExceeded {
+                        kind: ProjectLoadLimitKind::Documents,
+                        observed: *observed,
+                        maximum,
+                    });
+                }
                 output.push(path);
             }
         }
@@ -491,9 +620,57 @@ fn collect_arcw_files(source_root: &Path) -> Result<Vec<PathBuf>, ProjectLoadErr
     }
 
     let mut files = Vec::new();
-    visit(source_root, &mut files)?;
+    let mut observed = already_observed;
+    visit(source_root, &mut files, &mut observed, maximum_documents)?;
     files.sort();
     Ok(files)
+}
+
+fn read_utf8_bounded(
+    path: &Path,
+    already_observed: u64,
+    maximum_bytes: u64,
+) -> Result<(String, u64), ProjectLoadError> {
+    let file = File::open(path).map_err(|source| ProjectLoadError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let remaining = maximum_bytes.checked_sub(already_observed).ok_or(
+        ProjectLoadError::ArithmeticOverflow {
+            counter: ProjectLoadLimitKind::SourceBytes,
+        },
+    )?;
+    let evidence_limit = remaining.saturating_add(1);
+    let mut bytes = Vec::new();
+    file.take(evidence_limit)
+        .read_to_end(&mut bytes)
+        .map_err(|source| ProjectLoadError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let observed =
+        u64::try_from(bytes.len()).map_err(|_| ProjectLoadError::ArithmeticOverflow {
+            counter: ProjectLoadLimitKind::SourceBytes,
+        })?;
+    let aggregate =
+        already_observed
+            .checked_add(observed)
+            .ok_or(ProjectLoadError::ArithmeticOverflow {
+                counter: ProjectLoadLimitKind::SourceBytes,
+            })?;
+    if aggregate > maximum_bytes {
+        return Err(ProjectLoadError::LimitExceeded {
+            kind: ProjectLoadLimitKind::SourceBytes,
+            observed: aggregate,
+            maximum: maximum_bytes,
+        });
+    }
+    String::from_utf8(bytes)
+        .map(|source| (source, observed))
+        .map_err(|source| ProjectLoadError::InvalidUtf8 {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn read_to_string(path: &Path) -> Result<String, ProjectLoadError> {
@@ -506,9 +683,56 @@ fn read_to_string(path: &Path) -> Result<String, ProjectLoadError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ProjectLoadError, inferred_module_path, load_project_manifest, project_document_id,
+        ProjectLoadBudget, ProjectLoadError, ProjectLoadLimitKind, inferred_module_path,
+        load_project_manifest, load_with_limits, project_document_id,
     };
+    use crate::project_limits::ProjectLoadLimits;
     use std::{fs, path::Path};
+
+    struct ProjectFixture {
+        root: std::path::PathBuf,
+        manifest: std::path::PathBuf,
+        manifest_source: String,
+        module_source: String,
+    }
+
+    impl ProjectFixture {
+        fn new(module_source: &str) -> Self {
+            let unique = format!(
+                "arcweft-project-limits-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("system clock follows epoch")
+                    .as_nanos()
+            );
+            let root = std::env::temp_dir().join(unique);
+            let source_root = root.join("src");
+            fs::create_dir_all(&source_root).expect("fixture source root creates");
+            let manifest = root.join("arcw.toml");
+            let manifest_source =
+                "[package]\nname = \"limits-fixture\"\nversion = \"0.1.0\"\n".to_owned();
+            fs::write(&manifest, &manifest_source).expect("fixture manifest writes");
+            fs::write(source_root.join("main.arcw"), module_source).expect("fixture module writes");
+            Self {
+                root,
+                manifest,
+                manifest_source,
+                module_source: module_source.to_owned(),
+            }
+        }
+
+        fn source_bytes(&self) -> u64 {
+            u64::try_from(self.manifest_source.len() + self.module_source.len())
+                .expect("fixture byte length fits u64")
+        }
+    }
+
+    impl Drop for ProjectFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
 
     #[test]
     fn maps_flat_files_without_mod_rs_layout() {
@@ -585,6 +809,82 @@ source = "demo.arcw"
                 Path::new("D:/workspace/other/main.arcw"),
             ),
             Err(ProjectLoadError::OutsideProjectRoot { .. })
+        ));
+    }
+
+    #[test]
+    fn bounded_project_load_accepts_exact_document_and_source_byte_limits() {
+        let fixture = ProjectFixture::new("flow opening {}\n");
+
+        let loaded = load_with_limits(
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("exact inclusive limits load");
+
+        assert_eq!(loaded.module_documents().len(), 1);
+    }
+
+    #[test]
+    fn bounded_project_load_stops_enumeration_at_one_document_over_limit() {
+        let fixture = ProjectFixture::new("this source must not be parsed");
+
+        assert!(matches!(
+            load_with_limits(
+                &fixture.manifest,
+                ProjectLoadLimits::new(1, fixture.source_bytes()),
+            ),
+            Err(ProjectLoadError::LimitExceeded {
+                kind: ProjectLoadLimitKind::Documents,
+                observed: 2,
+                maximum: 1,
+            })
+        ));
+    }
+
+    #[test]
+    fn bounded_project_load_reads_only_one_byte_over_remaining_limit() {
+        let fixture = ProjectFixture::new("flow opening {}\n");
+        let maximum = fixture.source_bytes() - 1;
+
+        assert!(matches!(
+            load_with_limits(
+                &fixture.manifest,
+                ProjectLoadLimits::new(2, maximum),
+            ),
+            Err(ProjectLoadError::LimitExceeded {
+                kind: ProjectLoadLimitKind::SourceBytes,
+                observed,
+                maximum: actual_maximum,
+            }) if observed == maximum + 1 && actual_maximum == maximum
+        ));
+    }
+
+    #[test]
+    fn bounded_project_load_reports_checked_counter_overflow() {
+        let fixture = ProjectFixture::new("");
+        let mut document_overflow = ProjectLoadBudget {
+            limits: ProjectLoadLimits::new(u64::MAX, u64::MAX),
+            documents: u64::MAX,
+            source_bytes: 0,
+        };
+        assert!(matches!(
+            document_overflow.read_document(&fixture.manifest),
+            Err(ProjectLoadError::ArithmeticOverflow {
+                counter: ProjectLoadLimitKind::Documents,
+            })
+        ));
+
+        let mut byte_overflow = ProjectLoadBudget {
+            limits: ProjectLoadLimits::new(1, u64::MAX),
+            documents: 0,
+            source_bytes: u64::MAX,
+        };
+        assert!(matches!(
+            byte_overflow.read_document(&fixture.manifest),
+            Err(ProjectLoadError::ArithmeticOverflow {
+                counter: ProjectLoadLimitKind::SourceBytes,
+            })
         ));
     }
 }

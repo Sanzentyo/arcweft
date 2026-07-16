@@ -7,7 +7,7 @@ use std::{
 use thiserror::Error;
 
 /// Stable identifier for a launch profile.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
 pub struct ProfileId(String);
 
 /// The runtime surface selected by a launch profile.

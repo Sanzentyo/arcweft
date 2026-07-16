@@ -91,7 +91,7 @@ fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
     let first_analysis = Arc::clone(
         &session
             .analyses_by_uri
-            .get(&uri.to_string())
+            .get(&crate::uri_key::LspUriKey::from_uri(&uri))
             .expect("open analysis")
             .analysis,
     );
@@ -118,7 +118,7 @@ fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
     let changed = Arc::clone(
         &session
             .analyses_by_uri
-            .get(&uri.to_string())
+            .get(&crate::uri_key::LspUriKey::from_uri(&uri))
             .expect("changed analysis")
             .analysis,
     );
@@ -196,7 +196,7 @@ fn assert_notification_rebuilds_analysis(
     let current = Arc::clone(
         &session
             .analyses_by_uri
-            .get(&uri.to_string())
+            .get(&crate::uri_key::LspUriKey::from_uri(uri))
             .expect("rebuilt analysis")
             .analysis,
     );
@@ -222,7 +222,7 @@ fn assert_code_actions_reuse_analysis(
         expected,
         &session
             .analyses_by_uri
-            .get(&uri.to_string())
+            .get(&crate::uri_key::LspUriKey::from_uri(uri))
             .expect("reused analysis")
             .analysis
     ));
@@ -859,6 +859,9 @@ flow opening {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-dialogue-defaults-extract"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
@@ -1102,6 +1105,9 @@ fn did_open_refreshes_project_profile_for_completion() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-profile"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -1239,6 +1245,9 @@ flow opening {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-hover-dialogue-defaults"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
@@ -1282,6 +1291,9 @@ flow opening {
 }
 ";
     let manifest = r#"
+[package]
+name = "lsp-definition-dialogue-defaults"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
@@ -1354,6 +1366,9 @@ flow opening {
 }
 ";
     let manifest = r#"
+[package]
+name = "lsp-references-dialogue-defaults"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
@@ -1407,6 +1422,9 @@ fn completions_use_document_scoped_profiles() {
     alpha.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-alpha"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -1423,6 +1441,9 @@ adapter_manifests = ["adapters/alpha.toml"]
     beta.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-beta"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -1472,6 +1493,9 @@ fn watched_file_change_refreshes_profile_metadata() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-watch-refresh"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -1517,6 +1541,9 @@ fn watched_file_change_refreshes_rust_metadata() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-rust-watch-refresh"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -1563,6 +1590,9 @@ fn session_reads_rust_metadata_for_completion_and_hover() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-rust-metadata"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -1618,6 +1648,9 @@ fn signature_help_uses_document_scoped_rust_metadata() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-session-signature-rust-metadata"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"

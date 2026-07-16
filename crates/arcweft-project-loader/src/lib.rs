@@ -8,6 +8,7 @@ pub mod cache;
 pub mod character_manifest;
 pub mod environment;
 pub mod project;
+pub mod project_limits;
 pub mod release_adapter;
 pub mod rust_metadata;
 pub mod source_document;

@@ -11,6 +11,7 @@ use arcweft_lang_sema::{
         CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
     },
     check::analyze_registered_project_types_for_canonicalization,
+    registration::{CharacterRegistrar, CharacterRegistrationRequest},
 };
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceRange};
@@ -37,8 +38,15 @@ pub(crate) fn checked_inventory_for_document(
     let path = file_path_from_uri(uri).ok_or_else(|| {
         SemanticDataUnavailable::new(document.clone(), "document URI is not a local file URI")
     })?;
-    let loaded = arcweft_project_loader::project::load_discovered(&path)
-        .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
+    let limits = arcweft_lang_sema::registration::CharacterRegistrationLimits::PRODUCTION;
+    let loaded = arcweft_project_loader::project::load_discovered_with_limits(
+        &path,
+        arcweft_project_loader::project_limits::ProjectLoadLimits::new(
+            limits.documents(),
+            limits.source_bytes(),
+        ),
+    )
+    .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
     let selected_path = normalized_path(&path);
     let selected = loaded
         .sources()
@@ -111,11 +119,11 @@ pub(crate) fn checked_inventory_for_document(
         let source_span = exact_document
             .span(SourceRange::new(0, exact_document.text().len()))
             .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
-        modules.push(HirProjectModule::new(
-            project_source.module().clone(),
-            identity.clone(),
-            hir,
-        ));
+        modules.push(
+            HirProjectModule::try_new(project_source.module().clone(), identity, hir).map_err(
+                |error| SemanticDataUnavailable::new(document.clone(), error.to_string()),
+            )?,
+        );
         identities.push((project_source.module().clone(), source_span));
     }
 
@@ -124,22 +132,35 @@ pub(crate) fn checked_inventory_for_document(
     let sources = CanonicalizationSourceSet::try_new(hir_project.package().clone(), identities)
         .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
     let previous = profile.accepted_environment();
-    let registered =
-        crate::profiles::register_loaded_environment(crate::profiles::LoadedEnvironmentRequest {
-            loaded: &loaded,
-            project: &hir_project,
-            profile: profile.resolved_profile(),
-            adapter_manifests: profile.declared_manifests(),
-            base: profile.typecheck_env(),
-            additional_documents,
-            overlays: crate::profiles::cache::AcceptedOverlaySet::default(),
-            previous: previous
-                .as_ref()
-                .map(|accepted| accepted.world().environment()),
-        })
+    let request = arcweft_project_loader::environment::ProjectLoadRequest::new(
+        &loaded,
+        profile.resolved_profile(),
+        additional_documents,
+        Vec::new(),
+    )
+    .with_adapter_manifests(profile.declared_manifests().iter().cloned());
+    let registration = arcweft_project_loader::environment::load_project_registration(&request)
         .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
-    let (candidate, _) = registered.into_parts();
-    let registered = Arc::clone(candidate.world());
+    let (facts, _) = registration.into_parts();
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(profile.typecheck_env()),
+        &hir_project,
+        &facts,
+        previous
+            .as_ref()
+            .map(|accepted| accepted.world().environment()),
+    ))
+    .map_err(|report| {
+        SemanticDataUnavailable::new(
+            document.clone(),
+            report
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+                .collect::<Vec<_>>()
+                .join("; "),
+        )
+    })?;
     let report =
         analyze_registered_project_types_for_canonicalization(&hir_project, &registered, &sources)?;
     let selected_identity = sources.source(&selected_module).ok_or_else(|| {

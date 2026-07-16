@@ -1,157 +1,21 @@
 use super::{
-    cache::LspProfileState,
     diagnostic::{LspProfileDiagnostic, LspProfileDiagnosticKind, LspProfileLoadError},
     environment::register_profile_environment,
     model::{LspProfile, ProfileSourceSelection},
-    uri::{file_path_from_uri, file_uri_from_path},
+    state::LspProfileState,
+    uri::file_path_from_uri,
 };
-use arcweft_adapter_context::{
-    manifest::AdapterRegistry,
-    standard::{self, SANS_IO_ADAPTER_ID},
-};
-use arcweft_character::catalog::CharacterCatalog;
-use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_launch::{
-    LaunchKeyPath, LaunchManifestSourceMap, LaunchProfileError, LaunchTokenPath,
-    ResolvedLaunchProfile, SourceBackedLaunchManifest,
+    LaunchKeyPath, LaunchManifestSourceMap, LaunchProfileSelection, LaunchTokenPath,
 };
+use arcweft_project_loader::topology::LoadedProfileTopology;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
-use arcweft_rust_abi::ArcweftRustManifest;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSpan};
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 const DEFAULT_MANIFEST_NAME: &str = "arcw.toml";
-
-pub(super) struct SourceBackedProfileResource {
-    path: PathBuf,
-    source: Option<SourceSpan>,
-}
-
-impl SourceBackedProfileResource {
-    pub(super) fn new(path: PathBuf, source: Option<SourceSpan>) -> Self {
-        Self { path, source }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn bind(&self, diagnostic: LspProfileDiagnostic) -> LspProfileDiagnostic {
-        match &self.source {
-            Some(source) => diagnostic.with_source(source.clone()),
-            None => diagnostic,
-        }
-    }
-}
-
-pub(super) fn read_adapter_manifests(
-    resources: &[SourceBackedProfileResource],
-    manifest_dir: &Path,
-    profile_id: &str,
-    registry: AdapterRegistry,
-    diagnostics: &mut Vec<LspProfileDiagnostic>,
-) -> AdapterRegistry {
-    resources.iter().fold(registry, |registry, resource| {
-        match arcweft_project_loader::adapter_manifest::load(resource.path()) {
-            Ok(loaded) => registry.with_manifest(loaded.manifest().clone()),
-            Err(error) => {
-                diagnostics.push(resource.bind(adapter_manifest_diagnostic(
-                    &error,
-                    path_label(resource.path(), manifest_dir),
-                    profile_id,
-                )));
-                registry
-            }
-        }
-    })
-}
-
-pub(super) fn read_rust_metadata(
-    resources: &[SourceBackedProfileResource],
-    manifest_dir: &Path,
-    profile_id: &str,
-    diagnostics: &mut Vec<LspProfileDiagnostic>,
-) -> Vec<ArcweftRustManifest> {
-    resources
-        .iter()
-        .filter_map(
-            |resource| match arcweft_project_loader::rust_metadata::load(resource.path()) {
-                Ok(loaded) => Some(loaded.manifest().clone()),
-                Err(error) => {
-                    diagnostics.push(resource.bind(rust_metadata_diagnostic(
-                        &error,
-                        path_label(resource.path(), manifest_dir),
-                        profile_id,
-                    )));
-                    None
-                }
-            },
-        )
-        .collect()
-}
-
-fn adapter_manifest_diagnostic(
-    error: &arcweft_project_loader::adapter_manifest::LoadError,
-    resource: String,
-    profile_id: &str,
-) -> LspProfileDiagnostic {
-    let kind = match error {
-        arcweft_project_loader::adapter_manifest::LoadError::Read(_) => {
-            LspProfileDiagnosticKind::AdapterManifestRead
-        }
-        arcweft_project_loader::adapter_manifest::LoadError::DocumentId(_)
-        | arcweft_project_loader::adapter_manifest::LoadError::Document(_)
-        | arcweft_project_loader::adapter_manifest::LoadError::Parse(_) => {
-            LspProfileDiagnosticKind::AdapterManifestParse
-        }
-    };
-    LspProfileDiagnostic::new(kind, format!("{error} `{resource}`"))
-        .with_profile_id(profile_id)
-        .with_resource(resource)
-}
-
-fn rust_metadata_diagnostic(
-    error: &arcweft_project_loader::rust_metadata::LoadError,
-    resource: String,
-    profile_id: &str,
-) -> LspProfileDiagnostic {
-    let kind = match error {
-        arcweft_project_loader::rust_metadata::LoadError::Read(_) => {
-            LspProfileDiagnosticKind::RustMetadataRead
-        }
-        arcweft_project_loader::rust_metadata::LoadError::DocumentId(_)
-        | arcweft_project_loader::rust_metadata::LoadError::Document(_)
-        | arcweft_project_loader::rust_metadata::LoadError::Parse(_) => {
-            LspProfileDiagnosticKind::RustMetadataParse
-        }
-    };
-    LspProfileDiagnostic::new(kind, format!("{error} `{resource}`"))
-        .with_profile_id(profile_id)
-        .with_resource(resource)
-}
-
-fn path_label(path: &Path, manifest_dir: &Path) -> String {
-    let display_path = path.strip_prefix(manifest_dir).unwrap_or(path);
-    let components = display_path
-        .components()
-        .filter_map(|component| match component {
-            std::path::Component::Normal(value) => Some(value.to_string_lossy()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if components.is_empty() {
-        path.file_name().map_or_else(
-            || "metadata".to_owned(),
-            |name| name.to_string_lossy().into_owned(),
-        )
-    } else {
-        components.join("/")
-    }
-}
 
 /// Resolves LSP profile metadata from project manifests near opened documents.
 #[derive(Clone, Debug)]
@@ -160,6 +24,28 @@ pub struct LspProfileResolver {
     manifest_name: String,
     profile_id: Option<String>,
     arbitrary_expression_type_inlays: bool,
+}
+
+pub(crate) fn apply_registered_topology(
+    profile: &mut LspProfile,
+    topology: &LoadedProfileTopology,
+    characters: arcweft_character::catalog::CharacterCatalog,
+) {
+    let selected = topology.selected_profile();
+    let manifest = topology.loaded_project().manifest_document();
+    profile.adapter = topology.adapter().clone();
+    profile.declared_manifests = topology.registration_adapter_manifests().to_vec();
+    profile.dialogue_defaults = selected.dialogue_defaults().map(str::to_owned);
+    profile.dialogue_defaults_selection = selected.dialogue_defaults().and_then(|_| {
+        dialogue_defaults_selection(
+            topology.loaded_project().sources().manifest_path(),
+            manifest.text(),
+            selected.id().as_str(),
+            topology.loaded_project().launch().source_map(),
+        )
+    });
+    profile.characters = characters;
+    profile.resolved_profile = Some(selected.clone());
 }
 
 impl LspProfileResolver {
@@ -232,51 +118,31 @@ impl LspProfileResolver {
         let manifest_path = self
             .find_manifest(document_path)
             .ok_or(LspProfileLoadError::WorkspaceManifestNotFound)?;
-        let manifest_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-        let source =
-            fs::read_to_string(&manifest_path).map_err(LspProfileLoadError::ManifestRead)?;
-        let document_id = file_uri_from_path(&manifest_path).map_or_else(
-            || format!("arcweft-lsp://{}", manifest_path.display()),
-            |uri| uri.as_str().to_owned(),
+        let accepted = state.current();
+        let previous_profile = accepted
+            .as_ref()
+            .map(|environment| environment.profile().profile_id().as_str().to_owned());
+        let selection = self.profile_id.as_deref().map_or(
+            LaunchProfileSelection::Automatic {
+                previous: previous_profile.as_deref(),
+            },
+            LaunchProfileSelection::Explicit,
         );
-        let document_id = SourceDocumentId::try_new(document_id)
-            .map_err(|error| LspProfileLoadError::ManifestSource(error.to_string()))?;
-        let document = SourceDocument::try_new(
-            document_id,
-            SourceName::path(manifest_path.display().to_string()),
-            source.clone(),
-        )
-        .map_err(|error| LspProfileLoadError::ManifestSource(error.to_string()))?;
-        let sourced_manifest = SourceBackedLaunchManifest::parse_document(&document)
-            .map_err(LspProfileLoadError::ManifestParse)?;
-        let manifest = sourced_manifest.manifest();
-        let profile_id = self
-            .profile_id
-            .as_deref()
-            .or_else(|| manifest.profiles().keys().next().map(String::as_str))
-            .ok_or_else(|| {
-                LspProfileLoadError::ProfileResolve(LaunchProfileError::MissingProfile(
-                    "<default>".to_owned(),
-                ))
-            })?;
-        let standard_registry = standard::standard_registry();
-        let profile = manifest
-            .resolve_profile_with_adapters(
-                profile_id,
-                manifest_dir,
-                &standard_registry.adapter_ids(),
-            )
-            .map_err(LspProfileLoadError::ProfileResolve)?;
-        Ok(self.profile_from_resolved(
-            &profile,
-            manifest_dir,
+        let previous = accepted
+            .as_ref()
+            .map(|environment| environment.world().environment());
+        let registered = register_profile_environment(
             &manifest_path,
-            &source,
-            profile_id,
-            standard_registry,
-            state,
-            sourced_manifest.source_map(),
-        ))
+            selection,
+            &[],
+            super::state::AcceptedOverlaySet::default(),
+            previous,
+        )
+        .map_err(|error| LspProfileLoadError::Environment {
+            profile_id: self.profile_id.clone(),
+            source: Box::new(error),
+        })?;
+        Ok(self.profile_from_registered(registered, state))
     }
 
     fn find_manifest(&self, document_path: &Path) -> Option<PathBuf> {
@@ -287,93 +153,34 @@ impl LspProfileResolver {
             .find(|candidate| candidate.is_file())
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "profile construction keeps the resolved launch, exact manifest provenance, registry, and publication state explicit"
-    )]
-    fn profile_from_resolved(
+    fn profile_from_registered(
         &self,
-        profile: &ResolvedLaunchProfile,
-        manifest_dir: &Path,
-        manifest_path: &Path,
-        manifest_source: &str,
-        profile_id: &str,
-        standard_registry: AdapterRegistry,
+        registered: super::environment::RegisteredProfileCandidate,
         state: Arc<LspProfileState>,
-        source_map: &LaunchManifestSourceMap,
     ) -> LspProfile {
-        let mut diagnostics = Vec::new();
-        let adapter_resources = profile_resources(
-            profile.adapter_manifests(),
-            source_map,
-            profile_id,
-            "adapter_manifests",
-        );
-        let registry = read_adapter_manifests(
-            &adapter_resources,
-            manifest_dir,
-            profile_id,
-            standard_registry,
-            &mut diagnostics,
-        );
-        let mut adapter = registry
-            .get(profile.adapter().unwrap_or(SANS_IO_ADAPTER_ID))
-            .cloned()
-            .unwrap_or_else(standard::sans_io_manifest);
-        let rust_resources = profile_resources(
-            profile.rust_metadata(),
-            source_map,
-            profile_id,
-            "rust_metadata",
-        );
-        for rust_manifest in
-            read_rust_metadata(&rust_resources, manifest_dir, profile_id, &mut diagnostics)
-        {
-            adapter = adapter.with_rust_manifest(&rust_manifest);
-        }
-        let character_resources = profile_resources(
-            profile.character_manifests(),
-            source_map,
-            profile_id,
-            "character_manifests",
-        );
-        let base = adapter.apply_to_env(TypeCheckEnv::standard());
-        let accepted = state.current();
-        let previous = accepted
-            .as_ref()
-            .map(|environment| environment.world().environment());
-        let characters =
-            match register_profile_environment(manifest_path, profile, &adapter, base, previous) {
-                Ok(registered) => {
-                    let (candidate, characters) = registered.into_parts();
-                    state
-                        .replace_accepted(candidate)
-                        .expect("a fresh active profile state accepts generation one");
-                    characters
-                }
-                Err(error) => {
-                    diagnostics.push(character_environment_diagnostic(
-                        &error,
-                        &character_resources,
-                        manifest_dir,
-                        profile_id,
-                    ));
-                    CharacterCatalog::default()
-                }
-            };
-        let declared_manifests = vec![adapter.clone()];
+        let (candidate, characters, topology) = registered.into_parts();
+        state
+            .replace_accepted(candidate)
+            .expect("a fresh active profile state accepts generation one");
+        let profile = topology.selected_profile();
+        let manifest = topology.loaded_project().manifest_document();
         LspProfile {
-            adapter,
-            declared_manifests,
+            adapter: topology.adapter().clone(),
+            declared_manifests: topology.registration_adapter_manifests().to_vec(),
             runner: self.runner,
             dialogue_defaults: profile.dialogue_defaults().map(str::to_owned),
             dialogue_defaults_selection: profile.dialogue_defaults().and_then(|_| {
-                dialogue_defaults_selection(manifest_path, manifest_source, profile_id, source_map)
+                dialogue_defaults_selection(
+                    topology.loaded_project().sources().manifest_path(),
+                    manifest.text(),
+                    profile.id().as_str(),
+                    topology.loaded_project().launch().source_map(),
+                )
             }),
             characters,
             resolved_profile: Some(profile.clone()),
             state,
-            diagnostics,
+            diagnostics: Vec::new(),
             arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
         }
     }
@@ -388,43 +195,6 @@ impl LspProfileResolver {
         profile.diagnostics.push(diagnostic);
         profile.with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
     }
-}
-
-fn character_environment_diagnostic(
-    error: &super::environment::RegisterProfileEnvironmentError,
-    resources: &[SourceBackedProfileResource],
-    manifest_dir: &Path,
-    profile_id: &str,
-) -> LspProfileDiagnostic {
-    let Some(
-        arcweft_project_loader::environment::ProjectRegistrationLoadError::CharacterManifest {
-            path,
-            source,
-        },
-    ) = error.registration_load()
-    else {
-        return LspProfileDiagnostic::new(
-            LspProfileDiagnosticKind::CharacterCatalog,
-            error.to_string(),
-        )
-        .with_profile_id(profile_id);
-    };
-    let kind = if matches!(
-        source.as_ref(),
-        arcweft_project_loader::character_manifest::LoadError::Read(_)
-    ) {
-        LspProfileDiagnosticKind::CharacterManifestRead
-    } else {
-        LspProfileDiagnosticKind::CharacterManifestParse
-    };
-    let resource_label = path_label(path, manifest_dir);
-    let diagnostic = LspProfileDiagnostic::new(kind, format!("{source} `{resource_label}`"))
-        .with_profile_id(profile_id)
-        .with_resource(resource_label);
-    resources
-        .iter()
-        .find(|resource| resource.path() == path)
-        .map_or(diagnostic.clone(), |resource| resource.bind(diagnostic))
 }
 
 fn dialogue_defaults_selection(
@@ -450,32 +220,4 @@ fn dialogue_defaults_selection(
         source: source.to_owned(),
         value_range,
     })
-}
-
-fn profile_resources(
-    paths: &[PathBuf],
-    source_map: &LaunchManifestSourceMap,
-    profile_id: &str,
-    key: &str,
-) -> Vec<SourceBackedProfileResource> {
-    let path = LaunchKeyPath::new(vec![
-        "profiles".to_owned(),
-        profile_id.to_owned(),
-        key.to_owned(),
-    ]);
-    paths
-        .iter()
-        .enumerate()
-        .map(|(index, resource)| {
-            let source = source_map
-                .token(&LaunchTokenPath::ArrayElement {
-                    path: path.clone(),
-                    occurrence: 0,
-                    index,
-                })
-                .and_then(|token| token.value())
-                .cloned();
-            SourceBackedProfileResource::new(resource.clone(), source)
-        })
-        .collect()
 }

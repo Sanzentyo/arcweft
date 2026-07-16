@@ -1,4 +1,4 @@
-use super::cache::LspProfileState;
+use super::state::LspProfileState;
 use super::*;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use arcweft_rust_abi::{
@@ -157,6 +157,9 @@ fn adapter_manifest_diagnostic_keeps_profile_relative_resource() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-profile-adapter-diagnostic"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -186,6 +189,9 @@ fn invalid_adapter_manifest_diagnostic_keeps_profile_relative_resource() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-profile-adapter-invalid"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -211,7 +217,7 @@ adapter_manifests = ["adapters/bad.toml"]
 }
 
 #[test]
-fn use_path_range_comes_from_token_map() {
+fn failed_topology_resource_uses_owner_relative_identity() {
     let project = TestProject::new("lsp-profile-token-map-range");
     let manifest = r#"
 [package]
@@ -239,18 +245,12 @@ character_manifests = ["assets/missing.awchar"]
         .iter()
         .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::CharacterManifestRead)
         .expect("missing character manifest diagnostic");
-    let source = diagnostic.source().expect("structural launch token");
-    let token = &manifest[source.range().as_range()];
-
-    assert_eq!(token, "\"assets/missing.awchar\"");
+    assert_eq!(diagnostic.profile_id(), Some("dev"));
     assert_eq!(
-        source.range().start(),
-        manifest.rfind(token).expect("selected profile occurrence")
+        diagnostic.resource(),
+        Some("assets/missing.awchar/character.awchar.json")
     );
-    assert_ne!(
-        source.range().start(),
-        manifest.find(token).expect("unselected earlier occurrence")
-    );
+    assert!(diagnostic.source().is_none());
 }
 
 #[test]
@@ -259,6 +259,9 @@ fn missing_rust_metadata_diagnostic_keeps_profile_relative_resource() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-profile-rust-missing"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -288,6 +291,9 @@ fn invalid_rust_metadata_diagnostic_keeps_profile_relative_resource() {
     project.write(
         "arcw.toml",
         r#"
+[package]
+name = "lsp-profile-rust-invalid"
+
 [profiles.dev]
 kind = "server"
 source = "src/main.arcw"
@@ -316,6 +322,9 @@ rust_metadata = ["target/arcweft/bad.json"]
 fn resolves_dialogue_defaults_selection_source_range() {
     let project = TestProject::new("lsp-profile-dialogue-defaults-selection");
     let manifest = r#"
+[package]
+name = "lsp-profile-dialogue-defaults-selection"
+
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"

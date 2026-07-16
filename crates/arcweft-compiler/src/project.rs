@@ -358,15 +358,27 @@ where
         compile_project_units(project, &source_documents, cache)?;
 
     let result = (|| {
+        let mut project_modules = Vec::with_capacity(modules.len());
+        for module in &modules {
+            let bound = HirProjectModule::try_new(
+                module.module.clone(),
+                module.source.clone(),
+                module.hir.clone(),
+            )
+            .map_err(|error| {
+                linked_error(
+                    ProjectCompileStage::HirProject,
+                    [
+                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                            .with_code("hir.project.module"),
+                    ],
+                )
+            })?;
+            project_modules.push(bound);
+        }
         let hir_project = HirProject::new(
             project.manifest().package().name().as_str(),
-            modules.iter().map(|module| {
-                HirProjectModule::new(
-                    module.module.clone(),
-                    module.source.clone(),
-                    module.hir.clone(),
-                )
-            }),
+            project_modules,
         )
         .map_err(|error| {
             linked_error(

@@ -58,7 +58,8 @@ fn with_checked_project_inventory<T>(
                 .span(SourceRange::new(0, document.text().len()))
                 .expect("tooling fixture document owns its complete UTF-8 range");
             (
-                HirProjectModule::new(module.clone(), identity.clone(), hir),
+                HirProjectModule::try_new(module.clone(), identity.clone(), hir)
+                    .expect("tooling fixture module binding"),
                 (module.clone(), source_span),
             )
         })

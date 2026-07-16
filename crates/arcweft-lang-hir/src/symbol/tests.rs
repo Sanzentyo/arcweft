@@ -39,11 +39,12 @@ fn project(source: &str) -> (Arc<SourceDocument>, HirProject) {
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
     let project = HirProject::new(
         PACKAGE,
-        [HirProjectModule::new(
+        [HirProjectModule::try_new(
             CanonicalModulePath::crate_root(),
             document.identity().clone(),
             hir,
-        )],
+        )
+        .expect("root module binding")],
     )
     .expect("HIR project");
     (document, project)
@@ -83,7 +84,9 @@ fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocument>>, HirPr
             assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
             let hir =
                 lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered module HIR");
-            let module = HirProjectModule::new(module_path(path), document.identity().clone(), hir);
+            let module =
+                HirProjectModule::try_new(module_path(path), document.identity().clone(), hir)
+                    .expect("fixture module binding");
             documents.push(document);
             module
         })

@@ -1,4 +1,3 @@
-use arcweft_adapter_context::manifest::AdapterManifest;
 use arcweft_character::catalog::CharacterCatalog;
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
@@ -9,38 +8,43 @@ use arcweft_lang_sema::{
     registration::{CharacterRegistrar, CharacterRegistrationRequest, RegisteredTypeCheckEnv},
 };
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_launch::ResolvedLaunchProfile;
+use arcweft_launch::{LaunchProfileSelection, ProfileId};
+use arcweft_project_loader::{
+    environment::{ProfileRegistrationLoadRequest, load_profile_registration},
+    topology::{
+        LoadedProfileTopology, ProfileTopologyLoadError, ProfileTopologyLoadRequest,
+        ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, load_profile_topology,
+    },
+};
 use std::{collections::BTreeSet, path::Path, sync::Arc};
 use thiserror::Error;
 
 use super::{
-    cache::{
-        AcceptedOverlaySet, AcceptedProfileCandidate, AcceptedProfileKey, AcceptedSourceAccess,
-        AcceptedSourceDocumentSeed, AcceptedSourceLocator, AcceptedSourceOwnership,
+    accepted_project::{
+        AcceptedProjectSnapshot, AcceptedSourceAccess, AcceptedSourceDocumentSeed,
+        AcceptedSourceLocator, AcceptedSourceOwnership,
     },
+    state::{AcceptedOverlaySet, AcceptedProfileCandidate, AcceptedProfileKey},
     uri::file_uri_from_path,
 };
 
 pub(crate) struct RegisteredProfileCandidate {
     candidate: AcceptedProfileCandidate,
     characters: CharacterCatalog,
+    topology: LoadedProfileTopology,
 }
 
 pub(crate) struct LoadedEnvironmentRequest<'a> {
-    pub(crate) loaded: &'a arcweft_project_loader::project::LoadedProject,
-    pub(crate) project: &'a HirProject,
-    pub(crate) profile: Option<&'a ResolvedLaunchProfile>,
-    pub(crate) adapter_manifests: &'a [AdapterManifest],
-    pub(crate) base: TypeCheckEnv,
-    pub(crate) additional_documents: Vec<Arc<arcweft_source::SourceDocument>>,
+    pub(crate) topology: &'a LoadedProfileTopology,
+    pub(crate) project: &'a Arc<HirProject>,
     pub(crate) overlays: AcceptedOverlaySet,
     pub(crate) previous: Option<&'a RegisteredTypeCheckEnv>,
 }
 
 #[derive(Debug, Error)]
 pub(crate) enum RegisterProfileEnvironmentError {
-    #[error("failed to load registration project: {0}")]
-    Project(String),
+    #[error("failed to load exact launch-profile topology: {0}")]
+    Topology(#[source] Box<ProfileTopologyLoadError>),
     #[error("failed to assemble registration project: {0}")]
     ProjectAssembly(String),
     #[error("failed to load registration facts: {0}")]
@@ -50,77 +54,69 @@ pub(crate) enum RegisterProfileEnvironmentError {
     #[error("registered character catalog was rejected: {0}")]
     Catalog(String),
     #[error("accepted profile candidate was rejected: {0}")]
-    Candidate(#[source] super::cache::AcceptedProfileCandidateError),
-}
-
-impl RegisterProfileEnvironmentError {
-    pub(crate) const fn registration_load(
-        &self,
-    ) -> Option<&arcweft_project_loader::environment::ProjectRegistrationLoadError> {
-        match self {
-            Self::RegistrationLoad(error) => Some(error),
-            Self::Project(_)
-            | Self::ProjectAssembly(_)
-            | Self::Registration(_)
-            | Self::Catalog(_)
-            | Self::Candidate(_) => None,
-        }
-    }
+    Candidate(#[source] Box<super::state::AcceptedProfileCandidateError>),
+    #[error("accepted project snapshot was rejected: {0}")]
+    AcceptedProject(#[source] Box<super::accepted_project::AcceptedProjectSnapshotError>),
 }
 
 impl RegisteredProfileCandidate {
-    pub(crate) fn into_parts(self) -> (AcceptedProfileCandidate, CharacterCatalog) {
-        (self.candidate, self.characters)
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        AcceptedProfileCandidate,
+        CharacterCatalog,
+        LoadedProfileTopology,
+    ) {
+        (self.candidate, self.characters, self.topology)
     }
 }
 
-pub(super) fn register_profile_environment(
+pub(crate) fn register_profile_environment_with_overlays(
     manifest_path: &Path,
-    profile: &ResolvedLaunchProfile,
-    adapter: &AdapterManifest,
-    base: TypeCheckEnv,
+    profile_id: &ProfileId,
+    overlay_seeds: &[ProfileTopologyOverlaySeed],
+    overlays: AcceptedOverlaySet,
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<RegisteredProfileCandidate, RegisterProfileEnvironmentError> {
-    register_profile_environment_with_overlays(
+    register_profile_environment(
         manifest_path,
-        profile,
-        adapter,
-        base,
-        Vec::new(),
-        AcceptedOverlaySet::default(),
+        LaunchProfileSelection::Explicit(profile_id.as_str()),
+        overlay_seeds,
+        overlays,
         previous,
     )
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "one rebuild transaction keeps its resolved profile, exact overlay documents, publication overlay set, and previous environment explicit"
-)]
-pub(crate) fn register_profile_environment_with_overlays(
+pub(crate) fn register_profile_environment(
     manifest_path: &Path,
-    profile: &ResolvedLaunchProfile,
-    adapter: &AdapterManifest,
-    base: TypeCheckEnv,
-    overlay_documents: Vec<Arc<arcweft_source::SourceDocument>>,
+    selection: LaunchProfileSelection<'_>,
+    overlay_seeds: &[ProfileTopologyOverlaySeed],
     overlays: AcceptedOverlaySet,
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<RegisteredProfileCandidate, RegisterProfileEnvironmentError> {
-    let loaded = arcweft_project_loader::project::load(manifest_path)
-        .map_err(|error| RegisterProfileEnvironmentError::Project(error.to_string()))?;
-    let overlay_documents_by_id = overlay_documents
-        .iter()
-        .map(|document| (document.identity().id().clone(), Arc::clone(document)))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let modules = loaded
+    let workspace_owner = workspace_owner(manifest_path)?;
+    let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
+        manifest_path,
+        workspace_owner,
+        selection,
+        overlay_seeds,
+        arcweft_adapter_context::standard::standard_registry(),
+    ))
+    .map_err(|error| RegisterProfileEnvironmentError::Topology(Box::new(error)))?;
+    let modules = topology
+        .loaded_project()
         .sources()
         .modules()
         .map(|source| {
-            let disk_document = loaded
+            let document = topology
+                .loaded_project()
                 .module_document(source.module())
-                .expect("loaded project retains one document per source module");
-            let document = overlay_documents_by_id
-                .get(disk_document.identity().id())
-                .unwrap_or(disk_document);
+                .ok_or_else(|| {
+                    RegisterProfileEnvironmentError::ProjectAssembly(format!(
+                        "exact topology omitted module document `{}`",
+                        source.module()
+                    ))
+                })?;
             let parsed = parse_source(document.text());
             if !parsed.errors().is_empty() {
                 return Err(RegisterProfileEnvironmentError::ProjectAssembly(format!(
@@ -135,85 +131,66 @@ pub(crate) fn register_profile_environment_with_overlays(
                     source.path().display()
                 ))
             })?;
-            Ok(HirProjectModule::new(
-                source.module().clone(),
-                document.identity().clone(),
-                hir,
-            ))
+            HirProjectModule::try_new(source.module().clone(), document.identity().clone(), hir)
+                .map_err(|error| {
+                    RegisterProfileEnvironmentError::ProjectAssembly(error.to_string())
+                })
         })
         .collect::<Result<Vec<_>, RegisterProfileEnvironmentError>>()?;
-    let project = HirProject::new(
-        loaded.sources().manifest().package().name().as_str(),
-        modules,
-    )
-    .map_err(|error| RegisterProfileEnvironmentError::ProjectAssembly(error.to_string()))?;
-    register_loaded_environment(LoadedEnvironmentRequest {
-        loaded: &loaded,
+    let project = Arc::new(
+        HirProject::new(
+            topology
+                .loaded_project()
+                .sources()
+                .manifest()
+                .package()
+                .name()
+                .as_str(),
+            modules,
+        )
+        .map_err(|error| RegisterProfileEnvironmentError::ProjectAssembly(error.to_string()))?,
+    );
+    let (candidate, characters) = register_loaded_environment(LoadedEnvironmentRequest {
+        topology: &topology,
         project: &project,
-        profile: Some(profile),
-        adapter_manifests: std::slice::from_ref(adapter),
-        base,
-        additional_documents: overlay_documents,
         overlays,
         previous,
+    })?;
+    Ok(RegisteredProfileCandidate {
+        candidate,
+        characters,
+        topology,
     })
 }
 
 pub(crate) fn register_loaded_environment(
     request: LoadedEnvironmentRequest<'_>,
-) -> Result<RegisteredProfileCandidate, RegisterProfileEnvironmentError> {
+) -> Result<(AcceptedProfileCandidate, CharacterCatalog), RegisterProfileEnvironmentError> {
     let LoadedEnvironmentRequest {
-        loaded,
+        topology,
         project,
-        profile,
-        adapter_manifests,
-        base,
-        additional_documents,
         overlays,
         previous,
     } = request;
-    let additional_source_seeds = unavailable_source_seeds(&additional_documents);
-    let request = arcweft_project_loader::environment::ProjectLoadRequest::new(
-        loaded,
-        profile,
-        additional_documents,
-        Vec::new(),
-    )
-    .with_adapter_manifests(adapter_manifests.iter().cloned());
-    let registration = arcweft_project_loader::environment::load_project_registration(&request)
+    let registration = load_profile_registration(&ProfileRegistrationLoadRequest::new(topology))
         .map_err(RegisterProfileEnvironmentError::RegistrationLoad)?;
     let (facts, file_documents) = registration.into_parts();
-    let world = register_semantic_world(base, project, &facts, previous)?;
+    let base = topology.adapter().apply_to_env(TypeCheckEnv::standard());
+    let world = register_semantic_world(base, project.as_ref(), &facts, previous)?;
     let characters = registered_character_catalog(&facts)?;
-    let source_seeds = accepted_source_seeds(&facts, file_documents, additional_source_seeds);
+    let source_seeds = accepted_source_seeds(&facts, file_documents);
+    let project = Arc::new(
+        AcceptedProjectSnapshot::try_new(Arc::clone(project), world.as_ref(), source_seeds)
+            .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
+    );
     let candidate = AcceptedProfileCandidate::try_new(
-        accepted_profile_key(loaded, profile),
+        accepted_profile_key(topology)?,
         world,
-        source_seeds,
+        project,
         overlays,
     )
-    .map_err(RegisterProfileEnvironmentError::Candidate)?;
-    Ok(RegisteredProfileCandidate {
-        candidate,
-        characters,
-    })
-}
-
-fn unavailable_source_seeds(
-    documents: &[Arc<arcweft_source::SourceDocument>],
-) -> Vec<AcceptedSourceDocumentSeed> {
-    documents
-        .iter()
-        .cloned()
-        .map(|document| {
-            AcceptedSourceDocumentSeed::new(
-                document,
-                AcceptedSourceLocator::Unavailable,
-                AcceptedSourceOwnership::Generated,
-                AcceptedSourceAccess::Unknown,
-            )
-        })
-        .collect()
+    .map_err(|error| RegisterProfileEnvironmentError::Candidate(Box::new(error)))?;
+    Ok((candidate, characters))
 }
 
 fn register_semantic_world(
@@ -257,7 +234,6 @@ fn registered_character_catalog(
 fn accepted_source_seeds(
     facts: &arcweft_lang_sema::registration::ProjectRegistrationFacts,
     file_documents: Vec<arcweft_project_loader::environment::LoadedFileDocument>,
-    additional_source_seeds: Vec<AcceptedSourceDocumentSeed>,
 ) -> Vec<AcceptedSourceDocumentSeed> {
     let mut source_seeds = file_documents
         .into_iter()
@@ -294,7 +270,6 @@ fn accepted_source_seeds(
             )
         })
         .collect::<Vec<_>>();
-    source_seeds.extend(additional_source_seeds);
     let mut seeded = source_seeds
         .iter()
         .map(|seed| seed.document().identity().clone())
@@ -316,17 +291,48 @@ fn accepted_source_seeds(
 }
 
 fn accepted_profile_key(
-    loaded: &arcweft_project_loader::project::LoadedProject,
-    profile: Option<&ResolvedLaunchProfile>,
-) -> AcceptedProfileKey {
-    let workspace_uri = file_uri_from_path(loaded.sources().project_root()).map_or_else(
-        || loaded.sources().project_root().display().to_string(),
-        |uri| uri.to_string(),
-    );
-    let manifest_uri = file_uri_from_path(loaded.sources().manifest_path()).map_or_else(
-        || loaded.sources().manifest_path().display().to_string(),
-        |uri| uri.to_string(),
-    );
-    let profile_id = profile.map_or("default", |profile| profile.id().as_str());
-    AcceptedProfileKey::new(workspace_uri, manifest_uri, profile_id)
+    topology: &LoadedProfileTopology,
+) -> Result<AcceptedProfileKey, RegisterProfileEnvironmentError> {
+    let loaded = topology.loaded_project();
+    let workspace_uri = file_uri_from_path(loaded.sources().project_root()).ok_or_else(|| {
+        RegisterProfileEnvironmentError::ProjectAssembly(
+            "project root cannot be represented as an LSP file URI".to_owned(),
+        )
+    })?;
+    let manifest_uri = file_uri_from_path(loaded.sources().manifest_path()).ok_or_else(|| {
+        RegisterProfileEnvironmentError::ProjectAssembly(
+            "project manifest cannot be represented as an LSP file URI".to_owned(),
+        )
+    })?;
+    let profile_id = topology.selected_profile().id().clone();
+    Ok(AcceptedProfileKey::new(
+        &workspace_uri,
+        &manifest_uri,
+        profile_id,
+    ))
+}
+
+fn workspace_owner(
+    manifest_path: &Path,
+) -> Result<ProfileTopologyOwnerId, RegisterProfileEnvironmentError> {
+    let project_root = manifest_path.parent().ok_or_else(|| {
+        RegisterProfileEnvironmentError::ProjectAssembly(
+            "project manifest has no workspace parent".to_owned(),
+        )
+    })?;
+    let workspace_uri = file_uri_from_path(project_root).ok_or_else(|| {
+        RegisterProfileEnvironmentError::ProjectAssembly(
+            "project root cannot be represented as an LSP file URI".to_owned(),
+        )
+    })?;
+    let manifest_uri = file_uri_from_path(manifest_path).ok_or_else(|| {
+        RegisterProfileEnvironmentError::ProjectAssembly(
+            "project manifest cannot be represented as an LSP file URI".to_owned(),
+        )
+    })?;
+    ProfileTopologyOwnerId::workspace(
+        workspace_uri.as_str().to_owned(),
+        manifest_uri.as_str().to_owned(),
+    )
+    .map_err(|error| RegisterProfileEnvironmentError::ProjectAssembly(error.to_string()))
 }

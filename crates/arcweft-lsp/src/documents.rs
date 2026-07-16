@@ -1,4 +1,5 @@
 use crate::positions::{LineIndex, PositionEncoding};
+use crate::uri_key::LspUriKey;
 use arcweft_source::{SourceDocument, SourceDocumentError, SourceDocumentId, SourceName};
 use lsp_types::{DidChangeTextDocumentParams, DidOpenTextDocumentParams, Uri};
 use std::{collections::BTreeMap, sync::Arc};
@@ -8,7 +9,7 @@ use thiserror::Error;
 #[derive(Clone, Debug)]
 pub struct DocumentSnapshot {
     uri: Uri,
-    version: Option<i32>,
+    version: i32,
     document: Arc<SourceDocument>,
     line_index: LineIndex,
 }
@@ -16,7 +17,7 @@ pub struct DocumentSnapshot {
 /// Open document cache for FULL text synchronization.
 #[derive(Clone, Debug, Default)]
 pub struct DocumentStore {
-    documents: BTreeMap<String, DocumentSnapshot>,
+    documents: BTreeMap<LspUriKey, DocumentSnapshot>,
 }
 
 /// Document cache update error.
@@ -37,9 +38,9 @@ pub enum OverlayBindingError {
 }
 
 /// Rebinds one open editor snapshot through an explicit accepted URI adapter.
-pub fn rebind_overlay(
+pub(crate) fn rebind_overlay(
     snapshot: &DocumentSnapshot,
-    accepted: &crate::profiles::cache::AcceptedSourceDocument,
+    accepted: &crate::profiles::accepted_project::AcceptedSourceDocument,
 ) -> Result<Arc<SourceDocument>, OverlayBindingError> {
     let accepted_uri =
         accepted
@@ -69,7 +70,7 @@ impl DocumentSnapshot {
     }
 
     /// Last client-supplied document version.
-    pub const fn version(&self) -> Option<i32> {
+    pub const fn version(&self) -> i32 {
         self.version
     }
 
@@ -113,12 +114,12 @@ impl DocumentStore {
         );
         let snapshot = DocumentSnapshot {
             uri: params.text_document.uri,
-            version: Some(params.text_document.version),
+            version: params.text_document.version,
             line_index: LineIndex::new(Arc::clone(&text), encoding),
             document,
         };
         self.documents
-            .insert(snapshot.uri.to_string(), snapshot.clone());
+            .insert(LspUriKey::from_uri(snapshot.uri()), snapshot.clone());
         snapshot
     }
 
@@ -152,28 +153,40 @@ impl DocumentStore {
         );
         let snapshot = DocumentSnapshot {
             uri: params.text_document.uri,
-            version: Some(params.text_document.version),
+            version: params.text_document.version,
             line_index: LineIndex::new(Arc::clone(&text), encoding),
             document,
         };
         self.documents
-            .insert(snapshot.uri.to_string(), snapshot.clone());
+            .insert(LspUriKey::from_uri(snapshot.uri()), snapshot.clone());
         Ok(snapshot)
     }
 
     /// Removes a closed document.
     pub fn close(&mut self, uri: &Uri) {
-        self.documents.remove(&uri.to_string());
+        self.documents.remove(&LspUriKey::from_uri(uri));
     }
 
     /// Gets an open document by URI.
     pub fn get(&self, uri: &Uri) -> Option<&DocumentSnapshot> {
-        self.documents.get(&uri.to_string())
+        self.documents.get(&LspUriKey::from_uri(uri))
+    }
+
+    pub(crate) fn get_by_key(&self, uri: &LspUriKey) -> Option<&DocumentSnapshot> {
+        self.documents.get(uri)
     }
 
     /// All open document snapshots.
     pub fn snapshots(&self) -> impl Iterator<Item = &DocumentSnapshot> {
         self.documents.values()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.documents.clear();
+    }
+
+    pub(crate) fn remove_by_key(&mut self, uri: &LspUriKey) {
+        self.documents.remove(uri);
     }
 }
 
@@ -207,7 +220,7 @@ mod tests {
             )
             .expect("full sync change");
 
-        assert_eq!(snapshot.version(), Some(2));
+        assert_eq!(snapshot.version(), 2);
         assert!(store.get(&uri).is_some());
     }
 }

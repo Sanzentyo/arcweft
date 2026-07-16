@@ -37,31 +37,48 @@ pub enum HirProjectError {
     MissingRootModule,
 }
 
+/// Invalid binding between one canonical module and its lowered HIR source.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirProjectModuleError {
+    #[error("HIR module `{module}` is not bound to a source document")]
+    MissingSourceDocument { module: CanonicalModulePath },
+    #[error("HIR module `{module}` is bound to another source revision")]
+    SourceIdentityMismatch {
+        module: CanonicalModulePath,
+        expected: SourceDocumentIdentity,
+        actual: SourceDocumentIdentity,
+    },
+}
+
 impl HirProjectModule {
     /// Binds one lowered HIR module to its canonical module and source identity.
-    ///
-    /// # Panics
-    ///
-    /// Panics when `hir` was not lowered from a revision-bound source document or when that
-    /// document identity differs from `source`.
-    pub fn new(
+    #[allow(
+        clippy::result_large_err,
+        reason = "the exact module-binding error preserves both complete source identities"
+    )]
+    pub fn try_new(
         module: CanonicalModulePath,
         source: SourceDocumentIdentity,
         mut hir: HirModule,
-    ) -> Self {
-        let bound_source = hir
-            .source_identity()
-            .expect("project HIR must be lowered from a revision-bound source document");
-        assert_eq!(
-            bound_source, &source,
-            "project HIR source identity must match its module identity"
-        );
+    ) -> Result<Self, HirProjectModuleError> {
+        let bound_source =
+            hir.source_identity()
+                .ok_or_else(|| HirProjectModuleError::MissingSourceDocument {
+                    module: module.clone(),
+                })?;
+        if bound_source != &source {
+            return Err(HirProjectModuleError::SourceIdentityMismatch {
+                module,
+                expected: source,
+                actual: bound_source.clone(),
+            });
+        }
         hir.assign_declaration_module(&module);
-        Self {
+        Ok(Self {
             module,
             source,
             hir,
-        }
+        })
     }
 
     pub const fn module(&self) -> &CanonicalModulePath {
@@ -273,8 +290,8 @@ fn assign_flow_item_module(item: &mut HirFlowItem, path: &CanonicalModulePath) {
 
 #[cfg(test)]
 mod tests {
-    use super::{HirProject, HirProjectModule};
-    use crate::lower::lower_document_to_hir;
+    use super::{HirProject, HirProjectModule, HirProjectModuleError};
+    use crate::lower::{lower_document_to_hir, lower_to_hir};
     use crate::model::HirFlowItem;
     use crate::style::HirStylePatch;
     use arcweft_lang_syntax::{
@@ -325,13 +342,24 @@ mod tests {
         let project = HirProject::new(
             "game",
             [
-                HirProjectModule::new(omega_path.clone(), omega_document.identity().clone(), omega),
-                HirProjectModule::new(
+                HirProjectModule::try_new(
+                    omega_path.clone(),
+                    omega_document.identity().clone(),
+                    omega,
+                )
+                .expect("omega module binding"),
+                HirProjectModule::try_new(
                     CanonicalModulePath::crate_root(),
                     root_document.identity().clone(),
                     root,
-                ),
-                HirProjectModule::new(alpha_path.clone(), alpha_document.identity().clone(), alpha),
+                )
+                .expect("root module binding"),
+                HirProjectModule::try_new(
+                    alpha_path.clone(),
+                    alpha_document.identity().clone(),
+                    alpha,
+                )
+                .expect("alpha module binding"),
             ],
         )
         .unwrap();
@@ -354,12 +382,14 @@ mod tests {
         let project = HirProject::new(
             "game",
             [
-                HirProjectModule::new(
+                HirProjectModule::try_new(
                     CanonicalModulePath::crate_root(),
                     root_document.identity().clone(),
                     root,
-                ),
-                HirProjectModule::new(child_path, child_document.identity().clone(), child),
+                )
+                .expect("root module binding"),
+                HirProjectModule::try_new(child_path, child_document.identity().clone(), child)
+                    .expect("child module binding"),
             ],
         )
         .unwrap();
@@ -395,7 +425,9 @@ mod tests {
             lower_document_to_hir(&document, parsed.typed_tree()).expect("nested flow lowers");
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
-        let module = HirProjectModule::new(child_path.clone(), document.identity().clone(), hir);
+        let module =
+            HirProjectModule::try_new(child_path.clone(), document.identity().clone(), hir)
+                .expect("nested flow module binding");
 
         let HirFlowItem::Scope(scope) = &module.hir().flows()[0].body()[0] else {
             panic!("outer scope must lower");
@@ -488,9 +520,40 @@ mod tests {
 
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
-        let child = HirProjectModule::new(child_path.clone(), document.identity().clone(), hir);
+        let child = HirProjectModule::try_new(child_path.clone(), document.identity().clone(), hir)
+            .expect("child module binding");
         assert_eq!(child.hir().module_path(), &child_path);
         assert_eq!(child.hir().source_identity(), Some(document.identity()));
+        assert_eq!(child.hir().source_document(), Some(&document));
+    }
+
+    #[test]
+    fn project_module_rejects_hir_without_a_source_document() {
+        let parsed = parse_source("");
+        let hir = lower_to_hir(parsed.typed_tree()).expect("unbound HIR lowers");
+        let module = CanonicalModulePath::crate_root();
+        let source = source_document("missing-source", "");
+
+        assert_eq!(
+            HirProjectModule::try_new(module.clone(), source.identity().clone(), hir),
+            Err(HirProjectModuleError::MissingSourceDocument { module })
+        );
+    }
+
+    #[test]
+    fn project_module_rejects_another_source_revision() {
+        let (expected_document, hir) = lower_bound("expected-source", "");
+        let actual_document = source_document("actual-source", "flow different {}");
+        let module = CanonicalModulePath::crate_root();
+
+        assert_eq!(
+            HirProjectModule::try_new(module.clone(), actual_document.identity().clone(), hir,),
+            Err(HirProjectModuleError::SourceIdentityMismatch {
+                module,
+                expected: actual_document.identity().clone(),
+                actual: expected_document.identity().clone(),
+            })
+        );
     }
 
     #[test]

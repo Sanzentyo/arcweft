@@ -266,10 +266,12 @@ fn canonicalize_project_source(
             let source_span = document
                 .span(SourceRange::new(0, document.text().len()))
                 .expect("loaded source document owns its complete UTF-8 range");
-            Ok((
-                HirProjectModule::new(project_source.module().clone(), identity.clone(), hir),
-                (project_source.module().clone(), source_span),
-            ))
+            let module =
+                HirProjectModule::try_new(project_source.module().clone(), identity.clone(), hir)
+                    .map_err(|error| {
+                    semantic_data_unavailable(project_source.path(), error.to_string())
+                })?;
+            Ok((module, (project_source.module().clone(), source_span)))
         })
         .collect::<Result<Vec<_>, ToolingError>>()?;
     let hir_project = HirProject::new(

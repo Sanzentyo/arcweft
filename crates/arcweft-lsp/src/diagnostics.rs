@@ -246,7 +246,11 @@ pub fn publish_diagnostics_from_analysis(
 ) -> PublishDiagnosticsParams {
     let mut diagnostics = analysis.diagnostics.clone();
     diagnostics.extend(profile_diagnostics(profile));
-    PublishDiagnosticsParams::new(snapshot.uri().clone(), diagnostics, snapshot.version())
+    PublishDiagnosticsParams::new(
+        snapshot.uri().clone(),
+        diagnostics,
+        Some(snapshot.version()),
+    )
 }
 
 fn resolve_diagnostics(

@@ -1,6 +1,6 @@
 //! Character-aware definition dispatch over one accepted semantic generation.
 
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
@@ -23,10 +23,8 @@ use crate::{
     positions::CheckedPositionError,
     profiles::{
         LspProfile,
-        cache::{
-            AcceptedEnvironmentGeneration, AcceptedProfileEnvironment, AcceptedProfileKey,
-            CharacterDefinitionCacheKey, CharacterReferenceCacheKey,
-        },
+        caches::{CharacterDefinitionCacheKey, CharacterReferenceCacheKey},
+        state::{AcceptedEnvironmentGeneration, AcceptedProfileEnvironment, AcceptedProfileKey},
     },
 };
 
@@ -47,7 +45,7 @@ pub enum AcceptedCharacterDefinitionStale {
     },
     DocumentVersion {
         uri: String,
-        expected: Option<i32>,
+        expected: i32,
         actual: Option<i32>,
     },
     Profile {
@@ -215,7 +213,7 @@ fn prepare_character_request(
     let Some(accepted) = profile.accepted_environment() else {
         return Ok(None);
     };
-    let Some(accepted_origin) = accepted.sources().by_uri(document.uri()) else {
+    let Some(accepted_origin) = accepted.project().sources().by_uri(document.uri()) else {
         return Ok(None);
     };
     let rebound = rebind_overlay(document, accepted_origin).map_err(|_| {
@@ -235,21 +233,13 @@ fn prepare_character_request(
         ));
     }
 
-    let Some(path) = accepted_origin.locator().path() else {
-        return Ok(None);
-    };
-    let Ok(loaded) = arcweft_project_loader::project::load_discovered(path) else {
-        return Ok(None);
-    };
-    let normalized = normalized_path(path);
-    let Some(project_source) = loaded
-        .sources()
-        .modules()
-        .find(|source| normalized_path(source.path()) == normalized)
+    let Some(module_key) = accepted
+        .project()
+        .module_key(accepted_origin.document().identity())
     else {
         return Ok(None);
     };
-    let module = project_source.module().clone();
+    let module = module_key.module().clone();
     let reference_key = CharacterReferenceCacheKey::new(
         accepted.profile().clone(),
         accepted.generation(),
@@ -392,6 +382,7 @@ fn adapt_definition(
     let mut links = Vec::with_capacity(definition.declarations().len());
     for declaration in definition.declarations() {
         let Some(target) = accepted
+            .project()
             .sources()
             .get(declaration.selection_span().source())
         else {
@@ -483,10 +474,8 @@ fn final_request_check(
             },
         ));
     }
-    let actual = documents
-        .get(document.uri())
-        .and_then(DocumentSnapshot::version);
-    if actual != document.version() {
+    let actual = documents.get(document.uri()).map(DocumentSnapshot::version);
+    if actual != Some(document.version()) {
         return Err(CharacterDefinitionRequestError::stale(
             AcceptedCharacterDefinitionStale::DocumentVersion {
                 uri: document.uri().to_string(),
@@ -496,8 +485,4 @@ fn final_request_check(
         ));
     }
     Ok(())
-}
-
-fn normalized_path(path: &Path) -> std::path::PathBuf {
-    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }

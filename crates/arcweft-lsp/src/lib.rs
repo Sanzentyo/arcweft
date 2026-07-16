@@ -13,8 +13,10 @@ pub mod features;
 pub mod positions;
 pub mod profiles;
 pub mod repl_command;
+mod requests;
 pub mod server;
 pub mod session;
+mod uri_key;
 
 pub use config::LspConfig;
 pub use server::{LspServerError, run_stdio};

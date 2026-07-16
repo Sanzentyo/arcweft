@@ -1,20 +1,20 @@
 //! Source-backed LSP profile loading and atomically published semantic environments.
 
-pub mod cache;
+pub(crate) mod accepted_project;
+pub(crate) mod caches;
 mod diagnostic;
 mod environment;
 mod load;
 mod model;
+pub mod state;
 mod uri;
 
 pub use diagnostic::{LspProfileDiagnostic, LspProfileDiagnosticKind};
 pub use load::LspProfileResolver;
+pub(crate) use load::apply_registered_topology;
 pub use model::{LspProfile, ProfileSourceSelection};
 
-pub(crate) use environment::{
-    LoadedEnvironmentRequest, register_loaded_environment,
-    register_profile_environment_with_overlays,
-};
+pub(crate) use environment::register_profile_environment_with_overlays;
 pub(crate) use uri::file_path_from_uri;
 
 #[cfg(test)]

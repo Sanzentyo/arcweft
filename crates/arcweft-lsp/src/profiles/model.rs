@@ -1,6 +1,6 @@
 use super::{
-    cache::{AcceptedProfileEnvironment, LspProfileState},
     diagnostic::LspProfileDiagnostic,
+    state::{AcceptedProfileEnvironment, LspProfileState},
     uri::file_uri_from_path,
 };
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
@@ -107,10 +107,6 @@ impl LspProfile {
     /// Character manifests selected by the active launch profile.
     pub const fn characters(&self) -> &CharacterCatalog {
         &self.characters
-    }
-
-    pub(crate) fn replace_characters(&mut self, characters: CharacterCatalog) {
-        self.characters = characters;
     }
 
     /// Source-backed launch profile used to construct registration facts.

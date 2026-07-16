@@ -362,6 +362,11 @@ impl HirModule {
             .map(|source| source.document.identity())
     }
 
+    /// Exact source document retained by document-bound lowering.
+    pub fn source_document(&self) -> Option<&SourceDocument> {
+        self.source_map.as_ref().map(|source| &source.document)
+    }
+
     /// Canonical module represented by this HIR module.
     pub const fn module_path(&self) -> &CanonicalModulePath {
         &self.module_path

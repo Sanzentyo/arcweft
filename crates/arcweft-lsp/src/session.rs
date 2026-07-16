@@ -6,18 +6,19 @@ use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore, rebind_ov
 use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::{
-    LspProfile, LspProfileResolver,
-    cache::{AcceptedEnvironmentGeneration, LspProfileState},
-    file_path_from_uri, register_profile_environment_with_overlays,
+    LspProfile, LspProfileResolver, file_path_from_uri, register_profile_environment_with_overlays,
+    state::{AcceptedEnvironmentGeneration, AcceptedProfileKey, LspProfileState},
 };
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
+use crate::uri_key::LspUriKey;
 use arcweft_source::SourceRevision;
 use arcweft_tooling::model::ToolingError;
 use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response, ResponseError};
 use lsp_types::notification::{
-    DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidCloseTextDocument,
-    DidOpenTextDocument, DidSaveTextDocument, Notification as LspNotification, PublishDiagnostics,
+    DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
+    DidChangeWorkspaceFolders, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
+    Notification as LspNotification, PublishDiagnostics,
 };
 use lsp_types::request::{
     CodeActionRequest, Completion, ExecuteCommand, GotoDefinition, HoverRequest, InlayHintRequest,
@@ -26,19 +27,17 @@ use lsp_types::request::{
 use lsp_types::{
     CodeActionOrCommand, CodeActionParams, CodeActionResponse, CompletionParams,
     CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
-    DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams,
-    HoverParams, HoverProviderCapability, InitializeParams, InlayHintParams,
-    InlayHintServerCapabilities, OneOf, OptionalVersionedTextDocumentIdentifier, ReferenceParams,
-    ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit,
-    TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
+    DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, ExecuteCommandOptions,
+    ExecuteCommandParams, GotoDefinitionParams, HoverParams, HoverProviderCapability,
+    InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
+    OptionalVersionedTextDocumentIdentifier, ReferenceParams, ServerCapabilities,
+    SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit, TextDocumentSyncCapability,
+    TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
 /// Stateful Sans I/O session used by the stdio transport.
@@ -46,17 +45,18 @@ use thiserror::Error;
 pub struct ArcweftLspSession {
     documents: DocumentStore,
     default_profile: LspProfile,
-    profiles_by_uri: BTreeMap<String, LspProfile>,
-    analyses_by_uri: BTreeMap<String, CachedDocumentAnalysis>,
+    profiles_by_uri: BTreeMap<LspUriKey, LspProfile>,
+    profile_keys_by_uri: BTreeMap<LspUriKey, AcceptedProfileKey>,
+    analyses_by_uri: BTreeMap<LspUriKey, CachedDocumentAnalysis>,
     profile_resolver: LspProfileResolver,
     workspace_edit_policy: WorkspaceEditPolicy,
     position_encoding: PositionEncoding,
-    cancelled: BTreeSet<RequestId>,
+    signature_admission_open: bool,
 }
 
 #[derive(Debug)]
 struct CachedDocumentAnalysis {
-    version: Option<i32>,
+    version: i32,
     revision: SourceRevision,
     profile_generation: Option<AcceptedEnvironmentGeneration>,
     analysis: Arc<DocumentAnalysis>,
@@ -95,11 +95,12 @@ impl ArcweftLspSession {
             documents: DocumentStore::default(),
             default_profile,
             profiles_by_uri: BTreeMap::new(),
+            profile_keys_by_uri: BTreeMap::new(),
             analyses_by_uri: BTreeMap::new(),
             profile_resolver,
             workspace_edit_policy: WorkspaceEditPolicy::default(),
             position_encoding: PositionEncoding::default(),
-            cancelled: BTreeSet::new(),
+            signature_admission_open: true,
         }
     }
 
@@ -157,13 +158,6 @@ impl ArcweftLspSession {
         repl: Option<&mut dyn LspReplCommandExecutor>,
     ) -> Response {
         let id = request.id.clone();
-        if self.cancelled.remove(&id) {
-            return Response::new_err(
-                id,
-                ErrorCode::RequestCanceled as i32,
-                "request was cancelled".to_owned(),
-            );
-        }
         self.try_handle_request(request, repl)
             .unwrap_or_else(|error| {
                 let code = match &error {
@@ -181,15 +175,42 @@ impl ArcweftLspSession {
         &mut self,
         notification: Notification,
     ) -> Result<Vec<Notification>, SessionError> {
+        self.handle_notification_inner(notification, None)
+    }
+
+    pub(crate) fn handle_notification_with_requests(
+        &mut self,
+        notification: Notification,
+        requests: &crate::requests::RequestRegistry,
+    ) -> Result<Vec<Notification>, SessionError> {
+        self.handle_notification_inner(notification, Some(requests))
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "notification dispatch keeps document mutation and lifecycle invalidation in protocol order"
+    )]
+    fn handle_notification_inner(
+        &mut self,
+        notification: Notification,
+        requests: Option<&crate::requests::RequestRegistry>,
+    ) -> Result<Vec<Notification>, SessionError> {
         match notification.method.as_str() {
             DidOpenTextDocument::METHOD => {
                 let params = decode::<DidOpenTextDocumentParams>(
                     DidOpenTextDocument::METHOD,
                     notification.params,
                 )?;
+                let uri = LspUriKey::from_uri(&params.text_document.uri);
+                if let Some(requests) = requests {
+                    requests.cancel_uri(
+                        &uri,
+                        crate::requests::SignatureCancellationReason::DocumentChanged,
+                    );
+                }
                 let snapshot = self.documents.open(params, self.position_encoding);
-                self.refresh_profile_for_uri(snapshot.uri());
-                self.rebuild_profiles_affected_by_uri(snapshot.uri());
+                self.refresh_profile_for_uri(snapshot.uri(), requests);
+                self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, true);
                 Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidChangeTextDocument::METHOD => {
@@ -197,8 +218,15 @@ impl ArcweftLspSession {
                     DidChangeTextDocument::METHOD,
                     notification.params,
                 )?;
+                let uri = LspUriKey::from_uri(&params.text_document.uri);
+                if let Some(requests) = requests {
+                    requests.cancel_uri(
+                        &uri,
+                        crate::requests::SignatureCancellationReason::DocumentChanged,
+                    );
+                }
                 let snapshot = self.documents.change(params, self.position_encoding)?;
-                self.rebuild_profiles_affected_by_uri(snapshot.uri());
+                self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, true);
                 Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidCloseTextDocument::METHOD => {
@@ -206,7 +234,13 @@ impl ArcweftLspSession {
                     DidCloseTextDocument::METHOD,
                     notification.params,
                 )?;
-                let closed_key = params.text_document.uri.to_string();
+                let closed_key = LspUriKey::from_uri(&params.text_document.uri);
+                if let Some(requests) = requests {
+                    requests.cancel_uri(
+                        &closed_key,
+                        crate::requests::SignatureCancellationReason::DocumentClosed,
+                    );
+                }
                 let affected_profiles = self
                     .profiles_by_uri
                     .iter()
@@ -214,6 +248,7 @@ impl ArcweftLspSession {
                         *key != &closed_key
                             && profile.accepted_environment().is_some_and(|accepted| {
                                 accepted
+                                    .project()
                                     .sources()
                                     .by_uri(&params.text_document.uri)
                                     .is_some()
@@ -221,13 +256,27 @@ impl ArcweftLspSession {
                     })
                     .map(|(key, _)| key.clone())
                     .collect::<Vec<_>>();
-                if let Some(profile) = self.profiles_by_uri.remove(&closed_key) {
-                    profile.state().shutdown();
-                }
+                let removed_profile = self.profiles_by_uri.remove(&closed_key);
+                self.profile_keys_by_uri.remove(&closed_key);
                 self.analyses_by_uri.remove(&closed_key);
                 self.documents.close(&params.text_document.uri);
+                if let Some(profile) = removed_profile {
+                    let retained = self
+                        .profiles_by_uri
+                        .values()
+                        .any(|current| Arc::ptr_eq(current.state(), profile.state()));
+                    if !retained {
+                        if let Some(requests) = requests {
+                            requests.cancel_profile_state(
+                                profile.state(),
+                                crate::requests::SignatureCancellationReason::ProfileClosing,
+                            );
+                        }
+                        profile.state().shutdown();
+                    }
+                }
                 for key in affected_profiles {
-                    self.rebuild_profile_with_current_overlays(&key);
+                    self.rebuild_profile_with_current_overlays(&key, requests, false);
                 }
                 Ok(vec![Notification::new(
                     PublishDiagnostics::METHOD.to_owned(),
@@ -244,8 +293,8 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 self.invalidate_analysis_cache();
-                self.refresh_profile_for_uri(&params.text_document.uri);
-                self.rebuild_profiles_affected_by_uri(&params.text_document.uri);
+                self.refresh_profile_for_uri(&params.text_document.uri, requests);
+                self.rebuild_profiles_affected_by_uri(&params.text_document.uri, requests, false);
                 let Some(snapshot) = self.documents.get(&params.text_document.uri).cloned() else {
                     return Ok(Vec::new());
                 };
@@ -256,24 +305,26 @@ impl ArcweftLspSession {
                     DidChangeWatchedFiles::METHOD,
                     notification.params,
                 )?;
-                Ok(self.refresh_profile_for_open_documents())
+                Ok(self.refresh_profile_for_open_documents(requests))
             }
             DidChangeConfiguration::METHOD => {
                 let _params = decode::<DidChangeConfigurationParams>(
                     DidChangeConfiguration::METHOD,
                     notification.params,
                 )?;
-                Ok(self.refresh_profile_for_open_documents())
+                Ok(self.refresh_profile_for_open_documents(requests))
             }
-            "$/cancelRequest" => {
-                if let Some(id) = notification
-                    .params
-                    .get("id")
-                    .and_then(|value| serde_json::from_value(value.clone()).ok())
-                {
-                    self.cancelled.insert(id);
+            DidChangeWorkspaceFolders::METHOD => {
+                let params = decode::<DidChangeWorkspaceFoldersParams>(
+                    DidChangeWorkspaceFolders::METHOD,
+                    notification.params,
+                )?;
+                if let Some(requests) = requests {
+                    for removed in params.event.removed {
+                        self.remove_workspace(&LspUriKey::from_uri(&removed.uri), requests);
+                    }
                 }
-                Ok(Vec::new())
+                Ok(self.refresh_profile_for_open_documents(requests))
             }
             _ => Ok(Vec::new()),
         }
@@ -411,7 +462,7 @@ impl ArcweftLspSession {
             Ok(result) => Ok(Response::new_ok(id, result)),
             Err(error) => {
                 if error.schedules_profile_rebuild() {
-                    self.rebuild_profiles_affected_by_uri(document.uri());
+                    self.rebuild_profiles_affected_by_uri(document.uri(), None, false);
                 }
                 Ok(Response {
                     id,
@@ -484,25 +535,61 @@ impl ArcweftLspSession {
         serde_json::to_value(edit).unwrap_or(Value::Null)
     }
 
-    fn refresh_profile_for_uri(&mut self, uri: &lsp_types::Uri) {
-        let state = self.profiles_by_uri.get(&uri.to_string()).map_or_else(
+    fn refresh_profile_for_uri(
+        &mut self,
+        uri: &lsp_types::Uri,
+        requests: Option<&crate::requests::RequestRegistry>,
+    ) {
+        let key = LspUriKey::from_uri(uri);
+        let previous_profile = self.profiles_by_uri.get(&key).cloned();
+        let previous_accepted = previous_profile
+            .as_ref()
+            .and_then(LspProfile::accepted_environment);
+        let state = self.profiles_by_uri.get(&key).map_or_else(
             || Arc::new(LspProfileState::new()),
             |profile| Arc::clone(profile.state()),
         );
-        self.profiles_by_uri.insert(
-            uri.to_string(),
-            self.profile_resolver.resolve_for_uri_with_state(uri, state),
-        );
+        let profile = self.profile_resolver.resolve_for_uri_with_state(uri, state);
+        if let (Some(requests), Some(previous)) = (requests, previous_profile.as_ref())
+            && !Arc::ptr_eq(previous.state(), profile.state())
+        {
+            requests.cancel_profile_state(
+                previous.state(),
+                crate::requests::SignatureCancellationReason::ProfileRemapped,
+            );
+        }
+        let current_accepted = profile.accepted_environment();
+        if let (Some(requests), Some(previous)) = (requests, previous_accepted.as_ref())
+            && current_accepted
+                .as_ref()
+                .is_none_or(|current| !Arc::ptr_eq(previous, current))
+        {
+            requests.cancel_accepted(
+                previous,
+                crate::requests::SignatureCancellationReason::AcceptedReplaced,
+            );
+            previous.clear_caches();
+        }
+        if let Some(accepted) = current_accepted {
+            self.profile_keys_by_uri
+                .insert(key.clone(), accepted.profile().clone());
+        } else {
+            self.profile_keys_by_uri.remove(&key);
+        }
+        self.profiles_by_uri.insert(key, profile);
     }
 
-    fn refresh_profile_for_open_documents(&mut self) -> Vec<Notification> {
+    fn refresh_profile_for_open_documents(
+        &mut self,
+        requests: Option<&crate::requests::RequestRegistry>,
+    ) -> Vec<Notification> {
         self.invalidate_analysis_cache();
         let snapshots = self.documents.snapshots().cloned().collect::<Vec<_>>();
         for snapshot in &snapshots {
-            self.refresh_profile_for_uri(snapshot.uri());
+            self.refresh_profile_for_uri(snapshot.uri(), requests);
         }
         for snapshot in &snapshots {
-            self.rebuild_profiles_affected_by_uri(snapshot.uri());
+            self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, false);
         }
         snapshots
             .iter()
@@ -512,27 +599,37 @@ impl ArcweftLspSession {
 
     fn profile_for_uri(&self, uri: &lsp_types::Uri) -> &LspProfile {
         self.profiles_by_uri
-            .get(&uri.to_string())
+            .get(&LspUriKey::from_uri(uri))
             .unwrap_or(&self.default_profile)
     }
 
-    fn rebuild_profiles_affected_by_uri(&mut self, changed: &lsp_types::Uri) {
+    fn rebuild_profiles_affected_by_uri(
+        &mut self,
+        changed: &lsp_types::Uri,
+        requests: Option<&crate::requests::RequestRegistry>,
+        allow_unchanged_project: bool,
+    ) {
         let keys = self
             .profiles_by_uri
             .iter()
             .filter(|(_, profile)| {
                 profile
                     .accepted_environment()
-                    .is_some_and(|accepted| accepted.sources().by_uri(changed).is_some())
+                    .is_some_and(|accepted| accepted.project().sources().by_uri(changed).is_some())
             })
             .map(|(key, _)| key.clone())
             .collect::<Vec<_>>();
         for key in keys {
-            self.rebuild_profile_with_current_overlays(&key);
+            self.rebuild_profile_with_current_overlays(&key, requests, allow_unchanged_project);
         }
     }
 
-    fn rebuild_profile_with_current_overlays(&mut self, key: &str) {
+    fn rebuild_profile_with_current_overlays(
+        &mut self,
+        key: &LspUriKey,
+        requests: Option<&crate::requests::RequestRegistry>,
+        allow_unchanged_project: bool,
+    ) {
         let Some(profile) = self.profiles_by_uri.get(key).cloned() else {
             return;
         };
@@ -542,64 +639,91 @@ impl ArcweftLspSession {
         let Some(previous) = profile.accepted_environment() else {
             return;
         };
-        let Ok(manifest_uri) = previous.profile().manifest_uri().parse::<lsp_types::Uri>() else {
-            return;
-        };
+        let manifest_uri = previous.profile().manifest_key().to_uri();
         let Some(manifest_path) = file_path_from_uri(&manifest_uri) else {
             return;
         };
-        let mut overlay_documents = Vec::new();
+        let mut overlay_seeds = Vec::new();
         let mut overlay_entries = Vec::new();
         for snapshot in self.documents.snapshots() {
-            let Some(accepted_source) = previous.sources().by_uri(snapshot.uri()) else {
+            let Some(accepted_source) = previous.project().sources().by_uri(snapshot.uri()) else {
                 continue;
             };
+            let version = snapshot.version();
             let Ok(document) = rebind_overlay(snapshot, accepted_source) else {
                 return;
             };
-            overlay_entries.push(crate::profiles::cache::AcceptedOverlayEntry::new(
-                snapshot.uri().to_string(),
-                snapshot.version(),
-                document.identity().clone(),
+            let Some(path) = file_path_from_uri(snapshot.uri()) else {
+                return;
+            };
+            let Ok(seed) = arcweft_project_loader::topology::ProfileTopologyOverlaySeed::try_new(
+                path,
+                snapshot.text().to_owned(),
+            ) else {
+                return;
+            };
+            overlay_entries.push((
+                crate::uri_key::LspUriKey::from_uri(snapshot.uri()),
+                crate::profiles::state::AcceptedOverlayEntry::new(
+                    version,
+                    document.identity().clone(),
+                ),
             ));
-            overlay_documents.push(document);
+            overlay_seeds.push(seed);
         }
-        let Ok(overlays) = crate::profiles::cache::AcceptedOverlaySet::try_new(overlay_entries)
+        let Ok(overlays) = crate::profiles::state::AcceptedOverlaySet::try_new(overlay_entries)
         else {
             return;
         };
+        if allow_unchanged_project
+            && let Ok(candidate) =
+                crate::profiles::state::AcceptedProfileCandidate::try_from_unchanged_project(
+                    &previous,
+                    overlays.clone(),
+                )
+        {
+            let _ = self.replace_profile_candidate(key, &profile, &previous, candidate, requests);
+            return;
+        }
         let registered = register_profile_environment_with_overlays(
             &manifest_path,
-            resolved,
-            profile.adapter(),
-            profile.typecheck_env(),
-            overlay_documents,
+            resolved.id(),
+            &overlay_seeds,
             overlays.clone(),
             Some(previous.world().environment()),
         );
         let Ok(registered) = registered else {
+            let _ = self.record_failed_replacement(profile.state(), &previous);
             return;
         };
-        let current_overlay_uris = self
-            .documents
-            .snapshots()
-            .filter(|snapshot| previous.sources().by_uri(snapshot.uri()).is_some())
-            .map(|snapshot| (snapshot.uri().to_string(), snapshot.version()))
-            .collect::<Vec<_>>();
-        let candidate_overlay_uris = overlays
-            .entries()
-            .map(|entry| (entry.uri().to_owned(), entry.version()))
-            .collect::<Vec<_>>();
-        if current_overlay_uris != candidate_overlay_uris {
-            return;
-        }
-        let (candidate, characters) = registered.into_parts();
-        if profile.state().replace_accepted(candidate).is_err() {
+        let (candidate, characters, topology) = registered.into_parts();
+        if self
+            .replace_profile_candidate(key, &profile, &previous, candidate, requests)
+            .is_err()
+        {
             return;
         }
         if let Some(profile) = self.profiles_by_uri.get_mut(key) {
-            profile.replace_characters(characters);
+            crate::profiles::apply_registered_topology(profile, &topology, characters);
         }
+    }
+
+    fn replace_profile_candidate(
+        &mut self,
+        key: &LspUriKey,
+        profile: &LspProfile,
+        expected: &Arc<crate::profiles::state::AcceptedProfileEnvironment>,
+        candidate: crate::profiles::state::AcceptedProfileCandidate,
+        requests: Option<&crate::requests::RequestRegistry>,
+    ) -> Result<
+        Arc<crate::profiles::state::AcceptedProfileEnvironment>,
+        crate::session::lifecycle::AcceptedPublicationError,
+    > {
+        let accepted =
+            self.publish_accepted_candidate(profile.state(), expected, candidate, requests)?;
+        self.profile_keys_by_uri
+            .insert(key.clone(), accepted.profile().clone());
+        Ok(accepted)
     }
 
     fn replace_analysis(&mut self, snapshot: &DocumentSnapshot) -> Arc<DocumentAnalysis> {
@@ -614,7 +738,7 @@ impl ArcweftLspSession {
             .accepted_environment()
             .map(|environment| environment.generation());
         self.analyses_by_uri.insert(
-            snapshot.uri().to_string(),
+            LspUriKey::from_uri(snapshot.uri()),
             CachedDocumentAnalysis {
                 version: snapshot.version(),
                 revision: analysis.source_revision(),
@@ -637,13 +761,14 @@ impl ArcweftLspSession {
             let analysis = self.replace_analysis(snapshot);
             self.publish_diagnostics_notification(snapshot, &analysis)
         } else {
-            self.analyses_by_uri.remove(&snapshot.uri().to_string());
+            self.analyses_by_uri
+                .remove(&LspUriKey::from_uri(snapshot.uri()));
             Notification::new(
                 PublishDiagnostics::METHOD.to_owned(),
                 lsp_types::PublishDiagnosticsParams::new(
                     snapshot.uri().clone(),
                     Vec::new(),
-                    snapshot.version(),
+                    Some(snapshot.version()),
                 ),
             )
         }
@@ -656,7 +781,7 @@ impl ArcweftLspSession {
             .accepted_environment()
             .map(|environment| environment.generation());
         self.analyses_by_uri
-            .get(&snapshot.uri().to_string())
+            .get(&LspUriKey::from_uri(snapshot.uri()))
             .filter(|cached| {
                 cached.version == snapshot.version()
                     && cached.revision == revision
@@ -666,6 +791,36 @@ impl ArcweftLspSession {
     }
 
     fn invalidate_analysis_cache(&mut self) {
+        self.analyses_by_uri.clear();
+    }
+
+    pub(crate) fn begin_shutdown(&mut self, requests: &crate::requests::RequestRegistry) {
+        if !self.signature_admission_open {
+            return;
+        }
+        self.signature_admission_open = false;
+        requests.close_admission();
+        requests.cancel_all(crate::requests::SignatureCancellationReason::SessionShutdown);
+        let mut states = Vec::<Arc<LspProfileState>>::new();
+        for profile in self.profiles_by_uri.values() {
+            let state = Arc::clone(profile.state());
+            if states.iter().all(|current| !Arc::ptr_eq(current, &state)) {
+                states.push(state);
+            }
+        }
+        let default_state = Arc::clone(self.default_profile.state());
+        if states
+            .iter()
+            .all(|current| !Arc::ptr_eq(current, &default_state))
+        {
+            states.push(default_state);
+        }
+        for state in states {
+            state.shutdown();
+        }
+        self.documents.clear();
+        self.profiles_by_uri.clear();
+        self.profile_keys_by_uri.clear();
         self.analyses_by_uri.clear();
     }
 
@@ -727,7 +882,7 @@ impl WorkspaceEditPolicy {
         self,
         mut edit: WorkspaceEdit,
         current_uri: &lsp_types::Uri,
-        current_version: Option<i32>,
+        current_version: i32,
     ) -> WorkspaceEdit {
         if !self.document_changes || edit.document_changes.is_some() {
             return edit;
@@ -740,7 +895,7 @@ impl WorkspaceEditPolicy {
                 .into_iter()
                 .map(|(uri, edits)| TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier {
-                        version: (uri == *current_uri).then_some(current_version).flatten(),
+                        version: (uri == *current_uri).then_some(current_version),
                         uri,
                     },
                     edits: edits.into_iter().map(lsp_types::OneOf::Left).collect(),
@@ -757,5 +912,7 @@ fn decode<P: DeserializeOwned>(method: &'static str, value: Value) -> Result<P, 
 
 #[cfg(test)]
 mod character_definition_tests;
+mod lifecycle;
+mod signature;
 #[cfg(test)]
 mod tests;
