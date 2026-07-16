@@ -1049,8 +1049,8 @@ impl ViewProgramResource {
                 .chain(self.exported_parts.iter().flat_map(|part| {
                     [
                         part.target.view.public_id().as_str().to_owned(),
-                        part.target.part.public_id().as_str().to_owned(),
-                        part.public_name.public_id().as_str().to_owned(),
+                        part.target.part.as_public_id().as_str().to_owned(),
+                        part.public_name.as_public_id().as_str().to_owned(),
                         part.source.source_id.as_str().to_owned(),
                     ]
                 }))
@@ -2180,7 +2180,10 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         } => target
             .iter()
             .cloned()
-            .chain(part.iter().map(|part| part.public_id().as_str().to_owned()))
+            .chain(
+                part.iter()
+                    .map(|part| part.as_public_id().as_str().to_owned()),
+            )
             .chain(style_apply_public_ids(styles))
             .collect(),
         ViewProgramInstruction::CloseElement
@@ -2199,7 +2202,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             Some(text_source.clone()),
             Some(text_block.clone()),
             part.as_ref()
-                .map(|part| part.public_id().as_str().to_owned()),
+                .map(|part| part.as_public_id().as_str().to_owned()),
         ]
         .into_iter()
         .flatten()
@@ -2215,7 +2218,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
             Some(image.clone()),
             target.clone(),
             part.as_ref()
-                .map(|part| part.public_id().as_str().to_owned()),
+                .map(|part| part.as_public_id().as_str().to_owned()),
         ]
         .into_iter()
         .flatten()
@@ -2229,7 +2232,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         } => [
             Some(element.clone()),
             part.as_ref()
-                .map(|part| part.public_id().as_str().to_owned()),
+                .map(|part| part.as_public_id().as_str().to_owned()),
         ]
         .into_iter()
         .flatten()
@@ -2240,7 +2243,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         } => [
             Some(view.clone()),
             part.as_ref()
-                .map(|part| part.public_id().as_str().to_owned()),
+                .map(|part| part.as_public_id().as_str().to_owned()),
         ]
         .into_iter()
         .flatten()
@@ -2294,7 +2297,7 @@ fn style_selector_public_ids(selector: &ViewStyleSelector) -> impl Iterator<Item
     selector.sequences().iter().filter_map(|sequence| {
         sequence
             .part()
-            .map(|part| part.public_id().as_str().to_owned())
+            .map(|part| part.as_public_id().as_str().to_owned())
     })
 }
 

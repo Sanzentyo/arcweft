@@ -1,5 +1,8 @@
 use arcweft_lang_syntax::{
-    ast::{items::Item, view::ViewBody},
+    ast::{
+        items::Item,
+        view::{ViewBody, ViewExpr, ViewModifier},
+    },
     parser::parse_source,
     source::ParsedSource,
 };
@@ -31,28 +34,35 @@ fn view_export_part_parses_canonical_declaration_with_exact_ranges() {
     assert_eq!(parsed.errors(), &[]);
 
     let declaration = &view_body(&parsed).exports()[0];
-    assert_eq!(declaration.local().text(), "header.title");
-    assert_eq!(declaration.public().text(), "card.heading");
+    assert_eq!(declaration.local_name().text(), "header.title");
+    assert_eq!(declaration.public_name().text(), "card.heading");
+    let local = declaration.local_operand_span().range();
+    let public = declaration.public_operand_span().range();
+    assert_eq!(&source[local.start()..local.end()], "header.title");
+    assert_eq!(&source[public.start()..public.end()], "card.heading");
+    let export_keyword = declaration.export_keyword_span().range();
     assert_eq!(
-        &source[declaration.local().range().start()..declaration.local().range().end()],
-        "header.title"
-    );
-    assert_eq!(
-        &source[declaration.public().range().start()..declaration.public().range().end()],
-        "card.heading"
-    );
-    assert_eq!(
-        &source
-            [declaration.export_keyword_range().start()..declaration.export_keyword_range().end()],
+        &source[export_keyword.start()..export_keyword.end()],
         "export"
     );
+    let part_keyword = declaration.part_keyword_span().range();
+    assert_eq!(&source[part_keyword.start()..part_keyword.end()], "part");
+    let as_keyword = declaration.as_keyword_span().range();
+    assert_eq!(&source[as_keyword.start()..as_keyword.end()], "as");
+    assert_eq!(declaration.declaration_span().source(), parsed.identity());
+}
+
+#[test]
+fn export_part_excludes_trailing_comment_from_its_declaration_span() {
+    let source = "pub view Card() {\n    export part header-row as card.heading // public API\n    Panel().part(header-row)\n}\n";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+
+    let declaration = &view_body(&parsed).exports()[0];
+    let range = declaration.declaration_span().range();
     assert_eq!(
-        &source[declaration.part_keyword_range().start()..declaration.part_keyword_range().end()],
-        "part"
-    );
-    assert_eq!(
-        &source[declaration.as_keyword_range().start()..declaration.as_keyword_range().end()],
-        "as"
+        &source[range.start()..range.end()],
+        "export part header-row as card.heading"
     );
 }
 
@@ -111,14 +121,7 @@ fn malformed_export_families_have_structured_recovery() {
             "export part title as heading extra",
             "view::export_part_trailing_syntax",
         ),
-        (
-            "export title as heading",
-            "view::unsupported_export_spelling",
-        ),
-        (
-            "exportparts title as heading",
-            "view::unsupported_export_spelling",
-        ),
+        ("export title as heading", "view::export_part_missing_part"),
     ] {
         let source = format!("pub view Card() {{\n    {line}\n    Panel()\n}}\n");
         let parsed = parse_source(&source);
@@ -137,7 +140,6 @@ fn malformed_and_duplicate_part_modifiers_do_not_create_partial_labels() {
         (".part()", "view::part_missing_name"),
         (".part(title extra)", "view::part_trailing_syntax"),
         (".part(\"title\")", "view::part_invalid_local_name"),
-        (".export_part(heading)", "view::unsupported_export_spelling"),
     ] {
         let source = format!("pub view Card() {{\n    Panel()\n        {modifier}\n}}\n");
         let parsed = parse_source(&source);
@@ -156,5 +158,14 @@ fn malformed_and_duplicate_part_modifiers_do_not_create_partial_labels() {
             .errors()
             .iter()
             .any(|error| error.code() == "view::duplicate_part_modifier")
+    );
+    let ViewExpr::Element(element) = view_body(&parsed).value() else {
+        panic!("expected recovered ordinary element");
+    };
+    assert!(
+        element
+            .modifiers()
+            .iter()
+            .all(|modifier| !matches!(modifier, ViewModifier::Part(_)))
     );
 }

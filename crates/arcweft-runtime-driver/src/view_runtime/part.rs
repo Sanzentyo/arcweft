@@ -4,7 +4,7 @@ use arcweft_bundle::resource_codec::{
     SectionCodecError,
     view::{ViewDefinitionRef, ViewProgramResource},
 };
-use arcweft_view::{ViewLocalPartName, ViewPartName};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use std::collections::BTreeMap;
 
 /// One validated immutable View program accepted by the runtime.
@@ -17,7 +17,7 @@ pub(crate) struct AcceptedViewProgram {
 /// Deterministic owner-local IDs and public capabilities derived at acceptance.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ViewPartRuntimeCatalog {
-    exports: BTreeMap<(ViewDefinitionRef, ViewLocalPartName), ViewPartName>,
+    exports: BTreeMap<(ViewDefinitionRef, ViewPartLocalName), ViewPartName>,
 }
 
 impl AcceptedViewProgram {
@@ -55,7 +55,7 @@ impl ViewPartRuntimeCatalog {
     pub(crate) fn public_name(
         &self,
         owner: &str,
-        local: &ViewLocalPartName,
+        local: &ViewPartLocalName,
     ) -> Option<&ViewPartName> {
         let owner = ViewDefinitionRef::try_new(owner.to_owned()).ok()?;
         self.exports.get(&(owner, local.clone()))

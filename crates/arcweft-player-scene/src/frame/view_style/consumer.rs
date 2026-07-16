@@ -190,7 +190,7 @@ pub(super) fn validate_supported_properties(
             let scoped_part = node
                 .part
                 .as_ref()
-                .map(|part| mount.scoped_id(part.public_id().as_str()));
+                .map(|part| mount.scoped_id(part.as_public_id().as_str()));
             let has_surface = presentation.surfaces.iter().any(|surface| {
                 scoped_target
                     .as_deref()

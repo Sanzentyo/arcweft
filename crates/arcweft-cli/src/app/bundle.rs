@@ -489,6 +489,43 @@ fn collect_bundle_dsl_view_resources_for_package(
     image_objects: &[BundleImageObject],
     package: &str,
 ) -> Result<BundleViewSidecars, ExitCode> {
+    // Tests that do not retain their parsed document cannot project authored
+    // source-bound exports. A bounded placeholder remains sufficient for the
+    // unrelated View lowering fixtures that have no exported-part records.
+    let source = " ".repeat(1 << 20);
+    collect_bundle_dsl_view_resources_from_source_for_package(
+        module,
+        image_objects,
+        package,
+        "test.arcw",
+        &source,
+    )
+}
+
+#[cfg(test)]
+fn collect_bundle_dsl_view_resources_from_source(
+    module: &HirModule,
+    image_objects: &[BundleImageObject],
+    source_id: &str,
+    source: &str,
+) -> Result<BundleViewSidecars, ExitCode> {
+    collect_bundle_dsl_view_resources_from_source_for_package(
+        module,
+        image_objects,
+        "test-package",
+        source_id,
+        source,
+    )
+}
+
+#[cfg(test)]
+fn collect_bundle_dsl_view_resources_from_source_for_package(
+    module: &HirModule,
+    image_objects: &[BundleImageObject],
+    package: &str,
+    source_id: &str,
+    source: &str,
+) -> Result<BundleViewSidecars, ExitCode> {
     let typecheck = arcweft_compiler::hir::validate_hir_with_env(
         module,
         &arcweft_lang_sema::env::TypeCheckEnv::standard(),
@@ -497,27 +534,20 @@ fn collect_bundle_dsl_view_resources_for_package(
         eprintln!("error: test View HIR did not typecheck: {error}");
         ExitCode::FAILURE
     })?;
-    // These tests historically retained only HIR. A bounded synthetic source
-    // document preserves their source ranges while production always passes
-    // the exact source bytes through `ProfileCompiledRuntimePlan`.
-    let source = " ".repeat(1 << 20);
-    let style_artifact = arcweft_compiler::style::lower_source_view_styles(
-        module,
-        &typecheck.style_catalog,
-        &source,
-    )
-    .map_err(|error| {
-        eprintln!("error: test View Style lowering failed: {error}");
-        ExitCode::FAILURE
-    })?;
+    let style_artifact =
+        arcweft_compiler::style::lower_source_view_styles(module, &typecheck.style_catalog, source)
+            .map_err(|error| {
+                eprintln!("error: test View Style lowering failed: {error}");
+                ExitCode::FAILURE
+            })?;
     collect_bundle_dsl_view_resources_with_style_for_package(
         module,
         &style_artifact,
         image_objects,
         package,
         &typecheck.view_part_catalog,
-        "test.arcw",
-        &source,
+        source_id,
+        source,
     )
 }
 

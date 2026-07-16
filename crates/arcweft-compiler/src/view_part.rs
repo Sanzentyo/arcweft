@@ -8,7 +8,7 @@ use arcweft_bundle::{
     },
 };
 use arcweft_lang_sema::view_part::{CheckedViewPartCatalog, CheckedViewPartExport};
-use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_source::SourceSpan;
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -81,16 +81,16 @@ fn lower_export(
     if export.owner() != export.target().owner() {
         return Err(ViewPartLowerError::WrongOwner);
     }
-    if let Some(identity) = export.source().identity()
-        && (identity.document().as_str() != source.id.as_str()
-            || identity.source_len() != source.utf8_len
-            || identity.revision().as_bytes() != &source.digest.as_bytes())
+    let identity = export.source().identity();
+    if identity.id().as_str() != source.id.as_str()
+        || identity.source_len() != u64::try_from(source.utf8_len).unwrap_or(u64::MAX)
+        || identity.revision().as_bytes() != &source.digest.as_bytes()
     {
         return Err(ViewPartLowerError::SourceIdentityMismatch);
     }
-    let declaration = lower_range(export.source().declaration_range(), source.utf8_len)?;
-    let local_name = lower_range(export.source().local_range(), source.utf8_len)?;
-    let public_name = lower_range(export.source().public_range(), source.utf8_len)?;
+    let declaration = lower_range(export.source().declaration_span(), source.utf8_len)?;
+    let local_name = lower_range(export.source().local_operand_span(), source.utf8_len)?;
+    let public_name = lower_range(export.source().public_operand_span(), source.utf8_len)?;
     Ok(ViewExportedPart {
         target: ViewOwnedPartRef::new(owner, export.local_name().clone()),
         public_name: export.public_name().clone(),
@@ -103,7 +103,11 @@ fn lower_export(
     })
 }
 
-fn lower_range(range: TextRange, source_len: usize) -> Result<SourceRangeRef, ViewPartLowerError> {
+fn lower_range(
+    range: &SourceSpan,
+    source_len: usize,
+) -> Result<SourceRangeRef, ViewPartLowerError> {
+    let range = range.range();
     if range.end() > source_len {
         return Err(ViewPartLowerError::SourceOutOfBounds);
     }

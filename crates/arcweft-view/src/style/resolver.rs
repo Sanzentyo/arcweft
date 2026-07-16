@@ -15,7 +15,7 @@ use super::{
     ViewStyleSheetId, ViewStyleSourceId, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceMode,
     ViewStyleTraceRejection,
 };
-use crate::{ViewElementKind, ViewLocalPartName, ViewMountId, ViewPartName};
+use crate::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
 use arcweft_presentation::appearance::{ColorScheme, ContrastPreference, PresentationEnvironment};
 use axis::{PendingViewStyleContribution, resolve_axes, resolve_contribution, resolve_transitions};
 use provider::{ViewAxisProviderIndex, ViewAxisProviderUpdatePlan};
@@ -42,7 +42,7 @@ pub struct ViewElementStateSet(u8);
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleNodeFacts {
     element: Option<ViewElementKind>,
-    implementation_part: Option<ViewLocalPartName>,
+    implementation_part: Option<ViewPartLocalName>,
     exported_part: Option<ViewPartName>,
     interactions: ViewInteractionStateSet,
     element_states: ViewElementStateSet,
@@ -356,7 +356,7 @@ impl ViewStyleNodeFacts {
     #[must_use]
     pub fn with_parts(
         mut self,
-        implementation_part: Option<ViewLocalPartName>,
+        implementation_part: Option<ViewPartLocalName>,
         exported_part: Option<ViewPartName>,
     ) -> Self {
         self.implementation_part = implementation_part;
@@ -386,7 +386,7 @@ impl ViewStyleNodeFacts {
         self.element
     }
 
-    pub const fn implementation_part(&self) -> Option<&ViewLocalPartName> {
+    pub const fn implementation_part(&self) -> Option<&ViewPartLocalName> {
         self.implementation_part.as_ref()
     }
 
@@ -944,7 +944,7 @@ fn match_sequence(
         application.map_or_else(
             || {
                 node.implementation_part()
-                    .is_some_and(|local| local.matches_selector(part))
+                    .is_some_and(|local| local.as_str() == part.as_str())
             },
             |application| {
                 application.boundary().matches_part(
@@ -1142,11 +1142,11 @@ fn computed_revision(key: &ViewStyleCacheKey) -> ComputedViewStyleRevision {
             facts
                 .implementation_part
                 .as_ref()
-                .map(|part| part.public_id().as_str()),
+                .map(|part| part.as_public_id().as_str()),
             facts
                 .exported_part
                 .as_ref()
-                .map(|part| part.public_id().as_str()),
+                .map(|part| part.as_public_id().as_str()),
         ] {
             revision ^= u64::from(part.is_some());
             revision = revision.wrapping_mul(0x0000_0100_0000_01b3);

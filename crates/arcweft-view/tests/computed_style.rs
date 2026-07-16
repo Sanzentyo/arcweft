@@ -2,7 +2,7 @@ use arcweft_presentation::appearance::{
     ColorScheme, EnvironmentRevision, PresentationColor, PresentationEnvironment,
 };
 use arcweft_view::ViewFlexDirection;
-use arcweft_view::ViewLocalPartName;
+use arcweft_view::ViewPartLocalName;
 use arcweft_view::ViewPartName;
 use arcweft_view::style::{
     ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewAxisProviderParticipation,
@@ -715,7 +715,7 @@ fn nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part() {
     let private = resolve(
         2,
         &ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_parts(
-            Some(ViewLocalPartName::try_new("private.action").unwrap()),
+            Some(ViewPartLocalName::try_new("private.action").unwrap()),
             None,
         ),
         ViewStyleBoundaryFacts::nested_view(1, false, false),
@@ -725,7 +725,7 @@ fn nested_boundary_exposes_only_the_direct_root_or_an_explicit_exported_part() {
     let public = resolve(
         3,
         &ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_parts(
-            Some(ViewLocalPartName::try_new("private.action").unwrap()),
+            Some(ViewPartLocalName::try_new("private.action").unwrap()),
             Some(exported),
         ),
         ViewStyleBoundaryFacts::nested_view(1, true, false),
@@ -838,7 +838,7 @@ fn exported_part_does_not_expose_private_child_ancestry_to_structural_selectors(
         )
         .with_active_scopes(vec![ViewStyleScopeId::new(1)]);
     let node = ViewStyleNodeFacts::new(Some(ViewElementKind::Button)).with_parts(
-        Some(ViewLocalPartName::try_new("private.action").unwrap()),
+        Some(ViewPartLocalName::try_new("private.action").unwrap()),
         Some(exported),
     );
     let key = node_key(13, Vec::new(), 1);

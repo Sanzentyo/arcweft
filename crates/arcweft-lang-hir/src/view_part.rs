@@ -5,8 +5,10 @@ use arcweft_lang_syntax::ast::{
     ids::EntityRef,
     items::EntityDeclItem,
     module_path::CanonicalModulePath,
-    view::{ViewBody, ViewExpr, ViewModifier, ViewPartExportDecl, ViewPartLabelSyntax},
+    view::{ViewBody, ViewExpr, ViewModifier, ViewPartExportDecl, ViewPartModifier},
 };
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
+use std::sync::Arc;
 
 /// One View definition and all part declarations it owns.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -15,6 +17,7 @@ pub struct HirViewPartOwner {
     module: Option<CanonicalModulePath>,
     visibility: Option<Visibility>,
     range: TextRange,
+    source: Arc<SourceDocumentIdentity>,
     local_parts: Vec<HirViewLocalPart>,
     exports: Vec<HirViewPartExport>,
 }
@@ -23,7 +26,8 @@ pub struct HirViewPartOwner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirViewLocalPart {
     name: String,
-    name_range: TextRange,
+    modifier: SourceSpan,
+    operand: SourceSpan,
     target_range: TextRange,
     target_kind: HirViewPartTargetKind,
     occurrence: HirViewPartOccurrenceShape,
@@ -34,9 +38,9 @@ pub struct HirViewLocalPart {
 pub struct HirViewPartExport {
     local_name: String,
     public_name: String,
-    local_range: TextRange,
-    public_range: TextRange,
-    declaration_range: TextRange,
+    declaration: SourceSpan,
+    local_operand: SourceSpan,
+    public_operand: SourceSpan,
 }
 
 /// Syntax/HIR target family before product instruction projection.
@@ -60,21 +64,35 @@ impl HirViewPartOwner {
         module: Option<CanonicalModulePath>,
         item: &EntityDeclItem,
         body: &ViewBody,
-    ) -> Self {
+    ) -> Option<Self> {
         let mut local_parts = Vec::new();
         collect_local_parts(
             body.value(),
             HirViewPartOccurrenceShape::default(),
             &mut local_parts,
         );
-        Self {
+        let exports = body
+            .exports()
+            .iter()
+            .map(HirViewPartExport::from)
+            .collect::<Vec<_>>();
+        let source = local_parts
+            .first()
+            .map(|part: &HirViewLocalPart| part.modifier.source_identity())
+            .or_else(|| {
+                exports
+                    .first()
+                    .map(|export| export.declaration.source_identity())
+            })?;
+        Some(Self {
             view: item.id().clone(),
             module,
             visibility: item.visibility(),
             range: body.range(),
+            source,
             local_parts,
-            exports: body.exports().iter().map(HirViewPartExport::from).collect(),
-        }
+            exports,
+        })
     }
 
     pub const fn view(&self) -> &EntityRef {
@@ -91,6 +109,10 @@ impl HirViewPartOwner {
 
     pub const fn range(&self) -> TextRange {
         self.range
+    }
+
+    pub const fn source(&self) -> &Arc<SourceDocumentIdentity> {
+        &self.source
     }
 
     pub fn local_parts(&self) -> &[HirViewLocalPart] {
@@ -111,8 +133,12 @@ impl HirViewLocalPart {
         &self.name
     }
 
-    pub const fn name_range(&self) -> TextRange {
-        self.name_range
+    pub const fn modifier_span(&self) -> &SourceSpan {
+        &self.modifier
+    }
+
+    pub const fn operand_span(&self) -> &SourceSpan {
+        &self.operand
     }
 
     pub const fn target_range(&self) -> TextRange {
@@ -137,16 +163,16 @@ impl HirViewPartExport {
         &self.public_name
     }
 
-    pub const fn local_range(&self) -> TextRange {
-        self.local_range
+    pub const fn declaration_span(&self) -> &SourceSpan {
+        &self.declaration
     }
 
-    pub const fn public_range(&self) -> TextRange {
-        self.public_range
+    pub const fn local_operand_span(&self) -> &SourceSpan {
+        &self.local_operand
     }
 
-    pub const fn declaration_range(&self) -> TextRange {
-        self.declaration_range
+    pub const fn public_operand_span(&self) -> &SourceSpan {
+        &self.public_operand
     }
 }
 
@@ -177,11 +203,11 @@ impl HirViewPartOccurrenceShape {
 impl From<&ViewPartExportDecl> for HirViewPartExport {
     fn from(declaration: &ViewPartExportDecl) -> Self {
         Self {
-            local_name: declaration.local().text().to_owned(),
-            public_name: declaration.public().text().to_owned(),
-            local_range: declaration.local().range(),
-            public_range: declaration.public().range(),
-            declaration_range: declaration.range(),
+            local_name: declaration.local_name().text().to_owned(),
+            public_name: declaration.public_name().text().to_owned(),
+            declaration: declaration.declaration_span().clone(),
+            local_operand: declaration.local_operand_span().clone(),
+            public_operand: declaration.public_operand_span().clone(),
         }
     }
 }
@@ -288,14 +314,15 @@ fn collect_target(
 }
 
 fn local_part(
-    label: &ViewPartLabelSyntax,
+    label: &ViewPartModifier,
     target_range: TextRange,
     target_kind: HirViewPartTargetKind,
     occurrence: HirViewPartOccurrenceShape,
 ) -> HirViewLocalPart {
     HirViewLocalPart {
-        name: label.name().text().to_owned(),
-        name_range: label.name().range(),
+        name: label.local_name().text().to_owned(),
+        modifier: label.modifier_span().clone(),
+        operand: label.operand_span().clone(),
         target_range,
         target_kind,
         occurrence,

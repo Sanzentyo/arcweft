@@ -33,7 +33,7 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_view::{
     DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
-    ViewLocalPartName, ViewPartName,
+    ViewPartLocalName, ViewPartName,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -77,8 +77,8 @@ fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
     );
 }
 
-fn local_part(value: &str) -> ViewLocalPartName {
-    ViewLocalPartName::try_new(value).expect("valid local part identity")
+fn local_part(value: &str) -> ViewPartLocalName {
+    ViewPartLocalName::try_new(value).expect("valid local part identity")
 }
 
 fn public_part(value: &str) -> ViewPartName {
@@ -433,7 +433,7 @@ fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
         child.style_nodes[2]
             .exported_part
             .as_ref()
-            .map(|part| part.public_id().as_str()),
+            .map(|part| part.as_public_id().as_str()),
         Some("part.public-child")
     );
     assert!(exported_boundary.is_nested_view_boundary());
@@ -516,7 +516,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
     assert_eq!(
         deep.exported_part
             .as_ref()
-            .map(|part| part.public_id().as_str()),
+            .map(|part| part.as_public_id().as_str()),
         Some("part.public-c")
     );
     assert!(matches!(

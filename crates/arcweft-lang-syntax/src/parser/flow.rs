@@ -129,7 +129,7 @@ impl<'a> Parser<'a> {
         events: CstLineEvents<'a>,
         base_offset: usize,
     ) -> Vec<FlowItem> {
-        let mut nested = Parser::from_line_events("", events, SyntaxParseStats::default());
+        let mut nested = Parser::from_line_events(None, "", events, SyntaxParseStats::default());
         self.parse_nested_flow_body(&mut nested, base_offset)
     }
 

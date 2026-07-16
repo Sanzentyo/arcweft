@@ -16,7 +16,7 @@ use arcweft_view::style::{
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId,
 };
-use arcweft_view::{ViewLocalPartName, ViewPartName};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
@@ -29,8 +29,8 @@ const ACTION_PART: &str = "part.dialogue.primary_action";
 const SPEAKER_SOURCE: &str = "std.dialogue.text.speaker";
 const CONTENT_SOURCE: &str = "std.dialogue.text.content";
 
-fn local_part(value: &str) -> ViewLocalPartName {
-    ViewLocalPartName::try_new(value).expect("standard View part identities are canonical")
+fn local_part(value: &str) -> ViewPartLocalName {
+    ViewPartLocalName::try_new(value).expect("standard View part identities are canonical")
 }
 const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
 const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";

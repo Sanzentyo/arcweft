@@ -20,6 +20,7 @@ use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error}
 use super::recovery::ParseError;
 use super::style::parse_inline_native_style;
 use super::{parse_expr_lossy, split_top_level_binding};
+use arcweft_source::SourceDocument;
 
 mod part;
 
@@ -71,14 +72,21 @@ struct ViewSourceLine {
 
 struct ViewSourceMap<'a> {
     body: &'a str,
+    document: &'a SourceDocument,
     base: usize,
     lines: Vec<(usize, usize, usize)>,
 }
 
 impl<'a> ViewSourceMap<'a> {
-    fn new(body: &'a str, base: usize, lines: &[ViewSourceLine]) -> Self {
+    fn new(
+        body: &'a str,
+        document: &'a SourceDocument,
+        base: usize,
+        lines: &[ViewSourceLine],
+    ) -> Self {
         Self {
             body,
+            document,
             base,
             lines: lines
                 .iter()
@@ -102,14 +110,24 @@ impl<'a> ViewSourceMap<'a> {
     }
 }
 
-pub(super) fn parse_view_body(
-    body: &str,
+pub(super) fn parse_view_body<'a>(
+    body: &'a str,
     base: usize,
     module_path: Option<&str>,
+    document: Option<&'a SourceDocument>,
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewBody> {
+    let Some(document) = document else {
+        errors.push(simple_error(
+            base,
+            body.len().max(1),
+            "View body cannot be parsed without a source identity",
+            "revision-bound source document",
+        ));
+        return None;
+    };
     let expanded_lines = mapped_view_lines(body, base);
-    let source_map = ViewSourceMap::new(body, base, &expanded_lines);
+    let source_map = ViewSourceMap::new(body, document, base, &expanded_lines);
     let lines = expanded_lines
         .iter()
         .map(|line| line.text.as_str())
@@ -131,7 +149,7 @@ pub(super) fn parse_view_body(
         .count();
     let exports = expanded_lines[..export_count]
         .iter()
-        .filter_map(|line| part::parse_export(line, errors))
+        .filter_map(|line| part::parse_export(line, document, errors))
         .collect();
     let range = TextRange::new(base, base.saturating_add(body.len()));
     let value = parse_view_exprs(
@@ -769,6 +787,7 @@ fn parse_view_modifiers(
     errors: &mut Vec<ParseError>,
 ) -> (Vec<ViewModifier>, usize) {
     let mut modifiers = Vec::new();
+    let mut part_rejected = false;
     let mut fx_ordinal = 0_u32;
     let mut index = 0;
     while index < lines.len() && is_view_modifier_line(lines[index]) {
@@ -787,19 +806,23 @@ fn parse_view_modifiers(
                 fx_ordinal = fx_ordinal.saturating_add(1);
             }
             if let ViewModifier::Part(part) = &modifier
-                && modifiers
-                    .iter()
-                    .any(|existing| matches!(existing, ViewModifier::Part(_)))
+                && (part_rejected
+                    || modifiers
+                        .iter()
+                        .any(|existing| matches!(existing, ViewModifier::Part(_))))
             {
+                let range = part.modifier_span().range();
                 errors.push(
                     simple_error(
-                        part.range().start(),
-                        part.range().end().saturating_sub(part.range().start()),
+                        range.start(),
+                        range.end().saturating_sub(range.start()),
                         "View expression has more than one `.part(...)` modifier",
                         "one .part(local_name) modifier",
                     )
                     .with_code("view::duplicate_part_modifier"),
                 );
+                modifiers.retain(|existing| !matches!(existing, ViewModifier::Part(_)));
+                part_rejected = true;
             } else {
                 modifiers.push(modifier);
             }
@@ -961,23 +984,8 @@ fn parse_view_modifier(
         let range = source_map
             .location(lines[0])
             .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
-        return part::parse_label(part, line, range, errors)
+        return part::parse_label(part, line, range, source_map.document, errors)
             .map(|label| (ViewModifier::Part(label), 1));
-    }
-    if line.starts_with(".export_part") {
-        let range = source_map
-            .location(lines[0])
-            .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
-        errors.push(
-            simple_error(
-                range.start(),
-                range.end().saturating_sub(range.start()),
-                "attached View part exports are not supported",
-                "export part local as public in the leading View declaration block",
-            )
-            .with_code("view::unsupported_export_spelling"),
-        );
-        return Some((ViewModifier::Raw(line.to_owned()), 1));
     }
     if let Some(value) = call_arg(line, ".agent_target")
         && let Some(target) = entity_ref_expr(&parse_expr_lossy(value))

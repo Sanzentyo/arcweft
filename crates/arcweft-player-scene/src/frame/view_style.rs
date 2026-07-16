@@ -20,10 +20,10 @@ use arcweft_runtime_driver::view_runtime::{
 use arcweft_view::ViewMountId;
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewElementState, ViewElementStateSet,
-    ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet,
-    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleNodeFacts, ViewStyleNodeKey,
-    ViewStyleProgram, ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError,
-    ViewStyleResolver, ViewStyleRevisionSet, ViewStyleTraceMode,
+    ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleProgram,
+    ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
+    ViewStyleRevisionSet, ViewStyleTraceMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -647,7 +647,7 @@ fn node_bindings(
 ) -> Result<Vec<NodeBinding>, PlayerFrameError> {
     let part_key = node.part.as_ref().map(|part| StyleTargetKey {
         kind: StyleTargetKind::Part,
-        id: mount.scoped_id(part.public_id().as_str()),
+        id: mount.scoped_id(part.as_public_id().as_str()),
     });
     let mut bindings = match &node.kind {
         BundleViewStyleNodeKind::Element { target, .. } => target

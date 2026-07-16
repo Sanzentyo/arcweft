@@ -38,12 +38,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use thiserror::Error;
 
+use self::part::AcceptedViewProgram;
 pub use axis_seed::{
     BundleViewAxisSeedError, BundleViewAxisSeedRegistrySnapshot, BundleViewAxisSeedUpdate,
     BundleViewAxisSeedUpdateOutcome, BundleViewMountedAxisSeedSnapshot,
     BundleViewPendingAxisSeedSnapshot,
 };
-use self::part::AcceptedViewProgram;
 
 pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
@@ -313,7 +313,7 @@ pub struct BundleViewMountRuntimeSnapshot {
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewRuntimeError {
     #[error(transparent)]
-    AxisSeed(#[from] BundleViewAxisSeedError),
+    AxisSeed(BundleViewAxisSeedError),
     #[error(transparent)]
     Program(#[from] arcweft_bundle::resource_codec::SectionCodecError),
     #[error(transparent)]

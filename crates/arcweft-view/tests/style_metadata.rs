@@ -3,13 +3,12 @@ use arcweft_view::geometry::{ViewGeometryPropertySupport, ViewRepresentedGeometr
 use arcweft_view::{
     ViewAlignment, ViewBlendMode, ViewDisplay, ViewElementKind, ViewElementState,
     ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle,
-    ViewFontWeight, ViewInteractionSelector, ViewLocalPartName, ViewOverflow, ViewPartName,
+    ViewFontWeight, ViewInteractionSelector, ViewOverflow, ViewPartLocalName, ViewPartName,
     ViewPosition, ViewPropertyExpansion, ViewPropertyKind, ViewRatioMilli, ViewScalarMilli,
     ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts,
-    ViewStyleCombinator,
-    ViewStyleInvalidationSet, ViewStylePatchId, ViewStylePredicate, ViewStyleScopeId,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId, ViewStyleTokenId,
-    ViewStyleValueKind, ViewSystemFontFamily,
+    ViewStyleCombinator, ViewStyleInvalidationSet, ViewStylePatchId, ViewStylePredicate,
+    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId,
+    ViewStyleTokenId, ViewStyleValueKind, ViewSystemFontFamily,
 };
 use std::collections::BTreeSet;
 
@@ -178,7 +177,7 @@ fn typed_ids_and_applications_preserve_scope_order_and_boundaries() {
     assert_eq!(application.application_order(), 11);
     assert!(application.boundary().allows_selector_traversal());
     assert!(!application.boundary().allows_inherited_root());
-    let private = ViewLocalPartName::try_new("part.private").unwrap();
+    let private = ViewPartLocalName::try_new("part.private").unwrap();
     let public = ViewPartName::try_new("part.public").unwrap();
     assert!(
         application

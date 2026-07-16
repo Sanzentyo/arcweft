@@ -11,7 +11,7 @@ use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{
-    DialogueAdvanceTarget, ViewLocalPartName, ViewValueProgram, ViewValueProgramId,
+    DialogueAdvanceTarget, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
 };
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -61,7 +61,7 @@ pub enum ViewProgramInstruction {
         target: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<ViewLocalPartName>,
+        part: Option<ViewPartLocalName>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
     },
@@ -71,7 +71,7 @@ pub enum ViewProgramInstruction {
         text_block: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<ViewLocalPartName>,
+        part: Option<ViewPartLocalName>,
         source: Option<SourceRangeRef>,
     },
     EmitImage {
@@ -80,14 +80,14 @@ pub enum ViewProgramInstruction {
         target: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<ViewLocalPartName>,
+        part: Option<ViewPartLocalName>,
         source: Option<SourceRangeRef>,
     },
     EmitCustom {
         element: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<ViewLocalPartName>,
+        part: Option<ViewPartLocalName>,
         source: Option<SourceRangeRef>,
     },
     CallView {
@@ -95,7 +95,7 @@ pub enum ViewProgramInstruction {
         arguments: Vec<ViewCallArgumentBindingRef>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
-        part: Option<ViewLocalPartName>,
+        part: Option<ViewPartLocalName>,
         key: Option<u64>,
         source: Option<SourceRangeRef>,
     },
@@ -184,7 +184,7 @@ impl ViewProgramInstruction {
     }
 
     /// Authored part attached to a node-producing instruction, if present.
-    pub fn part(&self) -> Option<&ViewLocalPartName> {
+    pub fn part(&self) -> Option<&ViewPartLocalName> {
         match self {
             Self::OpenElement { part, .. }
             | Self::EmitText { part, .. }

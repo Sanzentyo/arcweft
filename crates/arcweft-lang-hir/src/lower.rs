@@ -3,7 +3,7 @@ use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirSource, H
 use crate::style::{HirStyleDecl, HirStylePatch};
 use crate::view_part::HirViewPartOwner;
 use arcweft_lang_syntax::ast::{
-    items::{AgentItem, Attribute, FunctionItem, Item, TypedSyntaxTree},
+    items::{AgentItem, Attribute, EntityDeclItem, FunctionItem, Item, TypedSyntaxTree},
     module_path::CanonicalModulePath,
 };
 use arcweft_source::SourceDocument;
@@ -118,26 +118,7 @@ impl HirLoweringState {
                 self.declarations.push(HirTopLevelDecl::Enum(item.clone()));
             }
             Item::EntityDecl(item) => {
-                if let Some(view) = item.view_body().and_then(|body| body.view()) {
-                    self.view_parts.push(HirViewPartOwner::from_syntax(
-                        self.module_path.clone(),
-                        item,
-                        view,
-                    ));
-                    for patch in view.style_patches() {
-                        let Ok(ordinal) = u32::try_from(self.style_patches.len()) else {
-                            self.errors.push(HirLowerError::new(
-                                "too many inline style patches",
-                                Some(patch.range()),
-                            ));
-                            break;
-                        };
-                        self.style_patches
-                            .push(HirStylePatch::from_syntax(ordinal, patch));
-                    }
-                }
-                self.declarations
-                    .push(HirTopLevelDecl::EntityDecl(item.clone()));
+                self.lower_entity_declaration(item);
             }
             Item::Entry(item) => {
                 self.declarations.push(HirTopLevelDecl::Entry(item.clone()));
@@ -212,6 +193,29 @@ impl HirLoweringState {
             | Item::FlowItem(_)
             | Item::Raw(_) => {}
         }
+    }
+
+    fn lower_entity_declaration(&mut self, item: &EntityDeclItem) {
+        if let Some(view) = item.view_body().and_then(|body| body.view()) {
+            self.view_parts.extend(HirViewPartOwner::from_syntax(
+                self.module_path.clone(),
+                item,
+                view,
+            ));
+            for patch in view.style_patches() {
+                let Ok(ordinal) = u32::try_from(self.style_patches.len()) else {
+                    self.errors.push(HirLowerError::new(
+                        "too many inline style patches",
+                        Some(patch.range()),
+                    ));
+                    break;
+                };
+                self.style_patches
+                    .push(HirStylePatch::from_syntax(ordinal, patch));
+            }
+        }
+        self.declarations
+            .push(HirTopLevelDecl::EntityDecl(item.clone()));
     }
 
     fn finish(self) -> Result<HirModule, Vec<HirLowerError>> {

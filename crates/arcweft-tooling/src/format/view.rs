@@ -29,11 +29,11 @@ pub(super) fn canonical_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEd
         };
 
         for declaration in view.exports() {
-            let range = declaration.range();
+            let range = declaration.declaration_span().range();
             let replacement = format!(
                 "export part {} as {}",
-                declaration.local().text(),
-                declaration.public().text()
+                declaration.local_name().text(),
+                declaration.public_name().text()
             );
             push_if_changed(source, range.start(), range.end(), replacement, &mut edits);
         }
@@ -84,12 +84,12 @@ fn collect_part_edits(source: &str, expression: &ViewExpr, edits: &mut Vec<TextE
 fn collect_modifier_edits(source: &str, modifiers: &[ViewModifier], edits: &mut Vec<TextEdit>) {
     for modifier in modifiers {
         if let ViewModifier::Part(part) = modifier {
-            let range = part.range();
+            let range = part.modifier_span().range();
             push_if_changed(
                 source,
                 range.start(),
                 range.end(),
-                format!(".part({})", part.name().text()),
+                format!(".part({})", part.local_name().text()),
                 edits,
             );
         }

@@ -59,8 +59,9 @@ pub use motion::{
     ViewTransition, ViewTransitionSpec,
 };
 pub use part::{
-    ViewLocalPartName, ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewPartName,
-    ViewProgramBuildError,
+    ViewEvaluationSiteId, ViewInstructionIndex, ViewPartExport, ViewPartId,
+    ViewPartInstructionKind, ViewPartLocalName, ViewPartName, ViewPartStaticReachability,
+    ViewProgramBuildError, ViewStaticPart,
 };
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{

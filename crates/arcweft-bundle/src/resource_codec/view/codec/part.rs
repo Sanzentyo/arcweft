@@ -49,7 +49,7 @@ pub(super) fn validate_exports(
 
     for exported in &program.exported_parts {
         let owner = exported.target.view.public_id().as_str();
-        let part = exported.target.part.public_id().as_str();
+        let part = exported.target.part.as_public_id().as_str();
         let owner_targets = targets
             .get(owner)
             .ok_or(ViewExportValidationError::UnknownOwner)?;
@@ -66,7 +66,7 @@ pub(super) fn validate_exports(
         if !exported_targets.insert((owner, part)) {
             return Err(ViewExportValidationError::DuplicateTarget);
         }
-        if !public_names.insert((owner, exported.public_name.public_id().as_str())) {
+        if !public_names.insert((owner, exported.public_name.as_public_id().as_str())) {
             return Err(ViewExportValidationError::DuplicatePublicName);
         }
         validate_source_structure(exported, &table)?;
@@ -126,7 +126,7 @@ fn owner_targets(
             let Some(part) = instruction.part() else {
                 continue;
             };
-            let part = part.public_id().as_str();
+            let part = part.as_public_id().as_str();
             let is_view_call = matches!(instruction, ViewProgramInstruction::CallView { .. });
             if parts.insert(part, is_view_call).is_some() {
                 return Err(ViewExportValidationError::DuplicateStaticTarget);

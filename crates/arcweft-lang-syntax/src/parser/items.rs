@@ -602,11 +602,14 @@ impl Parser<'_> {
         )?;
         let structured_body = parse_structured_entity_decl_body(
             kind,
-            &signature_tail,
-            &body,
-            start_line.start,
-            body_base,
-            self.current_module_path.as_deref(),
+            &StructuredEntityBodyContext {
+                signature_tail: &signature_tail,
+                body: &body,
+                base: start_line.start,
+                body_base,
+                module_path: self.current_module_path.as_deref(),
+                document: self.document,
+            },
             &mut self.errors,
         );
         let raw_body = structured_body.is_none().then(|| body.into_owned());
@@ -828,33 +831,44 @@ pub(super) fn parse_state_fields(
         .collect()
 }
 
-fn parse_structured_entity_decl_body(
-    kind: EntityDeclKind,
-    signature_tail: &str,
-    body: &str,
+struct StructuredEntityBodyContext<'a> {
+    signature_tail: &'a str,
+    body: &'a str,
     base: usize,
     body_base: usize,
-    module_path: Option<&str>,
+    module_path: Option<&'a str>,
+    document: Option<&'a arcweft_source::SourceDocument>,
+}
+
+fn parse_structured_entity_decl_body(
+    kind: EntityDeclKind,
+    context: &StructuredEntityBodyContext<'_>,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> Option<EntityDeclBody> {
     match kind {
         EntityDeclKind::Content => Some(EntityDeclBody::Content(ContentDeclBody::new(
-            parse_content_roots_field(body, base, errors),
+            parse_content_roots_field(context.body, context.base, errors),
         ))),
         EntityDeclKind::Image => Some(EntityDeclBody::Image(ImageDeclBody::new(
-            parse_image_decl_fields(body, base, errors),
+            parse_image_decl_fields(context.body, context.base, errors),
         ))),
         EntityDeclKind::View => {
-            if entity_signature_has_return_type(signature_tail) {
+            if entity_signature_has_return_type(context.signature_tail) {
                 errors.push(simple_error(
-                    base,
-                    signature_tail.len(),
+                    context.base,
+                    context.signature_tail.len(),
                     "invalid view declaration signature",
                     "view Name(...) { ... }",
                 ));
             }
             Some(EntityDeclBody::View(Box::new(ViewDeclBody::new(
-                parse_view_body(body, body_base, module_path, errors),
+                parse_view_body(
+                    context.body,
+                    context.body_base,
+                    context.module_path,
+                    context.document,
+                    errors,
+                ),
             ))))
         }
         _ => None,

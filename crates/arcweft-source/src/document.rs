@@ -50,6 +50,17 @@ impl SourceRevision {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Lowercase hexadecimal spelling used by content-addressed identities.
+    pub fn to_hex(self) -> String {
+        self.0
+            .iter()
+            .fold(String::with_capacity(64), |mut output, byte| {
+                use std::fmt::Write as _;
+                write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
+                output
+            })
+    }
 }
 
 /// Canonical revision of a complete set of source identities.
@@ -197,6 +208,11 @@ pub struct SourceSpan {
 impl SourceSpan {
     pub fn source(&self) -> &SourceDocumentIdentity {
         &self.source
+    }
+
+    /// Shared revision identity retained by source-aware intermediate records.
+    pub fn source_identity(&self) -> Arc<SourceDocumentIdentity> {
+        Arc::clone(&self.source)
     }
 
     pub const fn range(&self) -> SourceRange {

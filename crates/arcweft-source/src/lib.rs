@@ -73,6 +73,7 @@ impl SourceAnchor {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SourceName {
     Path(String),
+    Memory,
     Generated,
 }
 
@@ -84,6 +85,7 @@ impl SourceName {
     pub fn display_name(&self) -> &str {
         match self {
             Self::Path(path) => path,
+            Self::Memory => "<memory>",
             Self::Generated => "<generated>",
         }
     }

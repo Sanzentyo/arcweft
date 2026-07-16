@@ -1,8 +1,12 @@
 //! Parsed source container and line indexing.
 
+use crate::ast::common::TextRange;
 use crate::ast::items::TypedSyntaxTree;
 use crate::cst::{SyntaxNode, SyntaxParseStats};
 use crate::parser::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
+use arcweft_source::{
+    SourceDocument, SourceDocumentIdentity, SourceRange, SourceSpan, SourceSpanError,
+};
 use std::{cmp::Ordering, fmt, sync::Arc};
 
 /// Fully parsed source file.
@@ -12,7 +16,7 @@ use std::{cmp::Ordering, fmt, sync::Arc};
 /// by HIR and checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParsedSource {
-    source: Arc<str>,
+    document: Arc<SourceDocument>,
     syntax: SyntaxNode,
     typed_tree: TypedSyntaxTree,
     errors: Vec<ParseError>,
@@ -43,17 +47,17 @@ pub struct LineIndex {
 
 impl ParsedSource {
     pub(crate) fn new(
-        source: String,
+        document: Arc<SourceDocument>,
         syntax: SyntaxNode,
         typed_tree: TypedSyntaxTree,
         mut errors: Vec<ParseError>,
         syntax_stats: SyntaxParseStats,
     ) -> Self {
         normalize_parse_errors(&mut errors);
-        let source_hash = SourceHash::new(&source);
-        let line_index = LineIndex::new(&source);
+        let source_hash = SourceHash::new(document.text());
+        let line_index = LineIndex::new(document.text());
         Self {
-            source: Arc::from(source),
+            document,
             syntax,
             typed_tree,
             errors,
@@ -65,7 +69,23 @@ impl ParsedSource {
 
     /// Original source text.
     pub fn source(&self) -> &str {
-        &self.source
+        self.document.text()
+    }
+
+    /// Immutable source document that owns this parse revision.
+    pub const fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
+    }
+
+    /// Exact revision-bound identity shared by all spans produced from this parse.
+    pub fn identity(&self) -> &SourceDocumentIdentity {
+        self.document.identity()
+    }
+
+    /// Binds a parser byte range to the exact source revision.
+    pub fn span(&self, range: TextRange) -> Result<SourceSpan, SourceSpanError> {
+        self.document
+            .span(SourceRange::new(range.start(), range.end()))
     }
 
     /// Lossless rowan syntax tree.

@@ -38,7 +38,7 @@ use arcweft_view::style::{
     ViewColorValue, ViewElementState, ViewPropertyKind, ViewSpecifiedValue, ViewStylePredicate,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
 };
-use arcweft_view::{ViewLocalPartName, ViewPartName};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
 const MALFORMED_RESOURCE_IDENTITIES: [&str; 4] =
@@ -657,7 +657,7 @@ fn view_program_identities_reject_malformed_resource_ids() {
 fn exported_part_identities_reject_malformed_resource_ids() {
     for malformed in MALFORMED_RESOURCE_IDENTITIES {
         assert!(ViewDefinitionRef::try_new(malformed).is_err());
-        assert!(ViewLocalPartName::try_new(malformed).is_err());
+        assert!(ViewPartLocalName::try_new(malformed).is_err());
         assert!(ViewPartName::try_new(malformed).is_err());
     }
 }
@@ -680,7 +680,7 @@ fn exported_part_old_flat_record_has_no_compatibility_reader() {
 fn instruction_parts_reject_malformed_resource_ids() {
     for malformed in MALFORMED_RESOURCE_IDENTITIES {
         assert!(
-            ViewLocalPartName::try_new(malformed).is_err(),
+            ViewPartLocalName::try_new(malformed).is_err(),
             "node-producing instructions accept only typed local part identities",
         );
     }
@@ -1248,8 +1248,8 @@ fn view_ref(value: &str) -> ViewDefinitionRef {
     ViewDefinitionRef::try_new(value).expect("valid View definition identity")
 }
 
-fn local_part(value: &str) -> ViewLocalPartName {
-    ViewLocalPartName::try_new(value).expect("valid local part identity")
+fn local_part(value: &str) -> ViewPartLocalName {
+    ViewPartLocalName::try_new(value).expect("valid local part identity")
 }
 
 fn part_public(value: &str) -> ViewPartName {

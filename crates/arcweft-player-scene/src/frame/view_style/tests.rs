@@ -32,15 +32,15 @@ use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
     ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedGeneration,
     ViewColorValue, ViewElementState, ViewInheritedBoxAxes, ViewInteractionSelector,
-    ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewScalarMilli,
-    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
-    ViewStyleBoundaryFacts, ViewStyleContribution, ViewStyleContributionSource,
-    ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatchId,
-    ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext, ViewStyleRevisionSet,
-    ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleTraceMode,
+    ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewScalarMilli, ViewSpecifiedValue,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
+    ViewStyleContribution, ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleNodeFacts,
+    ViewStyleNodeKey, ViewStylePatchId, ViewStylePriority, ViewStyleProgram,
+    ViewStyleResolveContext, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSourceId, ViewStyleTraceMode,
 };
-use arcweft_view::{ViewElementKind, ViewLocalPartName, ViewMountId, ViewPartName};
+use arcweft_view::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
 
 #[test]
 fn node_path_encoding_distinguishes_all_segment_families_and_key_presence() {
@@ -229,7 +229,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
         kind: BundleViewStyleNodeKind::CallView {
             view: "view.Child".to_owned(),
         },
-        part: Some(ViewLocalPartName::try_new("part.call").unwrap()),
+        part: Some(ViewPartLocalName::try_new("part.call").unwrap()),
         exported_part: None,
         applications: vec![parent_application],
     }];
@@ -300,8 +300,8 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
             kind: BundleViewStyleNodeKind::Text {
                 text_source: "text.child.exported".to_owned(),
             },
-            part: Some("part.child-exported".to_owned()),
-            exported_part: Some("part.public-child".to_owned()),
+            part: Some(ViewPartLocalName::try_new("part.child-exported").unwrap()),
+            exported_part: Some(ViewPartName::try_new("part.public-child").unwrap()),
             applications: vec![child_application.clone(), exported_axis_application],
         },
         BundleViewStyleNode {
@@ -328,8 +328,8 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
             kind: BundleViewStyleNodeKind::Text {
                 text_source: "text.child.exported.inherited".to_owned(),
             },
-            part: Some("part.child-inherited-export".to_owned()),
-            exported_part: Some("part.public-inherited".to_owned()),
+            part: Some(ViewPartLocalName::try_new("part.child-inherited-export").unwrap()),
+            exported_part: Some(ViewPartName::try_new("part.public-inherited").unwrap()),
             applications: vec![child_application],
         },
     ];

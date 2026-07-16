@@ -4,7 +4,7 @@ use super::{
     ViewAlignment, ViewPropertyKind, ViewSpecifiedValue, ViewStyleSelector, ViewStyleValueKind,
 };
 use crate::ViewElementKind;
-use crate::{ViewLocalPartName, ViewPartName};
+use crate::{ViewPartLocalName, ViewPartName};
 use arcweft_id::{IdError, PublicId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeSet, HashMap};
@@ -369,11 +369,11 @@ impl ViewStyleBoundaryFacts {
     pub fn matches_part(
         self,
         selector: &ViewPartName,
-        implementation_part: Option<&ViewLocalPartName>,
+        implementation_part: Option<&ViewPartLocalName>,
         exported_part: Option<&ViewPartName>,
     ) -> bool {
         if self.crossed_view_boundaries == 0 {
-            implementation_part.is_some_and(|part| part.matches_selector(selector))
+            implementation_part.is_some_and(|part| part.as_str() == selector.as_str())
         } else if self.crossed_view_boundaries == 1 && self.exported_part {
             exported_part == Some(selector)
         } else {

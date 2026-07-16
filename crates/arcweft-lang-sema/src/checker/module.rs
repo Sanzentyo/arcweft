@@ -102,7 +102,7 @@ impl TypeCheckReport {
 /// Analyzes lowered HIR with an explicit symbol/method environment.
 pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
     let (style_catalog, style_diagnostics) = check_view_styles(module);
-    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module, None);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
     let mut checker = TypeChecker::new(env);
     finish_type_check(
         module,
@@ -120,13 +120,21 @@ pub fn analyze_registered_project_types(
     registered: &crate::registration::RegisteredSemanticWorld,
 ) -> TypeCheckReport {
     let (style_catalog, style_diagnostics) = check_view_styles(module);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
     let mut checker = TypeChecker::new_with_project(
         registered.environment().base(),
         None,
         Some(registered.symbols()),
         Some(registered.environment()),
     );
-    finish_type_check(module, style_catalog, style_diagnostics, &mut checker)
+    finish_type_check(
+        module,
+        style_catalog,
+        style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
+        &mut checker,
+    )
 }
 
 /// Analyzes a registered project while retaining exact-source speaker-line evidence.
@@ -138,6 +146,7 @@ pub fn analyze_registered_project_types_for_canonicalization(
     validate_canonicalization_sources(project, sources)?;
     let module = project.linked_module();
     let (style_catalog, style_diagnostics) = check_view_styles(&module);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
     let mut checker = TypeChecker::new_with_project(
         registered.environment().base(),
         Some(sources),
@@ -148,6 +157,8 @@ pub fn analyze_registered_project_types_for_canonicalization(
         &module,
         style_catalog,
         style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
         &mut checker,
     ))
 }
@@ -199,12 +210,15 @@ pub fn analyze_project_types_for_canonicalization(
         .into_table();
     let module = project.linked_module();
     let (style_catalog, style_diagnostics) = check_view_styles(&module);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
     let mut checker =
         TypeChecker::new_with_project(env, Some(sources), Some(&project_symbols), None);
     Ok(finish_type_check(
         &module,
         style_catalog,
         style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
         &mut checker,
     ))
 }

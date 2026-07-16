@@ -23,8 +23,10 @@ use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 use crate::source::ParsedSource;
 use crate::text::parse_dialogue_text;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRevision};
 use std::borrow::Cow;
 use std::ops::Range;
+use std::sync::Arc;
 
 pub mod assertion;
 pub mod await_;
@@ -55,7 +57,7 @@ use control_flow::{
 };
 pub use fragment::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
-    SourceDialect, parse_document, parse_fragment,
+    SourceDialect, parse_document, parse_document_with_source, parse_fragment,
 };
 use helpers::{
     PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items,
@@ -111,12 +113,29 @@ pub fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
 
 fn parse_source_with_options(source: impl Into<String>, options: ParseOptions) -> ParsedSource {
     let source = source.into();
-    let syntax = crate::cst::parse_cst(&source);
-    let mut parser = Parser::from_syntax(&source, &syntax);
-    parser.source_dialect = options.source_dialect;
-    let (tree, mut errors, syntax_stats) = parser.parse();
-    errors.extend(validate_let_type_ascriptions(&source));
-    ParsedSource::new(source, syntax, tree, errors, syntax_stats)
+    let id = SourceDocumentId::try_new(format!(
+        "memory:{}",
+        SourceRevision::for_utf8(&source).to_hex()
+    ))
+    .expect("content-addressed memory source ID is valid");
+    let document = SourceDocument::try_new(id, SourceName::Memory, source)
+        .expect("Rust String length fits the source identity");
+    parse_source_document_with_options(Arc::new(document), options)
+}
+
+fn parse_source_document_with_options(
+    document: Arc<SourceDocument>,
+    options: ParseOptions,
+) -> ParsedSource {
+    let source = document.text();
+    let syntax = crate::cst::parse_cst(source);
+    let (tree, mut errors, syntax_stats) = {
+        let mut parser = Parser::from_document(&document, &syntax);
+        parser.source_dialect = options.source_dialect;
+        parser.parse()
+    };
+    errors.extend(validate_let_type_ascriptions(source));
+    ParsedSource::new(document, syntax, tree, errors, syntax_stats)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -152,6 +171,7 @@ type ContentCallParse = (
 );
 
 struct Parser<'a> {
+    document: Option<&'a SourceDocument>,
     source: &'a str,
     events: CstLineEvents<'a>,
     index: usize,
@@ -252,21 +272,30 @@ impl<'a> Parser<'a> {
             .with_absolute_offsets(base_offset)
             .unwrap_or_default();
         let syntax_stats = events.stats();
-        Self::from_line_events("", events, syntax_stats)
+        Self::from_line_events(None, "", events, syntax_stats)
     }
 
     fn from_syntax(source: &'a str, syntax: &SyntaxNode) -> Self {
         let events = cst_lines_for_source(syntax, source);
         let syntax_stats = events.stats();
-        Self::from_line_events(source, events, syntax_stats)
+        Self::from_line_events(None, source, events, syntax_stats)
+    }
+
+    fn from_document(document: &'a SourceDocument, syntax: &SyntaxNode) -> Self {
+        let source = document.text();
+        let events = cst_lines_for_source(syntax, source);
+        let syntax_stats = events.stats();
+        Self::from_line_events(Some(document), source, events, syntax_stats)
     }
 
     fn from_line_events(
+        document: Option<&'a SourceDocument>,
         source: &'a str,
         events: CstLineEvents<'a>,
         syntax_stats: SyntaxParseStats,
     ) -> Self {
         Self {
+            document,
             source,
             events,
             index: 0,

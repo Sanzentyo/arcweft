@@ -3,7 +3,7 @@
 use super::BundleViewInstancePath;
 use arcweft_bundle::resource_codec::view::ViewElementKind;
 use arcweft_view::{
-    ViewLocalPartName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewPartLocalName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
     ViewStyleBoundaryFacts, ViewStyleScopeId,
 };
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ pub struct BundleViewStyleNode {
     pub parent: Option<BundleViewStyleNodeId>,
     pub kind: BundleViewStyleNodeKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub part: Option<ViewLocalPartName>,
+    pub part: Option<ViewPartLocalName>,
     /// Public part identity exposed to a Style application crossing the
     /// direct owning View boundary. This is distinct from the private
     /// implementation `part` identity above.
@@ -104,7 +104,7 @@ pub(crate) struct ViewStyleNodeInput<'a> {
     pub(crate) path: &'a BundleViewInstancePath,
     pub(crate) instruction: u32,
     pub(crate) kind: BundleViewStyleNodeKind,
-    pub(crate) part: Option<&'a ViewLocalPartName>,
+    pub(crate) part: Option<&'a ViewPartLocalName>,
     pub(crate) local: &'a [ViewStyleApplicationTarget],
     pub(crate) root: bool,
 }

@@ -1,4 +1,4 @@
-use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_source::SourceSpan;
 
 use super::CheckedViewId;
 
@@ -14,7 +14,6 @@ pub enum ViewPartDiagnosticCode {
     DuplicatePublicName,
     UnsupportedCallViewExport,
     PartIdOverflow,
-    MissingSourceIdentity,
 }
 
 /// Structured semantic diagnostic for one View-part contract violation.
@@ -22,7 +21,7 @@ pub enum ViewPartDiagnosticCode {
 pub struct ViewPartDiagnostic {
     code: ViewPartDiagnosticCode,
     message: String,
-    range: TextRange,
+    span: SourceSpan,
     owner: Option<CheckedViewId>,
 }
 
@@ -30,13 +29,13 @@ impl ViewPartDiagnostic {
     pub(super) fn new(
         code: ViewPartDiagnosticCode,
         message: impl Into<String>,
-        range: TextRange,
+        span: SourceSpan,
         owner: Option<CheckedViewId>,
     ) -> Self {
         Self {
             code,
             message: message.into(),
-            range,
+            span,
             owner,
         }
     }
@@ -49,8 +48,8 @@ impl ViewPartDiagnostic {
         &self.message
     }
 
-    pub const fn range(&self) -> TextRange {
-        self.range
+    pub const fn span(&self) -> &SourceSpan {
+        &self.span
     }
 
     pub const fn owner(&self) -> Option<&CheckedViewId> {

@@ -71,7 +71,7 @@ use arcweft_lang_syntax::{
 };
 use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
-use arcweft_view::ViewLocalPartName;
+use arcweft_view::{ViewPartLocalName, part::ViewPartNameError};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -110,7 +110,10 @@ pub(in crate::app) enum ViewSidecarError {
     #[error("View `{value}` has an invalid public ID: {source}")]
     InvalidViewPublicId { value: String, source: IdError },
     #[error("View part `{value}` has an invalid local identity: {source}")]
-    InvalidViewPartId { value: String, source: IdError },
+    InvalidViewPartId {
+        value: String,
+        source: ViewPartNameError,
+    },
     #[error("View `{view}` parameter {ordinal} must use one identifier binding")]
     UnsupportedViewParameter { view: String, ordinal: usize },
     #[error("View call references unknown definition `{view}`")]
@@ -944,7 +947,7 @@ fn next_element_id(view_id: &str, state: &mut ViewLoweringState) -> String {
     id
 }
 
-fn element_part(element: &ViewElement) -> Result<Option<ViewLocalPartName>, ViewSidecarError> {
+fn element_part(element: &ViewElement) -> Result<Option<ViewPartLocalName>, ViewSidecarError> {
     first_part(element.modifiers())
 }
 
@@ -1038,15 +1041,15 @@ fn usize_to_u32_saturating(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-fn first_part(modifiers: &[ViewModifier]) -> Result<Option<ViewLocalPartName>, ViewSidecarError> {
+fn first_part(modifiers: &[ViewModifier]) -> Result<Option<ViewPartLocalName>, ViewSidecarError> {
     modifiers
         .iter()
         .find_map(|modifier| match modifier {
-            ViewModifier::Part(part) => Some(part.name().text()),
+            ViewModifier::Part(part) => Some(part.local_name().text()),
             _ => None,
         })
         .map(|value| {
-            ViewLocalPartName::try_new(value.to_owned()).map_err(|source| {
+            ViewPartLocalName::try_new(value.to_owned()).map_err(|source| {
                 ViewSidecarError::InvalidViewPartId {
                     value: value.to_owned(),
                     source,

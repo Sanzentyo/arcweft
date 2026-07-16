@@ -2,6 +2,8 @@ use crate::ast::{flow::Stmt, items::Item};
 use crate::expr::{Expr, ExprOp, parse_expr};
 use crate::parser::recovery::ParseError;
 use crate::source::ParsedSource;
+use arcweft_source::SourceDocument;
+use std::sync::Arc;
 
 /// Source dialect selected before parsing.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -60,6 +62,14 @@ pub struct ParsedFragment {
 /// Parses a full source document using the selected dialect.
 pub fn parse_document(source: impl Into<String>, options: ParseOptions) -> ParsedSource {
     super::parse_source_with_options(source, options)
+}
+
+/// Parses an immutable source document while preserving its exact identity.
+pub fn parse_document_with_source(
+    document: Arc<SourceDocument>,
+    options: ParseOptions,
+) -> ParsedSource {
+    super::parse_source_document_with_options(document, options)
 }
 
 /// Parses a fragment using the same syntax components as full documents.

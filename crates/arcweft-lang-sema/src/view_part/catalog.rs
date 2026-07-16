@@ -3,9 +3,9 @@ use arcweft_lang_syntax::ast::{
     common::{TextRange, Visibility},
     module_path::CanonicalModulePath,
 };
-use arcweft_view::{ViewLocalPartName, ViewPartName};
-
-use crate::canonicalization::SemanticSourceIdentity;
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
+use std::sync::Arc;
 
 /// Canonical public identity of one checked View definition.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -42,20 +42,19 @@ pub struct CheckedViewPartOccurrenceShape {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedViewLocalPart {
     id: CheckedViewPartId,
-    name: ViewLocalPartName,
+    name: ViewPartLocalName,
     target_kind: CheckedViewPartTargetKind,
     occurrence: CheckedViewPartOccurrenceShape,
-    name_range: TextRange,
-    target_range: TextRange,
+    modifier: SourceSpan,
+    operand: SourceSpan,
 }
 
 /// Exact revision-bound source evidence and declaration ranges.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedViewPartExportSource {
-    identity: Option<SemanticSourceIdentity>,
-    declaration_range: TextRange,
-    local_range: TextRange,
-    public_range: TextRange,
+    declaration: SourceSpan,
+    local_operand: SourceSpan,
+    public_operand: SourceSpan,
 }
 
 /// One checked public capability mapping.
@@ -63,7 +62,7 @@ pub struct CheckedViewPartExportSource {
 pub struct CheckedViewPartExport {
     owner: CheckedViewId,
     target: CheckedViewPartRef,
-    local_name: ViewLocalPartName,
+    local_name: ViewPartLocalName,
     public_name: ViewPartName,
     source: CheckedViewPartExportSource,
 }
@@ -75,7 +74,7 @@ pub struct CheckedViewPartOwner {
     module: CanonicalModulePath,
     visibility: Option<Visibility>,
     range: TextRange,
-    source: Option<SemanticSourceIdentity>,
+    source: Arc<SourceDocumentIdentity>,
     local_parts: Vec<CheckedViewLocalPart>,
     exports: Vec<CheckedViewPartExport>,
 }
@@ -140,19 +139,19 @@ impl CheckedViewPartOccurrenceShape {
 impl CheckedViewLocalPart {
     pub(super) const fn new(
         id: CheckedViewPartId,
-        name: ViewLocalPartName,
+        name: ViewPartLocalName,
         target_kind: CheckedViewPartTargetKind,
         occurrence: CheckedViewPartOccurrenceShape,
-        name_range: TextRange,
-        target_range: TextRange,
+        modifier: SourceSpan,
+        operand: SourceSpan,
     ) -> Self {
         Self {
             id,
             name,
             target_kind,
             occurrence,
-            name_range,
-            target_range,
+            modifier,
+            operand,
         }
     }
 
@@ -160,7 +159,7 @@ impl CheckedViewLocalPart {
         self.id
     }
 
-    pub const fn name(&self) -> &ViewLocalPartName {
+    pub const fn name(&self) -> &ViewPartLocalName {
         &self.name
     }
 
@@ -172,44 +171,42 @@ impl CheckedViewLocalPart {
         self.occurrence
     }
 
-    pub const fn name_range(&self) -> TextRange {
-        self.name_range
+    pub const fn modifier_span(&self) -> &SourceSpan {
+        &self.modifier
     }
 
-    pub const fn target_range(&self) -> TextRange {
-        self.target_range
+    pub const fn operand_span(&self) -> &SourceSpan {
+        &self.operand
     }
 }
 
 impl CheckedViewPartExportSource {
     pub(super) const fn new(
-        identity: Option<SemanticSourceIdentity>,
-        declaration_range: TextRange,
-        local_range: TextRange,
-        public_range: TextRange,
+        declaration: SourceSpan,
+        local_operand: SourceSpan,
+        public_operand: SourceSpan,
     ) -> Self {
         Self {
-            identity,
-            declaration_range,
-            local_range,
-            public_range,
+            declaration,
+            local_operand,
+            public_operand,
         }
     }
 
-    pub const fn identity(&self) -> Option<&SemanticSourceIdentity> {
-        self.identity.as_ref()
+    pub fn identity(&self) -> &SourceDocumentIdentity {
+        self.declaration.source()
     }
 
-    pub const fn declaration_range(&self) -> TextRange {
-        self.declaration_range
+    pub const fn declaration_span(&self) -> &SourceSpan {
+        &self.declaration
     }
 
-    pub const fn local_range(&self) -> TextRange {
-        self.local_range
+    pub const fn local_operand_span(&self) -> &SourceSpan {
+        &self.local_operand
     }
 
-    pub const fn public_range(&self) -> TextRange {
-        self.public_range
+    pub const fn public_operand_span(&self) -> &SourceSpan {
+        &self.public_operand
     }
 }
 
@@ -217,7 +214,7 @@ impl CheckedViewPartExport {
     pub(super) const fn new(
         owner: CheckedViewId,
         target: CheckedViewPartRef,
-        local_name: ViewLocalPartName,
+        local_name: ViewPartLocalName,
         public_name: ViewPartName,
         source: CheckedViewPartExportSource,
     ) -> Self {
@@ -238,7 +235,7 @@ impl CheckedViewPartExport {
         &self.target
     }
 
-    pub const fn local_name(&self) -> &ViewLocalPartName {
+    pub const fn local_name(&self) -> &ViewPartLocalName {
         &self.local_name
     }
 
@@ -257,7 +254,7 @@ impl CheckedViewPartOwner {
         module: CanonicalModulePath,
         visibility: Option<Visibility>,
         range: TextRange,
-        source: Option<SemanticSourceIdentity>,
+        source: Arc<SourceDocumentIdentity>,
         local_parts: Vec<CheckedViewLocalPart>,
         exports: Vec<CheckedViewPartExport>,
     ) -> Self {
@@ -288,8 +285,8 @@ impl CheckedViewPartOwner {
         self.range
     }
 
-    pub const fn source(&self) -> Option<&SemanticSourceIdentity> {
-        self.source.as_ref()
+    pub const fn source(&self) -> &Arc<SourceDocumentIdentity> {
+        &self.source
     }
 
     pub fn local_parts(&self) -> &[CheckedViewLocalPart] {

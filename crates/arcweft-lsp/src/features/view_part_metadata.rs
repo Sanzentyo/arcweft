@@ -9,9 +9,16 @@ use arcweft_lang_sema::{
         CheckedViewPartTargetKind,
     },
 };
-use arcweft_lang_syntax::{ast::common::TextRange, parser::parse_source};
-use arcweft_view::{ViewLocalPartName, ViewPartName};
+#[cfg(test)]
+use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::{
+    ast::common::TextRange,
+    parser::{ParseOptions, parse_document_with_source},
+};
+use arcweft_source::SourceSpan;
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use lsp_types::{CompletionItem, CompletionItemKind, Documentation};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ViewPartMetadataIndex {
@@ -24,11 +31,11 @@ struct LocalPartMetadata {
     owner: CheckedViewId,
     owner_range: TextRange,
     id: CheckedViewPartId,
-    name: ViewLocalPartName,
+    name: ViewPartLocalName,
     target_kind: CheckedViewPartTargetKind,
     occurrence: CheckedViewPartOccurrenceShape,
-    definition: TextRange,
-    references: Vec<TextRange>,
+    definition: SourceSpan,
+    references: Vec<SourceSpan>,
     exported_as: Option<ViewPartName>,
 }
 
@@ -37,9 +44,9 @@ struct ExportedPartMetadata {
     owner: CheckedViewId,
     owner_range: TextRange,
     name: ViewPartName,
-    local_name: ViewLocalPartName,
-    definition: TextRange,
-    references: Vec<TextRange>,
+    local_name: ViewPartLocalName,
+    definition: SourceSpan,
+    references: Vec<SourceSpan>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,11 +63,23 @@ enum ViewPartSymbol {
 
 impl ViewPartMetadataIndex {
     pub(crate) fn for_document(profile: &LspProfile, document: &DocumentSnapshot) -> Option<Self> {
-        Self::from_source(profile, document.text())
+        let parsed = parse_document_with_source(
+            Arc::new(document.source_document().clone()),
+            ParseOptions::default(),
+        );
+        Self::from_parsed(profile, &parsed)
     }
 
+    #[cfg(test)]
     fn from_source(profile: &LspProfile, source: &str) -> Option<Self> {
         let parsed = parse_source(source);
+        Self::from_parsed(profile, &parsed)
+    }
+
+    fn from_parsed(
+        profile: &LspProfile,
+        parsed: &arcweft_lang_syntax::source::ParsedSource,
+    ) -> Option<Self> {
         let hir = lower_to_hir(parsed.typed_tree()).ok()?;
         let report = analyze_types(&hir, &profile.typecheck_env());
         Some(Self::from_catalog(&report.view_part_catalog))
@@ -75,9 +94,9 @@ impl ViewPartMetadataIndex {
                     .exports()
                     .iter()
                     .find(|export| export.target().part() == local.id());
-                let mut references = vec![local.name_range()];
+                let mut references = vec![local.operand_span().clone()];
                 if let Some(export) = matching_export {
-                    references.push(export.source().local_range());
+                    references.push(export.source().local_operand_span().clone());
                 }
                 locals.push(LocalPartMetadata {
                     owner: owner.id().clone(),
@@ -86,7 +105,7 @@ impl ViewPartMetadataIndex {
                     name: local.name().clone(),
                     target_kind: local.target_kind(),
                     occurrence: local.occurrence(),
-                    definition: local.name_range(),
+                    definition: local.operand_span().clone(),
                     references,
                     exported_as: matching_export.map(|export| export.public_name().clone()),
                 });
@@ -96,8 +115,8 @@ impl ViewPartMetadataIndex {
                 owner_range: owner.range(),
                 name: export.public_name().clone(),
                 local_name: export.local_name().clone(),
-                definition: export.source().public_range(),
-                references: vec![export.source().public_range()],
+                definition: export.source().public_operand_span().clone(),
+                references: vec![export.source().public_operand_span().clone()],
             }));
         }
         Self { locals, exports }
@@ -117,11 +136,11 @@ impl ViewPartMetadataIndex {
                 };
                 let export = local.exported_as.as_ref().map_or_else(
                     || "private; not exported".to_owned(),
-                    |name| format!("exported as `{}`", name.public_id()),
+                    |name| format!("exported as `{}`", name.as_public_id()),
                 );
                 Some(format!(
                     "private View part `{}`\n\nOwner: `{}`  \nTarget: {}  \nOccurrence: {cardinality}  \n{export}",
-                    local.name.public_id(),
+                    local.name.as_public_id(),
                     owner.public_id(),
                     target_kind_label(local.target_kind),
                 ))
@@ -130,9 +149,9 @@ impl ViewPartMetadataIndex {
                 let export = self.exported(&owner, &name)?;
                 Some(format!(
                     "exported View part `{}`\n\nOwner: `{}`  \nPrivate target: `{}`  \nBoundary: direct caller only; no re-export or private traversal",
-                    export.name.public_id(),
+                    export.name.as_public_id(),
                     owner.public_id(),
-                    export.local_name.public_id(),
+                    export.local_name.as_public_id(),
                 ))
             }
         }
@@ -142,11 +161,11 @@ impl ViewPartMetadataIndex {
         match self.symbol_at(offset) {
             Some(ViewPartSymbol::Local { owner, id }) => self
                 .local(&owner, id)
-                .map(|local| vec![local.definition])
+                .map(|local| vec![source_text_range(&local.definition)])
                 .unwrap_or_default(),
             Some(ViewPartSymbol::Exported { owner, name }) => self
                 .exported(&owner, &name)
-                .map(|export| vec![export.definition])
+                .map(|export| vec![source_text_range(&export.definition)])
                 .unwrap_or_default(),
             None => Vec::new(),
         }
@@ -156,11 +175,11 @@ impl ViewPartMetadataIndex {
         match self.symbol_at(offset) {
             Some(ViewPartSymbol::Local { owner, id }) => self
                 .local(&owner, id)
-                .map(|local| local.references.clone())
+                .map(|local| local.references.iter().map(source_text_range).collect())
                 .unwrap_or_default(),
             Some(ViewPartSymbol::Exported { owner, name }) => self
                 .exported(&owner, &name)
-                .map(|export| export.references.clone())
+                .map(|export| export.references.iter().map(source_text_range).collect())
                 .unwrap_or_default(),
             None => Vec::new(),
         }
@@ -193,9 +212,9 @@ impl ViewPartMetadataIndex {
                 .filter(|local| local.owner_range == owner_range)
                 .filter(|local| local.exported_as.is_none())
                 .filter(|local| local.target_kind != CheckedViewPartTargetKind::ViewCall)
-                .filter(|local| local.name.public_id().as_str().starts_with(partial))
+                .filter(|local| local.name.as_public_id().as_str().starts_with(partial))
                 .map(|local| CompletionItem {
-                    label: local.name.public_id().as_str().to_owned(),
+                    label: local.name.as_public_id().as_str().to_owned(),
                     kind: Some(CompletionItemKind::PROPERTY),
                     detail: Some(format!("private View part in {}", local.owner.public_id())),
                     documentation: Some(Documentation::String(
@@ -225,7 +244,7 @@ impl ViewPartMetadataIndex {
             local
                 .references
                 .iter()
-                .any(|range| contains(*range, offset))
+                .any(|span| contains_source_span(span, offset))
         });
         if let Some(local) = local {
             return Some(ViewPartSymbol::Local {
@@ -239,7 +258,7 @@ impl ViewPartMetadataIndex {
                 export
                     .references
                     .iter()
-                    .any(|range| contains(*range, offset))
+                    .any(|span| contains_source_span(span, offset))
             })
             .map(|export| ViewPartSymbol::Exported {
                 owner: export.owner.clone(),
@@ -275,6 +294,16 @@ fn keyword_completion(keyword: &str) -> CompletionItem {
 
 fn contains(range: TextRange, offset: usize) -> bool {
     range.start() <= offset && offset <= range.end()
+}
+
+fn contains_source_span(span: &SourceSpan, offset: usize) -> bool {
+    let range = span.range();
+    range.start() <= offset && offset <= range.end()
+}
+
+fn source_text_range(span: &SourceSpan) -> TextRange {
+    let range = span.range();
+    TextRange::new(range.start(), range.end())
 }
 
 const fn target_kind_label(kind: CheckedViewPartTargetKind) -> &'static str {

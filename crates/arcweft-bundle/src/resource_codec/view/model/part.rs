@@ -2,7 +2,7 @@
 
 use crate::resource_codec::{SourceMapSourceId, SourceRangeRef};
 use arcweft_id::{IdError, PublicId};
-use arcweft_view::{ViewLocalPartName, ViewPartName};
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Canonical product reference to one View definition.
@@ -14,7 +14,7 @@ pub struct ViewDefinitionRef(PublicId);
 #[serde(deny_unknown_fields)]
 pub struct ViewOwnedPartRef {
     pub view: ViewDefinitionRef,
-    pub part: ViewLocalPartName,
+    pub part: ViewPartLocalName,
 }
 
 /// Exact source ranges retained for one authored export declaration.
@@ -51,7 +51,7 @@ impl ViewDefinitionRef {
 }
 
 impl ViewOwnedPartRef {
-    pub const fn new(view: ViewDefinitionRef, part: ViewLocalPartName) -> Self {
+    pub const fn new(view: ViewDefinitionRef, part: ViewPartLocalName) -> Self {
         Self { view, part }
     }
 }

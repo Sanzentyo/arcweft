@@ -15,7 +15,7 @@ mod fx;
 mod part;
 
 pub use fx::{ViewFxApplication, ViewFxApplicationOrdinal};
-pub use part::{ViewPartExportDecl, ViewPartLabelSyntax, ViewPartNameSyntax};
+pub use part::{ViewPartExportDecl, ViewPartLocalNameSyntax, ViewPartModifier, ViewPartNameSyntax};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewBody {
@@ -218,7 +218,7 @@ pub enum ViewModifier {
     Style(ViewStyleModifier),
     /// Applies one typed `#[fx] fn -> Fx` call to the preceding View value.
     Fx(ViewFxApplication),
-    Part(ViewPartLabelSyntax),
+    Part(ViewPartModifier),
     Label(Expr),
     AgentTarget(EntityRefSyntax),
     Placeholder(Expr),

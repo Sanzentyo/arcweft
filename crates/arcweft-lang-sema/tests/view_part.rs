@@ -1,9 +1,10 @@
-use arcweft_lang_hir::{lower::lower_to_hir, symbol::CallablePackageId};
-use arcweft_lang_sema::{
-    canonicalization::{CanonicalizationSourceSet, SemanticDocumentId, SemanticSourceIdentity},
-    view_part::{CheckedViewPartTargetKind, ViewPartDiagnosticCode, check_view_parts},
+use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_sema::view_part::{
+    CheckedViewPartTargetKind, ViewPartDiagnosticCode, check_view_parts,
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source, parse_source};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 fn checked(
     source: &str,
@@ -14,7 +15,7 @@ fn checked(
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_to_hir(parsed.typed_tree()).unwrap();
-    check_view_parts(&hir, None)
+    check_view_parts(&hir)
 }
 
 #[test]
@@ -24,25 +25,26 @@ fn checked_view_part_catalog_separates_private_and_public_names() {
     Panel().part(header)
 }
 ";
-    let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).unwrap();
-    let package = CallablePackageId::try_new("example").unwrap();
-    let identity = SemanticSourceIdentity::from_source(
-        package.clone(),
-        SemanticDocumentId::new("file:///card.arcw"),
-        CanonicalModulePath::crate_root(),
-        source,
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("file:///card.arcw").unwrap(),
+            SourceName::path("card.arcw"),
+            source,
+        )
+        .unwrap(),
     );
-    let sources = CanonicalizationSourceSet::try_new(package, [identity.clone()]).unwrap();
-    let (catalog, diagnostics) = check_view_parts(&hir, Some(&sources));
+    let identity = document.identity().clone();
+    let parsed = parse_document_with_source(document, ParseOptions::default());
+    let hir = lower_to_hir(parsed.typed_tree()).unwrap();
+    let (catalog, diagnostics) = check_view_parts(&hir);
     assert_eq!(diagnostics, []);
 
     let owner = &catalog.owners()[0];
     let local = &owner.local_parts()[0];
     let export = &owner.exports()[0];
-    assert_eq!(local.name().public_id().as_str(), "header");
-    assert_eq!(export.public_name().public_id().as_str(), "heading");
-    assert_eq!(export.source().identity(), Some(&identity));
+    assert_eq!(local.name().as_public_id().as_str(), "header");
+    assert_eq!(export.public_name().as_public_id().as_str(), "heading");
+    assert_eq!(export.source().identity(), &identity);
     assert_eq!(local.target_kind(), CheckedViewPartTargetKind::Element);
 }
 

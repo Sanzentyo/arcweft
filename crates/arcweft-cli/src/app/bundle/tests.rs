@@ -1206,9 +1206,11 @@ pub dialogue defaults {
 #[test]
 fn authored_export_part_lowers_to_typed_product_inventory() {
     use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let source = r#"
 view Card() {
   export part title as heading
 
@@ -1218,18 +1220,27 @@ view Card() {
 flow test {
   view(@view.Card)
 }
-"#,
+"#;
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("test.arcw").expect("source identity"),
+            SourceName::path("test.arcw"),
+            source,
+        )
+        .expect("source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources_from_source(&hir, &[], "test.arcw", source)
+        .expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let [export] = program.exported_parts.as_slice() else {
         panic!("authored export must produce exactly one product record");
     };
     assert_eq!(export.target.view.public_id().as_str(), "view.Card");
-    assert_eq!(export.target.part.public_id().as_str(), "title");
-    assert_eq!(export.public_name.public_id().as_str(), "heading");
+    assert_eq!(export.target.part.as_public_id().as_str(), "title");
+    assert_eq!(export.public_name.as_public_id().as_str(), "heading");
     assert_eq!(export.source.source_id.as_str(), "test.arcw");
     assert!(export.source.declaration.start_byte < export.source.local_name.start_byte);
     assert!(export.source.local_name.end_byte < export.source.public_name.start_byte);
@@ -1249,7 +1260,7 @@ flow test {
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
         ViewProgramInstruction::EmitText { part: Some(part), .. }
-            if part.public_id().as_str() == "title"
+            if part.as_public_id().as_str() == "title"
     )));
 }
 
@@ -1332,7 +1343,7 @@ flow test {
     assert_eq!(
         speaker_selector
             .part()
-            .map(|part| part.public_id().as_str()),
+            .map(|part| part.as_public_id().as_str()),
         Some("speaker")
     );
     let [color, font_size] = showcase_rule.declarations() else {

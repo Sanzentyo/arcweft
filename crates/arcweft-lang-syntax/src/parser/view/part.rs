@@ -1,7 +1,10 @@
 //! Parser and recovery for leading View-part export declarations.
 
 use crate::ast::common::TextRange;
-use crate::ast::view::{ViewPartExportDecl, ViewPartLabelSyntax, ViewPartNameSyntax};
+use crate::ast::view::{
+    ViewPartExportDecl, ViewPartLocalNameSyntax, ViewPartModifier, ViewPartNameSyntax,
+};
+use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
 use super::super::headers::simple_error;
 use super::super::recovery::ParseError;
@@ -16,17 +19,21 @@ struct ParsedExportNames<'a> {
 }
 
 pub(super) fn is_export_candidate(line: &str) -> bool {
-    line == "export"
-        || line.starts_with("export ")
-        || line.starts_with("exportparts")
-        || line.starts_with("export_part")
+    line == "export" || line.starts_with("export ")
 }
 
 pub(super) fn parse_export(
     line: &ViewSourceLine,
+    document: &SourceDocument,
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewPartExportDecl> {
-    let tokens = tokens(&line.text, line.start);
+    let declaration_text = line
+        .text
+        .split_once("//")
+        .map_or(line.text.as_str(), |(declaration, _)| declaration)
+        .trim_end();
+    let declaration_end = line.start.saturating_add(declaration_text.len());
+    let tokens = tokens(declaration_text, line.start);
     let token = |index: usize| tokens.get(index).copied();
 
     if token(0).is_none_or(|(text, _)| text != "export")
@@ -34,18 +41,18 @@ pub(super) fn parse_export(
     {
         errors.push(export_error(
             TextRange::new(line.start, line.end),
-            "view::unsupported_export_spelling",
-            "View part exports use `export part local as public`",
-            "export part local as public",
+            "view::export_part_missing_part",
+            "View part export needs `part` before its private local target",
+            "part local as public",
         ));
         return None;
     }
 
-    let names = parse_export_names(&tokens, line.end, errors)?;
+    let names = parse_export_names(&tokens, declaration_end, errors)?;
     if let Some((trailing, trailing_range)) = token(5) {
         let duplicate_as = trailing == "as" || tokens.iter().skip(5).any(|(text, _)| *text == "as");
         errors.push(export_error(
-            TextRange::new(trailing_range.start(), line.end),
+            TextRange::new(trailing_range.start(), declaration_end),
             if duplicate_as {
                 "view::export_part_duplicate_as"
             } else {
@@ -62,12 +69,21 @@ pub(super) fn parse_export(
     }
 
     Some(ViewPartExportDecl::new(
-        ViewPartNameSyntax::new(names.local.to_owned(), names.local_range),
-        ViewPartNameSyntax::new(names.public.to_owned(), names.public_range),
-        token(0).expect("checked above").1,
-        token(1).expect("checked above").1,
-        names.as_range,
-        TextRange::new(line.start, line.end),
+        ViewPartLocalNameSyntax::new(
+            names.local.to_owned(),
+            source_span(document, names.local_range),
+        ),
+        ViewPartNameSyntax::new(
+            names.public.to_owned(),
+            source_span(document, names.public_range),
+        ),
+        source_span(
+            document,
+            TextRange::new(line.start, names.public_range.end()),
+        ),
+        source_span(document, token(0).expect("checked above").1),
+        source_span(document, token(1).expect("checked above").1),
+        source_span(document, names.as_range),
     ))
 }
 
@@ -166,8 +182,9 @@ pub(super) fn parse_label(
     value: &str,
     line: &str,
     line_range: TextRange,
+    document: &SourceDocument,
     errors: &mut Vec<ParseError>,
-) -> Option<ViewPartLabelSyntax> {
+) -> Option<ViewPartModifier> {
     let value = value.trim();
     let value_offset = line.find(value).unwrap_or_default();
     let value_range = TextRange::new(
@@ -215,10 +232,16 @@ pub(super) fn parse_label(
         );
         return None;
     }
-    Some(ViewPartLabelSyntax::new(
-        ViewPartNameSyntax::new(value.to_owned(), value_range),
-        line_range,
+    Some(ViewPartModifier::new(
+        ViewPartLocalNameSyntax::new(value.to_owned(), source_span(document, value_range)),
+        source_span(document, line_range),
     ))
+}
+
+fn source_span(document: &SourceDocument, range: TextRange) -> SourceSpan {
+    document
+        .span(SourceRange::new(range.start(), range.end()))
+        .expect("parser ranges are UTF-8 boundaries within the owning source document")
 }
 
 fn tokens(line: &str, base: usize) -> Vec<(&str, TextRange)> {
@@ -255,12 +278,16 @@ fn tokens(line: &str, base: usize) -> Vec<(&str, TextRange)> {
 
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
-        && !matches!(name.chars().next(), Some('@' | '.' | '"' | '\''))
+        && name.len() <= 255
+        && !name.contains("::")
+        && name.split('.').count() <= 32
         && name.split('.').all(|segment| {
             let mut characters = segment.chars();
             characters
                 .next()
                 .is_some_and(|first| first == '_' || first.is_alphabetic())
-                && characters.all(|character| character == '_' || character.is_alphanumeric())
+                && characters.all(|character| {
+                    character == '_' || character == '-' || character.is_alphanumeric()
+                })
         })
 }

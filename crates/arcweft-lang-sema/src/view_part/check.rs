@@ -5,10 +5,8 @@ use arcweft_lang_hir::{
     model::HirModule,
     view_part::{HirViewPartOwner, HirViewPartTargetKind},
 };
-use arcweft_lang_syntax::ast::{common::TextRange, module_path::CanonicalModulePath};
-use arcweft_view::{ViewLocalPartName, ViewPartName};
-
-use crate::canonicalization::{CanonicalizationSourceSet, SemanticSourceIdentity};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_view::{ViewPartLocalName, ViewPartName};
 
 use super::{
     CheckedViewId, CheckedViewLocalPart, CheckedViewPartCatalog, CheckedViewPartExport,
@@ -18,22 +16,18 @@ use super::{
 };
 
 /// Checks private/public View-part namespaces without source I/O.
-pub fn check_view_parts(
-    module: &HirModule,
-    sources: Option<&CanonicalizationSourceSet>,
-) -> (CheckedViewPartCatalog, Vec<ViewPartDiagnostic>) {
+pub fn check_view_parts(module: &HirModule) -> (CheckedViewPartCatalog, Vec<ViewPartDiagnostic>) {
     let mut diagnostics = Vec::new();
     let owners = module
         .view_parts()
         .iter()
-        .filter_map(|owner| check_owner(owner, sources, &mut diagnostics))
+        .filter_map(|owner| check_owner(owner, &mut diagnostics))
         .collect();
     (CheckedViewPartCatalog::new(owners), diagnostics)
 }
 
 fn check_owner(
     owner: &HirViewPartOwner,
-    sources: Option<&CanonicalizationSourceSet>,
     diagnostics: &mut Vec<ViewPartDiagnostic>,
 ) -> Option<CheckedViewPartOwner> {
     let owner_text = if owner.view().body().starts_with("view.") {
@@ -41,38 +35,36 @@ fn check_owner(
     } else {
         format!("view.{}", owner.view().body())
     };
-    let owner_range = owner.local_parts().first().map_or_else(
-        || TextRange::new(0, 0),
-        arcweft_lang_hir::view_part::HirViewLocalPart::target_range,
-    );
+    let owner_evidence = owner
+        .local_parts()
+        .first()
+        .map(|part| part.operand_span().clone())
+        .or_else(|| {
+            owner
+                .exports()
+                .first()
+                .map(|export| export.declaration_span().clone())
+        })
+        .expect("HIR View-part owners contain at least one source-bound record");
     let owner_id = PublicId::try_new(owner_text.clone()).map_or_else(
         |_| {
             diagnostics.push(ViewPartDiagnostic::new(
                 ViewPartDiagnosticCode::InvalidOwner,
                 format!("View `{owner_text}` is not a valid checked public identity"),
-                owner_range,
+                owner_evidence,
                 None,
             ));
             None
         },
         |id| Some(CheckedViewId::from_public_id(id)),
     )?;
-    let source = source_identity(owner, sources);
+    let source = owner.source().clone();
     let module = owner
         .module()
         .cloned()
         .unwrap_or_else(CanonicalModulePath::crate_root);
-    if sources.is_some() && source.is_none() && !owner.exports().is_empty() {
-        diagnostics.push(ViewPartDiagnostic::new(
-            ViewPartDiagnosticCode::MissingSourceIdentity,
-            format!("View `{owner_text}` has exports but no exact source identity"),
-            owner.exports()[0].declaration_range(),
-            Some(owner_id.clone()),
-        ));
-    }
-
     let local_parts = check_local_parts(owner, &owner_id, diagnostics);
-    let exports = check_exports(owner, &owner_id, source.as_ref(), &local_parts, diagnostics);
+    let exports = check_exports(owner, &owner_id, &local_parts, diagnostics);
     Some(CheckedViewPartOwner::new(
         owner_id,
         module,
@@ -84,17 +76,6 @@ fn check_owner(
     ))
 }
 
-fn source_identity(
-    owner: &HirViewPartOwner,
-    sources: Option<&CanonicalizationSourceSet>,
-) -> Option<SemanticSourceIdentity> {
-    let module = owner
-        .module()
-        .cloned()
-        .unwrap_or_else(CanonicalModulePath::crate_root);
-    sources?.source(&module).cloned()
-}
-
 fn check_local_parts(
     owner: &HirViewPartOwner,
     owner_id: &CheckedViewId,
@@ -102,11 +83,11 @@ fn check_local_parts(
 ) -> Vec<CheckedViewLocalPart> {
     let mut parts = BTreeMap::new();
     for part in owner.local_parts() {
-        let Ok(name) = ViewLocalPartName::try_new(part.name().to_owned()) else {
+        let Ok(name) = ViewPartLocalName::try_new(part.name().to_owned()) else {
             diagnostics.push(ViewPartDiagnostic::new(
                 ViewPartDiagnosticCode::InvalidLocalName,
                 format!("`{}` is not a valid private View part name", part.name()),
-                part.name_range(),
+                part.operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -118,7 +99,7 @@ fn check_local_parts(
                     "private View part `{}` is declared more than once",
                     part.name()
                 ),
-                part.name_range(),
+                part.operand_span().clone(),
                 Some(owner_id.clone()),
             ));
         }
@@ -131,7 +112,7 @@ fn check_local_parts(
                 diagnostics.push(ViewPartDiagnostic::new(
                     ViewPartDiagnosticCode::PartIdOverflow,
                     "View has more private parts than the checked u32 identity space",
-                    part.name_range(),
+                    part.operand_span().clone(),
                     Some(owner_id.clone()),
                 ));
                 return None;
@@ -144,8 +125,8 @@ fn check_local_parts(
                     part.occurrence().can_be_absent(),
                     part.occurrence().can_repeat(),
                 ),
-                part.name_range(),
-                part.target_range(),
+                part.modifier_span().clone(),
+                part.operand_span().clone(),
             ))
         })
         .collect()
@@ -154,7 +135,6 @@ fn check_local_parts(
 fn check_exports(
     owner: &HirViewPartOwner,
     owner_id: &CheckedViewId,
-    source: Option<&SemanticSourceIdentity>,
     local_parts: &[CheckedViewLocalPart],
     diagnostics: &mut Vec<ViewPartDiagnostic>,
 ) -> Vec<CheckedViewPartExport> {
@@ -166,14 +146,14 @@ fn check_exports(
     let mut public_names = BTreeSet::new();
     let mut exports = Vec::new();
     for export in owner.exports() {
-        let Ok(local_name) = ViewLocalPartName::try_new(export.local_name().to_owned()) else {
+        let Ok(local_name) = ViewPartLocalName::try_new(export.local_name().to_owned()) else {
             diagnostics.push(ViewPartDiagnostic::new(
                 ViewPartDiagnosticCode::InvalidLocalName,
                 format!(
                     "`{}` is not a valid private View part name",
                     export.local_name()
                 ),
-                export.local_range(),
+                export.local_operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -185,7 +165,7 @@ fn check_exports(
                     "`{}` is not a valid public View part name",
                     export.public_name()
                 ),
-                export.public_range(),
+                export.public_operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -197,7 +177,7 @@ fn check_exports(
                     "export references missing private View part `{}`",
                     export.local_name()
                 ),
-                export.local_range(),
+                export.local_operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -209,7 +189,7 @@ fn check_exports(
                     "nested View call part `{}` cannot be re-exported",
                     export.local_name()
                 ),
-                export.local_range(),
+                export.local_operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -221,7 +201,7 @@ fn check_exports(
                     "private View part `{}` is exported more than once",
                     export.local_name()
                 ),
-                export.local_range(),
+                export.local_operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -233,7 +213,7 @@ fn check_exports(
                     "public View part `{}` is exported more than once",
                     export.public_name()
                 ),
-                export.public_range(),
+                export.public_operand_span().clone(),
                 Some(owner_id.clone()),
             ));
             continue;
@@ -244,10 +224,9 @@ fn check_exports(
             local_name,
             public_name,
             CheckedViewPartExportSource::new(
-                source.cloned(),
-                export.declaration_range(),
-                export.local_range(),
-                export.public_range(),
+                export.declaration_span().clone(),
+                export.local_operand_span().clone(),
+                export.public_operand_span().clone(),
             ),
         ));
     }
