@@ -2,6 +2,7 @@
 
 pub mod archive;
 pub mod signing_policy;
+pub mod verification_trust;
 
 use crate::container::{BundleDigest, BundleKind, BundleView, ReadBudget};
 use std::collections::BTreeSet;
@@ -81,33 +82,25 @@ pub struct ReleaseNetworkFetchPolicy {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReleaseSignaturePolicy {
-    #[serde(default)]
     pub require_awfb_signature: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub minimum_signature_bytes: Option<u64>,
-    #[serde(
-        default = "default_release_signature_algorithms",
-        skip_serializing_if = "is_default_release_signature_algorithms"
-    )]
     pub allowed_algorithms: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trusted_signer_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trusted_public_keys: Vec<ReleaseTrustedPublicKey>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReleaseTrustedPublicKey {
     pub signer_id: String,
-    #[serde(default = "default_release_signature_algorithm")]
     pub algorithm: String,
     pub public_key: String,
-    #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub valid_from_key_epoch: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub valid_until_key_epoch: Option<u64>,
-    #[serde(default, skip_serializing_if = "is_false_bool")]
     pub revoked: bool,
 }
 
@@ -703,21 +696,6 @@ impl ReleaseSignaturePolicy {
                 "minimum_signature_bytes must be greater than zero when set".to_owned(),
             ));
         }
-        if self.minimum_signature_bytes.is_some() && !self.require_awfb_signature {
-            return Err(ReleaseManifestError::InvalidSignaturePolicy(
-                "minimum_signature_bytes requires require_awfb_signature".to_owned(),
-            ));
-        }
-        if !self.trusted_signer_ids.is_empty() && !self.require_awfb_signature {
-            return Err(ReleaseManifestError::InvalidSignaturePolicy(
-                "trusted_signer_ids requires require_awfb_signature".to_owned(),
-            ));
-        }
-        if !self.trusted_public_keys.is_empty() && !self.require_awfb_signature {
-            return Err(ReleaseManifestError::InvalidSignaturePolicy(
-                "trusted_public_keys requires require_awfb_signature".to_owned(),
-            ));
-        }
         let mut algorithms = BTreeSet::new();
         for algorithm in &self.allowed_algorithms {
             if algorithm.is_empty() {
@@ -1138,16 +1116,8 @@ const fn default_candidate_byte_budget() -> u64 {
     u64::MAX
 }
 
-fn default_release_signature_algorithm() -> String {
-    RELEASE_SIGNATURE_ALGORITHM_ED25519_V1.to_owned()
-}
-
 fn default_release_signature_algorithms() -> Vec<String> {
     vec![RELEASE_SIGNATURE_ALGORITHM_ED25519_V1.to_owned()]
-}
-
-fn is_default_release_signature_algorithms(value: &[String]) -> bool {
-    value.len() == 1 && value[0] == RELEASE_SIGNATURE_ALGORITHM_ED25519_V1
 }
 
 fn default_release_user_agent() -> String {
@@ -1973,7 +1943,7 @@ mod tests {
     }
 
     #[test]
-    fn release_manifest_rejects_invalid_signature_policy() {
+    fn release_manifest_allows_signature_policy_for_non_awfb_subjects() {
         let manifest = ReleaseManifest {
             schema_version: RELEASE_MANIFEST_SCHEMA_VERSION,
             fetch_policy: ReleaseFetchPolicy::default(),
@@ -1987,14 +1957,9 @@ mod tests {
             bundles: Vec::new(),
         };
 
-        let error = manifest
+        manifest
             .to_json_bytes()
-            .expect_err("minimum without required signature rejects");
-
-        assert!(matches!(
-            error,
-            ReleaseManifestError::InvalidSignaturePolicy(_)
-        ));
+            .expect("signature constraints may serve non-AWFB signed subjects");
     }
 
     #[test]

@@ -43,8 +43,8 @@ pub enum SigningSubjectKind {
 
 /// Key epoch acceptance window. `max` is exclusive when present.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct KeyEpochPolicy {
-    #[serde(default)]
     pub min: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max: Option<u64>,
@@ -55,6 +55,7 @@ pub struct KeyEpochPolicy {
 /// Release adapters obtain these floors from operator-owned authority input;
 /// project source, manifests, and evaluated bundles cannot lower them.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerificationTrustGenerationPolicy {
     pub minimum_policy_generation: u64,
     pub minimum_revocation_generation: u64,
@@ -63,17 +64,15 @@ pub struct VerificationTrustGenerationPolicy {
 /// Typed release signing policy. The policy says which subject families require
 /// signatures and which inspection shortcuts are explicitly allowed.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SigningPolicy {
     pub schema_version: u32,
     pub mode: SigningPolicyMode,
     pub channel: ReleaseChannel,
     pub key_epoch: KeyEpochPolicy,
     pub verification_trust: VerificationTrustGenerationPolicy,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub required_subjects: BTreeSet<SigningSubjectKind>,
-    #[serde(default, skip_serializing_if = "is_false")]
     pub allow_unsigned_local_artifacts: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
     pub allow_metadata_only_external_payloads: bool,
 }
 
@@ -115,6 +114,7 @@ pub struct SigningInspectionResult {
 
 /// Deterministic transcript input for release signatures.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SigningDigestTranscript {
     pub schema_version: u32,
     pub subject: SigningSubjectKind,
@@ -726,11 +726,6 @@ fn put_optional_artifact_identity(out: &mut Vec<u8>, value: Option<ArtifactIdent
     } else {
         out.push(0);
     }
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
-const fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 #[cfg(test)]
