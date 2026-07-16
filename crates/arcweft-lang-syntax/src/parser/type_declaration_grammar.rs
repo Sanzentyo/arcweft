@@ -1,0 +1,354 @@
+//! Private nominal-type declaration grammar over the shared document cursor.
+
+use arcweft_source::SourceRange;
+
+use super::declaration::{
+    emit_generic_parameters, emit_name, emit_outer_prefixes, emit_visibility, emit_where_clause,
+};
+use super::document::ShadowDocumentParser;
+use super::expression::emit_expression;
+use super::lexer::LexToken;
+use super::shadow_recovery::{
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
+    find_matching_close, find_top_level_boundary, first_significant, token_count, token_text,
+    trimmed_end,
+};
+use super::type_ref::emit_type;
+use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+
+pub(super) fn emit_declaration(
+    source: &str,
+    tokens: &[LexToken],
+    kind: SyntaxKind,
+    role: SyntaxRole,
+    events: &mut Vec<SyntaxEvent>,
+) {
+    debug_assert!(matches!(
+        kind,
+        SyntaxKind::EnumItem | SyntaxKind::StructItem | SyntaxKind::TypeAliasItem
+    ));
+    let mut parser = ShadowDocumentParser::new(source, tokens, events);
+    parser.start(kind, role);
+    emit_outer_prefixes(&mut parser);
+    parser.bump_trivia();
+    emit_visibility(&mut parser);
+    parser.bump_trivia();
+
+    let keyword = match kind {
+        SyntaxKind::EnumItem => "enum",
+        SyntaxKind::StructItem => "struct",
+        SyntaxKind::TypeAliasItem => "type",
+        _ => unreachable!("validated nominal declaration kind"),
+    };
+    if parser.at(keyword) {
+        parser.bump();
+    }
+    parser.bump_trivia();
+    emit_name(&mut parser, keyword);
+    parser.bump_trivia();
+
+    if parser.at("<") {
+        emit_generic_parameters(&mut parser);
+        parser.bump_trivia();
+    }
+
+    if kind == SyntaxKind::TypeAliasItem {
+        emit_type_alias_tail(&mut parser);
+    } else {
+        if parser.at("where") {
+            emit_where_clause(&mut parser);
+            parser.bump_trivia();
+        }
+        emit_nominal_body(&mut parser, kind);
+    }
+
+    while parser.bump().is_some() {}
+    parser.finish();
+}
+
+fn emit_type_alias_tail(parser: &mut ShadowDocumentParser<'_, '_>) {
+    if parser.at("=") {
+        parser.bump();
+        parser.bump_trivia();
+    } else {
+        let at = parser.current_offset();
+        parser.push(SyntaxEvent::MissingToken {
+            expected: expected(SyntaxKind::PunctuationToken),
+            at,
+        });
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.type_alias.missing_equals",
+            SourceRange::new(at, at),
+            "type alias requires `=` before its target type",
+        )));
+    }
+
+    let target_end = find_top_level_boundary(parser, parser.cursor(), &["where"]);
+    emit_type(parser, target_end, SyntaxRole::Type);
+    bump_until(parser, target_end);
+    parser.bump_trivia();
+    emit_alias_where_clauses(parser);
+}
+
+fn emit_alias_where_clauses(parser: &mut ShadowDocumentParser<'_, '_>) {
+    if !parser.at("where") {
+        return;
+    }
+
+    parser.start(SyntaxKind::WhereClause, SyntaxRole::WhereClause);
+    parser.start(SyntaxKind::WherePredicateList, SyntaxRole::Element(0));
+    let mut ordinal = 0_u16;
+    while parser.at("where") {
+        parser.start(
+            SyntaxKind::WherePredicate,
+            SyntaxRole::WherePredicate(ordinal),
+        );
+        parser.bump();
+        parser.bump_trivia();
+        let end = next_alias_where(parser, parser.cursor());
+        emit_expression(parser, end, SyntaxRole::Condition);
+        bump_until(parser, end);
+        parser.finish();
+        ordinal = ordinal.saturating_add(1);
+        parser.bump_trivia();
+    }
+    parser.finish();
+    parser.finish();
+}
+
+fn next_alias_where(parser: &ShadowDocumentParser<'_, '_>, start: usize) -> usize {
+    let mut depth = 0_usize;
+    let mut index = start;
+    while let Some(token) = parser.token_at(index) {
+        let text = parser.text_of(token);
+        if depth == 0 && text == "where" {
+            return index;
+        }
+        match text {
+            "(" | "[" | "{" | "<" => depth += 1,
+            ")" | "]" | "}" | ">" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        index += 1;
+    }
+    index
+}
+
+fn emit_nominal_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind) {
+    if !parser.at("{") {
+        let at = parser.current_offset();
+        parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.nominal.missing_body",
+            SourceRange::new(at, at),
+            "nominal type declaration requires a braced body",
+        )));
+        return;
+    }
+
+    parser.start(SyntaxKind::DelimitedGroup, SyntaxRole::Body);
+    emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
+    let end = token_count(parser);
+    let close = find_matching_close(parser, parser.cursor(), "{").unwrap_or(end);
+    parser.start(SyntaxKind::FieldList, SyntaxRole::Element(0));
+    emit_fields(parser, close, item_kind);
+    bump_until(parser, close);
+    parser.finish();
+    if parser.at("}") {
+        emit_close_delimiter(
+            parser,
+            SyntaxKind::CloseBraceNode,
+            "}",
+            "syntax.nominal.missing_body_close",
+        );
+    } else {
+        emit_missing_delimiter(
+            parser,
+            SyntaxKind::CloseBraceNode,
+            SyntaxRole::CloseDelimiter,
+        );
+        let at = parser.current_offset();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.nominal.missing_body_close",
+            SourceRange::new(at, at),
+            "missing closing `}` for nominal type declaration",
+        )));
+    }
+    parser.finish();
+}
+
+fn emit_fields(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, item_kind: SyntaxKind) {
+    let mut ordinal = 0_u16;
+    while parser.cursor() < close {
+        emit_outer_prefixes(parser);
+        parser.bump_trivia();
+        if parser.cursor() >= close {
+            break;
+        }
+        if parser.at(",") {
+            parser.bump();
+            continue;
+        }
+
+        let end = field_boundary(parser, parser.cursor(), close);
+        if item_kind == SyntaxKind::StructItem {
+            emit_named_field(parser, end, ordinal);
+        } else {
+            emit_enum_variant(parser, end, ordinal);
+        }
+        bump_until(parser, end);
+        if parser.at(",") {
+            parser.bump();
+        }
+        ordinal = ordinal.saturating_add(1);
+    }
+}
+
+fn emit_enum_variant(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+    parser.start(SyntaxKind::RecordField, SyntaxRole::Field(ordinal));
+    let significant_end = trimmed_end(parser, parser.cursor(), end);
+    let Some(name) = first_significant(parser, parser.cursor(), significant_end) else {
+        emit_missing_field_name(parser, "enum variant requires an ordinary name");
+        parser.finish();
+        return;
+    };
+    bump_until(parser, name);
+    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
+        parser.bump();
+        parser.finish();
+    } else {
+        emit_missing_field_name(parser, "enum variant requires an ordinary name");
+    }
+    parser.bump_trivia();
+
+    if parser.cursor() < significant_end {
+        if parser.at("{") {
+            emit_record_payload(parser, significant_end);
+        } else {
+            emit_type(parser, significant_end, SyntaxRole::Type);
+        }
+    }
+    bump_until(parser, significant_end);
+    parser.finish();
+}
+
+fn emit_record_payload(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+    parser.start(SyntaxKind::DelimitedGroup, SyntaxRole::Type);
+    emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
+    let close = find_matching_close(parser, parser.cursor(), "{")
+        .unwrap_or(end)
+        .min(end);
+    parser.start(SyntaxKind::FieldList, SyntaxRole::Element(0));
+    let mut ordinal = 0_u16;
+    while parser.cursor() < close {
+        parser.bump_trivia();
+        if parser.cursor() >= close {
+            break;
+        }
+        if parser.at(",") {
+            parser.bump();
+            continue;
+        }
+        let field_end = field_boundary(parser, parser.cursor(), close);
+        emit_named_field(parser, field_end, ordinal);
+        bump_until(parser, field_end);
+        if parser.at(",") {
+            parser.bump();
+        }
+        ordinal = ordinal.saturating_add(1);
+    }
+    bump_until(parser, close);
+    parser.finish();
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseBraceNode,
+        "}",
+        "syntax.enum.missing_payload_close",
+    );
+    parser.finish();
+}
+
+fn emit_named_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+    parser.start(SyntaxKind::RecordField, SyntaxRole::Field(ordinal));
+    let significant_end = trimmed_end(parser, parser.cursor(), end);
+    let Some(name) = first_significant(parser, parser.cursor(), significant_end) else {
+        emit_missing_field_name(parser, "field requires an ordinary name");
+        emit_missing_field_type(parser, "field requires `: Type`");
+        parser.finish();
+        return;
+    };
+    bump_until(parser, name);
+    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
+        parser.bump();
+        parser.finish();
+    } else {
+        emit_missing_field_name(parser, "field requires an ordinary name");
+    }
+    parser.bump_trivia();
+
+    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]);
+    if colon < significant_end && token_text(parser, colon) == Some(":") {
+        bump_until(parser, colon);
+        parser.bump();
+        parser.bump_trivia();
+        emit_type(parser, significant_end, SyntaxRole::Type);
+    } else {
+        emit_missing_field_type(parser, "field requires `: Type`");
+        if parser.cursor() < significant_end {
+            parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+            bump_until(parser, significant_end);
+            parser.finish();
+        }
+    }
+    bump_until(parser, significant_end);
+    parser.finish();
+}
+
+fn emit_missing_field_name(parser: &mut ShadowDocumentParser<'_, '_>, message: &'static str) {
+    let at = parser.current_offset();
+    parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
+    parser.push(SyntaxEvent::MissingToken {
+        expected: expected(SyntaxKind::IdentifierToken),
+        at,
+    });
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.nominal.missing_field_name",
+        SourceRange::new(at, at),
+        message,
+    )));
+}
+
+fn emit_missing_field_type(parser: &mut ShadowDocumentParser<'_, '_>, message: &'static str) {
+    let at = parser.current_offset();
+    parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.nominal.missing_field_type",
+        SourceRange::new(at, at),
+        message,
+    )));
+}
+
+fn field_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+    let mut depth = 0_usize;
+    for index in start..end {
+        let Some(token) = parser.token_at(index) else {
+            return index;
+        };
+        let text = parser.text_of(token);
+        if depth == 0 && (text == "," || token.kind() == SyntaxKind::NewlineToken) {
+            return index;
+        }
+        match text {
+            "(" | "[" | "{" | "<" => depth += 1,
+            ")" | "]" | "}" | ">" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    end
+}

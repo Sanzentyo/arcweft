@@ -175,7 +175,7 @@ fn emit_logical_lines(
         if let Some((declaration_line, kind)) =
             structured_declaration_after_outer_prefixes(source, tokens, &lines, line)
         {
-            let last = declaration_group_end(source, tokens, &lines, declaration_line);
+            let last = declaration_group_end(source, tokens, &lines, declaration_line, kind);
             let grouped = &tokens[lines[line].start..lines[last].end];
             emit_declaration_item(source, grouped, kind, ordinal, events);
             line = last + 1;
@@ -211,7 +211,12 @@ fn structured_declaration_after_outer_prefixes(
     let kind = classify_top_level_item(source, &tokens[range.start..range.end])?;
     matches!(
         kind,
-        SyntaxKind::FunctionItem | SyntaxKind::PredicateItem | SyntaxKind::ProofItem
+        SyntaxKind::FunctionItem
+            | SyntaxKind::PredicateItem
+            | SyntaxKind::ProofItem
+            | SyntaxKind::EnumItem
+            | SyntaxKind::StructItem
+            | SyntaxKind::TypeAliasItem
     )
     .then_some((declaration, kind))
 }
@@ -310,18 +315,20 @@ fn declaration_group_end(
     tokens: &[LexToken],
     lines: &[LogicalTokenRange],
     first: usize,
+    kind: SyntaxKind,
 ) -> usize {
     let mut last = first;
     loop {
         let grouped = &tokens[lines[first].start..lines[last].end];
-        if declaration_has_body(source, grouped) {
+        if kind != SyntaxKind::TypeAliasItem && declaration_has_body(source, grouped) {
             return last;
         }
         let Some(next) = lines.get(last + 1).copied() else {
             return last;
         };
         let next_tokens = &tokens[next.start..next.end];
-        if declaration_header_angle_is_open(source, grouped)
+        if (kind == SyntaxKind::TypeAliasItem && line_starts_with(source, next_tokens, "where"))
+            || declaration_header_angle_is_open(source, grouped)
             || declaration_continuation_line(source, next_tokens)
         {
             last += 1;
@@ -329,6 +336,13 @@ fn declaration_group_end(
             return last;
         }
     }
+}
+
+fn line_starts_with(source: &str, tokens: &[LexToken], spelling: &str) -> bool {
+    tokens
+        .iter()
+        .find(|token| !is_trivia_kind(token.kind))
+        .is_some_and(|token| &source[token.range.as_range()] == spelling)
 }
 
 fn declaration_has_body(source: &str, tokens: &[LexToken]) -> bool {
@@ -407,6 +421,15 @@ fn emit_declaration_item(
         ),
         SyntaxKind::PredicateItem | SyntaxKind::ProofItem => {
             super::predicate_proof::emit_declaration(
+                source,
+                tokens,
+                kind,
+                SyntaxRole::Element(ordinal),
+                events,
+            );
+        }
+        SyntaxKind::EnumItem | SyntaxKind::StructItem | SyntaxKind::TypeAliasItem => {
+            super::type_declaration_grammar::emit_declaration(
                 source,
                 tokens,
                 kind,

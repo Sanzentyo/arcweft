@@ -68,6 +68,9 @@ mod statement;
 pub mod statements;
 pub mod style;
 pub mod top_level;
+mod type_declaration_grammar;
+#[cfg(test)]
+mod type_declaration_grammar_tests;
 mod type_ref;
 pub mod view;
 use await_::{is_await_with_head, parse_await_with};
