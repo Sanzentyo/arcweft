@@ -36,6 +36,23 @@ pub enum CallableDeclarationOwner {
     Proof,
 }
 
+impl CallableDeclarationOwner {
+    /// Whether declarations of this family can become runtime call targets.
+    pub const fn is_runtime_callable(self) -> bool {
+        matches!(self, Self::Function)
+    }
+
+    /// Whether declarations of this family denote logical Boolean callables.
+    pub const fn is_logical_callable(self) -> bool {
+        matches!(self, Self::Predicate)
+    }
+
+    /// Whether declarations of this family can be invoked as proof statements.
+    pub const fn permits_proof_statement_call(self) -> bool {
+        matches!(self, Self::Proof)
+    }
+}
+
 /// One callable declaration indexed independently from every source alias.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableSymbol {
@@ -512,6 +529,21 @@ mod tests {
         assert_eq!(id.owner(), CallableDeclarationOwner::Function);
         assert_eq!(id.qualified_name(), "view.effects.notice");
         assert_eq!(id.to_string(), "opening-game::view.effects.notice");
+    }
+
+    #[test]
+    fn callable_owner_owns_runtime_logical_and_proof_call_policy() {
+        assert!(CallableDeclarationOwner::Function.is_runtime_callable());
+        assert!(!CallableDeclarationOwner::Function.is_logical_callable());
+        assert!(!CallableDeclarationOwner::Function.permits_proof_statement_call());
+
+        assert!(!CallableDeclarationOwner::Predicate.is_runtime_callable());
+        assert!(CallableDeclarationOwner::Predicate.is_logical_callable());
+        assert!(!CallableDeclarationOwner::Predicate.permits_proof_statement_call());
+
+        assert!(!CallableDeclarationOwner::Proof.is_runtime_callable());
+        assert!(!CallableDeclarationOwner::Proof.is_logical_callable());
+        assert!(CallableDeclarationOwner::Proof.permits_proof_statement_call());
     }
 
     #[test]

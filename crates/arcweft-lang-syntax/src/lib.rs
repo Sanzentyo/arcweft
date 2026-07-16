@@ -9,6 +9,7 @@ pub mod ast;
 pub mod cache_facts;
 pub mod cst;
 pub mod expr;
+mod grammar;
 pub mod incremental;
 pub mod lint;
 pub mod parser;

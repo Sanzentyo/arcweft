@@ -5,11 +5,17 @@
 pub enum SyntaxLimit {
     PrefixDepth,
     AssertionConditions,
+    PredicateParameters,
+    ProofParameters,
+    ContractClauses,
+    GenericParameters,
+    WherePredicates,
     TopLevelItems,
     Statements,
     Expressions,
     TypeNodes,
     PatternNodes,
+    IdentityBearingNodes,
     Diagnostics,
 }
 
@@ -17,11 +23,17 @@ impl SyntaxLimit {
     /// Inclusive hard maximum for the allocation family.
     pub const fn maximum(self) -> usize {
         match self {
-            Self::PrefixDepth | Self::AssertionConditions => 64,
+            Self::PrefixDepth
+            | Self::AssertionConditions
+            | Self::PredicateParameters
+            | Self::ProofParameters
+            | Self::ContractClauses => 64,
+            Self::GenericParameters | Self::WherePredicates => 256,
             Self::TopLevelItems => 16_384,
             Self::Statements => 65_536,
             Self::Expressions => 262_144,
             Self::TypeNodes | Self::PatternNodes => 131_072,
+            Self::IdentityBearingNodes => 1_048_576,
             Self::Diagnostics => 1_024,
         }
     }
@@ -35,11 +47,17 @@ mod tests {
     fn syntax_hard_limits_match_the_language_contract() {
         assert_eq!(SyntaxLimit::PrefixDepth.maximum(), 64);
         assert_eq!(SyntaxLimit::AssertionConditions.maximum(), 64);
+        assert_eq!(SyntaxLimit::PredicateParameters.maximum(), 64);
+        assert_eq!(SyntaxLimit::ProofParameters.maximum(), 64);
+        assert_eq!(SyntaxLimit::ContractClauses.maximum(), 64);
+        assert_eq!(SyntaxLimit::GenericParameters.maximum(), 256);
+        assert_eq!(SyntaxLimit::WherePredicates.maximum(), 256);
         assert_eq!(SyntaxLimit::TopLevelItems.maximum(), 16_384);
         assert_eq!(SyntaxLimit::Statements.maximum(), 65_536);
         assert_eq!(SyntaxLimit::Expressions.maximum(), 262_144);
         assert_eq!(SyntaxLimit::TypeNodes.maximum(), 131_072);
         assert_eq!(SyntaxLimit::PatternNodes.maximum(), 131_072);
+        assert_eq!(SyntaxLimit::IdentityBearingNodes.maximum(), 1_048_576);
         assert_eq!(SyntaxLimit::Diagnostics.maximum(), 1_024);
     }
 }

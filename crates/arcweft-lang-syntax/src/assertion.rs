@@ -36,6 +36,11 @@ impl AssertionMode {
         matches!(self, Self::Check)
     }
 
+    /// Whether this mode can produce a runtime assertion guard.
+    pub const fn is_runtime_capable(self) -> bool {
+        matches!(self, Self::Check | Self::Debug)
+    }
+
     /// Fact class produced by a successfully established assertion.
     pub const fn facts(self) -> AssertionFactClass {
         match self {
@@ -155,14 +160,17 @@ mod tests {
         );
         assert_eq!(AssertionMode::from_keyword("other"), None);
         assert!(!AssertionMode::Prove.has_release_runtime_instruction());
+        assert!(!AssertionMode::Prove.is_runtime_capable());
         assert_eq!(AssertionMode::Prove.facts(), AssertionFactClass::Release);
 
         assert_eq!(AssertionMode::Check.keyword(), "check");
         assert!(AssertionMode::Check.has_release_runtime_instruction());
+        assert!(AssertionMode::Check.is_runtime_capable());
         assert_eq!(AssertionMode::Check.facts(), AssertionFactClass::Release);
 
         assert_eq!(AssertionMode::Debug.keyword(), "debug");
         assert!(!AssertionMode::Debug.has_release_runtime_instruction());
+        assert!(AssertionMode::Debug.is_runtime_capable());
         assert_eq!(AssertionMode::Debug.facts(), AssertionFactClass::DebugOnly);
     }
 

@@ -178,10 +178,24 @@ pub struct LocalGeneration(NonZeroU32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntheticRole {
     ImplicitUnitTail,
+    PredicateBoolReturn,
+    ProofUnitReturn,
     ElidedRegion,
     RecoveryOperand,
     PostconditionResult,
     DesugaredTemporary,
+    MissingRequiredTail,
+    DestructuredBinding,
+    ClosureEnvironment,
+    ClosureCapture,
+    ContractRequiresScope,
+    ContractEnsuresScope,
+    ForIterator,
+    ForNextValue,
+    IfLetScrutinee,
+    WhileLetScrutinee,
+    MatchScrutinee,
+    PatternRest,
 }
 
 impl SyntheticRole {
@@ -189,10 +203,24 @@ impl SyntheticRole {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::ImplicitUnitTail => "implicit_unit_tail",
+            Self::PredicateBoolReturn => "predicate_bool_return",
+            Self::ProofUnitReturn => "proof_unit_return",
             Self::ElidedRegion => "elided_region",
             Self::RecoveryOperand => "recovery_operand",
             Self::PostconditionResult => "postcondition_result",
             Self::DesugaredTemporary => "desugared_temporary",
+            Self::MissingRequiredTail => "missing_required_tail",
+            Self::DestructuredBinding => "destructured_binding",
+            Self::ClosureEnvironment => "closure_environment",
+            Self::ClosureCapture => "closure_capture",
+            Self::ContractRequiresScope => "contract_requires_scope",
+            Self::ContractEnsuresScope => "contract_ensures_scope",
+            Self::ForIterator => "for_iterator",
+            Self::ForNextValue => "for_next_value",
+            Self::IfLetScrutinee => "if_let_scrutinee",
+            Self::WhileLetScrutinee => "while_let_scrutinee",
+            Self::MatchScrutinee => "match_scrutinee",
+            Self::PatternRest => "pattern_rest",
         }
     }
 }
@@ -227,6 +255,7 @@ pub enum HirIdentityKind {
 /// Inclusive HIR allocation limit.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirLimit {
+    ModulesPerDatabase,
     Items,
     Statements,
     Expressions,
@@ -235,6 +264,10 @@ pub enum HirLimit {
     Scopes,
     LocalsPerScope,
     LocalsPerModule,
+    Captures,
+    Diagnostics,
+    SyntheticDescendantsPerOwner,
+    TotalSlotsPerModule,
 }
 
 impl HirLimit {
@@ -242,10 +275,15 @@ impl HirLimit {
     pub const fn maximum(self) -> usize {
         match self {
             Self::Items | Self::Scopes => 16_384,
-            Self::Statements | Self::LocalsPerModule => 65_536,
+            Self::ModulesPerDatabase
+            | Self::Statements
+            | Self::LocalsPerModule
+            | Self::Captures => 65_536,
             Self::Expressions => 262_144,
             Self::Types | Self::Patterns => 131_072,
             Self::LocalsPerScope => 4_096,
+            Self::Diagnostics | Self::SyntheticDescendantsPerOwner => 1_024,
+            Self::TotalSlotsPerModule => 786_432,
         }
     }
 }
@@ -284,6 +322,8 @@ mod tests {
     fn owned_identity_vocabularies_have_stable_behavior() {
         assert_eq!(HirIdKind::Capture.as_str(), "capture");
         assert_eq!(HirLimit::LocalsPerScope.maximum(), 4_096);
+        assert_eq!(HirLimit::Captures.maximum(), 65_536);
+        assert_eq!(HirLimit::TotalSlotsPerModule.maximum(), 786_432);
         let owner = RawHirId {
             module: HirModuleId(NonZeroU32::MIN),
             slot: NonZeroU32::MIN,
@@ -295,5 +335,10 @@ mod tests {
         };
         assert_eq!(key.role().as_str(), "elided_region");
         assert_eq!(key.ordinal(), 2);
+        assert_eq!(SyntheticRole::ClosureCapture.as_str(), "closure_capture");
+        assert_eq!(
+            SyntheticRole::ContractEnsuresScope.as_str(),
+            "contract_ensures_scope"
+        );
     }
 }
