@@ -210,6 +210,9 @@ impl HirLoweringState {
     fn finish(self) -> Result<HirModule, Vec<HirLowerError>> {
         if self.errors.is_empty() {
             Ok(HirModule {
+                module_path: self
+                    .module_path
+                    .unwrap_or_else(CanonicalModulePath::crate_root),
                 attributes: self.attributes,
                 uses: self.uses,
                 source_len: self.source_len,

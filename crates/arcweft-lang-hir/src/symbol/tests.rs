@@ -195,6 +195,22 @@ fn ordinary_projection_matches_callable_golden() {
 }
 
 #[test]
+fn table_retains_source_identity_for_every_module() {
+    let (documents, project) = project_modules(&[("", ""), ("empty", "")]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "module-source-identities"),
+    )
+    .expect("empty modules link")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let child = module_path("empty");
+
+    assert_eq!(table.source_identity(&root), Some(documents[0].identity()));
+    assert_eq!(table.source_identity(&child), Some(documents[1].identity()));
+}
+
+#[test]
 fn ordinary_projection_unchanged_by_character_externals() {
     let (document, project) =
         project("pub fn alpha() -> Unit { () }\nfn beta(value: i32) -> i32 { value }\n");

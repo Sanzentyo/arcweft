@@ -50,7 +50,7 @@ impl HirProjectModule {
         mut hir: HirModule,
     ) -> Self {
         let bound_source = hir
-            .bound_source_identity()
+            .source_identity()
             .expect("project HIR must be lowered from a revision-bound source document");
         assert_eq!(
             bound_source, &source,
@@ -122,6 +122,12 @@ impl HirProject {
         self.sources.get(path)
     }
 
+    pub(crate) fn source_identities(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &SourceDocumentIdentity)> {
+        self.sources.iter()
+    }
+
     /// Links project declarations, imports, and typed external declarations.
     pub fn project_symbols(
         &self,
@@ -159,6 +165,7 @@ impl HirProject {
 
 impl HirModule {
     fn assign_declaration_module(&mut self, path: &CanonicalModulePath) {
+        self.module_path.clone_from(path);
         self.bind_project_module(path);
         for flow in &mut self.flows {
             flow.module_path = Some(path.clone());
@@ -466,6 +473,20 @@ mod tests {
         let parsed = parse_source(source);
         let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("source lowers");
         (document, hir)
+    }
+
+    #[test]
+    fn document_bound_hir_exposes_exact_source_and_module_identity() {
+        let (document, hir) = lower_bound("identity", "");
+
+        assert_eq!(hir.source_identity(), Some(document.identity()));
+        assert_eq!(hir.module_path(), &CanonicalModulePath::crate_root());
+
+        let child_path =
+            CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
+        let child = HirProjectModule::new(child_path.clone(), document.identity().clone(), hir);
+        assert_eq!(child.hir().module_path(), &child_path);
+        assert_eq!(child.hir().source_identity(), Some(document.identity()));
     }
 
     #[test]

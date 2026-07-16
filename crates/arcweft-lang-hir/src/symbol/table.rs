@@ -13,7 +13,7 @@ use arcweft_lang_syntax::ast::{
     },
     symbol_path::{ProjectSymbolPath, SymbolPath},
 };
-use arcweft_source::SourceSpan;
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
 use crate::project::HirProject;
 
@@ -128,6 +128,7 @@ pub struct ProjectSymbolTable {
     world: ProjectSymbolWorldId,
     revision: ProjectSymbolRevision,
     modules: BTreeSet<CanonicalModulePath>,
+    source_identities: BTreeMap<CanonicalModulePath, SourceDocumentIdentity>,
     symbols: BTreeMap<ProjectDeclarationId, ProjectSymbol>,
     pub(super) scopes: BTreeMap<CanonicalModulePath, BTreeMap<String, Vec<ScopeBinding>>>,
 }
@@ -193,6 +194,10 @@ impl ProjectSymbolTable {
             .modules()
             .map(|(path, _)| path.clone())
             .collect::<BTreeSet<_>>();
+        let source_identities = project
+            .source_identities()
+            .map(|(path, source)| (path.clone(), source.clone()))
+            .collect();
         let mut table = Self {
             world: externals.world().clone(),
             revision: *externals.revision(),
@@ -202,6 +207,7 @@ impl ProjectSymbolTable {
                 .map(|module| (module, BTreeMap::new()))
                 .collect(),
             modules,
+            source_identities,
             symbols: BTreeMap::new(),
         };
         let mut diagnostics = Vec::new();
@@ -278,6 +284,11 @@ impl ProjectSymbolTable {
 
     pub fn modules(&self) -> impl ExactSizeIterator<Item = &CanonicalModulePath> {
         self.modules.iter()
+    }
+
+    /// Exact source-document revision for one project module.
+    pub fn source_identity(&self, module: &CanonicalModulePath) -> Option<&SourceDocumentIdentity> {
+        self.source_identities.get(module)
     }
 
     pub fn symbols(&self) -> impl ExactSizeIterator<Item = &ProjectSymbol> {

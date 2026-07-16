@@ -35,6 +35,7 @@ use crate::style::{HirStyleDecl, HirStylePatch};
 /// re-parsing raw strings.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirModule {
+    pub(crate) module_path: CanonicalModulePath,
     pub(crate) attributes: Vec<Attribute>,
     pub(crate) uses: Vec<UseItem>,
     pub(crate) source_len: Option<usize>,
@@ -356,10 +357,16 @@ impl HirModule {
         Ok(())
     }
 
-    pub(crate) fn bound_source_identity(&self) -> Option<&SourceDocumentIdentity> {
+    /// Exact source-document revision used by document-bound lowering.
+    pub fn source_identity(&self) -> Option<&SourceDocumentIdentity> {
         self.source_map
             .as_ref()
             .map(|source| source.document.identity())
+    }
+
+    /// Canonical module represented by this HIR module.
+    pub const fn module_path(&self) -> &CanonicalModulePath {
+        &self.module_path
     }
 
     pub(crate) fn bind_project_module(&mut self, module: &CanonicalModulePath) {
