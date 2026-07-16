@@ -89,8 +89,10 @@ fan-in/fan-out is unchanged because no manifest or public boundary changed.
 
 ## Remaining Stage 1 work
 
-Stage 1 remains open. Item-family descendants, dialogue-context expression
-ownership, and the remaining malformed/recovery cross-products still require
-direct full-source events and tests before the Stage 1 gate can close. Stages
-2 through 8 remain outside this cut and are not inferred complete from the
-outer dispatch evidence.
+Stage 1 remains open. The subsequent
+`2026-07-16-proof-concurrency-v6-1-1-stage-1-dialogue-context.md` cut adds direct
+Flow-body and dialogue-context expression ownership. Complete descendants for
+the remaining item families and the remaining malformed/recovery cross-products
+still require direct full-source events and tests before the Stage 1 gate can
+close. Stages 2 through 8 remain outside this cut and are not inferred complete
+from the outer dispatch evidence.

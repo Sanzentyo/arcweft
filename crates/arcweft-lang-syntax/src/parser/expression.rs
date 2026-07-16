@@ -36,6 +36,122 @@ pub(super) fn emit_expression(
     }
 }
 
+/// Emits an expression at a Flow position where bracketed dialogue content is
+/// part of the surface grammar rather than an ordinary index expression.
+///
+/// The decision is made from the already lexed token stream. It never reparses
+/// a source substring, and ordinary indexed values continue through the Pratt
+/// parser unchanged.
+pub(super) fn emit_dialogue_context_expression(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) {
+    let end = trimmed_end(parser, parser.cursor(), end);
+    let Some(surface) = dialogue_surface(parser, end) else {
+        emit_expression(parser, end, role);
+        return;
+    };
+
+    if surface.has_try_prefix {
+        parser.start(SyntaxKind::TryExpression, role);
+        parser.bump();
+        parser.bump_trivia();
+        emit_dialogue_call(parser, end, SyntaxRole::Operand, surface);
+        parser.finish();
+    } else {
+        emit_dialogue_call(parser, end, role, surface);
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DialogueSurface {
+    open: usize,
+    close: Option<usize>,
+    has_try_prefix: bool,
+}
+
+fn dialogue_surface(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> Option<DialogueSurface> {
+    let start = parser.cursor();
+    let first = super::shadow_recovery::first_significant(parser, start, end)?;
+    let has_try_prefix = super::shadow_recovery::token_text(parser, first) == Some("try");
+    let callee_start = if has_try_prefix {
+        super::shadow_recovery::first_significant(parser, first + 1, end)?
+    } else {
+        first
+    };
+
+    let mut depth = 0_usize;
+    let mut saw_call = false;
+    let mut open = None;
+    for index in callee_start..end {
+        let text = super::shadow_recovery::token_text(parser, index)?;
+        if depth == 0 && text == "[" {
+            open = Some(index);
+            break;
+        }
+        match text {
+            "(" if depth == 0 => {
+                saw_call = true;
+                depth += 1;
+            }
+            "(" | "{" | "<" => depth += 1,
+            ")" | "}" | ">" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    let open = open?;
+    super::shadow_recovery::first_significant(parser, callee_start, open)?;
+
+    let close = super::shadow_recovery::find_matching_close(parser, open + 1, "[")
+        .filter(|close| *close < end);
+    if close.is_some_and(|close| {
+        super::shadow_recovery::first_significant(parser, close + 1, end).is_some()
+    }) {
+        return None;
+    }
+
+    let content_end = close.unwrap_or(end);
+    let first_content = super::shadow_recovery::first_significant(parser, open + 1, content_end);
+    let begins_non_ascii_text = first_content
+        .and_then(|index| super::shadow_recovery::token_text(parser, index))
+        .and_then(|text| text.chars().next())
+        .is_some_and(|character| !character.is_ascii());
+    let contains_raw_text = (open + 1..content_end).any(|index| {
+        parser
+            .token_at(index)
+            .is_some_and(|token| token.kind() == SyntaxKind::TextToken)
+    });
+
+    (saw_call || begins_non_ascii_text || contains_raw_text).then_some(DialogueSurface {
+        open,
+        close,
+        has_try_prefix,
+    })
+}
+
+fn emit_dialogue_call(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+    surface: DialogueSurface,
+) {
+    parser.start(SyntaxKind::DialogueCallExpression, role);
+    emit_expression(parser, surface.open, SyntaxRole::Callee);
+    bump_until(parser, surface.open);
+    emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
+    let content_end = surface.close.unwrap_or(end);
+    bump_until(parser, content_end);
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseBracketNode,
+        "]",
+        "syntax.expression.missing_dialogue_close",
+    );
+    bump_until(parser, end);
+    parser.finish();
+}
+
 pub(super) fn expression_is_call(
     parser: &ShadowDocumentParser<'_, '_>,
     start: usize,

@@ -3,7 +3,7 @@
 use arcweft_source::SourceRange;
 
 use super::document::ShadowDocumentParser;
-use super::expression::{emit_expression, expression_is_call};
+use super::expression::{emit_dialogue_context_expression, emit_expression, expression_is_call};
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
@@ -85,7 +85,7 @@ pub(super) fn emit_braced_block(
         }
 
         parser.finish();
-        emit_expression(parser, significant_end, SyntaxRole::Tail);
+        emit_item_expression(parser, significant_end, SyntaxRole::Tail, item_kind);
         bump_until(parser, close);
         has_tail = true;
         break;
@@ -145,7 +145,7 @@ fn emit_statement(
         }
         SyntaxKind::AssertionStatement => emit_assertion_children(parser, child_end),
         SyntaxKind::AssignmentStatement | SyntaxKind::LifetimeSetStatement => {
-            emit_assignment_children(parser, child_end);
+            emit_assignment_children(parser, child_end, item_kind);
         }
         SyntaxKind::WaitStatement => emit_wait_children(parser, child_end),
         SyntaxKind::OnStatement => emit_on_children(parser, child_end, item_kind),
@@ -169,12 +169,12 @@ fn emit_statement(
         | SyntaxKind::CloseStatement
         | SyntaxKind::SelectStatement
         | SyntaxKind::BreakStatement
-        | SyntaxKind::ContinueStatement => emit_keyword_value(parser, child_end),
+        | SyntaxKind::ContinueStatement => emit_keyword_value(parser, child_end, item_kind),
         SyntaxKind::ProofCallStatement => {
             emit_expression(parser, child_end, SyntaxRole::Callee);
         }
         SyntaxKind::ExpressionStatement => {
-            emit_expression(parser, child_end, SyntaxRole::Operand);
+            emit_item_expression(parser, child_end, SyntaxRole::Operand, item_kind);
         }
         _ => bump_until(parser, child_end),
     }
@@ -312,7 +312,7 @@ fn emit_let_children(
         } else {
             end
         };
-        emit_expression(parser, initializer_end, SyntaxRole::Initializer);
+        emit_item_expression(parser, initializer_end, SyntaxRole::Initializer, item_kind);
         bump_until(parser, initializer_end);
         if parser.at("else") {
             parser.bump();
@@ -342,7 +342,11 @@ fn emit_assertion_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize
     bump_until(parser, end);
 }
 
-fn emit_assignment_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_assignment_children(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+) {
     let operator = top_level_operator(parser, parser.cursor(), end, "<-")
         .or_else(|| top_level_operator(parser, parser.cursor(), end, "="))
         .unwrap_or(end);
@@ -351,11 +355,15 @@ fn emit_assignment_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usiz
     if parser.cursor() < end {
         parser.bump();
         parser.bump_trivia();
-        emit_expression(parser, end, SyntaxRole::Initializer);
+        emit_item_expression(parser, end, SyntaxRole::Initializer, item_kind);
     }
 }
 
-fn emit_keyword_value(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_keyword_value(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+) {
     parser.bump();
     parser.bump_trivia();
     if parser.current_kind() == Some(SyntaxKind::LifetimeToken) {
@@ -365,7 +373,7 @@ fn emit_keyword_value(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         parser.bump_trivia();
     }
     if parser.cursor() < end {
-        emit_expression(parser, end, SyntaxRole::Operand);
+        emit_item_expression(parser, end, SyntaxRole::Operand, item_kind);
     }
 }
 
@@ -598,10 +606,23 @@ fn emit_match_arm(
                 "syntax.statement.missing_match_arm_close",
             );
         } else {
-            emit_expression(parser, end, SyntaxRole::Body);
+            emit_item_expression(parser, end, SyntaxRole::Body, item_kind);
         }
     }
     parser.finish();
+}
+
+fn emit_item_expression(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+    item_kind: SyntaxKind,
+) {
+    if item_kind == SyntaxKind::FlowItem {
+        emit_dialogue_context_expression(parser, end, role);
+    } else {
+        emit_expression(parser, end, role);
+    }
 }
 
 fn find_match_arm_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {

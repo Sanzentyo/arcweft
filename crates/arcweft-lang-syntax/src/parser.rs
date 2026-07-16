@@ -33,6 +33,8 @@ pub mod await_;
 pub mod choice;
 pub mod control_flow;
 pub mod dialogue;
+#[cfg(test)]
+mod dialogue_expression_tests;
 mod document;
 mod expression;
 pub mod flow;
@@ -52,6 +54,7 @@ mod predicate_proof;
 mod predicate_proof_tests;
 pub mod proof;
 pub mod recovery;
+mod shadow_flow;
 mod shadow_recovery;
 pub mod source;
 mod statement;
