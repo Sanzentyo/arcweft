@@ -19,12 +19,41 @@ profiles with the package-defined precedence:
 Direct tests cover each branch. Focused tests, all-target/all-feature checking,
 clippy with warnings denied, and formatting have passed for this cut.
 
+## Completed cut: source-backed resource decoding
+
+`arcweft-project-loader` now returns source-backed adapter and Rust metadata
+products and exposes decode entry points that consume an already captured
+`Arc<SourceDocument>`. Character manifests use the same exact-document route.
+The disk loaders read once, construct the owning document, and delegate to the
+same decoders. Adapter format dispatch follows the declared path extension,
+and `.awchar` resolution is lexical rather than dependent on `Path::is_dir`.
+
+`AdapterRegistry::try_with_manifest` rejects duplicate stable adapter IDs. The
+existing CLI and LSP disk callers consume the new source-backed results without
+introducing a second reader; the later topology cut will replace the LSP disk
+route itself.
+
+Validation for this cut:
+
+- adapter-context and project-loader library tests: 103 passed;
+- LSP all-target/all-feature check: passed;
+- CLI production library check with no default features: passed;
+- adapter-context, project-loader, and LSP all-target/all-feature clippy with
+  warnings denied: passed;
+- CLI production library clippy with no default features and warnings denied:
+  passed.
+
+The broader all-feature check reaches an existing missing
+`web/assets/noto-sans-jp-vf.ttf` compile-time fixture. CLI no-default all-target
+checking also reaches existing tests that unconditionally import the optional
+runtime-driver crate. Neither failure is caused by this loader change; the
+production libraries and changed call paths pass their isolated checks.
+
 ## Remaining package work
 
 The following remain part of AW-AH-009.2.1.1 and are not completion claims for
 this cut:
 
-- source-backed adapter registry decoding and checked adapter inventory;
 - immutable document snapshots and exact import-closure loading;
 - overlay-first topology resolution without directory enumeration in the LSP
   request path;

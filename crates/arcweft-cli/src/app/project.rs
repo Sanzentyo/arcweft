@@ -631,7 +631,7 @@ fn adapter_registry_for_selection(
         .iter()
         .try_fold(registry, |registry, path| {
             arcweft_project_loader::adapter_manifest::load(path)
-                .map(|manifest| registry.with_manifest(manifest))
+                .map(|loaded| registry.with_manifest(loaded.manifest().clone()))
                 .map_err(|error| {
                     eprintln!(
                         "error: failed to load adapter manifest {}: {error}",
@@ -652,13 +652,15 @@ fn rust_metadata_for_selection(
         .rust_metadata()
         .iter()
         .map(|path| {
-            arcweft_project_loader::rust_metadata::load(path).map_err(|error| {
-                eprintln!(
-                    "error: failed to load Rust ABI metadata {}: {error}",
-                    path.display()
-                );
-                ExitCode::FAILURE
-            })
+            arcweft_project_loader::rust_metadata::load(path)
+                .map(|loaded| loaded.manifest().clone())
+                .map_err(|error| {
+                    eprintln!(
+                        "error: failed to load Rust ABI metadata {}: {error}",
+                        path.display()
+                    );
+                    ExitCode::FAILURE
+                })
         })
         .collect()
 }

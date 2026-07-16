@@ -229,6 +229,14 @@ pub struct AdapterRegistry {
     manifests: Vec<AdapterManifest>,
 }
 
+/// Failure to insert an adapter manifest into a checked registry.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum AdapterRegistryError {
+    /// Two manifests declared the same stable adapter ID.
+    #[error("adapter id `{id}` occurs more than once")]
+    DuplicateId { id: AdapterId },
+}
+
 impl AdapterId {
     /// Creates an adapter id.
     pub fn new(value: impl Into<String>) -> Self {
@@ -238,6 +246,12 @@ impl AdapterId {
     /// String form used in launch profile manifests.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl std::fmt::Display for AdapterId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -814,6 +828,20 @@ impl AdapterRegistry {
         self
     }
 
+    /// Adds one manifest while rejecting a duplicate stable adapter ID.
+    pub fn try_with_manifest(
+        mut self,
+        manifest: AdapterManifest,
+    ) -> Result<Self, AdapterRegistryError> {
+        if self.get(manifest.id().as_str()).is_some() {
+            return Err(AdapterRegistryError::DuplicateId {
+                id: manifest.id().clone(),
+            });
+        }
+        self.manifests.push(manifest);
+        Ok(self)
+    }
+
     /// Looks up one manifest by id.
     pub fn get(&self, id: &str) -> Option<&AdapterManifest> {
         self.manifests
@@ -1001,6 +1029,18 @@ mod tests {
         ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
         ArcweftRustVariant,
     };
+
+    #[test]
+    fn checked_registry_insertion_rejects_duplicate_adapter_ids() {
+        let registry = AdapterRegistry::new()
+            .try_with_manifest(AdapterManifest::new("fixture", "First"))
+            .expect("first manifest is unique");
+
+        assert!(matches!(
+            registry.try_with_manifest(AdapterManifest::new("fixture", "Second")),
+            Err(AdapterRegistryError::DuplicateId { id }) if id.as_str() == "fixture"
+        ));
+    }
 
     #[cfg(feature = "sema")]
     #[test]

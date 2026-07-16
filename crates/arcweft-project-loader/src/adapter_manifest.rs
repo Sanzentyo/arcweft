@@ -2,18 +2,67 @@ use arcweft_adapter_context::{
     codec::{AdapterManifestCodecError, AdapterManifestFile},
     manifest::AdapterManifest,
 };
-use std::path::Path;
+use arcweft_source::{
+    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
+};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use thiserror::Error;
 
+/// A decoded adapter manifest together with the exact document that supplied it.
+#[derive(Clone, Debug)]
+pub struct LoadedAdapterManifest {
+    document: Arc<SourceDocument>,
+    path: PathBuf,
+    manifest: AdapterManifest,
+}
+
+impl LoadedAdapterManifest {
+    /// Exact source document used for decoding.
+    pub fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
+    }
+
+    /// Exact declared path used for format dispatch.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Decoded typed adapter manifest.
+    pub const fn manifest(&self) -> &AdapterManifest {
+        &self.manifest
+    }
+}
+
 /// Loads a project-local adapter manifest from TOML or JSON.
-pub fn load(path: &Path) -> Result<AdapterManifest, LoadError> {
-    let source = std::fs::read_to_string(path).map_err(LoadError::Read)?;
+pub fn load(path: &Path) -> Result<LoadedAdapterManifest, LoadError> {
+    let path = path.to_path_buf();
+    let source = std::fs::read_to_string(&path).map_err(LoadError::Read)?;
+    let document = Arc::new(SourceDocument::try_new(
+        SourceDocumentId::try_new(path.to_string_lossy().replace('\\', "/"))?,
+        SourceName::path(path.display().to_string()),
+        source,
+    )?);
+    decode(path, document)
+}
+
+/// Decodes one adapter manifest from an already captured source document.
+pub fn decode(
+    path: PathBuf,
+    document: Arc<SourceDocument>,
+) -> Result<LoadedAdapterManifest, LoadError> {
     let file = match path.extension().and_then(|extension| extension.to_str()) {
-        Some("json") => AdapterManifestFile::from_json(&source),
-        _ => AdapterManifestFile::from_toml(&source),
+        Some("json") => AdapterManifestFile::from_json(document.text()),
+        _ => AdapterManifestFile::from_toml(document.text()),
     }
     .map_err(LoadError::Parse)?;
-    Ok(file.into_manifest())
+    Ok(LoadedAdapterManifest {
+        document,
+        path,
+        manifest: file.into_manifest(),
+    })
 }
 
 /// Adapter manifest load failure without host path decoration.
@@ -21,6 +70,10 @@ pub fn load(path: &Path) -> Result<AdapterManifest, LoadError> {
 pub enum LoadError {
     #[error("failed to read adapter manifest: {0}")]
     Read(std::io::Error),
+    #[error("invalid adapter manifest document identity: {0}")]
+    DocumentId(#[from] SourceDocumentIdError),
+    #[error("failed to construct adapter manifest source document: {0}")]
+    Document(#[from] SourceDocumentError),
     #[error("failed to parse adapter manifest: {0}")]
     Parse(AdapterManifestCodecError),
 }
@@ -38,9 +91,10 @@ mod tests {
         let path = project.path("adapter.toml");
         project.write("adapter.toml", adapter_manifest_toml());
 
-        let manifest = load(&path).expect("adapter manifest loads");
+        let loaded = load(&path).expect("adapter manifest loads");
 
-        assert_eq!(manifest.id().as_str(), "custom-echo");
+        assert_eq!(loaded.manifest().id().as_str(), "custom-echo");
+        assert_eq!(loaded.path(), path);
     }
 
     #[test]
@@ -58,9 +112,29 @@ mod tests {
 }"#,
         );
 
-        let manifest = load(&path).expect("adapter manifest loads");
+        let loaded = load(&path).expect("adapter manifest loads");
 
-        assert_eq!(manifest.id().as_str(), "json-echo");
+        assert_eq!(loaded.manifest().id().as_str(), "json-echo");
+    }
+
+    #[test]
+    fn decode_uses_the_supplied_document_without_filesystem_access() {
+        let path = PathBuf::from("missing/adapter.toml");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://fixture/adapter.toml")
+                    .expect("document id"),
+                SourceName::path("captured-adapter"),
+                adapter_manifest_toml(),
+            )
+            .expect("source document"),
+        );
+
+        let loaded = decode(path.clone(), Arc::clone(&document)).expect("document decodes");
+
+        assert!(Arc::ptr_eq(loaded.document(), &document));
+        assert_eq!(loaded.path(), path);
+        assert_eq!(loaded.manifest().id().as_str(), "custom-echo");
     }
 
     #[test]

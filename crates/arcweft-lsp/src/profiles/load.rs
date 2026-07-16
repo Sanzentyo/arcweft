@@ -57,7 +57,7 @@ pub(super) fn read_adapter_manifests(
 ) -> AdapterRegistry {
     resources.iter().fold(registry, |registry, resource| {
         match arcweft_project_loader::adapter_manifest::load(resource.path()) {
-            Ok(manifest) => registry.with_manifest(manifest),
+            Ok(loaded) => registry.with_manifest(loaded.manifest().clone()),
             Err(error) => {
                 diagnostics.push(resource.bind(adapter_manifest_diagnostic(
                     &error,
@@ -80,7 +80,7 @@ pub(super) fn read_rust_metadata(
         .iter()
         .filter_map(
             |resource| match arcweft_project_loader::rust_metadata::load(resource.path()) {
-                Ok(manifest) => Some(manifest),
+                Ok(loaded) => Some(loaded.manifest().clone()),
                 Err(error) => {
                     diagnostics.push(resource.bind(rust_metadata_diagnostic(
                         &error,
@@ -103,7 +103,9 @@ fn adapter_manifest_diagnostic(
         arcweft_project_loader::adapter_manifest::LoadError::Read(_) => {
             LspProfileDiagnosticKind::AdapterManifestRead
         }
-        arcweft_project_loader::adapter_manifest::LoadError::Parse(_) => {
+        arcweft_project_loader::adapter_manifest::LoadError::DocumentId(_)
+        | arcweft_project_loader::adapter_manifest::LoadError::Document(_)
+        | arcweft_project_loader::adapter_manifest::LoadError::Parse(_) => {
             LspProfileDiagnosticKind::AdapterManifestParse
         }
     };
@@ -121,7 +123,9 @@ fn rust_metadata_diagnostic(
         arcweft_project_loader::rust_metadata::LoadError::Read(_) => {
             LspProfileDiagnosticKind::RustMetadataRead
         }
-        arcweft_project_loader::rust_metadata::LoadError::Parse(_) => {
+        arcweft_project_loader::rust_metadata::LoadError::DocumentId(_)
+        | arcweft_project_loader::rust_metadata::LoadError::Document(_)
+        | arcweft_project_loader::rust_metadata::LoadError::Parse(_) => {
             LspProfileDiagnosticKind::RustMetadataParse
         }
     };

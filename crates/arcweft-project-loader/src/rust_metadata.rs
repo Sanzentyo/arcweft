@@ -1,11 +1,61 @@
 use arcweft_rust_abi::{ArcweftRustAbiError, ArcweftRustManifest};
-use std::path::Path;
+use arcweft_source::{
+    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
+};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use thiserror::Error;
 
+/// Decoded Rust ABI metadata together with the exact document that supplied it.
+#[derive(Clone, Debug)]
+pub struct LoadedRustMetadata {
+    document: Arc<SourceDocument>,
+    path: PathBuf,
+    manifest: ArcweftRustManifest,
+}
+
+impl LoadedRustMetadata {
+    /// Exact source document used for decoding.
+    pub fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
+    }
+
+    /// Exact declared metadata path.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Decoded typed Rust ABI metadata.
+    pub const fn manifest(&self) -> &ArcweftRustManifest {
+        &self.manifest
+    }
+}
+
 /// Loads Arcweft Rust ABI metadata from JSON.
-pub fn load(path: &Path) -> Result<ArcweftRustManifest, LoadError> {
-    let source = std::fs::read_to_string(path).map_err(LoadError::Read)?;
-    ArcweftRustManifest::from_json(&source).map_err(LoadError::Parse)
+pub fn load(path: &Path) -> Result<LoadedRustMetadata, LoadError> {
+    let path = path.to_path_buf();
+    let source = std::fs::read_to_string(&path).map_err(LoadError::Read)?;
+    let document = Arc::new(SourceDocument::try_new(
+        SourceDocumentId::try_new(path.to_string_lossy().replace('\\', "/"))?,
+        SourceName::path(path.display().to_string()),
+        source,
+    )?);
+    decode(path, document)
+}
+
+/// Decodes Rust ABI metadata from an already captured source document.
+pub fn decode(
+    path: PathBuf,
+    document: Arc<SourceDocument>,
+) -> Result<LoadedRustMetadata, LoadError> {
+    let manifest = ArcweftRustManifest::from_json(document.text()).map_err(LoadError::Parse)?;
+    Ok(LoadedRustMetadata {
+        document,
+        path,
+        manifest,
+    })
 }
 
 /// Rust metadata load failure without host path decoration.
@@ -13,6 +63,10 @@ pub fn load(path: &Path) -> Result<ArcweftRustManifest, LoadError> {
 pub enum LoadError {
     #[error("failed to read Rust ABI metadata: {0}")]
     Read(std::io::Error),
+    #[error("invalid Rust ABI metadata document identity: {0}")]
+    DocumentId(#[from] SourceDocumentIdError),
+    #[error("failed to construct Rust ABI metadata source document: {0}")]
+    Document(#[from] SourceDocumentError),
     #[error("failed to parse Rust ABI metadata: {0}")]
     Parse(ArcweftRustAbiError),
 }
@@ -37,9 +91,31 @@ mod tests {
             &rust_manifest().to_json_pretty().expect("metadata json"),
         );
 
-        let manifest = load(&path).expect("rust metadata loads");
+        let loaded = load(&path).expect("rust metadata loads");
 
-        assert_eq!(manifest.package.name, "custom_adapter");
+        assert_eq!(loaded.manifest().package.name, "custom_adapter");
+        assert_eq!(loaded.path(), path);
+    }
+
+    #[test]
+    fn decode_uses_the_supplied_document_without_filesystem_access() {
+        let path = PathBuf::from("missing/metadata.json");
+        let source = rust_manifest().to_json_pretty().expect("metadata json");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://fixture/metadata.json")
+                    .expect("document id"),
+                SourceName::path("captured-metadata"),
+                source,
+            )
+            .expect("source document"),
+        );
+
+        let loaded = decode(path.clone(), Arc::clone(&document)).expect("document decodes");
+
+        assert!(Arc::ptr_eq(loaded.document(), &document));
+        assert_eq!(loaded.path(), path);
+        assert_eq!(loaded.manifest().package.name, "custom_adapter");
     }
 
     #[test]

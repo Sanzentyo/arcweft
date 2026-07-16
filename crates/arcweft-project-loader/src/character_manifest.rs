@@ -50,7 +50,7 @@ impl LoadedCharacterManifest {
         &self.manifest
     }
 
-    /// Actual manifest file read, including directory-package resolution.
+    /// Exact manifest file path used for decoding.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -60,14 +60,26 @@ impl LoadedCharacterManifest {
     }
 }
 
-/// Resolves a manifest file path from a direct JSON path or `.awchar` directory.
+/// Resolves a manifest file path lexically from a direct path or `.awchar` suffix.
 pub fn manifest_path(path: &Path) -> PathBuf {
-    if path.extension().and_then(|extension| extension.to_str()) == Some("awchar") || path.is_dir()
-    {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("awchar") {
         path.join(CHARACTER_MANIFEST_FILE_NAME)
     } else {
         path.to_path_buf()
     }
+}
+
+/// Decodes a character manifest from an already captured source document.
+pub fn decode(
+    path: PathBuf,
+    document: Arc<SourceDocument>,
+) -> Result<LoadedCharacterManifest, LoadError> {
+    let manifest = SourceBackedCharacterManifest::decode_registration_json(&document)?;
+    Ok(LoadedCharacterManifest {
+        document,
+        path,
+        manifest,
+    })
 }
 
 /// Reads and structurally validates one source-backed registration manifest.
@@ -80,12 +92,7 @@ pub fn load(path: &Path) -> Result<LoadedCharacterManifest, LoadError> {
         SourceName::path(path.display().to_string()),
         source,
     )?);
-    let manifest = SourceBackedCharacterManifest::decode_registration_json(&document)?;
-    Ok(LoadedCharacterManifest {
-        document,
-        path,
-        manifest,
-    })
+    decode(path, document)
 }
 
 /// Reads one registration manifest with the owning project's canonical document identity.
@@ -101,12 +108,7 @@ pub fn load_for_project(
         SourceName::path(path.display().to_string()),
         source,
     )?);
-    let manifest = SourceBackedCharacterManifest::decode_registration_json(&document)?;
-    Ok(LoadedCharacterManifest {
-        document,
-        path,
-        manifest,
-    })
+    decode(path, document)
 }
 
 #[cfg(test)]
@@ -114,11 +116,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn awchar_directories_resolve_to_the_package_manifest() {
+    fn awchar_suffix_resolves_without_directory_probe() {
         assert_eq!(
-            manifest_path(Path::new("assets/akane.awchar")),
-            PathBuf::from("assets/akane.awchar/character.awchar.json")
+            manifest_path(Path::new("missing/akane.awchar")),
+            PathBuf::from("missing/akane.awchar/character.awchar.json")
         );
+    }
+
+    #[test]
+    fn direct_character_manifest_path_remains_direct() {
+        let path = Path::new("assets/akane.character.json");
+        assert_eq!(manifest_path(path), path);
+    }
+
+    #[test]
+    fn decode_uses_the_supplied_document_without_filesystem_access() {
+        let path = PathBuf::from("missing/akane.awchar/character.awchar.json");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://fixture/akane.awchar.json")
+                    .expect("document id"),
+                SourceName::path("captured-character-manifest"),
+                include_str!(
+                    "../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
+                ),
+            )
+            .expect("source document"),
+        );
+
+        let loaded = decode(path.clone(), Arc::clone(&document)).expect("document decodes");
+
+        assert!(Arc::ptr_eq(loaded.document(), &document));
+        assert_eq!(loaded.path(), path);
     }
 
     #[test]
