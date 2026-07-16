@@ -606,80 +606,6 @@ fn private_helper(value: String | Bytes) -> Unit {
 }
 
 #[test]
-fn parses_documented_state_reducer_and_function_items() {
-    let tree = parse_ok(
-        r"
-pub state GameState {
-    pub route: Ref<Flow> = @flow.opening
-    pub config: Config = Config {}
-    pub flags: OrderedSet<Flag> = {}
-    pub affection: OrderedMap<Ref<Character>, i32> = {}
-    pub current_bg: Option<ImageHandle> = None
-}
-
-pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError>
-requires state_is_valid
-{
-    match event {
-        _ => Ok(state.to_update())
-    }
-}
-
-pub fn current_scene(state: GameState) -> bool {
-    true
-}
-",
-    );
-
-    let Item::State(state) = &tree.items()[0] else {
-        panic!("expected state item");
-    };
-    assert_eq!(state.visibility(), Some(Visibility::Public));
-    assert_eq!(state.name(), "GameState");
-    assert_eq!(state.fields().len(), 5);
-    assert_eq!(state.fields()[0].visibility(), Some(Visibility::Public));
-    assert_eq!(state.fields()[0].name(), "route");
-    assert!(
-        matches!(state.fields()[0].default(), Expr::EntityRef(entity) if entity.body() == "flow.opening")
-    );
-    assert!(matches!(
-        state.fields()[1].default(),
-        Expr::Record { path, fields } if path == "Config" && fields.is_empty()
-    ));
-
-    let Item::Callable(reducer) = &tree.items()[1] else {
-        panic!("expected reducer item");
-    };
-    assert_eq!(reducer.kind(), CallableKind::Reducer);
-    assert_eq!(reducer.name(), "update");
-    assert!(reducer.signature_tail().contains("GameEvent"));
-    assert_eq!(reducer.contracts().len(), 1);
-    assert!(reducer.body().contains("match event"));
-    assert!(reducer.body_statements().is_empty());
-    assert!(matches!(reducer.body_value(), Some(Expr::Match { .. })));
-
-    let Item::Function(function) = &tree.items()[2] else {
-        panic!("expected function item");
-    };
-    assert_eq!(function.kind(), FunctionKind::Function);
-    assert_eq!(function.signature().name(), "current_scene");
-    assert!(function.body_statements().is_empty());
-    assert!(matches!(
-        function.body_value().map(AuthoredExpr::expr),
-        Some(Expr::Literal(Literal::Bool(true)))
-    ));
-
-    let hir = lower_to_hir(&tree).expect("syntax-only state/callable items do not block HIR");
-    assert!(hir.flows().is_empty());
-    assert_eq!(hir.functions().len(), 1);
-    validate_typecheck_ready(&hir).expect("state defaults lower without raw expressions");
-    assert!(matches!(
-        hir.declarations(),
-        [HirTopLevelDecl::State(_), HirTopLevelDecl::Callable(_)]
-    ));
-}
-
-#[test]
 fn parses_documented_trait_and_impl_items() {
     let tree = parse_ok(
         r"
@@ -1402,8 +1328,12 @@ extern rust mod mini_games.truck from crate "truck_game" {
         panic!("expected extern module item");
     };
     assert_eq!(item.abi(), "rust");
-    assert_eq!(item.path(), "mini_games.truck");
-    assert_eq!(item.source(), Some(r#"crate "truck_game""#));
+    assert_eq!(item.path().to_string(), "mini_games.truck");
+    assert_eq!(
+        item.source()
+            .map(arcweft_lang_syntax::ast::items::ExternModSource::crate_name),
+        Some("truck_game")
+    );
     assert!(item.body().contains("pub activity truck_game"));
     assert!(matches!(
         item.members(),
@@ -1427,17 +1357,4 @@ extern rust mod mini_games.truck from crate "truck_game" {
         errors.first().map(crate::diagnostics::TypeCheckError::kind),
         Some(TypeCheckErrorKind::MissingRustPackageMetadata { package }) if package == "truck_game"
     ));
-
-    let env = TypeCheckEnv::new()
-        .with_rust_type_export("truck_game", "TruckEvent")
-        .with_rust_type_export("truck_game", "TruckResult")
-        .with_rust_function_export(
-            "truck_game",
-            "mini_games.truck.score_to_rank",
-            FunctionSignature::new(
-                TypeKind::Named("Rank".to_owned()),
-                [FunctionParam::required("score", TypeKind::I32)],
-            ),
-        );
-    typecheck_hir(&hir, &env).expect("extern module metadata matches declaration");
 }

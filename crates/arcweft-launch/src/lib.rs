@@ -8,7 +8,7 @@ pub mod parse;
 pub mod source;
 
 pub use arcweft_manifest_model::{
-    ContentCompression, ContentPlacement, ContentResidency, LaunchKind, ProfileId,
+    ContentCompression, ContentPlacement, ContentResidency, EntrySelectionId, LaunchKind, ProfileId,
 };
 
 pub use model::{

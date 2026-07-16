@@ -15,7 +15,15 @@ pub fn references(
     document: &DocumentSnapshot,
     position: Position,
 ) -> Vec<Location> {
-    let offset = document.line_index().byte_offset_from_position(position);
+    let Ok(offset) = document
+        .line_index()
+        .try_byte_offset_from_position(position)
+    else {
+        return Vec::new();
+    };
+    if let Some(locations) = crate::features::entry_roles::references(profile, document, offset) {
+        return locations;
+    }
     if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
         let locations = metadata
             .references(offset)

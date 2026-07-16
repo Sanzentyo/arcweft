@@ -59,7 +59,7 @@ name = "release_dynamic_goto"
     fs::write(
         source_root.join("main.arcw"),
         r#"
-entry game { goto @flow.opening }
+entry cli @entry.main { goto @flow.opening }
 
 flow opening {
 let route = @flow.done
@@ -270,7 +270,7 @@ name = "cache_persistent_query"
     fs::write(
         source_root.join("main.arcw"),
         r#"
-entry game { goto @flow.opening }
+entry cli @entry.main { goto @flow.opening }
 
 flow opening {
 goto @flow.done

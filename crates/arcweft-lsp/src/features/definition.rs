@@ -21,6 +21,9 @@ pub fn definition(
     let offset = document
         .line_index()
         .try_byte_offset_from_position(position)?;
+    if let Some(result) = crate::features::entry_roles::definition(profile, document, offset) {
+        return Ok(Some(result));
+    }
     match character_definition(profile, documents, document, offset)? {
         CharacterDefinitionDispatch::Character(result) => return Ok(result),
         CharacterDefinitionDispatch::NotCharacter => {}

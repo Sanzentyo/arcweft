@@ -1,14 +1,15 @@
 use arcweft_core::awbc::schema::{
     AwbcEntryId, AwbcFunctionKind, AwbcInstruction, AwbcRegisterId, AwbcTraitReceiverMode,
 };
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::executor::ArcweftRuntimeExecutor;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeIteratorEvidence,
-    RuntimeIteratorIdentityWitnessCalls, RuntimeIteratorWitnessCalls,
-    RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable, RuntimePlan,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethod,
-    RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
+    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeFlow, RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls,
+    RuntimeIteratorWitnessCalls, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
+    RuntimePlan, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimeTraitMethod, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
 };
 use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::step::{
@@ -20,6 +21,17 @@ use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn with_test_entry(plan: RuntimePlan) -> RuntimePlan {
+    plan.with_entries(vec![RuntimeEntrySpec {
+        id: EntryRuntimeId::from_source_entity_body("entry.iterator_witness")
+            .expect("test entry ID is valid"),
+        kind: RuntimeEntryKind::Cli,
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
+        target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
+        roles: RuntimeEntryRoles::None,
+    }])
 }
 
 #[test]
@@ -208,29 +220,30 @@ fn counter_trait_methods() -> Vec<RuntimeTraitMethod> {
 }
 
 fn counter_witness_plan() -> RuntimePlan {
-    RuntimePlan::new(
-        Some(flow_id("flow.main")),
-        vec![RuntimeFlow {
-            id: flow_id("flow.main"),
-            ops: vec![FlowOp::For {
-                pattern: RuntimePattern::Ident("item".to_owned()),
-                source: RuntimeExpr::Value(counter_state()),
-                evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
-                    item_type: "i64".to_owned(),
-                    into_iter_type: "CounterIter".to_owned(),
-                    executable: RuntimeIteratorWitnessExecutable::TraitCalls(
-                        RuntimeIteratorWitnessCalls {
-                            into_iter: RuntimeTraitMethodId(0),
-                            next: RuntimeTraitMethodId(1),
-                        },
-                    ),
-                }),
-                body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
+    with_test_entry(
+        RuntimePlan::new(
+            vec![RuntimeFlow {
+                id: flow_id("flow.main"),
+                ops: vec![FlowOp::For {
+                    pattern: RuntimePattern::Ident("item".to_owned()),
+                    source: RuntimeExpr::Value(counter_state()),
+                    evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
+                        item_type: "i64".to_owned(),
+                        into_iter_type: "CounterIter".to_owned(),
+                        executable: RuntimeIteratorWitnessExecutable::TraitCalls(
+                            RuntimeIteratorWitnessCalls {
+                                into_iter: RuntimeTraitMethodId(0),
+                                next: RuntimeTraitMethodId(1),
+                            },
+                        ),
+                    }),
+                    body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
+                }],
             }],
-        }],
-        Vec::new(),
+            Vec::new(),
+        )
+        .expect("flow plan is valid"),
     )
-    .expect("flow plan is valid")
     .with_trait_methods(counter_trait_methods())
 }
 
@@ -247,27 +260,28 @@ fn counter_identity_trait_methods() -> Vec<RuntimeTraitMethod> {
 }
 
 fn counter_identity_witness_plan() -> RuntimePlan {
-    RuntimePlan::new(
-        Some(flow_id("flow.main")),
-        vec![RuntimeFlow {
-            id: flow_id("flow.main"),
-            ops: vec![FlowOp::For {
-                pattern: RuntimePattern::Ident("item".to_owned()),
-                source: RuntimeExpr::Value(counter_state()),
-                evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
-                    item_type: "i64".to_owned(),
-                    into_iter_type: "Counter".to_owned(),
-                    executable: RuntimeIteratorWitnessExecutable::IdentityIntoIterator(
-                        RuntimeIteratorIdentityWitnessCalls {
-                            next: RuntimeTraitMethodId(0),
-                        },
-                    ),
-                }),
-                body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
+    with_test_entry(
+        RuntimePlan::new(
+            vec![RuntimeFlow {
+                id: flow_id("flow.main"),
+                ops: vec![FlowOp::For {
+                    pattern: RuntimePattern::Ident("item".to_owned()),
+                    source: RuntimeExpr::Value(counter_state()),
+                    evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
+                        item_type: "i64".to_owned(),
+                        into_iter_type: "Counter".to_owned(),
+                        executable: RuntimeIteratorWitnessExecutable::IdentityIntoIterator(
+                            RuntimeIteratorIdentityWitnessCalls {
+                                next: RuntimeTraitMethodId(0),
+                            },
+                        ),
+                    }),
+                    body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
+                }],
             }],
-        }],
-        Vec::new(),
+            Vec::new(),
+        )
+        .expect("flow plan is valid"),
     )
-    .expect("flow plan is valid")
     .with_trait_methods(counter_identity_trait_methods())
 }

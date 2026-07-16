@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 flow @flow.main main {
     let xs = ["a", "b"]
     return xs[0i64]

@@ -7,6 +7,7 @@
 
 pub mod codec;
 pub mod fiber;
+mod identity;
 pub mod parity;
 pub mod product_step;
 pub mod schema;

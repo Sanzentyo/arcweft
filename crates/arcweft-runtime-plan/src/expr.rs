@@ -133,6 +133,31 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
         }
     }
 
+    pub(crate) fn with_project_function_typed_lowering_evidence<'new_helpers>(
+        self,
+        typed_lowering_evidence: &'new_helpers [RuntimeTypedLoweringEvidence],
+        expression_cursor: &'new_helpers Cell<usize>,
+        declaration: &'new_helpers arcweft_lang_hir::symbol::CallableDeclarationId,
+    ) -> RuntimePureHelperLookup<'new_helpers, 'functions, 'locals>
+    where
+        'helpers: 'new_helpers,
+    {
+        RuntimePureHelperLookup {
+            ids: self.ids,
+            helpers: self.helpers,
+            function_values: self.function_values,
+            function_locals: self.function_locals,
+            typed_lowering_evidence: Some(
+                RuntimeTypedLoweringEvidenceLookup::for_project_function(
+                    typed_lowering_evidence,
+                    declaration,
+                ),
+            ),
+            expression_cursor: Some(expression_cursor),
+            pipe_binding_depth: self.pipe_binding_depth,
+        }
+    }
+
     fn enter_pipe_binding(mut self) -> Self {
         self.pipe_binding_depth = Some(
             self.pipe_binding_depth

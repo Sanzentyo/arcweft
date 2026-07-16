@@ -1,10 +1,10 @@
 use super::support::*;
 
 #[test]
-fn multiline_state_defaults_are_structured() {
+fn multiline_struct_defaults_are_structured() {
     let tree = parse_ok(
         r"
-pub state GameState {
+pub struct GameState {
     pub config: Config = Config {
         text_speed = 1.0f32,
         volume = 0.8f32,
@@ -12,8 +12,8 @@ pub state GameState {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("multiline state default lowers");
-    validate_typecheck_ready(&hir).expect("multiline state default is structured");
+    let hir = lower_to_hir(&tree).expect("multiline struct default lowers");
+    validate_typecheck_ready(&hir).expect("multiline struct default is structured");
 }
 
 #[test]
@@ -38,28 +38,13 @@ flow @flow.main main {
 fn entry_selects_runtime_goto_flow() {
     let tree = parse_ok(
         r#"
-entry game @entry.main { goto @flow.second }
+entry cli @entry.main { goto @flow.second }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
     );
     let hir = lower_to_hir(&tree).expect("entry lowers");
     validate_typecheck_ready(&hir).expect("explicit entry is typecheck ready");
-}
-
-#[test]
-fn entry_accepts_bare_goto_flow_target() {
-    let tree = parse_ok(
-        r#"
-entry game {
-    goto @flow.second
-}
-flow @flow.first first { return "wrong" }
-flow @flow.second second { return "right" }
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("entry lowers");
-    validate_typecheck_ready(&hir).expect("bare start entry is typecheck ready");
 }
 
 #[test]

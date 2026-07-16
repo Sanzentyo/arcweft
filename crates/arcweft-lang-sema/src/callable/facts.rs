@@ -44,7 +44,7 @@ pub enum CallTargetFact {
         primary: CallableCandidateId,
         equivalent: Arc<[CallableCandidateId]>,
         considered: Arc<[CallableCandidateId]>,
-        origin: SignatureOrigin,
+        origin: Box<SignatureOrigin>,
         schema: Arc<CallableSignatureSchema>,
     },
     Ambiguous {

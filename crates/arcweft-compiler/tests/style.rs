@@ -34,7 +34,13 @@ fn project_context(project: &ProjectSources) -> ProjectCompilationContext {
             .expect("symbol world");
     let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
         .expect("registration facts");
-    ProjectCompilationContext::new(Arc::new(TypeCheckEnv::standard()), Arc::new(facts), None)
+    ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        None,
+        None,
+        Vec::new(),
+    )
 }
 
 #[test]

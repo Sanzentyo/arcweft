@@ -1,6 +1,5 @@
 use arcweft_agent_runner::effect_policy::AgentEffectRegistry;
 use arcweft_agent_runner::session::{AgentSession, RagService};
-use arcweft_compiler::error::CompileAgentError;
 use arcweft_compiler::types::CompiledAgentBundle;
 use arcweft_core::bytecode::BytecodeVerificationBudget;
 use arcweft_debug_model::sink::DebugEventSink;
@@ -15,7 +14,8 @@ use crate::cell::{
     ReplCellInput, ReplCellList, ReplCellRecord, ReplEvaluateOutcome, ReplResetOptions,
     ReplResetOutcome, ReplUndoOptions, ReplUndoOutcome,
 };
-use crate::error::{ReplTransactionError, ReplTransactionPhase};
+use crate::compile::compile_repl_cell;
+use crate::error::ReplTransactionError;
 use crate::evidence::{ReplBindingEvidence, ReplGenerationEvidence, ReplGenerationId};
 use crate::hash::hash_parts;
 use crate::runtime::{
@@ -175,11 +175,7 @@ impl ReplSession {
     {
         let prelude = live_binding_prelude(&self.bindings);
         let parsed = classify_repl_cell(cell_id, input, &prelude)?;
-        let compiled = arcweft_compiler::agent::compile_agent_bundle_with_project(
-            parsed.synthetic_source.clone(),
-            self.base.project(),
-        )
-        .map_err(map_compile_error)?;
+        let compiled = compile_repl_cell(&parsed, &self.base)?;
         compiled
             .bundle
             .bytecode
@@ -241,17 +237,27 @@ impl ReplSession {
 
     fn commit_validated_cell(&mut self, validated: ValidatedReplCell) -> usize {
         let bytecode = validated.compiled.bundle.bytecode.program.clone();
+        let entry = validated
+            .compiled
+            .bundle
+            .manifest
+            .entry
+            .as_deref()
+            .map(|entry| {
+                arcweft_core::plan::EntryRuntimeId::from_source_entity_body(entry)
+                    .expect("checked REPL bundles retain an exact canonical entry")
+            });
         let mut record = ReplCellRecord::new(
             validated.cell_id,
             validated.parsed.kind,
             validated.parsed.source,
             validated.parsed.source_hash,
             validated.parsed.synthetic_source_hash,
-            validated.parsed.synthetic_agent_id,
+            validated.parsed.synthetic_controller_name,
             self.base.program_hash.clone(),
             self.generation,
             validated.commit_hash,
-            bytecode.entry_flow.clone(),
+            entry,
             validated.bytecode_stats,
             validated.verified_effects,
             validated.parsed.bindings,
@@ -422,8 +428,8 @@ impl ReplSession {
                 ordinal: cell.record.ordinal,
                 commit_hash: cell.record.commit_hash.clone(),
                 source_hash: cell.record.source_hash.clone(),
-                synthetic_agent_id: cell.record.synthetic_agent_id.clone(),
-                entry_flow: cell.record.entry_flow.clone(),
+                synthetic_controller_name: cell.record.synthetic_controller_name.clone(),
+                entry: cell.record.entry.clone(),
                 bytecode: cell.bytecode.clone(),
             })
             .collect();
@@ -550,34 +556,5 @@ impl ReplBindingRecord {
             ReplBindingStatus::Active => "active",
             ReplBindingStatus::Invalidated => "invalidated",
         }
-    }
-}
-
-fn map_compile_error(error: CompileAgentError) -> ReplTransactionError {
-    match error {
-        CompileAgentError::Parse(errors) => ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::ClassifyParse,
-            message: format!("{errors:?}"),
-        },
-        CompileAgentError::Hir(errors) => ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::HirLowering,
-            message: format!("{errors:?}"),
-        },
-        CompileAgentError::Resolve(errors) => ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::SemanticEffectChecks,
-            message: format!("{errors:?}"),
-        },
-        CompileAgentError::Readiness(errors) => ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::SemanticEffectChecks,
-            message: format!("{errors:?}"),
-        },
-        CompileAgentError::Type(errors) => ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::SemanticEffectChecks,
-            message: format!("{errors:?}"),
-        },
-        other => ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::SemanticEffectChecks,
-            message: other.to_string(),
-        },
     }
 }

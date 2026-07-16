@@ -36,10 +36,14 @@ fn minimal_program() -> AwbcProgram {
             source_map: None,
         }],
         entries: vec![AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
-            kind: AwbcEntryKind::Game,
+            kind: AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     }
@@ -232,10 +236,14 @@ fn expression_apply_program(
         },
         resume_points,
         entries: vec![AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
-            kind: AwbcEntryKind::Game,
+            kind: AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     }
@@ -610,10 +618,14 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
             },
         ],
         entries: vec![AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(1),
-            kind: AwbcEntryKind::Game,
+            kind: AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     };

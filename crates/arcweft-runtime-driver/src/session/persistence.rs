@@ -23,12 +23,16 @@ impl BundleSession {
             .runtime_images
             .get(generation)?
             .runtime()
-            .start_entry(start)?;
+            .start_entry(start, &self.options.root_command_host_calls)?;
         let entry = runtime.entry;
         self.activate_runtime(runtime);
         self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         self.pending_input_events.clear();
         self.pending_presentation_inputs.clear();
+        self.pending_host_call_results.clear();
+        self.pending_deferred_root_events.clear();
+        self.pending_root_command_results.clear();
+        self.waiting_action_receive_calls.clear();
         self.presentation = BundlePresentationSnapshot::default();
         self.view_virtualization = ViewVirtualizationRuntime::default();
         self.retire_unused_generations();
@@ -58,6 +62,26 @@ impl BundleSession {
                 }
             }
         };
+        let active_entry = self
+            .executor
+            .product_active_entry_snapshot_identity()
+            .map_err(|error| BundleSessionSaveError::Root {
+                message: error.to_string(),
+            })?
+            .ok_or_else(|| BundleSessionSaveError::UnsupportedExecutorTier {
+                tier: self.executor.tier().as_str().to_owned(),
+            })?;
+        let root = self.executor.product_root_state_snapshot();
+        let mut validated_root_owner = self.executor.clone();
+        validated_root_owner
+            .restore_product_root_snapshot(&active_entry, root.clone())
+            .map_err(|error| BundleSessionSaveError::Root {
+                message: error.to_string(),
+            })?;
+        let next_step_index =
+            u64::try_from(self.next_step_index).map_err(|_| BundleSessionSaveError::Encode {
+                message: "next step index does not fit the final u64 session field".to_owned(),
+            })?;
         Ok(BundleSessionSnapshot {
             generation: BundleSessionGenerationSnapshot {
                 active_generation: active.id,
@@ -65,9 +89,11 @@ impl BundleSession {
                 bytecode_abi: active.bytecode_abi,
                 adapter_requirements: active.adapter_requirements,
             },
+            active_entry,
+            root,
             runtime: BundleSessionRuntimeSnapshot {
                 source_label: self.source_label.clone(),
-                next_step_index: u64::try_from(self.next_step_index).unwrap_or(u64::MAX),
+                next_step_index,
                 next_task_sequence: self.next_task_sequence,
                 next_generation_id: self.next_generation_id,
                 runtime_generation_pin: self.runtime_generation_pin.as_ref().map(|pin| pin.id),
@@ -100,7 +126,7 @@ impl BundleSession {
         bytes: &[u8],
         options: &arcweft_save::SaveDecodeOptions,
     ) -> Result<(), BundleSessionSaveError> {
-        let snapshot = arcweft_save::decode_typed_json_save::<BundleSessionSnapshot>(
+        let snapshot = arcweft_save::decode_strict_typed_json_save::<BundleSessionSnapshot>(
             bytes,
             &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
             BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
@@ -122,6 +148,7 @@ impl BundleSession {
     ) -> Result<(), BundleSessionSaveError> {
         self.validate_session_save_generation(&snapshot.generation)?;
         validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
+        let active_entry = snapshot.active_entry.clone();
         let active_generation = self.active_generation().id;
         let BundleSessionExecutorSnapshot { generation, state } = snapshot.executor;
         if generation != active_generation {
@@ -164,6 +191,11 @@ impl BundleSession {
         let executor_snapshot = ArcweftRuntimeExecutorSnapshot::AwbcProduct(state);
         let mut restored_executor = self.executor.clone();
         restored_executor.restore_snapshot(executor_snapshot)?;
+        restored_executor
+            .restore_product_root_snapshot(&active_entry, snapshot.root.clone())
+            .map_err(|error| BundleSessionSaveError::Root {
+                message: error.to_string(),
+            })?;
         let restored_view_virtualization = ViewVirtualizationRuntime::from_snapshot(
             &snapshot.view_virtualization,
         )
@@ -215,6 +247,8 @@ impl BundleSession {
         self.pending_presentation_inputs.clear();
         self.pending_text_control_write_backs.clear();
         self.pending_host_call_results.clear();
+        self.pending_deferred_root_events.clear();
+        self.pending_root_command_results.clear();
         self.waiting_action_receive_calls.clear();
         self.task_generation_pins.clear();
         self.tasks = RuntimeTaskRegistry::default();
@@ -242,9 +276,14 @@ impl BundleSession {
                 count: self.pending_text_control_write_backs.len(),
             });
         }
-        if !self.pending_host_call_results.is_empty() {
+        let pending_host_results = self
+            .pending_host_call_results
+            .len()
+            .checked_add(self.pending_root_command_results.len())
+            .expect("two live host-result collections cannot exceed addressable memory");
+        if pending_host_results > 0 {
             blockers.push(BundleSessionPendingBlocker::PendingHostCallResults {
-                count: self.pending_host_call_results.len(),
+                count: pending_host_results,
             });
         }
         if !self.waiting_action_receive_calls.is_empty() {
@@ -263,6 +302,25 @@ impl BundleSession {
         if !self.task_generation_pins.is_empty() {
             blockers.push(BundleSessionPendingBlocker::TaskGenerationPins {
                 count: self.task_generation_pins.len(),
+            });
+        }
+        let mut pending_root_events = self.pending_deferred_root_events.len();
+        if let Some(root) = self.executor.product_root_save_blockers() {
+            if root.reducer_active {
+                blockers.push(BundleSessionPendingBlocker::ReducerTransactionActive);
+            }
+            pending_root_events = pending_root_events
+                .checked_add(root.pending_events as usize)
+                .expect("live root-event queues cannot exceed addressable memory");
+            if root.pending_commands > 0 {
+                blockers.push(BundleSessionPendingBlocker::PendingRootCommands {
+                    count: root.pending_commands,
+                });
+            }
+        }
+        if pending_root_events > 0 {
+            blockers.push(BundleSessionPendingBlocker::PendingRootEvents {
+                count: pending_root_events,
             });
         }
         blockers

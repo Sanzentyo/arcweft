@@ -1,4 +1,15 @@
+pub mod entry_inventory;
+
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
+pub use crate::entry::{
+    AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
+    RuntimeAgentEntryRoles, RuntimeCallableExecutable, RuntimeCallableExecutableCode,
+    RuntimeCallableId, RuntimeCallableRole, RuntimeCommandConstructorId, RuntimeCommandContract,
+    RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeEntryRoles, RuntimeFlowExecutable,
+    RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowRole, RuntimeNominalRole,
+    RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaLimits, RuntimeSchemaVariant,
+    RuntimeStatefulEntryRoles, RuntimeTypeSchema, RuntimeValueDigest, TypeLayoutHash,
+};
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
@@ -7,15 +18,19 @@ use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
 use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeIterator, RuntimePayload};
+pub use entry_inventory::{
+    EntryRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlanError,
+    RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
-use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RuntimePlan {
-    pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<RuntimeEntrySpec>,
+    pub callable_executables: Vec<RuntimeCallableExecutable>,
+    pub flow_executables: Vec<RuntimeFlowExecutable>,
     pub flows: Vec<RuntimeFlow>,
     pub pure_helpers: Vec<RuntimePureHelper>,
     pub trait_methods: Vec<RuntimeTraitMethod>,
@@ -28,61 +43,6 @@ pub struct RuntimePlan {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct FlowRuntimeId {
     path: RuntimeIdPath,
-}
-
-/// Runtime identifier for a source-declared entry.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct EntryRuntimeId {
-    path: RuntimeIdPath,
-}
-
-/// Adapter family of a source-declared entry.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeEntryKind {
-    Game,
-    Cli,
-    Server,
-    Activity,
-    Test,
-    Bench,
-    Custom(String),
-}
-
-/// Launch target selected by an entry.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeEntryTarget {
-    Flow(FlowRuntimeId),
-    Routes(Vec<RuntimeRouteSpec>),
-}
-
-/// Route declaration in a server-like entry.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeRouteSpec {
-    pub method: String,
-    pub path: String,
-    pub target: FlowRuntimeId,
-    pub bindings: Vec<RuntimeRouteBinding>,
-}
-
-/// Explicit route parameter binding for a target flow invocation.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeRouteBinding {
-    pub name: String,
-    pub source: RuntimeRouteBindingSource,
-}
-
-/// Adapter route value source used by a route binding.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeRouteBindingSource {
-    PathParam(String),
-}
-
-/// Lowered entry declaration preserved for CLI/LSP/runtime launch selection.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeEntrySpec {
-    pub id: EntryRuntimeId,
-    pub kind: RuntimeEntryKind,
-    pub target: RuntimeEntryTarget,
 }
 
 /// Runtime identifier for a lowered dialogue line.
@@ -123,6 +83,11 @@ impl FlowRuntimeId {
         }
     }
 
+    pub(crate) fn from_runtime_contract(value: &str) -> Result<Self, RuntimeIdError> {
+        RuntimeIdPath::from_runtime_contract_str(RuntimeIdFamily::Flow, value)
+            .map(|path| Self { path })
+    }
+
     #[must_use]
     pub const fn path(&self) -> &RuntimeIdPath {
         &self.path
@@ -140,42 +105,6 @@ impl FlowRuntimeId {
 }
 
 impl fmt::Display for FlowRuntimeId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.path.fmt(f)
-    }
-}
-
-impl EntryRuntimeId {
-    pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
-        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Entry, value).map(|path| Self { path })
-    }
-
-    pub fn from_source_entity_body(value: &str) -> Result<Self, RuntimeIdError> {
-        RuntimeIdPath::from_source_entity_body(
-            RuntimeIdFamily::Entry,
-            value,
-            RuntimeIdFamily::Entry.source_families(),
-        )
-        .map(|path| Self { path })
-    }
-
-    #[must_use]
-    pub const fn path(&self) -> &RuntimeIdPath {
-        &self.path
-    }
-
-    #[must_use]
-    pub fn canonical_label(&self) -> String {
-        self.path.label()
-    }
-
-    #[must_use]
-    pub fn public_label(&self) -> RuntimePublicLabel {
-        RuntimePublicLabel::for_family(RuntimeIdFamily::Entry, &self.path)
-    }
-}
-
-impl fmt::Display for EntryRuntimeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.path.fmt(f)
     }
@@ -667,26 +596,15 @@ pub enum FlowEvent {
     Done,
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
-pub enum RuntimePlanError {
-    #[error("entry flow `{0}` does not exist in runtime plan")]
-    MissingEntryFlow(String),
-}
-
 impl RuntimePlan {
     pub fn new(
-        entry_flow: Option<FlowRuntimeId>,
         flows: Vec<RuntimeFlow>,
         line_task_groups: Vec<LineTaskGroup>,
     ) -> Result<Self, RuntimePlanError> {
-        if let Some(entry) = entry_flow.as_ref()
-            && !flows.iter().any(|flow| flow.id == *entry)
-        {
-            return Err(RuntimePlanError::MissingEntryFlow(entry.canonical_label()));
-        }
         Ok(Self {
-            entry_flow,
             entries: Vec::new(),
+            callable_executables: Vec::new(),
+            flow_executables: Vec::new(),
             flows,
             pure_helpers: Vec::new(),
             trait_methods: Vec::new(),
@@ -719,16 +637,11 @@ impl RuntimePlan {
         self
     }
 
-    #[must_use]
-    pub fn with_entries(mut self, entries: Vec<RuntimeEntrySpec>) -> Self {
-        self.entries = entries;
-        self
-    }
-
     pub fn lines_only(line_task_groups: Vec<LineTaskGroup>) -> Self {
         Self {
-            entry_flow: None,
             entries: Vec::new(),
+            callable_executables: Vec::new(),
+            flow_executables: Vec::new(),
             flows: Vec::new(),
             pure_helpers: Vec::new(),
             trait_methods: Vec::new(),

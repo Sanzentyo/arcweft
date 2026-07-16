@@ -35,7 +35,13 @@ pub fn hover(
     document: &DocumentSnapshot,
     position: Position,
 ) -> Option<Hover> {
-    let offset = document.line_index().byte_offset_from_position(position);
+    let offset = document
+        .line_index()
+        .try_byte_offset_from_position(position)
+        .ok()?;
+    if let Some(hover) = crate::features::entry_roles::hover(profile, document, offset) {
+        return Some(hover);
+    }
     if let Some(text) = ViewPartMetadataIndex::for_document(profile, document)
         .and_then(|metadata| metadata.hover(offset))
     {
@@ -345,15 +351,6 @@ fn callable_at_word(
                 label: word.to_owned(),
             })
         }
-        Item::Agent(agent)
-            if agent.name() == word
-                && declaration_header_contains_word(source, agent.range(), word_range) =>
-        {
-            Some(CallableHoverTarget {
-                id: CallableId::new(format!("agent.{word}")),
-                label: word.to_owned(),
-            })
-        }
         _ => None,
     })
 }
@@ -606,7 +603,10 @@ fn word_at_position_range(
     document: &DocumentSnapshot,
     position: Position,
 ) -> Option<(String, TextRange)> {
-    let offset = document.line_index().byte_offset_from_position(position);
+    let offset = document
+        .line_index()
+        .try_byte_offset_from_position(position)
+        .ok()?;
     let text = document.text();
     let start = text[..offset]
         .char_indices()

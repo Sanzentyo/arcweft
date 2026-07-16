@@ -238,11 +238,26 @@ impl<'a> AwbcFlowLowerer<'a> {
         }
         let entry_targets = entry_target_flows(plan);
         for flow in &plan.flows {
-            let entry_parameters = if entry_targets.contains(&flow.id) {
-                infer_entry_parameter_names(&flow.ops)
-            } else {
-                Vec::new()
-            };
+            let entry_parameters = plan
+                .flow_executables
+                .iter()
+                .find(|executable| executable.flow == flow.id)
+                .map_or_else(
+                    || {
+                        if entry_targets.contains(&flow.id) {
+                            infer_entry_parameter_names(&flow.ops)
+                        } else {
+                            Vec::new()
+                        }
+                    },
+                    |executable| {
+                        executable
+                            .parameters
+                            .iter()
+                            .map(|parameter| parameter.name.clone())
+                            .collect()
+                    },
+                );
             self.lower_flow(flow, &entry_parameters);
         }
         self.inventory.lower_entries(plan);
@@ -1662,12 +1677,9 @@ fn patch_jump_target(
 
 fn entry_target_flows(plan: &RuntimePlan) -> BTreeSet<FlowRuntimeId> {
     let mut targets = BTreeSet::new();
-    if let Some(entry_flow) = plan.entry_flow.as_ref() {
-        targets.insert(entry_flow.clone());
-    }
     for entry in &plan.entries {
         match &entry.target {
-            RuntimeEntryTarget::Flow(flow) => {
+            RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
                 targets.insert(flow.clone());
             }
             RuntimeEntryTarget::Routes(routes) => {

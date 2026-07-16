@@ -1462,7 +1462,7 @@ fn agent_observe_profile_selected_dialogue_defaults_drive_native_debug_output() 
     assert!(
         base_styles
             .iter()
-            .any(|style| style["kind"] == "size" && style["raw"] == "24"),
+            .any(|style| style["kind"] == "size" && style["raw"] == "24px"),
         "mobile dialogue defaults should select the 24px base text size: {dialogue_view}"
     );
 
@@ -1538,7 +1538,7 @@ pub character alice {
     display = "Alice"
 }
 
-entry game {
+entry cli @entry.main {
     goto @flow.main
 }
 
@@ -1554,13 +1554,18 @@ flow main {
 
 fn profiled_observe_manifest() -> &'static str {
     r#"
+[package]
+name = "profiled-agent-observe"
+
 [profiles.desktop]
-kind = "game"
+kind = "cli"
+entry = "entry.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 
 [profiles.mobile]
-kind = "game"
+kind = "cli"
+entry = "entry.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"

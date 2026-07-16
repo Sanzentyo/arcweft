@@ -1,6 +1,6 @@
 use super::call;
 use crate::effect::{LineEffectRequest, RuntimeLog};
-use crate::engine::{Engine, FlowFiberStatus};
+use crate::engine::FlowFiberStatus;
 use crate::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope};
 use crate::plan::{FlowOp, RuntimeFlow, RuntimePlan};
 use crate::step::{
@@ -89,7 +89,7 @@ fn runtime_step_output_sink_scopes_mutation_without_taking_output() {
 
 #[test]
 fn runtime_step_modes_apply_internal_drain_and_budget() {
-    let mut drain = Engine::new(linear_plan(vec![
+    let mut drain = super::engine_for_test_plan(linear_plan(vec![
         FlowOp::Noop,
         FlowOp::Noop,
         FlowOp::Return("done".to_owned()),
@@ -103,7 +103,7 @@ fn runtime_step_modes_apply_internal_drain_and_budget() {
     assert_eq!(drained.stats.pending_ops_before, 0);
     assert!(matches!(drain.fiber().status, FlowFiberStatus::Done(_)));
 
-    let mut budgeted = Engine::new(linear_plan(vec![
+    let mut budgeted = super::engine_for_test_plan(linear_plan(vec![
         FlowOp::Noop,
         FlowOp::Noop,
         FlowOp::Return("done".to_owned()),
@@ -116,7 +116,7 @@ fn runtime_step_modes_apply_internal_drain_and_budget() {
     assert_eq!(result.stats.executed_ops, 2);
     assert!(matches!(budgeted.fiber().status, FlowFiberStatus::Running));
 
-    let mut one_op = Engine::new(linear_plan(vec![
+    let mut one_op = super::engine_for_test_plan(linear_plan(vec![
         FlowOp::Noop,
         FlowOp::Return("done".to_owned()),
     ]));
@@ -139,7 +139,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
         },
         ..LineTaskGroup::default()
     };
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.opening"),
@@ -155,7 +155,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
     )
     .expect("plan is valid");
 
-    let mut game = Engine::new(plan.clone());
+    let mut game = super::engine_for_test_plan(plan.clone());
     let result = game.step(
         RuntimeStepInput::default(),
         options(RuntimeStepMode::Game, 8),
@@ -173,7 +173,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
     assert_eq!(resumed.stop_reason, RuntimeStepStopReason::Done);
     assert!(matches!(game.fiber().status, FlowFiberStatus::Done(_)));
 
-    let mut server = Engine::new(plan);
+    let mut server = super::engine_for_test_plan(plan);
     let result = server.step(
         RuntimeStepInput::default(),
         options(RuntimeStepMode::Server, 8),
@@ -197,7 +197,7 @@ fn game_mode_stops_on_visible_output_but_server_mode_drains() {
 
 #[test]
 fn game_mode_does_not_stop_for_pure_observations() {
-    let mut engine = Engine::new(linear_plan(vec![
+    let mut engine = super::engine_for_test_plan(linear_plan(vec![
         FlowOp::Effect(LineEffectRequest::Log(RuntimeLog {
             level: "info".to_owned(),
             message: "tick".to_owned(),
@@ -217,7 +217,7 @@ fn game_mode_does_not_stop_for_pure_observations() {
 }
 
 fn linear_plan(ops: Vec<FlowOp>) -> RuntimePlan {
-    RuntimePlan::new(
+    super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.opening"),

@@ -15,6 +15,8 @@ use arcweft_core::{
         },
     },
     bytecode::BytecodeProgram,
+    entry::{EntryBindingIdentity, RuntimeEntryRoles},
+    plan::EntryRuntimeId,
     value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
 };
 use arcweft_interaction_model::input::{
@@ -548,6 +550,73 @@ fn save_envelope_strict_decode_rejects_future_or_trailing_payloads() {
 }
 
 #[test]
+fn save_007_predecessor_v1_missing_runtime_generation_pin_is_rejected() {
+    let bytes = product_awfb_bytes("entry.main");
+    let session = product_session_from_bytes(&bytes);
+    let snapshot = session.snapshot_session().expect("snapshot exports");
+    let mut predecessor = serde_json::to_value(snapshot).expect("snapshot becomes JSON");
+    predecessor
+        .get_mut("runtime")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("runtime object")
+        .remove("runtime_generation_pin");
+    let encoded = encode_session_json_value(&predecessor);
+    let mut target = product_session_from_bytes(&bytes);
+    let before = target.snapshot_session().expect("live snapshot exports");
+
+    let error = target
+        .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("missing required generation pin rejects");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::Decode { message }
+            if message.contains("missing field `runtime_generation_pin`")
+    ));
+    assert_eq!(
+        target
+            .snapshot_session()
+            .expect("rejected decode leaves session valid"),
+        before
+    );
+}
+
+#[test]
+fn save_007_unknown_nested_session_field_is_rejected() {
+    let bytes = product_awfb_bytes("entry.main");
+    let session = product_session_from_bytes(&bytes);
+    let snapshot = session.snapshot_session().expect("snapshot exports");
+    let mut future = serde_json::to_value(snapshot).expect("snapshot becomes JSON");
+    future
+        .get_mut("runtime")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("runtime object")
+        .insert(
+            "predecessor_extension".to_owned(),
+            serde_json::Value::Bool(true),
+        );
+    let encoded = encode_session_json_value(&future);
+    let mut target = product_session_from_bytes(&bytes);
+    let before = target.snapshot_session().expect("live snapshot exports");
+
+    let error = target
+        .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("unknown nested field rejects");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::Decode { message }
+            if message.contains("runtime.predecessor_extension")
+    ));
+    assert_eq!(
+        target
+            .snapshot_session()
+            .expect("rejected decode leaves session valid"),
+        before
+    );
+}
+
+#[test]
 fn session_save_rejects_pending_input_events() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
@@ -584,6 +653,17 @@ fn encode_session_snapshot(snapshot: &BundleSessionSnapshot, schema_version: u32
     .expect("session snapshot encodes")
 }
 
+fn encode_session_json_value(value: &serde_json::Value) -> Vec<u8> {
+    arcweft_save::SaveEnvelope::new(
+        arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
+        BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+        arcweft_save::TYPED_JSON_CODEC_ID,
+        serde_json::to_vec(value).expect("JSON payload encodes"),
+    )
+    .encode_bytes()
+    .expect("save envelope encodes")
+}
+
 fn product_awfb_bytes(entry: &str) -> Vec<u8> {
     product_awfb_bytes_with_label(entry, "awbc-session.arcw")
 }
@@ -607,7 +687,7 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some(entry.to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -782,12 +862,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 source_map: None,
             },
         ],
-        entries: vec![AwbcEntry {
-            public_id: AwbcStringId(1),
-            kind: AwbcEntryKind::Game,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
-        }],
+        entries: vec![minimal_awbc_entry(entry)],
         effect_plans: vec![AwbcEffectPlan {
             kind: AwbcEffectKind::Log,
             signature: AwbcSignatureId(2),
@@ -797,5 +872,17 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
             resources: Vec::new(),
         }],
         ..AwbcProgram::default()
+    }
+}
+
+fn minimal_awbc_entry(entry: &str) -> AwbcEntry {
+    AwbcEntry {
+        runtime_id: EntryRuntimeId::from_source_entity_body(entry).expect("test entry ID is valid"),
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
+        public_id: AwbcStringId(1),
+        kind: AwbcEntryKind::Cli,
+        signature: AwbcSignatureId(0),
+        target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        roles: RuntimeEntryRoles::None,
     }
 }

@@ -12,6 +12,7 @@ use crate::awbc::schema::{
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
     AwbcTypeId,
 };
+use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowParameterMode};
 use std::collections::BTreeSet;
 
 pub(super) struct Verifier<'program, 'context> {
@@ -48,6 +49,7 @@ pub(super) fn verify_program(
     verify_patterns(&verifier)?;
     verify_runtime_tables(&verifier)?;
     super::code::verify_code(&verifier)?;
+    verify_entry_runtime_contracts(&verifier)?;
     verify_entries(&verifier)?;
     verify_maps_and_resources(&verifier)?;
     Ok(())
@@ -1254,9 +1256,16 @@ fn verify_stream_and_source_tables(verifier: &Verifier<'_, '_>) -> Result<(), Aw
 fn verify_entries(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     let mut ids = BTreeSet::new();
+    let mut runtime_ids = BTreeSet::new();
     for (entry_index, entry) in program.entries.iter().enumerate() {
         let at = format!("entry {entry_index}");
         check_string(program, entry.public_id, &at)?;
+        if !runtime_ids.insert(entry.runtime_id.clone()) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "duplicate semantic runtime entry identity".to_owned(),
+            });
+        }
         if !ids.insert(entry.public_id) {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
@@ -1313,6 +1322,291 @@ fn verify_entries(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
+    let program = verifier.program;
+    let mut callable_ids = BTreeSet::new();
+    for (index, executable) in program.callable_executables.iter().enumerate() {
+        let at = format!("callable executable {index}");
+        if !callable_ids.insert(executable.role.callable.clone()) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "duplicate stable callable executable identity".to_owned(),
+            });
+        }
+        check_index(
+            program.functions.len(),
+            executable.function.0,
+            "functions",
+            &at,
+        )?;
+        if !matches!(
+            program.functions[executable.function.index()].kind,
+            AwbcFunctionKind::PureHelper | AwbcFunctionKind::Flow
+        ) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "role callable maps to a non-callable Product AWBC function".to_owned(),
+            });
+        }
+    }
+
+    let mut flow_ids = BTreeSet::new();
+    for (index, executable) in program.flow_executables.iter().enumerate() {
+        let at = format!("flow executable {index}");
+        if !flow_ids.insert(executable.metadata.flow.clone()) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "duplicate stable flow executable identity".to_owned(),
+            });
+        }
+        check_index(
+            program.functions.len(),
+            executable.function.0,
+            "functions",
+            &at,
+        )?;
+        let function = &program.functions[executable.function.index()];
+        if function.kind != AwbcFunctionKind::Flow {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "flow executable maps to a non-flow Product AWBC function".to_owned(),
+            });
+        }
+        let signature = &program.signatures[function.signature.index()];
+        if signature.params.len() != executable.metadata.parameters.len() {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "flow executable parameter metadata does not match its signature"
+                    .to_owned(),
+            });
+        }
+        for (position, parameter) in executable.metadata.parameters.iter().enumerate() {
+            if parameter.position as usize != position || parameter.name.is_empty() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: format!("{at} parameter {position}"),
+                    message: "flow executable parameters must be contiguous and named".to_owned(),
+                });
+            }
+        }
+        if let Some(controller) = executable.metadata.controller.as_ref() {
+            let Some(callable) = find_callable_executable(program, controller) else {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "flow controller role has no exact callable executable".to_owned(),
+                });
+            };
+            if callable.function != executable.function {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "flow controller and flow metadata map to different functions"
+                        .to_owned(),
+                });
+            }
+        }
+    }
+
+    let mut referenced_callables = BTreeSet::new();
+    let mut referenced_flows = BTreeSet::new();
+    for (entry_index, entry) in program.entries.iter().enumerate() {
+        let at = format!("entry {entry_index} runtime contract");
+        if let AwbcEntryTarget::Function(target) = &entry.target {
+            check_index(program.functions.len(), target.0, "functions", &at)?;
+        }
+        match (&entry.kind, &entry.target, &entry.roles) {
+            (
+                AwbcEntryKind::Game | AwbcEntryKind::Editor | AwbcEntryKind::Test,
+                AwbcEntryTarget::Function(target),
+                RuntimeEntryRoles::Stateful(roles),
+            ) => {
+                if entry.binding != roles.binding {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "top-level entry binding differs from stateful role binding"
+                            .to_owned(),
+                    });
+                }
+                if !roles.command_policy.root_limits.is_valid() {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "stateful entry has invalid durable-root execution limits"
+                            .to_owned(),
+                    });
+                }
+                for (label, role, arity) in [
+                    ("initializer", &roles.initializer, 0_usize),
+                    ("reducer", &roles.reducer, 2_usize),
+                ] {
+                    let Some(executable) = find_callable_executable(program, role) else {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: format!("{label} role has no exact callable executable"),
+                        });
+                    };
+                    let function = &program.functions[executable.function.index()];
+                    let signature = &program.signatures[function.signature.index()];
+                    if function.kind != AwbcFunctionKind::PureHelper
+                        || signature.params.len() != arity
+                        || signature.result.is_none()
+                    {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: format!(
+                                "{label} role does not map to the required pure callable shape"
+                            ),
+                        });
+                    }
+                    referenced_callables.insert((role.callable.clone(), role.contract));
+                }
+                let Some(flow) = program.flow_executables.iter().find(|executable| {
+                    executable.metadata.flow == roles.initial_flow.flow
+                        && executable.metadata.contract == roles.initial_flow.contract
+                }) else {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "initial-flow role has no exact flow executable".to_owned(),
+                    });
+                };
+                if flow.function != *target {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "stateful target differs from its bound initial flow".to_owned(),
+                    });
+                }
+                let [parameter] = flow.metadata.parameters.as_slice() else {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "stateful initial flow must have exactly one parameter".to_owned(),
+                    });
+                };
+                if parameter.mode != RuntimeFlowParameterMode::Owned
+                    || parameter.nominal != roles.state.identity
+                    || parameter.layout != roles.state.layout
+                {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "initial flow does not receive the selected owned state role"
+                            .to_owned(),
+                    });
+                }
+                verify_role_schema(&at, "state", &roles.state.schema, roles.state.layout)?;
+                verify_role_schema(&at, "event", &roles.event.schema, roles.event.layout)?;
+                referenced_flows
+                    .insert((roles.initial_flow.flow.clone(), roles.initial_flow.contract));
+            }
+            (
+                AwbcEntryKind::Agent,
+                AwbcEntryTarget::Function(target),
+                RuntimeEntryRoles::Agent(roles),
+            ) => {
+                if entry.binding != roles.binding {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "top-level entry binding differs from Agent role binding"
+                            .to_owned(),
+                    });
+                }
+                let Some(callable) = find_callable_executable(program, &roles.controller) else {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "Agent controller role has no exact callable executable"
+                            .to_owned(),
+                    });
+                };
+                if callable.function != *target
+                    || program.functions[target.index()].kind != AwbcFunctionKind::Flow
+                {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "Agent controller target differs from its callable executable"
+                            .to_owned(),
+                    });
+                }
+                let Some(flow) = program.flow_executables.iter().find(|flow| {
+                    flow.function == *target
+                        && flow.metadata.controller.as_ref() == Some(&roles.controller)
+                }) else {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "Agent controller target has no exact flow executable".to_owned(),
+                    });
+                };
+                referenced_callables
+                    .insert((roles.controller.callable.clone(), roles.controller.contract));
+                referenced_flows.insert((flow.metadata.flow.clone(), flow.metadata.contract));
+            }
+            (
+                AwbcEntryKind::Cli
+                | AwbcEntryKind::Server
+                | AwbcEntryKind::Activity
+                | AwbcEntryKind::Bench
+                | AwbcEntryKind::Custom(_),
+                AwbcEntryTarget::Function(_) | AwbcEntryTarget::Routes(_),
+                RuntimeEntryRoles::None,
+            ) => {}
+            _ => {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "entry kind, target, and semantic roles are incompatible".to_owned(),
+                });
+            }
+        }
+    }
+
+    for executable in &program.callable_executables {
+        if !referenced_callables
+            .contains(&(executable.role.callable.clone(), executable.role.contract))
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: executable.role.callable.as_str().to_owned(),
+                message: "callable executable is not reachable from an entry role".to_owned(),
+            });
+        }
+    }
+    for executable in &program.flow_executables {
+        if !referenced_flows.contains(&(
+            executable.metadata.flow.clone(),
+            executable.metadata.contract,
+        )) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: executable.metadata.flow.canonical_label(),
+                message: "flow executable is not reachable from an entry role".to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn find_callable_executable<'a>(
+    program: &'a AwbcProgram,
+    role: &RuntimeCallableRole,
+) -> Option<&'a crate::awbc::schema::AwbcCallableExecutable> {
+    program
+        .callable_executables
+        .iter()
+        .find(|executable| executable.role == *role)
+}
+
+fn verify_role_schema(
+    at: &str,
+    role: &'static str,
+    schema: &crate::entry::RuntimeTypeSchema,
+    layout: crate::entry::TypeLayoutHash,
+) -> Result<(), AwbcVerifyError> {
+    let actual = schema
+        .try_layout_hash()
+        .map_err(|error| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: format!("{role} schema is invalid: {error}"),
+        })?;
+    if actual != layout {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: format!("{role} schema layout does not match checked metadata"),
+        });
     }
     Ok(())
 }

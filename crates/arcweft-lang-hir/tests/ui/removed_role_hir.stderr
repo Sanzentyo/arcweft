@@ -1,0 +1,23 @@
+error[E0432]: unresolved import `arcweft_lang_hir::model::HirAgent`
+ --> tests/ui/removed_role_hir.rs:1:31
+  |
+1 | use arcweft_lang_hir::model::{HirAgent, HirModule, HirTopLevelDecl};
+  |                               ^^^^^^^^ no `HirAgent` in `model`
+
+error[E0599]: no method named `agents` found for reference `&HirModule` in the current scope
+ --> tests/ui/removed_role_hir.rs:5:20
+  |
+5 |     let _ = module.agents();
+  |                    ^^^^^^ method not found in `&HirModule`
+
+error[E0599]: no variant, associated function, or constant named `State` found for enum `HirTopLevelDecl` in the current scope
+ --> tests/ui/removed_role_hir.rs:7:26
+  |
+7 |         HirTopLevelDecl::State(_) | HirTopLevelDecl::Agent(_) => {}
+  |                          ^^^^^ variant, associated function, or constant not found in `HirTopLevelDecl`
+
+error[E0599]: no variant, associated function, or constant named `Agent` found for enum `HirTopLevelDecl` in the current scope
+ --> tests/ui/removed_role_hir.rs:7:54
+  |
+7 |         HirTopLevelDecl::State(_) | HirTopLevelDecl::Agent(_) => {}
+  |                                                      ^^^^^ variant, associated function, or constant not found in `HirTopLevelDecl`

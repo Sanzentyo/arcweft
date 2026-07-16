@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.action_fields action_fields()
+fn action_fields() -> Result<Unit, AgentError>
 effects { agent.observe, debug.record }
 {
     let frame = try observe()
@@ -10,4 +9,9 @@ effects { agent.observe, debug.record }
     checkpoint("action-target-fields-observed")
 
     observed.target
+    Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = action_fields
 }

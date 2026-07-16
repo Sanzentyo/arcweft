@@ -1,5 +1,5 @@
 use arcweft_agent_protocol::{artifact::ProjectBindingMode, protocol::AgentAssertionKind};
-use arcweft_core::plan::RuntimePlanError;
+use arcweft_core::{engine::EngineStartError, plan::RuntimePlanError};
 use thiserror::Error;
 
 use crate::effect_policy::AgentEffectPolicyError;
@@ -24,10 +24,16 @@ where
     Rag(#[source] RagError),
     #[error("Agent controller bytecode is invalid: {0}")]
     Bytecode(#[source] RuntimePlanError),
+    #[error("Agent controller entry could not start: {0}")]
+    ControllerEntryStart(#[source] EngineStartError),
+    #[error("Agent controller entry is invalid: {detail}")]
+    InvalidControllerEntry { detail: String },
     #[error("bundle is not an Agent controller bundle")]
     NotAgentControllerBundle,
     #[error("Agent controller bundle is missing its Agent artifact manifest")]
     MissingAgentManifest,
+    #[error("Agent controller artifact binding mismatch: {detail}")]
+    AgentArtifactMismatch { detail: String },
     #[error(
         "Agent controller project binding mismatch: expected program hash {expected_program_hash}, actual {actual_program_hash}, mode {mode:?}: {detail}"
     )]

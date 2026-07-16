@@ -4,7 +4,7 @@ use super::project::{
     native_host_policy_for_selection, resolve_source_selection, runtime_plan_options_for_selection,
     runtime_pure_config_for_selection,
 };
-use super::runtime::entry::apply_runtime_entry_selection;
+use super::runtime::entry::select_runtime_entry;
 use super::runtime::executor::RuntimeExecutorInstance;
 use super::runtime::options::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
@@ -23,7 +23,7 @@ use crate::output::{
 use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::{
     engine::{FlowFiberStatus, FlowStatusLabelStyle},
-    plan::RuntimePlan,
+    plan::{EntryRuntimeId, RuntimePlan},
     value::RuntimeBinding,
 };
 use arcweft_runtime_host::NativeAdapterRegistrar;
@@ -99,12 +99,13 @@ pub(super) fn verify_types_command(
     }
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let mut checked = load_and_check_selection(&selection, None)?;
-    let runtime_plan = verify_types_runtime_plan(&mut checked, &selection, options)?;
+    let (runtime_plan, entry) = verify_types_runtime_plan(&mut checked, &selection, options)?;
     let runtime_type_validation =
         verify_types_runtime_type_validation(&mut checked, &runtime_plan)?;
     let verification = verify_types_semantics(&mut checked, options.mode)?;
     let runtime = verify_types_runtime_self_check(
         runtime_plan,
+        &entry,
         &selection,
         options,
         &mut checked,
@@ -166,8 +167,8 @@ fn verify_types_runtime_plan(
     checked: &mut CheckedModule,
     selection: &SourceSelection,
     options: &VerifyTypesOptions,
-) -> Result<RuntimePlan, ExitCode> {
-    let mut runtime_plan = run_profile_phase(&mut checked.phases, "runtime_plan_lower", || {
+) -> Result<(RuntimePlan, EntryRuntimeId), ExitCode> {
+    let runtime_plan = run_profile_phase(&mut checked.phases, "runtime_plan_lower", || {
         let runtime_options = runtime_plan_options_for_selection(selection)?;
         lower_source_runtime_plan_with_typecheck_and_options(
             &checked.hir,
@@ -181,9 +182,9 @@ fn verify_types_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_entry_selection(&mut runtime_plan, entry, options.flow.as_deref())?;
-    Ok(runtime_plan)
+    let entry = selection.command_entry(options.entry.as_deref())?;
+    let entry = select_runtime_entry(&runtime_plan, entry)?;
+    Ok((runtime_plan, entry))
 }
 
 fn verify_types_runtime_type_validation(
@@ -217,6 +218,7 @@ fn verify_types_semantics(
 
 fn verify_types_runtime_self_check(
     runtime_plan: RuntimePlan,
+    entry: &EntryRuntimeId,
     selection: &SourceSelection,
     options: &VerifyTypesOptions,
     checked: &mut CheckedModule,
@@ -235,11 +237,15 @@ fn verify_types_runtime_self_check(
         options.math_wgpu_min_elements,
     )?;
     let mut executor = run_profile_phase(&mut checked.phases, "executor_prepare", || {
-        Ok::<RuntimeExecutorInstance, ExitCode>(RuntimeExecutorInstance::new(
-            runtime_plan,
-            options.executor,
-            pure_config,
-        ))
+        RuntimeExecutorInstance::new(runtime_plan, entry, options.executor, pure_config).map_err(
+            |error| {
+                eprintln!(
+                    "error: failed to start entry `{}`: {error}",
+                    entry.public_label()
+                );
+                ExitCode::FAILURE
+            },
+        )
     })?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let file_roots = selection.native_file_roots()?;
@@ -338,8 +344,6 @@ pub(in crate::app) struct VerifyTypesOptions {
     profile: ProfileOptions,
     #[arg(long)]
     entry: Option<String>,
-    #[arg(long)]
-    flow: Option<String>,
     #[arg(long, value_parser = parse_verification_mode, default_value = "test")]
     mode: VerificationMode,
     #[arg(long)]

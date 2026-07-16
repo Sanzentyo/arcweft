@@ -5,27 +5,31 @@
 //! without adding parser-specific command shapes.
 
 use crate::checker::helpers::type_ref_kind;
+use crate::entry::{CheckedEntryCatalog, CheckedEntryId};
 use crate::env::{
     AgentActionEnvSignature, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
     TypeCheckEnv,
 };
 use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
 use arcweft_id::PublicId;
-use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_hir::style::HirStyleDecl;
+use arcweft_lang_hir::{
+    entry::HirEntryItem,
+    model::{HirFlowItem, HirModule, HirTopLevelDecl},
+    project::HirProject,
+    symbol::{CallableDeclarationId, CallableDeclarationOwner, CallablePackageId},
+};
 use arcweft_lang_syntax::{
     ast::{
         choice::ChoiceAction,
         flow::{Stmt, StmtMatchArm},
         ids::EntityRef,
-        items::{CallableItem, CallableKind, EntityDeclItem, EntityDeclKind, EntryItem},
+        items::{EntityDeclItem, EntityDeclKind},
+        module_path::CanonicalModulePath,
         pattern::Pattern,
     },
     expr::{CallArg, Expr, Literal, MatchExprArm},
-    types::{
-        FnParam as SyntaxFnParam, FnSignature as SyntaxFnSignature, TypeRef, parse_fn_signature,
-        parse_type_ref,
-    },
+    types::{FnParam as SyntaxFnParam, FnSignature as SyntaxFnSignature, TypeRef, parse_type_ref},
 };
 use arcweft_source::{SourceAnchor, SourceDocument};
 use std::collections::BTreeMap;
@@ -33,8 +37,13 @@ use thiserror::Error;
 
 mod agent_prelude;
 mod entities;
+mod entry_roles;
 mod flow_control;
 mod relations;
+
+pub use entry_roles::{
+    ProjectEntryRecord, ProjectEntryRoleEdge, ProjectEntryRoleKind, ProjectEntryRoleTarget,
+};
 
 type SourceName = SourceDocument;
 
@@ -113,6 +122,7 @@ pub enum ProjectGraphSymbolRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectCallableSymbol {
     kind: ProjectCallableKind,
+    declaration: CallableDeclarationId,
     signature: FunctionSignature,
     source: SourceAnchor,
     semantic_hash: SemanticHash,
@@ -121,7 +131,7 @@ pub struct ProjectCallableSymbol {
 /// Source callable family represented in the project graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectCallableKind {
-    Reducer,
+    Function,
     View,
 }
 
@@ -228,7 +238,9 @@ pub struct ProjectSemanticIndex {
     bundle_hash: Option<BundleHash>,
     entities: BTreeMap<PublicId, EntitySymbol>,
     callables: BTreeMap<QualifiedName, CallableSymbol>,
-    project_callables: BTreeMap<QualifiedName, ProjectCallableSymbol>,
+    project_callables: BTreeMap<CallableDeclarationId, ProjectCallableSymbol>,
+    entry_records: BTreeMap<CheckedEntryId, ProjectEntryRecord>,
+    entry_role_edges: Vec<ProjectEntryRoleEdge>,
     types: BTreeMap<TypeName, TypeKind>,
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
@@ -265,6 +277,10 @@ pub enum ProjectSemanticIndexError {
     InvalidSignalType { id: String, message: String },
     #[error("invalid callable signature for `{name}`: {message}")]
     InvalidCallableSignature { name: String, message: String },
+    #[error("invalid callable identity for `{name}`: {message}")]
+    InvalidCallableIdentity { name: String, message: String },
+    #[error("HIR project module `{module}` is not bound to its source document")]
+    MissingProjectSource { module: String },
 }
 
 impl ProgramHash {
@@ -504,15 +520,31 @@ impl ProjectGraphSymbolRef {
 }
 
 impl ProjectCallableSymbol {
-    /// Creates a source-owned project callable symbol.
-    pub const fn new(
-        kind: ProjectCallableKind,
+    /// Creates an ordinary function record with its canonical project identity.
+    pub const fn function(
+        declaration: CallableDeclarationId,
         signature: FunctionSignature,
         source: SourceAnchor,
         semantic_hash: SemanticHash,
     ) -> Self {
         Self {
-            kind,
+            kind: ProjectCallableKind::Function,
+            declaration,
+            signature,
+            source,
+            semantic_hash,
+        }
+    }
+
+    pub const fn view(
+        declaration: CallableDeclarationId,
+        signature: FunctionSignature,
+        source: SourceAnchor,
+        semantic_hash: SemanticHash,
+    ) -> Self {
+        Self {
+            kind: ProjectCallableKind::View,
+            declaration,
             signature,
             source,
             semantic_hash,
@@ -522,6 +554,11 @@ impl ProjectCallableSymbol {
     /// Callable family from source syntax.
     pub const fn kind(&self) -> ProjectCallableKind {
         self.kind
+    }
+
+    /// Canonical source declaration for an ordinary function.
+    pub const fn declaration(&self) -> &CallableDeclarationId {
+        &self.declaration
     }
 
     /// Typed callable signature projected from source syntax.
@@ -544,7 +581,7 @@ impl ProjectCallableKind {
     /// Stable lowercase graph/RAG label.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Reducer => "reducer",
+            Self::Function => "function",
             Self::View => "view",
         }
     }
@@ -678,6 +715,8 @@ impl ProjectSemanticIndex {
             entities: BTreeMap::new(),
             callables: agent_prelude::agent_prelude_callables(),
             project_callables: BTreeMap::new(),
+            entry_records: BTreeMap::new(),
+            entry_role_edges: Vec::new(),
             types: BTreeMap::new(),
             debug_queries: BTreeMap::new(),
             relations: Vec::new(),
@@ -705,12 +744,17 @@ impl ProjectSemanticIndex {
     }
 
     #[must_use]
-    pub fn with_project_callable(
-        mut self,
-        name: QualifiedName,
-        symbol: ProjectCallableSymbol,
-    ) -> Self {
-        self.project_callables.insert(name, symbol);
+    pub fn with_project_callable(mut self, symbol: ProjectCallableSymbol) -> Self {
+        self.project_callables
+            .insert(symbol.declaration().clone(), symbol);
+        self
+    }
+
+    /// Replaces the schema-v1 entry records and role edges from one exact checked catalog.
+    #[must_use]
+    pub fn with_checked_entry_catalog(mut self, catalog: &CheckedEntryCatalog) -> Self {
+        (self.entry_records, self.entry_role_edges) =
+            entry_roles::checked_entry_records_and_edges(catalog);
         self
     }
 
@@ -772,8 +816,16 @@ impl ProjectSemanticIndex {
         &self.callables
     }
 
-    pub fn project_callables(&self) -> &BTreeMap<QualifiedName, ProjectCallableSymbol> {
+    pub fn project_callables(&self) -> &BTreeMap<CallableDeclarationId, ProjectCallableSymbol> {
         &self.project_callables
+    }
+
+    pub fn entry_records(&self) -> &BTreeMap<CheckedEntryId, ProjectEntryRecord> {
+        &self.entry_records
+    }
+
+    pub fn entry_role_edges(&self) -> &[ProjectEntryRoleEdge] {
+        &self.entry_role_edges
     }
 
     pub fn types(&self) -> &BTreeMap<TypeName, TypeKind> {
@@ -809,7 +861,32 @@ impl ProjectSemanticIndex {
     }
 
     pub fn project_callable(&self, name: &QualifiedName) -> Option<&ProjectCallableSymbol> {
-        self.project_callables.get(name)
+        let mut matches = self
+            .project_callables
+            .values()
+            .filter(|symbol| symbol.declaration().qualified_name() == name.as_str());
+        let callable = matches.next()?;
+        matches.next().is_none().then_some(callable)
+    }
+
+    pub fn project_callable_by_declaration(
+        &self,
+        declaration: &CallableDeclarationId,
+    ) -> Option<&ProjectCallableSymbol> {
+        self.project_callables.get(declaration)
+    }
+
+    pub fn entry_record(&self, id: &CheckedEntryId) -> Option<&ProjectEntryRecord> {
+        self.entry_records.get(id)
+    }
+
+    pub fn entry_role_edges_for(
+        &self,
+        id: &CheckedEntryId,
+    ) -> impl Iterator<Item = &ProjectEntryRoleEdge> {
+        self.entry_role_edges
+            .iter()
+            .filter(move |edge| edge.entry() == id)
     }
 
     pub fn typecheck_env(&self) -> TypeCheckEnv {
@@ -870,7 +947,42 @@ pub fn project_semantic_index_from_hir(
     program_hash: ProgramHash,
     document: &SourceDocument,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    let index = index_hir_module_symbols(
+        module,
+        ProjectSemanticIndex::new(program_hash),
+        document,
+        None,
+    )?;
+    relations::index_project_symbol_dependency_relations(module, index)
+}
+
+/// Builds the final project-wide schema-v1 index from canonical package HIR and checked entries.
+pub fn project_semantic_index_from_checked_project(
+    project: &HirProject,
+    program_hash: ProgramHash,
+    entries: &CheckedEntryCatalog,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     let mut index = ProjectSemanticIndex::new(program_hash);
+    for (module_path, module) in project.modules() {
+        let document = module.source_document().ok_or_else(|| {
+            ProjectSemanticIndexError::MissingProjectSource {
+                module: module_path.to_string(),
+            }
+        })?;
+        index = index_hir_module_symbols(module, index, document, Some(project.package()))?;
+    }
+    for (_, module) in project.modules() {
+        index = relations::index_project_symbol_dependency_relations(module, index)?;
+    }
+    Ok(index.with_checked_entry_catalog(entries))
+}
+
+fn index_hir_module_symbols(
+    module: &HirModule,
+    mut index: ProjectSemanticIndex,
+    document: &SourceDocument,
+    package: Option<&CallablePackageId>,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for flow in module.flows() {
         if let Some(id) = flow.id() {
             index = index.with_entity(entities::entity_symbol(
@@ -890,21 +1002,31 @@ pub fn project_semantic_index_from_hir(
             );
         }
     }
-    for agent in module.agents() {
-        if let Some(id) = agent.item().id() {
-            index = index.with_entity(entities::entity_symbol(
-                id,
-                EntityKind::Agent,
-                None,
+    if let Some(package) = package {
+        for function in module.functions() {
+            let declaration =
+                CallableDeclarationId::for_function(package, function).map_err(|error| {
+                    ProjectSemanticIndexError::InvalidCallableIdentity {
+                        name: function.qualified_name(),
+                        message: error.to_string(),
+                    }
+                })?;
+            index = index.with_project_callable(entities::project_function_symbol(
+                declaration,
+                function,
                 document,
-                "agent",
-            )?);
+            ));
         }
     }
     for declaration in module.declarations() {
-        index = index_top_level_declaration(declaration, index, document)?;
+        index = index_top_level_declaration(
+            declaration,
+            index,
+            document,
+            package,
+            module.module_path(),
+        )?;
     }
-    index = relations::index_project_symbol_dependency_relations(module, index)?;
     Ok(index)
 }
 
@@ -912,8 +1034,29 @@ fn index_top_level_declaration(
     declaration: &HirTopLevelDecl,
     mut index: ProjectSemanticIndex,
     document: &SourceDocument,
+    package: Option<&CallablePackageId>,
+    module: &CanonicalModulePath,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match declaration {
+        HirTopLevelDecl::Callable(item) => {
+            if let Some(package) = package {
+                let callable = CallableDeclarationId::try_new(
+                    package.clone(),
+                    module.clone(),
+                    CallableDeclarationOwner::View,
+                    item.name(),
+                )
+                .map_err(|error| {
+                    ProjectSemanticIndexError::InvalidCallableIdentity {
+                        name: item.name().to_owned(),
+                        message: error.to_string(),
+                    }
+                })?;
+                index = index.with_project_callable(entities::project_view_callable_symbol(
+                    callable, item, document,
+                )?);
+            }
+        }
         HirTopLevelDecl::Source(source) => {
             if let Some(id) = source.item().id() {
                 index = index.with_entity(entities::entity_symbol(
@@ -975,17 +1118,10 @@ fn index_top_level_declaration(
                 )?);
             }
         }
-        HirTopLevelDecl::Callable(item) => {
-            index = index.with_project_callable(
-                QualifiedName::new(item.name()),
-                entities::project_callable_symbol(item, document)?,
-            );
-        }
         HirTopLevelDecl::Style(item) => {
             index = index_view_style_entity(index, item, document)?;
         }
-        HirTopLevelDecl::State(_)
-        | HirTopLevelDecl::Trait(_)
+        HirTopLevelDecl::Trait(_)
         | HirTopLevelDecl::Impl(_)
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternCapability(_)

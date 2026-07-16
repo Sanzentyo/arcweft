@@ -5,6 +5,8 @@ use std::{
 
 use thiserror::Error;
 
+use arcweft_lang_hir::symbol::CallableDeclarationId;
+
 use crate::effects::{EffectId, EffectSet};
 
 /// Stable semantic identity of a callable node in the effect graph.
@@ -16,7 +18,6 @@ pub struct CallableId(String);
 pub enum CallableKind {
     Function,
     Flow,
-    Agent,
     Hook,
     Entry,
     Source,
@@ -114,9 +115,35 @@ impl CallableId {
         Self(value.into())
     }
 
+    /// Semantic effect-graph identity of an ordinary source function.
+    pub fn source_function(name: &str) -> Self {
+        Self(format!("fn.{name}"))
+    }
+
+    /// Semantic effect-graph identity of a source flow.
+    pub fn source_flow(name: &str) -> Self {
+        Self(format!("flow.{name}"))
+    }
+
+    /// Canonical effect-graph identity of a registered project function.
+    pub fn project_function(declaration: &CallableDeclarationId) -> Self {
+        let mut value = "project.function|".to_owned();
+        push_identity_component(&mut value, declaration.package().as_str());
+        push_identity_component(&mut value, &declaration.module().to_string());
+        push_identity_component(&mut value, declaration.name());
+        Self(value)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+fn push_identity_component(output: &mut String, component: &str) {
+    output.push_str(&component.len().to_string());
+    output.push(':');
+    output.push_str(component);
+    output.push('|');
 }
 
 impl fmt::Display for CallableId {
@@ -354,5 +381,56 @@ impl EffectProgram {
 
     pub const fn available_capabilities(&self) -> Option<&EffectSet> {
         self.available_capabilities.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arcweft_lang_hir::symbol::{
+        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+    };
+    use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
+
+    use super::CallableId;
+
+    #[test]
+    fn project_function_identity_is_prefix_free_across_package_and_module_boundaries() {
+        let first = CallableDeclarationId::try_new(
+            CallablePackageId::try_new("a.crate").expect("first package"),
+            CanonicalModulePath::from_segments([ModuleSegment::new("b").expect("first module")]),
+            CallableDeclarationOwner::Function,
+            "work",
+        )
+        .expect("first declaration");
+        let second = CallableDeclarationId::try_new(
+            CallablePackageId::try_new("a").expect("second package"),
+            CanonicalModulePath::from_segments([
+                ModuleSegment::new("crate").expect("second module prefix"),
+                ModuleSegment::new("b").expect("second module leaf"),
+            ]),
+            CallableDeclarationOwner::Function,
+            "work",
+        )
+        .expect("second declaration");
+
+        assert_eq!(
+            format!(
+                "project.{}.{}.{}",
+                first.package(),
+                first.module(),
+                first.name()
+            ),
+            format!(
+                "project.{}.{}.{}",
+                second.package(),
+                second.module(),
+                second.name()
+            ),
+            "the previous dotted projection collided at the package/module boundary"
+        );
+        assert_ne!(
+            CallableId::project_function(&first),
+            CallableId::project_function(&second)
+        );
     }
 }

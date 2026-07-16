@@ -2,20 +2,33 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
 };
 
 use arcweft_lang_hir::{
     model::HirModule,
     project::HirProject,
-    symbol::{ProjectSymbolRevision, ProjectSymbolWorldId},
+    symbol::{
+        CallableDeclarationId, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+    },
 };
-use arcweft_lang_sema::registration::{CharacterRegistrationLimits, RegisteredSemanticWorld};
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_sema::{
+    check::analyze_registered_project_types,
+    entry::{CheckedEntryId, check_project_entries},
+    project_index::{ProjectSemanticIndex, project_semantic_index_from_checked_project},
+    registration::{CharacterRegistrationLimits, RegisteredSemanticWorld},
+};
+use arcweft_lang_syntax::ast::{
+    common::UseTreeKind,
+    module_path::CanonicalModulePath,
+    symbol_path::{ProjectSymbolPath, SymbolPath},
+};
 use arcweft_source::{
-    SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceSetRevision,
-    SourceSetRevisionError,
+    SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceRange, SourceSetRevision,
+    SourceSetRevisionError, SourceSpan,
 };
 use lsp_types::Uri;
 use thiserror::Error;
@@ -167,10 +180,45 @@ struct AcceptedSourceRegistryBuilder {
 #[derive(Debug)]
 pub(crate) struct AcceptedProjectSnapshot {
     hir: Arc<HirProject>,
+    semantic_index: Arc<ProjectSemanticIndex>,
+    callable_references: Arc<[AcceptedCallableReference]>,
+    entry_references: Arc<[AcceptedEntryReference]>,
     sources: AcceptedSourceDocuments,
     module_by_source: BTreeMap<SourceDocumentIdentity, CanonicalModulePath>,
     #[allow(dead_code, reason = "retained for bounded accepted-project metrics")]
     footprint: AcceptedProjectFootprint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AcceptedCallableReference {
+    declaration: CallableDeclarationId,
+    source: SourceSpan,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AcceptedEntryReference {
+    entry: CheckedEntryId,
+    source: SourceSpan,
+}
+
+impl AcceptedCallableReference {
+    pub(crate) const fn declaration(&self) -> &CallableDeclarationId {
+        &self.declaration
+    }
+
+    pub(crate) const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+}
+
+impl AcceptedEntryReference {
+    pub(crate) const fn entry(&self) -> &CheckedEntryId {
+        &self.entry
+    }
+
+    pub(crate) const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
 }
 
 #[derive(Debug)]
@@ -240,10 +288,17 @@ pub(crate) enum AcceptedProjectSnapshotError {
         first: CanonicalModulePath,
         conflicting: CanonicalModulePath,
     },
+    TypeCheck(String),
+    EntryBinding(String),
+    SemanticIndex(String),
     SourceSet(SourceSetRevisionError),
 }
 
 impl std::fmt::Display for AcceptedProjectSnapshotError {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive formatter preserves stable messages for every accepted-project invariant"
+    )]
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::DuplicateSourceIdentity { source } => {
@@ -340,6 +395,18 @@ impl std::fmt::Display for AcceptedProjectSnapshotError {
                 formatter,
                 "accepted source maps to multiple modules: {source:?} -> {first:?}, {conflicting:?}"
             ),
+            Self::TypeCheck(message) => {
+                write!(
+                    formatter,
+                    "accepted project type checking failed: {message}"
+                )
+            }
+            Self::EntryBinding(message) => {
+                write!(formatter, "accepted entry binding failed: {message}")
+            }
+            Self::SemanticIndex(message) => {
+                write!(formatter, "accepted semantic index failed: {message}")
+            }
             Self::SourceSet(error) => std::fmt::Display::fmt(error, formatter),
         }
     }
@@ -691,13 +758,133 @@ impl AcceptedProjectSnapshot {
             modules: module_count,
             source_bytes: source_builder.source_bytes,
         };
+        let linked = hir.linked_module();
+        let typecheck = analyze_registered_project_types(&linked, world);
+        if !typecheck.diagnostics.is_empty() {
+            return Err(AcceptedProjectSnapshotError::TypeCheck(
+                typecheck
+                    .diagnostics
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ));
+        }
+        let checked_entries = check_project_entries(
+            hir.as_ref(),
+            world.symbols(),
+            world.environment().callable_catalog(),
+            &typecheck,
+        )
+        .map_err(|diagnostics| {
+            AcceptedProjectSnapshotError::EntryBinding(
+                diagnostics
+                    .iter()
+                    .map(|diagnostic| diagnostic.message().to_owned())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            )
+        })?;
+        let source_set_revision = symbols.revision().as_source_set().as_bytes().iter().fold(
+            String::with_capacity(64),
+            |mut output, byte| {
+                write!(&mut output, "{byte:02x}")
+                    .expect("formatting a byte into a String cannot fail");
+                output
+            },
+        );
+        let semantic_index = Arc::new(
+            project_semantic_index_from_checked_project(
+                hir.as_ref(),
+                arcweft_lang_sema::project_index::ProgramHash::new(format!(
+                    "lsp:source-set-v1:{source_set_revision}"
+                )),
+                &checked_entries,
+            )
+            .map_err(|error| AcceptedProjectSnapshotError::SemanticIndex(error.to_string()))?,
+        );
         let sources = source_builder.finish(
             symbols.world().clone(),
             *symbols.revision(),
             character_source_revision,
         );
+        let mut callable_references = typecheck
+            .project_callable_references
+            .iter()
+            .filter_map(|reference| {
+                let identity = hir.source(reference.module())?;
+                let source = sources.get(identity)?;
+                let start = reference.range().start();
+                let end = reference.range().end();
+                let span = source.document().span(SourceRange::new(start, end)).ok()?;
+                Some(AcceptedCallableReference {
+                    declaration: reference.declaration().clone(),
+                    source: span,
+                })
+            })
+            .collect::<Vec<_>>();
+        callable_references.extend(import_callable_references(&hir, symbols, &sources));
+        callable_references.sort_by(|left, right| {
+            left.source
+                .source()
+                .id()
+                .as_str()
+                .cmp(right.source.source().id().as_str())
+                .then_with(|| {
+                    left.source
+                        .range()
+                        .start()
+                        .cmp(&right.source.range().start())
+                })
+                .then_with(|| left.declaration.cmp(&right.declaration))
+        });
+        callable_references.dedup();
+        let mut entry_references = Vec::new();
+        for reference in &typecheck.project_entity_references {
+            let Some(identity) = hir.source(reference.module()) else {
+                continue;
+            };
+            let Some(source) = sources.get(identity) else {
+                continue;
+            };
+            let Some(entry) = semantic_index
+                .entry_records()
+                .keys()
+                .find(|entry| entry.public_id().as_str() == reference.name())
+            else {
+                continue;
+            };
+            let Ok(span) = source.document().span(SourceRange::new(
+                reference.range().start(),
+                reference.range().end(),
+            )) else {
+                continue;
+            };
+            entry_references.push(AcceptedEntryReference {
+                entry: entry.clone(),
+                source: span,
+            });
+        }
+        entry_references.sort_by(|left, right| {
+            left.source
+                .source()
+                .id()
+                .as_str()
+                .cmp(right.source.source().id().as_str())
+                .then_with(|| {
+                    left.source
+                        .range()
+                        .start()
+                        .cmp(&right.source.range().start())
+                })
+                .then_with(|| left.entry.cmp(&right.entry))
+        });
+        entry_references.dedup();
         Ok(Self {
             hir,
+            semantic_index,
+            callable_references: callable_references.into(),
+            entry_references: entry_references.into(),
             sources,
             module_by_source,
             footprint,
@@ -706,6 +893,18 @@ impl AcceptedProjectSnapshot {
 
     pub(crate) const fn hir_project(&self) -> &Arc<HirProject> {
         &self.hir
+    }
+
+    pub(crate) const fn semantic_index(&self) -> &Arc<ProjectSemanticIndex> {
+        &self.semantic_index
+    }
+
+    pub(crate) fn callable_references(&self) -> &[AcceptedCallableReference] {
+        &self.callable_references
+    }
+
+    pub(crate) fn entry_references(&self) -> &[AcceptedEntryReference] {
+        &self.entry_references
     }
 
     pub(crate) const fn sources(&self) -> &AcceptedSourceDocuments {
@@ -770,6 +969,92 @@ impl AcceptedProjectSnapshot {
     pub(crate) const fn footprint(&self) -> AcceptedProjectFootprint {
         self.footprint
     }
+}
+
+fn import_callable_references(
+    hir: &HirProject,
+    symbols: &ProjectSymbolTable,
+    sources: &AcceptedSourceDocuments,
+) -> Vec<AcceptedCallableReference> {
+    let mut references = Vec::new();
+    for (module, hir_module) in hir.modules() {
+        let Some(identity) = hir.source(module) else {
+            continue;
+        };
+        let Some(source) = sources.get(identity) else {
+            continue;
+        };
+        for import in hir_module.uses() {
+            match import.tree().kind() {
+                UseTreeKind::Path { path, .. } => {
+                    let Some(range) = path.segment_ranges().last().copied() else {
+                        continue;
+                    };
+                    let Ok(reference) = SymbolPath::try_from(path.path()) else {
+                        continue;
+                    };
+                    push_import_reference(
+                        &mut references,
+                        symbols,
+                        module,
+                        source,
+                        &reference,
+                        range,
+                    );
+                }
+                UseTreeKind::Group {
+                    module: prefix,
+                    names,
+                } => {
+                    for name in names {
+                        let Ok(path) = ProjectSymbolPath::from_str(&format!(
+                            "{}.{}",
+                            prefix.path(),
+                            name.name()
+                        )) else {
+                            continue;
+                        };
+                        let Ok(reference) = SymbolPath::try_from(&path) else {
+                            continue;
+                        };
+                        push_import_reference(
+                            &mut references,
+                            symbols,
+                            module,
+                            source,
+                            &reference,
+                            name.name_range(),
+                        );
+                    }
+                }
+                UseTreeKind::Glob { .. } => {}
+            }
+        }
+    }
+    references
+}
+
+fn push_import_reference(
+    references: &mut Vec<AcceptedCallableReference>,
+    symbols: &ProjectSymbolTable,
+    module: &CanonicalModulePath,
+    source: &AcceptedSourceDocument,
+    reference: &SymbolPath,
+    range: arcweft_lang_syntax::ast::common::TextRange,
+) {
+    let Ok(span) = source
+        .document()
+        .span(SourceRange::new(range.start(), range.end()))
+    else {
+        return;
+    };
+    let Ok(callable) = symbols.resolve_callable(module, reference, &span) else {
+        return;
+    };
+    references.push(AcceptedCallableReference {
+        declaration: callable.declaration().clone(),
+        source: span,
+    });
 }
 
 impl AcceptedSourceDocuments {
@@ -857,230 +1142,4 @@ impl AcceptedSourceLocator {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use arcweft_lang_hir::{
-        lower::lower_document_to_hir,
-        project::HirProjectModule,
-        symbol::{CallablePackageId, ProjectSymbolWorldId},
-    };
-    use arcweft_lang_sema::{
-        env::TypeCheckEnv,
-        registration::{
-            CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
-        },
-    };
-    use arcweft_lang_syntax::{ast::module_path::ModuleSegment, parser::parse_source};
-    use arcweft_source::SourceName;
-
-    fn document(id: &str, text: &str) -> Arc<SourceDocument> {
-        Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new(id).expect("document ID"),
-                SourceName::path(id),
-                text,
-            )
-            .expect("source document"),
-        )
-    }
-
-    fn module(path: CanonicalModulePath, document: &Arc<SourceDocument>) -> HirProjectModule {
-        let parsed = parse_source(document.text());
-        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_document_to_hir(document, parsed.typed_tree()).expect("lowered HIR");
-        HirProjectModule::try_new(path, document.identity().clone(), hir)
-            .expect("source-bound module")
-    }
-
-    fn project_and_world(
-        modules: &[(CanonicalModulePath, Arc<SourceDocument>)],
-    ) -> (Arc<HirProject>, Arc<RegisteredSemanticWorld>) {
-        let root = Arc::clone(&modules[0].1);
-        let documents = modules
-            .iter()
-            .map(|(_, document)| Arc::clone(document))
-            .collect::<Vec<_>>();
-        let project = Arc::new(
-            HirProject::new(
-                "accepted-project-tests",
-                modules
-                    .iter()
-                    .map(|(path, document)| module(path.clone(), document)),
-            )
-            .expect("HIR project"),
-        );
-        let world = ProjectSymbolWorldId::try_new(
-            CallablePackageId::try_new("accepted-project-tests").expect("package"),
-            root.identity().id().clone(),
-            "test",
-        )
-        .expect("world");
-        let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-            .expect("registration facts");
-        let registered = Arc::new(
-            CharacterRegistrar::register(CharacterRegistrationRequest::new(
-                Arc::new(TypeCheckEnv::standard()),
-                project.as_ref(),
-                &facts,
-                None,
-            ))
-            .expect("registered world"),
-        );
-        (project, registered)
-    }
-
-    fn seed(document: Arc<SourceDocument>, uri: &str) -> AcceptedSourceDocumentSeed {
-        AcceptedSourceDocumentSeed::new(
-            document,
-            AcceptedSourceLocator::Uri {
-                uri: uri.parse::<Uri>().expect("URI"),
-            },
-            AcceptedSourceOwnership::Workspace,
-            AcceptedSourceAccess::Writable,
-        )
-    }
-
-    #[test]
-    fn exact_root_dependency_and_declaration_free_hir_are_retained() {
-        let root = document(
-            "arcweft-project://accepted/root.arcw",
-            "flow @flow.main main { return \"ok\" }\n",
-        );
-        let dependency = document("arcweft-project://accepted/empty.arcw", "\n");
-        let dependency_path =
-            CanonicalModulePath::from_segments([
-                ModuleSegment::new("dependency").expect("dependency segment")
-            ]);
-        let (hir, world) = project_and_world(&[
-            (CanonicalModulePath::crate_root(), Arc::clone(&root)),
-            (dependency_path.clone(), Arc::clone(&dependency)),
-        ]);
-        let snapshot = AcceptedProjectSnapshot::try_new(
-            Arc::clone(&hir),
-            world.as_ref(),
-            vec![
-                seed(Arc::clone(&root), "file:///accepted/root.arcw"),
-                AcceptedSourceDocumentSeed::new(
-                    Arc::clone(&dependency),
-                    AcceptedSourceLocator::Uri {
-                        uri: "arcweft-dependency:///empty.arcw"
-                            .parse::<Uri>()
-                            .expect("dependency URI"),
-                    },
-                    AcceptedSourceOwnership::Dependency,
-                    AcceptedSourceAccess::ReadOnly,
-                ),
-            ],
-        )
-        .expect("accepted snapshot");
-
-        assert!(Arc::ptr_eq(snapshot.hir_project(), &hir));
-        let root_key = snapshot
-            .module_key(root.identity())
-            .expect("root module key");
-        assert_eq!(root_key.module(), &CanonicalModulePath::crate_root());
-        assert_eq!(
-            snapshot.hir(&root_key).expect("root HIR").source_document(),
-            Some(root.as_ref())
-        );
-        let dependency_key = snapshot
-            .module_key(dependency.identity())
-            .expect("dependency module key");
-        assert_eq!(dependency_key.module(), &dependency_path);
-        assert_eq!(
-            snapshot
-                .source(dependency.identity())
-                .expect("dependency source")
-                .ownership(),
-            AcceptedSourceOwnership::Dependency
-        );
-        assert_eq!(
-            snapshot
-                .source(dependency.identity())
-                .expect("dependency source")
-                .access(),
-            AcceptedSourceAccess::ReadOnly
-        );
-        assert_eq!(snapshot.footprint().documents(), 2);
-        assert_eq!(snapshot.footprint().modules(), 2);
-        assert_eq!(
-            snapshot.footprint().source_bytes(),
-            (root.text().len() + dependency.text().len()) as u64
-        );
-    }
-
-    #[test]
-    fn duplicate_identity_and_uri_are_rejected_without_overwrite() {
-        let root = document(
-            "arcweft-project://accepted/duplicate.arcw",
-            "flow @flow.main main {}\n",
-        );
-        let (hir, world) =
-            project_and_world(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
-        let duplicate = AcceptedProjectSnapshot::try_new(
-            Arc::clone(&hir),
-            world.as_ref(),
-            vec![
-                seed(Arc::clone(&root), "file:///accepted/duplicate.arcw"),
-                seed(Arc::clone(&root), "file:///accepted/duplicate-again.arcw"),
-            ],
-        );
-        assert!(matches!(
-            duplicate,
-            Err(AcceptedProjectSnapshotError::DuplicateSourceIdentity { .. })
-        ));
-
-        let extra = document("arcweft-generated://accepted/extra.arcw", "\n");
-        let duplicate_uri = AcceptedProjectSnapshot::try_new(
-            hir,
-            world.as_ref(),
-            vec![
-                seed(root, "file:///accepted/shared.arcw"),
-                AcceptedSourceDocumentSeed::new(
-                    extra,
-                    AcceptedSourceLocator::Uri {
-                        uri: "file:///accepted/shared.arcw".parse::<Uri>().expect("URI"),
-                    },
-                    AcceptedSourceOwnership::Generated,
-                    AcceptedSourceAccess::ReadOnly,
-                ),
-            ],
-        );
-        assert!(matches!(
-            duplicate_uri,
-            Err(AcceptedProjectSnapshotError::DuplicateUri { .. })
-        ));
-    }
-
-    #[test]
-    fn accepted_generated_source_without_module_is_not_forged_into_hir() {
-        let root = document(
-            "arcweft-project://accepted/main.arcw",
-            "flow @flow.main main {}\n",
-        );
-        let generated = document("arcweft-generated://accepted/index.arcw", "\n");
-        let (hir, world) =
-            project_and_world(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
-        let snapshot = AcceptedProjectSnapshot::try_new(
-            hir,
-            world.as_ref(),
-            vec![
-                seed(root, "file:///accepted/main.arcw"),
-                AcceptedSourceDocumentSeed::new(
-                    Arc::clone(&generated),
-                    AcceptedSourceLocator::Uri {
-                        uri: "arcweft-generated:///index.arcw"
-                            .parse::<Uri>()
-                            .expect("generated URI"),
-                    },
-                    AcceptedSourceOwnership::Generated,
-                    AcceptedSourceAccess::ReadOnly,
-                ),
-            ],
-        )
-        .expect("accepted generated source");
-        assert!(snapshot.source(generated.identity()).is_some());
-        assert!(snapshot.module_key(generated.identity()).is_none());
-        assert_eq!(snapshot.sources().documents().len(), 2);
-    }
-}
+mod tests;

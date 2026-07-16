@@ -22,9 +22,6 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
         "fn value() {}\n",
         "predicate current() = true\n",
         "proof verify() {}\n",
-        "agent narrator {}\n",
-        "callable action() -> Unit\n",
-        "state Game {}\n",
         "trait Render {}\n",
         "impl Render for Game {}\n",
         "enum Mood {}\n",
@@ -60,9 +57,6 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
             SyntaxKind::FunctionItem,
             SyntaxKind::PredicateItem,
             SyntaxKind::ProofItem,
-            SyntaxKind::AgentItem,
-            SyntaxKind::CallableItem,
-            SyntaxKind::StateItem,
             SyntaxKind::TraitItem,
             SyntaxKind::ImplItem,
             SyntaxKind::EnumItem,
@@ -94,9 +88,6 @@ const fn is_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::FunctionItem
             | SyntaxKind::PredicateItem
             | SyntaxKind::ProofItem
-            | SyntaxKind::AgentItem
-            | SyntaxKind::CallableItem
-            | SyntaxKind::StateItem
             | SyntaxKind::TraitItem
             | SyntaxKind::ImplItem
             | SyntaxKind::EnumItem

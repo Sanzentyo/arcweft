@@ -6,6 +6,7 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmObservation, VmStepOptions};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
@@ -29,6 +30,16 @@ fn lower_plan(plan: &RuntimePlan) -> AwbcLowerReport {
 
 fn entry_id(value: &str) -> EntryRuntimeId {
     EntryRuntimeId::canonical(value).expect("test entry ID is valid")
+}
+
+fn with_test_entry(plan: RuntimePlan, flow: FlowRuntimeId) -> RuntimePlan {
+    plan.with_entries(vec![RuntimeEntrySpec {
+        id: entry_id("test"),
+        kind: RuntimeEntryKind::Cli,
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
+        target: RuntimeEntryTarget::Flow(flow),
+        roles: RuntimeEntryRoles::None,
+    }])
 }
 
 fn run_entry(program: &AwbcProgram, host: &mut impl VmHost) -> VmExit {
@@ -179,7 +190,6 @@ fn pipe_left_value_is_evaluated_once_and_shared_by_awbc_reads() {
     ));
 
     let plan = RuntimePlan::new(
-        Some(flow_id("main")),
         vec![RuntimeFlow {
             id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(lowered)],
@@ -187,6 +197,7 @@ fn pipe_left_value_is_evaluated_once_and_shared_by_awbc_reads() {
         Vec::new(),
     )
     .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
     let report = lower_plan(&plan);
     let mut host = CountingProbeHost::default();
     let exit = run_entry(&report.program, &mut host);
@@ -201,7 +212,6 @@ fn pipe_left_value_is_evaluated_once_and_shared_by_awbc_reads() {
 #[test]
 fn lowers_constant_return_plan_to_awbc_tables() {
     let plan = RuntimePlan::new(
-        Some(flow_id("main")),
         vec![RuntimeFlow {
             id: flow_id("main"),
             ops: vec![FlowOp::Let {
@@ -233,7 +243,6 @@ fn lowers_constant_return_plan_to_awbc_tables() {
 #[test]
 fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
     let plan = RuntimePlan::new(
-        Some(flow_id("main")),
         vec![RuntimeFlow {
             id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
@@ -247,6 +256,7 @@ fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
         Vec::new(),
     )
     .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
     let display = arcweft_render_text::LineDisplayCatalog::default();
     let report = AwbcLowerer::new(&plan, &display, "test.arcw")
         .lower()
@@ -285,7 +295,6 @@ fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
 #[test]
 fn generated_awbc_partial_apply_returns_function_value() {
     let plan = RuntimePlan::new(
-        Some(flow_id("main")),
         vec![RuntimeFlow {
             id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
@@ -299,6 +308,7 @@ fn generated_awbc_partial_apply_returns_function_value() {
         Vec::new(),
     )
     .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
     let report = lower_plan(&plan);
     let mut host = TestPureHelperHost;
 
@@ -325,7 +335,6 @@ fn generated_awbc_curried_closure_apply_executes_returned_function() {
         }),
     };
     let plan = RuntimePlan::new(
-        Some(flow_id("main")),
         vec![RuntimeFlow {
             id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
@@ -339,6 +348,7 @@ fn generated_awbc_curried_closure_apply_executes_returned_function() {
         Vec::new(),
     )
     .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
     let report = lower_plan(&plan);
     let mut host = TestPureHelperHost;
 
@@ -352,7 +362,6 @@ fn generated_awbc_curried_closure_apply_executes_returned_function() {
 fn entry_parameter_inference_keeps_let_scope_locals_inside_block_value() {
     let main = flow_id("main");
     let plan = RuntimePlan::new(
-        Some(main.clone()),
         vec![RuntimeFlow {
             id: main,
             ops: vec![
@@ -376,6 +385,7 @@ fn entry_parameter_inference_keeps_let_scope_locals_inside_block_value() {
         Vec::new(),
     )
     .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
     let report = lower_plan(&plan);
     let entry = &report.program.entries[0];
     let entry_signature = &report.program.signatures[entry.signature.index()];
@@ -408,7 +418,6 @@ fn let_scope_exit_emits_registered_cleanup_before_parent_binding() {
         args: vec!["handle = @handle.flow.main.panel".to_owned()],
     });
     let plan = RuntimePlan::new(
-        Some(main.clone()),
         vec![RuntimeFlow {
             id: main,
             ops: vec![
@@ -440,6 +449,7 @@ fn let_scope_exit_emits_registered_cleanup_before_parent_binding() {
         Vec::new(),
     )
     .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
     let report = lower_plan(&plan);
     let mut host = TestPureHelperHost;
     let output = step_entry(&report.program, &mut host);
@@ -494,7 +504,6 @@ fn generated_awbc_function_value_apply_can_call_pure_helper_body() {
         }),
     };
     let plan = RuntimePlan::new(
-        Some(flow_id("main")),
         vec![RuntimeFlow {
             id: flow_id("main"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Apply {
@@ -509,6 +518,7 @@ fn generated_awbc_function_value_apply_can_call_pure_helper_body() {
     )
     .expect("plan builds")
     .with_pure_helpers(vec![helper]);
+    let plan = with_test_entry(plan, flow_id("main"));
     let report = lower_plan(&plan);
     let mut host = TestPureHelperHost;
 
@@ -523,7 +533,6 @@ fn awbc_flow_target_resolution_uses_typed_runtime_ids() {
     let main = flow_id("chapter.main");
     let next = flow_id("chapter.next");
     let plan = RuntimePlan::new(
-        Some(main.clone()),
         vec![
             RuntimeFlow {
                 id: main,
@@ -540,12 +549,14 @@ fn awbc_flow_target_resolution_uses_typed_runtime_ids() {
     .with_entries(vec![RuntimeEntrySpec {
         id: entry_id("server"),
         kind: RuntimeEntryKind::Server,
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
         target: RuntimeEntryTarget::Routes(vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/next".to_owned(),
             target: next,
             bindings: Vec::new(),
         }]),
+        roles: RuntimeEntryRoles::None,
     }]);
     let report = lower_plan(&plan);
     let goto_target = report

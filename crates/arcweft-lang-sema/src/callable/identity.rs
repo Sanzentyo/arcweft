@@ -275,6 +275,15 @@ impl CallablePath {
         self.segments.len()
     }
 
+    /// Returns the canonical dotted source spelling of this validated path.
+    pub fn dotted_name(&self) -> String {
+        self.segments
+            .iter()
+            .map(CallableName::as_str)
+            .collect::<Vec<_>>()
+            .join(".")
+    }
+
     pub(crate) fn matches(&self, segments: &[&str]) -> bool {
         self.segments.len() == segments.len()
             && self
@@ -342,6 +351,7 @@ impl ProjectCallablePath {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProjectNameBinding {
     Callable(CallableDeclarationId),
+    Environment(EnvironmentCallableId),
     NonCallable {
         path: ProjectCallablePath,
         ty: TypeKind,
@@ -552,6 +562,7 @@ pub enum BuiltinCallableId {
     Math(MathCallableId),
     StdFloat(StdFloatCallableId),
     Capability(CapabilityCallableId),
+    Reduction(ReductionConstructorKind),
 }
 
 impl BuiltinCallableId {
@@ -625,6 +636,7 @@ impl BuiltinCallableId {
             return Some(id);
         }
         resolve_std_float(path)
+            .or_else(|| ReductionConstructorKind::resolve(path).map(BuiltinCallableId::Reduction))
     }
 }
 
@@ -727,6 +739,20 @@ pub enum ResultConstructorKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum OptionConstructorKind {
     Some,
+}
+
+/// Core `Reduction` constructor selected by a source callable path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ReductionConstructorKind {
+    Unchanged,
+}
+
+impl ReductionConstructorKind {
+    /// Resolves one canonical `Reduction` constructor path.
+    pub fn resolve(path: &CallablePath) -> Option<Self> {
+        path.matches(&["Reduction", "unchanged"])
+            .then_some(Self::Unchanged)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

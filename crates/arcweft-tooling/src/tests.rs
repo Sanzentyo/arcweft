@@ -1,7 +1,7 @@
 use crate::{
     canonicalize_source,
     code_actions::source_code_actions,
-    format::{format_source, format_source_with_dialect},
+    format::format_source,
     id_context::materialize_ids,
     model::{
         CanonicalizationInput, FormatOptions, ToolingCodeAction, ToolingEditReport, ToolingError,
@@ -19,7 +19,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::{
     ast::module_path::{CanonicalModulePath, ModuleSegment},
-    parser::{SourceDialect, parse_source},
+    parser::parse_source,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
@@ -107,10 +107,9 @@ fn default_format_preserves_sugar() {
 }
 
 #[test]
-fn agent_format_accepts_awfagent_dialect_without_game_sugar() {
-    let source = "agent @agent.opening {\n    let frame = try observe(@flow.opening)\n}\n";
-    let report = format_source_with_dialect(source, SourceDialect::Agent, FormatOptions::default())
-        .expect("agent format report");
+fn format_accepts_controller_function_source_without_extension_dispatch() {
+    let source = "fn opening() {\n    let frame = try observe(@flow.opening)\n}\n";
+    let report = format_source(source, FormatOptions::default()).expect("format report");
 
     assert!(!report.changed);
     assert_eq!(report.output, source);
@@ -120,13 +119,7 @@ fn agent_format_accepts_awfagent_dialect_without_game_sugar() {
 fn agent_format_preserves_comments_trivia_and_item_golden() {
     let source = r#"//! Agent formatter fixture
 /// Investigates route behavior while preserving docs.
-#[agent(version = 1)]
-
-// Launch metadata must stay attached to the agent item.
-#[launch(profile = "game.dev")]
-#[bind(program = compatible)]
-#[budget(timeout = 45s, steps = 192usize, captures = 8usize, rag_queries = 4usize)]
-agent @agent.debug.opening_route investigate_opening_route()
+fn investigate_opening_route()
 effects {
     agent.observe,
     agent.act.semantic,
@@ -191,8 +184,7 @@ fn agent_format_is_idempotent_for_action_resource_and_rag_samples() {
 }
 
 fn assert_agent_format_golden(source: &str) {
-    let first = format_source_with_dialect(source, SourceDialect::Agent, FormatOptions::default())
-        .expect("agent format report");
+    let first = format_source(source, FormatOptions::default()).expect("format report");
     assert!(!first.changed);
     assert_eq!(first.output, source);
     assert!(
@@ -201,12 +193,8 @@ fn assert_agent_format_golden(source: &str) {
         first.diagnostics
     );
 
-    let second = format_source_with_dialect(
-        &first.output,
-        SourceDialect::Agent,
-        FormatOptions::default(),
-    )
-    .expect("second agent format report");
+    let second =
+        format_source(&first.output, FormatOptions::default()).expect("second format report");
     assert!(!second.changed);
     assert_eq!(second.output, first.output);
     assert!(

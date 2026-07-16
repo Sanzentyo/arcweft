@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
+arcweft-data = { path = "../arcweft-data" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
@@ -27,6 +28,8 @@ thiserror.workspace = true
 path = "src/lib.rs"
 
 [dev-dependencies]
+arcweft-agent-runner = { path = "../arcweft-agent-runner" }
+arcweft-debug-model = { path = "../arcweft-debug-model" }
 trybuild.workspace = true
 
 [lints]

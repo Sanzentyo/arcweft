@@ -1,5 +1,5 @@
-entry game {
-    start(@flow.opening)
+entry cli @entry.main {
+    goto @flow.opening
 }
 
 flow opening {

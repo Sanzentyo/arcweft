@@ -278,14 +278,14 @@ impl TypeChecker<'_> {
             *return_type,
             effects,
         );
-        self.record_typed_lowering_evidence(TypedLoweringEvidence {
+        self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
             expression_id,
-            kind: TypedLoweringEvidenceKind::SignaturePartialCall {
+            TypedLoweringEvidenceKind::SignaturePartialCall {
                 callee: name.to_owned(),
                 result_ty: result_ty.clone(),
                 arg_count: args.len(),
             },
-        });
+        ));
         self.last_checked_curried_signature_call = Some(super::super::CurriedSignatureCallValue {
             function_name: name.to_owned(),
             remaining_group_index: 0,

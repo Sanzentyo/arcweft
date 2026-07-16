@@ -33,6 +33,10 @@ fn entry_goto_is_the_structured_flow_dispatch_item() {
     let tree = parse_ok(
         r#"
 entry game @entry.main {
+    state = GameState
+    initializer = initial_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.opening
 }
 
@@ -44,9 +48,14 @@ flow @flow.opening opening {
     let arcweft_lang_syntax::ast::items::Item::Entry(entry) = &tree.items()[0] else {
         panic!("expected entry");
     };
-    let [arcweft_lang_syntax::ast::items::EntryItem::Goto(target)] = entry.items() else {
-        panic!("expected one goto entry item: {:?}", entry.items());
-    };
+    let target = entry
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            arcweft_lang_syntax::ast::items::EntryItem::Goto(target) => Some(target),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("expected goto entry item: {:?}", entry.items()));
     assert_eq!(target.body(), "flow.opening");
 }
 

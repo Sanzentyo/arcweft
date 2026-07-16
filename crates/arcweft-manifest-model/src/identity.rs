@@ -74,6 +74,11 @@ pub struct PackageId(Box<str>);
 pub struct PackageVersion(Version);
 
 string_id!(ProfileId, "profile ID", valid_dotted_lower);
+string_id!(
+    EntrySelectionId,
+    "entry selection ID",
+    valid_entry_selection_id
+);
 string_id!(ContentUnitId, "content unit ID", valid_lower_kebab);
 string_id!(
     ExternalModuleImportId,
@@ -226,6 +231,22 @@ fn valid_activity_id(value: &str) -> bool {
         .is_some_and(valid_lower_snake)
 }
 
+fn valid_entry_selection_id(value: &str) -> bool {
+    value
+        .strip_prefix("entry.")
+        .is_some_and(|path| !path.is_empty() && path.split('.').all(valid_arcweft_identifier))
+}
+
+fn valid_arcweft_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    chars
+        .next()
+        .is_some_and(|character| character == '_' || character.is_alphabetic())
+        && chars.all(|character| {
+            character == '_' || character.is_alphabetic() || character.is_ascii_digit()
+        })
+}
+
 fn valid_symbol(value: &str) -> bool {
     let mut bytes = value.bytes();
     bytes
@@ -257,7 +278,7 @@ impl AsciiIdByte for u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{AdapterExportId, PackageId, PackageVersion};
+    use super::{AdapterExportId, EntrySelectionId, PackageId, PackageVersion};
 
     #[test]
     fn package_id_requires_canonical_reverse_domain_text() {
@@ -278,5 +299,20 @@ mod tests {
     fn adapter_exports_use_canonical_snake_case() {
         assert!(AdapterExportId::new("truck_game").is_ok());
         assert!(AdapterExportId::new("TruckGame").is_err());
+    }
+
+    #[test]
+    fn entry_selection_requires_the_full_canonical_family() {
+        assert!(EntrySelectionId::new("entry.game.main").is_ok());
+        assert!(EntrySelectionId::new("entry.日本語.main_2").is_ok());
+        for invalid in [
+            "main",
+            "@entry.game.main",
+            "entry",
+            "entry.",
+            "entry.game-main",
+        ] {
+            assert!(EntrySelectionId::new(invalid).is_err(), "{invalid}");
+        }
     }
 }

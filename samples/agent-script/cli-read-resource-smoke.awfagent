@@ -1,8 +1,11 @@
-#[agent(version = 1)]
-agent @agent.cli.read_resource_smoke read_resource_smoke()
+fn read_resource_smoke() -> Result<Unit, AgentError>
 effects { agent.resource.read, debug.record }
 {
     let resource = read_resource("arcweft://session/cli/observation/latest.json")
     checkpoint("after-read-resource")
-    return resource.body.json
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = read_resource_smoke
 }

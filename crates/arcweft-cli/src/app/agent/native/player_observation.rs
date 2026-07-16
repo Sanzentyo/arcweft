@@ -38,6 +38,7 @@ use arcweft_agent_protocol::{
 use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
 use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::plan::EntryRuntimeId;
 use arcweft_core::task::TaskEvent;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
@@ -60,7 +61,10 @@ use arcweft_render_wgpu::{
 use arcweft_runtime_driver::{
     clock::RuntimeClockStep,
     display::BundlePresentationSnapshot,
-    session::{BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput},
+    session::{
+        BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput,
+        RootCommandHostCallCatalog,
+    },
     task::HostTaskDispatch,
 };
 use capture::capture_player_observation_frame;
@@ -131,14 +135,19 @@ pub(super) fn native_player_runtime_state_for_options(
         eprintln!("error: player-backed observe image catalog failed: {error}");
         ExitCode::FAILURE
     })?;
+    let entry = selection.command_entry(options.entry.as_deref())?;
+    let entry = EntryRuntimeId::from_source_entity_body(entry).map_err(|error| {
+        eprintln!("error: selected entry must be an exact canonical entry.* ID: {error}");
+        ExitCode::from(2)
+    })?;
     let session = BundleSession::new(
         &compiled.bundle,
         BundleSessionOptions {
-            entry: options.entry.clone(),
-            flow: options.flow.clone(),
+            entry: Some(entry),
             mode: options.mode.into(),
             max_ops: options.max_ops,
             root_bindings: options.values.clone(),
+            root_command_host_calls: RootCommandHostCallCatalog::default(),
             presentation_environment: Some(
                 arcweft_presentation::appearance::PresentationEnvironmentValues::ENGINE_DEFAULT,
             ),

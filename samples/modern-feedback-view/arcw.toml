@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [profiles.main]
 kind = "game"
+entry = "entry.modern_feedback_view"
 source = "src/main.arcw"
 
 [profiles.main.player.viewport]

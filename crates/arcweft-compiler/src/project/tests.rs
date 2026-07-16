@@ -1,0 +1,347 @@
+use super::*;
+use arcweft_lang_hir::symbol::{
+    CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
+};
+use arcweft_lang_sema::registration::{
+    EnvironmentBindingId, ExternalRegistrationFact, RegisteredExternalOwner,
+};
+use arcweft_lang_syntax::ast::{
+    common::Visibility,
+    module_path::{CanonicalModulePath, ModulePathRoot},
+    symbol_path::SymbolPath,
+};
+use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
+use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
+use std::path::PathBuf;
+
+fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilationContext) {
+    let source_path = PathBuf::from("src/main.arcw");
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://removed-role/src/main.arcw")
+                .expect("document ID"),
+            SourceName::path(source_path.display().to_string()),
+            source_text,
+        )
+        .expect("source document"),
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        ProjectManifest::parse_toml("[package]\nname = \"removed-role\"\n").expect("manifest"),
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            source_path,
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .expect("project sources");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new("removed-role").expect("package"),
+        document.identity().id().clone(),
+        "removed-role-test",
+    )
+    .expect("symbol world");
+    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
+        .expect("registration facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        None,
+        None,
+        Vec::new(),
+    );
+    (project, context)
+}
+
+#[test]
+fn project_compiler_entrypoints_reject_removed_role_declarations_at_parse() {
+    for source in [
+        "state GameState {\n    value: i32\n}\n",
+        "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
+        "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
+    ] {
+        let (project, context) = removed_role_project(source);
+        let options = RuntimePlanLowerOptions::default();
+        let error = compile_project(&project, &context, &options)
+            .expect_err("removed declaration must fail project compilation");
+        assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+
+        let mut cache = InMemoryProjectCompileCache::default();
+        let error = compile_project_with_cache(&project, &context, &options, &mut cache)
+            .expect_err("cached project compilation must reject removed declaration");
+        assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+    }
+}
+
+#[test]
+fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
+    let source_text = "flow @flow.opening start {\n}\n";
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("src/main.arcw").expect("document id"),
+            SourceName::path("src/main.arcw"),
+            source_text,
+        )
+        .expect("source document"),
+    );
+    let source = ProjectSourceFile::new(
+        CanonicalModulePath::crate_root(),
+        PathBuf::from("src/main.arcw"),
+        Arc::clone(&document),
+        [],
+    );
+    let span = document
+        .span(SourceRange::new(5, 18))
+        .expect("diagnostic span");
+    let error = module_error(
+        &source,
+        &document,
+        ProjectCompileStage::Parse,
+        [Diagnostic::new(DiagnosticSeverity::Error, "parse failed")
+            .with_code("syntax.parse")
+            .with_label(DiagnosticLabel::primary(
+                span,
+                Some("found token here".to_owned()),
+            ))],
+    );
+
+    let diagnostic = error.diagnostics().first().expect("diagnostic");
+    assert_eq!(
+        diagnostic.module(),
+        Some(&CanonicalModulePath::crate_root())
+    );
+    assert_eq!(diagnostic.stage(), ProjectCompileStage::Parse);
+    assert_eq!(
+        diagnostic.diagnostic().code().expect("code").as_str(),
+        "syntax.parse"
+    );
+    assert_eq!(
+        diagnostic.source().expect("source").text(),
+        Some(source_text)
+    );
+    assert_eq!(
+        diagnostic.source().expect("source").name().display_name(),
+        "src/main.arcw"
+    );
+}
+
+#[test]
+fn pending_store_state_is_one_way() {
+    #[derive(Default)]
+    struct RecordingCache {
+        stores: Vec<(ProjectCompileUnitFingerprint, usize)>,
+    }
+
+    impl ProjectCompileCache for RecordingCache {
+        fn load(
+            &mut self,
+            _fingerprint: ProjectCompileUnitFingerprint,
+        ) -> Option<Vec<CompiledProjectModule>> {
+            None
+        }
+
+        fn store(
+            &mut self,
+            fingerprint: ProjectCompileUnitFingerprint,
+            modules: &[CompiledProjectModule],
+        ) {
+            self.stores.push((fingerprint, modules.len()));
+        }
+    }
+
+    let fingerprint = ProjectCompileUnitFingerprint([7; 32]);
+    let mut pending = PendingProjectCompileStores::new();
+    pending
+        .push(fingerprint, Vec::new())
+        .expect("collecting accepts stores");
+    let mut cache = RecordingCache::default();
+    pending.flush(&mut cache).expect("first flush succeeds");
+    assert_eq!(cache.stores, vec![(fingerprint, 0)]);
+    assert_eq!(
+        pending.push(fingerprint, Vec::new()),
+        Err(PendingStoreTransitionError::AlreadyFinalized)
+    );
+    assert_eq!(
+        pending.flush(&mut cache),
+        Err(PendingStoreTransitionError::AlreadyFinalized)
+    );
+    assert_eq!(cache.stores, vec![(fingerprint, 0)]);
+
+    let mut discarded = PendingProjectCompileStores::new();
+    discarded.discard();
+    discarded.discard();
+    assert_eq!(
+        discarded.push(fingerprint, Vec::new()),
+        Err(PendingStoreTransitionError::AlreadyFinalized)
+    );
+    assert_eq!(
+        discarded.flush(&mut cache),
+        Err(PendingStoreTransitionError::AlreadyFinalized)
+    );
+}
+
+#[test]
+fn registration_diagnostic_retains_accepted_source_document() {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://compiler-registration/src/main.arcw")
+                .expect("document id"),
+            SourceName::path("src/main.arcw"),
+            "fn main() -> Unit { () }\n",
+        )
+        .expect("document"),
+    );
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new("compiler-registration").expect("package"),
+        document.identity().id().clone(),
+        "test",
+    )
+    .expect("world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&document)],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("facts");
+    let span = document.span(SourceRange::new(0, 2)).expect("span");
+    let error = linked_error_with_registration_sources(
+        ProjectCompileStage::Registration,
+        &facts,
+        [
+            Diagnostic::new(DiagnosticSeverity::Error, "registration failed")
+                .with_code("aw.character.registration.unknown_owner")
+                .with_span(span),
+        ],
+    );
+
+    let diagnostic = error.diagnostics().first().expect("diagnostic");
+    let source = diagnostic.source().expect("accepted source document");
+    assert_eq!(source.document().identity(), document.identity());
+    assert_eq!(source.document().text(), document.text());
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the cache-rollback test retains every stage input and the zero-store assertion in one scenario"
+)]
+fn pending_stores_discard_on_registration_error() {
+    #[derive(Default)]
+    struct RecordingCache {
+        stores: usize,
+    }
+
+    impl ProjectCompileCache for RecordingCache {
+        fn load(
+            &mut self,
+            _fingerprint: ProjectCompileUnitFingerprint,
+        ) -> Option<Vec<CompiledProjectModule>> {
+            None
+        }
+
+        fn store(
+            &mut self,
+            _fingerprint: ProjectCompileUnitFingerprint,
+            _modules: &[CompiledProjectModule],
+        ) {
+            self.stores += 1;
+        }
+    }
+
+    let source_text = "fn main() -> Unit { () }\n";
+    let source_path = PathBuf::from("src/main.arcw");
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://compiler-registration/src/main.arcw")
+                .expect("document id"),
+            SourceName::path(source_path.display().to_string()),
+            source_text,
+        )
+        .expect("document"),
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        ProjectManifest::parse_toml("[package]\nname = \"compiler-registration\"\n")
+            .expect("manifest"),
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            source_path.clone(),
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .expect("project");
+    let declaration = document.span(SourceRange::new(0, 2)).expect("span");
+    let owner = EnvironmentBindingId::try_new("environment.missing").expect("environment id");
+    let direct_bindings = [owner.as_str()]
+        .into_iter()
+        .map(|name| {
+            ProjectDirectBinding::try_new(
+                CanonicalModulePath::crate_root(),
+                name,
+                Some(Visibility::Public),
+                declaration.clone(),
+                false,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .expect("direct bindings");
+    let seed = ExternalDeclarationSeed::try_new(
+        SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner.as_str())
+            .expect("symbol path"),
+        Some(Visibility::Public),
+        declaration.clone(),
+        direct_bindings,
+    )
+    .expect("external seed");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new("compiler-registration").expect("package"),
+        document.identity().id().clone(),
+        "test",
+    )
+    .expect("world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        vec![ExternalRegistrationFact::new(
+            seed,
+            RegisteredExternalOwner::Environment(owner),
+            declaration,
+        )],
+        Vec::new(),
+    )
+    .expect("facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        None,
+        None,
+        Vec::new(),
+    );
+    let mut cache = RecordingCache::default();
+
+    let error = compile_project_with_cache(
+        &project,
+        &context,
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect_err("unknown character owner rejects project");
+    assert_eq!(error.stage(), ProjectCompileStage::Registration.as_str());
+    assert_eq!(cache.stores, 0);
+    assert!(error.diagnostics().iter().any(|diagnostic| {
+        diagnostic
+            .diagnostic()
+            .code()
+            .is_some_and(|code| code.as_str() == "aw.character.registration.unknown_owner")
+    }));
+}
+
+#[test]
+fn registration_failure_discards_project() {
+    pending_stores_discard_on_registration_error();
+}

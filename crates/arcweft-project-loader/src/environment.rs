@@ -69,6 +69,7 @@ pub struct ProjectLoadRequest<'a> {
 /// Exact topology input for one profile registration transaction.
 pub struct ProfileRegistrationLoadRequest<'a> {
     topology: &'a LoadedProfileTopology,
+    additional_adapter_manifests: &'a [AdapterManifest],
 }
 
 /// Failure while loading or checking a complete registration-fact set.
@@ -143,7 +144,16 @@ impl<'a> ProjectLoadRequest<'a> {
 
 impl<'a> ProfileRegistrationLoadRequest<'a> {
     pub const fn new(topology: &'a LoadedProfileTopology) -> Self {
-        Self { topology }
+        Self {
+            topology,
+            additional_adapter_manifests: &[],
+        }
+    }
+
+    #[must_use]
+    pub const fn with_adapter_manifests(mut self, manifests: &'a [AdapterManifest]) -> Self {
+        self.additional_adapter_manifests = manifests;
+        self
     }
 }
 
@@ -208,7 +218,7 @@ pub fn load_project_registration(
         ProjectSymbolWorldId::try_new(package, root_document.identity().id().clone(), profile_id)?;
 
     let mut sources = project_registration_sources(request, &overlays);
-    append_adapter_sources(&mut sources, &request.adapter_manifests)?;
+    append_adapter_sources(&mut sources, request.adapter_manifests.iter())?;
     if let Some(profile) = request.profile {
         append_character_sources(
             &mut sources,
@@ -285,7 +295,13 @@ pub fn load_profile_registration(
         external_facts: Vec::new(),
         character_manifests: Vec::new(),
     };
-    append_adapter_sources(&mut sources, topology.registration_adapter_manifests())?;
+    append_adapter_sources(
+        &mut sources,
+        topology
+            .registration_adapter_manifests()
+            .iter()
+            .chain(request.additional_adapter_manifests),
+    )?;
     append_topology_character_sources(&mut sources, topology)?;
 
     let catalogs = if sources.character_manifests.is_empty() {
@@ -402,11 +418,11 @@ fn project_registration_sources(
     }
 }
 
-fn append_adapter_sources(
+fn append_adapter_sources<'a>(
     sources: &mut RegistrationSources,
-    manifests: &[AdapterManifest],
+    manifests: impl IntoIterator<Item = &'a AdapterManifest>,
 ) -> Result<(), ProjectRegistrationLoadError> {
-    for (index, manifest) in manifests.iter().enumerate() {
+    for (index, manifest) in manifests.into_iter().enumerate() {
         let ordinal = u64::try_from(index)
             .map_err(|_| ProjectRegistrationLoadError::AdapterOrdinalOverflow)?;
         let facts = manifest.source_backed_registration_facts(ordinal)?;
@@ -613,6 +629,7 @@ version = "0.1.0"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 character_manifests = ["characters/zundamon.awchar"]
 "#,
@@ -677,6 +694,7 @@ version = "0.1.0"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 character_manifests = ["characters/zundamon.awchar"]
 "#,

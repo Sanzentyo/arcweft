@@ -14,9 +14,9 @@ use arcweft_core::bytecode::{
     BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
 };
 use arcweft_core::effect::LineEffectRequest;
-use arcweft_core::engine::{FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
+use arcweft_core::engine::{EngineStartError, FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::plan::{FlowEvent, FlowRuntimeId, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
@@ -71,8 +71,7 @@ pub fn run_bundle_file_with_native_adapters(
 /// Bundle execution options for embedding hosts.
 #[derive(Clone, Debug)]
 pub struct BundleRunnerOptions {
-    pub entry: Option<String>,
-    pub flow: Option<String>,
+    pub entry: Option<EntryRuntimeId>,
     pub executor: BundleRunnerExecutor,
     pub steps: usize,
     pub mode: BundleRunnerStepMode,
@@ -85,7 +84,6 @@ impl Default for BundleRunnerOptions {
     fn default() -> Self {
         Self {
             entry: None,
-            flow: None,
             executor: BundleRunnerExecutor::AwbcProduct,
             steps: 8,
             mode: BundleRunnerStepMode::Drain,
@@ -211,14 +209,16 @@ pub enum BundleRunnerError {
     MaterializeVirtualFile(std::io::Error),
     #[error("bundle virtual file path must be relative and normalized")]
     InvalidVirtualFilePath,
-    #[error("entry and flow are mutually exclusive")]
-    ConflictingEntrySelection,
-    #[error("unknown flow `{flow}`")]
-    UnknownFlow { flow: String },
+    #[error("an exact entry selection is required to run a bundle")]
+    MissingEntrySelection,
+    #[error("invalid canonical entry selection `{entry}`: {message}")]
+    InvalidEntrySelection { entry: String, message: String },
     #[error("unknown entry `{entry}`")]
     UnknownEntry { entry: String },
     #[error("entry `{entry}` does not select a single runnable flow")]
     NonFlowEntry { entry: String },
+    #[error("failed to start exact entry: {0}")]
+    StartEntry(EngineStartError),
     #[error("native adapter registration failed: {0}")]
     NativeAdapter(arcweft_host_adapter::HostAdapterError),
 }
@@ -379,21 +379,17 @@ fn run_bundle_runner_phase<T>(
 fn bundle_runner_bytecode(
     bundle: &ArcweftBundle,
     options: &BundleRunnerOptions,
-) -> Result<BytecodeProgram, BundleRunnerError> {
+) -> Result<(BytecodeProgram, EntryRuntimeId), BundleRunnerError> {
     let structured_program = &bundle.bytecode.program;
     let program = structured_program.clone();
     program
         .verify(BytecodeVerificationBudget::default())
         .map_err(BundleRunnerError::VerifyBytecode)?;
-    let mut plan = program
+    let plan = program
         .into_runtime_plan()
         .map_err(BundleRunnerError::DecodeBytecode)?;
-    apply_bundle_runner_entry_selection(
-        &mut plan,
-        bundle_runner_entry(bundle, options),
-        options.flow.as_deref(),
-    )?;
-    Ok(BytecodeProgram::from_runtime_plan(plan))
+    let entry = selected_structured_entry(&plan, bundle, options)?;
+    Ok((BytecodeProgram::from_runtime_plan(plan), entry))
 }
 
 enum BundleRunnerRuntimeProgram {
@@ -402,7 +398,8 @@ enum BundleRunnerRuntimeProgram {
         entry: AwbcEntryId,
     },
     Structured {
-        program: BytecodeProgram,
+        program: Box<BytecodeProgram>,
+        entry: EntryRuntimeId,
         executor: BundleRunnerExecutor,
     },
 }
@@ -441,9 +438,10 @@ fn bundle_runner_runtime_program(
             })
         }
         BundleRunnerExecutor::BytecodeVm | BundleRunnerExecutor::Aot => {
-            bundle_runner_bytecode(bundle, options).map(|program| {
+            bundle_runner_bytecode(bundle, options).map(|(program, entry)| {
                 BundleRunnerRuntimeProgram::Structured {
-                    program,
+                    program: Box::new(program),
+                    entry,
                     executor: options.executor,
                 }
             })
@@ -456,77 +454,64 @@ fn selected_awbc_entry(
     bundle: &ArcweftBundle,
     options: &BundleRunnerOptions,
 ) -> Result<AwbcEntryId, BundleRunnerError> {
-    if let Some(flow) = options.flow.as_deref() {
-        return Err(BundleRunnerError::UnknownFlow {
-            flow: normalize_flow_id(flow),
-        });
-    }
-    let Some(entry) = bundle_runner_entry(bundle, options) else {
-        return Ok(AwbcEntryId(0));
+    let Some(entry) = bundle_runner_entry(bundle, options)? else {
+        return Err(BundleRunnerError::MissingEntrySelection);
     };
-    let selected = normalize_entry_id(entry);
     program
         .entries
         .iter()
         .enumerate()
         .find_map(|(index, candidate)| {
-            let public_id = program.strings.get(candidate.public_id.index())?;
-            (public_id == entry || public_id == &selected)
-                .then(|| AwbcEntryId(u32::try_from(index).unwrap_or(u32::MAX)))
+            (candidate.runtime_id == entry).then(|| {
+                AwbcEntryId(
+                    u32::try_from(index)
+                        .expect("verified AWBC entry table indices fit the u32 wire contract"),
+                )
+            })
         })
-        .ok_or(BundleRunnerError::UnknownEntry { entry: selected })
+        .ok_or(BundleRunnerError::UnknownEntry {
+            entry: entry.public_label().into_string(),
+        })
 }
 
-fn bundle_runner_entry<'a>(
-    bundle: &'a ArcweftBundle,
-    options: &'a BundleRunnerOptions,
-) -> Option<&'a str> {
-    options.entry.as_deref().or_else(|| {
-        options
-            .flow
-            .is_none()
-            .then_some(bundle.manifest.entry.as_deref())
-            .flatten()
-    })
+fn bundle_runner_entry(
+    bundle: &ArcweftBundle,
+    options: &BundleRunnerOptions,
+) -> Result<Option<EntryRuntimeId>, BundleRunnerError> {
+    if let Some(entry) = &options.entry {
+        return Ok(Some(entry.clone()));
+    }
+    bundle
+        .manifest
+        .entry
+        .as_deref()
+        .map(|entry| {
+            EntryRuntimeId::from_source_entity_body(entry).map_err(|error| {
+                BundleRunnerError::InvalidEntrySelection {
+                    entry: entry.to_owned(),
+                    message: error.to_string(),
+                }
+            })
+        })
+        .transpose()
 }
 
-fn apply_bundle_runner_entry_selection(
-    plan: &mut RuntimePlan,
-    entry: Option<&str>,
-    flow: Option<&str>,
-) -> Result<(), BundleRunnerError> {
-    if entry.is_some() && flow.is_some() {
-        return Err(BundleRunnerError::ConflictingEntrySelection);
+fn selected_structured_entry(
+    plan: &RuntimePlan,
+    bundle: &ArcweftBundle,
+    options: &BundleRunnerOptions,
+) -> Result<EntryRuntimeId, BundleRunnerError> {
+    let Some(entry) = bundle_runner_entry(bundle, options)? else {
+        return Err(BundleRunnerError::MissingEntrySelection);
+    };
+    let label = entry.public_label().into_string();
+    let Some(spec) = plan.entries.iter().find(|candidate| candidate.id == entry) else {
+        return Err(BundleRunnerError::UnknownEntry { entry: label });
+    };
+    if !matches!(spec.target, RuntimeEntryTarget::Flow(_)) {
+        return Err(BundleRunnerError::NonFlowEntry { entry: label });
     }
-    if let Some(flow) = flow {
-        let flow = FlowRuntimeId::from_runtime_target_value(&normalize_flow_id(flow)).map_err(
-            |error| BundleRunnerError::UnknownFlow {
-                flow: error.to_string(),
-            },
-        )?;
-        if !plan.flows.iter().any(|candidate| candidate.id == flow) {
-            return Err(BundleRunnerError::UnknownFlow {
-                flow: flow.public_label().into_string(),
-            });
-        }
-        plan.entry_flow = Some(flow);
-        return Ok(());
-    }
-    if let Some(entry) = entry {
-        let entry = normalize_entry_id(entry);
-        let Some(spec) = plan
-            .entries
-            .iter()
-            .find(|candidate| candidate.id.public_label().as_str() == entry)
-        else {
-            return Err(BundleRunnerError::UnknownEntry { entry });
-        };
-        let RuntimeEntryTarget::Flow(flow) = &spec.target else {
-            return Err(BundleRunnerError::NonFlowEntry { entry });
-        };
-        plan.entry_flow = Some(flow.clone());
-    }
-    Ok(())
+    Ok(entry)
 }
 
 fn run_product_runtime_steps(
@@ -657,14 +642,15 @@ impl RuntimeExecutorInstance {
                     &[],
                 ),
             }),
-            BundleRunnerRuntimeProgram::Structured { program, .. } => {
-                Self::from_bytecode(program, tier, pure_config)
+            BundleRunnerRuntimeProgram::Structured { program, entry, .. } => {
+                Self::from_bytecode(*program, &entry, tier, pure_config)
             }
         }
     }
 
     fn from_bytecode(
         bytecode: BytecodeProgram,
+        entry: &EntryRuntimeId,
         tier: BundleRunnerExecutor,
         pure_config: RuntimePureAcceleratorConfig,
     ) -> Result<Self, BundleRunnerError> {
@@ -676,11 +662,12 @@ impl RuntimeExecutorInstance {
             .into_runtime_plan()
             .map_err(BundleRunnerError::DecodeBytecode)?;
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-        Ok(Self {
-            executor: ArcweftRuntimeExecutor::from_bytecode(bytecode, tier.into())
-                .map_err(BundleRunnerError::DecodeBytecode)?,
-            pure,
-        })
+        let mut executor = ArcweftRuntimeExecutor::from_bytecode(bytecode, tier.into())
+            .map_err(BundleRunnerError::DecodeBytecode)?;
+        executor
+            .start_structured_entry(entry)
+            .map_err(BundleRunnerError::StartEntry)?;
+        Ok(Self { executor, pure })
     }
 
     fn step_with_root_bindings(
@@ -847,23 +834,6 @@ fn validate_relative_virtual_path(path: &Path) -> Result<(), BundleRunnerError> 
         .ok_or(BundleRunnerError::InvalidVirtualFilePath)
 }
 
-fn normalize_flow_id(value: &str) -> String {
-    normalize_entity_selector(value, "flow")
-}
-
-fn normalize_entry_id(value: &str) -> String {
-    normalize_entity_selector(value, "entry")
-}
-
-fn normalize_entity_selector(value: &str, family: &str) -> String {
-    let value = value.trim().trim_start_matches('@');
-    if value.contains('.') {
-        value.to_owned()
-    } else {
-        format!("{family}.{value}")
-    }
-}
-
 fn effect_label(effect: &LineEffectRequest) -> String {
     match effect {
         LineEffectRequest::RegisterHandle { key, .. } => format!("register {key}"),
@@ -903,8 +873,11 @@ mod tests {
         BundleVirtualFileRef, BundleVirtualFileSpace,
     };
     use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
     use arcweft_core::line_task::LineTaskGroup;
-    use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId};
+    use arcweft_core::plan::{
+        FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeLineId,
+    };
     use arcweft_render_text::LineDisplayCatalog;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -1113,7 +1086,6 @@ mod tests {
 
     fn dialogue_bundle() -> ArcweftBundle {
         let plan = RuntimePlan::new(
-            Some(flow_id("flow.main")),
             vec![RuntimeFlow {
                 id: flow_id("flow.main"),
                 ops: vec![
@@ -1126,7 +1098,15 @@ mod tests {
             }],
             vec![LineTaskGroup::default()],
         )
-        .expect("runtime plan is valid");
+        .expect("runtime plan is valid")
+        .with_entries(vec![RuntimeEntrySpec {
+            id: EntryRuntimeId::from_source_entity_body("entry.main")
+                .expect("test entry ID is valid"),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([1; 32]),
+            target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
+            roles: RuntimeEntryRoles::None,
+        }]);
         let display = LineDisplayCatalog::default();
         let product_awbc = AwbcLowerer::new(&plan, &display, "dialogue-bundle.arcw")
             .lower()
@@ -1137,7 +1117,7 @@ mod tests {
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
-                entry: None,
+                entry: Some("entry.main".to_owned()),
                 adapter: None,
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),

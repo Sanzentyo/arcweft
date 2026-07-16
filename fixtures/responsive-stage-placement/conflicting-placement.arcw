@@ -30,7 +30,7 @@ pub image @image.bad.independent_scale {
     scale.y = 1.0
 }
 
-entry game {
+entry cli @entry.conflicting_placement {
     goto @flow.main
 }
 

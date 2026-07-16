@@ -1,21 +1,11 @@
 use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
 use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
-use arcweft_lang_syntax::parser::{ParseOptions, SourceDialect, parse_document, parse_source};
+use arcweft_lang_syntax::parser::parse_source;
 use arcweft_lang_syntax::source::ParsedSource;
 
 /// Parses source text into the shared syntax parser output.
 pub fn parse_source_text(source: impl Into<String>) -> ParsedSource {
     parse_source(source)
-}
-
-/// Parses Agent dialect source text into the shared syntax parser output.
-pub fn parse_agent_source_text(source: impl Into<String>) -> ParsedSource {
-    parse_document(
-        source,
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
-    )
 }
 
 /// Runs syntax-level source lints on a typed syntax tree.

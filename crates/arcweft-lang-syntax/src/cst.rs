@@ -195,9 +195,6 @@ pub(crate) enum CstTopLevelLineKind {
 pub(crate) enum CstTopLevelItemKind {
     Flow,
     Function,
-    Agent,
-    Callable,
-    State,
     Trait,
     Impl,
     Enum,

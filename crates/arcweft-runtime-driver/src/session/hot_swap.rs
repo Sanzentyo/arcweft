@@ -6,8 +6,8 @@ use super::{
     BundleSessionArtifactIdentity, BundleSessionError, BundleView, GenerationId,
     GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration, ReadBudget,
     SwapCompatibility, ViewRuntimeTextControl, apply_patch_bundle, build_session_runtime,
-    classify_swap, decode_patch_bundle, reconciled_root_handles_for_restore,
-    validate_virtual_list_scroll_owner,
+    build_session_runtime_preserving_executor, classify_swap_for_entry, decode_patch_bundle,
+    reconciled_root_handles_for_restore, validate_virtual_list_scroll_owner,
 };
 
 impl BundleSession {
@@ -39,8 +39,18 @@ impl BundleSession {
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let next_id = GenerationId(self.next_generation_id);
         let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
+        let active_entry = self
+            .executor
+            .product_active_entry_snapshot_identity()
+            .map_err(|error| BundleHotSwapError::ActiveEntry {
+                message: error.to_string(),
+            })?
+            .ok_or_else(|| BundleHotSwapError::ActiveEntry {
+                message: "active executor has no Product AWBC entry identity".to_owned(),
+            })?;
         let compatibility =
-            classify_swap(self.swap.active(), &next_generation).max(compatibility_floor);
+            classify_swap_for_entry(self.swap.active(), &next_generation, &active_entry.id)
+                .max(compatibility_floor);
         if compatibility == SwapCompatibility::ContentOnly
             && next_artifact_identity == self.active_artifact_identity
         {
@@ -52,8 +62,40 @@ impl BundleSession {
         if compatibility == SwapCompatibility::RestartRequired {
             return Err(BundleHotSwapError::RestartRequired { compatibility });
         }
+        let root_blockers = self.executor.product_root_save_blockers();
+        let reducer_active = root_blockers
+            .as_ref()
+            .is_some_and(|blockers| blockers.reducer_active);
+        let pending_events = root_blockers
+            .as_ref()
+            .map_or(0, |blockers| blockers.pending_events as usize)
+            .checked_add(self.pending_deferred_root_events.len())
+            .expect("live root-event queues cannot exceed addressable memory");
+        let pending_commands = root_blockers
+            .as_ref()
+            .map_or(0, |blockers| blockers.pending_commands);
+        let pending_command_results = self.pending_root_command_results.len();
+        if reducer_active
+            || pending_events > 0
+            || pending_commands > 0
+            || pending_command_results > 0
+        {
+            return Err(BundleHotSwapError::PendingRootWork {
+                reducer_active,
+                pending_events,
+                pending_commands,
+                pending_command_results,
+            });
+        }
 
-        let mut next_runtime = build_session_runtime(bundle, &self.options)?;
+        let mut next_runtime = if matches!(
+            compatibility,
+            SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
+        ) {
+            build_session_runtime_preserving_executor(bundle, &self.options, &self.executor)?
+        } else {
+            build_session_runtime(bundle, &self.options)?
+        };
         let mut next_environment = self.environment.clone();
         let _environment_update =
             next_environment.replace_theme(next_runtime.view_theme_environment)?;

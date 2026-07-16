@@ -6,8 +6,8 @@ use crate::executor::{
     VmExecutor,
 };
 use crate::plan::{
-    FlowOp, RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
-    RuntimePureHelperOrigin, RuntimePureOutputType,
+    FlowOp, RuntimeFlow, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureOutputType,
 };
 use crate::step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions};
 use crate::task::{AwaitTarget, HostCapabilityId, HostTaskRequestTemplate, NeedId, TaskId};
@@ -15,7 +15,7 @@ use crate::value::{RuntimeExpr, RuntimeValue};
 
 #[test]
 fn aot_executor_matches_vm_executor_at_runtime_boundary() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -30,6 +30,9 @@ fn aot_executor_matches_vm_executor_at_runtime_boundary() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    aot.start_entry(&entry).expect("explicit AOT entry starts");
     assert_eq!(aot.program().stats().flows, 1);
     assert_eq!(aot.program().stats().linear_dispatch_flows, 1);
 
@@ -42,7 +45,7 @@ fn aot_executor_matches_vm_executor_at_runtime_boundary() {
 
 #[test]
 fn aot_program_records_nested_dispatch_shape() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -98,7 +101,7 @@ fn aot_program_records_nested_dispatch_shape() {
 
 #[test]
 fn aot_executor_uses_fast_path_for_supported_linear_flow() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -121,6 +124,9 @@ fn aot_executor_uses_fast_path_for_supported_linear_flow() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    aot.start_entry(&entry).expect("explicit AOT entry starts");
     assert_eq!(aot.program().flows()[0].lowered_linear_ops(), 3);
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
@@ -132,7 +138,7 @@ fn aot_executor_uses_fast_path_for_supported_linear_flow() {
 
 #[test]
 fn aot_executor_falls_back_for_control_effect_flow() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![
             RuntimeFlow {
@@ -156,6 +162,9 @@ fn aot_executor_falls_back_for_control_effect_flow() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    aot.start_entry(&entry).expect("explicit AOT entry starts");
 
     assert_eq!(aot.program().flows()[0].dispatch, AotDispatchShape::Mixed);
 
@@ -168,7 +177,7 @@ fn aot_executor_falls_back_for_control_effect_flow() {
 
 #[test]
 fn aot_executor_falls_back_for_branching_flow() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -187,6 +196,9 @@ fn aot_executor_falls_back_for_branching_flow() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    aot.start_entry(&entry).expect("explicit AOT entry starts");
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
     let aot_result = aot.step(RuntimeStepInput::default(), options);
@@ -197,7 +209,7 @@ fn aot_executor_falls_back_for_branching_flow() {
 
 #[test]
 fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_compatible_dispatch() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -221,6 +233,9 @@ fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_compatible_dispatch() {
     };
     let mut vm = VmExecutor::new(plan.clone());
     let mut aot = AotExecutor::new(plan);
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    aot.start_entry(&entry).expect("explicit AOT entry starts");
 
     assert_eq!(aot.program().flows()[0].dispatch, AotDispatchShape::Mixed);
     assert_eq!(aot.program().flows()[0].lowered_linear_ops(), 1);
@@ -236,7 +251,7 @@ fn aot_executor_runs_mixed_flow_linear_prefix_before_vm_compatible_dispatch() {
 
 #[test]
 fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -264,6 +279,11 @@ fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
     let mut vm = VmExecutor::new(plan);
     let mut bytecode_vm =
         BytecodeVmExecutor::new(bytecode).expect("bytecode program converts to runtime plan");
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    bytecode_vm
+        .start_entry(&entry)
+        .expect("explicit bytecode VM entry starts");
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
     let bytecode_result = bytecode_vm.step(RuntimeStepInput::default(), options);
@@ -274,7 +294,7 @@ fn bytecode_program_roundtrips_runtime_plan_and_matches_vm_executor() {
 
 #[test]
 fn runtime_executor_facade_matches_structured_vm_and_aot_boundaries() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -300,6 +320,14 @@ fn runtime_executor_facade_matches_structured_vm_and_aot_boundaries() {
         ArcweftRuntimeExecutor::from_runtime_plan(plan.clone(), ArcweftExecutionTier::StructuredVm);
     let mut facade_aot =
         ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredAot);
+    let entry = super::entry_id("entry.core_test");
+    vm.start_entry(&entry).expect("explicit VM entry starts");
+    facade_vm
+        .start_structured_entry(&entry)
+        .expect("explicit facade VM entry starts");
+    facade_aot
+        .start_structured_entry(&entry)
+        .expect("explicit facade AOT entry starts");
 
     let vm_result = vm.step(RuntimeStepInput::default(), options);
     let facade_vm_result = facade_vm.step(RuntimeStepInput::default(), options);

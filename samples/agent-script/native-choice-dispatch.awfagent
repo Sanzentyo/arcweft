@@ -1,6 +1,5 @@
-#[agent(version = 1)]
 
-agent @agent.native.choice_dispatch native_choice_dispatch()
+fn native_choice_dispatch() -> Result<Unit, AgentError>
 effects { agent.observe, agent.act.semantic, agent.wait }
 {
     let listen = choice_action(@choice.opening.listen)
@@ -21,5 +20,9 @@ effects { agent.observe, agent.act.semantic, agent.wait }
         poll_frames = 1u32,
     )
 
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = native_choice_dispatch
 }

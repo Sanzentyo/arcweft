@@ -91,7 +91,7 @@ pub character @character.narrator Narrator as narrator {
     }
 }
 
-entry game {
+entry cli @entry.rich_text_full_grammar {
     goto @flow.rich_text_full_grammar
 }
 

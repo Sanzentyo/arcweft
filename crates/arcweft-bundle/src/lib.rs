@@ -344,10 +344,12 @@ pub enum BundleVirtualFileSpace {
 #[serde(rename_all = "snake_case")]
 pub enum BundleLaunchKind {
     Game,
+    Editor,
     Cli,
     Server,
     Test,
     Bench,
+    Agent,
 }
 
 #[derive(Debug, Error)]
@@ -1473,10 +1475,10 @@ mod tests {
     use crate::resource_codec::runtime::RuntimeTypesSection;
     use arcweft_agent_protocol::{
         artifact::{
-            AgentArtifactManifest, AgentBudget, AgentBundleKind, EffectCapability, ProjectBinding,
+            AgentArtifactManifest, AgentBundleKind, EffectCapability, ProjectBinding,
             ProjectBindingMode, RequiredEntity,
         },
-        ids::{PublicId, StableHash},
+        ids::{CallableId, PublicId, StableHash},
         verified_effects::VerifiedEffectSummary,
     };
     use arcweft_audio_core::graph::{
@@ -1488,6 +1490,7 @@ mod tests {
         AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
         AwbcTableRange, AwbcTerminator,
     };
+    use arcweft_core::entry::AgentBudget;
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
@@ -1788,8 +1791,8 @@ mod tests {
             decoded
                 .agent
                 .as_ref()
-                .map(|manifest| manifest.agent_id.as_str()),
-            Some("agent.opening_smoke")
+                .map(|manifest| manifest.entry_id.as_str()),
+            Some("entry.agent.opening_smoke")
         );
         assert_eq!(decoded, bundle);
     }
@@ -2104,10 +2107,16 @@ mod tests {
                 source_map: None,
             }],
             entries: vec![AwbcEntry {
+                runtime_id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body(
+                    "entry.main",
+                )
+                .expect("test entry ID is valid"),
+                binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
                 public_id: AwbcStringId(0),
-                kind: AwbcEntryKind::Game,
+                kind: AwbcEntryKind::Cli,
                 signature: AwbcSignatureId(0),
                 target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+                roles: arcweft_core::entry::RuntimeEntryRoles::None,
             }],
             ..AwbcProgram::default()
         }
@@ -2155,7 +2164,12 @@ mod tests {
         AgentArtifactManifest {
             schema_version: 1,
             bundle_kind: AgentBundleKind::AgentController,
-            agent_id: public_id("agent.opening_smoke"),
+            entry_id: public_id("entry.agent.opening_smoke"),
+            controller_id: CallableId::new("test::crate.opening_smoke")
+                .expect("test callable id is nonempty"),
+            entry_binding_hash: stable_hash("blake3:entry-binding"),
+            controller_contract_hash: stable_hash("blake3:controller-contract"),
+            policy_hash: stable_hash("blake3:agent-policy"),
             source_hash: stable_hash("sha256:agent-source"),
             compiler_version: "arcweft-test".to_owned(),
             project_binding: ProjectBinding {

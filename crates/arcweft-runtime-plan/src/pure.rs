@@ -11,6 +11,7 @@ use arcweft_core::{
 };
 use arcweft_lang_hir::{
     model::{HirFunction, HirModule},
+    symbol::CallableDeclarationId,
     syntax::{
         ast::{flow::Stmt, items::FunctionKind, pattern::Pattern},
         expr::Expr,
@@ -22,6 +23,7 @@ use thiserror::Error;
 /// Runtime-ready pure helper candidate lowered from a checked HIR function.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PureHelperCandidate {
+    module: Option<arcweft_lang_hir::syntax::ast::module_path::CanonicalModulePath>,
     name: String,
     input_names: Vec<String>,
     input_types: Vec<RuntimePureInputType>,
@@ -70,11 +72,22 @@ pub enum PureHelperLowerError {
     UnsupportedParameter { name: String, parameter: String },
     #[error("pure helper `{name}` has unsupported parameter type `{parameter}`")]
     UnsupportedParameterType { name: String, parameter: String },
+    #[error(
+        "selected entry callable `{declaration}` resolved to {matches} ordinary functions during runtime lowering"
+    )]
+    EntryCallableCardinality { declaration: String, matches: usize },
     #[error("pure helper `{name}` has unsupported expression: {reason}")]
     UnsupportedExpr { name: String, reason: String },
 }
 
 impl PureHelperCandidate {
+    /// Canonical source module retained for checked entry-role projection.
+    pub const fn module(
+        &self,
+    ) -> Option<&arcweft_lang_hir::syntax::ast::module_path::CanonicalModulePath> {
+        self.module.as_ref()
+    }
+
     /// Function name from the source signature.
     pub fn name(&self) -> &str {
         &self.name
@@ -169,26 +182,62 @@ impl PureHelperCandidate {
 pub fn lower_pure_helper_candidates(
     module: &HirModule,
 ) -> Result<PureHelperCandidateReport, Vec<PureHelperLowerError>> {
+    lower_pure_helper_candidates_for_entry_callables(module, &[])
+}
+
+/// Lowers ordinary inferred helpers plus the exact entry-bound callables that
+/// require opaque runtime values for nominal state/event boundaries.
+pub(crate) fn lower_pure_helper_candidates_for_entry_callables(
+    module: &HirModule,
+    entry_callables: &[CallableDeclarationId],
+) -> Result<PureHelperCandidateReport, Vec<PureHelperLowerError>> {
     let mut stats = PureHelperCandidateStats::default();
     let mut candidates = Vec::new();
     let mut errors = Vec::new();
+    for declaration in entry_callables {
+        let matches = module
+            .functions()
+            .iter()
+            .filter(|function| {
+                CallableDeclarationId::for_function(declaration.package(), function)
+                    .is_ok_and(|candidate| candidate == *declaration)
+            })
+            .count();
+        if matches != 1 {
+            errors.push(PureHelperLowerError::EntryCallableCardinality {
+                declaration: declaration.to_string(),
+                matches,
+            });
+        }
+    }
     for function in module.functions() {
         stats.functions_seen += 1;
         stats.lower_attempts += 1;
         let annotated = function.has_attribute("pure");
-        match lower_pure_helper_candidate(
-            function,
-            if annotated {
-                RuntimePureHelperOrigin::Annotated
-            } else {
-                RuntimePureHelperOrigin::Inferred
-            },
-        ) {
+        let entry_callable = entry_callables.iter().any(|declaration| {
+            CallableDeclarationId::for_function(declaration.package(), function)
+                .is_ok_and(|candidate| candidate == *declaration)
+        });
+        let origin = if annotated {
+            RuntimePureHelperOrigin::Annotated
+        } else {
+            RuntimePureHelperOrigin::Inferred
+        };
+        let lowered = if entry_callable {
+            lower_pure_helper_candidate_with_input_policy(
+                function,
+                origin,
+                PureHelperInputPolicy::EntryOpaqueValues,
+            )
+        } else {
+            lower_pure_helper_candidate(function, origin)
+        };
+        match lowered {
             Ok(candidate) => {
                 stats.expr_lowered_nodes += candidate.shape().expr_weight;
                 candidates.push(candidate);
             }
-            Err(error) if annotated => errors.push(error),
+            Err(error) if annotated || entry_callable => errors.push(error),
             Err(_) => stats.lower_failures_inferred += 1,
         }
     }
@@ -203,17 +252,36 @@ pub fn lower_pure_helper_candidate(
     function: &HirFunction,
     origin: RuntimePureHelperOrigin,
 ) -> Result<PureHelperCandidate, PureHelperLowerError> {
+    lower_pure_helper_candidate_with_input_policy(
+        function,
+        origin,
+        PureHelperInputPolicy::ScalarOnly,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum PureHelperInputPolicy {
+    ScalarOnly,
+    EntryOpaqueValues,
+}
+
+fn lower_pure_helper_candidate_with_input_policy(
+    function: &HirFunction,
+    origin: RuntimePureHelperOrigin,
+    input_policy: PureHelperInputPolicy,
+) -> Result<PureHelperCandidate, PureHelperLowerError> {
     if function.kind() != FunctionKind::Function {
         return Err(PureHelperLowerError::UnsupportedFunctionKind {
             name: function.name().to_owned(),
             kind: function.kind(),
         });
     }
-    let inputs = pure_helper_inputs(function)?;
+    let inputs = pure_helper_inputs(function, input_policy)?;
     let (input_names, input_types): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();
     let expr = lower_pure_helper_body(function)?;
     let shape = pure_helper_shape(&expr, input_names.len());
     Ok(PureHelperCandidate {
+        module: function.module_path().cloned(),
         name: function.name().to_owned(),
         input_names,
         input_types,
@@ -445,19 +513,21 @@ fn lower_pure_helper_let_stmt(
 
 fn pure_helper_inputs(
     function: &HirFunction,
+    input_policy: PureHelperInputPolicy,
 ) -> Result<Vec<(String, RuntimePureInputType)>, PureHelperLowerError> {
     function
         .signature()
         .param_groups()
         .iter()
         .flat_map(arcweft_lang_hir::syntax::types::FnParamGroup::params)
-        .map(|param| pure_helper_param(function.name(), param))
+        .map(|param| pure_helper_param(function.name(), param, input_policy))
         .collect()
 }
 
 fn pure_helper_param(
     function_name: &str,
     param: &FnParam,
+    input_policy: PureHelperInputPolicy,
 ) -> Result<(String, RuntimePureInputType), PureHelperLowerError> {
     let name = binding_pattern_name(function_name, param.pattern()).map_err(|parameter| {
         PureHelperLowerError::UnsupportedParameter {
@@ -465,7 +535,7 @@ fn pure_helper_param(
             parameter,
         }
     })?;
-    pure_helper_input_type(param.ty())
+    pure_helper_input_type(param.ty(), input_policy)
         .map(|ty| (name.clone(), ty))
         .ok_or_else(|| PureHelperLowerError::UnsupportedParameterType {
             name: function_name.to_owned(),
@@ -482,7 +552,10 @@ fn binding_pattern_name(function_name: &str, pattern: &Pattern) -> Result<String
     }
 }
 
-fn pure_helper_input_type(ty: &TypeRef) -> Option<RuntimePureInputType> {
+fn pure_helper_input_type(
+    ty: &TypeRef,
+    input_policy: PureHelperInputPolicy,
+) -> Option<RuntimePureInputType> {
     match ty {
         TypeRef::Path(name) => match name.as_str() {
             "i8" => Some(RuntimePureInputType::I8),
@@ -499,8 +572,16 @@ fn pure_helper_input_type(ty: &TypeRef) -> Option<RuntimePureInputType> {
             "usize" => Some(RuntimePureInputType::USize),
             "f32" => Some(RuntimePureInputType::F32),
             "f64" => Some(RuntimePureInputType::F64),
+            _ if matches!(input_policy, PureHelperInputPolicy::EntryOpaqueValues) => {
+                Some(RuntimePureInputType::Value)
+            }
             _ => None,
         },
+        TypeRef::Reference(_)
+            if matches!(input_policy, PureHelperInputPolicy::EntryOpaqueValues) =>
+        {
+            Some(RuntimePureInputType::Value)
+        }
         _ => None,
     }
 }
@@ -533,7 +614,44 @@ fn pure_helper_output_type(ty: Option<&TypeRef>) -> RuntimePureOutputType {
 mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::symbol::CallablePackageId;
     use arcweft_lang_hir::syntax::parser::parse_source;
+
+    #[test]
+    fn opaque_entry_inputs_do_not_broaden_ordinary_helper_inference() {
+        let parsed = parse_source(
+            r"
+mod game
+
+fn unrelated(value: String) -> String {
+    value
+}
+
+fn reduce(state: &GameState, event: GameEvent) -> GameEvent {
+    event
+}
+",
+        );
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let tree = parsed.into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("functions lower to HIR");
+
+        let ordinary =
+            lower_pure_helper_candidates(&hir).expect("ordinary helper discovery succeeds");
+        assert!(ordinary.candidates.is_empty());
+
+        let package = CallablePackageId::try_new("game").expect("package ID");
+        let reducer = CallableDeclarationId::for_function(&package, &hir.functions()[1])
+            .expect("reducer declaration ID");
+        let selected = lower_pure_helper_candidates_for_entry_callables(&hir, &[reducer])
+            .expect("selected entry callable lowers");
+        assert_eq!(selected.candidates.len(), 1);
+        assert_eq!(selected.candidates[0].name(), "reduce");
+        assert_eq!(
+            selected.candidates[0].input_types(),
+            [RuntimePureInputType::Value, RuntimePureInputType::Value]
+        );
+    }
 
     #[test]
     fn lowers_pure_function_candidate_from_hir_attribute() {

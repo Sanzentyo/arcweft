@@ -5,7 +5,7 @@ use arcweft_core::{
     },
     line_task::{LineChildTask, LineOutRequest, LineTaskNode, LineTaskTrigger},
     pattern::RuntimePattern,
-    plan::{FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimeIteratorEvidence},
+    plan::{FlowOp, FlowRuntimeId, RuntimeEntryTarget, RuntimeIteratorEvidence},
     source::{SourceHandlerPlan, SourceOp},
     stream::StreamOp,
     time::LogicalDuration,
@@ -24,14 +24,14 @@ use arcweft_lang_sema::{
 use arcweft_lang_syntax::{
     ast::items::TypedSyntaxTree,
     expr::{Expr, parse_expr},
-    parser::{ParseOptions, SourceDialect, parse_document, parse_source},
+    parser::parse_source,
 };
 use arcweft_runtime_plan::{
     assertion::RuntimeAssertionBuildProfile,
     errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext, RuntimePlanLowerErrorKind},
     flow::{
-        RuntimePlanLowerOptions, lower_agent_controller_plan_with_stats, lower_runtime_plan,
-        lower_runtime_plan_with_options, lower_runtime_plan_with_stats,
+        RuntimePlanLowerOptions, lower_runtime_plan, lower_runtime_plan_with_options,
+        lower_runtime_plan_with_stats,
     },
     line_task::lower_line_task_groups,
 };
@@ -56,21 +56,6 @@ fn lower_bound(source: &str) -> HirModule {
     )
     .expect("source document");
     lower_document_to_hir(&document, &tree).expect("revision-bound source lowers to HIR")
-}
-
-fn parse_agent_ok(source: impl Into<String>) -> TypedSyntaxTree {
-    let parsed = parse_document(
-        source,
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
-    );
-    assert!(
-        parsed.errors().is_empty(),
-        "expected agent source to parse without errors, got {:?}",
-        parsed.errors()
-    );
-    parsed.into_typed_tree()
 }
 
 fn call(callee: &str, args: &[&str]) -> LineEffectRequest {
@@ -280,7 +265,7 @@ flow @flow.main main {
 fn entry_selects_runtime_goto_flow_from_compile_gap_fixture() {
     let tree = parse_ok(
         r#"
-entry game @entry.main { goto @flow.second }
+entry cli @entry.main { goto @flow.second }
 flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
@@ -288,39 +273,17 @@ flow @flow.second second { return "right" }
     let hir = lower_to_hir(&tree).expect("entry lowers");
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with explicit entry");
-    assert!(
-        plan.entry_flow
-            .as_ref()
-            .is_some_and(|id| id.public_label().as_str() == "flow.second")
-    );
-}
-
-#[test]
-fn entry_accepts_bare_goto_flow_target_from_compile_gap_fixture() {
-    let tree = parse_ok(
-        r#"
-entry game {
-    goto @flow.second
-}
-flow @flow.first first { return "wrong" }
-flow @flow.second second { return "right" }
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("entry lowers");
-
-    let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with bare start entry");
-    assert!(
-        plan.entry_flow
-            .as_ref()
-            .is_some_and(|id| id.public_label().as_str() == "flow.second")
-    );
+    assert!(matches!(
+        &plan.entries[0].target,
+        RuntimeEntryTarget::Flow(id) if id.public_label().as_str() == "flow.second"
+    ));
 }
 
 #[test]
 fn entry_goto_selects_runtime_flow_from_final_syntax() {
     let tree = parse_ok(
         r#"
-entry game {
+entry cli @entry.runtime_plan {
     goto @flow.second
 }
 flow @flow.first first { return "wrong" }
@@ -330,369 +293,10 @@ flow @flow.second second { return "right" }
     let hir = lower_to_hir(&tree).expect("entry goto lowers");
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with goto entry");
-    assert!(
-        plan.entry_flow
-            .as_ref()
-            .is_some_and(|id| id.public_label().as_str() == "flow.second")
-    );
-}
-
-#[test]
-fn agent_controller_plan_lowers_body_to_entry_flow() {
-    let tree = parse_agent_ok(
-        r"
-#[agent(version = 1)]
-agent @agent.observe_smoke observe_smoke()
-effects { agent.observe }
-{
-    observe()
-}
-",
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    assert_eq!(
-        report
-            .plan
-            .entry_flow
-            .as_ref()
-            .map(FlowRuntimeId::canonical_label),
-        Some("agent.observe_smoke".to_owned())
-    );
-    assert_eq!(report.plan.flows.len(), 1);
-    assert_eq!(
-        report.plan.flows[0].id.canonical_label(),
-        "agent.observe_smoke"
-    );
-    assert!(!report.plan.flows[0].ops.is_empty());
-    assert_eq!(report.plan.entries.len(), 1);
-    assert_eq!(
-        report.plan.entries[0].id.public_label().as_str(),
-        "entry.agent.observe_smoke"
-    );
-    assert_eq!(
-        report.plan.entries[0].kind,
-        RuntimeEntryKind::Custom("agent_controller".to_owned())
-    );
-    assert_eq!(
-        report.plan.entries[0].target,
-        RuntimeEntryTarget::Flow(flow_id("agent.observe_smoke"))
-    );
-}
-
-#[test]
-fn agent_controller_plan_lowers_host_call_let_to_await() {
-    let tree = parse_agent_ok(
-        r#"
-#[agent(version = 1)]
-agent @agent.capture_smoke capture_smoke()
-effects { agent.capture }
-{
-    let shot = capture(viewport(), format = .png, name = "hud")
-    return shot.uri
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Await {
-        binding, target, ..
-    } = &report.plan.flows[0].ops[0]
-    else {
-        panic!(
-            "expected capture let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert!(binding.is_some());
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "capture");
-    assert_eq!(target.request.args.len(), 2);
-}
-
-#[test]
-fn agent_controller_plan_lowers_read_resource_to_host_task() {
-    let tree = parse_agent_ok(
-        r#"
-#[agent(version = 1)]
-agent @agent.read_resource read_resource_smoke()
-effects { agent.resource.read }
-{
-    let resource = read_resource(uri = "arcweft://session/cli/observation/latest.json")
-    return resource
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
-        panic!(
-            "expected read_resource let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "read_resource");
-    assert_eq!(target.request.args.len(), 1);
-    assert!(format!("{:?}", target.request.args[0]).contains("observation/latest.json"));
-}
-
-#[test]
-fn agent_controller_plan_lowers_attach_resource_to_host_task() {
-    let tree = parse_agent_ok(
-        r#"
-#[agent(version = 1)]
-agent @agent.attach_resource attach_resource_smoke()
-effects { agent.resource.read, debug.record }
-{
-    let resource = read_resource(uri = "arcweft://session/cli/observation/latest.json")
-    attach(resource)
-    return resource.uri
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[1] else {
-        panic!(
-            "expected attach to lower to Await, got {:?}",
-            report.plan.flows[0].ops[1]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "attach");
-    assert_eq!(target.request.args.len(), 1);
-    assert!(format!("{:?}", target.request.args[0]).contains("resource"));
-}
-
-#[test]
-fn agent_controller_plan_lowers_pointer_click_to_host_task() {
-    let tree = parse_agent_ok(
-        r"
-#[agent(version = 1)]
-agent @agent.pointer_click pointer_click()
-effects { agent.act.physical }
-{
-    let result = pointer.click(viewport_point(12u32, 34u32), button = .primary)
-    return result.accepted
-}
-",
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
-        panic!(
-            "expected pointer.click let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "pointer.click");
-    assert_eq!(target.request.args.len(), 2);
-    assert!(format!("{:?}", target.request.args[0]).contains('x'));
-    assert!(format!("{:?}", target.request.args[0]).contains("34"));
-}
-
-#[test]
-fn agent_controller_plan_lowers_wait_predicate_to_host_task() {
-    let tree = parse_agent_ok(
-        r"
-#[agent(version = 1)]
-agent @agent.wait_smoke wait_smoke()
-effects { agent.wait, agent.observe }
-{
-    let obs = wait(signal(@signal.ready).eq(true), timeout = 5ms, stable_frames = 2u32, poll_frames = 1u32)
-    return obs.tick
-}
-",
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
-        panic!(
-            "expected wait let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "wait");
-    assert_eq!(target.request.args.len(), 2);
-}
-
-#[test]
-fn agent_controller_plan_lowers_composite_wait_predicates_to_host_task() {
-    let tree = parse_agent_ok(
-        r"
-#[agent(version = 1)]
-agent @agent.wait_composite wait_composite()
-effects { agent.wait, agent.observe }
-{
-    let obs = wait(any([
-        exists(signal(@signal.ready)),
-        metric(@metric.fps).ge(55.0f32),
-        diagnostics().has_error(),
-    ]), timeout = 5ms)
-    return obs.tick
-}
-",
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[0] else {
-        panic!(
-            "expected wait let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "wait");
-    let predicate = target.request.args[0].value();
-    let RuntimeExpr::Record(fields) = predicate else {
-        panic!("expected predicate record, got {predicate:?}");
-    };
-    assert!(fields.iter().any(|field| {
-        field.name == "kind"
-            && matches!(&field.value, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "any")
-    }));
-    assert!(format!("{predicate:?}").contains("greater_or_equal"));
-    assert!(format!("{predicate:?}").contains("diagnostics_has_error"));
-}
-
-#[test]
-fn agent_controller_plan_lowers_action_enabled_wait_predicate() {
-    let tree = parse_agent_ok(
-        r"
-#[agent(version = 1)]
-agent @agent.wait_action wait_action()
-effects { agent.wait, agent.observe }
-{
-    let listen = choice_action(@choice.opening.listen)
-    let obs = wait(action_enabled(listen), timeout = 5ms)
-    return obs.tick
-}
-",
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Let { pattern, expr } = &report.plan.flows[0].ops[0] else {
-        panic!(
-            "expected choice_action to lower to Let, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert!(format!("{pattern:?}").contains("listen"));
-    assert!(format!("{expr:?}").contains("choice.opening.listen"));
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[1] else {
-        panic!(
-            "expected wait let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[1]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "wait");
-    let predicate = target.request.args[0].value();
-    let RuntimeExpr::Record(fields) = predicate else {
-        panic!("expected predicate record, got {predicate:?}");
-    };
-    assert!(fields.iter().any(|field| {
-        field.name == "kind"
-            && matches!(&field.value, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "action_enabled")
-    }));
-    assert!(format!("{predicate:?}").contains("Local(\"listen\")"));
-    assert!(format!("{predicate:?}").contains("target"));
-}
-
-#[test]
-fn agent_controller_plan_lowers_state_and_observation_wait_predicates() {
-    let tree = parse_agent_ok(
-        r#"
-#[agent(version = 1)]
-agent @agent.wait_state wait_state()
-effects { agent.wait, agent.observe, debug.read }
-{
-    let route = state_path("route.phase")
-    let tick = observation_path("tick")
-    let obs = wait(
-        all(
-            state(route).eq("opening"),
-            observation(tick).ge(1i64),
-        ),
-        timeout = 5ms,
-    )
-    return obs.tick
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("agent lowers to HIR");
-    let agent = hir.agents().first().expect("agent item lowers");
-
-    let report =
-        lower_agent_controller_plan_with_stats(&hir, agent).expect("agent controller lowers");
-
-    let FlowOp::Let { pattern, expr } = &report.plan.flows[0].ops[0] else {
-        panic!(
-            "expected route path constructor to lower to Let, got {:?}",
-            report.plan.flows[0].ops[0]
-        );
-    };
-    assert!(format!("{pattern:?}").contains("route"));
-    assert!(
-        matches!(expr, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "route.phase")
-    );
-
-    let FlowOp::Let { pattern, expr } = &report.plan.flows[0].ops[1] else {
-        panic!(
-            "expected observation path constructor to lower to Let, got {:?}",
-            report.plan.flows[0].ops[1]
-        );
-    };
-    assert!(format!("{pattern:?}").contains("tick"));
-    assert!(matches!(expr, RuntimeExpr::Value(RuntimeValue::String(value)) if value == "tick"));
-
-    let FlowOp::Await { target, .. } = &report.plan.flows[0].ops[2] else {
-        panic!(
-            "expected wait let to lower to Await, got {:?}",
-            report.plan.flows[0].ops[2]
-        );
-    };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "wait");
-    let predicate = target.request.args[0].value();
-    assert!(format!("{predicate:?}").contains("Local(\"route\")"));
-    assert!(format!("{predicate:?}").contains("Local(\"tick\")"));
+    assert!(matches!(
+        &plan.entries[0].target,
+        RuntimeEntryTarget::Flow(id) if id.public_label().as_str() == "flow.second"
+    ));
 }
 
 #[test]
@@ -1025,7 +629,7 @@ flow @flow.next next {
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
 
-    assert_eq!(plan.entry_flow, Some(flow_id("flow.opening")));
+    assert!(plan.entries.is_empty());
     assert_eq!(plan.line_task_groups.len(), 1);
     assert_eq!(plan.flows.len(), 2);
     assert!(matches!(
@@ -2499,6 +2103,30 @@ flow assertions {
             .as_str(),
         "verify.proof.unresolved"
     );
+}
+
+#[test]
+fn audited_unsafe_lifetime_region_lowers_as_a_lexical_runtime_scope() {
+    let tree = parse_ok(
+        r#"
+flow @flow.audit audit {
+    unsafe lifetime @unsafe.cache reason = "owned clone" {
+        /// SAFETY: the value is owned before promotion.
+        let summary = promote_unchecked('flow)
+    }
+    return "done"
+}
+"#,
+    );
+    let hir = lower_to_hir(&tree).expect("unsafe lifetime fixture lowers to HIR");
+
+    let plan = lower_runtime_plan(&hir).expect("audited lifetime region lowers");
+
+    assert!(matches!(
+        plan.flows[0].ops.as_slice(),
+        [FlowOp::Scope(scope), FlowOp::ReturnExpr(_)]
+            if matches!(scope.as_slice(), [FlowOp::Let { .. }])
+    ));
 }
 
 #[test]

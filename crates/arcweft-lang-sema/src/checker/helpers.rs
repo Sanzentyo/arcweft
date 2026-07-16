@@ -1,7 +1,7 @@
 use super::{
     AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, EntityRefSyntax,
-    EnumVariantPayload, Expr, FnParam, FnSignature, LifetimeScopeKind, Literal, MapKind,
-    NominalTypeContext, Pattern, Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
+    EnumVariantPayload, Expr, FnParam, FnSignature, LifetimeScopeKind, Literal, NominalTypeContext,
+    Pattern, Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
 };
 use crate::{effect_row::EffectRow, effects::EffectSet};
 use std::collections::{HashMap, HashSet};
@@ -546,59 +546,6 @@ pub(super) fn result_ok_type(name: &str) -> Option<TypeKind> {
     Some(named_type_label(ok))
 }
 
-pub(super) fn well_known_runtime_method_type(name: &str) -> Option<TypeKind> {
-    if let Some(ty) = well_known_static_capacity_method_type(name) {
-        return Some(ty);
-    }
-    if matches!(name, "panic" | "fail" | "bail") {
-        return Some(TypeKind::Never);
-    }
-    if matches!(name, "ensure" | "assert" | "debug_assert") {
-        return Some(TypeKind::Unit);
-    }
-    if name == "load_bg" {
-        return Some(TypeKind::Need {
-            ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
-            error: Box::new(TypeKind::Named("ArcError".to_owned())),
-        });
-    }
-    if name == "asset.image" {
-        return Some(TypeKind::Need {
-            ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
-            error: Box::new(TypeKind::Named("AssetError".to_owned())),
-        });
-    }
-    if name == "voice.load" {
-        return Some(TypeKind::Need {
-            ready: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
-            error: Box::new(TypeKind::Named("VoiceError".to_owned())),
-        });
-    }
-    if name == "len" {
-        return Some(TypeKind::I64);
-    }
-    (name.starts_with("log.")
-        || matches!(
-            name,
-            "drop"
-                | "drop_optional"
-                | "on_drop"
-                | "signal.set"
-                | "metric.set"
-                | "event.emit"
-                | "adapter.events"
-                | "scene.show"
-                | "scene.clear"
-                | "progress.set"
-                | "meter.show"
-                | "text.show"
-                | "text.flush"
-                | "voice.stop"
-                | "cues.stop"
-        ))
-    .then_some(TypeKind::Unit)
-}
-
 pub(super) fn well_known_static_capacity_method_type(name: &str) -> Option<TypeKind> {
     if let Some(item) = name
         .strip_prefix("Vec<")
@@ -883,113 +830,8 @@ pub(super) fn await_branch_pattern_type(
     }
 }
 
-pub(super) fn is_map_type_name(name: &str) -> bool {
-    matches!(name, "OrderedMap" | "SortedMap" | "BTreeMap")
-}
-
-pub(super) fn map_kind_for_type_name(name: &str) -> MapKind {
-    match name {
-        "OrderedMap" => MapKind::Ordered,
-        "SortedMap" => MapKind::Sorted,
-        "BTreeMap" => MapKind::BTree,
-        _ => unreachable!("map type names are filtered before kind selection"),
-    }
-}
-
 pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
-    match ty {
-        TypeRef::Never => TypeKind::Never,
-        TypeRef::ConstInt(value) => TypeKind::Named(value.to_string()),
-        TypeRef::Path(path) => named_type_label(path),
-        TypeRef::Tuple(items) => TypeKind::Tuple(items.iter().map(type_ref_kind).collect()),
-        TypeRef::Function {
-            params,
-            return_type,
-            effects,
-        } => TypeKind::function_with_effects(
-            params.iter().map(type_ref_kind),
-            type_ref_kind(return_type),
-            type_ref_effect_row(effects.as_ref()),
-        ),
-        TypeRef::Choice(alternatives) => {
-            normalize_choice_type(alternatives.iter().map(type_ref_kind).collect::<Vec<_>>())
-        }
-        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
-            TypeKind::Vec(Box::new(type_ref_kind(&args[0])))
-        }
-        TypeRef::Generic { base, args } if base == "Array" && args.len() == 2 => TypeKind::Array {
-            item: Box::new(type_ref_kind(&args[0])),
-            len: type_ref_label(&args[1]),
-        },
-        TypeRef::Generic { base, args } if base == "Seq" && args.len() == 1 => {
-            TypeKind::Seq(Box::new(type_ref_kind(&args[0])))
-        }
-        TypeRef::Generic { base, args } if is_map_type_name(base) && args.len() == 2 => {
-            TypeKind::Map {
-                kind: map_kind_for_type_name(base),
-                key: Box::new(type_ref_kind(&args[0])),
-                value: Box::new(type_ref_kind(&args[1])),
-            }
-        }
-        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
-            TypeKind::Result {
-                ok: Box::new(type_ref_kind(&args[0])),
-                error: Box::new(type_ref_kind(&args[1])),
-            }
-        }
-        TypeRef::Generic { base, args } if base == "ArcResult" && args.len() == 1 => {
-            TypeKind::Result {
-                ok: Box::new(type_ref_kind(&args[0])),
-                error: Box::new(TypeKind::Named("ArcError".to_owned())),
-            }
-        }
-        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
-            TypeKind::Option(Box::new(type_ref_kind(&args[0])))
-        }
-        TypeRef::Generic { base, args } if base == "Speaker" && args.len() == 1 => {
-            speaker_entity_kind(&args[0])
-                .map_or_else(|| TypeKind::Named(type_ref_label(ty)), TypeKind::Speaker)
-        }
-        TypeRef::Generic { base, args } if base == "SpeakerPreset" && args.len() == 1 => {
-            speaker_entity_kind(&args[0]).map_or_else(
-                || TypeKind::Named(type_ref_label(ty)),
-                TypeKind::SpeakerPreset,
-            )
-        }
-        TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
-            ready: Box::new(type_ref_kind(&args[0])),
-            error: Box::new(type_ref_kind(&args[1])),
-        },
-        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
-            TypeKind::Stream {
-                item: Box::new(type_ref_kind(&args[0])),
-                error: Box::new(type_ref_kind(&args[1])),
-            }
-        }
-        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
-            TypeKind::Source {
-                item: Box::new(type_ref_kind(&args[0])),
-                error: Box::new(type_ref_kind(&args[1])),
-            }
-        }
-        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
-            subject: Box::new(type_ref_kind(subject)),
-            trait_name: None,
-            assoc: assoc.clone(),
-        },
-        TypeRef::TraitBound(bound) => named_type_label(bound.path()),
-        TypeRef::Reference(reference) => TypeKind::BorrowRef {
-            kind: reference.kind(),
-            lifetime: reference
-                .region()
-                .name()
-                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-            inner: Box::new(type_ref_kind(reference.referent())),
-        },
-        TypeRef::Slice(inner) => array_type_from_slice_inner(inner)
-            .unwrap_or_else(|| TypeKind::Slice(Box::new(type_ref_kind(inner)))),
-        TypeRef::Generic { .. } => TypeKind::Named(type_ref_label(ty)),
-    }
+    TypeKind::from(ty)
 }
 
 pub(super) fn function_param_local_type(param: &FnParam) -> TypeKind {
@@ -1066,24 +908,6 @@ pub(crate) fn type_ref_kind_with_generics(
         ),
         _ => type_ref_kind(ty),
     }
-}
-
-fn speaker_entity_kind(ty: &TypeRef) -> Option<EntityKind> {
-    let TypeRef::Path(name) = ty else {
-        return None;
-    };
-    EntityKind::from_type_name(name)
-}
-
-fn array_type_from_slice_inner(inner: &TypeRef) -> Option<TypeKind> {
-    let TypeRef::Path(path) = inner else {
-        return None;
-    };
-    let (item, len) = path.split_once(';')?;
-    Some(TypeKind::Array {
-        item: Box::new(named_type_label(item.trim())),
-        len: len.trim().to_owned(),
-    })
 }
 
 pub(super) fn stream_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {

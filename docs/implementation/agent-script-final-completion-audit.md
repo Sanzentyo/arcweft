@@ -8,8 +8,8 @@ chapter.
 
 | Requirement | Current evidence | Status |
 |---|---|---|
-| `.awfagent` is an Arcweft Agent dialect, not a line-command DSL | `SourceDialect::Agent`, parser tests, old `wait signal`/bare top-level forms rejected, no stable docs match old line-command syntax | Covered |
-| Agent source shares parser, HIR, sema, runtime plan, bytecode, and diagnostics | `compile_agent_source_with_project`, `compile_agent_bundle_with_project`, Agent HIR and Prelude type-checking, runner VM execution tests | Covered |
+| `.awfagent` uses canonical Arcweft syntax, not a line-command DSL or a path-selected dialect | identical `.arcw`/`.awfagent` parser and formatter path, ordinary `fn` plus explicit `entry agent`, and ordinary rejection of removed top-level spellings | Covered |
+| Agent source shares parser, HIR, sema, runtime plan, bytecode, and diagnostics | canonical project compilation, `compile_agent_project_bundle`, ordinary function HIR and Prelude type-checking, runner VM execution tests | Covered |
 | Agent artifacts are `.awfb` bundles with `bundle_kind = agent_controller`; traces are `.arcwx` | `arcw agent script build/run/trace/replay`, bundle kind checks, trace validation and replay tests | Covered |
 | Controller VM reaches observe, semantic action, wait, capture, resource read, debug record, RAG, and assertions through `AgentSession` | `arcweft-agent-runner` host-task dispatch, CLI/native Agent Script samples and focused tests listed in `agent-script-implementation.md` | Covered |
 | REPL uses fragment parser/compiler/runner, not a second evaluator | `arcw agent repl`, `arcweft-tooling::agent_repl`, REPL cell persistence and snapshot rejection tests | Covered |

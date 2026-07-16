@@ -12,6 +12,7 @@ use super::{
     normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
     type_ref_kind_with_generics, validate_typecheck_ready,
 };
+use crate::callable::{CallableParameterType, CallableSignatureSchema};
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
 };
@@ -25,15 +26,16 @@ use crate::effect_model::{
 use crate::effects::EffectSet;
 use crate::style::check_view_styles;
 use crate::view_part::{ViewPartDiagnostic, check_view_parts};
-use arcweft_lang_hir::model::{HirAgent, HirFlow, HirFunction};
+use arcweft_lang_hir::entry::HirEntryItem;
+use arcweft_lang_hir::model::{HirFlow, HirFunction};
 use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_hir::style::HirStyleDecl;
 use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 use arcweft_lang_syntax::ast::items::{
-    EntityDeclItem, EntityDeclKind, EntryItem, EntryRouteBinding, EntryRouteBindingSource,
-    EnumItem, EnumVariant, ExternModItem, ExternModMember, ImplItem, ImplMember, StructItem,
+    EntityDeclItem, EntityDeclKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem,
+    EnumVariant, ExternModItem, ExternModMember, ExternModSource, ImplItem, ImplMember, StructItem,
     TypeAliasItem,
 };
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
@@ -317,6 +319,8 @@ fn finish_type_check(
         view_part_catalog,
         view_part_diagnostics,
         canonicalization_inventories,
+        project_callable_references: std::mem::take(&mut checker.project_callable_references),
+        project_entity_references: std::mem::take(&mut checker.project_entity_references),
     }
 }
 
@@ -348,7 +352,6 @@ impl TypeChecker<'_> {
         self.flow_params = collect_flow_params(module);
         self.fx = FxCatalog::from_module(module, &mut self.errors);
 
-        self.check_module_agents(module.agents());
         self.with_runtime_for_iteration_evidence(|this| {
             this.check_module_flows(module.flows());
         });
@@ -359,63 +362,6 @@ impl TypeChecker<'_> {
         self.locals.clear();
         self.reset_semantic_root_scope(None);
         self.check_flow_items(module.top_level_items());
-    }
-
-    fn check_module_agents(&mut self, agents: &[HirAgent]) {
-        for agent in agents {
-            self.clear_borrow_state();
-            self.locals.clear();
-            self.reset_semantic_root_scope(agent.module_path());
-            self.loop_stack.clear();
-            self.yield_stack.clear();
-            self.active_presentation_defaults.clear();
-            let item = agent.item();
-            if let Some(id) = item.id() {
-                self.expect_entity_kind(id, &EntityKind::Agent, "agent id");
-            }
-            let expected_return = item
-                .signature()
-                .and_then(FnSignature::return_type)
-                .map(type_ref_kind);
-            if let Some(signature) = item.signature() {
-                self.check_signature_type_refs(signature);
-                for group in signature.param_groups() {
-                    for param in group.params() {
-                        self.bind_function_param(
-                            param.pattern(),
-                            &function_param_local_type(param),
-                        );
-                    }
-                }
-            }
-            for contract in item.contracts() {
-                self.check_contract_clause(contract);
-            }
-            let effect_scope = EffectScope::from_contracts(item.contracts());
-            let effect_snapshot = self.apply_effect_scope(&effect_scope);
-            let previous_callable = self
-                .effect_collector
-                .enter(CallableId::new(format!("agent.{}", item.name())));
-            let actual = self.with_expected_return(expected_return.as_ref(), |this| {
-                this.check_function_body_expr(
-                    item.body_statements(),
-                    item.body_value(),
-                    expected_return.as_ref(),
-                )
-            });
-            self.effect_collector.restore(previous_callable);
-            self.effect_capabilities = effect_snapshot;
-            if let (Some(expected), Some(actual)) = (expected_return, actual)
-                && !self.types_compatible(&expected, &actual)
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "agent `{}` returns {}, but body has {}",
-                    item.name(),
-                    type_kind_label(&expected),
-                    type_kind_label(&actual)
-                )));
-            }
-        }
     }
 
     fn check_module_flows(&mut self, flows: &[HirFlow]) {
@@ -477,30 +423,8 @@ impl TypeChecker<'_> {
             self.check_signature_type_refs(function.signature());
             let generic_names = signature_generic_names(function.signature());
             self.check_function_parameter_defaults(function, &generic_names);
-            let higher_order_param_scope = super::HigherOrderParamScope {
-                function_name: function.name().to_owned(),
-                callable: function_callable_id(function.name()),
-                param_names: function
-                    .signature()
-                    .param_groups()
-                    .iter()
-                    .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-                    .flat_map(|param| {
-                        let ty = function_param_local_type_with_generics(param, &generic_names);
-                        super::function_param_higher_order_bindings(
-                            param.pattern(),
-                            &ty,
-                            NominalTypeContext::new(
-                                &self.nominal_fields,
-                                &self.nominal_variant_payloads,
-                                self.env,
-                            ),
-                        )
-                        .into_iter()
-                        .map(|binding| binding.name().to_owned())
-                    })
-                    .collect::<BTreeSet<_>>(),
-            };
+            let higher_order_param_scope =
+                self.build_higher_order_param_scope(function, &generic_names);
             for group in function.signature().param_groups() {
                 for param in group.params() {
                     self.bind_function_param(
@@ -520,7 +444,18 @@ impl TypeChecker<'_> {
             let effect_snapshot = self.apply_effect_scope(&effect_scope);
             let previous_callable = self
                 .effect_collector
-                .enter(function_callable_id(function.name()));
+                .enter(self.effect_callable_id_for_function(function));
+            let typed_lowering_owner = self
+                .project_symbols
+                .and_then(|symbols| {
+                    CallableDeclarationId::for_function(symbols.world().package(), function).ok()
+                })
+                .map(|declaration| super::TypedLoweringOwnerScope {
+                    declaration,
+                    expression_base: self.stats.expressions,
+                });
+            let previous_typed_lowering_owner =
+                std::mem::replace(&mut self.typed_lowering_owner, typed_lowering_owner);
             self.higher_order_param_scope_stack
                 .push(higher_order_param_scope);
             let predicates = self
@@ -531,6 +466,7 @@ impl TypeChecker<'_> {
                 self.check_stream_function(function);
                 self.trait_predicate_stack.pop();
                 self.higher_order_param_scope_stack.pop();
+                self.typed_lowering_owner = previous_typed_lowering_owner;
                 self.effect_collector.restore(previous_callable);
                 self.effect_capabilities = effect_snapshot;
                 continue;
@@ -545,6 +481,7 @@ impl TypeChecker<'_> {
             self.connect_function_return_effect_callable(function.name(), actual.as_ref());
             self.trait_predicate_stack.pop();
             self.higher_order_param_scope_stack.pop();
+            self.typed_lowering_owner = previous_typed_lowering_owner;
             self.effect_collector.restore(previous_callable);
             self.effect_capabilities = effect_snapshot;
             if let (Some(expected), Some(actual)) = (expected_return, actual)
@@ -557,6 +494,37 @@ impl TypeChecker<'_> {
                     type_kind_label(&actual)
                 )));
             }
+        }
+    }
+
+    fn build_higher_order_param_scope(
+        &self,
+        function: &HirFunction,
+        generic_names: &HashSet<String>,
+    ) -> super::HigherOrderParamScope {
+        super::HigherOrderParamScope {
+            function_name: function.name().to_owned(),
+            callable: self.effect_callable_id_for_function(function),
+            param_names: function
+                .signature()
+                .param_groups()
+                .iter()
+                .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+                .flat_map(|param| {
+                    let ty = function_param_local_type_with_generics(param, generic_names);
+                    super::function_param_higher_order_bindings(
+                        param.pattern(),
+                        &ty,
+                        NominalTypeContext::new(
+                            &self.nominal_fields,
+                            &self.nominal_variant_payloads,
+                            self.env,
+                        ),
+                    )
+                    .into_iter()
+                    .map(|binding| binding.name().to_owned())
+                })
+                .collect::<BTreeSet<_>>(),
         }
     }
 
@@ -771,7 +739,10 @@ impl TypeChecker<'_> {
                 ),
             );
             let signature_type = if function.kind() == FunctionKind::Function {
-                let body_effects = self.function_effect_row(function.name());
+                let body_effects = self
+                    .effect_collector
+                    .inferred_effect_row(&self.effect_callable_id_for_function(function))
+                    .unwrap_or_else(|| self.function_effect_row(function.name()));
                 signature_type.with_body_effects(&body_effects)
             } else {
                 signature_type
@@ -804,22 +775,6 @@ impl TypeChecker<'_> {
 
     fn register_effect_callables(&mut self, module: &HirModule) {
         let entry_flow_names = entry_target_flow_names(module);
-        for agent in module.agents() {
-            let item = agent.item();
-            let contract = effect_contract_from_contracts(
-                item.contracts(),
-                agent.has_attribute("pure"),
-                &mut self.errors,
-            );
-            let source_name = format!("agent.{}", item.name());
-            let _ = self.register_effect_callable(
-                &source_name,
-                CallableId::new(format!("agent.{}", item.name())),
-                CallableKind::Agent,
-                EffectVisibility::Boundary,
-                contract,
-            );
-        }
         for flow in module.flows() {
             if let Some(name) = flow.name() {
                 let entry_boundary = entry_flow_names.contains(name);
@@ -851,7 +806,7 @@ impl TypeChecker<'_> {
                 self.global_function_effects
                     .insert(function.name().to_owned(), effects.to_labels());
             }
-            let callable = function_callable_id(function.name());
+            let callable = self.effect_callable_id_for_function(function);
             let registered = self.register_effect_callable(
                 function.name(),
                 callable.clone(),
@@ -885,6 +840,19 @@ impl TypeChecker<'_> {
         true
     }
 
+    fn effect_callable_id_for_function(&self, function: &HirFunction) -> CallableId {
+        self.project_symbols.map_or_else(
+            || function_callable_id(function.name()),
+            |symbols| {
+                CallableDeclarationId::for_function(symbols.world().package(), function)
+                    .map_or_else(
+                        |_| function_callable_id(function.name()),
+                        |declaration| CallableId::project_function(&declaration),
+                    )
+            },
+        )
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "one exhaustive match keeps every HIR top-level declaration family visible at the checker dispatch boundary"
@@ -892,7 +860,8 @@ impl TypeChecker<'_> {
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
             HirTopLevelDecl::DialogueDefaults(item) => self.check_dialogue_defaults(item),
-            HirTopLevelDecl::Enum(_)
+            HirTopLevelDecl::Callable(_)
+            | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
@@ -931,24 +900,6 @@ impl TypeChecker<'_> {
                 self.check_view_action_invokes(item);
                 self.check_view_fx_applications(item);
                 self.check_view_dialogue_text_sources(item);
-            }
-            HirTopLevelDecl::Callable(item) => {
-                self.clear_borrow_state();
-                self.locals.clear();
-                self.reset_semantic_root_scope(None);
-                self.loop_stack.clear();
-                for contract in item.contracts() {
-                    self.check_contract_clause(contract);
-                }
-            }
-            HirTopLevelDecl::State(item) => {
-                self.clear_borrow_state();
-                self.locals.clear();
-                self.reset_semantic_root_scope(None);
-                self.loop_stack.clear();
-                for field in item.fields() {
-                    self.check_expr(field.default());
-                }
             }
             HirTopLevelDecl::TypeAlias(item) => {
                 self.check_type_alias_decl(item);
@@ -1189,23 +1140,27 @@ impl TypeChecker<'_> {
         if item.abi() != "rust" {
             return;
         }
-        let Some(package) = item.source().and_then(extern_rust_crate_name) else {
+        let Some(ExternModSource::Crate(package)) = item.source() else {
             self.errors.push(TypeCheckError::new(format!(
                 "extern rust module `{}` must declare `from crate \"name\"`",
                 item.path()
             )));
             return;
         };
-        let Some(exports) = self.env.rust_package(package) else {
+        let catalog = self
+            .registered_world
+            .map(|world| world.environment().callable_catalog().environment());
+        if !catalog.is_some_and(|catalog| catalog.has_rust_package(package)) {
             self.errors
                 .push(TypeCheckError::missing_rust_package_metadata(package));
             return;
-        };
-        let namespace = item.path().replace("::", ".");
+        }
+        let type_exports = self.env.rust_package(package);
+        let namespace = item.path().to_string();
         for member in item.members() {
             match member {
                 ExternModMember::Type(ty) => {
-                    if !exports.has_type(ty.name()) {
+                    if !type_exports.is_some_and(|exports| exports.has_type(ty.name())) {
                         self.errors.push(TypeCheckError::missing_rust_export(
                             package,
                             format!("{namespace}.{}", ty.name()),
@@ -1216,18 +1171,33 @@ impl TypeChecker<'_> {
                     self.check_signature_type_refs(function.signature());
                     let export_name = format!("{namespace}.{}", function.signature().name());
                     let expected = function_signature_type(function.signature());
-                    let Some(actual) = exports.function(&export_name) else {
+                    let Ok(export) =
+                        crate::callable::CallableName::try_new(function.signature().name())
+                    else {
                         self.errors
                             .push(TypeCheckError::missing_rust_export(package, export_name));
                         continue;
                     };
-                    if &expected != actual {
+                    let candidates = catalog
+                        .into_iter()
+                        .flat_map(|catalog| catalog.rust_exports(package, &export))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    if candidates.is_empty() {
+                        self.errors
+                            .push(TypeCheckError::missing_rust_export(package, export_name));
+                        continue;
+                    }
+                    if !candidates
+                        .iter()
+                        .any(|record| record.schema().matches_function_signature(&expected))
+                    {
                         self.errors
                             .push(TypeCheckError::rust_export_signature_mismatch(
                                 package,
                                 export_name,
                                 function_signature_label(&expected),
-                                function_signature_label(actual),
+                                callable_schema_label(candidates[0].schema()),
                             ));
                     }
                 }
@@ -1337,12 +1307,20 @@ impl TypeChecker<'_> {
         self.bind_function_param(param.pattern(), &ty);
     }
 
-    fn check_entry_item(&mut self, item: &EntryItem) {
+    fn check_entry_item(&mut self, item: &HirEntryItem) {
         match item {
-            EntryItem::Goto(target) => {
+            HirEntryItem::StateType { .. }
+            | HirEntryItem::Initializer { .. }
+            | HirEntryItem::EventType { .. }
+            | HirEntryItem::Reducer { .. }
+            | HirEntryItem::Controller { .. } => {
+                // Project entry binding resolves these typed role references after
+                // ordinary nominal and callable catalogs are complete.
+            }
+            HirEntryItem::Goto(target) => {
                 self.expect_entity_kind(target, &EntityKind::Flow, "entry flow target");
             }
-            EntryItem::Route {
+            HirEntryItem::Route {
                 target,
                 path,
                 bindings,
@@ -1351,10 +1329,10 @@ impl TypeChecker<'_> {
                 self.expect_entity_kind(target, &EntityKind::Flow, "entry route target");
                 self.check_route_bindings(target, path, bindings);
             }
-            EntryItem::Option { value, .. } => {
+            HirEntryItem::Option { value, .. } => {
                 self.check_expr(value);
             }
-            EntryItem::Raw(raw) => {
+            HirEntryItem::Raw(raw) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "raw entry item is not type-checkable: {raw}"
                 )));
@@ -2040,15 +2018,23 @@ fn entry_target_flow_names(module: &HirModule) -> HashSet<String> {
         .collect()
 }
 
-fn entry_item_flow_target(item: &EntryItem) -> Option<&arcweft_lang_syntax::ast::ids::EntityRef> {
+fn entry_item_flow_target(
+    item: &HirEntryItem,
+) -> Option<&arcweft_lang_syntax::ast::ids::EntityRef> {
     match item {
-        EntryItem::Goto(target) | EntryItem::Route { target, .. } => Some(target),
-        EntryItem::Option { .. } | EntryItem::Raw(_) => None,
+        HirEntryItem::Goto(target) | HirEntryItem::Route { target, .. } => Some(target),
+        HirEntryItem::StateType { .. }
+        | HirEntryItem::Initializer { .. }
+        | HirEntryItem::EventType { .. }
+        | HirEntryItem::Reducer { .. }
+        | HirEntryItem::Controller { .. }
+        | HirEntryItem::Option { .. }
+        | HirEntryItem::Raw(_) => None,
     }
 }
 
 fn flow_callable_id(name: &str) -> CallableId {
-    CallableId::new(format!("flow.{name}"))
+    CallableId::source_flow(name)
 }
 
 fn effect_visibility_from_syntax(visibility: Option<Visibility>) -> EffectVisibility {
@@ -2318,12 +2304,6 @@ fn type_ref_kind_for_impl(
     }
 }
 
-fn extern_rust_crate_name(source: &str) -> Option<&str> {
-    let source = source.trim();
-    let name = source.strip_prefix("crate")?.trim();
-    name.strip_prefix('"')?.strip_suffix('"')
-}
-
 fn function_signature_label(signature: &FunctionSignature) -> String {
     let params = signature
         .params()
@@ -2340,4 +2320,28 @@ fn function_signature_label(signature: &FunctionSignature) -> String {
         "fn({params}) -> {}",
         type_kind_label(signature.return_type())
     )
+}
+
+fn callable_schema_label(schema: &CallableSignatureSchema) -> String {
+    let mut groups = String::new();
+    for group in schema.groups() {
+        let parameters = group
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                let ty = match parameter.ty() {
+                    CallableParameterType::Exact(ty) => type_kind_label(ty),
+                    CallableParameterType::Unchecked => "_".to_owned(),
+                };
+                parameter
+                    .name()
+                    .map_or(ty.clone(), |name| format!("{}: {ty}", name.as_str()))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        groups.push('(');
+        groups.push_str(&parameters);
+        groups.push(')');
+    }
+    format!("fn{groups} -> {}", type_kind_label(schema.result()))
 }

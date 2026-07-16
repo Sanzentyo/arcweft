@@ -1,7 +1,10 @@
-#[agent(version = 1)]
-agent @agent.native.flow_wait flow_wait()
+fn flow_wait() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait }
 {
     wait(signal(@signal.current_flow).eq(@flow.opening), timeout = 5s, stable_frames = 1u32, poll_frames = 1u32)
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = flow_wait
 }

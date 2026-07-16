@@ -11,8 +11,15 @@ use arcweft_core::bytecode::{
     BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeProgram, BytecodeVerificationBudget,
     BytecodeVerificationError,
 };
+use arcweft_core::entry::{
+    AgentBudget, AgentPolicyHash, EntryBindingIdentity, RuntimeCallableRole, RuntimeNominalTypeId,
+    RuntimeStatefulEntryRoles, TypeLayoutHash as CoreTypeLayoutHash,
+};
 use arcweft_core::line_task::LineTaskGroup;
-use arcweft_core::plan::{FlowRuntimeId, RuntimePureHelper};
+use arcweft_core::plan::{
+    EntryRuntimeId, RuntimeCallableExecutable, RuntimeEntryKind, RuntimeEntryRoles,
+    RuntimeFlowExecutable, RuntimePureHelper,
+};
 use arcweft_core::source::SourcePlan;
 use arcweft_core::stream::StreamPlan;
 use arcweft_render_text::LineDisplayCatalog;
@@ -53,7 +60,45 @@ pub struct ProgramGeneration {
     pub bytecode_abi: u32,
     pub code_slots: BTreeMap<CodeSlotId, CodeSlot>,
     pub state_layouts: BTreeMap<StateId, TypeLayoutHash>,
+    pub entry_compatibility: BTreeMap<EntryRuntimeId, EntryCompatibility>,
     pub adapter_requirements: BundleDigest,
+}
+
+type EntryCompatibilityMaps = (
+    BTreeMap<StateId, TypeLayoutHash>,
+    BTreeMap<EntryRuntimeId, EntryCompatibility>,
+);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EntryCompatibility {
+    Stateful(StatefulEntryCompatibility),
+    Agent(AgentEntryCompatibility),
+    Existing {
+        kind: RuntimeEntryKind,
+        binding: EntryBindingIdentity,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatefulEntryCompatibility {
+    pub kind: RuntimeEntryKind,
+    pub binding: EntryBindingIdentity,
+    pub state_identity: RuntimeNominalTypeId,
+    pub state_layout: CoreTypeLayoutHash,
+    pub event_identity: RuntimeNominalTypeId,
+    pub event_layout: CoreTypeLayoutHash,
+    pub initializer: RuntimeCallableRole,
+    pub reducer: RuntimeCallableRole,
+    pub initial_flow: arcweft_core::entry::RuntimeFlowRole,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentEntryCompatibility {
+    pub kind: RuntimeEntryKind,
+    pub binding: EntryBindingIdentity,
+    pub controller: RuntimeCallableRole,
+    pub policy: AgentPolicyHash,
+    pub budget: AgentBudget,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -106,8 +151,12 @@ pub enum GenerationBuildError {
     ProductAwbcVerification { message: String },
     #[error("failed to encode hot-swap generation fingerprint: {0}")]
     EncodeFingerprint(#[from] serde_json::Error),
+    #[error("failed to encode Product AWBC executable identity: {message}")]
+    ProductAwbcIdentity { message: String },
     #[error("failed to fingerprint compact adapter requirements: {message}")]
     AdapterRequirementFingerprint { message: String },
+    #[error("failed to decode executable entry kind for `{entry}`")]
+    InvalidEntryKind { entry: String },
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +186,7 @@ impl ProgramGeneration {
             bytecode_abi: BYTECODE_ABI_VERSION,
             code_slots: BTreeMap::new(),
             state_layouts: BTreeMap::new(),
+            entry_compatibility: BTreeMap::new(),
             adapter_requirements: BundleDigest::ZERO,
         }
     }
@@ -181,12 +231,14 @@ impl ProgramGeneration {
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
     ) -> Result<Self, GenerationBuildError> {
+        let (state_layouts, entry_compatibility) = bytecode_entry_compatibility(bytecode);
         Ok(Self {
             id,
             content_root,
             bytecode_abi: bytecode.abi_version,
             code_slots: code_slots(bytecode)?,
-            state_layouts: BTreeMap::new(),
+            state_layouts,
+            entry_compatibility,
             adapter_requirements,
         })
     }
@@ -197,14 +249,108 @@ impl ProgramGeneration {
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
     ) -> Result<Self, GenerationBuildError> {
+        let (state_layouts, entry_compatibility) = awbc_entry_compatibility(program)?;
         Ok(Self {
             id,
             content_root,
             bytecode_abi: program.header.abi_version,
             code_slots: awbc_code_slots(program)?,
-            state_layouts: BTreeMap::new(),
+            state_layouts,
+            entry_compatibility,
             adapter_requirements,
         })
+    }
+}
+
+impl StateId {
+    #[must_use]
+    pub fn for_entry_root(entry: &EntryRuntimeId) -> Self {
+        Self(format!("entry-root:{}", entry.canonical_label()))
+    }
+}
+
+fn bytecode_entry_compatibility(bytecode: &BytecodeProgram) -> EntryCompatibilityMaps {
+    let mut state_layouts = BTreeMap::new();
+    let mut entries = BTreeMap::new();
+    for entry in &bytecode.entries {
+        insert_entry_compatibility(
+            &mut state_layouts,
+            &mut entries,
+            entry.id.clone(),
+            entry.kind.clone(),
+            entry.binding,
+            &entry.roles,
+        );
+    }
+    (state_layouts, entries)
+}
+
+fn awbc_entry_compatibility(
+    program: &AwbcProgram,
+) -> Result<EntryCompatibilityMaps, GenerationBuildError> {
+    let mut state_layouts = BTreeMap::new();
+    let mut entries = BTreeMap::new();
+    for entry in &program.entries {
+        let kind = entry.kind.runtime_kind(&program.strings).ok_or_else(|| {
+            GenerationBuildError::InvalidEntryKind {
+                entry: entry.runtime_id.canonical_label(),
+            }
+        })?;
+        insert_entry_compatibility(
+            &mut state_layouts,
+            &mut entries,
+            entry.runtime_id.clone(),
+            kind,
+            entry.binding,
+            &entry.roles,
+        );
+    }
+    Ok((state_layouts, entries))
+}
+
+fn insert_entry_compatibility(
+    state_layouts: &mut BTreeMap<StateId, TypeLayoutHash>,
+    entries: &mut BTreeMap<EntryRuntimeId, EntryCompatibility>,
+    entry: EntryRuntimeId,
+    kind: RuntimeEntryKind,
+    binding: EntryBindingIdentity,
+    roles: &RuntimeEntryRoles,
+) {
+    let compatibility = match roles {
+        RuntimeEntryRoles::Stateful(roles) => {
+            state_layouts.insert(
+                StateId::for_entry_root(&entry),
+                TypeLayoutHash(BundleDigest::from_bytes(*roles.state.layout.as_bytes())),
+            );
+            EntryCompatibility::Stateful(stateful_compatibility(kind, binding, roles))
+        }
+        RuntimeEntryRoles::Agent(roles) => EntryCompatibility::Agent(AgentEntryCompatibility {
+            kind,
+            binding,
+            controller: roles.controller.clone(),
+            policy: roles.policy,
+            budget: roles.budget,
+        }),
+        RuntimeEntryRoles::None => EntryCompatibility::Existing { kind, binding },
+    };
+    entries.insert(entry, compatibility);
+}
+
+fn stateful_compatibility(
+    kind: RuntimeEntryKind,
+    binding: EntryBindingIdentity,
+    roles: &RuntimeStatefulEntryRoles,
+) -> StatefulEntryCompatibility {
+    StatefulEntryCompatibility {
+        kind,
+        binding,
+        state_identity: roles.state.identity.clone(),
+        state_layout: roles.state.layout,
+        event_identity: roles.event.identity.clone(),
+        event_layout: roles.event.layout,
+        initializer: roles.initializer.clone(),
+        reducer: roles.reducer.clone(),
+        initial_flow: roles.initial_flow.clone(),
     }
 }
 
@@ -281,12 +427,32 @@ fn code_slots(
 fn awbc_code_slots(
     program: &AwbcProgram,
 ) -> Result<BTreeMap<CodeSlotId, CodeSlot>, GenerationBuildError> {
-    program
+    let mut slots = program
         .functions
         .iter()
         .enumerate()
         .map(|(index, function)| awbc_function_code_slot(program, index, function))
-        .collect()
+        .collect::<Result<BTreeMap<_, _>, GenerationBuildError>>()?;
+    slots.insert(
+        CodeSlotId("__awbc_program_data".to_owned()),
+        CodeSlot {
+            // The canonical executable identity captures constant pools and
+            // other runtime tables referenced indirectly by instructions while
+            // excluding source/display metadata. Its interface is deliberately
+            // stable: table-data changes replace code at a quiescent boundary
+            // rather than forcing a generational ABI transition.
+            signature: RuntimeSignature::default(),
+            code_digest: BundleDigest::from_bytes(
+                program
+                    .executable_identity()
+                    .map_err(|error| GenerationBuildError::ProductAwbcIdentity {
+                        message: error.to_string(),
+                    })?
+                    .0,
+            ),
+        },
+    );
+    Ok(slots)
 }
 
 fn awbc_function_code_slot(
@@ -393,8 +559,9 @@ fn awbc_function_code_slot_id(index: usize, public_id: Option<&str>) -> CodeSlot
 
 #[derive(Serialize)]
 struct ProgramTablesFingerprint<'a> {
-    entry_flow: &'a Option<FlowRuntimeId>,
     entries: &'a [BytecodeEntry],
+    callable_executables: &'a [RuntimeCallableExecutable],
+    flow_executables: &'a [RuntimeFlowExecutable],
     pure_helpers: &'a [RuntimePureHelper],
     line_task_groups: &'a [LineTaskGroup],
     stream_plans: &'a [StreamPlan],
@@ -404,8 +571,9 @@ struct ProgramTablesFingerprint<'a> {
 impl<'a> ProgramTablesFingerprint<'a> {
     fn new(bytecode: &'a BytecodeProgram) -> Self {
         Self {
-            entry_flow: &bytecode.entry_flow,
             entries: &bytecode.entries,
+            callable_executables: &bytecode.callable_executables,
+            flow_executables: &bytecode.flow_executables,
             pure_helpers: &bytecode.pure_helpers,
             line_task_groups: &bytecode.line_task_groups,
             stream_plans: &bytecode.stream_plans,
@@ -499,7 +667,6 @@ impl std::fmt::Display for SwapCompatibility {
 pub fn classify_swap(active: &ProgramGeneration, next: &ProgramGeneration) -> SwapCompatibility {
     if active.bytecode_abi != next.bytecode_abi
         || active.adapter_requirements != next.adapter_requirements
-        || active.state_layouts != next.state_layouts
     {
         return SwapCompatibility::RestartRequired;
     }
@@ -516,6 +683,37 @@ pub fn classify_swap(active: &ProgramGeneration, next: &ProgramGeneration) -> Sw
     } else {
         SwapCompatibility::CodeGenerational
     }
+}
+
+/// Classifies a live session against the exact entry it currently executes.
+///
+/// Unselected entry metadata does not create a Lang-01.2 restart reason.
+pub fn classify_swap_for_entry(
+    active: &ProgramGeneration,
+    next: &ProgramGeneration,
+    active_entry: &EntryRuntimeId,
+) -> SwapCompatibility {
+    let (Some(active_compatibility), Some(next_compatibility)) = (
+        active.entry_compatibility.get(active_entry),
+        next.entry_compatibility.get(active_entry),
+    ) else {
+        return SwapCompatibility::RestartRequired;
+    };
+    if active_compatibility != next_compatibility {
+        return SwapCompatibility::RestartRequired;
+    }
+    if let EntryCompatibility::Stateful(compatibility) = active_compatibility {
+        let state = StateId::for_entry_root(active_entry);
+        let expected = TypeLayoutHash(BundleDigest::from_bytes(
+            *compatibility.state_layout.as_bytes(),
+        ));
+        if active.state_layouts.get(&state) != Some(&expected)
+            || next.state_layouts.get(&state) != Some(&expected)
+        {
+            return SwapCompatibility::RestartRequired;
+        }
+    }
+    classify_swap(active, next)
 }
 
 impl SwapSession {
@@ -634,346 +832,4 @@ impl SwapSession {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use arcweft_bundle::resource_codec::SourceMapSection;
-    use arcweft_bundle::{
-        BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleVirtualFileSpace,
-    };
-    use arcweft_core::awbc::schema::{
-        AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-        AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-        AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode,
-    };
-    use arcweft_core::bytecode::{
-        BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeFlow, BytecodeInstruction,
-    };
-    use arcweft_core::plan::{
-        EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget,
-    };
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-
-    fn digest(value: &[u8]) -> BundleDigest {
-        BundleDigest::of(value)
-    }
-
-    fn generation(id: u64, code: &'static [u8], content: &'static [u8]) -> Arc<ProgramGeneration> {
-        Arc::new(ProgramGeneration {
-            id: GenerationId(id),
-            content_root: digest(content),
-            bytecode_abi: BYTECODE_ABI_VERSION,
-            code_slots: BTreeMap::from([(
-                CodeSlotId("main".to_owned()),
-                CodeSlot {
-                    signature: RuntimeSignature {
-                        params: digest(b"params"),
-                        result: digest(b"result"),
-                        effects: digest(b"effects"),
-                    },
-                    code_digest: digest(code),
-                },
-            )]),
-            state_layouts: BTreeMap::from([(
-                StateId("save.main".to_owned()),
-                TypeLayoutHash(digest(b"state-layout")),
-            )]),
-            adapter_requirements: digest(b"adapter"),
-        })
-    }
-
-    #[test]
-    fn content_only_swap_does_not_require_quiescence_semantically() {
-        let active = generation(1, b"code", b"old-content");
-        let next = generation(2, b"code", b"new-content");
-
-        let compatibility = classify_swap(&active, &next);
-
-        assert_eq!(compatibility, SwapCompatibility::ContentOnly);
-        assert!(compatibility.can_apply_live());
-        assert!(!compatibility.requires_quiescence());
-        assert_eq!(compatibility.label(), "content-only");
-    }
-
-    #[test]
-    fn compatibility_max_preserves_the_stricter_policy() {
-        assert_eq!(
-            SwapCompatibility::ContentOnly.max(SwapCompatibility::CodeCompatible),
-            SwapCompatibility::CodeCompatible
-        );
-        assert_eq!(
-            SwapCompatibility::CodeGenerational.max(SwapCompatibility::CodeCompatible),
-            SwapCompatibility::CodeGenerational
-        );
-        assert_eq!(
-            SwapCompatibility::RestartRequired.max(SwapCompatibility::ContentOnly),
-            SwapCompatibility::RestartRequired
-        );
-    }
-
-    #[test]
-    fn compatible_code_swap_commits_between_steps_and_retires_after_pins_drop() {
-        let active = generation(1, b"old-code", b"content");
-        let mut session = SwapSession::new(active);
-        let fiber_pin = session.pin_active_generation();
-        let next = generation(2, b"new-code", b"content");
-
-        assert_eq!(
-            session.prepare(next).expect("prepare"),
-            SwapCompatibility::CodeCompatible
-        );
-        session.begin_quiescence().expect("quiesce");
-        session.enter_runtime_step();
-        assert_eq!(session.commit(), Err(SwapError::RuntimeNotQuiescent));
-        session.finish_runtime_step();
-        assert_eq!(
-            session.commit().expect("commit"),
-            SwapCompatibility::CodeCompatible
-        );
-
-        session.retire_unused();
-        assert_eq!(session.phase(), SwapPhase::Retiring);
-        assert_eq!(session.retired().len(), 1);
-        drop(fiber_pin);
-        session.retire_unused();
-        assert_eq!(session.phase(), SwapPhase::Idle);
-        assert!(session.retired().is_empty());
-    }
-
-    #[test]
-    fn state_layout_change_requires_restart() {
-        let active = generation(1, b"code", b"content");
-        let mut next = (*generation(2, b"new-code", b"content")).clone();
-        next.state_layouts.insert(
-            StateId("save.main".to_owned()),
-            TypeLayoutHash(digest(b"changed-layout")),
-        );
-
-        assert_eq!(
-            classify_swap(&active, &next),
-            SwapCompatibility::RestartRequired
-        );
-    }
-
-    #[test]
-    fn missing_active_code_signature_is_generational() {
-        let active = generation(1, b"code", b"content");
-        let mut next = (*generation(2, b"new-code", b"content")).clone();
-        next.code_slots.clear();
-
-        assert_eq!(
-            classify_swap(&active, &next),
-            SwapCompatibility::CodeGenerational
-        );
-    }
-
-    #[test]
-    fn generation_from_bundle_classifies_content_only_when_only_content_changes() {
-        let active = ProgramGeneration::from_bundle(
-            GenerationId(1),
-            &test_bundle(
-                test_bytecode(vec![BytecodeInstruction::Flow(FlowOp::Noop)]),
-                b"old",
-            ),
-        )
-        .expect("active generation");
-        let next = ProgramGeneration::from_bundle(
-            GenerationId(2),
-            &test_bundle(
-                test_bytecode(vec![BytecodeInstruction::Flow(FlowOp::Noop)]),
-                b"new",
-            ),
-        )
-        .expect("next generation");
-
-        assert_ne!(active.content_root, next.content_root);
-        assert_eq!(active.code_slots, next.code_slots);
-        assert_eq!(
-            classify_swap(&active, &next),
-            SwapCompatibility::ContentOnly
-        );
-    }
-
-    #[test]
-    fn generation_from_bundle_treats_structured_bytecode_change_as_generational() {
-        let active = ProgramGeneration::from_bundle(
-            GenerationId(1),
-            &test_bundle(
-                test_bytecode(vec![BytecodeInstruction::Flow(FlowOp::Noop)]),
-                b"asset",
-            ),
-        )
-        .expect("active generation");
-        let next = ProgramGeneration::from_bundle(
-            GenerationId(2),
-            &test_bundle(
-                test_bytecode(vec![BytecodeInstruction::Flow(FlowOp::Return(
-                    "done".to_owned(),
-                ))]),
-                b"asset",
-            ),
-        )
-        .expect("next generation");
-
-        assert_eq!(
-            classify_swap(&active, &next),
-            SwapCompatibility::CodeGenerational
-        );
-    }
-
-    #[test]
-    fn generation_from_bundle_uses_product_awbc_function_identity() {
-        let active = ProgramGeneration::from_bundle(
-            GenerationId(1),
-            &test_bundle(BytecodeProgram::default(), b"asset")
-                .with_product_awbc(test_awbc_program("revision-a")),
-        )
-        .expect("active AWBC generation");
-        let next = ProgramGeneration::from_bundle(
-            GenerationId(2),
-            &test_bundle(BytecodeProgram::default(), b"asset")
-                .with_product_awbc(test_awbc_program("revision-b")),
-        )
-        .expect("next AWBC generation");
-
-        assert_eq!(active.content_root, next.content_root);
-        assert_ne!(active.code_slots, next.code_slots);
-        assert_eq!(
-            classify_swap(&active, &next),
-            SwapCompatibility::CodeCompatible
-        );
-    }
-
-    #[test]
-    fn generation_from_bundle_rejects_unverified_bytecode() {
-        let mut bytecode = test_bytecode(Vec::new());
-        bytecode.abi_version = BYTECODE_ABI_VERSION + 1;
-
-        let error =
-            ProgramGeneration::from_bundle(GenerationId(1), &test_bundle(bytecode, b"asset"))
-                .expect_err("unsupported ABI should reject generation");
-
-        assert!(matches!(
-            error,
-            GenerationBuildError::VerifyBytecode(BytecodeVerificationError::UnsupportedAbi { .. })
-        ));
-    }
-
-    fn test_bundle(bytecode: BytecodeProgram, asset_bytes: &[u8]) -> ArcweftBundle {
-        let stats = bytecode.stats();
-        ArcweftBundle::new(
-            BundleManifest {
-                profile_id: None,
-                profile_kind: Some(BundleLaunchKind::Game),
-                entry: Some("entry.main".to_owned()),
-                adapter: Some("test".to_owned()),
-                adapter_manifest_ids: Vec::new(),
-                required_host_calls: Vec::new(),
-                runtime: BundleRuntimeSummary {
-                    entry_flow: bytecode
-                        .entry_flow
-                        .as_ref()
-                        .map(|flow| flow.public_label().into_string()),
-                    flows: stats.flows,
-                    bytecode_instructions: stats.instructions,
-                    line_task_groups: stats.line_task_groups,
-                    stream_plans: stats.stream_plans,
-                    source_plans: stats.source_plans,
-                },
-            },
-            source_map("test.arcw", "flow main { return \"ok\" }"),
-            bytecode,
-            LineDisplayCatalog::default(),
-        )
-        .with_virtual_files([BundleVirtualFile {
-            space: BundleVirtualFileSpace::Asset,
-            path: "asset.bin".to_owned(),
-            bytes: asset_bytes.to_vec(),
-        }])
-    }
-
-    fn source_map(label: &str, text: &str) -> SourceMapSection {
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new(label).expect("source ID"),
-            SourceName::path(label),
-            text,
-        )
-        .expect("source document");
-        SourceMapSection::try_from_documents(&[&document]).expect("source map")
-    }
-
-    fn test_awbc_program(revision: &str) -> AwbcProgram {
-        let trap_code = if revision == "revision-a" {
-            AwbcTrapCode::ExplicitPanic
-        } else {
-            AwbcTrapCode::InternalInvariant
-        };
-        AwbcProgram {
-            strings: vec!["entry.main".to_owned(), revision.to_owned()],
-            signatures: vec![AwbcSignature {
-                params: Vec::new(),
-                result: None,
-                effects: AwbcEffectSetId(0),
-            }],
-            frame_layouts: vec![AwbcFrameLayout {
-                slots: Vec::new(),
-                max_scope_depth: 0,
-            }],
-            functions: vec![AwbcFunction {
-                public_id: Some(AwbcStringId(0)),
-                kind: AwbcFunctionKind::Flow,
-                signature: AwbcSignatureId(0),
-                frame_layout: AwbcFrameLayoutId(0),
-                blocks: AwbcTableRange::new(0, 1),
-                entry_block: AwbcBlockId(0),
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
-            }],
-            blocks: vec![AwbcBlock {
-                owner: AwbcFunctionId(0),
-                instructions: AwbcTableRange::new(0, 0),
-                terminator: AwbcTerminator::Trap {
-                    code: trap_code,
-                    message: None,
-                },
-                safe_point: AwbcSafePointKind::FlowEntry,
-                source_map: None,
-            }],
-            entries: vec![AwbcEntry {
-                public_id: AwbcStringId(0),
-                kind: AwbcEntryKind::Game,
-                signature: AwbcSignatureId(0),
-                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
-            }],
-            ..AwbcProgram::default()
-        }
-    }
-
-    fn test_bytecode(instructions: Vec<BytecodeInstruction>) -> BytecodeProgram {
-        BytecodeProgram {
-            abi_version: BYTECODE_ABI_VERSION,
-            runtime_layout: arcweft_core::bytecode::BytecodeRuntimeLayout::current(),
-            entry_flow: Some(flow_id("flow.main")),
-            entries: vec![BytecodeEntry {
-                id: entry_id("entry.main"),
-                kind: RuntimeEntryKind::Game,
-                target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
-            }],
-            flows: vec![BytecodeFlow {
-                id: flow_id("flow.main"),
-                instructions,
-            }],
-            pure_helpers: Vec::new(),
-            line_task_groups: Vec::new(),
-            stream_plans: Vec::new(),
-            source_plans: Vec::new(),
-        }
-    }
-
-    fn flow_id(value: &str) -> FlowRuntimeId {
-        FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
-    }
-
-    fn entry_id(value: &str) -> EntryRuntimeId {
-        EntryRuntimeId::from_source_entity_body(value).expect("test entry ID is valid")
-    }
-}
+mod tests;

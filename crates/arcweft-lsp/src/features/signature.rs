@@ -10,6 +10,13 @@ pub fn signature_help(
     document: &DocumentSnapshot,
     position: Position,
 ) -> Option<SignatureHelp> {
+    let offset = document
+        .line_index()
+        .try_byte_offset_from_position(position)
+        .ok()?;
+    if let Some(help) = crate::features::entry_roles::signature_help(profile, document, offset) {
+        return Some(help);
+    }
     let word = word_at_position(document, position)?;
     rust_adapter_signature_help(&profile.context(), &word)
 }

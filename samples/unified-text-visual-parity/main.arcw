@@ -81,11 +81,36 @@ fn parity_orbit(
     )
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.unified_text_visual_parity {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.unified_text_visual_parity
 }
 
-flow unified_text_visual_parity {
+flow unified_text_visual_parity(state: GameState) {
     parity(id=@say.unified_text_visual_parity.vertical_rl, voice=auto):
         [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人」2026ARC。山川海[/font][/][/size][p]
 

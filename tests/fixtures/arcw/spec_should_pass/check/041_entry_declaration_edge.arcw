@@ -1,4 +1,4 @@
-entry @entry.main {
+entry cli @entry.main {
     goto @flow.opening
 }
 

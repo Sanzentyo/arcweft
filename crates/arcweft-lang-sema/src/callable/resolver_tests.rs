@@ -8,7 +8,7 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocument, SourceRange};
 
 use crate::{
-    checker::{TypeExpressionId, analyze_registered_project_types},
+    checker::{TypeExpressionId, analyze_registered_project_types, analyze_types},
     effect_row::EffectRow,
     env::{FunctionParam, FunctionSignature, TypeCheckEnv},
     registration::{CharacterRegistrar, CharacterRegistrationRequest, RegisteredSemanticWorld},
@@ -28,8 +28,10 @@ use super::{
     CallableSignatureSchema, CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
     EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
     EnvironmentDeclarationOrdinal, LexicalCallableScope, PRODUCTION_CALLABLE_LIMITS,
-    ResolveCallError, ResolveCallOutcome, ResolvedCallTarget, ResolverWork, SignatureOrigin,
-    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy, resolve_call_target,
+    ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedCallTarget, ResolverWork,
+    RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
+    SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
+    resolve_call_target,
 };
 
 const SOURCE: &str = r#"
@@ -42,6 +44,7 @@ flow @flow.main main {
     let standard: String = standard_value(2i32)
     let adapter: String = adapter_value(3i32)
     let dotted: String = custom.read(path = "opening.txt")
+    let inferred: String = infer.run(value = 4i32)
     let item: Vec<i32> = [1i32, 2i32]
     let item_len: usize = item.len()
 }
@@ -62,6 +65,7 @@ impl ResolverFixture {
         let (document, project, world) = root_project_source(profile, SOURCE);
         let facts = one_character_facts(&document, world, &sample_manifest("layers/body.png"));
         let base = TypeCheckEnv::standard()
+            .with_symbol("infer", TypeKind::Named("InferApi".to_owned()))
             .with_function_signature(
                 "standard_value",
                 FunctionSignature::new(
@@ -111,6 +115,36 @@ impl ResolverFixture {
         .expect("resolver request");
         resolve_call_target(request)
     }
+
+    fn resolve_method(&self, receiver_type: &TypeKind, method_name: &str) -> ResolveCallOutcome {
+        let method = CallableName::try_new(method_name).expect("method name");
+        let lexical = LexicalCallableScope::default();
+        let module = CanonicalModulePath::crate_root();
+        let cancellation = AtomicBool::new(false);
+        let traits = TraitCatalog::default();
+        let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+        let request = CallResolverRequest::try_new(
+            CallCallee::Selected {
+                receiver_expression: TypeExpressionId::from_index(0),
+                receiver_type,
+                method: &method,
+            },
+            &lexical,
+            None,
+            &module,
+            self.world.symbols(),
+            &self.world,
+            &traits,
+            CallSourceContext::new(self.document.identity(), None, None),
+            CallableGroupIndex::ZERO,
+            TypeExpressionId::from_index(1),
+            &cancellation,
+            &mut work,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("selected resolver request");
+        resolve_call_target(request)
+    }
 }
 
 #[test]
@@ -148,6 +182,183 @@ fn free_resolver_returns_project_standard_and_adapter_candidates() {
         SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
     ));
     assert!(matches!(dotted.id(), CallableCandidateId::Environment(_)));
+}
+
+#[test]
+fn capability_and_standard_calls_share_registered_and_standalone_checking() {
+    const SOURCE: &str = r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+flow @flow.main main effects { fs.read } {
+    let text: String = fs.read_text("opening.txt")
+    let display = fmt(text)
+    log.info(text)
+    event.emit(AppStarted, flow = @flow.main)
+}
+"#;
+    let (document, project, symbol_world) =
+        root_project_source("capability-callable-resolver", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let base = TypeCheckEnv::standard();
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(base.clone()),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("capability callable resolver fixture");
+    let fixture = ResolverFixture {
+        document,
+        project,
+        world,
+    };
+
+    let capability = resolved_candidate(fixture.resolve_path(&["fs", "read_text"]));
+    assert!(matches!(
+        capability.origin(),
+        SignatureOrigin::Project { path, .. }
+            if path.path() == &callable_path(&["fs", "read_text"])
+    ));
+    assert!(matches!(
+        capability.id(),
+        CallableCandidateId::Project(declaration)
+            if declaration.owner()
+                == arcweft_lang_hir::symbol::CallableDeclarationOwner::ExternCapability
+    ));
+    assert!(
+        capability
+            .schema()
+            .effects()
+            .project_declaration()
+            .is_none(),
+        "extern capabilities own fixed external effects, not a local call-graph row"
+    );
+    assert!(
+        capability
+            .schema()
+            .effects()
+            .declared()
+            .concrete()
+            .iter()
+            .any(|effect| effect.as_str() == "fs.read")
+    );
+
+    let standard = resolved_candidate(fixture.resolve_path(&["log", "info"]));
+    assert!(matches!(
+        standard.origin(),
+        SignatureOrigin::Standard {
+            owner: StandardEnvironmentId::Core,
+            ..
+        }
+    ));
+    let untyped_standard = resolved_candidate(fixture.resolve_path(&["fmt"]));
+    assert!(matches!(
+        untyped_standard.origin(),
+        SignatureOrigin::Standard {
+            owner: StandardEnvironmentId::Core,
+            ..
+        }
+    ));
+    assert_eq!(untyped_standard.schema().result(), &TypeKind::DisplayText);
+    assert_eq!(
+        untyped_standard.schema().validator(),
+        &CallableValidator::Untyped
+    );
+
+    let registered =
+        analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world);
+    assert!(
+        registered.diagnostics.is_empty(),
+        "registered checking must resolve capability, standard, and unchecked capability calls: {:?}",
+        registered.diagnostics
+    );
+    let standalone = analyze_types(&fixture.project.linked_module(), &base);
+    assert!(
+        standalone.diagnostics.is_empty(),
+        "standalone checking must use the same unchecked capability argument policy: {:?}",
+        standalone.diagnostics
+    );
+}
+
+#[test]
+fn extern_rust_alias_resolves_exact_typed_environment_record() {
+    const SOURCE: &str = r#"
+extern rust mod mini_games.truck from crate "truck_game" {
+    pub type Rank
+    pub fn score_to_rank(score: i32) -> Rank
+}
+
+flow @flow.main main {
+    let rank: Rank = mini_games.truck.score_to_rank(score = 42i32)
+}
+"#;
+    let (document, project, symbol_world) = root_project_source("rust-extern-alias", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let adapter = AdapterPackageId::try_new("adapter.rust").expect("adapter id");
+    let rust = RustCallableProvenance::try_new(
+        adapter.clone(),
+        RustPackageProvenance::try_new("truck_game", "1.0.0", None)
+            .expect("Rust package provenance"),
+        RustItemPath::try_new("truck_game::score_to_rank").expect("Rust item path"),
+        RustCallablePurity::Pure,
+    )
+    .expect("Rust callable provenance");
+    let record = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::RustFunction,
+        CallableLookupKey::Free(callable_path(&["score_to_rank"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        ordinary_single_parameter_schema(
+            "score",
+            TypeKind::I32,
+            TypeKind::Named("Rank".to_owned()),
+        ),
+        CallableDocumentation::missing(),
+        None,
+        Some(rust),
+        EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
+    )
+    .expect("Rust publication record");
+    let publication = EnvironmentCallablePublication::try_new(
+        EnvironmentCallableOwner::Adapter(adapter),
+        vec![record],
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("Rust callable publication");
+    let base = TypeCheckEnv::standard().with_rust_type_export("truck_game", "Rank");
+    let world = CharacterRegistrar::register(
+        CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
+            .with_callable_publication(publication),
+    )
+    .expect("registered Rust alias fixture");
+    let fixture = ResolverFixture {
+        document,
+        project,
+        world,
+    };
+
+    let candidate =
+        resolved_candidate(fixture.resolve_path(&["mini_games", "truck", "score_to_rank"]));
+    assert!(matches!(
+        candidate.origin(),
+        SignatureOrigin::Adapter { .. }
+    ));
+    analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world)
+        .into_result()
+        .expect("extern Rust alias typechecks through the accepted catalog");
+}
+
+#[test]
+fn selected_resolver_returns_adapter_method_candidate() {
+    let fixture = ResolverFixture::new();
+    let method =
+        resolved_candidate(fixture.resolve_method(&TypeKind::Named("InferApi".to_owned()), "run"));
+    assert!(matches!(
+        method.origin(),
+        SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
+    ));
+    assert!(matches!(method.id(), CallableCandidateId::Environment(_)));
 }
 
 #[test]
@@ -398,9 +609,23 @@ fn adapter_publication() -> EnvironmentCallablePublication {
         EnvironmentDeclarationOrdinal::try_from_usize(2).expect("declaration ordinal"),
     )
     .expect("receiver collision adapter record");
+    let method = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Method,
+        CallableLookupKey::Method(ReceiverMethodKey::new(
+            TypeKind::Named("InferApi".to_owned()),
+            CallableName::try_new("run").expect("method name"),
+        )),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        ordinary_single_parameter_schema("value", TypeKind::I32, TypeKind::String),
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(3).expect("declaration ordinal"),
+    )
+    .expect("adapter method record");
     EnvironmentCallablePublication::try_new(
         owner,
-        vec![single, dotted, receiver_collision],
+        vec![single, dotted, receiver_collision, method],
         &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("adapter publication")

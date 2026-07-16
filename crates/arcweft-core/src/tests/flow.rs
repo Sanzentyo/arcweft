@@ -13,7 +13,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
         },
         ..LineTaskGroup::default()
     };
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
@@ -34,7 +34,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
         vec![group],
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let first = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(first.effects.line, vec![call("opening_line")]);
@@ -84,7 +84,7 @@ fn engine_steps_flow_ops_and_applies_goto() {
 
 #[test]
 fn scoped_cleanup_effects_emit_on_scope_exit_in_lifo_order() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.cleanup")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.cleanup"),
@@ -105,7 +105,7 @@ fn scoped_cleanup_effects_emit_on_scope_exit_in_lifo_order() {
         Vec::new(),
     )
     .expect("cleanup plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = engine
         .step(RuntimeStepInput::default(), drain_step_options(16))
@@ -119,7 +119,7 @@ fn scoped_cleanup_effects_emit_on_scope_exit_in_lifo_order() {
 
 #[test]
 fn root_cleanup_effects_drain_on_return_unless_cancelled() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.cleanup")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.cleanup"),
@@ -141,7 +141,7 @@ fn root_cleanup_effects_drain_on_return_unless_cancelled() {
         Vec::new(),
     )
     .expect("cleanup plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = engine
         .step(RuntimeStepInput::default(), drain_step_options(16))
@@ -152,7 +152,7 @@ fn root_cleanup_effects_drain_on_return_unless_cancelled() {
 
 #[test]
 fn scoped_overlay_cleanup_drains_on_goto_scene_transition() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.scene_a")),
         vec![
             RuntimeFlow {
@@ -173,7 +173,7 @@ fn scoped_overlay_cleanup_drains_on_goto_scene_transition() {
         Vec::new(),
     )
     .expect("cleanup plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = engine
         .step(RuntimeStepInput::default(), drain_step_options(16))
@@ -203,7 +203,7 @@ fn drain_step_options(max_ops: usize) -> RuntimeStepOptions {
 
 #[test]
 fn engine_executes_runtime_pure_call_from_flow() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -246,7 +246,7 @@ fn engine_executes_runtime_pure_call_from_flow() {
         scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -360,7 +360,7 @@ fn counter_trait_methods() -> Vec<RuntimeTraitMethod> {
 }
 
 fn counter_witness_plan() -> RuntimePlan {
-    RuntimePlan::new(
+    super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -399,7 +399,7 @@ fn counter_identity_trait_methods() -> Vec<RuntimeTraitMethod> {
 }
 
 fn counter_identity_witness_plan() -> RuntimePlan {
-    RuntimePlan::new(
+    super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -426,7 +426,7 @@ fn counter_identity_witness_plan() -> RuntimePlan {
 
 #[test]
 fn engine_executes_for_loop_through_trait_method_witness_calls() {
-    let mut engine = Engine::new(counter_witness_plan());
+    let mut engine = super::engine_for_test_plan(counter_witness_plan());
 
     let result = engine.step(
         RuntimeStepInput::default(),
@@ -447,7 +447,7 @@ fn engine_executes_for_loop_through_trait_method_witness_calls() {
 
 #[test]
 fn engine_executes_for_loop_through_iterator_identity_witness() {
-    let mut engine = Engine::new(counter_identity_witness_plan());
+    let mut engine = super::engine_for_test_plan(counter_identity_witness_plan());
 
     let result = engine.step(
         RuntimeStepInput::default(),
@@ -468,7 +468,7 @@ fn engine_executes_for_loop_through_iterator_identity_witness() {
 
 #[test]
 fn engine_routes_non_i64_pure_call_to_value_backend() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -490,7 +490,7 @@ fn engine_routes_non_i64_pure_call_to_value_backend() {
         scalar_eval_supported: false,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -518,7 +518,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
             RuntimeExpr::Value(RuntimeValue::i64(bonus)),
         ],
     };
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -545,7 +545,7 @@ fn engine_batches_bracket_sequence_pure_calls() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -578,7 +578,7 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
             RuntimeExpr::Value(RuntimeValue::i64(bonus)),
         ],
     };
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -607,7 +607,7 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -625,7 +625,7 @@ fn engine_fuses_bracket_sequence_pure_batch_sum() {
 
 #[test]
 fn engine_batches_map_closure_pure_calls() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -662,7 +662,7 @@ fn engine_batches_map_closure_pure_calls() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -688,7 +688,7 @@ fn engine_batches_map_closure_pure_calls() {
 
 #[test]
 fn engine_fuses_map_closure_pure_batch_sum() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -727,7 +727,7 @@ fn engine_fuses_map_closure_pure_batch_sum() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -750,7 +750,7 @@ fn engine_fuses_map_closure_pure_batch_sum() {
 
 #[test]
 fn engine_fuses_local_map_closure_pure_batch_sum() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -795,7 +795,7 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(
         RuntimeStepInput::default(),
@@ -820,7 +820,7 @@ fn engine_fuses_local_map_closure_pure_batch_sum() {
 }
 
 fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str) {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -855,7 +855,7 @@ fn assert_dense_i64_map_sum_uses_flat_batch(source: RuntimeValue, expected: &str
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -880,7 +880,7 @@ fn engine_batches_dense_i64_map_without_value_materialization() {
 
 #[test]
 fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -917,7 +917,7 @@ fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -937,7 +937,7 @@ fn engine_batches_dense_i32_map_without_widening_flat_inputs() {
 
 #[test]
 fn engine_batches_dense_u32_map_without_widening_flat_inputs() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -974,7 +974,7 @@ fn engine_batches_dense_u32_map_without_widening_flat_inputs() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -1034,7 +1034,7 @@ fn engine_batches_dense_exact_int_map_outputs_without_widening() {
 
 #[test]
 fn engine_calls_exact_int_pure_helpers_without_value_fallback() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1063,7 +1063,7 @@ fn engine_calls_exact_int_pure_helpers_without_value_fallback() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -1083,7 +1083,7 @@ fn engine_calls_exact_int_pure_helpers_without_value_fallback() {
 
 #[test]
 fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1112,7 +1112,7 @@ fn engine_calls_typed_float_pure_helpers_without_arg_vec_allocation() {
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -1227,7 +1227,7 @@ fn assert_dense_exact_int_map_sum_uses_flat_batch(
     output_type: RuntimePureOutputType,
     expected_borrowed_bytes: usize,
 ) {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1262,7 +1262,7 @@ fn assert_dense_exact_int_map_sum_uses_flat_batch(
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -1289,7 +1289,7 @@ fn assert_dense_exact_int_map_output_uses_flat_batch(
     expected_borrowed_bytes: usize,
     expected_result_bytes: usize,
 ) {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1322,7 +1322,7 @@ fn assert_dense_exact_int_map_output_uses_flat_batch(
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -1349,7 +1349,7 @@ fn assert_dense_float_map_output_uses_flat_batch(
     expected_borrowed_bytes: usize,
     expected_result_bytes: usize,
 ) {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1382,7 +1382,7 @@ fn assert_dense_float_map_output_uses_flat_batch(
         scalar_eval_supported: true,
         origin: RuntimePureHelperOrigin::Annotated,
     }]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -1402,7 +1402,7 @@ fn assert_dense_float_map_output_uses_flat_batch(
 
 #[test]
 fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1446,7 +1446,7 @@ fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
         Vec::new(),
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(
         RuntimeStepInput::default(),
@@ -1475,7 +1475,7 @@ fn engine_keeps_dynamic_homogeneous_textual_sequences_dense() {
 
 #[test]
 fn engine_sums_local_i64_sequence_by_borrow() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1496,7 +1496,7 @@ fn engine_sums_local_i64_sequence_by_borrow() {
         Vec::new(),
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let result = engine.step(
         RuntimeStepInput::default(),
@@ -1515,7 +1515,7 @@ fn engine_sums_local_i64_sequence_by_borrow() {
 
 #[test]
 fn engine_runs_flow_thread_body_as_child_fiber() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1530,7 +1530,7 @@ fn engine_runs_flow_thread_body_as_child_fiber() {
         Vec::new(),
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let first = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
     assert_eq!(first.output.requests.tasks.len(), 1);
@@ -1565,7 +1565,7 @@ fn engine_waits_for_choice_input() {
         out: None,
         effects: Vec::new(),
     };
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
@@ -1583,7 +1583,7 @@ fn engine_waits_for_choice_input() {
         Vec::new(),
     )
     .expect("choice plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let presented = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(
@@ -1629,7 +1629,7 @@ fn engine_waits_for_await_task_event() {
             ))],
         ),
     };
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.opening"),
@@ -1645,7 +1645,7 @@ fn engine_waits_for_await_task_event() {
         Vec::new(),
     )
     .expect("await plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let waiting = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(waiting.effects.line, vec![call("show_loading")]);
@@ -1680,7 +1680,7 @@ fn engine_waits_for_await_task_event() {
 
 #[test]
 fn engine_runs_bounded_await_many_tasks_in_source_order() {
-    let mut engine = Engine::new(await_many_read_plan());
+    let mut engine = super::engine_for_test_plan(await_many_read_plan());
 
     let first = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert_eq!(first.requests.tasks.len(), 2);
@@ -1746,7 +1746,7 @@ fn engine_runs_bounded_await_many_tasks_in_source_order() {
 }
 
 fn await_many_read_plan() -> RuntimePlan {
-    RuntimePlan::new(
+    super::runtime_plan(
         Some(super::flow_id("flow.main")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.main"),
@@ -1796,7 +1796,7 @@ fn ready_event(task_id: &str, sequence: u64, value: &str) -> TaskEvent {
 
 #[test]
 fn engine_binds_runtime_values_and_gotos_entity_refs() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
@@ -1817,7 +1817,7 @@ fn engine_binds_runtime_values_and_gotos_entity_refs() {
         Vec::new(),
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     assert!(
         super::runtime_step(&mut engine, RuntimeStepInput::default())
@@ -1836,7 +1836,7 @@ fn engine_binds_runtime_values_and_gotos_entity_refs() {
 
 #[test]
 fn engine_runs_if_and_match_blocks_from_runtime_values() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![
             RuntimeFlow {
@@ -1869,7 +1869,7 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
         Vec::new(),
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let first = super::runtime_step(
         &mut engine,
@@ -1921,7 +1921,7 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
 
 #[test]
 fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.loop")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.loop"),
@@ -1938,7 +1938,7 @@ fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
         Vec::new(),
     )
     .expect("loop plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     for _ in 0..3 {
         super::runtime_step(&mut engine, RuntimeStepInput::default());
@@ -1955,7 +1955,7 @@ fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
 
 #[test]
 fn while_continue_reruns_condition_and_skips_remaining_body() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.while")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.while"),
@@ -1970,7 +1970,7 @@ fn while_continue_reruns_condition_and_skips_remaining_body() {
         Vec::new(),
     )
     .expect("while plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
     let keep_true = RuntimeBinding {
         name: "keep".to_owned(),
         value: RuntimeValue::Bool(true),
@@ -2017,7 +2017,7 @@ fn while_continue_reruns_condition_and_skips_remaining_body() {
 
 #[test]
 fn for_loop_expands_one_iteration_at_a_time() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.for")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.for"),
@@ -2036,7 +2036,7 @@ fn for_loop_expands_one_iteration_at_a_time() {
         Vec::new(),
     )
     .expect("for plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let first = engine.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
 
@@ -2046,7 +2046,7 @@ fn for_loop_expands_one_iteration_at_a_time() {
 
 #[test]
 fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.branch")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.branch"),
@@ -2068,7 +2068,7 @@ fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
         Vec::new(),
     )
     .expect("branch plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     super::runtime_step(
         &mut engine,
@@ -2098,7 +2098,7 @@ fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
 
 #[test]
 fn duplicate_pattern_bindings_fail_before_env_mutation() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.dup")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.dup"),
@@ -2116,7 +2116,7 @@ fn duplicate_pattern_bindings_fail_before_env_mutation() {
         Vec::new(),
     )
     .expect("duplicate pattern plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
@@ -2157,7 +2157,7 @@ fn runtime_pattern_binding_capacity_counts_nested_bindings() {
 
 #[test]
 fn typed_runtime_patterns_match_value_shape() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.typed")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.typed"),
@@ -2186,7 +2186,7 @@ fn typed_runtime_patterns_match_value_shape() {
         Vec::new(),
     )
     .expect("typed pattern plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     super::runtime_step(
         &mut engine,
@@ -2261,7 +2261,7 @@ fn typed_runtime_patterns_use_canonical_primitive_labels() {
 
 #[test]
 fn fs_write_dispatches_string_and_bytes_payloads() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.write")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.write"),
@@ -2307,7 +2307,7 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
         Vec::new(),
     )
     .expect("fs.write plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let text = super::runtime_step(&mut engine, RuntimeStepInput::default());
     assert!(matches!(
@@ -2344,7 +2344,7 @@ fn fs_write_dispatches_string_and_bytes_payloads() {
 
 #[test]
 fn runtime_call_spread_expands_sequence_arguments() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.spread")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.spread"),
@@ -2361,7 +2361,7 @@ fn runtime_call_spread_expands_sequence_arguments() {
         Vec::new(),
     )
     .expect("runtime plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
     let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
     assert_eq!(
@@ -2374,7 +2374,7 @@ fn runtime_call_spread_expands_sequence_arguments() {
 
 #[test]
 fn custom_host_request_spread_preserves_concrete_payload_values() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.log")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.log"),
@@ -2409,7 +2409,7 @@ fn custom_host_request_spread_preserves_concrete_payload_values() {
         Vec::new(),
     )
     .expect("custom host request plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
     let HostTaskRequest::Custom {
@@ -2465,7 +2465,7 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
         },
     ]);
     let expected = RuntimePayload::new(nested_payload.clone());
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.inspect")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.inspect"),
@@ -2488,7 +2488,7 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
         Vec::new(),
     )
     .expect("custom host request plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
     let HostTaskRequest::Custom { args, .. } = &output.requests.tasks[0].request else {
@@ -2500,7 +2500,7 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
 
 #[test]
 fn if_let_expression_binds_only_success_branch() {
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.if_let")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.if_let"),
@@ -2525,7 +2525,7 @@ fn if_let_expression_binds_only_success_branch() {
         Vec::new(),
     )
     .expect("if-let runtime plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     super::runtime_step(
         &mut engine,

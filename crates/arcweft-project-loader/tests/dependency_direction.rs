@@ -58,6 +58,67 @@ fn character_public_api_does_not_depend_on_sema() {
     assert!(!has_non_dev_path(nodes, character, sema));
 }
 
+#[test]
+fn lang_entry_binding_layers_remain_sans_project_and_host_io() {
+    let metadata = workspace_metadata();
+    let packages = metadata["packages"].as_array().expect("packages array");
+    let nodes = metadata["resolve"]["nodes"]
+        .as_array()
+        .expect("resolved nodes array");
+    let sema = package_id(packages, "arcweft-lang-sema");
+    let core = package_id(packages, "arcweft-core");
+    let protected_data = [
+        core,
+        package_id(packages, "arcweft-data"),
+        package_id(packages, "arcweft-data-derive"),
+        package_id(packages, "arcweft-bundle"),
+        package_id(packages, "arcweft-save"),
+        package_id(packages, "arcweft-manifest-model"),
+    ];
+    let project_and_manifest_io = [
+        package_id(packages, "arcweft-project"),
+        package_id(packages, "arcweft-project-loader"),
+        package_id(packages, "arcweft-cli"),
+        package_id(packages, "arcweft-launch"),
+    ];
+
+    for forbidden in [
+        package_id(packages, "arcweft-core"),
+        package_id(packages, "arcweft-bundle"),
+        package_id(packages, "arcweft-project"),
+        package_id(packages, "arcweft-project-loader"),
+        package_id(packages, "arcweft-cli"),
+        package_id(packages, "arcweft-launch"),
+    ] {
+        assert!(
+            !has_non_dev_path(nodes, sema, forbidden),
+            "arcweft-lang-sema must not reach `{}`",
+            package_name(packages, forbidden)
+        );
+    }
+
+    for protected in protected_data {
+        for forbidden in project_and_manifest_io {
+            assert!(
+                !has_non_dev_path(nodes, protected, forbidden),
+                "`{}` must not reach project/manifest I/O crate `{}`",
+                package_name(packages, protected),
+                package_name(packages, forbidden)
+            );
+        }
+        for host_io in ["ureq", "reqwest", "notify", "walkdir", "rfd"] {
+            if let Some(host_io) = optional_package_id(packages, host_io) {
+                assert!(
+                    !has_non_dev_path(nodes, protected, host_io),
+                    "`{}` must not reach host I/O package `{}`",
+                    package_name(packages, protected),
+                    package_name(packages, host_io)
+                );
+            }
+        }
+    }
+}
+
 fn workspace_metadata() -> Value {
     let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -88,6 +149,27 @@ fn package_id<'a>(packages: &'a [Value], name: &str) -> &'a str {
         "workspace package `{name}` must resolve to one exact package id"
     );
     ids[0]
+}
+
+fn optional_package_id<'a>(packages: &'a [Value], name: &str) -> Option<&'a str> {
+    let mut ids = packages
+        .iter()
+        .filter(|package| package["name"].as_str() == Some(name))
+        .map(|package| package["id"].as_str().expect("package id"));
+    let id = ids.next()?;
+    assert!(
+        ids.next().is_none(),
+        "package `{name}` must resolve to at most one exact package id"
+    );
+    Some(id)
+}
+
+fn package_name<'a>(packages: &'a [Value], id: &str) -> &'a str {
+    packages
+        .iter()
+        .find(|package| package["id"].as_str() == Some(id))
+        .and_then(|package| package["name"].as_str())
+        .expect("resolved package name")
 }
 
 fn normal_dependencies<'a>(nodes: &'a [Value], id: &str) -> BTreeSet<&'a str> {

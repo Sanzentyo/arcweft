@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.native.entity_meta entity_meta_smoke()
+fn entity_meta_smoke() -> Result<Unit, AgentError>
 effects { debug.read }
 {
     let meta = try entity_meta(@flow.opening)
@@ -10,5 +9,9 @@ effects { debug.read }
     expect(meta.source.has_source)
     expect(meta.source.end_byte > meta.source.start_byte)
 
-    return meta.semantic_hash
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = entity_meta_smoke
 }

@@ -57,11 +57,36 @@ pub dialogue defaults {
     }
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.vertical_writing_style {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.vertical_writing_style
 }
 
-flow vertical_writing_style {
+flow vertical_writing_style(state: GameState) {
     vertical_guide(id=@say.vertical_writing_style.vertical_rl, voice=auto):
         [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人」2026ARC。|[夢](ゆめ)山川海[/font][/][/size][p]
 

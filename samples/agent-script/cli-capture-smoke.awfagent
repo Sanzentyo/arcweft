@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.cli.capture_smoke capture_smoke()
+fn capture_smoke() -> Result<Unit, AgentError>
 effects { agent.capture }
 {
     let shot = capture(
@@ -8,5 +7,9 @@ effects { agent.capture }
         kind = .color,
         name = "viewport",
     )
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = capture_smoke
 }

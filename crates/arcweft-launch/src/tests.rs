@@ -10,10 +10,12 @@ fn selection_manifest(default: Option<&str>) -> LaunchProfileManifest {
 [profiles.alpha]
 kind = "game"
 source = "alpha.arcw"
+entry = "entry.alpha"
 
 [profiles.beta]
 kind = "game"
 source = "beta.arcw"
+entry = "entry.beta"
 "#
     ))
     .expect("selection manifest parses")
@@ -94,6 +96,39 @@ fn automatic_selection_rejects_empty_profile_map() {
 }
 
 #[test]
+fn launch_kind_owns_editor_and_agent_variants() {
+    assert_eq!(LaunchKind::Editor.as_str(), "editor");
+    assert_eq!(LaunchKind::Agent.as_str(), "agent");
+}
+
+#[test]
+fn profile_entry_is_required_and_fully_qualified() {
+    for source in [
+        "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\n",
+        "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"main\"\n",
+        "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"@entry.main\"\n",
+    ] {
+        assert!(
+            LaunchProfileManifest::parse_toml(source).is_err(),
+            "invalid profile entry must be rejected: {source}"
+        );
+    }
+}
+
+#[test]
+fn profile_cannot_duplicate_source_entry_role_bindings() {
+    for key in ["state", "initializer", "event", "reducer", "controller"] {
+        let source = format!(
+            "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"entry.game.main\"\n{key} = \"forbidden\"\n"
+        );
+        assert!(
+            LaunchProfileManifest::parse_toml(&source).is_err(),
+            "launch profile must not bind source role `{key}`"
+        );
+    }
+}
+
+#[test]
 fn parses_and_resolves_profiles_relative_to_manifest_dir() {
     let manifest = LaunchProfileManifest::parse_toml(
         r#"
@@ -102,7 +137,7 @@ default = "server.dev"
 [profiles."server.dev"]
 kind = "server"
 source = "src/server.arcw"
-entry = "http"
+entry = "entry.http"
 adapter = "native-http"
 adapter_manifests = ["adapters/http.toml"]
 listen = "127.0.0.1:8787"
@@ -140,7 +175,7 @@ object_artifacts = true
 
     assert_eq!(resolved.kind(), LaunchKind::Server);
     assert_eq!(resolved.source(), Path::new("game/src/server.arcw"));
-    assert_eq!(resolved.entry(), Some("http"));
+    assert_eq!(resolved.entry().as_str(), "entry.http");
     assert_eq!(resolved.adapter(), Some("native-http"));
     assert_eq!(
         resolved.adapter_manifests(),
@@ -195,6 +230,7 @@ compression = "zstd"
 [profiles.desktop]
 kind = "game"
 source = "src/main.arcw"
+entry = "entry.desktop"
 
 [profiles.desktop.content."content.chapter_two"]
 residency = "on-demand"
@@ -257,11 +293,13 @@ fn rejects_missing_profiles_and_unknown_adapters() {
 [profiles.bad]
 kind = "server"
 source = "server.arcw"
+entry = "entry.bad"
 adapter = "custom-http"
 
 [profiles.custom]
 kind = "server"
 source = "server.arcw"
+entry = "entry.custom"
 adapter = "custom-http"
 adapter_manifests = ["adapters/custom-http.toml"]
 "#,
@@ -294,6 +332,7 @@ fn rejects_zero_sized_player_design_viewport() {
 [profiles.bad]
 kind = "game"
 source = "game.arcw"
+entry = "entry.bad"
 
 [profiles.bad.player.viewport]
 design-width = 0

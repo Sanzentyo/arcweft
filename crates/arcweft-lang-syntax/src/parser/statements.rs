@@ -127,14 +127,6 @@ pub(super) fn parse_stmt_with_base(trimmed: &str, base: usize) -> Stmt {
     parse_stmt_inner(trimmed, None, Some(base))
 }
 
-pub(super) fn parse_stmt_for_dialect(trimmed: &str, dialect: super::SourceDialect) -> Stmt {
-    if dialect == super::SourceDialect::Agent && matches!(classify_stmt(trimmed), CstStmtKind::Wait)
-    {
-        return expr_stmt(parse_expr_lossy(trimmed), None, None);
-    }
-    parse_stmt(trimmed)
-}
-
 pub(super) fn parse_stmt_with_stats_and_base(
     trimmed: &str,
     stats: &mut SyntaxParseStats,
@@ -143,14 +135,18 @@ pub(super) fn parse_stmt_with_stats_and_base(
     parse_stmt_inner(trimmed, Some(stats), Some(base))
 }
 
-pub(super) fn parse_stmt_for_dialect_with_stats_and_base(
+/// Parses a statement in an expression-valued scope such as an ordinary
+/// function body.
+///
+/// `wait(...)` is an ordinary call expression in this scope. Flow and line-plan
+/// parsers continue to use `parse_stmt_with_stats_and_base`, where the same
+/// surface form owns line-local suspension semantics.
+pub(super) fn parse_value_scope_stmt_with_stats_and_base(
     trimmed: &str,
-    dialect: super::SourceDialect,
     stats: &mut SyntaxParseStats,
     base: usize,
 ) -> Stmt {
-    if dialect == super::SourceDialect::Agent && matches!(classify_stmt(trimmed), CstStmtKind::Wait)
-    {
+    if trimmed.starts_with("wait(") && trimmed.ends_with(')') {
         return expr_stmt(
             parse_expr_lossy_with_stats(trimmed, Some(stats)),
             Some(trimmed.to_owned()),

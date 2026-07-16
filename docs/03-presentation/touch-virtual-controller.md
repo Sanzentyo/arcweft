@@ -222,7 +222,7 @@ This makes the controller visible to visual tests and LLM debugging.
 Product builds may expose virtual controller settings:
 
 ```arcw
-pub state TouchControllerSettings {
+pub struct TouchControllerSettings {
     enabled: bool = auto
     opacity: f32 = 0.82
     scale: f32 = 1.0

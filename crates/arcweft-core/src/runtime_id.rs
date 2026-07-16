@@ -165,6 +165,31 @@ impl RuntimeIdPath {
             .map(|segments| Self { segments })
     }
 
+    /// Decodes an already-verified runtime contract identity.
+    ///
+    /// Product artifacts may contain the reserved runtime-only Agent controller
+    /// owner prefix. All authored source-family spellings remain rejected.
+    pub(crate) fn from_runtime_contract_str(
+        family: RuntimeIdFamily,
+        value: &str,
+    ) -> Result<Self, RuntimeIdError> {
+        let mut raw_segments = value.split('.');
+        let Some(first) = raw_segments.next() else {
+            return Err(RuntimeIdError::Empty { family });
+        };
+        if first != "__agent_controller" {
+            return Self::from_canonical_str(family, value);
+        }
+        let mut segments = vec![RuntimeIdSegment(first.to_owned())];
+        for segment in raw_segments {
+            segments.push(RuntimeIdSegment::new(family, segment)?);
+        }
+        if segments.len() == 1 {
+            return Err(RuntimeIdError::EmptySegment { family });
+        }
+        Ok(Self { segments })
+    }
+
     pub fn from_source_entity_body(
         expected: RuntimeIdFamily,
         value: &str,
@@ -195,6 +220,21 @@ impl RuntimeIdPath {
             return Err(RuntimeIdError::Empty { family });
         }
         Ok(Self { segments })
+    }
+
+    /// Creates one runtime-only controller path shared by every Agent entry
+    /// bound to the same exact callable identity.
+    pub(crate) fn for_agent_controller_callable(callable: &str) -> Self {
+        let mut hasher =
+            blake3::Hasher::new_derive_key("arcweft.agent-controller.callable-flow.v1");
+        hasher.update(&(callable.len() as u64).to_le_bytes());
+        hasher.update(callable.as_bytes());
+        Self {
+            segments: vec![
+                RuntimeIdSegment("__agent_controller".to_owned()),
+                RuntimeIdSegment(hasher.finalize().to_hex().to_string()),
+            ],
+        }
     }
 
     #[must_use]
@@ -297,5 +337,6 @@ fn reserved_family_segment(value: &str) -> bool {
             | "view"
             | "asset"
             | "pure"
+            | "__agent_controller"
     )
 }

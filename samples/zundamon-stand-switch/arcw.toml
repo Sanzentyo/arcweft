@@ -1,5 +1,12 @@
 default = "game.main"
 
+[package]
+name = "zundamon-stand-switch"
+
+[build]
+source-dir = "."
+
 [profiles."game.main"]
 kind = "game"
+entry = "entry.main"
 source = "main.arcw"

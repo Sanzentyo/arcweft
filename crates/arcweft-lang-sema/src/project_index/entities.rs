@@ -1,11 +1,12 @@
 use super::{
-    AgentActionSignature, CallArg, CallableItem, CallableKind, EntityDeclKind, EntityKind,
-    EntityRef, EntitySymbol, EntityType, Expr, FunctionParam, FunctionSignature, HirFlowItem,
-    Literal, MatchExprArm, Pattern, ProjectCallableKind, ProjectCallableSymbol,
-    ProjectSemanticIndex, ProjectSemanticIndexError, PublicId, QualifiedName, SemanticHash,
-    SourceAnchor, SourceName, Stmt, SyntaxFnParam, SyntaxFnSignature, TypeKind, TypeRef,
-    parse_fn_signature, parse_type_ref, type_ref_kind,
+    AgentActionSignature, CallArg, CallableDeclarationId, EntityDeclKind, EntityKind, EntityRef,
+    EntitySymbol, EntityType, Expr, FunctionParam, FunctionSignature, HirFlowItem, Literal,
+    MatchExprArm, Pattern, ProjectCallableSymbol, ProjectSemanticIndex, ProjectSemanticIndexError,
+    PublicId, QualifiedName, SemanticHash, SourceAnchor, SourceName, Stmt, SyntaxFnParam,
+    SyntaxFnSignature, TypeKind, TypeRef, parse_type_ref, type_ref_kind,
 };
+use arcweft_lang_hir::model::HirFunction;
+use arcweft_lang_syntax::{ast::items::CallableItem, types::parse_fn_signature};
 
 pub(super) fn index_flow_items(
     items: &[HirFlowItem],
@@ -613,44 +614,30 @@ pub(super) fn entity_symbol(
     ))
 }
 
-pub(super) fn project_callable_symbol(
-    item: &CallableItem,
+pub(super) fn project_function_symbol(
+    declaration: CallableDeclarationId,
+    function: &HirFunction,
     source_name: &SourceName,
-) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
-    let signature = project_callable_signature(item)?;
-    let kind = project_callable_kind(item.kind());
+) -> ProjectCallableSymbol {
+    let signature = function_signature_from_syntax(function.signature());
     let source = SourceAnchor::from_span(
         source_name
             .span(arcweft_source::SourceRange::new(
-                item.range().start(),
-                item.range().end(),
+                function.range().start(),
+                function.range().end(),
             ))
-            .expect("a callable range belongs to the source document that was lowered"),
+            .expect("a function range belongs to the project source document that was lowered"),
     );
-    let semantic_hash = SemanticHash::new(format!(
-        "hir:callable:{}:{}:{}",
-        kind.as_str(),
-        item.name(),
-        item.signature_tail().trim()
-    ));
-    Ok(ProjectCallableSymbol::new(
-        kind,
-        signature,
-        source,
-        semantic_hash,
-    ))
+    let semantic_hash =
+        SemanticHash::new(project_function_semantic_label(&declaration, &signature));
+    ProjectCallableSymbol::function(declaration, signature, source, semantic_hash)
 }
 
-fn project_callable_kind(kind: CallableKind) -> ProjectCallableKind {
-    match kind {
-        CallableKind::Reducer => ProjectCallableKind::Reducer,
-        CallableKind::View => ProjectCallableKind::View,
-    }
-}
-
-fn project_callable_signature(
+pub(super) fn project_view_callable_symbol(
+    declaration: CallableDeclarationId,
     item: &CallableItem,
-) -> Result<FunctionSignature, ProjectSemanticIndexError> {
+    source_name: &SourceName,
+) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
     let signature_source = format!("fn {}{}", item.name(), item.signature_tail());
     let signature = parse_fn_signature(&signature_source).map_err(|error| {
         ProjectSemanticIndexError::InvalidCallableSignature {
@@ -658,7 +645,44 @@ fn project_callable_signature(
             message: error.to_string(),
         }
     })?;
-    Ok(function_signature_from_syntax(&signature))
+    let signature = function_signature_from_syntax(&signature);
+    let source = SourceAnchor::from_span(
+        source_name
+            .span(arcweft_source::SourceRange::new(
+                item.range().start(),
+                item.range().end(),
+            ))
+            .expect("a View callable range belongs to the source document that was lowered"),
+    );
+    let semantic_hash = SemanticHash::new(format!(
+        "hir:callable:view:{}:{}",
+        declaration.qualified_name(),
+        item.signature_tail().trim()
+    ));
+    Ok(ProjectCallableSymbol::view(
+        declaration,
+        signature,
+        source,
+        semantic_hash,
+    ))
+}
+
+fn project_function_semantic_label(
+    declaration: &CallableDeclarationId,
+    signature: &FunctionSignature,
+) -> String {
+    let parameters = signature
+        .params()
+        .iter()
+        .map(|parameter| type_kind_stable_label(parameter.ty()))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "hir:callable:function:{}:{}:({parameters})->{}",
+        declaration.package().as_str(),
+        declaration.qualified_name(),
+        type_kind_stable_label(signature.return_type())
+    )
 }
 
 fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSignature {

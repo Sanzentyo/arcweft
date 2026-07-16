@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 fn clean(name: String) -> String { name.trim().to_string() }
 flow @flow.main main {
     let name = clean(" alice ")

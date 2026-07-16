@@ -68,7 +68,7 @@ pub character narrator {
     }
 }
 
-entry game {
+entry cli @entry.windows_font_showcase {
     goto @flow.windows_font_showcase
 }
 

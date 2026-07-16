@@ -139,8 +139,7 @@ ItemDecl     :=
     FlowDecl
   | FunctionDecl
   | SourceDecl
-  | StateDecl
-  | ReducerDecl
+  | EntryDecl
   | ViewDecl
   | DialogueDefaultsDecl
   | AssetDecl

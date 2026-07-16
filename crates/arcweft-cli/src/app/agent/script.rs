@@ -14,6 +14,20 @@ use super::{
     SemanticHash, SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent,
     agent_project, fs, print_json,
 };
+use arcweft_compiler::project::{
+    ProjectCompilationContext, ProjectCompileError, ProjectEntrySelection,
+    ProjectEntrySelectionKind, compile_project,
+};
+use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_sema::registration::ProjectRegistrationFacts;
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_project::{
+    manifest::ProjectManifest,
+    sources::{ProjectSourceFile, ProjectSources},
+};
+use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 #[cfg(feature = "native-capture")]
 use super::{
@@ -37,7 +51,7 @@ pub(super) fn agent_script_command(
 pub(super) struct AgentScriptCheckReport {
     pub(super) path: String,
     pub(super) ok: bool,
-    pub(super) agents: usize,
+    pub(super) agent_entries: usize,
     pub(super) error: Option<String>,
 }
 
@@ -46,12 +60,101 @@ pub(super) struct AgentScriptBuildReport {
     pub(super) path: String,
     pub(super) output: String,
     pub(super) ok: bool,
-    pub(super) agents: usize,
-    pub(super) agent_id: Option<String>,
+    pub(super) agent_entries: usize,
+    pub(super) entry_id: Option<String>,
+    pub(super) controller_id: Option<String>,
     pub(super) bundle_kind: Option<String>,
     pub(super) bytecode_instructions: usize,
     pub(super) bytes: usize,
     pub(super) error: Option<String>,
+}
+
+pub(super) fn compile_agent_script_source(
+    source_name: &Path,
+    source: String,
+    selected_entry: &str,
+    target_project: &ProjectSemanticIndex,
+) -> Result<arcweft_compiler::types::CompiledAgentBundle, String> {
+    const PACKAGE_NAME: &str = "arcweft-agent-script";
+
+    let selected_entry =
+        SemaPublicId::try_new(selected_entry.to_owned()).map_err(|error| error.to_string())?;
+    let source_path = PathBuf::from("src/controller.arcw");
+    let source_key = blake3::hash(source_name.to_string_lossy().as_bytes()).to_hex();
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("arcweft-agent-script://{source_key}"))
+                .map_err(|error| error.to_string())?,
+            SourceName::path(source_name.display().to_string()),
+            source,
+        )
+        .map_err(|error| error.to_string())?,
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        ProjectManifest::parse_toml(&format!("[package]\nname = \"{PACKAGE_NAME}\"\n"))
+            .map_err(|error| error.to_string())?,
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            source_path,
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .map_err(|error| error.to_string())?;
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(PACKAGE_NAME).map_err(|error| error.to_string())?,
+        document.identity().id().clone(),
+        format!("agent-script:{}", selected_entry.as_str()),
+    )
+    .map_err(|error| error.to_string())?;
+    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
+        .map_err(|report| {
+            report
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })?;
+    let context = ProjectCompilationContext::new(
+        Arc::new(target_project.typecheck_env()),
+        Arc::new(facts),
+        None,
+        Some(ProjectEntrySelection::new(
+            selected_entry.clone(),
+            ProjectEntrySelectionKind::Agent,
+        )),
+        Vec::new(),
+    );
+    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+        .map_err(|error| project_compile_message(&error))?;
+    let artifact_project = target_project
+        .clone()
+        .with_checked_entry_catalog(compiled.checked_entries());
+    agent::compile_agent_project_bundle(&compiled, &selected_entry, &artifact_project)
+        .map_err(|error| error.to_string())
+}
+
+fn project_compile_message(error: &ProjectCompileError) -> String {
+    let stage = error
+        .diagnostics()
+        .first()
+        .map_or(error.stage(), |diagnostic| diagnostic.stage().as_str());
+    let details = error
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| {
+            let diagnostic = diagnostic.diagnostic();
+            match diagnostic.code() {
+                Some(code) => format!("{}: {}", code.as_str(), diagnostic.message()),
+                None => diagnostic.message().to_owned(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!("{stage}: {details}")
 }
 
 pub(super) fn agent_script_build_command(
@@ -76,8 +179,9 @@ pub(super) fn agent_script_build_command(
             path: options.path.display().to_string(),
             output: options.output.display().to_string(),
             ok: false,
-            agents: 0,
-            agent_id: None,
+            agent_entries: 0,
+            entry_id: None,
+            controller_id: None,
             bundle_kind: None,
             bytecode_instructions: 0,
             bytes: 0,
@@ -106,8 +210,8 @@ pub(super) fn agent_script_build_report(
     let source = fs::read_to_string(&options.path)
         .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
     let project = agent_script_project_index(&options.signals)?;
-    let compiled = agent::compile_agent_bundle_with_project(source, &project)
-        .map_err(|error| error.to_string())?;
+    let compiled =
+        compile_agent_script_source(&options.path, source, &options.controller_entry, &project)?;
     let bytes = compiled
         .bundle
         .to_json_bytes()
@@ -117,8 +221,9 @@ pub(super) fn agent_script_build_report(
         path: options.path.display().to_string(),
         output: options.output.display().to_string(),
         ok: true,
-        agents: compiled.hir.agents().len(),
-        agent_id: Some(compiled.manifest.agent_id.as_str().to_owned()),
+        agent_entries: 1,
+        entry_id: Some(compiled.manifest.entry_id.as_str().to_owned()),
+        controller_id: Some(compiled.manifest.controller_id.as_str().to_owned()),
         bundle_kind: Some(compiled.bundle.bundle_kind.to_string()),
         bytecode_instructions: compiled.bundle.manifest.runtime.bytecode_instructions,
         bytes: bytes.len(),
@@ -177,24 +282,36 @@ pub(super) fn agent_script_check_command(
         eprintln!("error: failed to read {}: {error}", options.path.display());
         ExitCode::FAILURE
     })?;
-    let report = match agent::compile_agent_source(source) {
-        Ok(compiled) => AgentScriptCheckReport {
+    let project = agent_script_project_index(&[]).map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })?;
+    let report = match compile_agent_script_source(
+        &options.path,
+        source,
+        &options.controller_entry,
+        &project,
+    ) {
+        Ok(_) => AgentScriptCheckReport {
             path: options.path.display().to_string(),
             ok: true,
-            agents: compiled.hir.agents().len(),
+            agent_entries: 1,
             error: None,
         },
         Err(error) => AgentScriptCheckReport {
             path: options.path.display().to_string(),
             ok: false,
-            agents: 0,
-            error: Some(error.to_string()),
+            agent_entries: 0,
+            error: Some(error.clone()),
         },
     };
     if options.json {
         print_json(&report)?;
     } else if report.ok {
-        println!("{}: ok ({} agent item(s))", report.path, report.agents);
+        println!(
+            "{}: ok ({} selected Agent entry)",
+            report.path, report.agent_entries
+        );
     } else if let Some(error) = &report.error {
         eprintln!("{}: {error}", report.path);
     }
@@ -209,7 +326,7 @@ pub(super) fn agent_script_check_command(
 pub(super) struct AgentScriptRunReport {
     pub(super) path: String,
     pub(super) ok: bool,
-    pub(super) agents: usize,
+    pub(super) agent_entries: usize,
     pub(super) steps: usize,
     pub(super) host_calls: usize,
     pub(super) events_emitted: u64,
@@ -226,7 +343,7 @@ pub(super) struct AgentScriptRunReport {
 
 pub(in crate::app) struct AgentScriptRunInput {
     pub(super) path: String,
-    pub(super) agents: usize,
+    pub(super) agent_entries: usize,
     pub(super) program_hash: String,
     pub(super) project_entities: Vec<RequiredEntity>,
     pub(super) project_graph: AgentProjectGraph,
@@ -316,7 +433,7 @@ pub(super) fn agent_script_run_command(
         Err(error) => AgentScriptRunReport {
             path: options.path.display().to_string(),
             ok: false,
-            agents: 0,
+            agent_entries: 0,
             steps: 0,
             host_calls: 0,
             events_emitted: 0,
@@ -378,11 +495,11 @@ pub(super) fn agent_script_run_source_input(
     let program_hash = project.program_hash().as_str().to_owned();
     let project_entities = agent_project_entities(&project)?;
     let project_graph = agent_project_graph(&project)?;
-    let compiled = agent::compile_agent_bundle_with_project(source, &project)
-        .map_err(|error| error.to_string())?;
+    let compiled =
+        compile_agent_script_source(&options.path, source, &options.controller_entry, &project)?;
     Ok(AgentScriptRunInput {
         path: options.path.display().to_string(),
-        agents: compiled.hir.agents().len(),
+        agent_entries: 1,
         program_hash,
         project_entities,
         project_graph,
@@ -409,10 +526,10 @@ pub(super) fn agent_script_run_bundle_input(
     let program_hash = project.program_hash().as_str().to_owned();
     let project_entities = agent_project_entities(&project)?;
     let project_graph = agent_project_graph(&project)?;
-    let agents = usize::from(bundle.agent.is_some());
+    let agent_entries = usize::from(bundle.agent.is_some());
     Ok(AgentScriptRunInput {
         path: path.display().to_string(),
-        agents,
+        agent_entries,
         program_hash,
         project_entities,
         project_graph,
@@ -531,7 +648,7 @@ pub(super) fn agent_script_run_report_from_result(
     let mut report = match (run_result, trace_result, blob_result) {
         (Ok(run), Ok(trace_path), Ok(blob_report)) => agent_script_run_success_report(
             &input.path,
-            input.agents,
+            input.agent_entries,
             run,
             trace_path,
             trace_records.len(),
@@ -539,7 +656,7 @@ pub(super) fn agent_script_run_report_from_result(
         ),
         (Err(error), Ok(trace_path), Ok(blob_report)) => agent_script_run_error_report(
             &input.path,
-            input.agents,
+            input.agent_entries,
             trace_path,
             trace_records.len(),
             blob_report,
@@ -547,7 +664,7 @@ pub(super) fn agent_script_run_report_from_result(
         ),
         (_, Err(error), blob_result) => agent_script_run_error_report(
             &input.path,
-            input.agents,
+            input.agent_entries,
             options
                 .trace_out
                 .as_ref()
@@ -558,7 +675,7 @@ pub(super) fn agent_script_run_report_from_result(
         ),
         (_, _, Err(error)) => agent_script_run_error_report(
             &input.path,
-            input.agents,
+            input.agent_entries,
             options
                 .trace_out
                 .as_ref()
@@ -669,7 +786,7 @@ pub(super) fn agent_script_start_debug_run(
         .upsert_script_run(&DebugScriptRun {
             run_id: run_id.clone(),
             session_id: session_id.clone(),
-            agent_id: manifest.map(|manifest| manifest.agent_id.clone()),
+            agent_id: manifest.map(|manifest| manifest.entry_id.clone()),
             artifact_hash: None,
             source_hash: manifest.map(|manifest| manifest.source_hash.clone()),
             project_binding_mode,
@@ -956,7 +1073,7 @@ pub(super) fn agent_script_run_uses_native_session_for_metadata(
 
 pub(super) fn agent_script_run_success_report(
     path: &str,
-    agents: usize,
+    agent_entries: usize,
     run: AgentControllerRunReport,
     trace_path: Option<String>,
     trace_records: usize,
@@ -965,7 +1082,7 @@ pub(super) fn agent_script_run_success_report(
     AgentScriptRunReport {
         path: path.to_owned(),
         ok: true,
-        agents,
+        agent_entries,
         steps: run.steps,
         host_calls: run.host_calls,
         events_emitted: run.events_emitted,
@@ -983,7 +1100,7 @@ pub(super) fn agent_script_run_success_report(
 
 pub(super) fn agent_script_run_error_report(
     path: &str,
-    agents: usize,
+    agent_entries: usize,
     trace_path: Option<String>,
     trace_records: usize,
     blob_report: AgentBlobWriteReport,
@@ -992,7 +1109,7 @@ pub(super) fn agent_script_run_error_report(
     AgentScriptRunReport {
         path: path.to_owned(),
         ok: false,
-        agents,
+        agent_entries,
         steps: 0,
         host_calls: 0,
         events_emitted: 0,
@@ -1894,5 +2011,31 @@ pub(super) fn agent_value_to_json(value: &AgentValue) -> serde_json::Value {
             serde_json::Value::Array(values.iter().map(agent_value_to_json).collect())
         }
         AgentValue::Map(values) => agent_values_to_json(values),
+    }
+}
+
+#[cfg(test)]
+mod removed_role_tests {
+    use super::*;
+
+    #[test]
+    fn awfagent_compiler_consumer_rejects_removed_role_declarations() {
+        for source in [
+            "state GameState {\n    value: i32\n}\n",
+            "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
+            "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
+        ] {
+            let error = compile_agent_script_source(
+                Path::new("removed.awfagent"),
+                source.to_owned(),
+                "entry.agent.main",
+                &ProjectSemanticIndex::new(ProgramHash::new("removed-role-test")),
+            )
+            .expect_err("removed declaration must fail the .awfagent compiler consumer");
+            assert!(
+                error.starts_with("parse:"),
+                "removed declaration must fail at parse, got: {error}"
+            );
+        }
     }
 }

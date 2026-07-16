@@ -362,6 +362,7 @@ source-dir = "game"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "game/main.arcw"
 "#,
         )
@@ -414,6 +415,7 @@ content-dir = "game-content"
             r#"
 [profiles.game]
 kind = "game"
+entry = "entry.game.main"
 source = "main.arcw"
 "#,
         )

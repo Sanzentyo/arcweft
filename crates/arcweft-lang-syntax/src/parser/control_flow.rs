@@ -1,4 +1,3 @@
-use super::SourceDialect;
 use super::helpers::LogicalBlockItem;
 use super::{
     AuthoredExpr, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
@@ -6,7 +5,7 @@ use super::{
     StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, binding_value_start_in_line,
     braced_expr_source, collect_logical_block_items, collect_logical_block_items_with_base,
     indentation, is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt,
-    parse_stmt_for_dialect_with_stats_and_base, parse_stmt_with_base, raw_stmt, split_brace_item,
+    parse_stmt_with_base, parse_value_scope_stmt_with_stats_and_base, raw_stmt, split_brace_item,
     split_optional_block_label, split_top_level_binding, split_top_level_keyword_once,
 };
 use crate::cst::{
@@ -847,33 +846,17 @@ fn split_if_let_guard(source: &str) -> (&str, Option<&str>) {
 }
 
 pub(super) fn parse_scope_expr_body(body: &str) -> (Vec<Stmt>, Option<crate::expr::Expr>) {
-    let (statements, value) =
-        parse_scope_authored_expr_body_with_base_for_dialect(body, 0, SourceDialect::Game);
+    let (statements, value) = parse_scope_authored_expr_body_with_base(body, 0);
     (statements, value.map(|value| value.expr().clone()))
 }
 
 pub(super) fn parse_scope_authored_expr_body(body: &str) -> (Vec<Stmt>, Option<AuthoredExpr>) {
-    parse_scope_authored_expr_body_with_base_for_dialect(body, 0, SourceDialect::Game)
-}
-
-pub(super) fn parse_scope_authored_expr_body_for_dialect(
-    body: &str,
-    dialect: SourceDialect,
-) -> (Vec<Stmt>, Option<AuthoredExpr>) {
-    parse_scope_authored_expr_body_with_base_for_dialect(body, 0, dialect)
+    parse_scope_authored_expr_body_with_base(body, 0)
 }
 
 pub(super) fn parse_scope_authored_expr_body_with_base(
     body: &str,
     body_base: usize,
-) -> (Vec<Stmt>, Option<AuthoredExpr>) {
-    parse_scope_authored_expr_body_with_base_for_dialect(body, body_base, SourceDialect::Game)
-}
-
-pub(super) fn parse_scope_authored_expr_body_with_base_for_dialect(
-    body: &str,
-    body_base: usize,
-    dialect: SourceDialect,
 ) -> (Vec<Stmt>, Option<AuthoredExpr>) {
     let lines = collect_logical_block_items_with_base(body, body_base)
         .into_iter()
@@ -885,12 +868,7 @@ pub(super) fn parse_scope_authored_expr_body_with_base_for_dialect(
     let parsed_statements = statements
         .iter()
         .map(|line| {
-            parse_stmt_for_dialect_with_stats_and_base(
-                line.source.as_ref(),
-                dialect,
-                &mut stats,
-                line.base,
-            )
+            parse_value_scope_stmt_with_stats_and_base(line.source.as_ref(), &mut stats, line.base)
         })
         .collect::<Vec<_>>();
     if let Some(value) = parse_final_block_expr(last.source.as_ref()) {
@@ -898,9 +876,8 @@ pub(super) fn parse_scope_authored_expr_body_with_base_for_dialect(
     }
     if is_typed_stmt(last.source.as_ref()) {
         let mut parsed_statements = parsed_statements;
-        parsed_statements.push(parse_stmt_for_dialect_with_stats_and_base(
+        parsed_statements.push(parse_value_scope_stmt_with_stats_and_base(
             last.source.as_ref(),
-            dialect,
             &mut stats,
             last.base,
         ));

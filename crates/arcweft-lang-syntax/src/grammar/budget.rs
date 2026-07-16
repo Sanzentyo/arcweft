@@ -242,9 +242,6 @@ impl SyntaxKind {
                 | Self::FunctionItem
                 | Self::PredicateItem
                 | Self::ProofItem
-                | Self::AgentItem
-                | Self::CallableItem
-                | Self::StateItem
                 | Self::TraitItem
                 | Self::ImplItem
                 | Self::EnumItem

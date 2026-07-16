@@ -843,7 +843,6 @@ mod tests {
     fn fixture_bundle_with(display_text: &str, image_bytes: &[u8]) -> ArcweftBundle {
         let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
         let plan = RuntimePlan::new(
-            Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
             vec![RuntimeFlow {
                 id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
                 ops: vec![
@@ -856,7 +855,17 @@ mod tests {
             }],
             vec![LineTaskGroup::default()],
         )
-        .expect("runtime plan is valid");
+        .expect("runtime plan is valid")
+        .with_entries(vec![arcweft_core::plan::RuntimeEntrySpec {
+            id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+                .expect("test entry ID is valid"),
+            kind: arcweft_core::plan::RuntimeEntryKind::Cli,
+            binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
+            target: arcweft_core::plan::RuntimeEntryTarget::Flow(
+                FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
+            ),
+            roles: arcweft_core::entry::RuntimeEntryRoles::None,
+        }]);
         let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
             line,
             callee: "alice".to_owned(),
@@ -884,7 +893,7 @@ mod tests {
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
-                entry: None,
+                entry: Some("entry.main".to_owned()),
                 adapter: None,
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),

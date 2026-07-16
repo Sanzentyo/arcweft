@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.cli.pointer_click_smoke pointer_click_smoke()
+fn pointer_click_smoke() -> Result<Unit, AgentError>
 effects { agent.act.physical }
 {
     let action = try pointer.click(
@@ -7,5 +6,9 @@ effects { agent.act.physical }
         button = .secondary,
     )
     expect(action.accepted)
-    return action.after_state_hash
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = pointer_click_smoke
 }

@@ -1,4 +1,4 @@
-use crate::{effect::*, engine::*, plan::*, step::*};
+use crate::{effect::*, plan::*, step::*};
 
 #[test]
 fn runtime_records_log_signal_metric_and_event_observations() {
@@ -21,7 +21,7 @@ fn runtime_records_log_signal_metric_and_event_observations() {
             fields: Vec::new(),
         }),
     ];
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(super::flow_id("flow.opening")),
         vec![RuntimeFlow {
             id: super::flow_id("flow.opening"),
@@ -30,7 +30,7 @@ fn runtime_records_log_signal_metric_and_event_observations() {
         Vec::new(),
     )
     .expect("flow plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     for _ in 0..4 {
         super::runtime_step(&mut engine, RuntimeStepInput::default());

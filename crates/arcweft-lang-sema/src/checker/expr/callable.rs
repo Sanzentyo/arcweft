@@ -155,16 +155,16 @@ impl TypeChecker<'_> {
             self.last_checked_curried_signature_call = None;
         }
         let partial = supplied_arg_count < params.len();
-        self.record_typed_lowering_evidence(TypedLoweringEvidence {
+        self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
             expression_id,
-            kind: TypedLoweringEvidenceKind::FunctionValueCall {
+            TypedLoweringEvidenceKind::FunctionValueCall {
                 callee: callee.map(str::to_owned),
                 callee_ty,
                 result_ty: result_ty.clone(),
                 arg_count: args.len(),
                 partial,
             },
-        });
+        ));
         result_ty
     }
 

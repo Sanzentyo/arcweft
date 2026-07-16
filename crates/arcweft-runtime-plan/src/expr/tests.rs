@@ -40,6 +40,7 @@ fn resolved_numeric_evidence(
 ) -> RuntimeTypedLoweringEvidence {
     RuntimeTypedLoweringEvidence {
         expression_id: RuntimeTypedExpressionId::from_index(expression),
+        owner: None,
         kind: RuntimeTypedLoweringEvidenceKind::ResolvedNumericType { target },
     }
 }

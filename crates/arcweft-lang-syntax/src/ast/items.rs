@@ -1,5 +1,5 @@
-use crate::expr::Expr;
-use crate::types::{FnSignature, TypeRef, WhereClause};
+use crate::expr::{DottedPath, Expr};
+use crate::types::{FnSignature, GenericParam, TypeRef, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
 use super::dialogue::DialogueDefaultsItem;
@@ -8,6 +8,7 @@ use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem};
 use super::source::SourceItem;
 use super::style::StyleDecl;
+use super::symbol_path::ProjectSymbolPath;
 use super::view::ViewBody;
 
 /// Typed syntax view of an `.arcw` source with module/use headers and items.
@@ -26,9 +27,7 @@ pub struct TypedSyntaxTree {
 pub enum Item {
     Flow(Flow),
     Function(FunctionItem),
-    Agent(AgentItem),
     Callable(CallableItem),
-    State(StateItem),
     Trait(TraitItem),
     Impl(ImplItem),
     Enum(EnumItem),
@@ -145,9 +144,7 @@ impl Item {
         match self {
             Self::Flow(item) => Some(*item.range()),
             Self::Function(item) => Some(*item.range()),
-            Self::Agent(item) => Some(*item.range()),
             Self::Callable(item) => Some(*item.range()),
-            Self::State(item) => Some(*item.range()),
             Self::Trait(item) => Some(*item.range()),
             Self::Impl(item) => Some(*item.range()),
             Self::Enum(item) => Some(*item.range()),
@@ -294,40 +291,6 @@ pub struct FunctionParameterSource {
     default: Option<TextRange>,
 }
 
-/// Agent controller entry point declared in an Agent dialect source.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AgentItem {
-    attrs: Vec<Attribute>,
-    doc: Option<DocBlock>,
-    visibility: Option<Visibility>,
-    id: Option<EntityRef>,
-    name: String,
-    signature: Option<FnSignature>,
-    signature_text: Option<String>,
-    contracts: Vec<ContractClause>,
-    body: String,
-    body_statements: Vec<Stmt>,
-    body_value: Option<AuthoredExpr>,
-    range: TextRange,
-}
-
-/// Internal initializer for an agent controller item.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct AgentItemInit {
-    pub(crate) attrs: Vec<Attribute>,
-    pub(crate) doc: Option<DocBlock>,
-    pub(crate) visibility: Option<Visibility>,
-    pub(crate) id: Option<EntityRef>,
-    pub(crate) name: String,
-    pub(crate) signature: Option<FnSignature>,
-    pub(crate) signature_text: Option<String>,
-    pub(crate) contracts: Vec<ContractClause>,
-    pub(crate) body: String,
-    pub(crate) body_statements: Vec<Stmt>,
-    pub(crate) body_value: Option<AuthoredExpr>,
-    pub(crate) range: TextRange,
-}
-
 /// Top-level function category.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FunctionKind {
@@ -339,6 +302,27 @@ pub enum FunctionKind {
     Dialogue,
     /// Generator-like function that yields a stream/source of values.
     Stream,
+}
+
+/// View callable retained as a distinct function-like source family.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableItem {
+    kind: CallableKind,
+    visibility: Option<Visibility>,
+    name: String,
+    signature_tail: String,
+    contracts: Vec<ContractClause>,
+    body: String,
+    body_statements: Vec<Stmt>,
+    body_value: Option<Expr>,
+    range: TextRange,
+}
+
+/// Function-like callable category not represented by an ordinary function.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallableKind {
+    /// Retained View callable family.
+    View,
 }
 
 /// Top-level entity declaration family with runtime-specific body preserved.
@@ -440,10 +424,11 @@ pub struct ImageDeclField {
     value: Expr,
 }
 
-/// Program entry declaration such as `entry game @entry.main { goto @flow.opening }`.
+/// Program entry declaration such as `entry cli @entry.main { goto @flow.opening }`.
 ///
-/// Entries are launch manifests in source form. They select an executable flow
-/// or adapter route without making the first flow in a file special.
+/// Source entries are the typed authority for executable role and target
+/// bindings. A launch manifest separately selects one exact entry and supplies
+/// its launch environment; it does not redefine the entry contract.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntryDeclItem {
     kind: EntryKind,
@@ -457,17 +442,54 @@ pub struct EntryDeclItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryKind {
     Game,
+    Editor,
     Cli,
     Server,
     Activity,
     Test,
     Bench,
+    Agent,
     Custom(String),
+}
+
+/// Typed role that an entry may bind to an ordinary declaration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum EntryRoleKind {
+    State,
+    Initializer,
+    Event,
+    Reducer,
+    Controller,
 }
 
 /// Structured item inside an entry block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryItem {
+    StateType {
+        ty: TypeRef,
+        value_range: TextRange,
+        range: TextRange,
+    },
+    Initializer {
+        path: DottedPath,
+        value_range: TextRange,
+        range: TextRange,
+    },
+    EventType {
+        ty: TypeRef,
+        value_range: TextRange,
+        range: TextRange,
+    },
+    Reducer {
+        path: DottedPath,
+        value_range: TextRange,
+        range: TextRange,
+    },
+    Controller {
+        path: DottedPath,
+        value_range: TextRange,
+        range: TextRange,
+    },
     Goto(EntityRef),
     Route {
         method: String,
@@ -500,11 +522,17 @@ pub enum EntryRouteBindingSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternModItem {
     abi: String,
-    path: String,
-    source: Option<String>,
+    path: ProjectSymbolPath,
+    source: Option<ExternModSource>,
     members: Vec<ExternModMember>,
     body: String,
     range: TextRange,
+}
+
+/// Typed implementation source selected by an external module declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternModSource {
+    Crate(String),
 }
 
 /// Structured member declared inside an `extern rust mod` block.
@@ -564,7 +592,9 @@ pub struct ExternCapabilityItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityFn {
     signature: FnSignature,
+    signature_source: FunctionSignatureSource,
     effects: Vec<Expr>,
+    range: TextRange,
 }
 
 /// Internal initializer for a function item.
@@ -582,59 +612,6 @@ pub(crate) struct FunctionInit {
     pub(crate) body_statements: Vec<Stmt>,
     pub(crate) body_value: Option<AuthoredExpr>,
     pub(crate) range: TextRange,
-}
-
-/// Function-like top-level item such as `reducer` or `view`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallableItem {
-    kind: CallableKind,
-    visibility: Option<Visibility>,
-    name: String,
-    signature_tail: String,
-    contracts: Vec<ContractClause>,
-    body: String,
-    body_statements: Vec<Stmt>,
-    body_value: Option<Expr>,
-    range: TextRange,
-}
-
-pub(crate) struct CallableItemInit {
-    pub(crate) kind: CallableKind,
-    pub(crate) visibility: Option<Visibility>,
-    pub(crate) name: String,
-    pub(crate) signature_tail: String,
-    pub(crate) contracts: Vec<ContractClause>,
-    pub(crate) body: String,
-    pub(crate) body_statements: Vec<Stmt>,
-    pub(crate) body_value: Option<Expr>,
-    pub(crate) range: TextRange,
-}
-
-/// Function-like item category.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CallableKind {
-    Reducer,
-    View,
-}
-
-/// Root state declaration with typed fields and initializer expressions.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StateItem {
-    attrs: Vec<Attribute>,
-    visibility: Option<Visibility>,
-    name: String,
-    fields: Vec<StateField>,
-    range: TextRange,
-}
-
-/// One state field, optionally public, with its default expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct StateField {
-    doc: Option<DocBlock>,
-    visibility: Option<Visibility>,
-    name: String,
-    ty: TypeRef,
-    default: Expr,
 }
 
 /// Trait declaration with associated type and function members.
@@ -714,6 +691,8 @@ pub struct EnumItem {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
+    name_range: TextRange,
+    generic_params: Vec<GenericParam>,
     variants: Vec<EnumVariant>,
     range: TextRange,
 }
@@ -732,6 +711,8 @@ pub struct StructItem {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
+    name_range: TextRange,
+    generic_params: Vec<GenericParam>,
     fields: Vec<StructField>,
     range: TextRange,
 }
@@ -823,6 +804,70 @@ impl FunctionItem {
     }
 }
 
+impl CallableItem {
+    /// Projects a typed View declaration onto the retained callable family.
+    ///
+    /// View keeps its dedicated body grammar and structured entity declaration.
+    /// This projection exposes only its callable signature and source ownership
+    /// to HIR and semantic indexing.
+    pub fn from_view_declaration(item: &EntityDeclItem) -> Option<Self> {
+        if item.kind() != EntityDeclKind::View {
+            return None;
+        }
+        let name = item
+            .surface_alias()
+            .or_else(|| item.name())
+            .or_else(|| item.id().body().rsplit('.').next())?;
+        Some(Self {
+            kind: CallableKind::View,
+            visibility: item.visibility(),
+            name: name.to_owned(),
+            signature_tail: item.signature_tail().to_owned(),
+            contracts: Vec::new(),
+            body: item.body().unwrap_or_default().to_owned(),
+            body_statements: Vec::new(),
+            body_value: None,
+            range: *item.range(),
+        })
+    }
+
+    pub const fn kind(&self) -> CallableKind {
+        self.kind
+    }
+
+    pub const fn visibility(&self) -> Option<Visibility> {
+        self.visibility
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn signature_tail(&self) -> &str {
+        &self.signature_tail
+    }
+
+    pub fn contracts(&self) -> &[ContractClause] {
+        &self.contracts
+    }
+
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    pub fn body_statements(&self) -> &[Stmt] {
+        &self.body_statements
+    }
+
+    pub const fn body_value(&self) -> Option<&Expr> {
+        self.body_value.as_ref()
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
 impl FunctionSignatureSource {
     pub(crate) fn new(
         signature: TextRange,
@@ -900,73 +945,6 @@ impl FunctionParameterSource {
 
     pub const fn default(&self) -> Option<TextRange> {
         self.default
-    }
-}
-
-impl AgentItem {
-    pub(crate) fn new(init: AgentItemInit) -> Self {
-        Self {
-            attrs: init.attrs,
-            doc: init.doc,
-            visibility: init.visibility,
-            id: init.id,
-            name: init.name,
-            signature: init.signature,
-            signature_text: init.signature_text,
-            contracts: init.contracts,
-            body: init.body,
-            body_statements: init.body_statements,
-            body_value: init.body_value,
-            range: init.range,
-        }
-    }
-
-    pub const fn doc(&self) -> Option<&DocBlock> {
-        self.doc.as_ref()
-    }
-
-    pub fn attrs(&self) -> &[Attribute] {
-        &self.attrs
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn id(&self) -> Option<&EntityRef> {
-        self.id.as_ref()
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn signature(&self) -> Option<&FnSignature> {
-        self.signature.as_ref()
-    }
-
-    pub fn signature_text(&self) -> Option<&str> {
-        self.signature_text.as_deref()
-    }
-
-    pub fn contracts(&self) -> &[ContractClause] {
-        &self.contracts
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub fn body_statements(&self) -> &[Stmt] {
-        &self.body_statements
-    }
-
-    pub const fn body_value(&self) -> Option<&AuthoredExpr> {
-        self.body_value.as_ref()
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
     }
 }
 
@@ -1160,11 +1138,13 @@ impl EntryKind {
     pub(crate) fn parse(source: &str) -> Self {
         match source {
             "game" => Self::Game,
+            "editor" => Self::Editor,
             "cli" => Self::Cli,
             "server" => Self::Server,
             "activity" => Self::Activity,
             "test" => Self::Test,
             "bench" => Self::Bench,
+            "agent" => Self::Agent,
             custom => Self::Custom(custom.to_owned()),
         }
     }
@@ -1172,12 +1152,118 @@ impl EntryKind {
     pub fn as_str(&self) -> &str {
         match self {
             Self::Game => "game",
+            Self::Editor => "editor",
             Self::Cli => "cli",
             Self::Server => "server",
             Self::Activity => "activity",
             Self::Test => "test",
             Self::Bench => "bench",
+            Self::Agent => "agent",
             Self::Custom(value) => value,
+        }
+    }
+
+    /// Returns whether this entry owns a durable root-state binding.
+    pub const fn is_stateful(&self) -> bool {
+        matches!(self, Self::Game | Self::Editor | Self::Test)
+    }
+
+    /// Returns whether this entry binds an ordinary Agent controller.
+    pub const fn is_agent(&self) -> bool {
+        matches!(self, Self::Agent)
+    }
+
+    /// Returns whether `role` is legal for this entry kind.
+    pub const fn allows_role(&self, role: EntryRoleKind) -> bool {
+        if self.is_stateful() {
+            matches!(
+                role,
+                EntryRoleKind::State
+                    | EntryRoleKind::Initializer
+                    | EntryRoleKind::Event
+                    | EntryRoleKind::Reducer
+            )
+        } else {
+            self.is_agent() && matches!(role, EntryRoleKind::Controller)
+        }
+    }
+
+    /// Typed roles required exactly once by this entry kind.
+    pub const fn required_roles(&self) -> &'static [EntryRoleKind] {
+        const STATEFUL: &[EntryRoleKind] = &[
+            EntryRoleKind::State,
+            EntryRoleKind::Initializer,
+            EntryRoleKind::Event,
+            EntryRoleKind::Reducer,
+        ];
+        const AGENT: &[EntryRoleKind] = &[EntryRoleKind::Controller];
+        if self.is_stateful() {
+            STATEFUL
+        } else if self.is_agent() {
+            AGENT
+        } else {
+            &[]
+        }
+    }
+
+    /// Returns whether a `goto` target is legal for this entry kind.
+    pub const fn allows_goto(&self) -> bool {
+        !self.is_agent()
+    }
+
+    /// Returns whether adapter routes are legal for this entry kind.
+    pub const fn allows_routes(&self) -> bool {
+        !self.is_stateful() && !self.is_agent()
+    }
+}
+
+impl EntryRoleKind {
+    /// Canonical entry-member spelling.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::State => "state",
+            Self::Initializer => "initializer",
+            Self::Event => "event",
+            Self::Reducer => "reducer",
+            Self::Controller => "controller",
+        }
+    }
+}
+
+impl EntryItem {
+    /// Typed role represented by this member, when it is a role binding.
+    pub const fn role(&self) -> Option<EntryRoleKind> {
+        match self {
+            Self::StateType { .. } => Some(EntryRoleKind::State),
+            Self::Initializer { .. } => Some(EntryRoleKind::Initializer),
+            Self::EventType { .. } => Some(EntryRoleKind::Event),
+            Self::Reducer { .. } => Some(EntryRoleKind::Reducer),
+            Self::Controller { .. } => Some(EntryRoleKind::Controller),
+            Self::Goto(_) | Self::Route { .. } | Self::Option { .. } | Self::Raw(_) => None,
+        }
+    }
+
+    /// Exact range of the role value, excluding its member name and `=`.
+    pub const fn value_range(&self) -> Option<&TextRange> {
+        match self {
+            Self::StateType { value_range, .. }
+            | Self::Initializer { value_range, .. }
+            | Self::EventType { value_range, .. }
+            | Self::Reducer { value_range, .. }
+            | Self::Controller { value_range, .. } => Some(value_range),
+            Self::Goto(_) | Self::Route { .. } | Self::Option { .. } | Self::Raw(_) => None,
+        }
+    }
+
+    /// Exact range of the complete role member.
+    pub const fn range(&self) -> Option<&TextRange> {
+        match self {
+            Self::StateType { range, .. }
+            | Self::Initializer { range, .. }
+            | Self::EventType { range, .. }
+            | Self::Reducer { range, .. }
+            | Self::Controller { range, .. } => Some(range),
+            Self::Goto(_) | Self::Route { .. } | Self::Option { .. } | Self::Raw(_) => None,
         }
     }
 }
@@ -1214,8 +1300,8 @@ impl EntryRouteBindingSource {
 impl ExternModItem {
     pub(crate) const fn new(
         abi: String,
-        path: String,
-        source: Option<String>,
+        path: ProjectSymbolPath,
+        source: Option<ExternModSource>,
         members: Vec<ExternModMember>,
         body: String,
         range: TextRange,
@@ -1234,12 +1320,12 @@ impl ExternModItem {
         &self.abi
     }
 
-    pub fn path(&self) -> &str {
+    pub const fn path(&self) -> &ProjectSymbolPath {
         &self.path
     }
 
-    pub fn source(&self) -> Option<&str> {
-        self.source.as_deref()
+    pub const fn source(&self) -> Option<&ExternModSource> {
+        self.source.as_ref()
     }
 
     pub fn members(&self) -> &[ExternModMember] {
@@ -1252,6 +1338,14 @@ impl ExternModItem {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl ExternModSource {
+    pub fn crate_name(&self) -> &str {
+        match self {
+            Self::Crate(name) => name,
+        }
     }
 }
 
@@ -1369,144 +1463,35 @@ impl ExternCapabilityItem {
 }
 
 impl CapabilityFn {
-    pub(crate) const fn new(signature: FnSignature, effects: Vec<Expr>) -> Self {
-        Self { signature, effects }
+    pub(crate) const fn new(
+        signature: FnSignature,
+        signature_source: FunctionSignatureSource,
+        effects: Vec<Expr>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            signature,
+            signature_source,
+            effects,
+            range,
+        }
     }
 
     pub const fn signature(&self) -> &FnSignature {
         &self.signature
     }
 
+    /// Exact source ranges for this capability member's function signature.
+    pub const fn signature_source(&self) -> &FunctionSignatureSource {
+        &self.signature_source
+    }
+
     pub fn effects(&self) -> &[Expr] {
         &self.effects
     }
-}
-
-impl CallableItem {
-    pub(crate) fn new(init: CallableItemInit) -> Self {
-        Self {
-            kind: init.kind,
-            visibility: init.visibility,
-            name: init.name,
-            signature_tail: init.signature_tail,
-            contracts: init.contracts,
-            body: init.body,
-            body_statements: init.body_statements,
-            body_value: init.body_value,
-            range: init.range,
-        }
-    }
-
-    pub const fn kind(&self) -> CallableKind {
-        self.kind
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn signature_tail(&self) -> &str {
-        &self.signature_tail
-    }
-
-    pub fn contracts(&self) -> &[ContractClause] {
-        &self.contracts
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub fn body_statements(&self) -> &[Stmt] {
-        &self.body_statements
-    }
-
-    pub const fn body_value(&self) -> Option<&Expr> {
-        self.body_value.as_ref()
-    }
 
     pub const fn range(&self) -> &TextRange {
         &self.range
-    }
-}
-
-impl StateItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        name: String,
-        fields: Vec<StateField>,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            attrs,
-            visibility,
-            name,
-            fields,
-            range,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn attrs(&self) -> &[Attribute] {
-        &self.attrs
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn fields(&self) -> &[StateField] {
-        &self.fields
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl StateField {
-    pub(crate) const fn new(
-        doc: Option<DocBlock>,
-        visibility: Option<Visibility>,
-        name: String,
-        ty: TypeRef,
-        default: Expr,
-    ) -> Self {
-        Self {
-            doc,
-            visibility,
-            name,
-            ty,
-            default,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn doc(&self) -> Option<&DocBlock> {
-        self.doc.as_ref()
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn ty(&self) -> &TypeRef {
-        &self.ty
-    }
-
-    pub const fn default(&self) -> &Expr {
-        &self.default
     }
 }
 
@@ -1606,6 +1591,8 @@ impl EnumItem {
         attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
+        name_range: TextRange,
+        generic_params: Vec<GenericParam>,
         variants: Vec<EnumVariant>,
         range: TextRange,
     ) -> Self {
@@ -1613,6 +1600,8 @@ impl EnumItem {
             attrs,
             visibility,
             name,
+            name_range,
+            generic_params,
             variants,
             range,
         }
@@ -1628,6 +1617,16 @@ impl EnumItem {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Exact parser-owned range of the nominal declaration name.
+    pub const fn name_range(&self) -> &TextRange {
+        &self.name_range
+    }
+
+    /// Structured generic parameters declared by this nominal type.
+    pub fn generic_params(&self) -> &[GenericParam] {
+        &self.generic_params
     }
 
     pub fn variants(&self) -> &[EnumVariant] {
@@ -1662,6 +1661,8 @@ impl StructItem {
         attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
+        name_range: TextRange,
+        generic_params: Vec<GenericParam>,
         fields: Vec<StructField>,
         range: TextRange,
     ) -> Self {
@@ -1669,6 +1670,8 @@ impl StructItem {
             attrs,
             visibility,
             name,
+            name_range,
+            generic_params,
             fields,
             range,
         }
@@ -1684,6 +1687,16 @@ impl StructItem {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Exact parser-owned range of the nominal declaration name.
+    pub const fn name_range(&self) -> &TextRange {
+        &self.name_range
+    }
+
+    /// Structured generic parameters declared by this nominal type.
+    pub fn generic_params(&self) -> &[GenericParam] {
+        &self.generic_params
     }
 
     pub fn fields(&self) -> &[StructField] {

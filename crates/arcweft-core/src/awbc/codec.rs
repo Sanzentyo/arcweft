@@ -46,6 +46,8 @@ pub struct AwbcDecodeBudget {
     pub display_map: usize,
     pub source_map: usize,
     pub resources: usize,
+    pub callable_executables: usize,
+    pub flow_executables: usize,
     pub entries: usize,
     pub collection_items: usize,
     pub tensor_elements: usize,
@@ -86,6 +88,8 @@ impl Default for AwbcDecodeBudget {
             display_map: 2_000_000,
             source_map: 8_000_000,
             resources: 1_000_000,
+            callable_executables: 262_144,
+            flow_executables: 262_144,
             entries: 262_144,
             collection_items: 16_000_000,
             tensor_elements: 16_000_000,
@@ -129,6 +133,12 @@ pub enum AwbcCodecError {
     TrailingBytes { count: usize },
     #[error("AWBC nesting depth exceeds {limit}")]
     NestingDepthExceeded { limit: usize },
+    #[error("AWBC {kind} metadata is invalid at byte offset {offset}: {message}")]
+    InvalidMetadata {
+        kind: &'static str,
+        message: String,
+        offset: usize,
+    },
 }
 
 impl AwbcProgram {

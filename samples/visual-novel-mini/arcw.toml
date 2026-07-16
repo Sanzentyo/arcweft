@@ -1,31 +1,37 @@
 default = "game.main"
 
+[package]
+name = "visual-novel-mini"
+
 [profiles."game.main"]
 kind = "game"
+entry = "entry.main"
 source = "src/game.arcw"
 
 [profiles."server.plan"]
 kind = "server"
 source = "src/server.arcw"
-entry = "http"
+entry = "entry.http"
 adapter = "native-http"
 
 [profiles."server.dev"]
 kind = "server"
 source = "src/server.arcw"
-entry = "http"
+entry = "entry.http"
 adapter = "native-http"
 listen = "127.0.0.1:8080"
 
 [profiles."cli.main"]
 kind = "cli"
 source = "src/tool.arcw"
-entry = "main"
+entry = "entry.main"
 
 [profiles."test.opening"]
 kind = "test"
+entry = "entry.opening"
 source = "tests/opening.arcw"
 
 [profiles."bench.opening"]
 kind = "bench"
+entry = "entry.opening"
 source = "benches/opening.arcw"

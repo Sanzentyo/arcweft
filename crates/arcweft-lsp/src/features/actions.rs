@@ -17,7 +17,7 @@ use arcweft_lang_syntax::{
             FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock, SourceLocaleBlock,
             Stmt, WhileBlock, WhileLetBlock,
         },
-        items::{AgentItem, EntityDeclItem, EntityDeclKind, FunctionItem, Item},
+        items::{EntityDeclItem, EntityDeclKind, FunctionItem, Item},
         pattern::Pattern,
     },
     expr::Expr,
@@ -42,6 +42,12 @@ pub fn actions(
     analysis: &DocumentAnalysis,
     position: Position,
 ) -> Result<Vec<CodeAction>, ToolingError> {
+    let Ok(offset) = document
+        .line_index()
+        .try_byte_offset_from_position(position)
+    else {
+        return Ok(Vec::new());
+    };
     let mut actions = source_code_actions_with_mapper(
         uri,
         document.source_document(),
@@ -56,7 +62,7 @@ pub fn actions(
         ));
     }
     actions.extend(effect_contract_actions(profile, uri, document));
-    actions.extend(dialogue_override_actions(profile, uri, document, position));
+    actions.extend(dialogue_override_actions(profile, uri, document, offset));
     Ok(actions)
 }
 
@@ -112,9 +118,8 @@ fn dialogue_override_actions(
     profile: &LspProfile,
     uri: &Uri,
     document: &DocumentSnapshot,
-    position: Position,
+    offset: usize,
 ) -> Vec<CodeAction> {
-    let offset = document.line_index().byte_offset_from_position(position);
     let Some(insertion) = dialogue_option_insertion_at(document.text(), offset) else {
         return Vec::new();
     };
@@ -314,9 +319,6 @@ fn effect_set_edit(
 
 fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRange> {
     items.iter().find_map(|item| match item {
-        Item::Agent(agent) if callable.as_str() == agent_callable_name(agent) => {
-            Some(*agent.range())
-        }
         Item::Function(function) if callable.as_str() == function_callable_name(function) => {
             Some(*function.range())
         }
@@ -327,11 +329,9 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         {
             Some(*flow.range())
         }
-        Item::Flow(_)
+        Item::Callable(_)
+        | Item::Flow(_)
         | Item::Function(_)
-        | Item::Agent(_)
-        | Item::Callable(_)
-        | Item::State(_)
         | Item::Trait(_)
         | Item::Impl(_)
         | Item::Enum(_)
@@ -350,10 +350,6 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         | Item::FlowItem(_)
         | Item::Raw(_) => None,
     })
-}
-
-fn agent_callable_name(agent: &AgentItem) -> String {
-    format!("agent.{}", agent.name())
 }
 
 fn function_callable_name(function: &FunctionItem) -> String {

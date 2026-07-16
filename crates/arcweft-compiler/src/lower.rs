@@ -17,6 +17,7 @@ use arcweft_runtime_plan::pure::{
 use arcweft_runtime_plan::typed_evidence::{
     RuntimeDataLastMethodFallbackArg, RuntimeNumericType, RuntimeTypedExpressionId,
     RuntimeTypedLoweringEvidence, RuntimeTypedLoweringEvidenceKind,
+    RuntimeTypedLoweringEvidenceOwner,
 };
 
 use crate::trait_methods::{
@@ -122,6 +123,13 @@ fn runtime_typed_lowering_evidence(
 ) -> RuntimeTypedLoweringEvidence {
     RuntimeTypedLoweringEvidence {
         expression_id: RuntimeTypedExpressionId::from_index(evidence.expression_id.index()),
+        owner: evidence
+            .owner
+            .as_ref()
+            .map(|owner| RuntimeTypedLoweringEvidenceOwner {
+                declaration: owner.declaration.clone(),
+                expression_id: RuntimeTypedExpressionId::from_index(owner.expression_id.index()),
+            }),
         kind: match &evidence.kind {
             TypedLoweringEvidenceKind::ResolvedNumericType { target } => {
                 RuntimeTypedLoweringEvidenceKind::ResolvedNumericType {

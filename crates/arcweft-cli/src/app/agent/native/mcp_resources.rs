@@ -904,6 +904,11 @@ pub(super) fn agent_mcp_capture_image_kind(value: &str) -> Result<AgentObserveIm
 pub(super) fn agent_mcp_observe_options(
     arguments: &serde_json::Value,
 ) -> Result<AgentObserveOptions, String> {
+    if arguments.get("flow").is_some() {
+        return Err(
+            "arcweft.observe does not accept arguments.flow; select an exact entry.* ID".to_owned(),
+        );
+    }
     let source = arguments.get("source").and_then(serde_json::Value::as_str);
     let profile = arguments
         .get("profile")
@@ -917,6 +922,9 @@ pub(super) fn agent_mcp_observe_options(
     }
     if source.is_none() && profile.is_none() {
         return Err("arcweft.observe requires arguments.source or arguments.profile".to_owned());
+    }
+    if source.is_some() && arguments.get("entry").is_none() {
+        return Err("arcweft.observe with arguments.source requires arguments.entry".to_owned());
     }
     if arguments.get("renderer").is_some() {
         return Err("arcweft.observe no longer accepts arguments.renderer".to_owned());
@@ -932,10 +940,6 @@ pub(super) fn agent_mcp_observe_options(
         },
         entry: arguments
             .get("entry")
-            .and_then(serde_json::Value::as_str)
-            .map(ToOwned::to_owned),
-        flow: arguments
-            .get("flow")
             .and_then(serde_json::Value::as_str)
             .map(ToOwned::to_owned),
         executor: CliRuntimeExecutorTier::BytecodeVm,

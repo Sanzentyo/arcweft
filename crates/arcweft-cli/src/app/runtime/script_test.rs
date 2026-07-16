@@ -12,7 +12,7 @@ use crate::output::{
 };
 use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::plan::{FlowRuntimeId, RuntimePlan};
+use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_launch::LaunchKind;
@@ -158,10 +158,33 @@ fn run_script_test(
             Vec::new(),
         );
     };
-    let mut plan = plan.clone();
-    plan.entry_flow = Some(start);
+    let matching_entries = plan
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.kind == RuntimeEntryKind::Test
+                && matches!(
+                    &entry.target,
+                    RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow)
+                        if flow == &start
+                )
+        })
+        .collect::<Vec<_>>();
+    let [entry] = matching_entries.as_slice() else {
+        return ScriptTestRunSummary::completed(
+            test,
+            false,
+            ScriptTestFinalStatus::NotStarted,
+            vec![format!(
+                "scenario target `{}` must be bound by exactly one `entry test` declaration",
+                start.public_label()
+            )],
+            Vec::new(),
+        );
+    };
     let Ok(trace) = run_runtime_steps(
-        plan,
+        plan.clone(),
+        &entry.id,
         Some(source),
         config,
         host_policy,

@@ -1,4 +1,4 @@
-use super::entry::apply_runtime_entry_selection;
+use super::entry::select_runtime_entry;
 use super::executor::RuntimeExecutorInstance;
 use super::options::RuntimeProfileOptions;
 use super::profile::{compile_profile_runtime_plan, report_path, run_profile_phase};
@@ -45,15 +45,17 @@ pub(in crate::app) fn runtime_profile_command(
     }
 
     let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)?;
-    let mut plan = compiled.plan;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let plan = compiled.plan;
+    let entry = selection.command_entry(options.entry.as_deref())?;
+    let entry = select_runtime_entry(&plan, entry)?;
     let mut executor = run_profile_phase(&mut phases, "executor_prepare", || {
-        Ok::<RuntimeExecutorInstance, ExitCode>(RuntimeExecutorInstance::new(
-            plan,
-            options.executor,
-            pure_config,
-        ))
+        RuntimeExecutorInstance::new(plan, &entry, options.executor, pure_config).map_err(|error| {
+            eprintln!(
+                "error: failed to start entry `{}`: {error}",
+                entry.public_label()
+            );
+            ExitCode::FAILURE
+        })
     })?;
     let file_roots = selection.native_file_roots()?;
     let trace = run_profile_phase(&mut phases, "run", || {

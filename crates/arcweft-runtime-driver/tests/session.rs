@@ -26,11 +26,13 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
-    RuntimeLineId, RuntimePlan,
+    ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeHostCallTarget, RuntimeLineId,
+    RuntimePlan,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{
@@ -89,6 +91,20 @@ mod dialogue_restore;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn main_cli_entry() -> RuntimeEntrySpec {
+    cli_entry("entry.main", "flow.main", [1; 32])
+}
+
+fn cli_entry(entry: &str, flow: &str, binding: [u8; 32]) -> RuntimeEntrySpec {
+    RuntimeEntrySpec {
+        id: EntryRuntimeId::from_source_entity_body(entry).expect("test entry ID is valid"),
+        kind: RuntimeEntryKind::Cli,
+        binding: EntryBindingIdentity::from_bytes(binding),
+        target: RuntimeEntryTarget::Flow(flow_id(flow)),
+        roles: RuntimeEntryRoles::None,
+    }
 }
 
 fn line_id(value: &str) -> RuntimeLineId {
@@ -199,7 +215,6 @@ fn structured_vm_fixture_bundle() -> ArcweftBundle {
 )]
 fn executable_view_fixture_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
             id: flow_id("flow.main"),
             ops: vec![
@@ -231,7 +246,8 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         }],
         vec![LineTaskGroup::default()],
     )
-    .unwrap();
+    .unwrap()
+    .with_entries(vec![main_cli_entry()]);
     let display = LineDisplayCatalog::new(Vec::new());
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let product_awbc = AwbcLowerer::new(&plan, &display, "view-runtime.arcw")
@@ -242,7 +258,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -541,12 +557,13 @@ fn fixture_bundle_from_parts(
             ops: vec![FlowOp::Return("extra".to_owned())],
         });
     }
-    let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
-        flows,
-        vec![LineTaskGroup::default()],
-    )
-    .expect("runtime plan is valid");
+    let mut entries = vec![main_cli_entry()];
+    if extra_flow {
+        entries.push(cli_entry("entry.extra", "flow.extra", [2; 32]));
+    }
+    let plan = RuntimePlan::new(flows, vec![LineTaskGroup::default()])
+        .expect("runtime plan is valid")
+        .with_entries(entries);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
         line,
@@ -569,7 +586,7 @@ fn fixture_bundle_from_parts(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -625,8 +642,9 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
             ops: vec![FlowOp::Return("extra".to_owned())],
         });
     }
-    let plan = RuntimePlan::new(Some(flow_id("flow.main")), flows, Vec::new())
-        .expect("runtime plan is valid");
+    let plan = RuntimePlan::new(flows, Vec::new())
+        .expect("runtime plan is valid")
+        .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::new(Vec::new());
     let product_awbc = AwbcLowerer::new(&plan, &display, "await-demo.arcw")
@@ -637,7 +655,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -659,7 +677,6 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
 
 fn fixture_action_receive_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
             id: flow_id("flow.main"),
             ops: vec![
@@ -682,14 +699,15 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
         }],
         vec![LineTaskGroup::default()],
     )
-    .expect("runtime plan is valid");
+    .expect("runtime plan is valid")
+    .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::default();
     let bundle = ArcweftBundle::new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -716,7 +734,6 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
 fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
     let line = line_id("line.action_intro");
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
             id: flow_id("flow.main"),
             ops: vec![
@@ -743,7 +760,8 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
         }],
         vec![LineTaskGroup::default()],
     )
-    .expect("runtime plan is valid");
+    .expect("runtime plan is valid")
+    .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
         line,
@@ -766,7 +784,7 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -850,14 +868,14 @@ fn fixture_action_receive_after_dialogue_bundle_with_submit_input() -> ArcweftBu
 
 fn fixture_await_replacement_bundle() -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
             id: flow_id("flow.main"),
             ops: vec![FlowOp::Return("changed".to_owned())],
         }],
         Vec::new(),
     )
-    .expect("runtime plan is valid");
+    .expect("runtime plan is valid")
+    .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::default();
     let product_awbc = AwbcLowerer::new(&plan, &display, "await-replacement.arcw")
@@ -868,7 +886,7 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -909,6 +927,9 @@ fn bundle_with_route_entry() -> ArcweftBundle {
         .expect("default entry targets a function");
     let signature = first.signature;
     program.entries.push(AwbcEntry {
+        runtime_id: EntryRuntimeId::from_source_entity_body("entry.route")
+            .expect("route entry ID is valid"),
+        binding: EntryBindingIdentity::from_bytes([2; 32]),
         public_id,
         kind: AwbcEntryKind::Server,
         signature,
@@ -918,6 +939,7 @@ fn bundle_with_route_entry() -> ArcweftBundle {
             target: function,
             bindings: Vec::new(),
         }]),
+        roles: RuntimeEntryRoles::None,
     });
     bundle
 }
@@ -1961,67 +1983,85 @@ fn session_accepts_generic_semantic_action_invoke() {
 }
 
 #[test]
-fn product_awbc_session_flow_option_selects_flow_function() {
+fn product_awbc_session_entry_option_selects_exact_entry() {
     let bundle = fixture_bundle_with("WebGPU dialogue", true, false);
 
-    for selector in ["extra", "flow.extra"] {
-        let mut session = BundleSession::new(
-            &bundle,
-            BundleSessionOptions {
-                flow: Some(selector.to_owned()),
-                ..BundleSessionOptions::default()
-            },
-        )
-        .expect("flow selector starts Product AWBC session");
+    let mut session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            entry: Some(
+                EntryRuntimeId::from_source_entity_body("entry.extra")
+                    .expect("exact entry ID is valid"),
+            ),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("exact entry selector starts Product AWBC session");
 
-        let mut step = session.step_with_clock(
-            RuntimeClockStep::from_millis(1, 16).expect("clock"),
+    let mut step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    for tick in 2..=4 {
+        if step.finished {
+            break;
+        }
+        step = session.step_with_clock(
+            RuntimeClockStep::from_millis(tick, 16).expect("clock"),
             BundleStepInput::default(),
         );
-        for tick in 2..=4 {
-            if step.finished {
-                break;
-            }
-            step = session.step_with_clock(
-                RuntimeClockStep::from_millis(tick, 16).expect("clock"),
-                BundleStepInput::default(),
-            );
-        }
-
-        assert!(
-            step.finished,
-            "{selector} should return, stopped at {:?} with {}; diagnostics: {}",
-            step.stop_reason,
-            step.status_label,
-            step.diagnostics.join("; ")
-        );
-        assert!(
-            step.status_label.contains("extra"),
-            "{selector} should run flow.extra, got {}",
-            step.status_label
-        );
     }
+
+    assert!(
+        step.finished,
+        "entry.extra should return, stopped at {:?} with {}; diagnostics: {}",
+        step.stop_reason,
+        step.status_label,
+        step.diagnostics.join("; ")
+    );
+    assert!(
+        step.status_label.contains("extra"),
+        "entry.extra should run flow.extra, got {}",
+        step.status_label
+    );
 }
 
 #[test]
-fn product_awbc_session_flow_option_reports_unknown_flow() {
+fn product_awbc_session_entry_option_reports_unknown_entry() {
     let bundle = fixture_bundle_with("WebGPU dialogue", true, false);
 
     let error = BundleSession::new(
         &bundle,
         BundleSessionOptions {
-            flow: Some("missing".to_owned()),
+            entry: Some(
+                EntryRuntimeId::from_source_entity_body("entry.missing")
+                    .expect("exact missing entry ID is valid"),
+            ),
             ..BundleSessionOptions::default()
         },
     )
-    .expect_err("unknown flow rejects");
+    .expect_err("unknown entry rejects");
 
     assert_eq!(
         error,
-        BundleSessionError::UnknownFlow {
-            flow: "flow.missing".to_owned()
+        BundleSessionError::ProductAwbcEntry {
+            entry: "entry.missing".to_owned()
         }
     );
+}
+
+#[test]
+fn product_awbc_session_rejects_short_manifest_entry() {
+    let mut bundle = fixture_bundle();
+    bundle.manifest.entry = Some("main".to_owned());
+
+    let error = BundleSession::new(&bundle, BundleSessionOptions::default())
+        .expect_err("short manifest entry must not be normalized");
+
+    assert!(matches!(
+        error,
+        BundleSessionError::InvalidEntrySelection { entry, .. } if entry == "main"
+    ));
 }
 
 #[test]
@@ -2214,17 +2254,14 @@ fn session_rejects_unverified_bytecode_before_construction() {
 }
 
 #[test]
-fn session_rejects_missing_bytecode_entrypoint_before_construction() {
-    let mut bundle = structured_vm_fixture_bundle();
-    bundle.bytecode.program.entry_flow = None;
+fn session_rejects_missing_exact_entry_selection_before_construction() {
+    let mut bundle = fixture_bundle();
+    bundle.manifest.entry = None;
 
     let error = BundleSession::new(&bundle, BundleSessionOptions::default())
-        .expect_err("bytecode without an entrypoint is rejected before session construction");
+        .expect_err("a bundle without an exact entry selection is rejected");
 
-    assert!(matches!(
-        error,
-        BundleSessionError::VerifyBytecode(BytecodeVerificationError::MissingEntrypoint)
-    ));
+    assert_eq!(error, BundleSessionError::MissingEntrySelection);
 }
 
 #[test]

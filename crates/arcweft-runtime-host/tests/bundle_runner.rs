@@ -5,7 +5,11 @@ use arcweft_bundle::{
     BundleRuntimeSummary,
 };
 use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
-use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+use arcweft_core::plan::{
+    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeFlow, RuntimePlan,
+};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
 };
@@ -24,6 +28,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn cli_entry(entry: &str, flow: &str) -> RuntimeEntrySpec {
+    RuntimeEntrySpec {
+        id: EntryRuntimeId::from_source_entity_body(entry).expect("test entry ID is valid"),
+        kind: RuntimeEntryKind::Cli,
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
+        target: RuntimeEntryTarget::Flow(flow_id(flow)),
+        roles: RuntimeEntryRoles::None,
+    }
 }
 
 #[test]
@@ -104,9 +118,9 @@ fn bundle_runner_rejects_unverified_bytecode_before_execution() {
 }
 
 #[test]
-fn bundle_runner_rejects_missing_bytecode_entrypoint_before_execution() {
+fn bundle_runner_rejects_missing_exact_entry_selection_before_execution() {
     let mut bundle = structured_custom_echo_bundle();
-    bundle.bytecode.program.entry_flow = None;
+    bundle.manifest.entry = None;
     let registrars: [NativeAdapterRegistrar; 1] =
         [|_, builder| builder.register(CustomEchoAdapter::new())];
 
@@ -120,12 +134,9 @@ fn bundle_runner_rejects_missing_bytecode_entrypoint_before_execution() {
         },
         &registrars,
     )
-    .expect_err("bytecode without an entrypoint is rejected before execution");
+    .expect_err("bundle without exact entry selection is rejected before execution");
 
-    assert!(matches!(
-        error,
-        BundleRunnerError::VerifyBytecode(BytecodeVerificationError::MissingEntrypoint)
-    ));
+    assert!(matches!(error, BundleRunnerError::MissingEntrySelection));
 }
 
 #[test]
@@ -215,7 +226,6 @@ fn structured_custom_echo_bundle() -> ArcweftBundle {
 
 fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.custom")),
         vec![RuntimeFlow {
             id: flow_id("flow.custom"),
             ops: vec![
@@ -239,7 +249,8 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
         }],
         Vec::new(),
     )
-    .expect("custom bundle plan is valid");
+    .expect("custom bundle plan is valid")
+    .with_entries(vec![cli_entry("entry.custom", "flow.custom")]);
     let display = LineDisplayCatalog::default();
     let product_awbc = include_product_awbc.then(|| {
         AwbcLowerer::new(&plan, &display, "custom.arcw")
@@ -253,7 +264,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.custom".to_owned()),
             adapter: Some("custom-echo".to_owned()),
             adapter_manifest_ids: vec!["custom-echo".to_owned()],
             required_host_calls: vec!["custom.echo".to_owned()],

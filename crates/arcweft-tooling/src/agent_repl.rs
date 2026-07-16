@@ -1,8 +1,7 @@
 //! Sans I/O helpers for Agent REPL frontends.
 
 use arcweft_lang_syntax::parser::{
-    FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, SourceDialect,
-    parse_fragment,
+    FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, parse_fragment,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -232,12 +231,7 @@ pub fn agent_repl_parse_fragment(source: &str) -> ParsedFragment {
 }
 
 fn agent_repl_parse_fragment_with_kind(source: &str) -> (ParsedFragment, AgentReplFragmentKind) {
-    if source.starts_with("agent ") {
-        return (
-            parse_agent_fragment(source, AgentReplFragmentKind::Items),
-            AgentReplFragmentKind::Items,
-        );
-    } else if source.starts_with("let ")
+    if source.starts_with("let ")
         || source.starts_with("try ")
         || source.starts_with("expect(")
         || source.starts_with("deny(")
@@ -255,6 +249,14 @@ fn agent_repl_parse_fragment_with_kind(source: &str) -> (ParsedFragment, AgentRe
     ) {
         return (expression, AgentReplFragmentKind::Expression);
     }
+    let items = parse_agent_fragment(source, AgentReplFragmentKind::Items);
+    if matches!(
+        items.kind(),
+        Some(ParsedFragmentKind::Items(items)) if !items.is_empty()
+    ) && matches!(items.completion(), ParseCompletion::Complete)
+    {
+        return (items, AgentReplFragmentKind::Items);
+    }
     (
         parse_agent_fragment(source, AgentReplFragmentKind::Statements),
         AgentReplFragmentKind::Statements,
@@ -271,9 +273,7 @@ fn parse_agent_fragment(source: &str, kind: AgentReplFragmentKind) -> ParsedFrag
             }
             AgentReplFragmentKind::Items => FragmentKind::Items,
         },
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
+        ParseOptions::default(),
     )
 }
 
@@ -621,8 +621,8 @@ fn is_operator(ch: char) -> bool {
 
 fn agent_keywords() -> Vec<&'static str> {
     vec![
-        "agent", "effects", "let", "mut", "return", "try", "if", "else", "match", "for", "in",
-        "while", "await", "break", "continue",
+        "effects", "let", "mut", "return", "try", "if", "else", "match", "for", "in", "while",
+        "await", "break", "continue",
     ]
 }
 
@@ -851,15 +851,14 @@ mod tests {
     }
 
     #[test]
-    fn repl_classify_cell_reports_incomplete_agent_items_without_cli_logic() {
-        let classified = agent_repl_classify_cell("agent @agent.bad broken() {");
+    fn repl_classify_cell_recognizes_ordinary_function_items() {
+        let classified = agent_repl_classify_cell("fn helper(value: i64) -> i64 { value + 1 }");
 
         assert_eq!(
             classified.completion.kind,
-            AgentReplCellCompletionKind::Incomplete
+            AgentReplCellCompletionKind::Complete
         );
         assert_eq!(classified.fragment_kind, AgentReplFragmentKind::Items);
-        assert_eq!(classified.completion.expected, ["}"]);
         assert!(classified.errors.is_empty());
     }
 

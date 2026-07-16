@@ -41,11 +41,6 @@ pub fn registry_from_hir(module: &HirModule) -> NameRegistry {
             register_flow_item(item, &mut registry);
         }
     }
-    for agent in module.agents() {
-        if let Some(id) = agent.item().id() {
-            registry.insert(id.body(), EntityKind::Agent);
-        }
-    }
     for declaration in module.declarations() {
         match declaration {
             HirTopLevelDecl::Source(source) => {

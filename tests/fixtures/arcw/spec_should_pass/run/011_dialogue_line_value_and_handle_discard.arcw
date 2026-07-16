@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.line_handles }
+
 pub character @character.alice Alice as alice {
 }
 

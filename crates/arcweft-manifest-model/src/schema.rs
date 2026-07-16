@@ -234,20 +234,24 @@ pub enum ContentCompression {
 }
 kebab_enum!(LaunchKind {
     Game,
+    Editor,
     Server,
     Cli,
     Test,
-    Bench
+    Bench,
+    Agent
 });
 
 impl LaunchKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Game => "game",
+            Self::Editor => "editor",
             Self::Server => "server",
             Self::Cli => "cli",
             Self::Test => "test",
             Self::Bench => "bench",
+            Self::Agent => "agent",
         }
     }
 }

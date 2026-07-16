@@ -5,7 +5,32 @@ pub character narrator {
 
 pub action settings.apply(value: String)
 
+struct GameState {
+  started: bool
+}
+
+enum GameEvent {
+  Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+  GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+  Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.focus_navigation_controller_dsl {
+  state = GameState
+  initializer = initial_game_state
+  event = GameEvent
+  reducer = reduce_game
   goto @flow.focus_navigation_controller_dsl
 }
 
@@ -43,7 +68,7 @@ pub view FocusNavigationControllerSample() {
   }
 }
 
-flow focus_navigation_controller_dsl {
+flow focus_navigation_controller_dsl(state: GameState) {
   view(@view:.FocusNavigationControllerSample)
 
   narrator:

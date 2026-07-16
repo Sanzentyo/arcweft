@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.native.project_graph_relations project_graph_relations_smoke()
+fn project_graph_relations_smoke() -> Result<Unit, AgentError>
 effects { debug.read }
 {
     let graph = try project_neighbors(@flow.opening, depth = 1u32)
@@ -12,5 +11,9 @@ effects { debug.read }
     expect(graph.edges[2].kind == "flow_include")
     expect(graph.edges[3].kind == "flow_goto")
 
-    return graph.edge_count
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = project_graph_relations_smoke
 }

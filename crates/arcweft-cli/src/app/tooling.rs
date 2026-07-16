@@ -9,11 +9,10 @@ use arcweft_lang_sema::{
     check::analyze_project_types_for_canonicalization,
     env::TypeCheckEnv,
 };
-use arcweft_lang_syntax::parser::SourceDialect;
 use arcweft_source::{SourceDocumentId, SourceRange};
 use arcweft_tooling::{
     canonicalize_source,
-    format::format_source_with_dialect,
+    format::format_source,
     id_context::materialize_ids,
     model::{
         CanonicalizationInput, FormatOptions, ToolingDiagnostic, ToolingEditReport, ToolingError,
@@ -51,19 +50,13 @@ fn is_awfagent_path(path: &Path) -> bool {
         .is_some_and(|extension| extension == "awfagent")
 }
 
-fn source_dialect_for_path(path: &Path) -> Option<SourceDialect> {
-    if is_arcw_path(path) {
-        Some(SourceDialect::Game)
-    } else if is_awfagent_path(path) {
-        Some(SourceDialect::Agent)
-    } else {
-        None
-    }
+fn is_tooling_source_path(path: &Path) -> bool {
+    is_arcw_path(path) || is_awfagent_path(path)
 }
 
 fn collect_tooling_paths(path: &Path, game_only: bool) -> Result<Vec<PathBuf>, ExitCode> {
     if path.is_file() {
-        if source_dialect_for_path(path).is_none() || (game_only && !is_arcw_path(path)) {
+        if !is_tooling_source_path(path) || (game_only && !is_arcw_path(path)) {
             eprintln!(
                 "error: {} is not a supported {} source file",
                 path.display(),
@@ -95,7 +88,7 @@ fn collect_tooling_paths(path: &Path, game_only: bool) -> Result<Vec<PathBuf>, E
             let entry_path = entry.path();
             if entry_path.is_dir() {
                 stack.push(entry_path);
-            } else if source_dialect_for_path(&entry_path).is_some()
+            } else if is_tooling_source_path(&entry_path)
                 && (!game_only || is_arcw_path(&entry_path))
             {
                 paths.push(entry_path);
@@ -121,11 +114,9 @@ struct ToolingFileReport {
 }
 
 pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
-    run_tooling_command(options, false, |path, source| {
-        let dialect = source_dialect_for_path(path).unwrap_or(SourceDialect::Game);
-        format_source_with_dialect(
+    run_tooling_command(options, false, |_path, source| {
+        format_source(
             source,
-            dialect,
             FormatOptions {
                 canonical_rich_text: options.canonical_rich_text,
             },

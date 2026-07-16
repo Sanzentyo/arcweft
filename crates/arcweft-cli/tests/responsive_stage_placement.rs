@@ -95,6 +95,8 @@ fn stand_top_right_bundles_and_observes_responsive_bbox() {
         "agent",
         "observe",
         &path_arg(&source),
+        "--entry",
+        "entry.stand_top_right",
         "--viewport-width",
         "1920",
         "--viewport-height",

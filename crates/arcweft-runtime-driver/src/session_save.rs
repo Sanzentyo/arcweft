@@ -14,10 +14,12 @@ use arcweft_core::awbc::fiber::{FiberState, FiberStateError};
 use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::engine::FlowFiberStatus;
+pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
+pub use arcweft_core::root::RootStateSnapshotV1;
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::virtualization::ViewVirtualizationSnapshot;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -27,6 +29,8 @@ pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleSessionSnapshot {
     pub generation: BundleSessionGenerationSnapshot,
+    pub active_entry: ActiveEntrySnapshotV1,
+    pub root: Option<RootStateSnapshotV1>,
     pub runtime: BundleSessionRuntimeSnapshot,
     pub executor: BundleSessionExecutorSnapshot,
     pub presentation: BundlePresentationSnapshot,
@@ -72,8 +76,16 @@ pub struct BundleSessionRuntimeSnapshot {
     pub next_step_index: u64,
     pub next_task_sequence: u64,
     pub next_generation_id: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(deserialize_with = "deserialize_required_option")]
     pub runtime_generation_pin: Option<GenerationId>,
+}
+
+fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -94,6 +106,64 @@ pub enum BundleSessionPendingBlocker {
     WaitingActionReceiveCalls { count: usize },
     HostTasks { active: usize, queued_events: usize },
     TaskGenerationPins { count: usize },
+    ReducerTransactionActive,
+    PendingRootEvents { count: usize },
+    PendingRootCommands { count: u32 },
+}
+
+impl BundleSessionPendingBlocker {
+    #[must_use]
+    pub const fn category(&self) -> &'static str {
+        match self {
+            Self::ReducerTransactionActive
+            | Self::PendingRootEvents { .. }
+            | Self::PendingRootCommands { .. } => "root",
+            Self::PendingPresentationInputs { .. }
+            | Self::PendingInputEvents { .. }
+            | Self::PendingTextControlWriteBacks { .. } => "input",
+            Self::PendingHostCallResults { .. } | Self::WaitingActionReceiveCalls { .. } => "host",
+            Self::HostTasks { .. } | Self::TaskGenerationPins { .. } => "task",
+        }
+    }
+}
+
+impl std::fmt::Display for BundleSessionPendingBlocker {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PendingPresentationInputs { count } => {
+                write!(formatter, "{count} pending presentation inputs")
+            }
+            Self::PendingInputEvents { count } => {
+                write!(formatter, "{count} pending input events")
+            }
+            Self::PendingTextControlWriteBacks { count } => {
+                write!(formatter, "{count} pending text-control write-backs")
+            }
+            Self::PendingHostCallResults { count } => {
+                write!(formatter, "{count} pending host-call results")
+            }
+            Self::WaitingActionReceiveCalls { count } => {
+                write!(formatter, "{count} waiting action receives")
+            }
+            Self::HostTasks {
+                active,
+                queued_events,
+            } => write!(
+                formatter,
+                "{active} active host tasks and {queued_events} queued task events"
+            ),
+            Self::TaskGenerationPins { count } => {
+                write!(formatter, "{count} task generation pins")
+            }
+            Self::ReducerTransactionActive => formatter.write_str("root reducer is active"),
+            Self::PendingRootEvents { count } => {
+                write!(formatter, "{count} pending root events")
+            }
+            Self::PendingRootCommands { count } => {
+                write!(formatter, "{count} pending root commands")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -116,6 +186,8 @@ pub enum BundleSessionSaveError {
     Fx { diagnostic: Box<FxDiagnostic> },
     #[error("invalid Product AWBC fiber snapshot in session save: {message}")]
     Fiber { message: String },
+    #[error("invalid root-state session snapshot: {message}")]
+    Root { message: String },
     #[error("invalid runtime value in session save at {path}: {message}")]
     InvalidRuntimeValue { path: String, message: String },
     #[error("invalid retained View virtualization snapshot: {message}")]

@@ -79,14 +79,51 @@ fn selected_source_overlay_builds_exact_import_closure() {
 }
 
 #[test]
-fn selected_source_must_map_to_crate_root() {
-    let project = TestProject::new("topology-non-root-source");
-    project.write("arcw.toml", &manifest("dev", "src/feature.arcw", ""));
-    project.write("src/feature.arcw", "mod crate.feature\n");
+fn selected_source_outside_default_root_is_the_profile_crate_root() {
+    let project = TestProject::new("topology-profile-root-outside-src");
+    project.write("arcw.toml", &manifest("dev", "tests/smoke.arcw", ""));
+    project.write(
+        "tests/smoke.arcw",
+        "use crate.feature.value\nfn main() -> Unit { () }\n",
+    );
+    project.write(
+        "src/feature.arcw",
+        "mod crate.feature\nfn value() -> Unit { () }\n",
+    );
+
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let logical_paths = topology
+        .resources()
+        .map(|resource| resource.id().path().as_str())
+        .collect::<Vec<_>>();
+
+    assert!(logical_paths.contains(&"tests/smoke.arcw"));
+    assert!(logical_paths.contains(&"src/feature.arcw"));
+}
+
+#[test]
+fn selected_source_outside_default_root_rejects_non_root_module_declaration() {
+    let project = TestProject::new("topology-profile-root-module-mismatch");
+    project.write("arcw.toml", &manifest("dev", "tests/smoke.arcw", ""));
+    project.write(
+        "tests/smoke.arcw",
+        "mod crate.feature\nfn main() -> Unit { () }\n",
+    );
 
     let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
 
-    assert_eq!(error.code(), ProfileTopologyErrorCode::ModuleDeclaration);
+    let super::ProfileTopologyLoadError::ModuleDeclaration { id, source, .. } = error else {
+        panic!("expected selected-root module declaration error");
+    };
+    let crate::project::ProjectLoadError::ModulePathMismatch {
+        declared, expected, ..
+    } = *source
+    else {
+        panic!("expected selected-root module path mismatch");
+    };
+    assert_eq!(id.path().as_str(), "tests/smoke.arcw");
+    assert_eq!(declared.to_string(), "crate.feature");
+    assert!(expected.is_crate_root());
 }
 
 #[test]
@@ -618,6 +655,7 @@ version = "0.1.0"
 
 [profiles."{profile}"]
 kind = "game"
+entry = "entry.game.main"
 source = "{source}"
 {extra}
 "#

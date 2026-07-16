@@ -200,7 +200,6 @@ fn hir_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
             attribute_count: 0,
             flow_count: 1,
             function_count: 0,
-            agent_count: 0,
             declaration_count: 0,
             top_level_item_count: 1,
             flow_item_count: 1,
@@ -394,10 +393,14 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             source_map: None,
         }],
         entries: vec![AwbcEntry {
+            runtime_id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+                .expect("test entry ID is valid"),
+            binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
-            kind: AwbcEntryKind::Game,
+            kind: AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: arcweft_core::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     };

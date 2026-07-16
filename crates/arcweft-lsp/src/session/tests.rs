@@ -40,6 +40,158 @@ fn capabilities_advertise_full_sync_and_p0_features() {
 }
 
 #[test]
+fn entry_definition_protocol_dispatch_honors_utf8_utf16_and_utf32_positions() {
+    let project = TestProject::new("entry-definition-position-encodings");
+    let source = r#"
+fn smoke() -> Result<Unit, AgentError>
+effects {}
+{
+    Ok(())
+}
+
+fn selected_entry() -> Unit {
+    let selected = ("😀", @entry.agent.main)
+    ()
+}
+
+entry agent @entry.agent.main {
+    controller = smoke
+}
+"#;
+    project.write(
+        "arcw.toml",
+        r#"[package]
+name = "entry-definition-position-encodings"
+
+[profiles.agent]
+kind = "agent"
+entry = "entry.agent.main"
+source = "src/main.arcw"
+"#,
+    );
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
+    let reference = source.find("@entry.agent.main").expect("entry reference") + 1;
+
+    for (kind, encoding) in [
+        (
+            lsp_types::PositionEncodingKind::UTF8,
+            crate::positions::PositionEncoding::Utf8,
+        ),
+        (
+            lsp_types::PositionEncodingKind::UTF16,
+            crate::positions::PositionEncoding::Utf16,
+        ),
+        (
+            lsp_types::PositionEncodingKind::UTF32,
+            crate::positions::PositionEncoding::Utf32,
+        ),
+    ] {
+        let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("agent"));
+        let capabilities = session.initialize(&InitializeParams {
+            capabilities: ClientCapabilities {
+                general: Some(lsp_types::GeneralClientCapabilities {
+                    position_encodings: Some(vec![kind.clone()]),
+                    ..lsp_types::GeneralClientCapabilities::default()
+                }),
+                ..ClientCapabilities::default()
+            },
+            ..InitializeParams::default()
+        });
+        assert_eq!(capabilities.position_encoding, Some(kind));
+        open_text(&mut session, uri.clone(), source);
+        let line_index = crate::positions::LineIndex::new(source.to_owned(), encoding);
+        let response = session.handle_request(Request {
+            id: RequestId::from(41),
+            method: GotoDefinition::METHOD.to_owned(),
+            params: serde_json::json!(GotoDefinitionParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: line_index.position_from_byte_offset(reference),
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                partial_result_params: PartialResultParams::default(),
+            }),
+        });
+        assert!(response.error.is_none(), "{:?}", response.error);
+        let definition = serde_json::from_value::<GotoDefinitionResponse>(
+            response.result.expect("definition response"),
+        )
+        .expect("definition response decodes");
+        let GotoDefinitionResponse::Scalar(location) = definition else {
+            panic!("entry definition is a scalar location");
+        };
+        assert_eq!(location.uri, uri);
+    }
+}
+
+#[test]
+fn workspace_edit_normalization_is_deterministic_and_deduplicated() {
+    let current = "file:///b.arcw".parse::<Uri>().expect("current URI");
+    let other = "file:///a.arcw".parse::<Uri>().expect("other URI");
+    let mut documents = crate::documents::DocumentStore::default();
+    documents.open(
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem::new(
+                current.clone(),
+                "arcweft".to_owned(),
+                7,
+                String::new(),
+            ),
+        },
+        PositionEncoding::Utf16,
+    );
+    documents.open(
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem::new(
+                other.clone(),
+                "arcweft".to_owned(),
+                9,
+                String::new(),
+            ),
+        },
+        PositionEncoding::Utf16,
+    );
+    let later = lsp_types::TextEdit::new(
+        Range::new(Position::new(3, 4), Position::new(3, 8)),
+        "later".to_owned(),
+    );
+    let earlier = lsp_types::TextEdit::new(
+        Range::new(Position::new(1, 2), Position::new(1, 6)),
+        "earlier".to_owned(),
+    );
+    let edit = lsp_types::WorkspaceEdit {
+        changes: Some(std::collections::HashMap::from([
+            (current.clone(), vec![later.clone(), earlier.clone(), later]),
+            (other.clone(), vec![earlier]),
+        ])),
+        document_changes: None,
+        change_annotations: None,
+    };
+    let normalized = WorkspaceEditPolicy {
+        document_changes: true,
+    }
+    .normalize(edit, &documents);
+    let Some(lsp_types::DocumentChanges::Edits(edits)) = normalized.document_changes else {
+        panic!("normalized document edits");
+    };
+    assert_eq!(
+        edits
+            .iter()
+            .map(|edit| edit.text_document.uri.clone())
+            .collect::<Vec<_>>(),
+        [other, current]
+    );
+    assert_eq!(edits[1].edits.len(), 2);
+    assert_eq!(edits[0].text_document.version, Some(9));
+    assert_eq!(edits[1].text_document.version, Some(7));
+    let lsp_types::OneOf::Left(first) = &edits[1].edits[0] else {
+        panic!("plain text edit");
+    };
+    assert_eq!(first.range.start, Position::new(1, 2));
+}
+
+#[test]
 fn full_sync_notifications_publish_diagnostics() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
@@ -669,8 +821,12 @@ pub dialogue defaults {
 
 pub character alice {}
 
-flow opening {
+flow @flow.opening opening {
     alice: |[夢](ゆめ)[p]
+}
+
+entry server @entry.server.main {
+    goto @flow.opening
 }
 ";
     open_text(&mut session, uri.clone(), source);
@@ -863,7 +1019,8 @@ flow opening {
 name = "lsp-dialogue-defaults-extract"
 
 [profiles.dev]
-kind = "game"
+kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"
@@ -933,8 +1090,12 @@ pub character alice {
     }
 }
 
-flow opening {
+flow @flow.opening opening {
     alice: |[夢](ゆめ)[p]
+}
+
+entry server @entry.server.main {
+    goto @flow.opening
 }
 ";
     open_text(&mut session, uri.clone(), source);
@@ -1110,6 +1271,7 @@ name = "lsp-session-profile"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "custom-echo"
 adapter_manifests = ["adapters/custom-echo.toml"]
@@ -1222,6 +1384,8 @@ pub struct StoryDialogue {
 fn hover_uses_profile_selected_dialogue_defaults() {
     let project = TestProject::new("lsp-session-dialogue-defaults-profile");
     let source = r"
+pub character @character.alice Alice as alice {}
+
 pub dialogue defaults {
     rich_text {
         ruby {
@@ -1238,8 +1402,12 @@ pub dialogue defaults @dialogue.mobile {
     }
 }
 
-flow opening {
+flow @flow.opening opening {
     alice: |[夢](ゆめ)[p]
+}
+
+entry server @entry.server.main {
+    goto @flow.opening
 }
 ";
     project.write(
@@ -1249,7 +1417,8 @@ flow opening {
 name = "lsp-hover-dialogue-defaults"
 
 [profiles.dev]
-kind = "game"
+kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"
@@ -1259,6 +1428,14 @@ dialogue_defaults = "dialogue.mobile"
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), source);
+    assert!(
+        session
+            .profile_for_uri(&uri)
+            .accepted_environment()
+            .is_some(),
+        "dialogue-defaults profile was not accepted: {:#?}",
+        session.profile_for_uri(&uri).diagnostics()
+    );
 
     let hover = hover_text(&mut session, uri, source, "夢");
 
@@ -1270,6 +1447,8 @@ dialogue_defaults = "dialogue.mobile"
 fn definition_includes_profile_selected_dialogue_defaults_manifest_location() {
     let project = TestProject::new("lsp-session-dialogue-defaults-definition");
     let source = r"
+pub character @character.alice Alice as alice {}
+
 pub dialogue defaults {
     rich_text {
         ruby {
@@ -1286,8 +1465,12 @@ pub dialogue defaults @dialogue.mobile {
     }
 }
 
-flow opening {
+flow @flow.opening opening {
     alice: |[夢](ゆめ)[p]
+}
+
+entry server @entry.server.main {
+    goto @flow.opening
 }
 ";
     let manifest = r#"
@@ -1295,7 +1478,8 @@ flow opening {
 name = "lsp-definition-dialogue-defaults"
 
 [profiles.dev]
-kind = "game"
+kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"
@@ -1345,6 +1529,8 @@ dialogue_defaults = "dialogue.mobile"
 fn references_include_profile_selected_dialogue_defaults_manifest_location() {
     let project = TestProject::new("lsp-session-dialogue-defaults-references");
     let source = r"
+pub character @character.alice Alice as alice {}
+
 pub dialogue defaults {
     rich_text {
         ruby {
@@ -1361,8 +1547,12 @@ pub dialogue defaults @dialogue.mobile {
     }
 }
 
-flow opening {
+flow @flow.opening opening {
     alice: |[夢](ゆめ)[p]
+}
+
+entry server @entry.server.main {
+    goto @flow.opening
 }
 ";
     let manifest = r#"
@@ -1370,7 +1560,8 @@ flow opening {
 name = "lsp-references-dialogue-defaults"
 
 [profiles.dev]
-kind = "game"
+kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"
@@ -1427,6 +1618,7 @@ name = "lsp-session-alpha"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "alpha"
 adapter_manifests = ["adapters/alpha.toml"]
@@ -1446,6 +1638,7 @@ name = "lsp-session-beta"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "beta"
 adapter_manifests = ["adapters/beta.toml"]
@@ -1498,6 +1691,7 @@ name = "lsp-session-watch-refresh"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "custom"
 adapter_manifests = ["adapters/custom.toml"]
@@ -1546,6 +1740,7 @@ name = "lsp-session-rust-watch-refresh"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 rust_metadata = ["target/arcweft/quest.json"]
@@ -1595,6 +1790,7 @@ name = "lsp-session-rust-metadata"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "quest"
 adapter_manifests = ["adapters/quest.toml"]
@@ -1611,12 +1807,21 @@ rust_metadata = ["target/arcweft/quest.json"]
             .to_json_pretty()
             .expect("metadata json"),
     );
-    let source =
-        "flow @.main main {\n    let result = quest_evaluate\n    let ty = PlayerStats\n}\n";
+    let source = "fn evaluate_stats(stats: PlayerStats) -> String {\n    quest_evaluate(stats)\n}\n\
+entry server @entry.server.main { goto @flow.main }\n\
+flow @flow.main main {}\n";
     project.write("src/main.arcw", source);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), source);
+    assert!(
+        session
+            .profile_for_uri(&uri)
+            .accepted_environment()
+            .is_some(),
+        "Rust-metadata profile was not accepted: {:#?}",
+        session.profile_for_uri(&uri).diagnostics()
+    );
 
     let completions = completion_labels(&mut session, uri.clone());
     let player_stats = completions
@@ -1653,6 +1858,7 @@ name = "lsp-session-signature-rust-metadata"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "quest"
 adapter_manifests = ["adapters/quest.toml"]
@@ -1669,7 +1875,9 @@ rust_metadata = ["target/arcweft/quest.json"]
             .to_json_pretty()
             .expect("metadata json"),
     );
-    let source = "flow @.main main {\n    let result = quest_evaluate\n}\n";
+    let source = "fn evaluate_stats(stats: PlayerStats) -> String {\n    quest_evaluate(stats)\n}\n\
+entry server @entry.server.main { goto @flow.main }\n\
+flow @flow.main main {}\n";
     project.write("src/main.arcw", source);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));

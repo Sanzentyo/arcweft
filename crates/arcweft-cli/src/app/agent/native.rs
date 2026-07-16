@@ -14,7 +14,7 @@ use super::script::{
     agent_debug_start_runtime_session, agent_project_entities, agent_project_graph,
     agent_script_project_entities_metadata, agent_script_project_graph_metadata,
     agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
-    agent_script_run_report_from_result, agent_script_runtime_policy,
+    agent_script_run_report_from_result, agent_script_runtime_policy, compile_agent_script_source,
     parse_agent_script_signal_arg, parse_agent_script_state_arg,
     read_and_validate_agent_trace_records, write_agent_capture_blobs,
 };

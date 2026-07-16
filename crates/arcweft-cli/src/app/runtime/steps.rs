@@ -3,7 +3,7 @@ use super::options::{CliRuntimeExecutorTier, CliRuntimeStepMode, RuntimeRunOptio
 use super::parse::step_options;
 use crate::output::RuntimeStepRunSummary;
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::plan::RuntimePlan;
+use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
 use arcweft_core::step::RuntimeStepInput;
 use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
@@ -17,13 +17,23 @@ use std::process::ExitCode;
 
 pub(in crate::app) fn run_runtime_steps(
     plan: RuntimePlan,
+    entry: &EntryRuntimeId,
     source: Option<NativeRunSource<'_>>,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
     values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, ExitCode> {
-    let mut executor = RuntimeExecutorInstance::new(plan, config.executor, config.pure_config);
+    let mut executor =
+        RuntimeExecutorInstance::new(plan, entry, config.executor, config.pure_config).map_err(
+            |error| {
+                eprintln!(
+                    "error: failed to start entry `{}`: {error}",
+                    entry.public_label()
+                );
+                ExitCode::FAILURE
+            },
+        )?;
     run_runtime_steps_with_executor(
         &mut executor,
         NativeRunHost {

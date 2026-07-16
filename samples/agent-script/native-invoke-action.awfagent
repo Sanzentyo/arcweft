@@ -1,11 +1,14 @@
-#[agent(version = 1)]
 
-agent @agent.native.invoke_action native_invoke_action()
+fn native_invoke_action() -> Result<Unit, AgentError>
 effects { agent.observe, agent.act.semantic }
 {
     observe()
 
     invoke(@target.sample.clipped_pulse, "action.inspect.clipped_pulse")
 
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = native_invoke_action
 }

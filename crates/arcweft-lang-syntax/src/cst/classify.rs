@@ -90,12 +90,6 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Flow
     } else if looks_like_function_item(trimmed) {
         CstTopLevelItemKind::Function
-    } else if looks_like_agent_item(trimmed) {
-        CstTopLevelItemKind::Agent
-    } else if looks_like_callable_item(trimmed) {
-        CstTopLevelItemKind::Callable
-    } else if looks_like_state_item(trimmed) {
-        CstTopLevelItemKind::State
     } else if looks_like_trait_item(trimmed) {
         CstTopLevelItemKind::Trait
     } else if looks_like_impl_item(trimmed) {
@@ -170,19 +164,6 @@ pub(super) fn looks_like_function_item(trimmed: &str) -> bool {
         || rest.starts_with("task fn ")
         || rest.starts_with("dialogue fn ")
         || rest.starts_with("stream fn ")
-}
-
-pub(super) fn looks_like_agent_item(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("agent ")
-}
-
-fn looks_like_callable_item(trimmed: &str) -> bool {
-    let rest = visible_head(trimmed);
-    rest.starts_with("reducer ")
-}
-
-fn looks_like_state_item(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("state ")
 }
 
 fn looks_like_trait_item(trimmed: &str) -> bool {
@@ -474,6 +455,5 @@ pub(super) fn function_body_line_starts_body(line: &CstLine) -> bool {
     let trimmed = line.trimmed();
     trimmed == "{"
         || (line.has_unclosed_top_level_brace_open() && !trimmed.starts_with("effects"))
-        || ((looks_like_function_item(trimmed) || looks_like_agent_item(trimmed))
-            && line.has_top_level_brace_open())
+        || (looks_like_function_item(trimmed) && line.has_top_level_brace_open())
 }

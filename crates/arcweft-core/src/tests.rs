@@ -1,6 +1,11 @@
 use crate::effect::{LineEffectRequest, RuntimeCall};
 use crate::engine::Engine;
-use crate::plan::{FlowRuntimeId, RuntimeLineId};
+use crate::entry::EntryBindingIdentity;
+use crate::line_task::LineTaskGroup;
+use crate::plan::{
+    EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryRoles, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeFlow, RuntimeLineId, RuntimePlan, RuntimePlanError,
+};
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepOutput};
 use arcweft_interaction_model::{
     id::Identifier,
@@ -13,6 +18,7 @@ mod flow;
 mod line_task;
 mod observation;
 mod pure;
+mod root_state;
 mod source;
 mod step;
 mod step_stats_delta;
@@ -31,8 +37,41 @@ fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
 }
 
+fn entry_id(value: &str) -> EntryRuntimeId {
+    EntryRuntimeId::from_source_entity_body(value).expect("test entry ID is valid")
+}
+
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn runtime_plan(
+    entry_flow: Option<FlowRuntimeId>,
+    flows: Vec<RuntimeFlow>,
+    line_task_groups: Vec<LineTaskGroup>,
+) -> Result<RuntimePlan, RuntimePlanError> {
+    RuntimePlan::new(flows, line_task_groups).map(|plan| {
+        if let Some(flow) = entry_flow {
+            plan.with_entries(vec![RuntimeEntrySpec {
+                id: entry_id("entry.core_test"),
+                kind: RuntimeEntryKind::Cli,
+                binding: EntryBindingIdentity::from_bytes([1; 32]),
+                target: RuntimeEntryTarget::Flow(flow),
+                roles: RuntimeEntryRoles::None,
+            }])
+        } else {
+            plan
+        }
+    })
+}
+
+fn engine_for_test_plan(plan: RuntimePlan) -> Engine {
+    let entry = entry_id("entry.core_test");
+    if plan.entries.iter().any(|candidate| candidate.id == entry) {
+        Engine::for_entry(plan, &entry).expect("test entry selects an existing flow")
+    } else {
+        Engine::new(plan)
+    }
 }
 
 fn runtime_step(engine: &mut Engine, input: RuntimeStepInput) -> RuntimeStepOutput {

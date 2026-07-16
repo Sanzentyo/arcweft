@@ -23,6 +23,7 @@ name = "lsp-profile-resolve"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "custom-echo"
 adapter_manifests = ["adapters/custom-echo.toml"]
@@ -102,6 +103,7 @@ name = "lsp-profile-failed-rebuild"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 "#,
@@ -160,6 +162,7 @@ name = "lsp-profile-adapter-diagnostic"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "missing"
 adapter_manifests = ["adapters/missing.toml"]
@@ -192,6 +195,7 @@ name = "lsp-profile-adapter-invalid"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "missing"
 adapter_manifests = ["adapters/bad.toml"]
@@ -223,12 +227,14 @@ name = "lsp-profile-token-map-range"
 
 [profiles.other]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 character_manifests = ["assets/missing.awchar"]
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 character_manifests = ["assets/missing.awchar"]
@@ -262,6 +268,7 @@ name = "lsp-profile-rust-missing"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 rust_metadata = ["target/arcweft/missing.json"]
@@ -294,6 +301,7 @@ name = "lsp-profile-rust-invalid"
 
 [profiles.dev]
 kind = "server"
+entry = "entry.server.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 rust_metadata = ["target/arcweft/bad.json"]
@@ -325,12 +333,14 @@ name = "lsp-profile-dialogue-defaults-selection"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"
 
 [profiles.other]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.debug"

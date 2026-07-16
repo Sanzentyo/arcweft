@@ -409,7 +409,7 @@ fn agent_repl_typed_cell_outcome(
                 "generation": record.generation.as_u64(),
                 "overlay_hash": record.overlay_hash,
                 "commit_hash": record.commit_hash,
-                "entry_flow": record.entry_flow,
+                "entry": record.entry,
                 "bytecode_stats": {
                     "flows": record.bytecode_stats.flows,
                     "instructions": record.bytecode_stats.instructions,
@@ -545,7 +545,6 @@ mod tests {
             path: None,
             profile: ProfileOptions::default(),
             entry: None,
-            flow: None,
             executor: CliRuntimeExecutorTier::BytecodeVm,
             pure_backend: None,
             pure_workers: None,

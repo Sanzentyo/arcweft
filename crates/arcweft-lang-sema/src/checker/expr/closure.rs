@@ -53,12 +53,12 @@ impl TypeChecker<'_> {
         self.restore_scoped_locals(local_snapshot);
         self.restore_effect_callable(previous_effect_callable);
         self.pop_closure_capture_frame();
-        self.record_typed_lowering_evidence(super::TypedLoweringEvidence {
+        self.record_typed_lowering_evidence(super::TypedLoweringEvidence::new(
             expression_id,
-            kind: super::TypedLoweringEvidenceKind::FunctionEffectCallable {
+            super::TypedLoweringEvidenceKind::FunctionEffectCallable {
                 callable: closure_effect_callable.clone(),
             },
-        });
+        ));
         self.last_checked_closure_effect_callable = Some(closure_effect_callable);
         if let (Some(expected_return), Some(body_type)) = (expected_return, body_type.as_ref())
             && !self.types_compatible(expected_return, body_type)

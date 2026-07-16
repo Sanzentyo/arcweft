@@ -1,7 +1,32 @@
+struct GameState {
+    score: i32
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    initial_game_state()
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    reduce_game(state, event)
+}
+
 entry game @entry.game {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.main
 }
 
-flow @flow.main main {
+flow @flow.main main(state: GameState) {
     return "game"
 }

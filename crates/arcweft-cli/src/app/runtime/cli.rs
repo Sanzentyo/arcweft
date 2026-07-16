@@ -1,4 +1,4 @@
-use super::entry::apply_runtime_cli_entry_selection;
+use super::entry::select_runtime_cli_entry;
 use super::options::CliRunOptions;
 use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
@@ -33,7 +33,7 @@ pub(in crate::app) fn runtime_cli_command(
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let runtime_options = runtime_plan_options_for_selection(&selection)?;
-    let mut plan = lower_source_runtime_plan_with_typecheck_and_options(
+    let plan = lower_source_runtime_plan_with_typecheck_and_options(
         &checked.hir,
         &checked.typecheck_report,
         &runtime_options,
@@ -44,8 +44,8 @@ pub(in crate::app) fn runtime_cli_command(
         }
         ExitCode::FAILURE
     })?;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_cli_entry_selection(&mut plan, entry)?;
+    let entry = selection.command_entry(options.entry.as_deref())?;
+    let entry = select_runtime_cli_entry(&plan, entry)?;
     let mut bindings = options.values.clone();
     bindings.push(RuntimeBinding {
         name: "args".to_owned(),
@@ -66,6 +66,7 @@ pub(in crate::app) fn runtime_cli_command(
     let file_roots = selection.native_file_roots()?;
     let trace = run_runtime_steps(
         plan,
+        &entry,
         Some(NativeRunSource::new(selection.path(), &file_roots)),
         RuntimeStepRunConfig {
             steps: options.steps,

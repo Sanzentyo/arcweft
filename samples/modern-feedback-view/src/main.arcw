@@ -25,7 +25,32 @@ pub image glass_bg {
 pub action feedback.submit_name(value: String)
 pub action feedback.submit_brief(value: String)
 
+struct GameState {
+  started: bool
+}
+
+enum GameEvent {
+  Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+  GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+  -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+  Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.modern_feedback_view {
+  state = GameState
+  initializer = initial_game_state
+  event = GameEvent
+  reducer = reduce_game
   goto @flow.modern_feedback_view
 }
 
@@ -223,7 +248,7 @@ pub view ModernFeedbackBriefPanel() {
     .style(@style:.modern_feedback_panel)
 }
 
-flow modern_feedback_view {
+flow modern_feedback_view(state: GameState) {
     image(@image.glass_bg)
 
     concierge:

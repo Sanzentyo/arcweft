@@ -1,5 +1,8 @@
-use arcweft_lang_hir::model::{HirFlowItem, HirModule, HirTopLevelDecl};
 use arcweft_lang_hir::style::HirStyleDecl;
+use arcweft_lang_hir::{
+    entry::{HirEntryDecl, HirEntryItem},
+    model::{HirFlowItem, HirModule, HirTopLevelDecl},
+};
 use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
@@ -58,21 +61,6 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
             collect_expr(value.expr(), &mut uses);
         }
     }
-    for agent in module.agents() {
-        let item = agent.item();
-        if let Some(id) = item.id() {
-            push_entity(&mut uses, id);
-        }
-        for contract in item.contracts() {
-            collect_contract_clause(contract, &mut uses);
-        }
-        for stmt in item.body_statements() {
-            collect_stmt(stmt, &mut uses);
-        }
-        if let Some(value) = item.body_value() {
-            collect_expr(value.expr(), &mut uses);
-        }
-    }
     for declaration in module.declarations() {
         collect_top_level_decl(declaration, &mut uses);
     }
@@ -84,7 +72,8 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
 
 fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUse>) {
     match declaration {
-        HirTopLevelDecl::DialogueDefaults(_)
+        HirTopLevelDecl::Callable(_)
+        | HirTopLevelDecl::DialogueDefaults(_)
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternCapability(_)
         | HirTopLevelDecl::ExternMod(_)
@@ -123,16 +112,6 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
                 }
             }
         }
-        HirTopLevelDecl::Callable(item) => {
-            for contract in item.contracts() {
-                collect_contract_clause(contract, uses);
-            }
-        }
-        HirTopLevelDecl::State(item) => {
-            for field in item.fields() {
-                collect_expr(field.default(), uses);
-            }
-        }
         HirTopLevelDecl::Trait(item) => {
             for member in item.members() {
                 if let TraitMember::Raw(raw) = member {
@@ -162,21 +141,22 @@ fn collect_style_decl(item: &HirStyleDecl, uses: &mut Vec<SymbolUse>) {
     push_entity(uses, item.id());
 }
 
-fn collect_entry_decl(
-    item: &arcweft_lang_syntax::ast::items::EntryDeclItem,
-    uses: &mut Vec<SymbolUse>,
-) {
+fn collect_entry_decl(item: &HirEntryDecl, uses: &mut Vec<SymbolUse>) {
     push_entity(uses, item.id());
     for item in item.items() {
         match item {
-            arcweft_lang_syntax::ast::items::EntryItem::Goto(target)
-            | arcweft_lang_syntax::ast::items::EntryItem::Route { target, .. } => {
+            HirEntryItem::StateType { .. }
+            | HirEntryItem::Initializer { .. }
+            | HirEntryItem::EventType { .. }
+            | HirEntryItem::Reducer { .. }
+            | HirEntryItem::Controller { .. } => {}
+            HirEntryItem::Goto(target) | HirEntryItem::Route { target, .. } => {
                 push_entity(uses, target);
             }
-            arcweft_lang_syntax::ast::items::EntryItem::Option { value, .. } => {
+            HirEntryItem::Option { value, .. } => {
                 collect_expr(value, uses);
             }
-            arcweft_lang_syntax::ast::items::EntryItem::Raw(raw) => {
+            HirEntryItem::Raw(raw) => {
                 uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone()));
             }
         }

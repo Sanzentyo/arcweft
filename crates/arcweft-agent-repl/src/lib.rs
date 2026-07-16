@@ -9,6 +9,7 @@
 pub mod binding;
 pub mod cell;
 pub mod command;
+mod compile;
 pub mod error;
 pub mod evidence;
 mod hash;

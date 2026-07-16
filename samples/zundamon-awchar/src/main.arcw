@@ -1,6 +1,35 @@
 mod crate
 
-flow main {
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.main
+}
+
+flow main(state: GameState) {
     show(@character.zundamon, look = .normal)
     zundamon: "通常の表情なのだ。"
 

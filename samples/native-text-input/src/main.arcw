@@ -3,7 +3,32 @@ pub character narrator {
   default_voice = auto
 }
 
+struct GameState {
+  started: bool
+}
+
+enum GameEvent {
+  Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+  GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+  Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.native_text_input_sample {
+  state = GameState
+  initializer = initial_game_state
+  event = GameEvent
+  reducer = reduce_game
   goto @flow.native_text_input_sample
 }
 
@@ -89,7 +114,7 @@ fn i_to_string_2(i: i32) -> String {
     }
 }
 
-flow native_text_input_sample {
+flow native_text_input_sample(state: GameState) {
   view(@view:.NativeTextInputPanel)
 
     let a: i32 = 2

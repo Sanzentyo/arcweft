@@ -83,7 +83,11 @@ fn current_check_fixtures_pass() {
 fn current_run_fixtures_pass() {
     for path in arcw_files(&fixture_root().join("current_pass/run")) {
         let output = run_fixture_from_temp(&path, |cmd| {
-            cmd.arg("run").arg("--steps").arg("16");
+            cmd.arg("run")
+                .arg("--entry")
+                .arg("entry.main")
+                .arg("--steps")
+                .arg("16");
         });
         assert!(
             output.status.success(),
@@ -108,6 +112,8 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
     for path in arcw_files(&fixture_root().join("spec_should_pass/run")) {
         let output = run_fixture_from_temp(&path, |cmd| {
             cmd.arg("run")
+                .arg("--entry")
+                .arg("entry.main")
                 .arg("--mode")
                 .arg("drain")
                 .arg("--steps")

@@ -1,4 +1,4 @@
-use crate::{engine::*, pattern::*, plan::*, source::*, step::*, stream::*, task::*, value::*};
+use crate::{pattern::*, source::*, step::*, stream::*, task::*, value::*};
 
 #[test]
 fn stream_plan_drains_source_queue_and_emits_stream_items() {
@@ -36,10 +36,10 @@ fn stream_plan_drains_source_queue_and_emits_stream_items() {
             }],
         }],
     };
-    let plan = RuntimePlan::new(None, Vec::new(), Vec::new())
+    let plan = super::runtime_plan(None, Vec::new(), Vec::new())
         .expect("empty plan is valid")
         .with_generation_plans(vec![stream], vec![source]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = super::runtime_step(
         &mut engine,

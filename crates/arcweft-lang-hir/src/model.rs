@@ -7,9 +7,8 @@ use arcweft_lang_syntax::{
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
-            AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
-            ExternCapabilityItem, ExternModItem, FunctionKind, FunctionSignatureSource, ImplItem,
-            StateItem, StructItem, TraitItem, TypeAliasItem,
+            Attribute, CallableItem, EntityDeclItem, EnumItem, ExternCapabilityItem, ExternModItem,
+            FunctionKind, FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -26,6 +25,7 @@ use arcweft_source::{
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+use crate::entry::HirEntryDecl;
 use crate::style::{HirStyleDecl, HirStylePatch};
 use crate::view_part::HirViewPartOwner;
 
@@ -43,7 +43,6 @@ pub struct HirModule {
     pub(crate) top_level_ranges: Vec<TextRange>,
     pub(crate) flows: Vec<HirFlow>,
     pub(crate) functions: Vec<HirFunction>,
-    pub(crate) agents: Vec<HirAgent>,
     pub(crate) declarations: Vec<HirTopLevelDecl>,
     pub(crate) style_patches: Vec<HirStylePatch>,
     pub(crate) view_parts: Vec<HirViewPartOwner>,
@@ -87,24 +86,15 @@ pub struct HirFunction {
     pub(crate) range: TextRange,
 }
 
-/// HIR-facing Agent controller item.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HirAgent {
-    pub(crate) attributes: Vec<Attribute>,
-    pub(crate) module_path: Option<CanonicalModulePath>,
-    pub(crate) item: AgentItem,
-}
-
 /// HIR-facing top-level declaration preserved for later semantic passes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirTopLevelDecl {
     Callable(CallableItem),
-    State(StateItem),
     Trait(TraitItem),
     Impl(ImplItem),
     Enum(EnumItem),
     EntityDecl(EntityDeclItem),
-    Entry(EntryDeclItem),
+    Entry(HirEntryDecl),
     ExternCapability(ExternCapabilityItem),
     ExternMod(ExternModItem),
     DialogueDefaults(DialogueDefaultsItem),
@@ -458,10 +448,6 @@ impl HirModule {
         &self.functions
     }
 
-    pub fn agents(&self) -> &[HirAgent] {
-        &self.agents
-    }
-
     pub fn declarations(&self) -> &[HirTopLevelDecl] {
         &self.declarations
     }
@@ -602,26 +588,6 @@ impl HirFunction {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
-    }
-}
-
-impl HirAgent {
-    pub fn attributes(&self) -> &[Attribute] {
-        &self.attributes
-    }
-
-    pub fn has_attribute(&self, name: &str) -> bool {
-        self.attributes
-            .iter()
-            .any(|attribute| attribute.name() == name)
-    }
-
-    pub const fn module_path(&self) -> Option<&CanonicalModulePath> {
-        self.module_path.as_ref()
-    }
-
-    pub const fn item(&self) -> &AgentItem {
-        &self.item
     }
 }
 

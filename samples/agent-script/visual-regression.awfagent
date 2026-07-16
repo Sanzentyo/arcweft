@@ -1,9 +1,6 @@
-#[agent(version = 1)]
 
-#[launch(profile = "game.visual-ci")]
-#[bind(program = strict)]
 #[budget(timeout = 20s, steps = 96usize, captures = 12usize)]
-agent @agent.visual.dialogue visual_dialogue()
+fn visual_dialogue() -> Result<Unit, AgentError>
 effects {
     agent.observe,
     agent.act.semantic,
@@ -39,4 +36,8 @@ effects {
     expect(dialogue_view.bbox.height > 0u32)
 
     Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = visual_dialogue
 }

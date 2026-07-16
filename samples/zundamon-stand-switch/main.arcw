@@ -109,11 +109,36 @@ pub image @image.zundamon.smile {
     depth = 1000
 }
 
-entry game {
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.normal
 }
 
-flow normal {
+flow normal(state: GameState) {
     image(@image.zundamon.normal)
 
     narrator(id=@say.zundamon.intro, voice=auto):

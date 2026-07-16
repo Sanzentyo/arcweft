@@ -44,7 +44,7 @@ pub view WarningPreview() {
         .fx(notice(accent = rgb("#78dce8"), amplitude = 4px))
 }
 
-entry game {
+entry cli @entry.rich_text_fx {
     goto @flow.rich_text_fx
 }
 

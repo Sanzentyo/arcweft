@@ -90,13 +90,12 @@ pub mod view;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
     parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr,
-    parse_scope_authored_expr_body, parse_scope_authored_expr_body_for_dialect,
-    parse_scope_authored_expr_body_with_base, parse_scope_authored_expr_body_with_base_for_dialect,
+    parse_scope_authored_expr_body, parse_scope_authored_expr_body_with_base,
     parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms, split_pattern_guard,
 };
 pub use fragment::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
-    SourceDialect, parse_document, parse_document_with_source, parse_fragment,
+    parse_document, parse_document_with_source, parse_fragment,
 };
 use helpers::{
     PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items,
@@ -117,8 +116,8 @@ use line_plan::{
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{
     binding_value_start_in_line, braced_expr_source, parse_scope_head, parse_stmt,
-    parse_stmt_for_dialect, parse_stmt_for_dialect_with_stats_and_base, parse_stmt_with_base,
-    parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block, raw_stmt,
+    parse_stmt_with_base, parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block,
+    parse_value_scope_stmt_with_stats_and_base, raw_stmt,
 };
 
 /// Parses an Arcweft source string.
@@ -164,13 +163,12 @@ fn parse_source_with_options(source: impl Into<String>, options: ParseOptions) -
 
 fn parse_source_document_with_options(
     document: Arc<SourceDocument>,
-    options: ParseOptions,
+    _options: ParseOptions,
 ) -> ParsedSource {
     let source = document.text();
     let syntax = crate::cst::parse_cst(source);
     let (tree, mut errors, syntax_stats) = {
         let mut parser = Parser::from_document(&document, &syntax);
-        parser.source_dialect = options.source_dialect;
         parser.parse()
     };
     errors.extend(validate_let_type_ascriptions(source));
@@ -219,7 +217,6 @@ struct Parser<'a> {
     pending_doc: Option<DocBlock>,
     pending_attrs: Vec<Attribute>,
     syntax_stats: SyntaxParseStats,
-    source_dialect: SourceDialect,
     current_module_path: Option<String>,
 }
 
@@ -343,7 +340,6 @@ impl<'a> Parser<'a> {
             pending_doc: None,
             pending_attrs: Vec::new(),
             syntax_stats,
-            source_dialect: SourceDialect::Game,
             current_module_path: None,
         }
     }
@@ -399,11 +395,6 @@ impl<'a> Parser<'a> {
         self.reject_pending_attrs(TextRange::new(self.previous_end(), self.previous_end()));
         let tree = TypedSyntaxTree::new(source_take(self), attrs, module, uses, items, wiki_links);
         (tree, core::mem::take(&mut self.errors), self.syntax_stats)
-    }
-
-    fn take_flow_block(&mut self) -> (Cow<'a, str>, Cow<'a, str>, usize, bool) {
-        let event = self.take_flow_block_event();
-        (event.head, event.body, event.end, event.ok)
     }
 
     fn take_flow_block_event(&mut self) -> CstBlockEvent<'a> {
@@ -520,11 +511,11 @@ impl<'a> Parser<'a> {
             return self
                 .events
                 .get(range.start)
-                .map(|line| parse_stmt_for_dialect(line.trimmed(), self.source_dialect));
+                .map(|line| parse_stmt(line.trimmed()));
         }
         let source = self.collect_stmt_line_group_source(range);
         let trimmed = source.trim();
-        (!trimmed.is_empty()).then(|| parse_stmt_for_dialect(trimmed, self.source_dialect))
+        (!trimmed.is_empty()).then(|| parse_stmt(trimmed))
     }
 
     fn collect_stmt_line_group_source(&self, range: Range<usize>) -> String {

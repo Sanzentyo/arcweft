@@ -1,7 +1,9 @@
+use crate::entry::EntryBindingIdentity;
 use crate::line_task::LineTaskGroup;
 use crate::plan::{
-    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeFlow, RuntimePlan, RuntimePlanError, RuntimePureHelper,
+    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeCallableExecutable, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeFlowExecutable, RuntimePlan,
+    RuntimePlanError, RuntimePureHelper,
 };
 use crate::source::SourcePlan;
 use crate::stream::StreamPlan;
@@ -23,8 +25,9 @@ pub struct BytecodeProgram {
     pub abi_version: u32,
     #[serde(default)]
     pub runtime_layout: BytecodeRuntimeLayout,
-    pub entry_flow: Option<FlowRuntimeId>,
     pub entries: Vec<BytecodeEntry>,
+    pub callable_executables: Vec<RuntimeCallableExecutable>,
+    pub flow_executables: Vec<RuntimeFlowExecutable>,
     pub flows: Vec<BytecodeFlow>,
     pub pure_helpers: Vec<RuntimePureHelper>,
     pub line_task_groups: Vec<LineTaskGroup>,
@@ -45,7 +48,9 @@ pub struct BytecodeRuntimeLayout {
 pub struct BytecodeEntry {
     pub id: EntryRuntimeId,
     pub kind: RuntimeEntryKind,
+    pub binding: EntryBindingIdentity,
     pub target: RuntimeEntryTarget,
+    pub roles: crate::entry::RuntimeEntryRoles,
 }
 
 /// One flow's bytecode instruction stream.
@@ -69,6 +74,8 @@ pub enum BytecodeInstruction {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BytecodeStats {
     pub flows: usize,
+    pub callable_executables: usize,
+    pub flow_executables: usize,
     pub instructions: usize,
     pub line_task_groups: usize,
     pub stream_plans: usize,
@@ -79,6 +86,8 @@ pub struct BytecodeStats {
 pub struct BytecodeVerificationBudget {
     pub flows: usize,
     pub entries: usize,
+    pub callable_executables: usize,
+    pub flow_executables: usize,
     pub instructions: usize,
     pub line_task_groups: usize,
     pub stream_plans: usize,
@@ -92,16 +101,12 @@ pub enum BytecodeVerificationError {
     UnsupportedAbi { actual: u32, expected: u32 },
     #[error("unsupported bytecode runtime layout `{actual}`; expected `{expected}`")]
     UnsupportedRuntimeLayout { actual: String, expected: String },
-    #[error("bytecode artifact is missing its entrypoint flow")]
-    MissingEntrypoint,
     #[error("bytecode artifact exceeds verification budget `{budget}`")]
     BudgetExceeded { budget: &'static str },
     #[error("duplicate bytecode flow `{0}`")]
     DuplicateFlow(String),
     #[error("duplicate bytecode entry `{0}`")]
     DuplicateEntry(String),
-    #[error("bytecode entry flow `{0}` does not exist")]
-    MissingEntryFlow(String),
     #[error("bytecode entry `{entry}` targets missing flow `{flow}`")]
     MissingEntryTarget { entry: String, flow: String },
     #[error("bytecode route entry `{entry}` targets missing flow `{flow}`")]
@@ -112,6 +117,8 @@ pub enum BytecodeVerificationError {
     MissingGotoTarget { flow: String, target: String },
     #[error("bytecode flow `{flow}` choice option targets missing flow `{target}`")]
     MissingChoiceTarget { flow: String, target: String },
+    #[error("bytecode runtime-plan metadata is invalid: {message}")]
+    InvalidRuntimePlan { message: String },
 }
 
 impl Default for BytecodeProgram {
@@ -119,8 +126,9 @@ impl Default for BytecodeProgram {
         Self {
             abi_version: BYTECODE_ABI_VERSION,
             runtime_layout: BytecodeRuntimeLayout::current(),
-            entry_flow: None,
             entries: Vec::new(),
+            callable_executables: Vec::new(),
+            flow_executables: Vec::new(),
             flows: Vec::new(),
             pure_helpers: Vec::new(),
             line_task_groups: Vec::new(),
@@ -154,6 +162,8 @@ impl Default for BytecodeVerificationBudget {
         Self {
             flows: 16_384,
             entries: 16_384,
+            callable_executables: 262_144,
+            flow_executables: 16_384,
             instructions: 1_000_000,
             line_task_groups: 262_144,
             stream_plans: 65_536,
@@ -168,8 +178,9 @@ impl BytecodeProgram {
         Self {
             abi_version: BYTECODE_ABI_VERSION,
             runtime_layout: BytecodeRuntimeLayout::current(),
-            entry_flow: plan.entry_flow,
             entries: plan.entries.into_iter().map(BytecodeEntry::from).collect(),
+            callable_executables: plan.callable_executables,
+            flow_executables: plan.flow_executables,
             flows: plan.flows.into_iter().map(BytecodeFlow::from).collect(),
             pure_helpers: plan.pure_helpers,
             line_task_groups: plan.line_task_groups,
@@ -180,7 +191,6 @@ impl BytecodeProgram {
 
     pub fn into_runtime_plan(self) -> Result<RuntimePlan, RuntimePlanError> {
         RuntimePlan::new(
-            self.entry_flow,
             self.flows.into_iter().map(RuntimeFlow::from).collect(),
             self.line_task_groups,
         )
@@ -192,6 +202,7 @@ impl BytecodeProgram {
                     .collect(),
             )
             .with_pure_helpers(self.pure_helpers)
+            .with_entry_executables(self.callable_executables, self.flow_executables)
             .with_generation_plans(self.stream_plans, self.source_plans)
         })
     }
@@ -199,6 +210,8 @@ impl BytecodeProgram {
     pub fn stats(&self) -> BytecodeStats {
         BytecodeStats {
             flows: self.flows.len(),
+            callable_executables: self.callable_executables.len(),
+            flow_executables: self.flow_executables.len(),
             instructions: self.flows.iter().map(|flow| flow.instructions.len()).sum(),
             line_task_groups: self.line_task_groups.len(),
             stream_plans: self.stream_plans.len(),
@@ -226,6 +239,16 @@ impl BytecodeProgram {
         verify_budget("flows", self.flows.len(), budget.flows)?;
         verify_budget("entries", self.entries.len(), budget.entries)?;
         verify_budget(
+            "callable_executables",
+            self.callable_executables.len(),
+            budget.callable_executables,
+        )?;
+        verify_budget(
+            "flow_executables",
+            self.flow_executables.len(),
+            budget.flow_executables,
+        )?;
+        verify_budget(
             "line_task_groups",
             self.line_task_groups.len(),
             budget.line_task_groups,
@@ -242,15 +265,6 @@ impl BytecodeProgram {
                 ));
             }
         }
-        let Some(entry_flow) = self.entry_flow.as_ref() else {
-            return Err(BytecodeVerificationError::MissingEntrypoint);
-        };
-        if !flow_ids.contains(entry_flow) {
-            return Err(BytecodeVerificationError::MissingEntryFlow(
-                entry_flow.canonical_label(),
-            ));
-        }
-
         let mut entry_ids = BTreeSet::new();
         for entry in &self.entries {
             if !entry_ids.insert(entry.id.clone()) {
@@ -272,6 +286,12 @@ impl BytecodeProgram {
                 budget.instructions,
             )?;
         }
+        self.clone()
+            .into_runtime_plan()
+            .and_then(|plan| plan.verify())
+            .map_err(|error| BytecodeVerificationError::InvalidRuntimePlan {
+                message: error.to_string(),
+            })?;
         Ok(())
     }
 }
@@ -297,7 +317,7 @@ fn verify_entry_target(
     flow_ids: &BTreeSet<FlowRuntimeId>,
 ) -> Result<(), BytecodeVerificationError> {
     match &entry.target {
-        RuntimeEntryTarget::Flow(flow) => {
+        RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
             if !flow_ids.contains(flow) {
                 return Err(BytecodeVerificationError::MissingEntryTarget {
                     entry: entry.id.canonical_label(),
@@ -583,7 +603,9 @@ impl From<RuntimeEntrySpec> for BytecodeEntry {
         Self {
             id: entry.id,
             kind: entry.kind,
+            binding: entry.binding,
             target: entry.target,
+            roles: entry.roles,
         }
     }
 }
@@ -593,7 +615,9 @@ impl From<BytecodeEntry> for RuntimeEntrySpec {
         Self {
             id: entry.id,
             kind: entry.kind,
+            binding: entry.binding,
             target: entry.target,
+            roles: entry.roles,
         }
     }
 }
@@ -673,14 +697,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_entrypoint() {
+    fn does_not_invent_an_entrypoint_for_an_unselected_program() {
         let mut program = sample_program();
-        program.entry_flow = None;
+        program.entries.clear();
 
-        assert!(matches!(
-            program.verify(BytecodeVerificationBudget::default()),
-            Err(BytecodeVerificationError::MissingEntrypoint)
-        ));
+        program
+            .verify(BytecodeVerificationBudget::default())
+            .expect("an executable inventory does not imply launch selection");
     }
 
     #[test]
@@ -740,12 +763,15 @@ mod tests {
         BytecodeProgram {
             abi_version: BYTECODE_ABI_VERSION,
             runtime_layout: BytecodeRuntimeLayout::current(),
-            entry_flow: Some(flow_id("flow.main")),
             entries: vec![BytecodeEntry {
                 id: entry_id("entry.main"),
-                kind: RuntimeEntryKind::Game,
+                kind: RuntimeEntryKind::Cli,
+                binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
                 target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
+                roles: crate::entry::RuntimeEntryRoles::None,
             }],
+            callable_executables: Vec::new(),
+            flow_executables: Vec::new(),
             flows: vec![
                 BytecodeFlow {
                     id: flow_id("flow.main"),

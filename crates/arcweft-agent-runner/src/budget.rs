@@ -1,7 +1,8 @@
 use arcweft_agent_protocol::{
-    artifact::{AgentBudget, ProjectBinding, RequiredEntity},
+    artifact::{ProjectBinding, RequiredEntity},
     protocol::{AgentSessionInfo, WaitRequest},
 };
+use arcweft_core::entry::AgentBudget;
 
 use crate::config::AgentControllerRunConfig;
 use crate::error::AgentRunError;

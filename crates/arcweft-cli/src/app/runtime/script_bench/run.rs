@@ -16,8 +16,9 @@ use crate::output::{
     ScriptBenchRunSummary, ScriptBenchSectionRunSummary,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureInputType, RuntimePureOutputType,
+    EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan,
+    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+    RuntimePureOutputType,
 };
 use arcweft_core::pure::RuntimePureCallBackend;
 use arcweft_lang_syntax::expr::{Expr, parse_expr};
@@ -134,10 +135,13 @@ fn bench_expectation_failures(
             "bench assertion `goto` target `{flow}` is not a valid flow runtime ID"
         )];
     };
-    let mut assertion_plan = plan.clone();
-    assertion_plan.entry_flow = Some(flow);
+    let entry = match bench_entry_for_flow(plan, &flow) {
+        Ok(entry) => entry,
+        Err(error) => return vec![error],
+    };
     let frames = run_runtime_steps(
-        assertion_plan,
+        plan.clone(),
+        &entry,
         Some(NativeRunSource::new(source_path, runtime.file_roots)),
         RuntimeStepRunConfig {
             steps: options.steps,
@@ -464,14 +468,29 @@ fn run_bench_flow_section(
         return summary;
     };
     let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
-    let mut selected_plan = plan.clone();
-    selected_plan.entry_flow = Some(flow);
-    let executor_template = RuntimeExecutorTemplate::new(&selected_plan, options.executor);
-    let mut pure =
-        RuntimePureAccelerator::with_config(runtime.pure_config, &selected_plan.pure_helpers);
+    let entry = match bench_entry_for_flow(plan, &flow) {
+        Ok(entry) => entry,
+        Err(error) => {
+            let mut summary = validated;
+            "failed".clone_into(&mut summary.status);
+            summary.diagnostics.push(error);
+            return summary;
+        }
+    };
+    let executor_template = RuntimeExecutorTemplate::new(plan, entry, options.executor);
+    let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &plan.pure_helpers);
     for iteration in 0..options.warmup + options.iterations {
         pure.reset_runtime_counters();
-        let executor = executor_template.instantiate();
+        let executor = match executor_template.instantiate() {
+            Ok(executor) => executor,
+            Err(error) => {
+                return ScriptBenchSectionRunSummary::new(
+                    &section.name,
+                    "failed",
+                    vec![format!("failed to start bench entry: {error}")],
+                );
+            }
+        };
         let started = Instant::now();
         let trace = run_runtime_bench_steps_with_pure(
             executor,
@@ -517,4 +536,29 @@ fn run_bench_flow_section(
             deterministic: samples.deterministic_summary(),
         },
     )
+}
+
+fn bench_entry_for_flow(
+    plan: &RuntimePlan,
+    flow: &FlowRuntimeId,
+) -> Result<EntryRuntimeId, String> {
+    let matching_entries = plan
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.kind == RuntimeEntryKind::Bench
+                && matches!(
+                    &entry.target,
+                    RuntimeEntryTarget::Flow(target) | RuntimeEntryTarget::Controller(target)
+                        if target == flow
+                )
+        })
+        .collect::<Vec<_>>();
+    let [entry] = matching_entries.as_slice() else {
+        return Err(format!(
+            "bench target `{}` must be bound by exactly one `entry bench` declaration",
+            flow.public_label()
+        ));
+    };
+    Ok(entry.id.clone())
 }

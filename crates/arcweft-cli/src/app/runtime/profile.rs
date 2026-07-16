@@ -1,34 +1,30 @@
-use super::expectations::{parse_goto_flow_in_text, parse_goto_flow_statement};
-use crate::app::diagnostics::{DiagnosticEmitter, DiagnosticSource};
 use crate::app::project::{
-    SelectionSemanticContext, SourceSelection, print_project_compile_error,
-    project_compilation_context, runtime_plan_options_for_selection, source_document_for_path,
+    SelectionSemanticContext, SourceSelection, direct_project_compilation_input,
+    print_project_compile_error, profile_project_compilation_context, project_compilation_context,
+    runtime_plan_options_for_selection,
 };
 use crate::output::RuntimeProfilePhase;
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_compiler::{
-    hir, lower, parse,
-    project::compile_project,
-    style::{CompiledViewStyleArtifact, lower_source_view_styles},
+    project::{ProjectCompilationContext, compile_project},
+    style::CompiledViewStyleArtifact,
 };
 use arcweft_core::{
     aot::{AotProgram, AotProgramStats},
     awbc::schema::AwbcProgram,
     bytecode::{BytecodeProgram, BytecodeStats},
-    plan::{FlowRuntimeId, RuntimePlan},
+    plan::RuntimePlan,
 };
-use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
+use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_lang_syntax::cst::SyntaxParseStats;
+use arcweft_project::sources::ProjectSources;
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::{
     awbc_lower::{AwbcLowerError, AwbcLowerer},
-    flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
+    flow::RuntimePlanLowerStats,
 };
 use arcweft_source::SourceDocument;
-use arcweft_test::collect_script_tests;
 use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
-use std::fs;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -53,173 +49,25 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) source_map: SourceMapSection,
 }
 
-struct ProfileParsedSource {
-    document: Arc<SourceDocument>,
-    tree: arcweft_lang_syntax::ast::items::TypedSyntaxTree,
-    syntax_warnings: usize,
-    syntax_stats: SyntaxParseStats,
-}
-
-struct ProfileCheckedSource {
-    hir: arcweft_lang_hir::model::HirModule,
-    style: CompiledViewStyleArtifact,
-    line_task_groups: usize,
-    typecheck_report: TypeCheckReport,
-}
-
 pub(in crate::app) fn compile_profile_runtime_plan(
     selection: &SourceSelection,
     semantic: &SelectionSemanticContext,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    if let Some(topology) = semantic.profile_topology() {
+        let context = profile_project_compilation_context(topology, semantic)?;
+        return compile_loaded_project_runtime_plan(
+            topology.loaded_project(),
+            &context,
+            selection,
+            phases,
+        );
+    }
     if let Some(manifest) = selection.project_manifest() {
         return compile_project_runtime_plan(manifest, selection, semantic, phases);
     }
-    let env = semantic.base();
-    let parsed = profile_parse_single_source(selection, phases)?;
-    let checked = profile_lower_checked_source(&parsed, env, phases)?;
-    let runtime_plan_report =
-        profile_lower_runtime_plan(selection, &checked.hir, &checked.typecheck_report, phases)?;
-    let mut plan = runtime_plan_report.plan;
-    apply_script_manifest_entry_fallback(&mut plan, &checked.hir);
-    let line_display_catalog = runtime_plan_report.line_display_catalog;
-    let runtime_plan_stats = runtime_plan_report.stats;
-    let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
-        let report = validate_runtime_plan_types(&plan, &checked.typecheck_report);
-        if report.has_errors() {
-            for diagnostic in report.diagnostics {
-                eprintln!("error: {}: {}", diagnostic.path, diagnostic.message);
-            }
-            Err(ExitCode::FAILURE)
-        } else {
-            Ok(report.stats)
-        }
-    })?;
-    let product_awbc = profile_lower_product_awbc(selection, &plan, &line_display_catalog, phases)?;
-    let aot = run_profile_phase(phases, "aot_lower", || {
-        Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
-    })?;
-    let aot_stats = aot.stats().clone();
-    let bytecode = run_profile_phase(phases, "bytecode_lower", || {
-        Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
-    })?;
-    let bytecode_stats = bytecode.stats();
-    let plan = bytecode.clone().into_runtime_plan().map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::FAILURE
-    })?;
-    let source_map =
-        SourceMapSection::try_from_documents(&[parsed.document.as_ref()]).map_err(|error| {
-            eprintln!("error: failed to build product source map: {error}");
-            ExitCode::FAILURE
-        })?;
-    Ok(ProfileCompiledRuntimePlan {
-        hir: checked.hir,
-        style: checked.style,
-        plan,
-        syntax_warnings: parsed.syntax_warnings,
-        syntax_stats: parsed.syntax_stats,
-        line_task_groups: checked.line_task_groups,
-        typecheck_report: checked.typecheck_report,
-        runtime_plan_stats,
-        line_display_catalog,
-        runtime_type_validation_stats,
-        product_awbc,
-        bytecode,
-        bytecode_stats,
-        aot_stats,
-        source_document: Arc::clone(&parsed.document),
-        source_map,
-    })
-}
-
-fn profile_parse_single_source(
-    selection: &SourceSelection,
-    phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<ProfileParsedSource, ExitCode> {
-    let source = run_profile_phase(phases, "read_source", || {
-        fs::read_to_string(selection.path()).map_err(|error| {
-            eprintln!(
-                "error: failed to read {}: {error}",
-                selection.path().display()
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-    let document = Arc::new(source_document_for_path(selection.path(), source)?);
-    let parsed = run_profile_phase(phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| {
-            parse::parse_source_text(document.text().to_owned())
-        }))
-        .map_err(|_| {
-            eprintln!(
-                "error: parser panicked while profiling {}",
-                selection.path().display()
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-    if !parsed.errors().is_empty() {
-        for error in parsed.errors() {
-            eprintln!("error: {}", error.message());
-        }
-        return Err(ExitCode::FAILURE);
-    }
-
-    debug_assert_eq!(parsed.source(), document.text());
-    let diagnostic_source = DiagnosticSource::new(&document);
-    let emitter = DiagnosticEmitter::stderr();
-    let syntax_stats = parsed.syntax_stats();
-    let tree = parsed.into_typed_tree();
-    let syntax_warnings = run_profile_phase(phases, "lint", || {
-        let lints = parse::lint_source_tree(&tree);
-        for lint in &lints {
-            emitter.emit(&lint.diagnostic(&document), &diagnostic_source);
-        }
-        if parse::has_error_lints(&lints) {
-            return Err(ExitCode::FAILURE);
-        }
-        Ok::<usize, ExitCode>(parse::count_warning_lints(&lints))
-    })?;
-
-    Ok(ProfileParsedSource {
-        document,
-        tree,
-        syntax_warnings,
-        syntax_stats,
-    })
-}
-
-fn profile_lower_checked_source(
-    parsed: &ProfileParsedSource,
-    env: &TypeCheckEnv,
-    phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<ProfileCheckedSource, ExitCode> {
-    let hir = profile_lower_hir(&parsed.document, &parsed.tree, phases)?;
-    let typecheck_report = profile_validate_hir(&hir, env, phases)?;
-    let style = run_profile_phase(phases, "style_lower", || {
-        lower_source_view_styles(&hir, &typecheck_report.style_catalog, &parsed.document).map_err(
-            |error| {
-                eprintln!("error: failed to lower checked View Style: {error}");
-                ExitCode::FAILURE
-            },
-        )
-    })?;
-    let line_task_groups = run_profile_phase(phases, "line_task_lower", || {
-        lower::lower_source_line_tasks(&hir).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })
-    })?;
-
-    Ok(ProfileCheckedSource {
-        hir,
-        style,
-        line_task_groups: line_task_groups.len(),
-        typecheck_report,
-    })
+    let direct = direct_project_compilation_input(selection, semantic, phases)?;
+    compile_project_sources_runtime_plan(direct.sources(), direct.context(), selection, phases)
 }
 
 fn profile_lower_product_awbc(
@@ -258,42 +106,6 @@ fn profile_lower_product_awbc(
     Ok(report.program)
 }
 
-fn apply_script_manifest_entry_fallback(
-    plan: &mut RuntimePlan,
-    hir: &arcweft_lang_hir::model::HirModule,
-) {
-    if plan.entry_flow.is_some() || !plan.entries.is_empty() {
-        return;
-    }
-    if let Some(flow) = script_manifest_goto_flow(hir) {
-        match FlowRuntimeId::from_runtime_target_value(&flow) {
-            Ok(flow) => plan.entry_flow = Some(flow),
-            Err(error) => {
-                eprintln!(
-                    "warning: script manifest fallback ignored invalid goto target `{flow}`: {error}"
-                );
-            }
-        }
-    }
-}
-
-fn script_manifest_goto_flow(hir: &arcweft_lang_hir::model::HirModule) -> Option<String> {
-    let manifest = collect_script_tests(hir);
-    manifest
-        .tests
-        .iter()
-        .filter(|test| test.kind == "scenario")
-        .flat_map(|test| test.steps.iter().map(|step| step.text.as_str()))
-        .find_map(parse_goto_flow_statement)
-        .or_else(|| {
-            manifest
-                .benches
-                .iter()
-                .flat_map(|bench| bench.sections.iter().map(|section| section.text.as_str()))
-                .find_map(parse_goto_flow_in_text)
-        })
-}
-
 fn compile_project_runtime_plan(
     manifest: &Path,
     selection: &SourceSelection,
@@ -306,14 +118,28 @@ fn compile_project_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
-    let source_document = Arc::clone(
-        loaded
-            .module_document(loaded.sources().root_module().module())
-            .expect("loaded projects retain their root source document"),
-    );
+    let context = project_compilation_context(&loaded, selection, semantic)?;
+    compile_loaded_project_runtime_plan(&loaded, &context, selection, phases)
+}
+
+fn compile_loaded_project_runtime_plan(
+    loaded: &arcweft_project_loader::project::LoadedProject,
+    context: &ProjectCompilationContext,
+    selection: &SourceSelection,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    compile_project_sources_runtime_plan(loaded.sources(), context, selection, phases)
+}
+
+fn compile_project_sources_runtime_plan(
+    sources: &ProjectSources,
+    context: &ProjectCompilationContext,
+    selection: &SourceSelection,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    let source_document = Arc::clone(sources.root_module().document());
     let source_map = SourceMapSection::try_from_documents(
-        &loaded
-            .sources()
+        &sources
             .modules()
             .map(|source| source.document().as_ref())
             .collect::<Vec<_>>(),
@@ -323,9 +149,8 @@ fn compile_project_runtime_plan(
         ExitCode::FAILURE
     })?;
     let runtime_options = runtime_plan_options_for_selection(selection)?;
-    let context = project_compilation_context(&loaded, selection, semantic)?;
     let compiled = run_profile_phase(phases, "project_compile", || {
-        compile_project(loaded.sources(), &context, &runtime_options).map_err(|error| {
+        compile_project(sources, context, &runtime_options).map_err(|error| {
             print_project_compile_error(&error);
             ExitCode::FAILURE
         })
@@ -397,74 +222,6 @@ fn add_syntax_stats(total: &mut SyntaxParseStats, item: &SyntaxParseStats) {
     total.dot_normalization_owned += item.dot_normalization_owned;
     total.dialogue_rescue_expr_parse_attempts += item.dialogue_rescue_expr_parse_attempts;
     total.numeric_seq_summaries += item.numeric_seq_summaries;
-}
-
-fn profile_lower_runtime_plan(
-    selection: &SourceSelection,
-    hir: &arcweft_lang_hir::model::HirModule,
-    typecheck: &TypeCheckReport,
-    phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<RuntimePlanLowerReport, ExitCode> {
-    run_profile_phase(phases, "runtime_plan_lower", || {
-        let runtime_options = runtime_plan_options_for_selection(selection)?;
-        lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
-            hir,
-            typecheck,
-            &runtime_options,
-        )
-        .map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })
-    })
-}
-
-pub(in crate::app) fn profile_lower_hir(
-    document: &SourceDocument,
-    tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree,
-    phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<arcweft_lang_hir::model::HirModule, ExitCode> {
-    run_profile_phase(phases, "lower_hir", || {
-        hir::lower_source_document(document, tree).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })
-    })
-}
-
-pub(in crate::app) fn profile_validate_hir(
-    hir: &arcweft_lang_hir::model::HirModule,
-    env: &TypeCheckEnv,
-    phases: &mut Vec<RuntimeProfilePhase>,
-) -> Result<TypeCheckReport, ExitCode> {
-    run_profile_phase(phases, "resolve", || {
-        hir::resolve_hir_references_with_env(hir, env).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {error}");
-            }
-            ExitCode::FAILURE
-        })
-    })?;
-    run_profile_phase(phases, "readiness", || {
-        hir::validate_hir_typecheck_ready(hir).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })
-    })?;
-    run_profile_phase(phases, "typecheck", || {
-        hir::typecheck_hir_with_env(hir, env).map_err(|errors| {
-            for error in errors {
-                eprintln!("error: {}", error.message());
-            }
-            ExitCode::FAILURE
-        })
-    })
 }
 
 pub(in crate::app) fn run_profile_phase<T>(

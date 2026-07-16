@@ -21,6 +21,7 @@ pub mod effect_diagnostics;
 pub mod effect_model;
 pub mod effect_row;
 pub mod effects;
+pub mod entry;
 pub mod env;
 pub mod fact_layer;
 pub mod lifetime;

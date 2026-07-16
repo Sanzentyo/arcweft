@@ -8,6 +8,7 @@ fn resolves_character_manifests_relative_to_project_root() {
 [profiles.game]
 kind = "game"
 source = "src/main.arcw"
+entry = "entry.game"
 character_manifests = ["assets/akane.awchar", "assets/sub/alice.arcwchar.json"]
 "#,
     )

@@ -1179,6 +1179,58 @@ mod tests {
 
     #[cfg(feature = "sema")]
     #[test]
+    fn rust_callable_publication_is_a_typed_delta_for_augmented_standard_manifest() {
+        use crate::publication::AdapterManifestSource;
+        use arcweft_lang_sema::callable::{
+            EnvironmentCallableKind, EnvironmentCallableOwner, PRODUCTION_CALLABLE_LIMITS,
+            StandardEnvironmentId,
+        };
+
+        let rust = ArcweftRustManifest::new(ArcweftRustPackage {
+            name: "truck_game".to_owned(),
+            version: "0.1.0".to_owned(),
+            metadata_hash: None,
+        })
+        .with_function(ArcweftRustFunction {
+            name: "score_to_rank".to_owned(),
+            rust_path: "truck_game::score_to_rank".to_owned(),
+            params: vec![ArcweftRustParam {
+                name: "score".to_owned(),
+                ty: ArcweftRustTypeRef::I32,
+            }],
+            return_type: ArcweftRustTypeRef::String,
+            purity: ArcweftRustPurity::Pure,
+            effects: Vec::new(),
+        });
+        let base = crate::standard::inference_tensor_manifest();
+        let expected_order = base.functions().len() + base.methods().len();
+        let augmented = base
+            .try_with_rust_manifest(&rust)
+            .expect("Rust callable metadata augments the standard manifest");
+        let publication = augmented
+            .try_rust_callable_publication(
+                AdapterManifestSource::Standard(StandardEnvironmentId::InferenceTensor),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("Rust delta publication is valid");
+
+        assert_eq!(
+            publication.owner(),
+            &EnvironmentCallableOwner::Standard(StandardEnvironmentId::InferenceTensor)
+        );
+        assert_eq!(publication.records().len(), 1);
+        assert_eq!(
+            publication.records()[0].kind(),
+            EnvironmentCallableKind::RustFunction
+        );
+        assert_eq!(
+            publication.records()[0].declaration_order().get(),
+            expected_order
+        );
+    }
+
+    #[cfg(feature = "sema")]
+    #[test]
     fn source_backed_adapter_facts_bind_exact_environment_keys_and_base_revision() {
         let first_manifest = AdapterManifest::new("fixture", "Fixture")
             .with_symbol("adapter.viewport", AdapterTypeKind::I32);
@@ -1329,10 +1381,12 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "sema")]
     fn adapter_overload(value: usize) -> AdapterCallableOverloadIndex {
         AdapterCallableOverloadIndex::try_from_usize(value).expect("test overload fits")
     }
 
+    #[cfg(feature = "sema")]
     fn adapter_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
         AdapterCallablePath::try_new(
             segments

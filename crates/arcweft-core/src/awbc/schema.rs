@@ -1,3 +1,6 @@
+use crate::entry::{
+    EntryBindingIdentity, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
+};
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -142,6 +145,8 @@ pub struct AwbcProgram {
     pub display_map: Vec<AwbcDisplayMapEntry>,
     pub source_map: Vec<AwbcSourceMapEntry>,
     pub resources: Vec<AwbcResourceRef>,
+    pub callable_executables: Vec<AwbcCallableExecutable>,
+    pub flow_executables: Vec<AwbcFlowExecutable>,
     pub entries: Vec<AwbcEntry>,
 }
 
@@ -178,6 +183,8 @@ impl Default for AwbcProgram {
             display_map: Vec::new(),
             source_map: Vec::new(),
             resources: Vec::new(),
+            callable_executables: Vec::new(),
+            flow_executables: Vec::new(),
             entries: Vec::new(),
         }
     }
@@ -212,133 +219,167 @@ impl AwbcProgram {
         self.strings = strings;
         remap_program_strings(self, &remap);
     }
-}
 
-fn remap_string_id(id: &mut AwbcStringId, remap: &[u32]) {
-    if let Some(index) = remap.get(id.index()).copied() {
-        id.0 = index;
+    pub(super) fn retain_referenced_strings(&mut self) {
+        let mut referenced = vec![false; self.strings.len()];
+        visit_program_strings(self, &mut |id| {
+            if let Some(referenced) = referenced.get_mut(id.index()) {
+                *referenced = true;
+            }
+        });
+
+        let mut remap = vec![0_u32; self.strings.len()];
+        let mut strings = Vec::with_capacity(referenced.iter().filter(|used| **used).count());
+        for (old_index, (value, used)) in self.strings.iter().zip(referenced).enumerate() {
+            if !used {
+                continue;
+            }
+            let new_index = u32::try_from(strings.len()).unwrap_or(u32::MAX);
+            remap[old_index] = new_index;
+            strings.push(value.clone());
+        }
+        self.strings = strings;
+        remap_program_strings(self, &remap);
     }
 }
 
-fn remap_optional_string_id(id: &mut Option<AwbcStringId>, remap: &[u32]) {
+fn visit_string_id(id: &mut AwbcStringId, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
+    visitor(id);
+}
+
+fn visit_optional_string_id(
+    id: &mut Option<AwbcStringId>,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     if let Some(id) = id {
-        remap_string_id(id, remap);
+        visit_string_id(id, visitor);
     }
 }
 
-fn remap_program_strings(program: &mut AwbcProgram, remap: &[u32]) {
+fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
     for ty in &mut program.runtime_types {
-        remap_runtime_type_strings(ty, remap);
+        visit_runtime_type_strings(ty, visitor);
     }
     for constant in &mut program.constants {
-        remap_constant_strings(constant, remap);
+        visit_constant_strings(constant, visitor);
     }
     for effect_set in &mut program.effect_sets {
         for effect in &mut effect_set.effects {
-            remap_string_id(effect, remap);
+            visit_string_id(effect, visitor);
         }
     }
     for layout in &mut program.frame_layouts {
         for slot in &mut layout.slots {
-            remap_optional_string_id(&mut slot.name, remap);
+            visit_optional_string_id(&mut slot.name, visitor);
         }
     }
     for function in &mut program.functions {
-        remap_optional_string_id(&mut function.public_id, remap);
+        visit_optional_string_id(&mut function.public_id, visitor);
     }
     for instruction in &mut program.instructions {
-        remap_instruction_strings(instruction, remap);
+        visit_instruction_strings(instruction, visitor);
     }
     for block in &mut program.blocks {
-        remap_terminator_strings(&mut block.terminator, remap);
+        visit_terminator_strings(&mut block.terminator, visitor);
     }
     for pattern in &mut program.patterns {
-        remap_pattern_strings(pattern, remap);
+        visit_pattern_strings(pattern, visitor);
     }
     for intrinsic in &mut program.intrinsics {
-        remap_string_id(&mut intrinsic.public_id, remap);
+        visit_string_id(&mut intrinsic.public_id, visitor);
     }
     for call in &mut program.host_calls {
-        remap_string_id(&mut call.public_id, remap);
-        remap_string_id(&mut call.capability, remap);
-        remap_string_id(&mut call.operation, remap);
+        visit_string_id(&mut call.public_id, visitor);
+        visit_string_id(&mut call.capability, visitor);
+        visit_string_id(&mut call.operation, visitor);
     }
     for task in &mut program.task_plans {
-        remap_string_id(&mut task.public_id, remap);
-        remap_string_id(&mut task.need_id, remap);
-        remap_string_id(&mut task.capability, remap);
-        remap_string_id(&mut task.operation, remap);
-        remap_string_id(&mut task.cancel_scope, remap);
+        visit_string_id(&mut task.public_id, visitor);
+        visit_string_id(&mut task.need_id, visitor);
+        visit_string_id(&mut task.capability, visitor);
+        visit_string_id(&mut task.operation, visitor);
+        visit_string_id(&mut task.cancel_scope, visitor);
         for argument in &mut task.arguments {
-            remap_optional_string_id(&mut argument.name, remap);
+            visit_optional_string_id(&mut argument.name, visitor);
         }
     }
     for effect in &mut program.effect_plans {
-        remap_optional_string_id(&mut effect.capability, remap);
+        visit_optional_string_id(&mut effect.capability, visitor);
     }
     for choice in &mut program.choices {
-        remap_optional_string_id(&mut choice.public_id, remap);
+        visit_optional_string_id(&mut choice.public_id, visitor);
     }
     for option in &mut program.choice_options {
-        remap_optional_string_id(&mut option.public_id, remap);
-        remap_string_id(&mut option.label, remap);
+        visit_optional_string_id(&mut option.public_id, visitor);
+        visit_string_id(&mut option.label, visitor);
     }
     for content in &mut program.content_units {
-        remap_string_id(&mut content.public_id, remap);
+        visit_string_id(&mut content.public_id, visitor);
     }
     for group in &mut program.line_task_groups {
         for option in &mut group.options {
-            remap_string_id(&mut option.name, remap);
+            visit_string_id(&mut option.name, visitor);
         }
         for handler in &mut group.cancel_handlers {
-            remap_string_id(&mut handler.trigger, remap);
+            visit_string_id(&mut handler.trigger, visitor);
         }
     }
     for node in &mut program.line_task_nodes {
-        remap_line_task_node_strings(node, remap);
+        visit_line_task_node_strings(node, visitor);
     }
     for stream in &mut program.stream_plans {
-        remap_string_id(&mut stream.public_id, remap);
+        visit_string_id(&mut stream.public_id, visitor);
     }
     for source in &mut program.source_plans {
-        remap_string_id(&mut source.public_id, remap);
+        visit_string_id(&mut source.public_id, visitor);
     }
     for helper in &mut program.pure_helpers {
-        remap_string_id(&mut helper.public_id, remap);
+        visit_string_id(&mut helper.public_id, visitor);
     }
     for method in &mut program.trait_methods {
-        remap_string_id(&mut method.public_id, remap);
+        visit_string_id(&mut method.public_id, visitor);
     }
     for display in &mut program.display_map {
-        remap_string_id(&mut display.display_key, remap);
+        visit_string_id(&mut display.display_key, visitor);
     }
     for source in &mut program.source_map {
-        remap_string_id(&mut source.source_file, remap);
-        remap_optional_string_id(&mut source.anchor, remap);
+        visit_string_id(&mut source.source_file, visitor);
+        visit_optional_string_id(&mut source.anchor, visitor);
     }
     for resource in &mut program.resources {
-        remap_string_id(&mut resource.public_id, remap);
-        remap_string_id(&mut resource.kind, remap);
+        visit_string_id(&mut resource.public_id, visitor);
+        visit_string_id(&mut resource.kind, visitor);
     }
     for entry in &mut program.entries {
-        remap_string_id(&mut entry.public_id, remap);
-        remap_entry_kind_strings(&mut entry.kind, remap);
-        remap_entry_target_strings(&mut entry.target, remap);
+        visit_string_id(&mut entry.public_id, visitor);
+        visit_entry_kind_strings(&mut entry.kind, visitor);
+        visit_entry_target_strings(&mut entry.target, visitor);
     }
 }
 
-fn remap_runtime_type_strings(ty: &mut AwbcRuntimeType, remap: &[u32]) {
+fn remap_program_strings(program: &mut AwbcProgram, remap: &[u32]) {
+    visit_program_strings(program, &mut |id| {
+        if let Some(index) = remap.get(id.index()).copied() {
+            id.0 = index;
+        }
+    });
+}
+
+fn visit_runtime_type_strings(
+    ty: &mut AwbcRuntimeType,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     match ty {
         AwbcRuntimeType::Record { public_id, fields } => {
-            remap_optional_string_id(public_id, remap);
+            visit_optional_string_id(public_id, visitor);
             for field in fields {
-                remap_string_id(&mut field.name, remap);
+                visit_string_id(&mut field.name, visitor);
             }
         }
         AwbcRuntimeType::Variant { public_id, cases } => {
-            remap_optional_string_id(public_id, remap);
+            visit_optional_string_id(public_id, visitor);
             for case in cases {
-                remap_string_id(&mut case.name, remap);
+                visit_string_id(&mut case.name, visitor);
             }
         }
         AwbcRuntimeType::Unit
@@ -363,9 +404,9 @@ fn remap_runtime_type_strings(ty: &mut AwbcRuntimeType, remap: &[u32]) {
     }
 }
 
-fn remap_constant_strings(constant: &mut AwbcConstant, remap: &[u32]) {
+fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
     match constant {
-        AwbcConstant::String(id) | AwbcConstant::EntityRef(id) => remap_string_id(id, remap),
+        AwbcConstant::String(id) | AwbcConstant::EntityRef(id) => visit_string_id(id, visitor),
         AwbcConstant::Unit
         | AwbcConstant::Bool(_)
         | AwbcConstant::Int { .. }
@@ -380,21 +421,24 @@ fn remap_constant_strings(constant: &mut AwbcConstant, remap: &[u32]) {
         | AwbcConstant::Bytes(_)
         | AwbcConstant::TensorF32 { .. }
         | AwbcConstant::TensorF64 { .. } => {}
-        AwbcConstant::Variant { case_name, .. } => remap_string_id(case_name, remap),
+        AwbcConstant::Variant { case_name, .. } => visit_string_id(case_name, visitor),
         AwbcConstant::Record { field_names, .. } => {
             for field_name in field_names {
-                remap_string_id(field_name, remap);
+                visit_string_id(field_name, visitor);
             }
         }
     }
 }
 
-fn remap_instruction_strings(instruction: &mut AwbcInstruction, remap: &[u32]) {
+fn visit_instruction_strings(
+    instruction: &mut AwbcInstruction,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     match instruction {
         AwbcInstruction::ProjectField { field, .. }
-        | AwbcInstruction::AssignField { field, .. } => remap_string_id(field, remap),
+        | AwbcInstruction::AssignField { field, .. } => visit_string_id(field, visitor),
         AwbcInstruction::RegisterCleanup { key, .. } | AwbcInstruction::CancelCleanup { key } => {
-            remap_string_id(key, remap);
+            visit_string_id(key, visitor);
         }
         AwbcInstruction::MakeFunction {
             params,
@@ -402,32 +446,35 @@ fn remap_instruction_strings(instruction: &mut AwbcInstruction, remap: &[u32]) {
             ..
         } => {
             for param in params {
-                remap_string_id(param, remap);
+                visit_string_id(param, visitor);
             }
             for capture_name in capture_names {
-                remap_string_id(capture_name, remap);
+                visit_string_id(capture_name, visitor);
             }
         }
         AwbcInstruction::MakeRecord { field_names, .. } => {
             for field_name in field_names {
-                remap_string_id(field_name, remap);
+                visit_string_id(field_name, visitor);
             }
         }
-        AwbcInstruction::MakeVariant { case_name, .. } => remap_string_id(case_name, remap),
+        AwbcInstruction::MakeVariant { case_name, .. } => visit_string_id(case_name, visitor),
         _ => {}
     }
 }
 
-fn remap_terminator_strings(terminator: &mut AwbcTerminator, remap: &[u32]) {
+fn visit_terminator_strings(
+    terminator: &mut AwbcTerminator,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     if let AwbcTerminator::Trap { message, .. } = terminator {
-        remap_optional_string_id(message, remap);
+        visit_optional_string_id(message, visitor);
     }
 }
 
-fn remap_pattern_strings(pattern: &mut AwbcPattern, remap: &[u32]) {
+fn visit_pattern_strings(pattern: &mut AwbcPattern, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
     match pattern {
-        AwbcPattern::Entity(entity) => remap_string_id(entity, remap),
-        AwbcPattern::Variant { case_name, .. } => remap_string_id(case_name, remap),
+        AwbcPattern::Entity(entity) => visit_string_id(entity, visitor),
+        AwbcPattern::Variant { case_name, .. } => visit_string_id(case_name, visitor),
         AwbcPattern::Bind { .. }
         | AwbcPattern::Discard
         | AwbcPattern::Literal(_)
@@ -438,39 +485,51 @@ fn remap_pattern_strings(pattern: &mut AwbcPattern, remap: &[u32]) {
     }
 }
 
-fn remap_line_task_node_strings(node: &mut AwbcLineTaskNode, remap: &[u32]) {
+fn visit_line_task_node_strings(
+    node: &mut AwbcLineTaskNode,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     if let AwbcLineTaskNode::Child { trigger, .. } = node {
-        remap_line_task_trigger_strings(trigger, remap);
+        visit_line_task_trigger_strings(trigger, visitor);
     }
 }
 
-fn remap_line_task_trigger_strings(trigger: &mut AwbcLineTaskTrigger, remap: &[u32]) {
+fn visit_line_task_trigger_strings(
+    trigger: &mut AwbcLineTaskTrigger,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     if let AwbcLineTaskTrigger::Mark(id) = trigger {
-        remap_string_id(id, remap);
+        visit_string_id(id, visitor);
     }
 }
 
-fn remap_entry_kind_strings(kind: &mut AwbcEntryKind, remap: &[u32]) {
+fn visit_entry_kind_strings(kind: &mut AwbcEntryKind, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
     if let AwbcEntryKind::Custom(id) = kind {
-        remap_string_id(id, remap);
+        visit_string_id(id, visitor);
     }
 }
 
-fn remap_entry_target_strings(target: &mut AwbcEntryTarget, remap: &[u32]) {
+fn visit_entry_target_strings(
+    target: &mut AwbcEntryTarget,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     if let AwbcEntryTarget::Routes(routes) = target {
         for route in routes {
-            remap_string_id(&mut route.method, remap);
-            remap_string_id(&mut route.path, remap);
+            visit_string_id(&mut route.method, visitor);
+            visit_string_id(&mut route.path, visitor);
             for binding in &mut route.bindings {
-                remap_route_binding_source_strings(&mut binding.source, remap);
+                visit_route_binding_source_strings(&mut binding.source, visitor);
             }
         }
     }
 }
 
-fn remap_route_binding_source_strings(source: &mut AwbcRouteBindingSource, remap: &[u32]) {
+fn visit_route_binding_source_strings(
+    source: &mut AwbcRouteBindingSource,
+    visitor: &mut dyn FnMut(&mut AwbcStringId),
+) {
     match source {
-        AwbcRouteBindingSource::PathParameter(id) => remap_string_id(id, remap),
+        AwbcRouteBindingSource::PathParameter(id) => visit_string_id(id, visitor),
     }
 }
 
@@ -1915,21 +1974,64 @@ pub enum AwbcResourceResidency {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcEntry {
+    /// Canonical runtime lookup identity. `public_id` is presentation/debug
+    /// text and must never be parsed back into semantic identity.
+    pub runtime_id: crate::plan::EntryRuntimeId,
+    pub binding: EntryBindingIdentity,
     pub public_id: AwbcStringId,
     pub kind: AwbcEntryKind,
     pub signature: AwbcSignatureId,
     pub target: AwbcEntryTarget,
+    pub roles: RuntimeEntryRoles,
+}
+
+/// Exact semantic callable role mapped to one Product AWBC function slot.
+///
+/// Root transactions retain `role` and ask the Product evaluator to resolve
+/// this table. The dense function id never becomes semantic identity.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcCallableExecutable {
+    pub role: RuntimeCallableRole,
+    pub function: AwbcFunctionId,
+}
+
+/// Exact semantic flow contract mapped to one Product AWBC function slot.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcFlowExecutable {
+    pub metadata: RuntimeFlowExecutable,
+    pub function: AwbcFunctionId,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcEntryKind {
     Game,
+    Editor,
     Cli,
     Server,
     Activity,
     Test,
     Bench,
+    Agent,
     Custom(AwbcStringId),
+}
+
+impl AwbcEntryKind {
+    #[must_use]
+    pub fn runtime_kind(&self, strings: &[String]) -> Option<crate::plan::RuntimeEntryKind> {
+        Some(match self {
+            Self::Game => crate::plan::RuntimeEntryKind::Game,
+            Self::Editor => crate::plan::RuntimeEntryKind::Editor,
+            Self::Cli => crate::plan::RuntimeEntryKind::Cli,
+            Self::Server => crate::plan::RuntimeEntryKind::Server,
+            Self::Activity => crate::plan::RuntimeEntryKind::Activity,
+            Self::Test => crate::plan::RuntimeEntryKind::Test,
+            Self::Bench => crate::plan::RuntimeEntryKind::Bench,
+            Self::Agent => crate::plan::RuntimeEntryKind::Agent,
+            Self::Custom(value) => {
+                crate::plan::RuntimeEntryKind::Custom(strings.get(value.index())?.clone())
+            }
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

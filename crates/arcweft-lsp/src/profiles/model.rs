@@ -8,6 +8,7 @@ use arcweft_character::catalog::CharacterCatalog;
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_launch::ResolvedLaunchProfile;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
+use arcweft_source::{SourceDocument, SourceDocumentIdentity};
 use arcweft_verify_lsp::{ArcweftLspContext, ArcweftLspProfileContextBuilder};
 use lsp_types::Uri;
 use std::{
@@ -24,6 +25,8 @@ pub struct LspProfile {
     pub(super) runner: RuntimeHostRunnerKind,
     pub(super) dialogue_defaults: Option<String>,
     pub(super) dialogue_defaults_selection: Option<ProfileSourceSelection>,
+    pub(super) entry_selection: Option<ProfileSourceSelection>,
+    pub(super) entry_selections: Vec<(String, ProfileSourceSelection)>,
     pub(super) characters: CharacterCatalog,
     pub(super) resolved_profile: Option<ResolvedLaunchProfile>,
     pub(super) state: Arc<LspProfileState>,
@@ -35,7 +38,7 @@ pub struct LspProfile {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProfileSourceSelection {
     pub(super) path: PathBuf,
-    pub(super) source: String,
+    pub(super) document: Arc<SourceDocument>,
     pub(super) value_range: Range<usize>,
 }
 
@@ -48,6 +51,8 @@ impl LspProfile {
             runner,
             dialogue_defaults: None,
             dialogue_defaults_selection: None,
+            entry_selection: None,
+            entry_selections: Vec::new(),
             characters: CharacterCatalog::default(),
             resolved_profile: None,
             state: Arc::new(LspProfileState::new()),
@@ -64,6 +69,8 @@ impl LspProfile {
             runner,
             dialogue_defaults: None,
             dialogue_defaults_selection: None,
+            entry_selection: None,
+            entry_selections: Vec::new(),
             characters: CharacterCatalog::default(),
             resolved_profile: None,
             state: Arc::new(LspProfileState::new()),
@@ -129,6 +136,16 @@ impl LspProfile {
         self.dialogue_defaults_selection.as_ref()
     }
 
+    /// Source location of the launch profile's canonical `entry` value.
+    pub fn entry_selection(&self) -> Option<&ProfileSourceSelection> {
+        self.entry_selection.as_ref()
+    }
+
+    /// Every source-backed profile `entry` token in the current manifest.
+    pub fn entry_selections(&self) -> &[(String, ProfileSourceSelection)] {
+        &self.entry_selections
+    }
+
     /// Whether expression-level type inlays are enabled for this profile.
     pub const fn arbitrary_expression_type_inlays(&self) -> bool {
         self.arbitrary_expression_type_inlays
@@ -155,7 +172,12 @@ impl ProfileSourceSelection {
 
     /// Manifest source text used to compute `value_range`.
     pub fn source(&self) -> &str {
-        &self.source
+        self.document.text()
+    }
+
+    /// Exact manifest revision that owns this token.
+    pub fn source_identity(&self) -> &SourceDocumentIdentity {
+        self.document.identity()
     }
 
     /// Byte range of the selected value inside `source`.

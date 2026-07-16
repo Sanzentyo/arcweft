@@ -7,6 +7,7 @@ pub mod character_metadata;
 pub mod completion;
 pub mod definition;
 mod dialogue_view_metadata;
+pub(crate) mod entry_roles;
 pub mod hover;
 pub mod inlay;
 pub mod references;

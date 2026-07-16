@@ -1,5 +1,5 @@
 use arcweft_manifest_model::{
-    ContentCompression, ContentPlacement, ContentResidency, LaunchKind, ProfileId,
+    ContentCompression, ContentPlacement, ContentResidency, EntrySelectionId, LaunchKind, ProfileId,
 };
 use serde::Deserialize;
 use std::{
@@ -140,11 +140,11 @@ pub enum LaunchProfileSelection<'a> {
 
 /// One launch profile entry in the manifest.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct LaunchProfileSpec {
     kind: LaunchKind,
     source: PathBuf,
-    #[serde(default)]
-    entry: Option<String>,
+    entry: EntrySelectionId,
     #[serde(default)]
     adapter: Option<String>,
     #[serde(default)]
@@ -248,7 +248,7 @@ pub struct ResolvedLaunchProfile {
     id: ProfileId,
     kind: LaunchKind,
     source: PathBuf,
-    entry: Option<String>,
+    entry: EntrySelectionId,
     adapter: Option<String>,
     adapter_manifests: Vec<PathBuf>,
     listen: Option<String>,
@@ -445,6 +445,11 @@ impl LaunchProfileSpec {
         self.kind
     }
 
+    /// Exact canonical source entry selected by this profile.
+    pub const fn entry(&self) -> &EntrySelectionId {
+        &self.entry
+    }
+
     /// Build policy selected by this profile.
     pub const fn build(&self) -> &LaunchBuildProfileSpec {
         &self.build
@@ -482,9 +487,9 @@ impl ResolvedLaunchProfile {
         &self.source
     }
 
-    /// Optional source entry selector.
-    pub fn entry(&self) -> Option<&str> {
-        self.entry.as_deref()
+    /// Exact canonical source entry selected by this profile.
+    pub const fn entry(&self) -> &EntrySelectionId {
+        &self.entry
     }
 
     /// Optional adapter selected by the profile.

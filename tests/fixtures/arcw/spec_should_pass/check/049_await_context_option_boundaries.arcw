@@ -17,7 +17,7 @@ effects { log.write }
             log.info("loading voice", progress = p.ratio)
 
     let route = state.route_override
-        .context("route override is missing")?
+        .context("route override is missing")
 
     return Ok("done")
 }

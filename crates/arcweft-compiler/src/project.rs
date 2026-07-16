@@ -6,13 +6,19 @@
 //! the transitional crate-global semantic-pass view.
 
 mod cache_batch;
+mod entry_runtime;
+#[cfg(test)]
+mod entry_tests;
 mod registration;
 
 pub(crate) use cache_batch::PendingProjectCompileStores;
 #[cfg(test)]
 use cache_batch::PendingStoreTransitionError;
 pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, ProjectCompileCache};
-pub use registration::ProjectCompilationContext;
+pub(crate) use entry_runtime::EntryRuntimeProjection;
+pub use registration::{
+    ProjectCompilationContext, ProjectEntrySelection, ProjectEntrySelectionKind,
+};
 
 use crate::{hir, lower, parse, style};
 use arcweft_lang_hir::{
@@ -24,6 +30,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::{
     check::TypeCheckReport,
+    entry::{CheckedEntryCatalog, CheckedEntryDiagnostic, CheckedEntryKind, check_project_entries},
     registration::{ProjectRegistrationFacts, RegisteredSemanticWorld, RegisteredTypeCheckEnv},
 };
 use arcweft_lang_syntax::{
@@ -40,7 +47,8 @@ use arcweft_runtime_plan::{
 #[cfg(test)]
 use arcweft_source::SourceDocumentId;
 use arcweft_source::{
-    Diagnostic, DiagnosticSeverity, SourceDocument, SourceDocumentIdentity, SourceName,
+    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceDocument, SourceDocumentIdentity,
+    SourceName,
 };
 use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 use thiserror::Error;
@@ -56,6 +64,8 @@ pub enum ProjectCompileStage {
     Resolve,
     Readiness,
     TypeCheck,
+    EntryBinding,
+    EntrySelection,
     StyleLower,
     LineTaskLower,
     RuntimePlanLower,
@@ -118,6 +128,7 @@ pub struct CompiledProject {
     registered_world: Arc<RegisteredSemanticWorld>,
     linked_hir: HirModule,
     typecheck_report: TypeCheckReport,
+    checked_entries: CheckedEntryCatalog,
     style: style::CompiledViewStyleArtifact,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     runtime_plan: RuntimePlanLowerReport,
@@ -142,6 +153,8 @@ impl ProjectCompileStage {
             Self::Resolve => "resolve",
             Self::Readiness => "readiness",
             Self::TypeCheck => "type-check",
+            Self::EntryBinding => "entry-binding",
+            Self::EntrySelection => "entry-selection",
             Self::StyleLower => "style-lower",
             Self::LineTaskLower => "line-task-lower",
             Self::RuntimePlanLower => "runtime-plan-lower",
@@ -295,6 +308,10 @@ impl CompiledProject {
         &self.typecheck_report
     }
 
+    pub const fn checked_entries(&self) -> &CheckedEntryCatalog {
+        &self.checked_entries
+    }
+
     pub const fn style(&self) -> &style::CompiledViewStyleArtifact {
         &self.style
     }
@@ -412,6 +429,20 @@ where
                     errors.into_iter().map(|error| error.diagnostic()),
                 )
             })?;
+        let checked_entries = check_project_entries(
+            &hir_project,
+            registered_world.symbols(),
+            registered_world.environment().callable_catalog(),
+            &typecheck_report,
+        )
+        .map_err(|diagnostics| {
+            linked_error_with_registration_sources(
+                ProjectCompileStage::EntryBinding,
+                context.facts(),
+                diagnostics.iter().map(entry_binding_diagnostic),
+            )
+        })?;
+        validate_entry_selection(&checked_entries, context.entry_selection())?;
         let style = style::lower_project_view_styles(
             &hir_project,
             &linked_hir,
@@ -433,10 +464,23 @@ where
                 errors.into_iter().map(|error| error.diagnostic()),
             )
         })?;
+        let agent_controllers = entry_runtime::agent_controller_requests(&checked_entries)
+            .map_err(|error| {
+                linked_error(
+                    ProjectCompileStage::RuntimePlanLower,
+                    [
+                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                            .with_code("compiler.entry_runtime_projection"),
+                    ],
+                )
+            })?;
+        let entry_callables = entry_runtime::stateful_callable_requests(&checked_entries);
         let runtime_options = runtime_options
             .clone()
-            .with_package_identity(project.manifest().package().name().as_str());
-        let runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
+            .with_package_identity(project.manifest().package().name().as_str())
+            .with_agent_controllers(agent_controllers)
+            .with_entry_callables(entry_callables);
+        let mut runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
             &linked_hir,
             &typecheck_report,
             &runtime_options,
@@ -447,6 +491,29 @@ where
                 errors.into_iter().map(|error| error.diagnostic()),
             )
         })?;
+        entry_runtime::attach_checked_entries(
+            &mut runtime_plan,
+            &checked_entries,
+            runtime_options.command_policy(),
+        )
+        .map_err(|error| {
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                [
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("compiler.entry_runtime_projection"),
+                ],
+            )
+        })?;
+        runtime_plan.plan.verify().map_err(|error| {
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                [
+                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("compiler.runtime_plan_verify"),
+                ],
+            )
+        })?;
 
         Ok(CompiledProject {
             modules,
@@ -455,6 +522,7 @@ where
             registered_world,
             linked_hir,
             typecheck_report,
+            checked_entries,
             style,
             line_task_groups,
             runtime_plan,
@@ -692,6 +760,76 @@ fn module_error(
     }
 }
 
+fn entry_binding_diagnostic(diagnostic: &CheckedEntryDiagnostic) -> Diagnostic {
+    let mut rendered = Diagnostic::new(DiagnosticSeverity::Error, diagnostic.message())
+        .with_code(diagnostic.code())
+        .with_span(diagnostic.primary().clone());
+    for related in diagnostic.related() {
+        rendered = rendered.with_label(DiagnosticLabel::secondary(
+            related.clone(),
+            Some("related entry binding declaration".to_owned()),
+        ));
+    }
+    rendered
+}
+
+fn validate_entry_selection(
+    catalog: &CheckedEntryCatalog,
+    selection: Option<&ProjectEntrySelection>,
+) -> Result<(), ProjectCompileError> {
+    let Some(selection) = selection else {
+        return Ok(());
+    };
+    let Some(binding) = catalog.get_public(selection.id()) else {
+        return Err(linked_error(
+            ProjectCompileStage::EntrySelection,
+            [Diagnostic::new(
+                DiagnosticSeverity::Error,
+                format!("selected source entry `{}` does not exist", selection.id()),
+            )
+            .with_code("compiler.entry_selection.missing")],
+        ));
+    };
+    let actual = binding.kind();
+    if entry_selection_kind_matches(selection.kind(), &actual) {
+        Ok(())
+    } else {
+        Err(linked_error(
+            ProjectCompileStage::EntrySelection,
+            [Diagnostic::new(
+                DiagnosticSeverity::Error,
+                format!(
+                    "selected source entry `{}` has kind `{}`, but the launch surface requires `{}`",
+                    selection.id(),
+                    actual.as_str(),
+                    selection.kind().as_str(),
+                ),
+            )
+            .with_code("compiler.entry_selection.kind_mismatch")],
+        ))
+    }
+}
+
+fn entry_selection_kind_matches(
+    selected: ProjectEntrySelectionKind,
+    actual: &CheckedEntryKind,
+) -> bool {
+    matches!(
+        (selected, actual),
+        (ProjectEntrySelectionKind::Game, CheckedEntryKind::Game)
+            | (ProjectEntrySelectionKind::Editor, CheckedEntryKind::Editor)
+            | (ProjectEntrySelectionKind::Cli, CheckedEntryKind::Cli)
+            | (ProjectEntrySelectionKind::Server, CheckedEntryKind::Server)
+            | (
+                ProjectEntrySelectionKind::Activity,
+                CheckedEntryKind::Activity
+            )
+            | (ProjectEntrySelectionKind::Test, CheckedEntryKind::Test)
+            | (ProjectEntrySelectionKind::Bench, CheckedEntryKind::Bench)
+            | (ProjectEntrySelectionKind::Agent, CheckedEntryKind::Agent)
+    )
+}
+
 fn linked_error(
     stage: ProjectCompileStage,
     diagnostics: impl IntoIterator<Item = Diagnostic>,
@@ -748,289 +886,4 @@ impl ProjectCompileError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use arcweft_lang_hir::symbol::{
-        CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
-    };
-    use arcweft_lang_sema::registration::{
-        EnvironmentBindingId, ExternalRegistrationFact, RegisteredExternalOwner,
-    };
-    use arcweft_lang_syntax::ast::{
-        common::Visibility,
-        module_path::{CanonicalModulePath, ModulePathRoot},
-        symbol_path::SymbolPath,
-    };
-    use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
-    use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
-    use std::path::PathBuf;
-
-    #[test]
-    fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
-        let source_text = "flow @flow.opening start {\n}\n";
-        let document = Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new("src/main.arcw").expect("document id"),
-                SourceName::path("src/main.arcw"),
-                source_text,
-            )
-            .expect("source document"),
-        );
-        let source = ProjectSourceFile::new(
-            CanonicalModulePath::crate_root(),
-            PathBuf::from("src/main.arcw"),
-            Arc::clone(&document),
-            [],
-        );
-        let span = document
-            .span(SourceRange::new(5, 18))
-            .expect("diagnostic span");
-        let error = module_error(
-            &source,
-            &document,
-            ProjectCompileStage::Parse,
-            [Diagnostic::new(DiagnosticSeverity::Error, "parse failed")
-                .with_code("syntax.parse")
-                .with_label(DiagnosticLabel::primary(
-                    span,
-                    Some("found token here".to_owned()),
-                ))],
-        );
-
-        let diagnostic = error.diagnostics().first().expect("diagnostic");
-        assert_eq!(
-            diagnostic.module(),
-            Some(&CanonicalModulePath::crate_root())
-        );
-        assert_eq!(diagnostic.stage(), ProjectCompileStage::Parse);
-        assert_eq!(
-            diagnostic.diagnostic().code().expect("code").as_str(),
-            "syntax.parse"
-        );
-        assert_eq!(
-            diagnostic.source().expect("source").text(),
-            Some(source_text)
-        );
-        assert_eq!(
-            diagnostic.source().expect("source").name().display_name(),
-            "src/main.arcw"
-        );
-    }
-
-    #[test]
-    fn pending_store_state_is_one_way() {
-        #[derive(Default)]
-        struct RecordingCache {
-            stores: Vec<(ProjectCompileUnitFingerprint, usize)>,
-        }
-
-        impl ProjectCompileCache for RecordingCache {
-            fn load(
-                &mut self,
-                _fingerprint: ProjectCompileUnitFingerprint,
-            ) -> Option<Vec<CompiledProjectModule>> {
-                None
-            }
-
-            fn store(
-                &mut self,
-                fingerprint: ProjectCompileUnitFingerprint,
-                modules: &[CompiledProjectModule],
-            ) {
-                self.stores.push((fingerprint, modules.len()));
-            }
-        }
-
-        let fingerprint = ProjectCompileUnitFingerprint([7; 32]);
-        let mut pending = PendingProjectCompileStores::new();
-        pending
-            .push(fingerprint, Vec::new())
-            .expect("collecting accepts stores");
-        let mut cache = RecordingCache::default();
-        pending.flush(&mut cache).expect("first flush succeeds");
-        assert_eq!(cache.stores, vec![(fingerprint, 0)]);
-        assert_eq!(
-            pending.push(fingerprint, Vec::new()),
-            Err(PendingStoreTransitionError::AlreadyFinalized)
-        );
-        assert_eq!(
-            pending.flush(&mut cache),
-            Err(PendingStoreTransitionError::AlreadyFinalized)
-        );
-        assert_eq!(cache.stores, vec![(fingerprint, 0)]);
-
-        let mut discarded = PendingProjectCompileStores::new();
-        discarded.discard();
-        discarded.discard();
-        assert_eq!(
-            discarded.push(fingerprint, Vec::new()),
-            Err(PendingStoreTransitionError::AlreadyFinalized)
-        );
-        assert_eq!(
-            discarded.flush(&mut cache),
-            Err(PendingStoreTransitionError::AlreadyFinalized)
-        );
-    }
-
-    #[test]
-    fn registration_diagnostic_retains_accepted_source_document() {
-        let document = Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new("arcweft-project://compiler-registration/src/main.arcw")
-                    .expect("document id"),
-                SourceName::path("src/main.arcw"),
-                "fn main() -> Unit { () }\n",
-            )
-            .expect("document"),
-        );
-        let world = ProjectSymbolWorldId::try_new(
-            CallablePackageId::try_new("compiler-registration").expect("package"),
-            document.identity().id().clone(),
-            "test",
-        )
-        .expect("world");
-        let facts = ProjectRegistrationFacts::try_new(
-            world,
-            vec![Arc::clone(&document)],
-            Vec::new(),
-            Vec::new(),
-        )
-        .expect("facts");
-        let span = document.span(SourceRange::new(0, 2)).expect("span");
-        let error = linked_error_with_registration_sources(
-            ProjectCompileStage::Registration,
-            &facts,
-            [
-                Diagnostic::new(DiagnosticSeverity::Error, "registration failed")
-                    .with_code("aw.character.registration.unknown_owner")
-                    .with_span(span),
-            ],
-        );
-
-        let diagnostic = error.diagnostics().first().expect("diagnostic");
-        let source = diagnostic.source().expect("accepted source document");
-        assert_eq!(source.document().identity(), document.identity());
-        assert_eq!(source.document().text(), document.text());
-    }
-
-    #[test]
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the cache-rollback test retains every stage input and the zero-store assertion in one scenario"
-    )]
-    fn pending_stores_discard_on_registration_error() {
-        #[derive(Default)]
-        struct RecordingCache {
-            stores: usize,
-        }
-
-        impl ProjectCompileCache for RecordingCache {
-            fn load(
-                &mut self,
-                _fingerprint: ProjectCompileUnitFingerprint,
-            ) -> Option<Vec<CompiledProjectModule>> {
-                None
-            }
-
-            fn store(
-                &mut self,
-                _fingerprint: ProjectCompileUnitFingerprint,
-                _modules: &[CompiledProjectModule],
-            ) {
-                self.stores += 1;
-            }
-        }
-
-        let source_text = "fn main() -> Unit { () }\n";
-        let source_path = PathBuf::from("src/main.arcw");
-        let document = Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new("arcweft-project://compiler-registration/src/main.arcw")
-                    .expect("document id"),
-                SourceName::path(source_path.display().to_string()),
-                source_text,
-            )
-            .expect("document"),
-        );
-        let project = ProjectSources::new(
-            PathBuf::from("arcw.toml"),
-            PathBuf::new(),
-            ProjectManifest::parse_toml("[package]\nname = \"compiler-registration\"\n")
-                .expect("manifest"),
-            [ProjectSourceFile::new(
-                CanonicalModulePath::crate_root(),
-                source_path.clone(),
-                Arc::clone(&document),
-                [],
-            )],
-        )
-        .expect("project");
-        let declaration = document.span(SourceRange::new(0, 2)).expect("span");
-        let owner = EnvironmentBindingId::try_new("environment.missing").expect("environment id");
-        let direct_bindings = [owner.as_str()]
-            .into_iter()
-            .map(|name| {
-                ProjectDirectBinding::try_new(
-                    CanonicalModulePath::crate_root(),
-                    name,
-                    Some(Visibility::Public),
-                    declaration.clone(),
-                    false,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .expect("direct bindings");
-        let seed = ExternalDeclarationSeed::try_new(
-            SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner.as_str())
-                .expect("symbol path"),
-            Some(Visibility::Public),
-            declaration.clone(),
-            direct_bindings,
-        )
-        .expect("external seed");
-        let world = ProjectSymbolWorldId::try_new(
-            CallablePackageId::try_new("compiler-registration").expect("package"),
-            document.identity().id().clone(),
-            "test",
-        )
-        .expect("world");
-        let facts = ProjectRegistrationFacts::try_new(
-            world,
-            vec![document],
-            vec![ExternalRegistrationFact::new(
-                seed,
-                RegisteredExternalOwner::Environment(owner),
-                declaration,
-            )],
-            Vec::new(),
-        )
-        .expect("facts");
-        let context = ProjectCompilationContext::new(
-            Arc::new(TypeCheckEnv::standard()),
-            Arc::new(facts),
-            None,
-        );
-        let mut cache = RecordingCache::default();
-
-        let error = compile_project_with_cache(
-            &project,
-            &context,
-            &RuntimePlanLowerOptions::default(),
-            &mut cache,
-        )
-        .expect_err("unknown character owner rejects project");
-        assert_eq!(error.stage(), ProjectCompileStage::Registration.as_str());
-        assert_eq!(cache.stores, 0);
-        assert!(error.diagnostics().iter().any(|diagnostic| {
-            diagnostic
-                .diagnostic()
-                .code()
-                .is_some_and(|code| code.as_str() == "aw.character.registration.unknown_owner")
-        }));
-    }
-
-    #[test]
-    fn registration_failure_discards_project() {
-        pending_stores_discard_on_registration_error();
-    }
-}
+mod tests;

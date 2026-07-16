@@ -1888,7 +1888,7 @@ fn agent_repl_saves_loads_and_drops_bindings_from_input_session() {
     let check_json: serde_json::Value =
         serde_json::from_slice(&check_output.stdout).expect("script check output is JSON");
     assert_eq!(check_json["ok"], true);
-    assert_eq!(check_json["agents"], 1);
+    assert_eq!(check_json["agent_entries"], 1);
 }
 
 #[test]
@@ -1968,7 +1968,7 @@ fn agent_repl_executes_and_saves_physical_pointer_cell() {
     let check_json: serde_json::Value =
         serde_json::from_slice(&check_output.stdout).expect("script check output is JSON");
     assert_eq!(check_json["ok"], true);
-    assert_eq!(check_json["agents"], 1);
+    assert_eq!(check_json["agent_entries"], 1);
 }
 
 #[test]
@@ -2170,7 +2170,7 @@ fn agent_mcp_stdio_runs_agent_script() {
             .expect("script.run result text");
         let run: serde_json::Value = serde_json::from_str(text).expect("script.run result is JSON");
         assert_eq!(run["ok"], true);
-        assert_eq!(run["agents"], 1);
+        assert_eq!(run["agent_entries"], 1);
         assert_eq!(run["host_calls"], 1);
         assert_eq!(run["final_status"], "Done(Return(\"done\"))");
     }
@@ -2254,7 +2254,7 @@ fn assert_agent_script_bundle_run(bundle_path: &Path, trace_path: &Path) {
     let bundle_run_json: serde_json::Value =
         serde_json::from_slice(&bundle_run_output.stdout).expect("bundle run output is JSON");
     assert_eq!(bundle_run_json["ok"], true);
-    assert_eq!(bundle_run_json["agents"], 1);
+    assert_eq!(bundle_run_json["agent_entries"], 1);
     assert_eq!(bundle_run_json["host_calls"], 1);
     assert_eq!(bundle_run_json["trace_records"], 5);
     assert_eq!(bundle_run_json["responses"][0]["kind"], "observation");
@@ -2655,16 +2655,16 @@ fn write_project_callable_rag_fixture(source_path: &Path) {
         r#"
 signal @signal.current_flow: Watch<Ref<Flow>>
 
-entry game @entry.main {
+entry cli @entry.main {
     goto @flow.opening
 }
 
-pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
+pub fn update_route(state: GameState, event: GameEvent) -> GameState {
     let route = current_route(state)
     state
 }
 
-pub reducer current_route(state: GameState) -> Ref<Flow> {
+pub fn current_route(state: GameState) -> Ref<Flow> {
     @flow.opening
 }
 
@@ -2930,16 +2930,16 @@ fn assert_debug_db_graph_exposes_project_callables(
     assert!(
         symbols.iter().any(|symbol| {
             symbol["qualified_name"] == "update_route"
-                && symbol["kind"] == "project_reducer"
+                && symbol["kind"] == "project_function"
                 && symbol["semantic_hash"]
                     .as_str()
-                    .is_some_and(|hash| hash.contains("hir:callable:reducer:update_route"))
+                    .is_some_and(|hash| hash.contains("hir:callable:function:"))
         }),
-        "debug db graph should expose project reducer symbols: {graph_report}"
+        "debug db graph should expose the ordinary function bound as reducer: {graph_report}"
     );
     assert!(
         symbols.iter().any(|symbol| {
-            symbol["qualified_name"] == "current_route" && symbol["kind"] == "project_reducer"
+            symbol["qualified_name"] == "current_route" && symbol["kind"] == "project_function"
         }),
         "debug db graph should expose project callable symbols: {graph_report}"
     );

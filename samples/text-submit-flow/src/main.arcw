@@ -5,7 +5,32 @@ pub character narrator {
 
 pub action feedback.submit(value: String)
 
+struct GameState {
+  started: bool
+}
+
+enum GameEvent {
+  Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+  GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+  Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.text_submit_flow {
+  state = GameState
+  initializer = initial_game_state
+  event = GameEvent
+  reducer = reduce_game
   goto @flow.text_submit_flow
 }
 
@@ -42,7 +67,7 @@ pub view FeedbackForm() {
   }
 }
 
-flow text_submit_flow {
+flow text_submit_flow(state: GameState) {
   view(@view:.FeedbackForm)
 
   narrator:

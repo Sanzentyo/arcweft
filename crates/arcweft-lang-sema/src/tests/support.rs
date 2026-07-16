@@ -24,10 +24,7 @@ pub(super) use arcweft_lang_syntax::{
             AuthoredExpr, AwaitBranchKind, ContractClause, FlowItem, SelectBranchHead, Stmt,
             WaitTarget,
         },
-        items::{
-            CallableKind, EntityDeclKind, ExternModMember, FunctionKind, ImplMember, Item,
-            TraitMember,
-        },
+        items::{EntityDeclKind, ExternModMember, FunctionKind, ImplMember, Item, TraitMember},
         line_plan::{DeferOutcome, LinePlanItem},
         pattern::{Pattern, VariantPatternPayload},
         proof::{ProofClause, ProofTrust, TestKind},

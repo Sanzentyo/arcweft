@@ -10,8 +10,35 @@
 // - input.long_latin_area: TextArea, long Latin/Japanese text
 // - input.secret_secure_field: SecureField, redacted diagnostics
 
-entry game @entry.main { goto @flow.web_ime_player_rendered }
+struct GameState {
+    started: bool
+}
 
-flow web_ime_player_rendered {
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.web_ime_player_rendered
+}
+
+flow web_ime_player_rendered(state: GameState) {
     return "web_ime_player_rendered_fixture"
 }

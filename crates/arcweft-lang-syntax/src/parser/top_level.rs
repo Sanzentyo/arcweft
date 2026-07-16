@@ -13,7 +13,6 @@ use crate::ast::{
     module_path::ModulePath,
 };
 use crate::cst::{CstTopLevelItemKind, CstTopLevelLineKind};
-use crate::parser::SourceDialect;
 
 impl Parser<'_> {
     pub(super) fn parse_top_level_line(
@@ -193,11 +192,6 @@ impl Parser<'_> {
                     items.push(Item::Function(function));
                 }
             }
-            CstTopLevelItemKind::Agent => {
-                if let Some(agent) = self.parse_agent_item() {
-                    items.push(Item::Agent(agent));
-                }
-            }
             CstTopLevelItemKind::FlowBodyItemOrRaw => {
                 self.parse_top_level_flow_item_or_raw(trimmed, range, items);
             }
@@ -205,8 +199,7 @@ impl Parser<'_> {
                 self.reject_pending_doc(range);
                 if !matches!(
                     kind,
-                    CstTopLevelItemKind::State
-                        | CstTopLevelItemKind::Trait
+                    CstTopLevelItemKind::Trait
                         | CstTopLevelItemKind::Enum
                         | CstTopLevelItemKind::Struct
                         | CstTopLevelItemKind::TypeAlias
@@ -231,8 +224,6 @@ impl Parser<'_> {
         kind: CstTopLevelItemKind,
     ) -> Option<Item> {
         match kind {
-            CstTopLevelItemKind::Callable => self.parse_callable_item().map(Item::Callable),
-            CstTopLevelItemKind::State => self.parse_state_item().map(Item::State),
             CstTopLevelItemKind::Trait => self.parse_trait_item().map(Item::Trait),
             CstTopLevelItemKind::Impl => self.parse_impl_item().map(Item::Impl),
             CstTopLevelItemKind::Enum => self.parse_enum_item().map(Item::Enum),
@@ -253,7 +244,6 @@ impl Parser<'_> {
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::Style => self.parse_style().map(Item::Style),
             CstTopLevelItemKind::Flow
-            | CstTopLevelItemKind::Agent
             | CstTopLevelItemKind::Function
             | CstTopLevelItemKind::FlowBodyItemOrRaw => None,
         }
@@ -267,17 +257,6 @@ impl Parser<'_> {
     ) {
         self.reject_pending_doc(range);
         self.reject_pending_attrs(range);
-        if self.source_dialect == SourceDialect::Agent {
-            self.push_error(
-                range,
-                "unsupported top-level item in Agent dialect",
-                ["agent @agent.id name() { ... }"],
-                Some(trimmed),
-                ["wrap Agent work in a top-level `agent` item"],
-            );
-            self.index += 1;
-            return;
-        }
         if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
             items.push(Item::FlowItem(Box::new(flow_item)));
         } else {

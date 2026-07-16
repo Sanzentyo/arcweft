@@ -1,9 +1,13 @@
+use crate::entry::{HirEntryDecl, HirEntryItem};
 use crate::lower_flow::{lower_flow, lower_flow_item};
-use crate::model::{HirAgent, HirFunction, HirLowerError, HirModule, HirSource, HirTopLevelDecl};
+use crate::model::{HirFunction, HirLowerError, HirModule, HirSource, HirTopLevelDecl};
 use crate::style::{HirStyleDecl, HirStylePatch};
 use crate::view_part::HirViewPartOwner;
 use arcweft_lang_syntax::ast::{
-    items::{AgentItem, Attribute, EntityDeclItem, FunctionItem, Item, TypedSyntaxTree},
+    items::{
+        Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EntryItem, FunctionItem, Item,
+        TypedSyntaxTree,
+    },
     module_path::CanonicalModulePath,
 };
 use arcweft_source::SourceDocument;
@@ -68,7 +72,6 @@ struct HirLoweringState {
     top_level_ranges: Vec<arcweft_lang_syntax::ast::common::TextRange>,
     flows: Vec<crate::model::HirFlow>,
     functions: Vec<HirFunction>,
-    agents: Vec<HirAgent>,
     declarations: Vec<HirTopLevelDecl>,
     style_patches: Vec<HirStylePatch>,
     view_parts: Vec<HirViewPartOwner>,
@@ -89,10 +92,6 @@ impl HirLoweringState {
             Item::Function(function) => {
                 self.functions
                     .push(lower_function(function, self.module_path.clone()));
-            }
-            Item::Agent(agent) => {
-                self.agents
-                    .push(lower_agent(agent, self.module_path.clone()));
             }
             Item::FlowItem(item) => match lower_flow_item(item) {
                 Ok(item) => {
@@ -123,7 +122,10 @@ impl HirLoweringState {
                 self.lower_entity_declaration(item);
             }
             Item::Entry(item) => {
-                self.declarations.push(HirTopLevelDecl::Entry(item.clone()));
+                self.declarations.push(HirTopLevelDecl::Entry(lower_entry(
+                    item,
+                    self.module_path.clone(),
+                )));
             }
             Item::ExternCapability(item) => {
                 self.declarations
@@ -163,9 +165,6 @@ impl HirLoweringState {
                         &self.source,
                     )));
             }
-            Item::State(item) => {
-                self.declarations.push(HirTopLevelDecl::State(item.clone()));
-            }
             Item::Struct(item) => {
                 self.declarations
                     .push(HirTopLevelDecl::Struct(item.clone()));
@@ -177,15 +176,14 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::TypeAlias(item.clone()));
             }
-            Item::Flow(_)
-            | Item::Function(_)
-            | Item::Agent(_)
-            | Item::FlowItem(_)
-            | Item::Raw(_) => {}
+            Item::Flow(_) | Item::Function(_) | Item::FlowItem(_) | Item::Raw(_) => {}
         }
     }
 
     fn lower_entity_declaration(&mut self, item: &EntityDeclItem) {
+        if let Some(callable) = CallableItem::from_view_declaration(item) {
+            self.declarations.push(HirTopLevelDecl::Callable(callable));
+        }
         if let Some(view) = item.view_body().and_then(|body| body.view()) {
             self.view_parts.extend(HirViewPartOwner::from_syntax(
                 self.module_path.clone(),
@@ -220,7 +218,6 @@ impl HirLoweringState {
                 top_level_ranges: self.top_level_ranges,
                 flows: self.flows,
                 functions: self.functions,
-                agents: self.agents,
                 declarations: self.declarations,
                 style_patches: self.style_patches,
                 view_parts: self.view_parts,
@@ -233,12 +230,83 @@ impl HirLoweringState {
     }
 }
 
-fn lower_agent(agent: &AgentItem, module_path: Option<CanonicalModulePath>) -> HirAgent {
-    HirAgent {
-        attributes: agent.attrs().to_vec(),
+fn lower_entry(entry: &EntryDeclItem, module_path: Option<CanonicalModulePath>) -> HirEntryDecl {
+    let items = entry
+        .items()
+        .iter()
+        .map(|item| match item {
+            EntryItem::StateType {
+                ty,
+                value_range,
+                range,
+            } => HirEntryItem::StateType {
+                ty: ty.clone(),
+                value_range: *value_range,
+                range: *range,
+            },
+            EntryItem::Initializer {
+                path,
+                value_range,
+                range,
+            } => HirEntryItem::Initializer {
+                path: path.clone(),
+                value_range: *value_range,
+                range: *range,
+            },
+            EntryItem::EventType {
+                ty,
+                value_range,
+                range,
+            } => HirEntryItem::EventType {
+                ty: ty.clone(),
+                value_range: *value_range,
+                range: *range,
+            },
+            EntryItem::Reducer {
+                path,
+                value_range,
+                range,
+            } => HirEntryItem::Reducer {
+                path: path.clone(),
+                value_range: *value_range,
+                range: *range,
+            },
+            EntryItem::Controller {
+                path,
+                value_range,
+                range,
+            } => HirEntryItem::Controller {
+                path: path.clone(),
+                value_range: *value_range,
+                range: *range,
+            },
+            EntryItem::Goto(target) => HirEntryItem::Goto(target.clone()),
+            EntryItem::Route {
+                method,
+                path,
+                target,
+                bindings,
+            } => HirEntryItem::Route {
+                method: method.clone(),
+                path: path.clone(),
+                target: target.clone(),
+                bindings: bindings.clone(),
+            },
+            EntryItem::Option { name, value } => HirEntryItem::Option {
+                name: name.clone(),
+                value: value.clone(),
+            },
+            EntryItem::Raw(raw) => HirEntryItem::Raw(raw.clone()),
+        })
+        .collect();
+    HirEntryDecl::new(
         module_path,
-        item: agent.clone(),
-    }
+        entry.kind().clone(),
+        entry.visibility(),
+        entry.id().clone(),
+        items,
+        *entry.range(),
+    )
 }
 
 fn lower_function(
@@ -263,10 +331,7 @@ fn lower_function(
 #[cfg(test)]
 mod tests {
     use super::lower_to_hir;
-    use arcweft_lang_syntax::{
-        ast::ids::EntityRef,
-        parser::{ParseOptions, SourceDialect, parse_document, parse_source},
-    };
+    use arcweft_lang_syntax::parser::parse_source;
 
     #[test]
     fn lowering_preserves_flow_attributes() {
@@ -289,35 +354,6 @@ flow @flow.opening opening {
             Some("id::flow_module_mismatch")
         );
         assert!(flow.has_attribute("allow"));
-    }
-
-    #[test]
-    fn lowering_preserves_agent_items() {
-        let parsed = parse_document(
-            r"
-#[agent(version = 1)]
-agent @agent.opening_smoke opening_smoke()
-effects { agent.observe }
-{
-    observe()
-}
-",
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
-        );
-        assert_eq!(parsed.errors(), &[]);
-
-        let module = lower_to_hir(parsed.typed_tree()).expect("agent lowers");
-
-        assert_eq!(module.agents().len(), 1);
-        let agent = &module.agents()[0];
-        assert!(agent.has_attribute("agent"));
-        assert_eq!(agent.item().name(), "opening_smoke");
-        assert_eq!(
-            agent.item().id().map(EntityRef::body),
-            Some("agent.opening_smoke")
-        );
     }
 
     #[test]

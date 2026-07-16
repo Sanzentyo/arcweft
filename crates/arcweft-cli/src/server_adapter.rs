@@ -1,5 +1,4 @@
-use arcweft_core::engine::{FlowExit, FlowFiberStatus};
-use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
 use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpec};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -148,11 +147,16 @@ fn run_route_flow(
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
 ) -> NativeHttpResponse {
-    let mut plan = plan.clone();
-    plan.entry_flow = Some(route.target.clone());
     let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-    let mut executor =
-        ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredVm);
+    let mut executor = match Engine::for_flow(plan.clone(), &route.target) {
+        Ok(executor) => executor,
+        Err(error) => {
+            return NativeHttpResponse {
+                status: 500,
+                body: format!("failed to dispatch server route: {error}"),
+            };
+        }
+    };
     let result = executor.step_with_pure_backend(
         RuntimeStepInput {
             bindings: request_bindings(request, route, params),
@@ -422,7 +426,6 @@ mod tests {
 
     fn plan_with_flow(id: &str, ops: Vec<FlowOp>) -> RuntimePlan {
         let id = FlowRuntimeId::from_runtime_target_value(id).expect("flow runtime id");
-        RuntimePlan::new(Some(id.clone()), vec![RuntimeFlow { id, ops }], Vec::new())
-            .expect("plan is valid")
+        RuntimePlan::new(vec![RuntimeFlow { id, ops }], Vec::new()).expect("plan is valid")
     }
 }

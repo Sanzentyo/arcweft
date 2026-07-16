@@ -365,10 +365,15 @@ dependencies = [
  "arcweft-compiler",
  "arcweft-core",
  "arcweft-debug-model",
+ "arcweft-id",
+ "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
+ "arcweft-project",
  "arcweft-runtime-codegen",
  "arcweft-runtime-driver",
+ "arcweft-runtime-plan",
+ "arcweft-source",
  "arcweft-tooling",
  "blake3",
  "serde_json",
@@ -676,8 +681,11 @@ name = "arcweft-compiler"
 version = "0.1.0"
 dependencies = [
  "arcweft-agent-protocol",
+ "arcweft-agent-runner",
  "arcweft-bundle",
  "arcweft-core",
+ "arcweft-data",
+ "arcweft-debug-model",
  "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
@@ -716,6 +724,7 @@ dependencies = [
  "arcweft-interaction-model",
  "arcweft-need",
  "arcweft-source",
+ "blake3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1306,6 +1315,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-source",
+ "blake3",
  "thiserror 2.0.18",
 ]
 
@@ -1351,6 +1361,7 @@ dependencies = [
  "arcweft-data",
  "blake3",
  "serde",
+ "serde_ignored",
  "serde_json",
 ]
 
@@ -6160,6 +6171,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

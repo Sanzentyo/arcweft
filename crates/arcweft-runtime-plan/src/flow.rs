@@ -32,7 +32,7 @@ use crate::labels::expr_label;
 use crate::line_task::{lower_line_plan, lower_line_plan_statements};
 use crate::lowering_context::ExecutableLoweringLocation;
 use crate::pattern::lower_runtime_pattern_checked;
-use crate::pure::lower_pure_helper_candidates;
+use crate::pure::lower_pure_helper_candidates_for_entry_callables;
 use crate::render_text::{
     DialogueDisplayDefaults, DialogueSpeakerPreset, FxCatalog,
     lower_dialogue_display_with_speaker_presets_and_fx, speaker_preset_from_let,
@@ -41,6 +41,7 @@ use crate::source::lower_source_plan;
 use crate::stream::lower_stream_function;
 use crate::typed_evidence::RuntimeTypedLoweringEvidence;
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeCommandPolicy};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
@@ -55,17 +56,19 @@ use arcweft_core::task::{
     HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_lang_hir::entry::HirEntryItem;
 use arcweft_lang_hir::model::{
-    HirAgent, HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirFor,
+    HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirFor, HirFunction,
     HirLoop, HirMatch, HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
 };
+use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_hir::syntax::ast::{
     choice::ChoiceAction,
     flow::{
         AuthoredExpr, AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock,
     },
     ids::EntityRefSyntax,
-    items::{EntryItem, EntryKind, FunctionKind},
+    items::{EntryKind, FunctionKind},
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
@@ -92,6 +95,27 @@ pub struct RuntimePlanLowerReport {
     pub stats: RuntimePlanLowerStats,
     pub line_display_catalog: LineDisplayCatalog,
     pub closure_captures: Vec<RuntimeClosureCaptureInventory>,
+    pub pure_helper_sources: Vec<RuntimePureHelperSource>,
+}
+
+/// Compiler-side provenance used to connect checked callable identity to one
+/// executable helper slot without making dense slots semantic identities.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePureHelperSource {
+    pub helper: arcweft_core::plan::RuntimePureHelperId,
+    pub module: Option<arcweft_lang_hir::syntax::ast::module_path::CanonicalModulePath>,
+    pub name: String,
+}
+
+/// One checked ordinary function that must be lowered as an Agent controller.
+///
+/// The request carries exact source declaration identity and a compiler-chosen
+/// runtime flow identity. Runtime lowering does not rediscover controllers from
+/// attributes or names alone.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeAgentControllerRequest {
+    pub flow: FlowRuntimeId,
+    pub declaration: CallableDeclarationId,
 }
 
 /// Options that select profile/build-context inputs for runtime-plan lowering.
@@ -103,6 +127,9 @@ pub struct RuntimePlanLowerOptions {
     trait_methods: Vec<RuntimeTraitMethod>,
     typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
     closure_captures: Vec<RuntimeClosureCaptureInventory>,
+    agent_controllers: Vec<RuntimeAgentControllerRequest>,
+    entry_callables: Vec<CallableDeclarationId>,
+    command_policy: Option<RuntimeCommandPolicy>,
     required_typed_lowering_evidence_len: Option<usize>,
     assertion_build_profile: RuntimeAssertionBuildProfile,
 }
@@ -118,6 +145,9 @@ impl RuntimePlanLowerOptions {
             trait_methods: Vec::new(),
             typed_lowering_evidence: Vec::new(),
             closure_captures: Vec::new(),
+            agent_controllers: Vec::new(),
+            entry_callables: Vec::new(),
+            command_policy: None,
             required_typed_lowering_evidence_len: None,
             assertion_build_profile: RuntimeAssertionBuildProfile::Debug,
         }
@@ -166,6 +196,37 @@ impl RuntimePlanLowerOptions {
         self
     }
 
+    /// Selects checked ordinary functions that own Agent controller programs.
+    #[must_use]
+    pub fn with_agent_controllers(
+        mut self,
+        controllers: impl IntoIterator<Item = RuntimeAgentControllerRequest>,
+    ) -> Self {
+        self.agent_controllers = controllers.into_iter().collect();
+        self
+    }
+
+    /// Selects the exact ordinary functions bound as stateful entry callables.
+    #[must_use]
+    pub fn with_entry_callables(
+        mut self,
+        callables: impl IntoIterator<Item = CallableDeclarationId>,
+    ) -> Self {
+        self.entry_callables = callables.into_iter().collect();
+        self
+    }
+
+    /// Supplies the selected adapter's verified command constructor policy.
+    ///
+    /// Stateful project entry projection requires this input even when the
+    /// selected adapter admits no commands. This prevents an absent production
+    /// policy from being mistaken for an intentionally empty policy.
+    #[must_use]
+    pub fn with_command_policy(mut self, policy: RuntimeCommandPolicy) -> Self {
+        self.command_policy = Some(policy);
+        self
+    }
+
     /// Requires checked-build lowering to receive the exact typed evidence
     /// count exported by semantic analysis.
     #[must_use]
@@ -211,6 +272,21 @@ impl RuntimePlanLowerOptions {
         &self.typed_lowering_evidence
     }
 
+    /// Exact checked ordinary-function controller requests.
+    pub fn agent_controllers(&self) -> &[RuntimeAgentControllerRequest] {
+        &self.agent_controllers
+    }
+
+    /// Exact checked initializer and reducer declarations.
+    pub fn entry_callables(&self) -> &[CallableDeclarationId] {
+        &self.entry_callables
+    }
+
+    /// Selected adapter command policy, when supplied by the production owner.
+    pub const fn command_policy(&self) -> Option<&RuntimeCommandPolicy> {
+        self.command_policy.as_ref()
+    }
+
     /// Returns the selected runtime assertion build profile.
     pub const fn assertion_build_profile(&self) -> RuntimeAssertionBuildProfile {
         self.assertion_build_profile
@@ -228,6 +304,30 @@ impl RuntimePlanLowerOptions {
             "checked runtime lowering expected {required_len} typed lowering evidence record(s), found {actual_len}; pass the TypeCheckReport-derived evidence into RuntimePlanLowerOptions"
         )))
     }
+
+    /// Derives a stable binding for source-local lowering. Full project
+    /// compilation replaces this value with the accepted checked-sema digest
+    /// before verification and artifact emission.
+    fn source_entry_binding(
+        &self,
+        id: &EntryRuntimeId,
+        kind: &RuntimeEntryKind,
+    ) -> EntryBindingIdentity {
+        let mut hasher =
+            blake3::Hasher::new_derive_key("arcweft.runtime-plan.source-entry-binding.v1");
+        hash_entry_binding_part(&mut hasher, self.package_identity().as_bytes());
+        hash_entry_binding_part(&mut hasher, id.canonical_label().as_bytes());
+        hasher.update(&[kind.canonical_tag()]);
+        if let Some(custom) = kind.custom_payload() {
+            hash_entry_binding_part(&mut hasher, custom.as_bytes());
+        }
+        EntryBindingIdentity::from_bytes(hasher.finalize().into())
+    }
+}
+
+fn hash_entry_binding_part(hasher: &mut blake3::Hasher, value: &[u8]) {
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value);
 }
 
 /// Compiler-side counters for runtime-plan pure and flow optimization work.
@@ -283,12 +383,14 @@ pub fn lower_runtime_plan_with_stats_and_options(
     options
         .validate_typed_lowering_evidence()
         .map_err(|error| vec![error])?;
-    let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
-        errors
-            .into_iter()
-            .map(|error| RuntimePlanLowerError::new(error.to_string()))
-            .collect::<Vec<_>>()
-    })?;
+    let pure_candidate_report =
+        lower_pure_helper_candidates_for_entry_callables(module, options.entry_callables())
+            .map_err(|errors| {
+                errors
+                    .into_iter()
+                    .map(|error| RuntimePlanLowerError::new(error.to_string()))
+                    .collect::<Vec<_>>()
+            })?;
     let mut stats = RuntimePlanLowerStats {
         pure_candidate_functions_seen: pure_candidate_report.stats.functions_seen,
         pure_candidate_lower_attempts: pure_candidate_report.stats.lower_attempts,
@@ -298,10 +400,20 @@ pub fn lower_runtime_plan_with_stats_and_options(
     };
     let (pure_helpers, pure_map) =
         runtime_pure_helper_inventory(&pure_candidate_report.candidates, &mut stats);
+    let pure_helper_sources = pure_candidate_report
+        .candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| RuntimePureHelperSource {
+            helper: arcweft_core::plan::RuntimePureHelperId(index),
+            module: candidate.module().cloned(),
+            name: candidate.name().to_owned(),
+        })
+        .collect::<Vec<_>>();
     let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
     let function_value_candidates = lower_runtime_function_value_candidates(module, pure_lookup);
     let function_values = runtime_function_value_map(&function_value_candidates);
-    let entries = lower_runtime_entries(module);
+    let entries = lower_runtime_entries(module, options);
     let (flows, line_task_groups, line_display_catalog, stream_plans, source_plans) = {
         let typed_expression_cursor = Cell::new(0);
         let pure_lookup = pure_lookup
@@ -312,10 +424,16 @@ pub fn lower_runtime_plan_with_stats_and_options(
             );
         let lowered_flows = lower_runtime_flows(module, pure_lookup, options)?;
         let LoweredRuntimeFlows {
-            flows,
+            mut flows,
             line_task_groups,
             line_display_catalog,
         } = lowered_flows;
+        flows.extend(lower_requested_agent_controller_flows(
+            module,
+            options.agent_controllers(),
+            pure_lookup,
+            options,
+        )?);
         let stream_plans = module
             .functions()
             .iter()
@@ -340,9 +458,8 @@ pub fn lower_runtime_plan_with_stats_and_options(
             source_plans,
         )
     };
-    let entry = implicit_entry_flow(&entries, &flows);
     stats.pure_helpers = pure_helpers.len();
-    RuntimePlan::new(entry, flows, line_task_groups)
+    RuntimePlan::new(flows, line_task_groups)
         .map(|plan| {
             let plan = optimizer::finalize_runtime_plan(
                 plan.with_entries(entries)
@@ -356,96 +473,32 @@ pub fn lower_runtime_plan_with_stats_and_options(
                 stats,
                 line_display_catalog,
                 closure_captures: options.closure_captures.clone(),
+                pure_helper_sources,
             }
         })
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
 }
 
-/// Lowers a checked Agent controller body to the same runtime-plan/bytecode
-/// shape used by ordinary flows.
-pub fn lower_agent_controller_plan_with_stats(
+fn lower_runtime_entries(
     module: &HirModule,
-    agent: &HirAgent,
-) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
-    lower_agent_controller_plan_with_stats_and_options(
-        module,
-        agent,
-        &RuntimePlanLowerOptions::default(),
-    )
-}
-
-pub fn lower_agent_controller_plan_with_stats_and_options(
-    module: &HirModule,
-    agent: &HirAgent,
     options: &RuntimePlanLowerOptions,
-) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
-    options
-        .validate_typed_lowering_evidence()
-        .map_err(|error| vec![error])?;
-    let pure_candidate_report = lower_pure_helper_candidates(module).map_err(|errors| {
-        errors
-            .into_iter()
-            .map(|error| RuntimePlanLowerError::new(error.to_string()))
-            .collect::<Vec<_>>()
-    })?;
-    let mut stats = RuntimePlanLowerStats {
-        pure_candidate_functions_seen: pure_candidate_report.stats.functions_seen,
-        pure_candidate_lower_attempts: pure_candidate_report.stats.lower_attempts,
-        pure_candidate_lower_failures_inferred: pure_candidate_report.stats.lower_failures_inferred,
-        pure_expr_lowered_nodes: pure_candidate_report.stats.expr_lowered_nodes,
-        ..RuntimePlanLowerStats::default()
-    };
-    let (pure_helpers, pure_map) =
-        runtime_pure_helper_inventory(&pure_candidate_report.candidates, &mut stats);
-    let pure_lookup = RuntimePureHelperLookup::new(&pure_map, &pure_helpers);
-    let function_value_candidates = lower_runtime_function_value_candidates(module, pure_lookup);
-    let function_values = runtime_function_value_map(&function_value_candidates);
-    let lowered = {
-        let typed_expression_cursor = Cell::new(0);
-        let pure_lookup = pure_lookup
-            .with_runtime_function_values(&function_values)
-            .with_typed_lowering_evidence(
-                options.typed_lowering_evidence(),
-                &typed_expression_cursor,
-            );
-        lower_agent_controller_flow(module, agent, pure_lookup, options)?
-    };
-    let entry_flow = lowered.id.clone();
-    let entry_id = EntryRuntimeId::canonical(&entry_flow.canonical_label())
-        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
-    stats.pure_helpers = pure_helpers.len();
-    RuntimePlan::new(Some(entry_flow.clone()), vec![lowered], Vec::new())
-        .map(|plan| {
-            let plan = optimizer::finalize_runtime_plan(
-                plan.with_entries(vec![RuntimeEntrySpec {
-                    id: entry_id,
-                    kind: RuntimeEntryKind::Custom("agent_controller".to_owned()),
-                    target: RuntimeEntryTarget::Flow(entry_flow),
-                }])
-                .with_pure_helpers(pure_helpers),
-                &mut stats,
-            );
-            RuntimePlanLowerReport {
-                plan,
-                stats,
-                line_display_catalog: LineDisplayCatalog::default(),
-                closure_captures: options.closure_captures.clone(),
-            }
-        })
-        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
-}
-
-fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
+) -> Vec<RuntimeEntrySpec> {
     module
         .declarations()
         .iter()
         .filter_map(|decl| match decl {
-            HirTopLevelDecl::Entry(entry) => Some(RuntimeEntrySpec {
-                id: EntryRuntimeId::from_source_entity_body(entry.id().body())
-                    .expect("HIR entry ID should be a valid runtime entry ID"),
-                kind: lower_entry_kind(entry.kind()),
-                target: lower_entry_target(entry.items()),
-            }),
+            HirTopLevelDecl::Entry(entry) => {
+                let id = EntryRuntimeId::from_source_entity_body(entry.id().body())
+                    .expect("HIR entry ID should be a valid runtime entry ID");
+                let kind = lower_entry_kind(entry.kind());
+                Some(RuntimeEntrySpec {
+                    binding: options.source_entry_binding(&id, &kind),
+                    id,
+                    kind,
+                    target: lower_entry_target(entry.items()),
+                    roles: arcweft_core::plan::RuntimeEntryRoles::None,
+                })
+            }
             _ => None,
         })
         .collect()
@@ -454,20 +507,22 @@ fn lower_runtime_entries(module: &HirModule) -> Vec<RuntimeEntrySpec> {
 fn lower_entry_kind(kind: &EntryKind) -> RuntimeEntryKind {
     match kind {
         EntryKind::Game => RuntimeEntryKind::Game,
+        EntryKind::Editor => RuntimeEntryKind::Editor,
         EntryKind::Cli => RuntimeEntryKind::Cli,
         EntryKind::Server => RuntimeEntryKind::Server,
         EntryKind::Activity => RuntimeEntryKind::Activity,
         EntryKind::Test => RuntimeEntryKind::Test,
         EntryKind::Bench => RuntimeEntryKind::Bench,
+        EntryKind::Agent => RuntimeEntryKind::Agent,
         EntryKind::Custom(value) => RuntimeEntryKind::Custom(value.clone()),
     }
 }
 
-fn lower_entry_target(items: &[EntryItem]) -> RuntimeEntryTarget {
+fn lower_entry_target(items: &[HirEntryItem]) -> RuntimeEntryTarget {
     let routes = items
         .iter()
         .filter_map(|item| match item {
-            EntryItem::Route {
+            HirEntryItem::Route {
                 method,
                 path,
                 target,
@@ -497,28 +552,17 @@ fn lower_entry_target(items: &[EntryItem]) -> RuntimeEntryTarget {
     items
         .iter()
         .find_map(|item| match item {
-            EntryItem::Goto(target) => Some(RuntimeEntryTarget::Flow(flow_runtime_id(target))),
-            EntryItem::Route { .. } | EntryItem::Option { .. } | EntryItem::Raw(_) => None,
+            HirEntryItem::Goto(target) => Some(RuntimeEntryTarget::Flow(flow_runtime_id(target))),
+            HirEntryItem::StateType { .. }
+            | HirEntryItem::Initializer { .. }
+            | HirEntryItem::EventType { .. }
+            | HirEntryItem::Reducer { .. }
+            | HirEntryItem::Controller { .. }
+            | HirEntryItem::Route { .. }
+            | HirEntryItem::Option { .. }
+            | HirEntryItem::Raw(_) => None,
         })
         .unwrap_or_else(|| RuntimeEntryTarget::Routes(Vec::new()))
-}
-
-fn implicit_entry_flow(
-    entries: &[RuntimeEntrySpec],
-    flows: &[RuntimeFlow],
-) -> Option<FlowRuntimeId> {
-    if entries.len() == 1
-        && let Some(flow) = match &entries[0].target {
-            RuntimeEntryTarget::Flow(flow) => Some(flow),
-            RuntimeEntryTarget::Routes(routes) => routes.first().map(|route| &route.target),
-        }
-    {
-        return Some(flow.clone());
-    }
-    if entries.is_empty() {
-        return flows.first().map(|flow| flow.id.clone());
-    }
-    None
 }
 
 /// Lowers HIR flow bodies into executable Sans I/O flow operations.
@@ -573,9 +617,52 @@ pub(crate) fn lower_runtime_flows(
     }
 }
 
-fn lower_agent_controller_flow(
+fn lower_requested_agent_controller_flows(
     module: &HirModule,
-    agent: &HirAgent,
+    requests: &[RuntimeAgentControllerRequest],
+    pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
+    options: &RuntimePlanLowerOptions,
+) -> Result<Vec<RuntimeFlow>, Vec<RuntimePlanLowerError>> {
+    requests
+        .iter()
+        .map(|request| {
+            let candidates = module
+                .functions()
+                .iter()
+                .filter(|function| {
+                    CallableDeclarationId::for_function(request.declaration.package(), function)
+                        .is_ok_and(|candidate| candidate == request.declaration)
+                })
+                .collect::<Vec<_>>();
+            let [function] = candidates.as_slice() else {
+                return Err(vec![RuntimePlanLowerError::new(format!(
+                    "checked Agent controller `{}` resolved to {} ordinary functions during runtime lowering",
+                    request.declaration,
+                    candidates.len(),
+                ))]);
+            };
+            let typed_expression_cursor = Cell::new(0);
+            let controller_pure_helpers = pure_helpers
+                .with_project_function_typed_lowering_evidence(
+                    options.typed_lowering_evidence(),
+                    &typed_expression_cursor,
+                    &request.declaration,
+                );
+            lower_agent_function_controller_flow(
+                module,
+                function,
+                request.flow.clone(),
+                controller_pure_helpers,
+                options,
+            )
+        })
+        .collect()
+}
+
+fn lower_agent_function_controller_flow(
+    module: &HirModule,
+    function: &HirFunction,
+    id: FlowRuntimeId,
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
     options: &RuntimePlanLowerOptions,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
@@ -597,9 +684,9 @@ fn lower_agent_controller_flow(
         presentation_handle_scopes: Vec::new(),
         function_local_scopes: Vec::new(),
         current_location: ExecutableLoweringLocation::in_module(
-            "agent `<pending>`",
+            format!("Agent controller flow `{}`", id.canonical_label()),
             module,
-            agent.module_path(),
+            function.module_path(),
         ),
         errors: Vec::new(),
         pure_helpers,
@@ -607,20 +694,8 @@ fn lower_agent_controller_flow(
         for_iteration_cursor: 0,
         assertion_build_profile: options.assertion_build_profile(),
     };
-    let id = agent.item().id().map_or_else(
-        || {
-            FlowRuntimeId::canonical(&format!("agent.{}", agent.item().name()))
-                .expect("generated agent flow ID is valid")
-        },
-        flow_runtime_id,
-    );
-    lowerer.current_location = ExecutableLoweringLocation::in_module(
-        format!("agent flow `{}`", id.canonical_label()),
-        module,
-        agent.module_path(),
-    );
-    let mut ops = lowerer.lower_flow_stmt_list(&id, 0, agent.item().body_statements());
-    if let Some(value) = agent.item().body_value() {
+    let mut ops = lowerer.lower_flow_stmt_list(&id, 0, function.statements());
+    if let Some(value) = function.value() {
         if let Some(mut host_ops) = lowerer.lower_agent_host_call_expr(value.expr(), value.range())
         {
             ops.append(&mut host_ops);
@@ -1309,6 +1384,9 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
                 body,
             } => self.lower_for_stmt(flow_id, flow_index, stmt, pattern, source.expr(), body),
             Stmt::Thread(thread) => self.lower_thread_stmt(flow_id, flow_index, thread),
+            Stmt::UnsafeLifetime { body, .. } => vec![FlowOp::Scope(
+                self.lower_flow_stmt_list(flow_id, flow_index, body),
+            )],
             Stmt::Match { expr, arms } => vec![FlowOp::Match {
                 scrutinee: self.lower_runtime_expr(expr.expr()),
                 arms: self.lower_stmt_match_arms(flow_id, flow_index, arms),

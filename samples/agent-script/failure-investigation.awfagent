@@ -1,9 +1,6 @@
-#[agent(version = 1)]
 
-#[launch(profile = "game.dev")]
-#[bind(program = compatible)]
 #[budget(timeout = 45s, steps = 192usize, captures = 8usize, rag_queries = 4usize)]
-agent @agent.debug.opening_route investigate_opening_route()
+fn investigate_opening_route() -> Result<Unit, AgentError>
 effects {
     agent.observe,
     agent.act.semantic,
@@ -44,4 +41,8 @@ effects {
 
     expect(result.accepted)
     Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = investigate_opening_route
 }

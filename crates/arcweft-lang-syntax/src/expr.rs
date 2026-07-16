@@ -1119,11 +1119,13 @@ fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
     if entity_ref.delimited && !entity_ref.closed {
         return None;
     }
-    (entity_ref.raw.len() == source.len()).then_some(EntityRefSyntax::absolute(EntityRef::new(
-        entity_ref.body.to_owned(),
-        entity_ref.delimited,
-        TextRange::new(0, source.len()),
-    )))
+    (entity_ref.raw.len() == source.len()).then_some(EntityRefSyntax::absolute(
+        EntityRef::authored(
+            entity_ref.body.to_owned(),
+            entity_ref.delimited,
+            TextRange::new(0, source.len()),
+        ),
+    ))
 }
 
 fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {

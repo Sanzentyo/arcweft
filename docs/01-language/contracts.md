@@ -1,6 +1,8 @@
 # 契約プログラミング
 
-契約は関数、flow、reducer、Activity、parser、shader、View、Rust extern に付けられる。
+契約は通常の関数、flow、Activity、shader、View、Rust extern に付けられる。
+entry から reducer や Agent controller に選択される関数も、専用の宣言
+family ではなく通常の関数契約を使う。
 
 ## requires / ensures
 
@@ -29,16 +31,20 @@ pub invariant @inv.affection_bounds(state: GameState) {
 }
 ```
 
-## reducer contract
+## entry-bound reducer contract
 
 ```arcw
-pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError>
+pub fn update(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
 requires invariant @inv.affection_bounds(state)
 ensures result.is_ok() => invariant @inv.affection_bounds(result.unwrap().state)
 {
     ...
 }
 ```
+
+この関数を root reducer として使う entry は `reducer = update` を明示する。
 
 ## modifies / effects
 

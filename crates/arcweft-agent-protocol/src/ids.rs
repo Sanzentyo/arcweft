@@ -11,6 +11,11 @@ pub struct IdentifierError;
 #[serde(transparent)]
 pub struct PublicId(String);
 
+/// Canonical identity of an ordinary Arcweft callable declaration.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct CallableId(String);
+
 /// Content or program hash encoded with its algorithm prefix.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -41,6 +46,16 @@ impl PublicId {
     }
 }
 
+impl CallableId {
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentifierError> {
+        nonempty(value).map(Self)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 impl StableHash {
     pub fn new(value: impl Into<String>) -> Result<Self, IdentifierError> {
         nonempty(value).map(Self)
@@ -48,6 +63,19 @@ impl StableHash {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Encodes one canonical BLAKE3 digest using the artifact hash spelling.
+    #[must_use]
+    pub fn from_blake3_bytes(bytes: [u8; 32]) -> Self {
+        use std::fmt::Write as _;
+
+        let mut value = String::with_capacity("blake3:".len() + bytes.len() * 2);
+        value.push_str("blake3:");
+        for byte in bytes {
+            write!(value, "{byte:02x}").expect("writing to String cannot fail");
+        }
+        Self(value)
     }
 }
 

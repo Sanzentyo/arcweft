@@ -777,6 +777,7 @@ version = "0.1.0"
 
 [profiles.main]
 kind = "game"
+entry = "entry.game.main"
 source = "demo.arcw"
 "#,
         )

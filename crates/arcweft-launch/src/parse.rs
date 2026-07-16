@@ -41,6 +41,8 @@ pub enum LaunchDocumentError {
         first: SourceSpan,
         duplicate: SourceSpan,
     },
+    #[error("launch profiles cannot bind source role `{key}`")]
+    ForbiddenProfileRole { key: String, span: SourceSpan },
     #[error("invalid launch TOML structure")]
     Syntax {
         kind: TomlStructuralErrorKind,
@@ -181,6 +183,12 @@ impl<'a> TomlScanner<'a> {
             .map_err(|kind| self.syntax(kind, key_start, key_end))?;
         let path = self.current_table.extended(key);
         let key_span = self.span(key_start, key_end);
+        if let Some(key) = path.profile_field().filter(|key| is_source_role_key(key)) {
+            return Err(LaunchDocumentError::ForbiddenProfileRole {
+                key: key.to_owned(),
+                span: key_span,
+            });
+        }
         if let Some(first) = self.key_spans.insert(path.clone(), key_span.clone()) {
             return Err(LaunchDocumentError::DuplicateKey {
                 path,
@@ -238,6 +246,13 @@ impl<'a> TomlScanner<'a> {
             .span(SourceRange::new(start, end))
             .expect("TOML scanner offsets remain on UTF-8 boundaries")
     }
+}
+
+fn is_source_role_key(key: &str) -> bool {
+    matches!(
+        key,
+        "state" | "initializer" | "event" | "reducer" | "controller"
+    )
 }
 
 fn comment_start(source: &str, start: usize, end: usize) -> usize {
@@ -463,8 +478,7 @@ mod tests {
 
     #[test]
     fn duplicate_scalar_key_retains_spans() {
-        let source =
-            "[profiles.game]\nkind = \"game\"\nkind = \"server\"\nsource = \"main.arcw\"\n";
+        let source = "[profiles.game]\nkind = \"game\"\nkind = \"server\"\nsource = \"main.arcw\"\nentry = \"entry.game\"\n";
         let error = SourceBackedLaunchManifest::parse_document(&document(source))
             .expect_err("duplicate key");
         let LaunchDocumentError::DuplicateKey {
@@ -479,7 +493,7 @@ mod tests {
 
     #[test]
     fn duplicate_table_retains_spans() {
-        let source = "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\n[profiles.game]\n";
+        let source = "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"entry.game\"\n[profiles.game]\n";
         let error = SourceBackedLaunchManifest::parse_document(&document(source))
             .expect_err("duplicate table");
         let LaunchDocumentError::DuplicateTable {
@@ -501,7 +515,7 @@ mod tests {
 
     #[test]
     fn escaped_manifest_path_range_is_exact() {
-        let source = "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\ncharacter_manifests = [\"characters\\u002fakane.json\"]\n";
+        let source = "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"entry.game\"\ncharacter_manifests = [\"characters\\u002fakane.json\"]\n";
         let manifest = SourceBackedLaunchManifest::parse_document(&document(source))
             .expect("source-backed manifest");
         let token = manifest
@@ -532,7 +546,7 @@ mod tests {
 
     #[test]
     fn launch_parse_document_is_the_only_registration_profile_decoder() {
-        let source = "[package]\nname = \"game\"\n[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\ncharacter_manifests = [\"characters/akane.json\"]\n";
+        let source = "[package]\nname = \"game\"\n[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"entry.game\"\ncharacter_manifests = [\"characters/akane.json\"]\n";
         let sourced = SourceBackedLaunchManifest::parse_document(&document(source))
             .expect("source-backed registration profile");
         let runtime = LaunchProfileManifest::parse_toml(source).expect("runtime profile decode");
@@ -555,5 +569,21 @@ mod tests {
             &source[token.range().as_range()],
             "\"characters/akane.json\""
         );
+    }
+
+    #[test]
+    fn source_roles_are_rejected_at_the_key_span() {
+        for role in ["state", "initializer", "event", "reducer", "controller"] {
+            let source = format!(
+                "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"entry.game.main\"\n{role} = \"forbidden\"\n"
+            );
+            let error = SourceBackedLaunchManifest::parse_document(&document(&source))
+                .expect_err("launch profiles cannot bind source roles");
+            let LaunchDocumentError::ForbiddenProfileRole { key, span } = error else {
+                panic!("expected forbidden profile role");
+            };
+            assert_eq!(key, role);
+            assert_eq!(&source[span.range().as_range()], role);
+        }
     }
 }

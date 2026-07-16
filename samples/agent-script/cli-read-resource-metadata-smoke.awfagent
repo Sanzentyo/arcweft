@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.cli.read_resource_metadata_smoke read_resource_metadata_smoke()
+fn read_resource_metadata_smoke() -> Result<Unit, AgentError>
 effects { agent.resource.read }
 {
     let resource = try read_resource("arcweft://session/cli/observation/latest.json")
@@ -8,5 +7,9 @@ effects { agent.resource.read }
     expect(resource.mime_type == "application/json")
     expect(resource.hash == "cli-resource")
     expect(resource.body.kind == "json")
-    return resource.hash
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = read_resource_metadata_smoke
 }

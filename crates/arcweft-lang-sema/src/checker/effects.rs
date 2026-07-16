@@ -10,6 +10,13 @@ use std::collections::HashSet;
 
 impl TypeChecker<'_> {
     pub(super) fn check_function_effects(&mut self, name: &str) {
+        if let Some(declaration) = self.resolve_project_callable(name) {
+            self.effect_collector.record_local_call(
+                crate::effect_model::CallableId::project_function(declaration),
+                EffectSite::new(format!("call `{name}`")),
+            );
+            return;
+        }
         let source_effects = self
             .global_function_effects
             .get(name)

@@ -180,9 +180,20 @@ pub(crate) fn register_loaded_environment(
     let mut callable_publications =
         arcweft_adapter_context::standard::callable_publications(&PRODUCTION_CALLABLE_LIMITS)
             .map_err(|error| RegisterProfileEnvironmentError::Registration(error.to_string()))?;
-    if arcweft_adapter_context::standard::manifest_source(topology.adapter().id().as_str())
-        .is_none()
+    if let Some(source) =
+        arcweft_adapter_context::standard::manifest_source(topology.adapter().id().as_str())
     {
+        if !topology.adapter().rust_functions().is_empty() {
+            callable_publications.push(
+                topology
+                    .adapter()
+                    .try_rust_callable_publication(source, &PRODUCTION_CALLABLE_LIMITS)
+                    .map_err(|error| {
+                        RegisterProfileEnvironmentError::Registration(error.to_string())
+                    })?,
+            );
+        }
+    } else {
         callable_publications.push(
             topology
                 .adapter()

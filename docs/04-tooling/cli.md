@@ -333,7 +333,7 @@ changing backend.
 
 ## Agent Script
 
-`arcw agent script run <file.awfagent|file.awfb> [--signal id=value]... [--state path=value]... [--native-source <file.arcw>|--profile <id>] [--trace-out <file.arcwx>] [--blob-dir <dir>] [--json]`
+`arcw agent script run <file.awfagent|file.awfb> [--controller-entry entry.agent.*] [--signal id=value]... [--state path=value]... [--native-source <file.arcw>|--profile <id>] [--trace-out <file.arcwx>] [--blob-dir <dir>] [--json]`
 executes one compiled Agent controller through `arcweft-agent-runner`. Without a
 native source or launch profile, it uses the deterministic CLI session adapter
 for parser/compiler/runner smoke coverage. `--signal signal.ready=true` injects
@@ -343,6 +343,11 @@ without creating a native project. `--state route.phase=opening` injects a
 deterministic debug-state payload value for `state("route.phase")` probes;
 `observation("tick")`, `observation("state_hash")`, and
 `observation("signals.signal.ready")` read the current observation envelope.
+An `.awfagent` file uses the same Arcweft grammar as `.arcw`: it declares an
+ordinary zero-argument function and an explicit `entry agent` that binds that
+function as `controller`. `--controller-entry` selects that complete entry ID;
+the default is `entry.agent.main`. There is no Agent-only parser dialect or
+implicit first-controller discovery.
 `read_resource("arcweft://...")` is typed as `AgentResource`, requires
 `agent.resource.read`, and dispatches through the same resource-read host
 boundary used by native and deterministic CLI sessions. Agent scripts can read

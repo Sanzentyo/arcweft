@@ -1782,10 +1782,14 @@ mod tests {
             source_map: None,
         });
         program.entries.push(AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(2),
-            kind: AwbcEntryKind::Game,
+            kind: AwbcEntryKind::Cli,
             signature: Default::default(),
             target: AwbcEntryTarget::Function(Default::default()),
+            roles: crate::entry::RuntimeEntryRoles::None,
         });
         program
     }

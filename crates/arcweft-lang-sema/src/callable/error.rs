@@ -435,6 +435,15 @@ pub enum CallableCatalogBuildError {
     MissingProjectModuleSource { module: CanonicalModulePath },
     #[error("project callable identity mismatch for {declaration:?}")]
     ProjectIdentityMismatch { declaration: CallableDeclarationId },
+    #[error(
+        "extern Rust alias {path:?} for {package}::{export:?} matches {candidates} callable records"
+    )]
+    AmbiguousRustExternBinding {
+        path: ProjectCallablePath,
+        package: String,
+        export: CallableName,
+        candidates: usize,
+    },
     #[error(transparent)]
     InvalidRecord(#[from] CallableCatalogError),
     #[error(transparent)]
@@ -459,6 +468,7 @@ impl CallableCatalogBuildError {
             | Self::MissingProjectBindingType { .. }
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
+            | Self::AmbiguousRustExternBinding { .. }
             | Self::InvalidRecord(_)
             | Self::InvalidPublication(_)
             | Self::InvalidSchema(_) => CallableDiagnosticCode::CorruptCallableCatalog,

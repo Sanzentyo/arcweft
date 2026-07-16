@@ -122,11 +122,36 @@ style native_style_parity {
   }
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.native_style_parity {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.native_style_parity
 }
 
-flow native_style_parity {
+flow native_style_parity(state: GameState) {
     stylist(id=@say.native_style_parity.main, voice=auto):
         [font "Arcweft Demo"][color #64d2c8][size 31]DSL-styled text[/size][/color][/font] uses [color #f6cc66]color[/color], [size 32]size[/size], [strong]strong[/strong], [em]emphasis[/em], |[星影](ほしかげ), [style .opacity 0.86][transform .offset x=6px y=-1px][color #9be7ff]opacity plus offset[/color][/transform][/style], and [effect .wave amp=2px dir=0,1 period=8 speed=1][color #b7f58b]wave motion[/color][/effect] in one Arcweft-rendered paragraph.[p]
 

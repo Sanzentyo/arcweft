@@ -99,7 +99,7 @@ pub(in crate::app) fn runtime_serve_selection(
         }
         ExitCode::FAILURE
     })?;
-    let entry = select_server_entry(&plan, entry_override.or(selection.entry()))?;
+    let entry = select_server_entry(&plan, selection.command_entry(entry_override)?)?;
     let routes = server_routes(entry);
     if routes.is_empty() {
         eprintln!(

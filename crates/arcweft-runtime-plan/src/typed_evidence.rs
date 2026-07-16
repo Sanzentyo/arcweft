@@ -1,5 +1,7 @@
 //! Type-checker evidence consumed by runtime-plan lowering.
 
+use arcweft_lang_hir::symbol::CallableDeclarationId;
+
 /// Runtime-plan-local expression identifier aligned with type-check evidence.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeTypedExpressionId(usize);
@@ -20,7 +22,16 @@ impl RuntimeTypedExpressionId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeTypedLoweringEvidence {
     pub expression_id: RuntimeTypedExpressionId,
+    pub owner: Option<RuntimeTypedLoweringEvidenceOwner>,
     pub kind: RuntimeTypedLoweringEvidenceKind,
+}
+
+/// Exact project function and function-local expression identity for one
+/// lowering-sensitive fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeTypedLoweringEvidenceOwner {
+    pub declaration: CallableDeclarationId,
+    pub expression_id: RuntimeTypedExpressionId,
 }
 
 /// Runtime-plan decisions proven by type checking.
@@ -124,11 +135,40 @@ pub enum RuntimeDataLastMethodFallbackArg {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RuntimeTypedLoweringEvidenceLookup<'a> {
     evidence: &'a [RuntimeTypedLoweringEvidence],
+    project_function: Option<&'a CallableDeclarationId>,
 }
 
 impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
     pub(crate) const fn new(evidence: &'a [RuntimeTypedLoweringEvidence]) -> Self {
-        Self { evidence }
+        Self {
+            evidence,
+            project_function: None,
+        }
+    }
+
+    pub(crate) const fn for_project_function(
+        evidence: &'a [RuntimeTypedLoweringEvidence],
+        declaration: &'a CallableDeclarationId,
+    ) -> Self {
+        Self {
+            evidence,
+            project_function: Some(declaration),
+        }
+    }
+
+    fn matches_expression(
+        self,
+        evidence: &RuntimeTypedLoweringEvidence,
+        expression_id: RuntimeTypedExpressionId,
+    ) -> bool {
+        self.project_function.map_or_else(
+            || evidence.expression_id == expression_id,
+            |declaration| {
+                evidence.owner.as_ref().is_some_and(|owner| {
+                    owner.declaration == *declaration && owner.expression_id == expression_id
+                })
+            },
+        )
     }
 
     pub(crate) fn has_function_value_call(
@@ -138,7 +178,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         arg_count: usize,
     ) -> bool {
         self.evidence.iter().any(|evidence| {
-            evidence.expression_id == expression_id
+            self.matches_expression(evidence, expression_id)
                 && matches!(
                     &evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
@@ -158,7 +198,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         arg_count: usize,
     ) -> bool {
         self.evidence.iter().any(|evidence| {
-            evidence.expression_id == expression_id
+            self.matches_expression(evidence, expression_id)
                 && matches!(
                     &evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::FunctionValueCall {
@@ -176,7 +216,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         expression_id: RuntimeTypedExpressionId,
     ) -> Option<RuntimeNumericType> {
         self.evidence.iter().find_map(|evidence| {
-            if evidence.expression_id != expression_id {
+            if !self.matches_expression(evidence, expression_id) {
                 return None;
             }
             let RuntimeTypedLoweringEvidenceKind::ResolvedNumericType { target } = evidence.kind
@@ -192,7 +232,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         expression_id: RuntimeTypedExpressionId,
     ) -> bool {
         self.evidence.iter().any(|evidence| {
-            evidence.expression_id == expression_id
+            self.matches_expression(evidence, expression_id)
                 && matches!(
                     evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { .. }
@@ -206,7 +246,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         callee: &str,
     ) -> bool {
         self.evidence.iter().any(|evidence| {
-            evidence.expression_id == expression_id
+            self.matches_expression(evidence, expression_id)
                 && matches!(
                     &evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::FunctionValueReference {
@@ -223,7 +263,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         arg_count: usize,
     ) -> bool {
         self.evidence.iter().any(|evidence| {
-            evidence.expression_id == expression_id
+            self.matches_expression(evidence, expression_id)
                 && matches!(
                     &evidence.kind,
                     RuntimeTypedLoweringEvidenceKind::SignaturePartialCall {
@@ -241,7 +281,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
         arg_count: usize,
     ) -> Option<&'a [RuntimeDataLastMethodFallbackArg]> {
         self.evidence.iter().find_map(|evidence| {
-            if evidence.expression_id != expression_id {
+            if !self.matches_expression(evidence, expression_id) {
                 return None;
             }
             let RuntimeTypedLoweringEvidenceKind::DataLastMethodFallback {

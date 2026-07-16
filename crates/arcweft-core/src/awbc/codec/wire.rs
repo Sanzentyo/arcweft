@@ -39,6 +39,10 @@ impl Writer {
         self.write_bytes(&value.to_le_bytes());
     }
 
+    pub(super) fn write_i128_le(&mut self, value: i128) {
+        self.write_bytes(&value.to_le_bytes());
+    }
+
     pub(super) fn write_u32_var(&mut self, mut value: u32) {
         while value >= 0x80 {
             let low_bits = u8::try_from(value & 0x7f).expect("varint low 7 bits always fit in u8");
@@ -156,6 +160,14 @@ impl<'a> Reader<'a> {
     pub(super) fn read_i32_le(&mut self) -> Result<i32, AwbcCodecError> {
         Ok(i32::from_le_bytes(
             self.read_exact(4)?
+                .try_into()
+                .expect("fixed wire width checked"),
+        ))
+    }
+
+    pub(super) fn read_i128_le(&mut self) -> Result<i128, AwbcCodecError> {
+        Ok(i128::from_le_bytes(
+            self.read_exact(16)?
                 .try_into()
                 .expect("fixed wire width checked"),
         ))
@@ -333,6 +345,18 @@ impl Wire for u64 {
     }
 }
 
+impl Wire for usize {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        u64::try_from(*self)
+            .map_err(|_| AwbcCodecError::LengthOverflow)?
+            .write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        usize::try_from(u64::read_wire(reader)?).map_err(|_| AwbcCodecError::LengthOverflow)
+    }
+}
+
 impl Wire for i32 {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_i32_le(*self);
@@ -341,6 +365,17 @@ impl Wire for i32 {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         reader.read_i32_le()
+    }
+}
+
+impl Wire for i128 {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_i128_le(*self);
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        reader.read_i128_le()
     }
 }
 

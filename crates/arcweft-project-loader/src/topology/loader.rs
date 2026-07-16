@@ -395,26 +395,6 @@ impl<'a> TopologyBuilder<'a> {
         source_root: &Path,
         selected_source: &Path,
     ) -> Result<Vec<ProjectSourceFile>, ProfileTopologyLoadError> {
-        let selected_id = self.provisional_workspace_id(selected_source)?;
-        let inferred =
-            project::inferred_module_path(source_root, selected_source).map_err(|source| {
-                ProfileTopologyLoadError::ModuleDeclaration {
-                    id: selected_id.clone(),
-                    path: selected_source.to_path_buf(),
-                    source: Box::new(source),
-                }
-            })?;
-        if !inferred.is_crate_root() {
-            return Err(ProfileTopologyLoadError::ModuleDeclaration {
-                id: selected_id,
-                path: selected_source.to_path_buf(),
-                source: Box::new(project::ProjectLoadError::MissingModuleDeclaration {
-                    path: selected_source.to_path_buf(),
-                    expected: CanonicalModulePath::crate_root(),
-                }),
-            });
-        }
-
         let root = CanonicalModulePath::crate_root();
         let root_resource = self.acquire_document(
             package,
@@ -871,27 +851,6 @@ impl<'a> TopologyBuilder<'a> {
             ownership: LoadedDocumentOwnership::Dependency,
             access: observed_access(path, LoadedDocumentOwnership::Dependency),
         })
-    }
-
-    fn provisional_workspace_id(
-        &self,
-        path: &Path,
-    ) -> Result<ProfileTopologyResourceId, ProfileTopologyLoadError> {
-        let relative = path.strip_prefix(&self.project_root).map_err(|_| {
-            ProfileTopologyLoadError::UnownedResourcePath {
-                path: path.to_path_buf(),
-                kind: ProfileTopologyResourceKind::ArcweftModule {
-                    module: CanonicalModulePath::crate_root(),
-                },
-            }
-        })?;
-        let logical = slash_relative_path(relative)
-            .map_err(|source| ProfileTopologyLoadError::DependencySeed { source })?;
-        Ok(ProfileTopologyResourceId::new(
-            self.workspace_owner.clone(),
-            ProfileTopologyLogicalPath::try_new(logical)
-                .expect("workspace relative paths were validated"),
-        ))
     }
 
     fn check_duplicate_claim(&self, claim: &ResourceClaim) -> Result<(), ProfileTopologyLoadError> {

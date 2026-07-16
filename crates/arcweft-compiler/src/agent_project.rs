@@ -100,20 +100,18 @@ fn agent_project_graph_symbols(
             });
         }
     }
-    for (name, callable) in project.project_callables() {
+    for (declaration, callable) in project.project_callables() {
+        let name = declaration.qualified_name();
+        let identity = format!("{}:{name}", declaration.owner().as_str());
         symbols.push(AgentProjectGraphSymbol {
-            symbol_id: agent_project_callable_symbol_id(name.as_str()),
+            symbol_id: agent_project_callable_symbol_id(&identity),
             public_id: None,
-            qualified_name: Some(name.as_str().to_owned()),
+            qualified_name: Some(name.clone()),
             kind: format!("project_{}", callable.kind().as_str()),
             semantic_hash: Some(callable.semantic_hash().as_str().to_owned()),
             flow_control: None,
             project_summary: None,
-            summary: format!(
-                "Project {} callable `{}`",
-                callable.kind().as_str(),
-                name.as_str()
-            ),
+            summary: format!("Project {} callable `{}`", callable.kind().as_str(), name),
         });
     }
     for name in project.debug_queries().keys() {
@@ -160,9 +158,13 @@ fn agent_project_graph_edges(project: &ProjectSemanticIndex) -> Vec<AgentProject
         project
             .project_callables()
             .keys()
-            .map(|name| AgentProjectGraphEdge {
+            .map(|declaration| AgentProjectGraphEdge {
                 from_symbol_id: agent_project_summary_symbol_id(),
-                to_symbol_id: agent_project_callable_symbol_id(name.as_str()),
+                to_symbol_id: agent_project_callable_symbol_id(&format!(
+                    "{}:{}",
+                    declaration.owner().as_str(),
+                    declaration.qualified_name()
+                )),
                 edge_kind: "contains_callable".to_owned(),
             }),
     );
@@ -191,8 +193,8 @@ fn agent_project_graph_edges(project: &ProjectSemanticIndex) -> Vec<AgentProject
             .dependency_relations()
             .iter()
             .map(|relation| AgentProjectGraphEdge {
-                from_symbol_id: agent_project_symbol_ref_id(relation.from()),
-                to_symbol_id: agent_project_symbol_ref_id(relation.to()),
+                from_symbol_id: agent_project_symbol_ref_id(project, relation.from()),
+                to_symbol_id: agent_project_symbol_ref_id(project, relation.to()),
                 edge_kind: relation.edge_kind().as_str().to_owned(),
             }),
     );
@@ -220,6 +222,7 @@ fn agent_project_debug_query_symbol_id(name: &str) -> String {
 }
 
 fn agent_project_symbol_ref_id(
+    project: &ProjectSemanticIndex,
     symbol_ref: &arcweft_lang_sema::project_index::ProjectGraphSymbolRef,
 ) -> String {
     match symbol_ref {
@@ -227,7 +230,16 @@ fn agent_project_symbol_ref_id(
             agent_project_entity_symbol_id(id.as_str())
         }
         arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Callable(name) => {
-            agent_project_callable_symbol_id(name.as_str())
+            project.project_callable(name).map_or_else(
+                || agent_project_callable_symbol_id(name.as_str()),
+                |callable| {
+                    agent_project_callable_symbol_id(&format!(
+                        "{}:{}",
+                        callable.declaration().owner().as_str(),
+                        callable.declaration().qualified_name()
+                    ))
+                },
+            )
         }
     }
 }

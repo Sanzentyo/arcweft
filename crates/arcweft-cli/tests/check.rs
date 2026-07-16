@@ -190,6 +190,7 @@ include!("check/toolchain_jit.rs");
 mod agent_observe_native;
 
 include!("check/cli_runtime_bench.rs");
+include!("check/profile_entry_selection.rs");
 
 fn temp_arcw(name: &str, source: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -235,6 +236,7 @@ fn temp_dir(name: &str) -> PathBuf {
         fs::remove_dir_all(&path).expect("remove stale temp fixture dir");
     }
     fs::create_dir_all(&path).expect("create temp fixture dir");
+    fs::create_dir(path.join("src")).expect("create temp project source dir");
     path
 }
 
@@ -771,7 +773,7 @@ fn truck_game_rust_manifest() -> ArcweftRustManifest {
         },
     })
     .with_function(ArcweftRustFunction {
-        name: "mini_games.truck.score_to_rank".to_owned(),
+        name: "score_to_rank".to_owned(),
         rust_path: "truck_game::score_to_rank".to_owned(),
         params: vec![ArcweftRustParam {
             name: "score".to_owned(),

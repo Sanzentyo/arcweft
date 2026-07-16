@@ -18,7 +18,8 @@ use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, DialogueCallableId, DialogueCalleeIdentity,
     FloatWidth, FxCallableSignatureId, MathCallableId, PRODUCTION_CALLABLE_LIMITS,
-    PresentationCallableId, ResolvedCharacterOwner, StdFloatOperation, VectorDimensions,
+    PresentationCallableId, ReductionConstructorKind, ResolvedCharacterOwner, StdFloatCallableId,
+    StdFloatOperation, VectorDimensions,
 };
 
 impl BuiltinCallableId {
@@ -78,50 +79,74 @@ impl BuiltinCallableId {
                 let ty = named(ty);
                 homogeneous(2, &ty, ty.clone(), validator)
             }
-            Self::StdFloat(id) => {
-                let width = match id.width() {
-                    FloatWidth::F32 => TypeKind::F32,
-                    FloatWidth::F64 => TypeKind::F64,
-                };
-                let bits = match id.width() {
-                    FloatWidth::F32 => TypeKind::U32,
-                    FloatWidth::F64 => TypeKind::U64,
-                };
-                let (arity, input, result) = match id.operation() {
-                    StdFloatOperation::Powf | StdFloatOperation::Atan2 => {
-                        (2, width.clone(), width.clone())
-                    }
-                    StdFloatOperation::MulAdd => (3, width.clone(), width.clone()),
-                    StdFloatOperation::IsNan
-                    | StdFloatOperation::IsInfinite
-                    | StdFloatOperation::IsFinite
-                    | StdFloatOperation::IsSignPositive
-                    | StdFloatOperation::IsSignNegative => (1, width.clone(), TypeKind::Bool),
-                    StdFloatOperation::ToBits => (1, width.clone(), bits.clone()),
-                    StdFloatOperation::FromBits => (1, bits, width.clone()),
-                    StdFloatOperation::ToF32 => (1, width.clone(), TypeKind::F32),
-                    StdFloatOperation::ToF64 => (1, width.clone(), TypeKind::F64),
-                    StdFloatOperation::Abs
-                    | StdFloatOperation::Floor
-                    | StdFloatOperation::Ceil
-                    | StdFloatOperation::Round
-                    | StdFloatOperation::Trunc
-                    | StdFloatOperation::Fract
-                    | StdFloatOperation::Sqrt
-                    | StdFloatOperation::Sin
-                    | StdFloatOperation::Cos
-                    | StdFloatOperation::Tan
-                    | StdFloatOperation::Exp
-                    | StdFloatOperation::Exp2
-                    | StdFloatOperation::Ln
-                    | StdFloatOperation::Log2
-                    | StdFloatOperation::Log10 => (1, width.clone(), width),
-                };
-                homogeneous(arity, &input, result, validator)
-            }
+            Self::StdFloat(id) => std_float_schema(*id, validator),
             Self::Capability(CapabilityCallableId::EventEmit) => {
                 variadic_unchecked(TypeKind::Unit, validator, &["event.emit"])
             }
+            Self::Reduction(kind) => kind.signature_schema(),
+        }
+    }
+}
+
+fn std_float_schema(
+    id: StdFloatCallableId,
+    validator: CallableValidator,
+) -> CallableSignatureSchema {
+    let width = match id.width() {
+        FloatWidth::F32 => TypeKind::F32,
+        FloatWidth::F64 => TypeKind::F64,
+    };
+    let bits = match id.width() {
+        FloatWidth::F32 => TypeKind::U32,
+        FloatWidth::F64 => TypeKind::U64,
+    };
+    let (arity, input, result) = match id.operation() {
+        StdFloatOperation::Powf | StdFloatOperation::Atan2 => (2, width.clone(), width.clone()),
+        StdFloatOperation::MulAdd => (3, width.clone(), width.clone()),
+        StdFloatOperation::IsNan
+        | StdFloatOperation::IsInfinite
+        | StdFloatOperation::IsFinite
+        | StdFloatOperation::IsSignPositive
+        | StdFloatOperation::IsSignNegative => (1, width.clone(), TypeKind::Bool),
+        StdFloatOperation::ToBits => (1, width.clone(), bits.clone()),
+        StdFloatOperation::FromBits => (1, bits, width.clone()),
+        StdFloatOperation::ToF32 => (1, width.clone(), TypeKind::F32),
+        StdFloatOperation::ToF64 => (1, width.clone(), TypeKind::F64),
+        StdFloatOperation::Abs
+        | StdFloatOperation::Floor
+        | StdFloatOperation::Ceil
+        | StdFloatOperation::Round
+        | StdFloatOperation::Trunc
+        | StdFloatOperation::Fract
+        | StdFloatOperation::Sqrt
+        | StdFloatOperation::Sin
+        | StdFloatOperation::Cos
+        | StdFloatOperation::Tan
+        | StdFloatOperation::Exp
+        | StdFloatOperation::Exp2
+        | StdFloatOperation::Ln
+        | StdFloatOperation::Log2
+        | StdFloatOperation::Log10 => (1, width.clone(), width),
+    };
+    homogeneous(arity, &input, result, validator)
+}
+
+impl ReductionConstructorKind {
+    pub fn signature_schema(self) -> CallableSignatureSchema {
+        match self {
+            Self::Unchanged => schema(
+                vec![parameter(
+                    0,
+                    Some("state"),
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOnly,
+                    CallableParameterPresence::Required,
+                )],
+                TypeKind::Named("Reduction<_>".to_owned()),
+                &[],
+                closed(),
+                CallableValidator::ReductionConstructor(self),
+            ),
         }
     }
 }

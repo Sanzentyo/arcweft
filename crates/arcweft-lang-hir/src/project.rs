@@ -3,14 +3,15 @@
 use crate::callable_source::{
     HirCallableEffects, HirCallableParameterSource, HirCallableSignatureSource, HirEffectName,
 };
-use crate::model::{HirFlowItem, HirFunction, HirModule};
+use crate::model::{HirFlowItem, HirFunction, HirModule, HirTopLevelDecl};
 use crate::symbol::{
     CallableDeclarationId, CallablePackageId, CallablePackageIdError, ProjectExternalDeclarations,
     ProjectSymbolLinkOutput, ProjectSymbolLinkReport, ProjectSymbolTable,
 };
 use arcweft_lang_syntax::ast::{
     flow::ContractClause,
-    module_path::{CanonicalModulePath, ModulePathRoot},
+    items::{CapabilityFn, ExternCapabilityItem},
+    module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
     symbol_path::SymbolPath,
 };
 use arcweft_source::SourceDocumentIdentity;
@@ -233,9 +234,96 @@ fn build_callable_signature_sources(
                 package, module, hir, function,
             )?);
         }
+        for declaration in hir.declarations() {
+            let HirTopLevelDecl::ExternCapability(capability) = declaration else {
+                continue;
+            };
+            for function in capability.functions() {
+                records.push(build_capability_signature_source(
+                    package, module, hir, capability, function,
+                )?);
+            }
+        }
         ranges.insert(module.clone(), start..records.len());
     }
     Ok((records, ranges))
+}
+
+fn build_capability_signature_source(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    hir: &HirModule,
+    capability: &ExternCapabilityItem,
+    function: &CapabilityFn,
+) -> Result<HirCallableSignatureSource, HirProjectError> {
+    let invalid = |reason: String| HirProjectError::InvalidCallableSource {
+        module: module.clone(),
+        name: format!("{}.{}", capability.id(), function.signature().name()),
+        reason,
+    };
+    let capability_segment =
+        ModuleSegment::new(capability.id()).map_err(|error| invalid(error.to_string()))?;
+    let declaration = CallableDeclarationId::try_new_in_owner_path(
+        package.clone(),
+        module.clone(),
+        crate::symbol::CallableDeclarationOwner::ExternCapability,
+        [capability_segment.clone()],
+        function.signature().name(),
+    )
+    .map_err(|error| invalid(error.to_string()))?;
+    let path = SymbolPath::try_new(
+        ModulePathRoot::ImplicitCrate,
+        vec![capability_segment],
+        function.signature().name(),
+    )
+    .map_err(|error| invalid(error.to_string()))?;
+    let source = function.signature_source();
+    let span = |range| {
+        hir.source_span(range)
+            .ok_or_else(|| invalid("source range is not bound to the lowered document".to_owned()))
+    };
+    let parameter_spans = source
+        .parameters()
+        .iter()
+        .map(|parameter| {
+            Ok(HirCallableParameterSource::new(
+                parameter.group(),
+                parameter.parameter(),
+                span(parameter.whole())?,
+                parameter.name().map(&span).transpose()?,
+                parameter.ty().map(&span).transpose()?,
+                parameter.default().map(&span).transpose()?,
+            ))
+        })
+        .collect::<Result<Vec<_>, HirProjectError>>()?;
+    let declared_effects = function
+        .effects()
+        .iter()
+        .map(|effect| {
+            effect
+                .dotted_selector_label()
+                .ok_or_else(|| {
+                    invalid("declared effect is not a dotted capability path".to_owned())
+                })
+                .and_then(|label| {
+                    HirEffectName::try_new(label).map_err(|error| invalid(error.to_string()))
+                })
+        })
+        .collect::<Result<Vec<_>, HirProjectError>>()?;
+    Ok(HirCallableSignatureSource::new(
+        declaration,
+        package.clone(),
+        module.clone(),
+        path,
+        function.signature().clone(),
+        None,
+        span(*function.range())?,
+        span(source.name())?,
+        span(source.signature())?,
+        source.result().map(&span).transpose()?,
+        parameter_spans,
+        HirCallableEffects::new(declared_effects),
+    ))
 }
 
 fn build_callable_signature_source(
@@ -316,12 +404,15 @@ impl HirModule {
         for function in &mut self.functions {
             function.module_path = Some(path.clone());
         }
-        for agent in &mut self.agents {
-            agent.module_path = Some(path.clone());
-        }
         for declaration in &mut self.declarations {
-            if let crate::model::HirTopLevelDecl::Source(source) = declaration {
-                source.bind_project_module(path);
+            match declaration {
+                crate::model::HirTopLevelDecl::Source(source) => {
+                    source.bind_project_module(path);
+                }
+                crate::model::HirTopLevelDecl::Entry(entry) => {
+                    entry.bind_project_module(path);
+                }
+                _ => {}
             }
         }
         self.view_parts
@@ -356,7 +447,6 @@ impl HirModule {
             .for_each(|patch| patch.rebase_ordinal(style_patch_base));
         self.flows.append(&mut module.flows);
         self.functions.append(&mut module.functions);
-        self.agents.append(&mut module.agents);
         self.declarations.append(&mut module.declarations);
         self.style_patches.append(&mut module.style_patches);
         self.view_parts.append(&mut module.view_parts);
@@ -781,6 +871,47 @@ effects { agent.observe }
         assert_eq!(record.parameter_spans()[1].group(), 1);
         assert_eq!(record.parameter_spans()[1].parameter(), 0);
         assert_eq!(record.effects().declared()[0].as_str(), "agent.observe");
+    }
+
+    #[test]
+    fn extern_capability_functions_publish_typed_owned_callable_sources() {
+        let source = r"extern capability fs {
+    fn read_text(path: VirtualPath) -> String effects { fs.read }
+}
+";
+        let (document, hir) = lower_bound("capability-callable", source);
+        let project = HirProject::new(
+            "game",
+            [HirProjectModule::try_new(
+                CanonicalModulePath::crate_root(),
+                document.identity().clone(),
+                hir,
+            )
+            .expect("root module binding")],
+        )
+        .expect("capability project");
+
+        let records = project.callable_signature_sources().collect::<Vec<_>>();
+        assert_eq!(records.len(), 1);
+        let record = records[0];
+        assert_eq!(
+            record.declaration().owner(),
+            crate::symbol::CallableDeclarationOwner::ExternCapability
+        );
+        assert_eq!(record.declaration().qualified_name(), "fs.read_text");
+        assert_eq!(record.declaration().owner_path().len(), 1);
+        assert_eq!(record.declaration().owner_path()[0].as_str(), "fs");
+        assert_eq!(record.path().to_string(), "fs.read_text");
+        assert_eq!(source_slice(source, record.name_span()), "read_text");
+        assert_eq!(
+            source_slice(source, record.parameter_spans()[0].whole()),
+            "path: VirtualPath"
+        );
+        assert_eq!(
+            source_slice(source, record.result_span().unwrap()),
+            "String"
+        );
+        assert_eq!(record.effects().declared()[0].as_str(), "fs.read");
     }
 
     fn source_slice<'a>(source: &'a str, span: &arcweft_source::SourceSpan) -> &'a str {

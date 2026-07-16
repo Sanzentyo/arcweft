@@ -10,11 +10,9 @@ use crate::cst::{
     split_top_level_punctuation_sequence_once, take_doc_comment_prefix,
 };
 use crate::{
-    ast::flow::{AuthoredExpr, ContractClause, FlowItem, Stmt},
-    ast::ids::EntityRef,
+    ast::flow::{FlowItem, Stmt},
     ast::items::Item,
-    expr::Expr,
-    parser::{ParseOptions, SourceDialect, parse_document, parse_source},
+    parser::parse_source,
     types::TypeRef,
 };
 
@@ -26,132 +24,6 @@ fn parsed_source_always_keeps_lossless_syntax() {
     assert_eq!(parsed.syntax().kind(), SyntaxKind::Root);
     assert_eq!(parsed.syntax().text().to_string(), "flow @flow.bad bad {");
     assert_eq!(parsed.typed_tree().source(), "flow @flow.bad bad {");
-}
-
-#[test]
-fn agent_dialect_parses_top_level_agent_item() {
-    let parsed = parse_document(
-        r"
-#[agent(version = 1)]
-agent @agent.opening_smoke opening_smoke()
-effects { agent.observe }
-{
-    observe()
-}
-",
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
-    );
-
-    assert_eq!(parsed.errors(), &[]);
-    let [Item::Agent(agent)] = parsed.typed_tree().items() else {
-        panic!("expected exactly one parsed agent item");
-    };
-    assert_eq!(agent.name(), "opening_smoke");
-    assert_eq!(agent.id().map(EntityRef::body), Some("agent.opening_smoke"));
-    assert!(agent.signature().is_some());
-    assert_eq!(agent.contracts().len(), 1);
-    assert!(matches!(
-        agent.body_value().map(AuthoredExpr::expr),
-        Some(Expr::Call { .. })
-    ));
-}
-
-#[test]
-fn agent_dialect_parses_multiline_attributes_and_effect_prelude() {
-    let parsed = parse_document(
-        r"
-#[agent(version = 1)]
-#[budget(
-    timeout = 30s,
-    steps = 128usize,
-)]
-agent @agent.opening.listen opening_listen()
-effects {
-    agent.observe,
-    agent.wait,
-}
-{
-    let first = try observe()
-    Ok(first)
-}
-",
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
-    );
-
-    assert_eq!(parsed.errors(), &[]);
-    let [Item::Agent(agent)] = parsed.typed_tree().items() else {
-        panic!("expected exactly one parsed agent item");
-    };
-    assert_eq!(agent.attrs().len(), 2);
-    let [ContractClause::Effects(effects)] = agent.contracts() else {
-        panic!("expected a structured effects contract");
-    };
-    assert_eq!(effects.len(), 2);
-    assert!(effects.iter().all(|effect| !matches!(effect, Expr::Raw(_))));
-    assert_eq!(agent.body_statements().len(), 1);
-    assert!(matches!(
-        agent.body_value().map(AuthoredExpr::expr),
-        Some(Expr::Call { .. })
-    ));
-}
-
-#[test]
-fn agent_dialect_parses_scope_statement_body() {
-    let parsed = parse_document(
-        r"
-#[agent(version = 1)]
-agent @agent.opening.listen opening_listen()
-effects {
-    agent.observe,
-    agent.act.semantic,
-}
-{
-    let first = try observe()
-    scope choose_listen {
-        let action = try choose(@choice.opening.listen)
-        expect(action.accepted)
-    }
-    Ok(first)
-}
-",
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
-    );
-
-    assert_eq!(parsed.errors(), &[]);
-    let [Item::Agent(agent)] = parsed.typed_tree().items() else {
-        panic!("expected exactly one parsed agent item");
-    };
-    assert_eq!(agent.body_statements().len(), 2);
-    assert!(matches!(
-        &agent.body_statements()[1],
-        Stmt::Expr {
-            expr: Expr::NamedBlock { name, .. },
-            ..
-        } if name == "scope choose_listen"
-    ));
-}
-
-#[test]
-fn agent_dialect_requires_an_agent_item() {
-    let parsed = parse_document(
-        "project_task\n",
-        ParseOptions {
-            source_dialect: SourceDialect::Agent,
-        },
-    );
-
-    assert!(parsed.typed_tree().items().is_empty());
-    assert!(parsed.errors().iter().any(|error| {
-        error
-            .message()
-            .contains("unsupported top-level item in Agent dialect")
-    }));
 }
 
 #[test]

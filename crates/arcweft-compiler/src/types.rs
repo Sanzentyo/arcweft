@@ -15,19 +15,6 @@ pub struct CompiledSource {
     pub runtime_plan_stats: RuntimePlanLowerStats,
 }
 
-/// Agent controller compilation result before bytecode/runtime artifact lowering.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CompiledAgent {
-    pub hir: arcweft_lang_hir::model::HirModule,
-}
-
-/// Agent controller compilation result checked against a project semantic index.
-#[derive(Clone, Debug, PartialEq)]
-pub struct TypecheckedAgent {
-    pub hir: arcweft_lang_hir::model::HirModule,
-    pub typecheck_report: TypeCheckReport,
-}
-
 /// Agent controller bundle compilation result.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CompiledAgentBundle {

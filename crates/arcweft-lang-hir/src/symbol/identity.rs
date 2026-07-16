@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::ast::{
     common::Visibility,
-    module_path::{CanonicalModulePath, ModulePathError},
+    module_path::{CanonicalModulePath, ModulePathError, ModuleSegment},
     symbol_path::{SymbolPath, SymbolPathError},
 };
 use arcweft_source::{
@@ -25,6 +25,7 @@ pub struct CallableDeclarationId {
     package: CallablePackageId,
     module: CanonicalModulePath,
     owner: CallableDeclarationOwner,
+    owner_path: Vec<ModuleSegment>,
     name: String,
 }
 
@@ -32,14 +33,27 @@ pub struct CallableDeclarationId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CallableDeclarationOwner {
     Function,
+    ExternCapability,
+    View,
     Predicate,
     Proof,
 }
 
 impl CallableDeclarationOwner {
+    /// Stable source-family label used at serialization and tooling boundaries.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::ExternCapability => "extern_capability",
+            Self::View => "view",
+            Self::Predicate => "predicate",
+            Self::Proof => "proof",
+        }
+    }
+
     /// Whether declarations of this family can become runtime call targets.
     pub const fn is_runtime_callable(self) -> bool {
-        matches!(self, Self::Function)
+        matches!(self, Self::Function | Self::ExternCapability)
     }
 
     /// Whether declarations of this family denote logical Boolean callables.
@@ -204,8 +218,23 @@ impl CallableDeclarationId {
             package,
             module,
             owner,
+            owner_path: Vec::new(),
             name,
         })
+    }
+
+    /// Creates a callable owned by a typed declaration path inside one source
+    /// module, such as `extern capability fs { fn read_text(...) }`.
+    pub fn try_new_in_owner_path(
+        package: CallablePackageId,
+        module: CanonicalModulePath,
+        owner: CallableDeclarationOwner,
+        owner_path: impl IntoIterator<Item = ModuleSegment>,
+        name: impl Into<String>,
+    ) -> Result<Self, CallableDeclarationIdError> {
+        let mut id = Self::try_new(package, module, owner, name)?;
+        id.owner_path = owner_path.into_iter().collect();
+        Ok(id)
     }
 
     pub fn for_function(
@@ -237,12 +266,23 @@ impl CallableDeclarationId {
         self.owner
     }
 
+    pub fn owner_path(&self) -> &[ModuleSegment] {
+        &self.owner_path
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
 
     pub fn qualified_name(&self) -> String {
-        qualified_name(&self.module, self.name())
+        let owner = self
+            .owner_path
+            .iter()
+            .map(ModuleSegment::as_str)
+            .chain(std::iter::once(self.name()))
+            .collect::<Vec<_>>()
+            .join(".");
+        qualified_name(&self.module, &owner)
     }
 }
 
@@ -544,6 +584,11 @@ mod tests {
         assert!(!CallableDeclarationOwner::Proof.is_runtime_callable());
         assert!(!CallableDeclarationOwner::Proof.is_logical_callable());
         assert!(CallableDeclarationOwner::Proof.permits_proof_statement_call());
+
+        assert!(!CallableDeclarationOwner::View.is_runtime_callable());
+        assert!(!CallableDeclarationOwner::View.is_logical_callable());
+        assert!(!CallableDeclarationOwner::View.permits_proof_statement_call());
+        assert_eq!(CallableDeclarationOwner::View.as_str(), "view");
     }
 
     #[test]

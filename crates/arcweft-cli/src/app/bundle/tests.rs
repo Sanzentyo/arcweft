@@ -342,12 +342,17 @@ name = "launch-only"
 version = "0.1.0"
 
 [profiles.main]
-kind = "game"
+kind = "cli"
+entry = "entry.main"
 source = "demo.arcw"
 "#,
     )
     .expect("fixture manifest writes");
-    fs::write(root.join("demo.arcw"), "flow main { return () }").expect("profile source writes");
+    fs::write(
+        root.join("demo.arcw"),
+        "entry cli @entry.main { goto @flow.main }\nflow @flow.main main { return () }",
+    )
+    .expect("profile source writes");
 
     let selection = resolve_source_selection(
         None,
@@ -831,16 +836,34 @@ flow test {
 
 #[test]
 fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
-    let source = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .join("samples/modern-feedback-view/src/main.arcw"),
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("samples/modern-feedback-view/arcw.toml");
+    let selection = resolve_source_selection(
+        None,
+        &ProfileOptions {
+            profile: Some("main".to_owned()),
+            manifest,
+        },
     )
-    .expect("modern feedback view sample source");
-    let parsed = arcweft_lang_syntax::parser::parse_source(&source);
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    .expect("modern feedback view profile resolves");
+    let mut phases = Vec::new();
+    let semantic = semantic_context_for_selection(&selection, None, &mut phases)
+        .expect("modern feedback project semantic context loads");
+    let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)
+        .expect("modern feedback project compiles through the canonical profile path");
+    let package = selection
+        .package_identity()
+        .expect("modern feedback package identity resolves");
+    let sidecars = collect_bundle_dsl_view_resources_with_style_for_package(
+        &compiled.hir,
+        &compiled.style,
+        &[],
+        &package,
+        &compiled.typecheck_report.view_part_catalog,
+        &compiled.source_map,
+    )
+    .expect("sidecars lower from the checked project artifacts");
     let program = sidecars.program.expect("program lowers");
     let text = sidecars.text.expect("text resource lowers");
 
@@ -1913,15 +1936,15 @@ fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
 }
 
 fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
-    let plan = RuntimePlan::new(
-        Some(FlowRuntimeId::from_runtime_target_value("flow.test").expect("flow runtime id")),
-        vec![RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.test").expect("flow runtime id"),
-            ops: vec![FlowOp::Return(return_value.to_owned())],
-        }],
-        Vec::new(),
-    )
-    .expect("test runtime plan is valid");
+    let source = format!(
+        "entry cli @entry.test {{ goto @flow.test }}\nflow test {{ return \"{return_value}\" }}"
+    );
+    let parsed = arcweft_lang_syntax::parser::parse_source(&source);
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree())
+        .expect("test source lowers to HIR");
+    let plan = arcweft_runtime_plan::flow::lower_runtime_plan(&hir)
+        .expect("test source lowers to a runtime plan");
     let display = LineDisplayCatalog::default();
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()
@@ -1933,7 +1956,7 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.test".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -1950,7 +1973,7 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
             &SourceDocument::try_new(
                 SourceDocumentId::try_new(source_label).expect("source ID"),
                 SourceName::path(source_label),
-                format!("flow test {{ return \"{return_value}\" }}"),
+                source,
             )
             .expect("source document"),
         ])
@@ -1999,7 +2022,42 @@ fn compile_bundle_for_selection_attaches_product_awbc_before_awfb_encoding() {
     ));
     fs::create_dir_all(&root).expect("temporary source directory");
     let source_path = root.join("main.arcw");
-    fs::write(&source_path, "flow main { return \"done\" }").expect("temporary source writes");
+    fs::write(
+        &source_path,
+        r#"
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.main
+}
+
+flow main(state: GameState) { return "done" }
+"#,
+    )
+    .expect("temporary source writes");
     let selection = SourceSelection::Direct {
         path: source_path.clone(),
     };
@@ -2007,6 +2065,10 @@ fn compile_bundle_for_selection_attaches_product_awbc_before_awfb_encoding() {
 
     let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
         .expect("ordinary source bundle compiles");
+    assert!(matches!(
+        artifact.bundle.bytecode.program.entries[0].roles,
+        arcweft_core::entry::RuntimeEntryRoles::Stateful(_)
+    ));
     let product_awbc = artifact
         .bundle
         .product_awbc()
@@ -2050,7 +2112,7 @@ fn wave(amplitude: Length = 2px) -> Fx {
     )
 }
 
-entry game @entry.main {
+entry cli @entry.main {
     goto @flow.main
 }
 
@@ -2110,7 +2172,7 @@ name = "product_awbc_builder"
     fs::write(
         &source_path,
         r#"
-entry game { goto @flow.main }
+entry cli @entry.main { goto @flow.main }
 
 flow main {
     return "done"
@@ -2170,8 +2232,15 @@ content-dir = "game-content"
 "#,
     )
     .expect("temporary manifest writes");
-    fs::write(&source_path, "flow main { return \"done\" }")
-        .expect("temporary project source writes");
+    fs::write(
+        &source_path,
+        r#"
+entry cli @entry.main { goto @flow.main }
+
+flow main { return "done" }
+"#,
+    )
+    .expect("temporary project source writes");
     fs::write(
         custom_asset_root.join("room.png"),
         sample_image_virtual_file("bg/room.png").bytes,

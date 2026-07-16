@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 flow @flow.main main {
     log.info("started")
     return "done"

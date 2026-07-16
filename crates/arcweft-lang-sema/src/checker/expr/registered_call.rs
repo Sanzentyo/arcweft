@@ -1,4 +1,4 @@
-//! Registered-catalog free-call checking.
+//! Registered-catalog call checking.
 
 use std::sync::atomic::AtomicBool;
 
@@ -10,12 +10,12 @@ use arcweft_lang_syntax::{
 use super::{TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
 use crate::{
     callable::{
-        CallCallee, CallResolverRequest, CallSourceContext, CallableGroupIndex, CallableName,
-        CallableParameter, CallableParameterPassing, CallableParameterPresence,
-        CallableParameterType, CallablePath, CallableSignatureSchema, CallableValidator,
-        LexicalCallableScope, NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS,
-        ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable, ResolverWork,
-        SpreadArgumentPolicy,
+        CallCallee, CallResolverRequest, CallSourceContext, CallableCandidateId,
+        CallableGroupIndex, CallableName, CallableParameter, CallableParameterPassing,
+        CallableParameterPresence, CallableParameterType, CallablePath, CallableSignatureSchema,
+        CallableValidator, LexicalCallableScope, NonEmptyResolvedCandidates,
+        PRODUCTION_CALLABLE_LIMITS, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
+        ResolverWork, SpreadArgumentPolicy,
     },
     effect_model::EffectSite,
 };
@@ -23,6 +23,11 @@ use crate::{
 use super::support::{FixedLiteralSpreadSlot, fixed_literal_spread_slots, spread_item_type};
 
 pub(super) enum RegisteredFreeCallOutcome {
+    NotHandled,
+    Checked(Option<TypeKind>),
+}
+
+pub(super) enum RegisteredMethodCallOutcome {
     NotHandled,
     Checked(Option<TypeKind>),
 }
@@ -46,28 +51,11 @@ impl TypeChecker<'_> {
             return RegisteredFreeCallOutcome::NotHandled;
         }
 
-        if let [name] = path.segments()
-            && self
-                .symbol_type(name.as_str())
-                .is_some_and(is_deferred_callable_value)
-        {
+        if self.registered_free_path_is_deferred(&path) {
             return RegisteredFreeCallOutcome::NotHandled;
         }
 
-        let lexical = LexicalCallableScope::from_non_callable_bindings(
-            self.locals
-                .iter()
-                .chain(self.global_symbols.iter())
-                .filter_map(|(name, ty)| {
-                    (!is_deferred_callable_value(ty))
-                        .then(|| {
-                            CallableName::try_new(name.as_str())
-                                .ok()
-                                .map(|name| (name, ty.clone()))
-                        })
-                        .flatten()
-                }),
-        );
+        let lexical = self.registered_free_lexical_scope();
         let module = self
             .current_module
             .clone()
@@ -110,10 +98,18 @@ impl TypeChecker<'_> {
         };
         match crate::callable::resolve_call_target(request) {
             ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
+                let label = path.dotted_name();
+                let callee_range = self.source_range_for_expr(callee).and_then(|range| {
+                    let end = range.end();
+                    let start = end.checked_sub(path.leaf().as_str().len())?;
+                    (start >= range.start())
+                        .then_some(arcweft_lang_syntax::ast::common::TextRange::new(start, end))
+                });
                 RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidates(
-                    path.leaf().as_str(),
+                    &label,
                     &candidates,
                     args,
+                    callee_range,
                 )))
             }
             ResolveCallOutcome::Resolved(ResolvedCallTarget::NonCallable(target)) => {
@@ -139,6 +135,37 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn registered_free_path_is_deferred(&self, path: &CallablePath) -> bool {
+        let [name] = path.segments() else {
+            return false;
+        };
+        let name = name.as_str();
+        self.locals
+            .get(name)
+            .is_some_and(is_deferred_callable_value)
+            || (self
+                .global_symbols
+                .get(name)
+                .is_some_and(is_deferred_callable_value)
+                && self.resolve_project_callable(name).is_none())
+    }
+
+    fn registered_free_lexical_scope(&self) -> LexicalCallableScope {
+        LexicalCallableScope::from_non_callable_bindings(
+            self.locals
+                .iter()
+                .chain(self.global_symbols.iter())
+                .filter_map(|(name, ty)| {
+                    if is_deferred_callable_value(ty) {
+                        return None;
+                    }
+                    CallableName::try_new(name.as_str())
+                        .ok()
+                        .map(|name| (name, ty.clone()))
+                }),
+        )
+    }
+
     fn registered_free_path_has_value_receiver(&self, callee: &Expr, path: &CallablePath) -> bool {
         matches!(callee, Expr::Select(_))
             && path.len() > 1
@@ -148,11 +175,100 @@ impl TypeChecker<'_> {
                 .is_some_and(|root| self.symbol_type(root.as_str()).is_some())
     }
 
+    pub(super) fn check_registered_catalog_method_call(
+        &mut self,
+        receiver_type: &TypeKind,
+        method_name: &str,
+        args: &[CallArg],
+        expression: TypeExpressionId,
+    ) -> RegisteredMethodCallOutcome {
+        let (Some(world), Some(symbols)) = (self.registered_world, self.project_symbols) else {
+            return RegisteredMethodCallOutcome::NotHandled;
+        };
+        let Ok(method) = CallableName::try_new(method_name) else {
+            return RegisteredMethodCallOutcome::NotHandled;
+        };
+        let module = self
+            .current_module
+            .clone()
+            .unwrap_or_else(CanonicalModulePath::crate_root);
+        let Some(document) = symbols.source_identity(&module) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "method call `{method_name}` has no accepted source identity"
+            )));
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return RegisteredMethodCallOutcome::Checked(None);
+        };
+        let lexical = LexicalCallableScope::default();
+        let cancellation = AtomicBool::new(false);
+        let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+        let request = match CallResolverRequest::try_new(
+            CallCallee::Selected {
+                receiver_expression: expression,
+                receiver_type,
+                method: &method,
+            },
+            &lexical,
+            None,
+            &module,
+            symbols,
+            world,
+            &self.trait_catalog,
+            CallSourceContext::new(document, None, None),
+            CallableGroupIndex::ZERO,
+            expression,
+            &cancellation,
+            &mut work,
+            &PRODUCTION_CALLABLE_LIMITS,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                for arg in args {
+                    self.check_expr(arg.value());
+                }
+                return RegisteredMethodCallOutcome::Checked(None);
+            }
+        };
+        match crate::callable::resolve_call_target(request) {
+            ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
+                RegisteredMethodCallOutcome::Checked(Some(self.check_registered_candidates(
+                    method_name,
+                    &candidates,
+                    args,
+                    None,
+                )))
+            }
+            ResolveCallOutcome::Missing(_) => RegisteredMethodCallOutcome::NotHandled,
+            ResolveCallOutcome::Rejected(error) => {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                for arg in args {
+                    self.check_expr(arg.value());
+                }
+                RegisteredMethodCallOutcome::Checked(None)
+            }
+            ResolveCallOutcome::Resolved(
+                ResolvedCallTarget::FunctionValue(_) | ResolvedCallTarget::NonCallable(_),
+            ) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "registered method `{method_name}` resolved to a non-method target"
+                )));
+                for arg in args {
+                    self.check_expr(arg.value());
+                }
+                RegisteredMethodCallOutcome::Checked(None)
+            }
+        }
+    }
+
     fn check_registered_candidates(
         &mut self,
         label: &str,
         candidates: &NonEmptyResolvedCandidates,
         args: &[CallArg],
+        callee_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> TypeKind {
         let viable = candidates
             .as_slice()
@@ -176,7 +292,7 @@ impl TypeChecker<'_> {
                 return TypeKind::Named("_".to_owned());
             }
         };
-        self.check_registered_candidate(label, selected, args)
+        self.check_registered_candidate(label, selected, args, callee_range)
     }
 
     fn check_registered_candidate(
@@ -184,31 +300,45 @@ impl TypeChecker<'_> {
         label: &str,
         candidate: &ResolvedCallable,
         args: &[CallArg],
+        callee_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> TypeKind {
         let schema = candidate.schema();
         self.check_virtual_path_call(label, args);
         match schema.validator() {
             CallableValidator::Ordinary => self.check_registered_schema_args(label, schema, args),
-            CallableValidator::Untyped => {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-            }
+            CallableValidator::Untyped => self.check_untyped_function_args(label, args),
             validator => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "registered free callable `{label}` has unsupported validator {validator:?}"
+                    "registered callable `{label}` has unsupported validator {validator:?}"
                 )));
                 for arg in args {
                     self.check_expr(arg.value());
                 }
             }
         }
-        let effects = schema.effects().declared();
-        self.effect_collector.record_named_call(
-            label,
-            Some(effects.concrete().clone()),
-            EffectSite::new(format!("call `{label}`")),
-        );
+        let site = EffectSite::new(format!("call `{label}`"));
+        if let Some(declaration) = schema.effects().project_declaration() {
+            self.effect_collector.record_local_call(
+                crate::effect_model::CallableId::project_function(declaration),
+                site,
+            );
+        } else {
+            self.effect_collector.record_named_call(
+                label,
+                Some(schema.effects().declared().concrete().clone()),
+                site,
+            );
+        }
+        if let CallableCandidateId::Project(declaration) = candidate.id()
+            && let (Some(module), Some(range)) = (&self.current_module, callee_range)
+        {
+            self.project_callable_references
+                .push(super::super::ProjectCallableReference {
+                    module: module.clone(),
+                    declaration: declaration.clone(),
+                    range,
+                });
+        }
         schema_result_type(schema, CallableGroupIndex::ZERO)
     }
 

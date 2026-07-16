@@ -1,4 +1,4 @@
-entry game @entry.main { goto @flow.opening }
+entry cli @entry.main { goto @flow.opening }
 flow @flow.opening opening { return "done" }
 
 test @test.entry_starts scenario {

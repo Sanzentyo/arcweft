@@ -15,7 +15,7 @@ pub(super) fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
     })
 }
 
-pub(super) fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
+pub(crate) fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
     function_signature_type_with_nominal_types(signature, NominalTypeContext::empty())
 }
 

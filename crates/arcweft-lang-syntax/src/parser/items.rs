@@ -1,25 +1,26 @@
 use crate::ast::common::TextRange;
 use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::items::{
-    AgentItem, AgentItemInit, CallableItem, CallableItemInit, CapabilityFn, ContentDeclBody,
-    EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem, EntryKind,
-    EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
-    ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
-    ExternModTypeKind, FunctionInit, FunctionItem, FunctionParameterSource,
-    FunctionSignatureSource, ImageDeclBody, ImageDeclField, ImplItem, ImplItemInit, ImplMember,
-    StateField, StateItem, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
+    CapabilityFn, ContentDeclBody, EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem,
+    EntryItem, EntryKind, EntryRoleKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem,
+    EnumVariant, ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem,
+    ExternModMember, ExternModType, ExternModTypeKind, FunctionInit, FunctionItem,
+    FunctionParameterSource, FunctionSignatureSource, ImageDeclBody, ImageDeclField, ImplItem,
+    ImplItemInit, ImplMember, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
     ViewDeclBody,
 };
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
-    find_top_level_punctuation, split_first_string_literal, split_leading_ident,
+    find_top_level_punctuation, is_identifier, split_first_string_literal, split_leading_ident,
     split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
     split_top_level_punctuation, split_top_level_punctuation_once,
 };
-use crate::types::{parse_fn_signature, parse_where_clause_list};
+use crate::expr::DottedPath;
+use crate::types::{parse_fn_signature, parse_generic_params, parse_where_clause_list};
+use std::collections::BTreeMap;
 
 use super::headers::{
-    parse_callable_kind, parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
+    parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
     parse_extern_mod_head, parse_function_kind_and_signature, parse_name_and_tail,
     parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
     parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
@@ -27,10 +28,9 @@ use super::headers::{
 };
 use super::view::parse_view_body;
 use super::{
-    Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
-    parse_scope_authored_expr_body, parse_scope_authored_expr_body_for_dialect,
-    parse_scope_authored_expr_body_with_base, parse_scope_authored_expr_body_with_base_for_dialect,
-    parse_scope_expr_body, parse_type_ref_or_error, split_top_level_binding,
+    Parser, PendingDocLines, collect_logical_block_items, collect_logical_block_items_with_base,
+    parse_expr_lossy, parse_scope_authored_expr_body, parse_scope_authored_expr_body_with_base,
+    parse_type_ref_or_error, split_top_level_binding,
 };
 
 impl Parser<'_> {
@@ -104,89 +104,6 @@ impl Parser<'_> {
         }))
     }
 
-    pub(super) fn parse_agent_item(&mut self) -> Option<AgentItem> {
-        let attrs = self.take_pending_attrs();
-        let doc = self.take_pending_doc();
-        let start_line = self.current().clone();
-        let block = self.take_function_block_event();
-        if !block.ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing agent",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the agent body"],
-            );
-            return None;
-        }
-        let head = &block.head;
-        let body = &block.body;
-
-        let header_lines = head
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>();
-        let (agent_head, contract_lines) = split_function_header_lines(&header_lines)?;
-        let (visibility, rest) = parse_visibility_prefix(&agent_head);
-        let rest = rest.trim_start().strip_prefix("agent")?.trim_start();
-        let (id, rest) = if rest.starts_with('@') {
-            match parse_required_entity_ref(rest, start_line.start, &mut self.errors) {
-                Some((id, rest)) => (Some(id), rest.trim_start()),
-                None => (None, rest),
-            }
-        } else {
-            (None, rest)
-        };
-        let (explicit_name, signature_tail) = parse_name_and_tail(rest);
-        let name = explicit_name
-            .or_else(|| id.as_ref().map(agent_name_from_id))
-            .unwrap_or_else(|| "agent".to_owned());
-        let signature_text = parse_agent_signature_text(&name, &signature_tail);
-        let signature = match signature_text.as_deref() {
-            Some(text) => match parse_fn_signature(text) {
-                Ok(signature) => Some(signature),
-                Err(error) => {
-                    self.push_error(
-                        TextRange::new(start_line.start, start_line.end),
-                        &error.to_string(),
-                        ["agent @agent.id name(...)"],
-                        Some(agent_head.as_str()),
-                        ["write the agent item with a valid function-style signature tail"],
-                    );
-                    return None;
-                }
-            },
-            None => None,
-        };
-        let contracts = parse_contract_clauses(&contract_lines);
-        let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
-            || parse_scope_authored_expr_body_for_dialect(body, SourceDialect::Agent),
-            |range| {
-                parse_scope_authored_expr_body_with_base_for_dialect(
-                    body,
-                    range.start,
-                    SourceDialect::Agent,
-                )
-            },
-        );
-
-        Some(AgentItem::new(AgentItemInit {
-            attrs,
-            doc,
-            visibility,
-            id,
-            name,
-            signature,
-            signature_text,
-            contracts,
-            body: body.clone().into_owned(),
-            body_statements,
-            body_value,
-            range: TextRange::new(start_line.start, block.end),
-        }))
-    }
-
     pub(super) fn parse_enum_item(&mut self) -> Option<EnumItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
@@ -202,77 +119,35 @@ impl Parser<'_> {
             return None;
         }
         let (visibility, rest) = parse_visibility_prefix(head.trim());
-        let name = rest.trim_start().strip_prefix("enum")?.trim();
-        let (name, _) = parse_name_and_tail(name);
+        let declaration = rest.trim_start().strip_prefix("enum")?.trim();
+        let (name, tail) = parse_name_and_tail(declaration);
+        let name = name.unwrap_or_default();
+        let name_start = start_line.start
+            + head.find(declaration).unwrap_or_default()
+            + declaration.find(&name).unwrap_or_default();
+        let (generic_source, trailing) = parse_optional_angle_head(&tail);
+        let generic_params = parse_nominal_generic_params(
+            generic_source.as_deref(),
+            start_line.start + head.find(declaration).unwrap_or_default(),
+            &mut self.errors,
+        )?;
+        if !trailing.is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unexpected tokens after enum generic parameters",
+                ["{"],
+                Some(trailing),
+                ["remove the trailing declaration text"],
+            );
+            return None;
+        }
         Some(EnumItem::new(
             attrs,
             visibility,
-            name.unwrap_or_default(),
+            name.clone(),
+            TextRange::new(name_start, name_start + name.len()),
+            generic_params,
             parse_enum_variants(&body),
-            TextRange::new(start_line.start, end),
-        ))
-    }
-
-    pub(super) fn parse_callable_item(&mut self) -> Option<CallableItem> {
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_flow_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing function-like item",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the item body"],
-            );
-            return None;
-        }
-        let header_lines = head
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>();
-        let first = header_lines.first().copied()?;
-        let (visibility, rest) = parse_visibility_prefix(first);
-        let (kind, after_kind) = parse_callable_kind(rest.trim_start())?;
-        let (name, signature_tail) = parse_name_and_tail(after_kind);
-        let contracts = parse_contract_clauses(&header_lines[1..]);
-        let (body_statements, body_value) = parse_scope_expr_body(&body);
-
-        Some(CallableItem::new(CallableItemInit {
-            kind,
-            visibility,
-            name: name.unwrap_or_default(),
-            signature_tail: signature_tail.clone(),
-            contracts,
-            body: body.clone().into_owned(),
-            body_statements,
-            body_value,
-            range: TextRange::new(start_line.start, end),
-        }))
-    }
-
-    pub(super) fn parse_state_item(&mut self) -> Option<StateItem> {
-        let attrs = self.take_pending_attrs();
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing state",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the state body"],
-            );
-            return None;
-        }
-        let (visibility, rest) = parse_visibility_prefix(head.trim());
-        let name = rest.trim_start().strip_prefix("state")?.trim();
-        let (name, _) = parse_name_and_tail(name);
-        Some(StateItem::new(
-            attrs,
-            visibility,
-            name.unwrap_or_default(),
-            parse_state_fields(&body, start_line.start, &mut self.errors),
             TextRange::new(start_line.start, end),
         ))
     }
@@ -369,12 +244,34 @@ impl Parser<'_> {
             return None;
         }
         let (visibility, rest) = parse_visibility_prefix(head.trim());
-        let name = rest.trim_start().strip_prefix("struct")?.trim();
-        let (name, _) = parse_name_and_tail(name);
+        let declaration = rest.trim_start().strip_prefix("struct")?.trim();
+        let (name, tail) = parse_name_and_tail(declaration);
+        let name = name.unwrap_or_default();
+        let name_start = start_line.start
+            + head.find(declaration).unwrap_or_default()
+            + declaration.find(&name).unwrap_or_default();
+        let (generic_source, trailing) = parse_optional_angle_head(&tail);
+        let generic_params = parse_nominal_generic_params(
+            generic_source.as_deref(),
+            start_line.start + head.find(declaration).unwrap_or_default(),
+            &mut self.errors,
+        )?;
+        if !trailing.is_empty() {
+            self.push_error(
+                TextRange::new(start_line.start, start_line.end),
+                "unexpected tokens after struct generic parameters",
+                ["{"],
+                Some(trailing),
+                ["remove the trailing declaration text"],
+            );
+            return None;
+        }
         Some(StructItem::new(
             attrs,
             visibility,
-            name.unwrap_or_default(),
+            name.clone(),
+            TextRange::new(name_start, name_start + name.len()),
+            generic_params,
             parse_struct_fields(&body, start_line.start, &mut self.errors),
             TextRange::new(start_line.start, end),
         ))
@@ -515,8 +412,8 @@ impl Parser<'_> {
 
     pub(super) fn parse_entry_item(&mut self) -> Option<EntryDeclItem> {
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing entry declaration",
@@ -527,21 +424,25 @@ impl Parser<'_> {
             return None;
         }
         let (kind, visibility, id) =
-            parse_entry_head(head.trim(), start_line.start, &mut self.errors)?;
+            parse_entry_head(block.head.trim(), start_line.start, &mut self.errors)?;
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
         Some(EntryDeclItem::new(
-            kind,
+            kind.clone(),
             visibility,
             id,
-            parse_entry_body(&body, start_line.start, &mut self.errors),
-            TextRange::new(start_line.start, end),
+            parse_entry_body(&kind, &block.body, body_base, &mut self.errors),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
     pub(super) fn parse_extern_capability_item(&mut self) -> Option<ExternCapabilityItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing external capability",
@@ -551,7 +452,11 @@ impl Parser<'_> {
             );
             return None;
         }
-        let (visibility, rest) = parse_visibility_prefix(head.trim());
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let (visibility, rest) = parse_visibility_prefix(block.head.trim());
         let id = rest
             .trim_start()
             .strip_prefix("extern capability")?
@@ -561,9 +466,9 @@ impl Parser<'_> {
             attrs,
             visibility,
             id,
-            parse_capability_fns(&body, start_line.start, &mut self.errors),
-            body.into_owned(),
-            TextRange::new(start_line.start, end),
+            parse_capability_fns(&block.body, body_base, &mut self.errors),
+            block.body.into_owned(),
+            TextRange::new(start_line.start, block.end),
         ))
     }
 
@@ -653,42 +558,6 @@ pub(super) fn parse_struct_fields(
         }
     }
     fields
-}
-
-pub(super) fn parse_state_fields(
-    body: &str,
-    body_base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
-) -> Vec<StateField> {
-    let mut docs = PendingDocLines::default();
-    super::collect_logical_block_items_with_base(body, body_base)
-        .into_iter()
-        .enumerate()
-        .filter_map(|(line_index, item)| {
-            let line = item.source.trim();
-            if line.is_empty() {
-                return None;
-            }
-            if docs.push_if_doc(line, line_index) {
-                return None;
-            }
-            let line = line.trim_end_matches(',').trim();
-            let (visibility, rest) = parse_visibility_prefix(line);
-            let (left, default) = split_top_level_binding(rest)?;
-            let (name, ty) = split_top_level_punctuation_once(left, ':')?;
-            let ty_source = ty.trim();
-            let ty_base = item.base + item.source.find(ty_source).unwrap_or_default();
-            parse_type_ref_or_error(ty_source, ty_base, errors).map(|ty| {
-                StateField::new(
-                    docs.take(),
-                    visibility,
-                    name.trim().to_owned(),
-                    ty,
-                    parse_expr_lossy(default.trim()),
-                )
-            })
-        })
-        .collect()
 }
 
 struct StructuredEntityBodyContext<'a> {
@@ -916,43 +785,217 @@ fn parse_entry_head(
 )> {
     let (visibility, rest) = parse_visibility_prefix(head);
     let rest = rest.trim_start().strip_prefix("entry")?.trim_start();
-    let (kind, id_source) = if rest.starts_with('@') {
-        (EntryKind::Game, rest)
-    } else {
-        let (kind, rest) = split_leading_ident(rest)
-            .map(|(kind, rest)| (EntryKind::parse(kind), rest))
-            .unwrap_or((EntryKind::Game, rest));
-        (kind, rest.trim_start())
+    let Some((kind_source, id_source)) = split_leading_ident(rest) else {
+        errors.push(
+            simple_error(
+                base + head.len().saturating_sub(rest.len()),
+                rest.len(),
+                "entry declarations require an explicit kind before their ID",
+                "entry game @entry.game.main",
+            )
+            .with_code("syntax.entry.missing_kind"),
+        );
+        return None;
     };
-
-    let id = if id_source.is_empty() {
-        crate::ast::ids::EntityRef::new(
-            format!("entry.{}", kind.as_str()),
-            false,
-            TextRange::new(base, base),
-        )
-    } else {
-        parse_required_decl_entity_ref_without_name_marker(
-            id_source,
-            "entry",
-            "entry declaration markers must include a suffix",
-            base + head.len().saturating_sub(id_source.len()),
-            errors,
-        )?
-        .0
-    };
+    let kind = EntryKind::parse(kind_source);
+    let id_source = id_source.trim_start();
+    if id_source.is_empty() {
+        errors.push(
+            simple_error(
+                base + head.len(),
+                0,
+                "entry declarations require an explicit canonical `@entry.*` ID",
+                "@entry.game.main",
+            )
+            .with_code("syntax.entry.missing_id"),
+        );
+        return None;
+    }
+    let id_base = base + head.len().saturating_sub(id_source.len());
+    let (id, trailing) = parse_required_decl_entity_ref_without_name_marker(
+        id_source,
+        "entry",
+        "entry declaration markers must include a suffix",
+        id_base,
+        errors,
+    )?;
+    if id.body().strip_prefix("entry.").is_none_or(str::is_empty) {
+        errors.push(
+            simple_error(
+                id.range().start(),
+                id.range().end().saturating_sub(id.range().start()),
+                "entry declaration IDs must use the `entry` family",
+                "@entry.name",
+            )
+            .with_code("syntax.entry.id_family"),
+        );
+        return None;
+    }
+    if !trailing.trim().is_empty() {
+        let trailing_base = id_base + id_source.len().saturating_sub(trailing.len());
+        errors.push(
+            simple_error(
+                trailing_base,
+                trailing.trim().len(),
+                "unexpected text after the entry ID",
+                "the entry body",
+            )
+            .with_code("syntax.entry.trailing_head"),
+        );
+        return None;
+    }
     Some((kind, visibility, id))
 }
 
 fn parse_entry_body(
+    kind: &EntryKind,
     body: &str,
-    base: usize,
+    body_base: usize,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> Vec<EntryItem> {
-    collect_logical_block_items(body)
-        .into_iter()
-        .map(|item| parse_entry_body_item(item.trim(), base, errors))
-        .collect()
+    let mut seen_roles = BTreeMap::new();
+    let mut first_goto = None;
+    let mut items = Vec::new();
+    for logical in collect_logical_block_items_with_base(body, body_base) {
+        let item = parse_entry_body_item(&logical.source, logical.base, errors);
+        if let Some(role) = item.role()
+            && let Some(range) = item.range().copied()
+        {
+            if let Some(first) = seen_roles.insert(role, range) {
+                errors.push(
+                    simple_error(
+                        range.start(),
+                        range.end().saturating_sub(range.start()),
+                        &format!("duplicate `{}` entry role", role.as_str()),
+                        "each required role exactly once",
+                    )
+                    .with_code("syntax.entry.duplicate_role")
+                    .with_related(first, Some("the first role binding is here".to_owned())),
+                );
+            }
+            if !kind.allows_role(role) {
+                errors.push(
+                    simple_error(
+                        range.start(),
+                        range.end().saturating_sub(range.start()),
+                        &format!(
+                            "entry kind `{}` cannot bind the `{}` role",
+                            kind.as_str(),
+                            role.as_str()
+                        ),
+                        "a role allowed by this entry kind",
+                    )
+                    .with_code("syntax.entry.incompatible_role"),
+                );
+            }
+        }
+        match &item {
+            EntryItem::Goto(target) if kind.is_stateful() => {
+                if let Some(first) = first_goto {
+                    errors.push(
+                        simple_error(
+                            target.range().start(),
+                            target.range().end().saturating_sub(target.range().start()),
+                            "stateful entries require exactly one `goto` target",
+                            "one initial flow target",
+                        )
+                        .with_code("syntax.entry.duplicate_goto")
+                        .with_related(first, Some("the first initial target is here".to_owned())),
+                    );
+                } else {
+                    first_goto = Some(*target.range());
+                }
+            }
+            EntryItem::Goto(target) if !kind.allows_goto() => errors.push(
+                simple_error(
+                    target.range().start(),
+                    target.range().end().saturating_sub(target.range().start()),
+                    &format!("entry kind `{}` cannot declare `goto`", kind.as_str()),
+                    "controller = path",
+                )
+                .with_code("syntax.entry.incompatible_goto"),
+            ),
+            EntryItem::Route { target, .. } if !kind.allows_routes() => errors.push(
+                simple_error(
+                    target.range().start(),
+                    target.range().end().saturating_sub(target.range().start()),
+                    &format!("entry kind `{}` cannot declare routes", kind.as_str()),
+                    "the entry kind's required members",
+                )
+                .with_code("syntax.entry.incompatible_route"),
+            ),
+            _ => {}
+        }
+        items.push(item);
+    }
+    validate_required_entry_members(kind, body_base, &seen_roles, first_goto, errors);
+    items
+}
+
+fn parse_nominal_generic_params(
+    source: Option<&str>,
+    declaration_base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<Vec<crate::types::GenericParam>> {
+    let Some(source) = source else {
+        return Some(Vec::new());
+    };
+    let contents = source
+        .strip_prefix('<')
+        .and_then(|value| value.strip_suffix('>'))
+        .expect("the angle-head parser returns one complete angle group");
+    match parse_generic_params(contents) {
+        Ok(params) => Some(params),
+        Err(error) => {
+            errors.push(
+                simple_error(
+                    declaration_base,
+                    source.len(),
+                    &format!("invalid nominal generic parameter list: {error}"),
+                    "<T>",
+                )
+                .with_code(error.code()),
+            );
+            None
+        }
+    }
+}
+
+fn validate_required_entry_members(
+    kind: &EntryKind,
+    body_base: usize,
+    seen_roles: &BTreeMap<EntryRoleKind, TextRange>,
+    first_goto: Option<TextRange>,
+    errors: &mut Vec<super::recovery::ParseError>,
+) {
+    for role in kind.required_roles() {
+        if !seen_roles.contains_key(role) {
+            errors.push(
+                simple_error(
+                    body_base,
+                    0,
+                    &format!(
+                        "entry kind `{}` requires exactly one `{}` role",
+                        kind.as_str(),
+                        role.as_str()
+                    ),
+                    &format!("{} = value", role.as_str()),
+                )
+                .with_code("syntax.entry.missing_role"),
+            );
+        }
+    }
+    if kind.is_stateful() && first_goto.is_none() {
+        errors.push(
+            simple_error(
+                body_base,
+                0,
+                "stateful entries require exactly one `goto` target",
+                "goto @flow.initial",
+            )
+            .with_code("syntax.entry.missing_goto"),
+        );
+    }
 }
 
 fn parse_entry_body_item(
@@ -960,6 +1003,9 @@ fn parse_entry_body_item(
     base: usize,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> EntryItem {
+    if let Some(role) = parse_entry_role_member(item, base, errors) {
+        return role;
+    }
     if let Some(target) = parse_entry_target(item, "goto", base, errors) {
         return EntryItem::Goto(target);
     }
@@ -974,6 +1020,141 @@ fn parse_entry_body_item(
         };
     }
     EntryItem::Raw(item.to_owned())
+}
+
+fn parse_entry_role_member(
+    item: &str,
+    base: usize,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<EntryItem> {
+    let (name, _) = split_leading_ident(item)?;
+    let role = match name {
+        "state" => EntryRoleKind::State,
+        "initializer" => EntryRoleKind::Initializer,
+        "event" => EntryRoleKind::Event,
+        "reducer" => EntryRoleKind::Reducer,
+        "controller" => EntryRoleKind::Controller,
+        _ => return None,
+    };
+    let member_range = TextRange::new(base, base + item.len());
+    let Some((binding_name, value_source)) = split_top_level_binding(item) else {
+        errors.push(
+            simple_error(
+                base,
+                item.len(),
+                &format!("entry role `{}` requires `=` and a value", role.as_str()),
+                &format!("{} = value", role.as_str()),
+            )
+            .with_code("syntax.entry.role_binding"),
+        );
+        return Some(EntryItem::Raw(item.to_owned()));
+    };
+    if binding_name.trim() != role.as_str() {
+        errors.push(
+            simple_error(
+                base,
+                binding_name.len(),
+                &format!("malformed `{}` entry role name", role.as_str()),
+                role.as_str(),
+            )
+            .with_code("syntax.entry.role_binding"),
+        );
+        return Some(EntryItem::Raw(item.to_owned()));
+    }
+    let value = value_source.trim();
+    let value_offset =
+        subslice_offset(item, value).expect("a trimmed binding value is a source subslice");
+    let value_range = TextRange::new(base + value_offset, base + value_offset + value.len());
+    if value.is_empty() {
+        errors.push(
+            simple_error(
+                value_range.start(),
+                0,
+                &format!("entry role `{}` requires a value", role.as_str()),
+                entry_role_expected_value(role),
+            )
+            .with_code("syntax.entry.role_value"),
+        );
+        return Some(EntryItem::Raw(item.to_owned()));
+    }
+    match role {
+        EntryRoleKind::State => parse_type_ref_or_error(value, value_range.start(), errors).map_or(
+            Some(EntryItem::Raw(item.to_owned())),
+            |ty| {
+                Some(EntryItem::StateType {
+                    ty,
+                    value_range,
+                    range: member_range,
+                })
+            },
+        ),
+        EntryRoleKind::Event => parse_type_ref_or_error(value, value_range.start(), errors).map_or(
+            Some(EntryItem::Raw(item.to_owned())),
+            |ty| {
+                Some(EntryItem::EventType {
+                    ty,
+                    value_range,
+                    range: member_range,
+                })
+            },
+        ),
+        EntryRoleKind::Initializer | EntryRoleKind::Reducer | EntryRoleKind::Controller => {
+            let Some(path) = parse_entry_role_path(value, value_range, role, errors) else {
+                return Some(EntryItem::Raw(item.to_owned()));
+            };
+            Some(match role {
+                EntryRoleKind::Initializer => EntryItem::Initializer {
+                    path,
+                    value_range,
+                    range: member_range,
+                },
+                EntryRoleKind::Reducer => EntryItem::Reducer {
+                    path,
+                    value_range,
+                    range: member_range,
+                },
+                EntryRoleKind::Controller => EntryItem::Controller {
+                    path,
+                    value_range,
+                    range: member_range,
+                },
+                EntryRoleKind::State | EntryRoleKind::Event => unreachable!(),
+            })
+        }
+    }
+}
+
+fn parse_entry_role_path(
+    value: &str,
+    value_range: TextRange,
+    role: EntryRoleKind,
+    errors: &mut Vec<super::recovery::ParseError>,
+) -> Option<DottedPath> {
+    if value.split('.').all(is_identifier) {
+        return Some(DottedPath::parse_dotted(value));
+    }
+    errors.push(
+        simple_error(
+            value_range.start(),
+            value_range.end().saturating_sub(value_range.start()),
+            &format!(
+                "entry role `{}` requires a dotted symbol path",
+                role.as_str()
+            ),
+            "module.function",
+        )
+        .with_code("syntax.entry.role_path"),
+    );
+    None
+}
+
+const fn entry_role_expected_value(role: EntryRoleKind) -> &'static str {
+    match role {
+        EntryRoleKind::State | EntryRoleKind::Event => "a canonical Arcweft type",
+        EntryRoleKind::Initializer | EntryRoleKind::Reducer | EntryRoleKind::Controller => {
+            "a dotted symbol path"
+        }
+    }
 }
 
 fn parse_entry_target(
@@ -996,7 +1177,10 @@ fn parse_entry_target(
     } else {
         rest.split_once(char::is_whitespace).unwrap_or((rest, ""))
     };
-    let (target, rest) = parse_required_entity_ref(target_source, base, errors)?;
+    let target_base = base
+        + subslice_offset(item, target_source)
+            .expect("entry target source is retained as a slice of its member");
+    let (target, rest) = parse_required_entity_ref(target_source, target_base, errors)?;
     if !rest.trim().is_empty() || !trailing.trim().is_empty() {
         return None;
     }
@@ -1163,10 +1347,17 @@ fn parse_capability_fn(
             return None;
         }
     };
+    let signature_source_ranges =
+        function_signature_source(signature_source, item_base, None, &signature)?;
     let effects = effects_source
         .map(parse_contract_expr_list)
         .unwrap_or_default();
-    Some(CapabilityFn::new(signature, effects))
+    Some(CapabilityFn::new(
+        signature,
+        signature_source_ranges,
+        effects,
+        TextRange::new(item_base, item_base + item.len()),
+    ))
 }
 
 fn parse_extern_mod_members(
@@ -1614,18 +1805,4 @@ fn is_identifier_character(character: char) -> bool {
 
 const fn absolute_range(base: usize, start: usize, end: usize) -> TextRange {
     TextRange::new(base + start, base + end)
-}
-
-fn parse_agent_signature_text(name: &str, signature_tail: &str) -> Option<String> {
-    let tail = signature_tail.trim();
-    (tail.starts_with('(') || tail.starts_with('<')).then(|| format!("fn {name}{tail}"))
-}
-
-fn agent_name_from_id(id: &EntityRef) -> String {
-    id.body()
-        .rsplit('.')
-        .next()
-        .filter(|suffix| !suffix.is_empty())
-        .unwrap_or("agent")
-        .to_owned()
 }

@@ -90,10 +90,33 @@ impl From<RustProvenanceError> for AdapterCallablePublicationError {
 }
 
 impl AdapterManifest {
+    /// Publishes every callable owned by this accepted manifest.
     pub fn try_callable_publication(
         &self,
         source: AdapterManifestSource,
         limits: &CallableLimits,
+    ) -> Result<EnvironmentCallablePublication, AdapterCallablePublicationError> {
+        self.try_callable_publication_scope(source, limits, CallablePublicationScope::All)
+    }
+
+    /// Publishes only Rust ABI callables augmenting this accepted manifest.
+    ///
+    /// Standard manifests use this delta beside their fixed bundled
+    /// publication so Rust metadata does not duplicate the standard callable
+    /// records already accepted under the same typed owner.
+    pub fn try_rust_callable_publication(
+        &self,
+        source: AdapterManifestSource,
+        limits: &CallableLimits,
+    ) -> Result<EnvironmentCallablePublication, AdapterCallablePublicationError> {
+        self.try_callable_publication_scope(source, limits, CallablePublicationScope::RustOnly)
+    }
+
+    fn try_callable_publication_scope(
+        &self,
+        source: AdapterManifestSource,
+        limits: &CallableLimits,
+        scope: CallablePublicationScope,
     ) -> Result<EnvironmentCallablePublication, AdapterCallablePublicationError> {
         let package = AdapterPackageId::try_new(self.id().as_str())
             .map_err(AdapterCallablePublicationError::InvalidPackageId)?;
@@ -101,46 +124,56 @@ impl AdapterManifest {
         validate_tooling(self)?;
 
         let mut records = Vec::new();
-        for function in self.functions() {
-            let subject = AdapterToolingSubject::Free {
-                kind: AdapterFreeCallableKind::Function,
-                path: function.path().clone(),
-                overload: function.overload(),
-            };
-            records.push(publication_record(
-                EnvironmentCallableKind::Function,
-                CallableLookupKey::Free(callable_path(function.path())?),
-                function.overload().get(),
-                function.signature(),
-                function.effects(),
-                documentation(self, &subject, &package, function.signature())?,
-                None,
-                records.len(),
-                limits,
-            )?);
+        if scope == CallablePublicationScope::All {
+            for function in self.functions() {
+                let subject = AdapterToolingSubject::Free {
+                    kind: AdapterFreeCallableKind::Function,
+                    path: function.path().clone(),
+                    overload: function.overload(),
+                };
+                records.push(publication_record(
+                    EnvironmentCallableKind::Function,
+                    CallableLookupKey::Free(callable_path(function.path())?),
+                    function.overload().get(),
+                    function.signature(),
+                    function.effects(),
+                    documentation(self, &subject, &package, function.signature())?,
+                    None,
+                    records.len(),
+                    limits,
+                )?);
+            }
+            for method in self.methods() {
+                let subject = AdapterToolingSubject::Method {
+                    receiver: method.receiver().clone(),
+                    name: method.callable_name().clone(),
+                    overload: method.overload(),
+                };
+                let name = callable_name(method.callable_name())?;
+                records.push(publication_record(
+                    EnvironmentCallableKind::Method,
+                    CallableLookupKey::Method(ReceiverMethodKey::new(
+                        method.receiver().to_sema_type_kind(),
+                        name,
+                    )),
+                    method.overload().get(),
+                    method.signature(),
+                    method.effects(),
+                    documentation(self, &subject, &package, method.signature())?,
+                    None,
+                    records.len(),
+                    limits,
+                )?);
+            }
         }
-        for method in self.methods() {
-            let subject = AdapterToolingSubject::Method {
-                receiver: method.receiver().clone(),
-                name: method.callable_name().clone(),
-                overload: method.overload(),
-            };
-            let name = callable_name(method.callable_name())?;
-            records.push(publication_record(
-                EnvironmentCallableKind::Method,
-                CallableLookupKey::Method(ReceiverMethodKey::new(
-                    method.receiver().to_sema_type_kind(),
-                    name,
-                )),
-                method.overload().get(),
-                method.signature(),
-                method.effects(),
-                documentation(self, &subject, &package, method.signature())?,
-                None,
-                records.len(),
-                limits,
-            )?);
-        }
+        let rust_declaration_offset = match scope {
+            CallablePublicationScope::All => 0,
+            CallablePublicationScope::RustOnly => self
+                .functions()
+                .len()
+                .checked_add(self.methods().len())
+                .ok_or(CallablePublicationError::InvalidOverload)?,
+        };
         for function in self.rust_functions() {
             let subject = AdapterToolingSubject::Free {
                 kind: AdapterFreeCallableKind::RustFunction,
@@ -156,12 +189,20 @@ impl AdapterManifest {
                 function.effects(),
                 documentation(self, &subject, &package, function.signature())?,
                 Some(rust),
-                records.len(),
+                rust_declaration_offset
+                    .checked_add(records.len())
+                    .ok_or(CallablePublicationError::InvalidOverload)?,
                 limits,
             )?);
         }
         EnvironmentCallablePublication::try_new(owner, records, limits).map_err(Into::into)
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CallablePublicationScope {
+    All,
+    RustOnly,
 }
 
 fn publication_owner(

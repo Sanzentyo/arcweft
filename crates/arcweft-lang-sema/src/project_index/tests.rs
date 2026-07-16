@@ -4,6 +4,14 @@ use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
+use crate::{
+    checker::analyze_registered_project_types,
+    entry::{CheckedEntryCatalog, check_project_entries},
+    env::TypeCheckEnv,
+    registration::ProjectRegistrationFacts,
+    test_support::character_project::{project_modules, register, root_project_source},
+};
+
 fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).expect("valid public id")
 }
@@ -25,6 +33,32 @@ fn test_source_anchor() -> SourceAnchor {
     )
     .expect("test source document");
     SourceAnchor::from_span(document.span(SourceRange::new(0, 0)).expect("empty span"))
+}
+
+fn checked_project_index(
+    profile: &str,
+    source: &str,
+) -> (CheckedEntryCatalog, ProjectSemanticIndex) {
+    let (document, project, world) = root_project_source(profile, source);
+    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
+        .expect("entry role registration facts");
+    let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("entry role semantic world");
+    let typecheck = analyze_registered_project_types(&project.linked_module(), &registered);
+    let catalog = check_project_entries(
+        &project,
+        registered.symbols(),
+        registered.environment().callable_catalog(),
+        &typecheck,
+    )
+    .expect("entry roles check");
+    let index = project_semantic_index_from_checked_project(
+        &project,
+        ProgramHash::new(format!("program-{profile}")),
+        &catalog,
+    )
+    .expect("checked project index builds");
+    (catalog, index)
 }
 
 #[test]
@@ -56,7 +90,7 @@ fn project_index_preserves_entity_payload_type() {
 fn project_index_records_entry_and_flow_entity_relations() {
     let tree = parse_source(
         r#"
-entry game @entry.main {
+entry cli @entry.main {
     goto @flow.opening
     goto @flow.listen
 }
@@ -274,14 +308,13 @@ view FeedbackForm() {
 
 #[test]
 fn project_index_from_hir_preserves_project_callables_separately_from_agent_prelude() {
-    let tree = parse_source(
-        r#"
-pub reducer update_route(state: GameState, event: GameEvent) -> GameState {
+    let source = r#"
+pub fn update_route(state: GameState, event: GameEvent) -> GameState {
     let route = current_route(state)
     state
 }
 
-pub reducer current_route(state: GameState) -> Ref<Flow> {
+pub fn current_route(state: GameState) -> Ref<Flow> {
     @flow.opening
 }
 
@@ -295,39 +328,47 @@ flow @flow.opening opening {
 flow @flow.done done {
     return "done"
 }
-"#,
+"#;
+    let (_, project, _) = root_project_source("project-index-callables", source);
+    let index = project_semantic_index_from_checked_project(
+        &project,
+        ProgramHash::new("program-a"),
+        &CheckedEntryCatalog::default(),
     )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let document = document_for_hir(&hir, "game.arcw");
-    let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
-        .expect("HIR indexes project callables");
+    .expect("project HIR indexes ordinary functions");
 
     assert!(
         index
             .callable(&QualifiedName::new("update_route"))
             .is_none()
     );
-    let reducer = index
+    let update_route = index
         .project_callable(&QualifiedName::new("update_route"))
-        .expect("reducer callable indexed");
-    assert_eq!(reducer.kind(), ProjectCallableKind::Reducer);
-    assert_eq!(reducer.signature().params().len(), 2);
+        .expect("ordinary function indexed");
+    assert_eq!(update_route.kind(), ProjectCallableKind::Function);
+    assert_eq!(update_route.signature().params().len(), 2);
     assert_eq!(
-        reducer.signature().return_type(),
+        update_route.signature().return_type(),
         &TypeKind::Named("GameState".to_owned())
     );
+    let declaration = update_route.declaration();
+    assert_eq!(declaration.package().as_str(), "registration-tests");
+    assert_eq!(declaration.qualified_name(), "update_route");
+    assert_eq!(
+        index.project_callable_by_declaration(declaration),
+        Some(update_route)
+    );
     assert!(
-        reducer
+        update_route
             .semantic_hash()
             .as_str()
-            .contains("hir:callable:reducer:update_route")
+            .contains("hir:callable:function:registration-tests:update_route")
     );
 
     let current_route = index
         .project_callable(&QualifiedName::new("current_route"))
         .expect("current_route callable indexed");
-    assert_eq!(current_route.kind(), ProjectCallableKind::Reducer);
+    assert_eq!(current_route.kind(), ProjectCallableKind::Function);
     assert_eq!(
         current_route.signature().return_type(),
         &TypeKind::entity_ref(EntityKind::Flow)
@@ -364,6 +405,219 @@ flow @flow.done done {
     assert_eq!(control.static_goto_count(), 1);
     assert_eq!(control.dynamic_goto_count(), 1);
     assert!(control.has_dynamic_control());
+}
+
+#[test]
+fn project_index_keeps_same_named_functions_distinct_by_canonical_declaration() {
+    let (_, project, _) = project_modules(
+        "project-index-same-name-callables",
+        &[
+            ("", "fn resolve() -> Unit { () }\n"),
+            ("ui", "fn resolve() -> Unit { () }\n"),
+        ],
+    );
+    let index = project_semantic_index_from_checked_project(
+        &project,
+        ProgramHash::new("program-same-name-callables"),
+        &CheckedEntryCatalog::default(),
+    )
+    .expect("same-name ordinary functions index");
+
+    let root = index
+        .project_callable(&QualifiedName::new("resolve"))
+        .map(ProjectCallableSymbol::declaration)
+        .expect("root declaration");
+    let child = index
+        .project_callable(&QualifiedName::new("ui.resolve"))
+        .map(ProjectCallableSymbol::declaration)
+        .expect("child declaration");
+    assert_eq!(root.name(), child.name());
+    assert_ne!(root, child);
+    assert_ne!(root.module(), child.module());
+    assert_eq!(index.project_callables().len(), 2);
+}
+
+#[test]
+fn project_index_keeps_same_named_function_and_view_owners_distinct() {
+    let (_, project, _) = root_project_source(
+        "project-index-function-view-identity",
+        "fn Card() -> Unit { () }\npub view Card() {\n    Panel()\n}\n",
+    );
+    let index = project_semantic_index_from_checked_project(
+        &project,
+        ProgramHash::new("program-function-view-identity"),
+        &CheckedEntryCatalog::default(),
+    )
+    .expect("same-name Function and View index");
+    let package = project.package().clone();
+    let module = CanonicalModulePath::crate_root();
+    let function = CallableDeclarationId::try_new(
+        package.clone(),
+        module.clone(),
+        CallableDeclarationOwner::Function,
+        "Card",
+    )
+    .expect("Function identity");
+    let view =
+        CallableDeclarationId::try_new(package, module, CallableDeclarationOwner::View, "Card")
+            .expect("View identity");
+
+    assert_ne!(function, view);
+    assert!(
+        index
+            .project_callable(&QualifiedName::new("Card"))
+            .is_none(),
+        "same-spelling owners must not gain an implicit resolution priority"
+    );
+    assert_eq!(
+        index
+            .project_callable_by_declaration(&function)
+            .map(ProjectCallableSymbol::kind),
+        Some(ProjectCallableKind::Function)
+    );
+    assert_eq!(
+        index
+            .project_callable_by_declaration(&view)
+            .map(ProjectCallableSymbol::kind),
+        Some(ProjectCallableKind::View)
+    );
+    assert_eq!(index.project_callables().len(), 2);
+}
+
+#[test]
+fn checked_project_index_records_exact_entry_roles_to_original_declarations() {
+    let source = r"
+struct GameState {
+    score: i32
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    ()
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    ()
+}
+
+flow @flow.opening opening(state: GameState) {
+}
+
+entry game @entry.game.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.opening
+}
+";
+    let (catalog, index) = checked_project_index("project-index-entry-roles", source);
+    let binding = catalog.entries().next().expect("one checked entry");
+    let entry_id = binding.id().clone();
+
+    let record = index
+        .entry_record(&entry_id)
+        .expect("checked entry record indexed");
+    assert_eq!(record.id(), &entry_id);
+    assert_eq!(record.kind(), &binding.kind());
+    assert_eq!(record.binding_digest(), binding.binding_digest());
+    assert!(record.agent_policy_digest().is_none());
+
+    let edges = index.entry_role_edges_for(&entry_id).collect::<Vec<_>>();
+    assert_eq!(
+        edges.iter().map(|edge| edge.role()).collect::<Vec<_>>(),
+        vec![
+            ProjectEntryRoleKind::State,
+            ProjectEntryRoleKind::Initializer,
+            ProjectEntryRoleKind::Event,
+            ProjectEntryRoleKind::Reducer,
+            ProjectEntryRoleKind::InitialFlow,
+        ]
+    );
+    let stateful = binding.stateful().expect("stateful checked entry");
+    assert!(matches!(
+        edges[0].target(),
+        ProjectEntryRoleTarget::Nominal { key, schema_digest }
+            if key == stateful.state().key()
+                && schema_digest == stateful.state().schema_digest()
+    ));
+    assert!(matches!(
+        edges[1].target(),
+        ProjectEntryRoleTarget::Callable {
+            declaration,
+            contract_digest,
+        } if declaration == stateful.initializer().declaration()
+            && contract_digest == stateful.initializer().contract_digest()
+    ));
+    assert!(matches!(
+        edges[3].target(),
+        ProjectEntryRoleTarget::Callable {
+            declaration,
+            contract_digest,
+        } if declaration == stateful.reducer().declaration()
+            && contract_digest == stateful.reducer().contract_digest()
+    ));
+    assert!(matches!(
+        edges[4].target(),
+        ProjectEntryRoleTarget::Flow { id, contract_digest }
+            if id == stateful.initial_flow().id()
+                && contract_digest == stateful.initial_flow().contract_digest()
+    ));
+    assert_eq!(
+        index
+            .project_callable_by_declaration(stateful.reducer().declaration())
+            .map(ProjectCallableSymbol::declaration),
+        Some(stateful.reducer().declaration())
+    );
+}
+
+#[test]
+fn checked_project_index_records_agent_policy_and_controller_edge() {
+    let source = r"
+#[budget(timeout = 20s, steps = 96usize)]
+fn smoke() -> Result<Unit, AgentError>
+effects { agent.observe }
+{
+    ()
+}
+
+entry agent @entry.agent.smoke {
+    controller = smoke
+}
+";
+    let (catalog, index) = checked_project_index("project-index-agent-role", source);
+    let binding = catalog.entries().next().expect("one checked Agent entry");
+    let agent = binding.agent().expect("Agent binding");
+
+    let record = index
+        .entry_record(binding.id())
+        .expect("Agent entry record indexed");
+    assert_eq!(record.agent_policy_digest(), Some(agent.policy_digest()));
+    let edges = index.entry_role_edges_for(binding.id()).collect::<Vec<_>>();
+    assert_eq!(edges.len(), 1);
+    assert_eq!(edges[0].role(), ProjectEntryRoleKind::Controller);
+    assert!(matches!(
+        edges[0].target(),
+        ProjectEntryRoleTarget::Callable {
+            declaration,
+            contract_digest,
+        } if declaration == agent.controller().declaration()
+            && contract_digest == agent.controller().contract_digest()
+    ));
+    assert_eq!(
+        index
+            .project_callable_by_declaration(agent.controller().declaration())
+            .map(ProjectCallableSymbol::declaration),
+        Some(agent.controller().declaration())
+    );
 }
 
 #[test]

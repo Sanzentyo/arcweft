@@ -18,12 +18,12 @@ use arcweft_agent_protocol::protocol::ActionResult;
 use arcweft_agent_protocol::{
     action::{AgentActionDispatch, AgentActionKind, AgentActionTarget},
     artifact::{
-        AgentArtifactManifest, AgentBudget, AgentBundleKind, EffectCapability, ProjectBinding,
+        AgentArtifactManifest, AgentBundleKind, EffectCapability, ProjectBinding,
         ProjectBindingMode, RequiredEntity, RequiredEntitySourceAnchor,
         RequiredEntitySourcePosition,
     },
     ids::StableHash,
-    ids::{AgentResourceUri, AgentRunId, PublicId, SessionId},
+    ids::{AgentResourceUri, AgentRunId, CallableId, PublicId, SessionId},
     predicate::{CompareOp, DebugStatePath, ObservationFieldPath, Predicate, Probe},
     protocol::{
         AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentHostRequest,
@@ -43,8 +43,16 @@ use arcweft_core::{
     bytecode::BytecodeProgram,
     effect::{LineEffectRequest, RuntimeCall},
     engine::{FlowExit, FlowFiberStatus},
+    entry::{
+        AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
+        RuntimeAgentEntryRoles, RuntimeCallableExecutable, RuntimeCallableExecutableCode,
+        RuntimeCallableId, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
+    },
     pattern::RuntimePattern,
-    plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
+    plan::{
+        EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
+        RuntimeEntryTarget, RuntimeFlow, RuntimePlan,
+    },
     task::{
         AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
     },
@@ -61,6 +69,58 @@ use std::convert::Infallible;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn agent_entry_id(agent_id: &str) -> EntryRuntimeId {
+    EntryRuntimeId::from_source_entity_body(&format!("entry.{agent_id}"))
+        .expect("test Agent entry ID is valid")
+}
+
+fn agent_controller_program(
+    flow: RuntimeFlow,
+    agent_id: &str,
+    budget: AgentBudget,
+) -> BytecodeProgram {
+    let entry = agent_entry_id(agent_id);
+    let controller_flow = flow.id.clone();
+    let binding = EntryBindingIdentity::from_bytes([1; 32]);
+    let contract = CallableContractHash::from_bytes([2; 32]);
+    let policy = AgentPolicyHash::from_bytes([3; 32]);
+    let controller = RuntimeCallableRole {
+        callable: RuntimeCallableId::try_new(format!("test::crate.{agent_id}"))
+            .expect("test controller identity is valid"),
+        contract,
+    };
+    let plan = RuntimePlan::new(vec![flow], Vec::new())
+        .expect("runtime plan is valid")
+        .with_entries(vec![RuntimeEntrySpec {
+            id: entry,
+            kind: RuntimeEntryKind::Agent,
+            binding,
+            target: RuntimeEntryTarget::Controller(controller_flow.clone()),
+            roles: RuntimeEntryRoles::Agent(Box::new(RuntimeAgentEntryRoles {
+                binding,
+                controller: controller.clone(),
+                policy,
+                budget,
+            })),
+        }])
+        .with_entry_executables(
+            vec![RuntimeCallableExecutable {
+                callable: controller.callable.clone(),
+                contract,
+                code: RuntimeCallableExecutableCode::ControllerFlow(controller_flow.clone()),
+            }],
+            vec![RuntimeFlowExecutable {
+                flow: controller_flow,
+                contract: FlowContractHash::from_bytes(*contract.as_bytes()),
+                parameters: Vec::new(),
+                controller: Some(controller),
+            }],
+        );
+    plan.verify()
+        .expect("Agent controller runtime plan verifies");
+    BytecodeProgram::from_runtime_plan(plan)
 }
 
 #[derive(Default)]
@@ -425,36 +485,33 @@ fn replay_trace_record(
 }
 
 fn observe_checkpoint_program() -> BytecodeProgram {
-    BytecodeProgram::from_runtime_plan(
-        RuntimePlan::new(
-            Some(flow_id("agent.observe_smoke")),
-            vec![RuntimeFlow {
-                id: flow_id("agent.observe_smoke"),
-                ops: vec![
-                    FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
-                        callee: "observe".to_owned(),
-                        args: vec!["include_objects = true".to_owned()],
-                    })),
-                    FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
-                        callee: "checkpoint".to_owned(),
-                        args: vec!["\"after-observe\"".to_owned()],
-                    })),
-                    FlowOp::Return("done".to_owned()),
-                ],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid"),
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.observe_smoke"),
+            ops: vec![
+                FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+                    callee: "observe".to_owned(),
+                    args: vec!["include_objects = true".to_owned()],
+                })),
+                FlowOp::Effect(LineEffectRequest::Call(RuntimeCall {
+                    callee: "checkpoint".to_owned(),
+                    args: vec!["\"after-observe\"".to_owned()],
+                })),
+                FlowOp::Return("done".to_owned()),
+            ],
+        },
+        "agent.observe_smoke",
+        AgentBudget::default(),
     )
 }
 
 fn observe_checkpoint_bundle() -> ArcweftBundle {
     let program = observe_checkpoint_program();
     agent_controller_test_bundle(
-        program,
+        &program,
         "agent.observe_smoke",
         "agent.observe_smoke.awfagent",
-        "agent @agent.observe_smoke observe_smoke() { observe() }",
+        "fn observe_smoke() -> Result<Unit, AgentError> effects { agent.observe, debug.record } { observe() }\nentry agent @entry.agent.observe_smoke { controller = observe_smoke }",
         &["agent.observe", "debug.record"],
         AgentBudget::default(),
     )
@@ -462,17 +519,17 @@ fn observe_checkpoint_bundle() -> ArcweftBundle {
 
 fn capture_binding_bundle_with_budget(budget: AgentBudget) -> ArcweftBundle {
     agent_controller_test_bundle(
-        capture_binding_program(),
+        &capture_binding_program_with_budget(budget),
         "agent.capture_binding",
         "agent.capture_binding.awfagent",
-        "agent @agent.capture_binding capture_binding() { let shot = try capture(viewport()) }",
+        "fn capture_binding() -> Result<Unit, AgentError> effects { agent.capture } { let shot = try capture(viewport()) }\nentry agent @entry.agent.capture_binding { controller = capture_binding }",
         &["agent.capture"],
         budget,
     )
 }
 
 fn agent_controller_test_bundle(
-    program: BytecodeProgram,
+    program: &BytecodeProgram,
     agent_id: &str,
     source_label: &str,
     source_text: &str,
@@ -480,6 +537,14 @@ fn agent_controller_test_bundle(
     budget: AgentBudget,
 ) -> ArcweftBundle {
     let stats = program.stats();
+    let [entry] = program.entries.as_slice() else {
+        panic!("test Agent artifact has exactly one entry");
+    };
+    assert_eq!(entry.id, agent_entry_id(agent_id));
+    let RuntimeEntryTarget::Controller(controller_flow) = &entry.target else {
+        panic!("test Agent entry targets a controller");
+    };
+    let roles = entry.roles.agent().expect("test Agent roles exist");
     let display = arcweft_render_text::LineDisplayCatalog::default();
     let declared_effects = effects
         .iter()
@@ -501,10 +566,7 @@ fn agent_controller_test_bundle(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
-                entry_flow: program
-                    .entry_flow
-                    .as_ref()
-                    .map(|flow| flow.public_label().into_string()),
+                entry_flow: Some(controller_flow.public_label().into_string()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
                 line_task_groups: stats.line_task_groups,
@@ -513,13 +575,20 @@ fn agent_controller_test_bundle(
             },
         },
         source_map(source_label, source_text),
-        program,
+        program.clone(),
         display,
     )
     .with_agent_manifest(AgentArtifactManifest {
         schema_version: 1,
         bundle_kind: AgentBundleKind::AgentController,
-        agent_id: PublicId::new(agent_id).expect("valid agent id"),
+        entry_id: PublicId::new(format!("entry.{agent_id}")).expect("valid entry id"),
+        controller_id: CallableId::new(roles.controller.callable.as_str())
+            .expect("valid controller id"),
+        entry_binding_hash: StableHash::from_blake3_bytes(*entry.binding.as_bytes()),
+        controller_contract_hash: StableHash::from_blake3_bytes(
+            *roles.controller.contract.as_bytes(),
+        ),
+        policy_hash: StableHash::from_blake3_bytes(*roles.policy.as_bytes()),
         source_hash: StableHash::new("blake3:test").expect("valid source hash"),
         compiler_version: "test".to_owned(),
         project_binding: ProjectBinding {
@@ -545,259 +614,246 @@ fn source_map(label: &str, text: &str) -> SourceMapSection {
 }
 
 fn capture_binding_program() -> BytecodeProgram {
-    BytecodeProgram::from_runtime_plan(
-        RuntimePlan::new(
-            Some(flow_id("agent.capture_binding")),
-            vec![RuntimeFlow {
-                id: flow_id("agent.capture_binding"),
-                ops: vec![
-                    FlowOp::Await {
-                        binding: Some(RuntimePattern::Ident("shot".to_owned())),
-                        target: AwaitTarget::new(
-                            NeedId("need.agent.capture".to_owned()),
-                            TaskId("task.agent.capture".to_owned()),
-                            HostTaskRequestTemplate::new(
-                                "agent",
-                                "capture",
-                                [
-                                    HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                        RuntimeValue::String("viewport()".to_owned()),
-                                    )),
-                                    HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
-                                        RuntimeFieldExpr {
-                                            name: "format".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::String(
-                                                ".png".to_owned(),
-                                            )),
-                                        },
-                                        RuntimeFieldExpr {
-                                            name: "name".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::String(
-                                                "viewport".to_owned(),
-                                            )),
-                                        },
-                                    ])),
-                                ],
-                            ),
+    capture_binding_program_with_budget(AgentBudget::default())
+}
+
+fn capture_binding_program_with_budget(budget: AgentBudget) -> BytecodeProgram {
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.capture_binding"),
+            ops: vec![
+                FlowOp::Await {
+                    binding: Some(RuntimePattern::Ident("shot".to_owned())),
+                    target: AwaitTarget::new(
+                        NeedId("need.agent.capture".to_owned()),
+                        TaskId("task.agent.capture".to_owned()),
+                        HostTaskRequestTemplate::new(
+                            "agent",
+                            "capture",
+                            [
+                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                    RuntimeValue::String("viewport()".to_owned()),
+                                )),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
+                                    RuntimeFieldExpr {
+                                        name: "format".to_owned(),
+                                        value: RuntimeExpr::Value(RuntimeValue::String(
+                                            ".png".to_owned(),
+                                        )),
+                                    },
+                                    RuntimeFieldExpr {
+                                        name: "name".to_owned(),
+                                        value: RuntimeExpr::Value(RuntimeValue::String(
+                                            "viewport".to_owned(),
+                                        )),
+                                    },
+                                ])),
+                            ],
                         ),
-                        pending: Vec::new(),
-                    },
-                    FlowOp::ReturnExpr(RuntimeExpr::Field {
-                        target: Box::new(RuntimeExpr::Local("shot".to_owned())),
-                        field: "uri".to_owned(),
-                    }),
-                ],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid"),
+                    ),
+                    pending: Vec::new(),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Local("shot".to_owned())),
+                    field: "uri".to_owned(),
+                }),
+            ],
+        },
+        "agent.capture_binding",
+        budget,
     )
 }
 
 fn read_resource_binding_program() -> BytecodeProgram {
-    BytecodeProgram::from_runtime_plan(
-        RuntimePlan::new(
-            Some(flow_id("agent.read_resource_binding")),
-            vec![RuntimeFlow {
-                id: flow_id("agent.read_resource_binding"),
-                ops: vec![
-                    FlowOp::Await {
-                        binding: Some(RuntimePattern::Ident("resource".to_owned())),
-                        target: AwaitTarget::new(
-                            NeedId("need.agent.read_resource".to_owned()),
-                            TaskId("task.agent.read_resource".to_owned()),
-                            HostTaskRequestTemplate::new(
-                                "agent",
-                                "read_resource",
-                                [HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                    RuntimeValue::String("agent://resource/test".to_owned()),
-                                ))],
-                            ),
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.read_resource_binding"),
+            ops: vec![
+                FlowOp::Await {
+                    binding: Some(RuntimePattern::Ident("resource".to_owned())),
+                    target: AwaitTarget::new(
+                        NeedId("need.agent.read_resource".to_owned()),
+                        TaskId("task.agent.read_resource".to_owned()),
+                        HostTaskRequestTemplate::new(
+                            "agent",
+                            "read_resource",
+                            [HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                RuntimeValue::String("agent://resource/test".to_owned()),
+                            ))],
                         ),
-                        pending: Vec::new(),
-                    },
-                    FlowOp::ReturnExpr(RuntimeExpr::Field {
-                        target: Box::new(RuntimeExpr::Field {
-                            target: Box::new(RuntimeExpr::Local("resource".to_owned())),
-                            field: "body".to_owned(),
-                        }),
-                        field: "json".to_owned(),
+                    ),
+                    pending: Vec::new(),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Field {
+                        target: Box::new(RuntimeExpr::Local("resource".to_owned())),
+                        field: "body".to_owned(),
                     }),
-                ],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid"),
+                    field: "json".to_owned(),
+                }),
+            ],
+        },
+        "agent.read_resource_binding",
+        AgentBudget::default(),
     )
 }
 
 fn entity_metadata_binding_program() -> BytecodeProgram {
-    BytecodeProgram::from_runtime_plan(
-        RuntimePlan::new(
-            Some(flow_id("agent.entity_metadata_binding")),
-            vec![RuntimeFlow {
-                id: flow_id("agent.entity_metadata_binding"),
-                ops: vec![
-                    FlowOp::Await {
-                        binding: Some(RuntimePattern::Ident("meta".to_owned())),
-                        target: AwaitTarget::new(
-                            NeedId("need.agent.entity_meta".to_owned()),
-                            TaskId("task.agent.entity_meta".to_owned()),
-                            HostTaskRequestTemplate::new(
-                                "agent",
-                                "entity_meta",
-                                [HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
-                                    "flow.opening".to_owned(),
-                                ))],
-                            ),
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.entity_metadata_binding"),
+            ops: vec![
+                FlowOp::Await {
+                    binding: Some(RuntimePattern::Ident("meta".to_owned())),
+                    target: AwaitTarget::new(
+                        NeedId("need.agent.entity_meta".to_owned()),
+                        TaskId("task.agent.entity_meta".to_owned()),
+                        HostTaskRequestTemplate::new(
+                            "agent",
+                            "entity_meta",
+                            [HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
+                                "flow.opening".to_owned(),
+                            ))],
                         ),
-                        pending: Vec::new(),
-                    },
-                    FlowOp::ReturnExpr(RuntimeExpr::Field {
-                        target: Box::new(RuntimeExpr::Local("meta".to_owned())),
-                        field: "semantic_hash".to_owned(),
-                    }),
-                ],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid"),
+                    ),
+                    pending: Vec::new(),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Local("meta".to_owned())),
+                    field: "semantic_hash".to_owned(),
+                }),
+            ],
+        },
+        "agent.entity_metadata_binding",
+        AgentBudget::default(),
     )
 }
 
 fn project_neighbors_binding_program() -> BytecodeProgram {
-    BytecodeProgram::from_runtime_plan(
-        RuntimePlan::new(
-            Some(flow_id("agent.project_neighbors_binding")),
-            vec![RuntimeFlow {
-                id: flow_id("agent.project_neighbors_binding"),
-                ops: vec![
-                    FlowOp::Await {
-                        binding: Some(RuntimePattern::Ident("graph".to_owned())),
-                        target: AwaitTarget::new(
-                            NeedId("need.agent.project_neighbors".to_owned()),
-                            TaskId("task.agent.project_neighbors".to_owned()),
-                            HostTaskRequestTemplate::new(
-                                "agent",
-                                "project_neighbors",
-                                [
-                                    HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
-                                        "flow.opening".to_owned(),
-                                    )),
-                                    HostTaskArgTemplate::positional(RuntimeExpr::Variant {
-                                        path: Some("agent".to_owned()),
-                                        name: AGENT_NAMED_ARGS_VARIANT.to_owned(),
-                                        payload: Some(Box::new(RuntimeExpr::Record(vec![
-                                            RuntimeFieldExpr {
-                                                name: "depth".to_owned(),
-                                                value: RuntimeExpr::Value(RuntimeValue::u32(1)),
-                                            },
-                                        ]))),
-                                    }),
-                                ],
-                            ),
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.project_neighbors_binding"),
+            ops: vec![
+                FlowOp::Await {
+                    binding: Some(RuntimePattern::Ident("graph".to_owned())),
+                    target: AwaitTarget::new(
+                        NeedId("need.agent.project_neighbors".to_owned()),
+                        TaskId("task.agent.project_neighbors".to_owned()),
+                        HostTaskRequestTemplate::new(
+                            "agent",
+                            "project_neighbors",
+                            [
+                                HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
+                                    "flow.opening".to_owned(),
+                                )),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Variant {
+                                    path: Some("agent".to_owned()),
+                                    name: AGENT_NAMED_ARGS_VARIANT.to_owned(),
+                                    payload: Some(Box::new(RuntimeExpr::Record(vec![
+                                        RuntimeFieldExpr {
+                                            name: "depth".to_owned(),
+                                            value: RuntimeExpr::Value(RuntimeValue::u32(1)),
+                                        },
+                                    ]))),
+                                }),
+                            ],
                         ),
-                        pending: Vec::new(),
-                    },
-                    FlowOp::ReturnExpr(RuntimeExpr::Field {
-                        target: Box::new(RuntimeExpr::Local("graph".to_owned())),
-                        field: "edge_count".to_owned(),
-                    }),
-                ],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid"),
+                    ),
+                    pending: Vec::new(),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Local("graph".to_owned())),
+                    field: "edge_count".to_owned(),
+                }),
+            ],
+        },
+        "agent.project_neighbors_binding",
+        AgentBudget::default(),
     )
 }
 
 fn wait_binding_program() -> BytecodeProgram {
-    BytecodeProgram::from_runtime_plan(
-        RuntimePlan::new(
-            Some(flow_id("agent.wait_binding")),
-            vec![RuntimeFlow {
-                id: flow_id("agent.wait_binding"),
-                ops: vec![
-                    FlowOp::Await {
-                        binding: Some(RuntimePattern::Ident("obs".to_owned())),
-                        target: AwaitTarget::new(
-                            NeedId("need.agent.wait".to_owned()),
-                            TaskId("task.agent.wait".to_owned()),
-                            HostTaskRequestTemplate::new(
-                                "agent",
-                                "wait",
-                                [
-                                    HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
-                                        RuntimeFieldExpr {
-                                            name: "kind".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::String(
-                                                "compare".to_owned(),
-                                            )),
-                                        },
-                                        RuntimeFieldExpr {
-                                            name: "probe".to_owned(),
-                                            value: RuntimeExpr::Record(vec![
-                                                RuntimeFieldExpr {
-                                                    name: "kind".to_owned(),
-                                                    value: RuntimeExpr::Value(
-                                                        RuntimeValue::String("signal".to_owned()),
-                                                    ),
-                                                },
-                                                RuntimeFieldExpr {
-                                                    name: "target".to_owned(),
-                                                    value: RuntimeExpr::Value(
-                                                        RuntimeValue::String(
-                                                            "signal.ready".to_owned(),
-                                                        ),
-                                                    ),
-                                                },
-                                            ]),
-                                        },
-                                        RuntimeFieldExpr {
-                                            name: "op".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::String(
-                                                "eq".to_owned(),
-                                            )),
-                                        },
-                                        RuntimeFieldExpr {
-                                            name: "value".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::Bool(true)),
-                                        },
-                                    ])),
-                                    HostTaskArgTemplate::positional(RuntimeExpr::Variant {
-                                        path: Some("agent".to_owned()),
-                                        name: "named_args".to_owned(),
-                                        payload: Some(Box::new(RuntimeExpr::Record(vec![
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.wait_binding"),
+            ops: vec![
+                FlowOp::Await {
+                    binding: Some(RuntimePattern::Ident("obs".to_owned())),
+                    target: AwaitTarget::new(
+                        NeedId("need.agent.wait".to_owned()),
+                        TaskId("task.agent.wait".to_owned()),
+                        HostTaskRequestTemplate::new(
+                            "agent",
+                            "wait",
+                            [
+                                HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
+                                    RuntimeFieldExpr {
+                                        name: "kind".to_owned(),
+                                        value: RuntimeExpr::Value(RuntimeValue::String(
+                                            "compare".to_owned(),
+                                        )),
+                                    },
+                                    RuntimeFieldExpr {
+                                        name: "probe".to_owned(),
+                                        value: RuntimeExpr::Record(vec![
                                             RuntimeFieldExpr {
-                                                name: "timeout".to_owned(),
-                                                value: RuntimeExpr::Value(RuntimeValue::Duration(
-                                                    LogicalDuration::from_nanos(5_000_000),
+                                                name: "kind".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::String(
+                                                    "signal".to_owned(),
                                                 )),
                                             },
                                             RuntimeFieldExpr {
-                                                name: "stable_frames".to_owned(),
-                                                value: RuntimeExpr::Value(RuntimeValue::u32(2)),
+                                                name: "target".to_owned(),
+                                                value: RuntimeExpr::Value(RuntimeValue::String(
+                                                    "signal.ready".to_owned(),
+                                                )),
                                             },
-                                            RuntimeFieldExpr {
-                                                name: "poll_frames".to_owned(),
-                                                value: RuntimeExpr::Value(RuntimeValue::u32(1)),
-                                            },
-                                        ]))),
-                                    }),
-                                ],
-                            ),
+                                        ]),
+                                    },
+                                    RuntimeFieldExpr {
+                                        name: "op".to_owned(),
+                                        value: RuntimeExpr::Value(RuntimeValue::String(
+                                            "eq".to_owned(),
+                                        )),
+                                    },
+                                    RuntimeFieldExpr {
+                                        name: "value".to_owned(),
+                                        value: RuntimeExpr::Value(RuntimeValue::Bool(true)),
+                                    },
+                                ])),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Variant {
+                                    path: Some("agent".to_owned()),
+                                    name: "named_args".to_owned(),
+                                    payload: Some(Box::new(RuntimeExpr::Record(vec![
+                                        RuntimeFieldExpr {
+                                            name: "timeout".to_owned(),
+                                            value: RuntimeExpr::Value(RuntimeValue::Duration(
+                                                LogicalDuration::from_nanos(5_000_000),
+                                            )),
+                                        },
+                                        RuntimeFieldExpr {
+                                            name: "stable_frames".to_owned(),
+                                            value: RuntimeExpr::Value(RuntimeValue::u32(2)),
+                                        },
+                                        RuntimeFieldExpr {
+                                            name: "poll_frames".to_owned(),
+                                            value: RuntimeExpr::Value(RuntimeValue::u32(1)),
+                                        },
+                                    ]))),
+                                }),
+                            ],
                         ),
-                        pending: Vec::new(),
-                    },
-                    FlowOp::ReturnExpr(RuntimeExpr::Field {
-                        target: Box::new(RuntimeExpr::Local("obs".to_owned())),
-                        field: "tick".to_owned(),
-                    }),
-                ],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid"),
+                    ),
+                    pending: Vec::new(),
+                },
+                FlowOp::ReturnExpr(RuntimeExpr::Field {
+                    target: Box::new(RuntimeExpr::Local("obs".to_owned())),
+                    field: "tick".to_owned(),
+                }),
+            ],
+        },
+        "agent.wait_binding",
+        AgentBudget::default(),
     )
 }
 
@@ -1508,12 +1564,11 @@ fn controller_bytecode_dispatches_effect_calls_to_runner_host_boundary() {
         ]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
+    let program = observe_checkpoint_program();
+    let entry = program.entries[0].id.clone();
 
     let report = runner
-        .run_controller_bytecode(
-            observe_checkpoint_program(),
-            AgentControllerRunConfig::default(),
-        )
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
         .expect("controller bytecode runs");
 
     assert_eq!(report.steps, 1);
@@ -1551,6 +1606,77 @@ fn controller_bundle_runs_through_bytecode_host_boundary() {
     assert!(matches!(
         &report.responses[0],
         AgentHostResponse::Observation(observation) if observation.tick == 1
+    ));
+}
+
+fn assert_agent_artifact_mismatch(bundle: &ArcweftBundle) {
+    let mut runner = AgentRunner::new(
+        TestSession {
+            observations: vec![observation(1, true)],
+        },
+        NullDebugEventSink,
+        NoopRagService,
+        RuntimeAgentPolicy::new([
+            RuntimeAgentCapability::Observe,
+            RuntimeAgentCapability::DebugRecord,
+        ]),
+        AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+    );
+
+    assert!(matches!(
+        runner.run_controller_bundle(bundle, AgentControllerRunConfig::default()),
+        Err(AgentRunError::AgentArtifactMismatch { .. })
+    ));
+}
+
+#[test]
+fn controller_bundle_rejects_tampered_entry_bound_manifest_fields() {
+    let original = observe_checkpoint_bundle();
+
+    let mut entry = original.clone();
+    entry.agent.as_mut().unwrap().entry_id =
+        PublicId::new("entry.agent.other").expect("valid tampered entry");
+    assert_agent_artifact_mismatch(&entry);
+
+    let mut controller = original.clone();
+    controller.agent.as_mut().unwrap().controller_id =
+        CallableId::new("test::crate.other").expect("valid tampered controller");
+    assert_agent_artifact_mismatch(&controller);
+
+    let mut binding = original.clone();
+    binding.agent.as_mut().unwrap().entry_binding_hash = StableHash::from_blake3_bytes([9; 32]);
+    assert_agent_artifact_mismatch(&binding);
+
+    let mut contract = original.clone();
+    contract.agent.as_mut().unwrap().controller_contract_hash =
+        StableHash::from_blake3_bytes([9; 32]);
+    assert_agent_artifact_mismatch(&contract);
+
+    let mut policy = original.clone();
+    policy.agent.as_mut().unwrap().policy_hash = StableHash::from_blake3_bytes([9; 32]);
+    assert_agent_artifact_mismatch(&policy);
+
+    let mut budget = original;
+    budget.agent.as_mut().unwrap().budget.max_vm_steps += 1;
+    assert_agent_artifact_mismatch(&budget);
+}
+
+#[test]
+fn controller_bytecode_rejects_explicit_non_agent_entry_before_execution() {
+    let mut program = observe_checkpoint_program();
+    program.entries[0].kind = RuntimeEntryKind::Game;
+    let entry = program.entries[0].id.clone();
+    let mut runner = AgentRunner::new(
+        TestSession::default(),
+        NullDebugEventSink,
+        NoopRagService,
+        RuntimeAgentPolicy::default(),
+        AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+    );
+
+    assert!(matches!(
+        runner.run_controller_bytecode(program, &entry, AgentControllerRunConfig::default()),
+        Err(AgentRunError::InvalidControllerEntry { .. })
     ));
 }
 
@@ -1709,12 +1835,11 @@ fn controller_bytecode_resumes_bound_capture_response() {
         ]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
+    let program = capture_binding_program();
+    let entry = program.entries[0].id.clone();
 
     let report = runner
-        .run_controller_bytecode(
-            capture_binding_program(),
-            AgentControllerRunConfig::default(),
-        )
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
         .expect("controller bytecode runs");
 
     assert_eq!(report.host_calls, 1);
@@ -1770,12 +1895,11 @@ fn controller_bytecode_resumes_bound_resource_response_fields() {
         RuntimeAgentPolicy::new([RuntimeAgentCapability::ResourceRead]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
+    let program = read_resource_binding_program();
+    let entry = program.entries[0].id.clone();
 
     let report = runner
-        .run_controller_bytecode(
-            read_resource_binding_program(),
-            AgentControllerRunConfig::default(),
-        )
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
         .expect("controller bytecode runs");
 
     assert_eq!(report.host_calls, 1);
@@ -1817,12 +1941,11 @@ fn controller_bytecode_resumes_bound_entity_metadata_response_fields() {
         RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRead]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
+    let program = entity_metadata_binding_program();
+    let entry = program.entries[0].id.clone();
 
     let report = runner
-        .run_controller_bytecode(
-            entity_metadata_binding_program(),
-            AgentControllerRunConfig::default(),
-        )
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
         .expect("controller bytecode runs");
 
     assert_eq!(report.host_calls, 1);
@@ -1855,12 +1978,11 @@ fn controller_bytecode_resumes_project_graph_neighborhood_fields() {
         RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRead]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
+    let program = project_neighbors_binding_program();
+    let entry = program.entries[0].id.clone();
 
     let report = runner
-        .run_controller_bytecode(
-            project_neighbors_binding_program(),
-            AgentControllerRunConfig::default(),
-        )
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
         .expect("controller bytecode runs");
 
     assert_eq!(report.host_calls, 1);
@@ -2101,9 +2223,11 @@ fn controller_bytecode_resumes_bound_wait_response() {
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
+    let program = wait_binding_program();
+    let entry = program.entries[0].id.clone();
 
     let report = runner
-        .run_controller_bytecode(wait_binding_program(), AgentControllerRunConfig::default())
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
         .expect("controller bytecode runs");
 
     assert_eq!(report.host_calls, 1);

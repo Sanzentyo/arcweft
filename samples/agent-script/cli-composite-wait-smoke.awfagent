@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.cli.composite_wait composite_wait()
+fn composite_wait() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait }
 {
     wait(
@@ -8,5 +7,9 @@ effects { agent.observe, agent.wait }
         stable_frames = 1u32,
         poll_frames = 1u32,
     )
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = composite_wait
 }

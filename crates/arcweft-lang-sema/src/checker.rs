@@ -42,6 +42,7 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax, IdRef},
         items::{EntityDeclKind, FunctionKind},
         line_plan::{CancelRuleSyntax, LinePlanItem, TriggerPattern},
+        module_path::CanonicalModulePath,
         pattern::{Pattern, RecordPatternField, VariantPatternPayload},
         source::{
             SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
@@ -67,7 +68,7 @@ pub mod lifetime_access;
 pub mod line_plan;
 pub mod module;
 pub mod presentation;
-mod signature;
+pub(crate) mod signature;
 pub mod source;
 pub mod source_ranges;
 pub mod stmt;
@@ -197,7 +198,7 @@ fn closure_effect_callable_id(expression_id: TypeExpressionId) -> CallableId {
 }
 
 fn function_callable_id(function_name: &str) -> CallableId {
-    CallableId::new(format!("fn.{function_name}"))
+    CallableId::source_function(function_name)
 }
 
 fn function_return_effect_callable_id(function_name: &str) -> CallableId {
@@ -266,7 +267,28 @@ impl TypeJudgment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypedLoweringEvidence {
     pub expression_id: TypeExpressionId,
+    /// Exact project function and function-local expression identity when the
+    /// evidence was produced while checking an ordinary callable body.
+    pub owner: Option<TypedLoweringEvidenceOwner>,
     pub kind: TypedLoweringEvidenceKind,
+}
+
+impl TypedLoweringEvidence {
+    fn new(expression_id: TypeExpressionId, kind: TypedLoweringEvidenceKind) -> Self {
+        Self {
+            expression_id,
+            owner: None,
+            kind,
+        }
+    }
+}
+
+/// Exact owner-relative identity for lowering evidence inside a project
+/// function body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypedLoweringEvidenceOwner {
+    pub declaration: CallableDeclarationId,
+    pub expression_id: TypeExpressionId,
 }
 
 /// Lowering-sensitive semantic facts proven during type checking.
@@ -366,6 +388,54 @@ pub struct TypeCheckReport {
     pub view_part_catalog: crate::view_part::CheckedViewPartCatalog,
     pub view_part_diagnostics: Vec<crate::view_part::ViewPartDiagnostic>,
     pub canonicalization_inventories: Vec<CheckedCanonicalizationInventory>,
+    /// Exact source ranges of calls resolved to ordinary project functions.
+    pub project_callable_references: Vec<ProjectCallableReference>,
+    /// Exact source ranges of authored absolute entity references.
+    pub project_entity_references: Vec<ProjectEntityReference>,
+}
+
+/// One typed ordinary-call reference selected by the shared callable resolver.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectCallableReference {
+    module: CanonicalModulePath,
+    declaration: CallableDeclarationId,
+    range: TextRange,
+}
+
+impl ProjectCallableReference {
+    pub const fn module(&self) -> &CanonicalModulePath {
+        &self.module
+    }
+
+    pub const fn declaration(&self) -> &CallableDeclarationId {
+        &self.declaration
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+}
+
+/// One authored absolute entity-reference token retained for typed tooling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectEntityReference {
+    module: CanonicalModulePath,
+    name: String,
+    range: TextRange,
+}
+
+impl ProjectEntityReference {
+    pub const fn module(&self) -> &CanonicalModulePath {
+        &self.module
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -454,6 +524,7 @@ struct TypeChecker<'a> {
     stats: TypeCheckStats,
     judgments: Vec<TypeJudgment>,
     typed_lowering_evidence: Vec<TypedLoweringEvidence>,
+    typed_lowering_owner: Option<TypedLoweringOwnerScope>,
     expression_source_ranges: HashMap<ExprNodeKey, TextRange>,
     closure_capture_stack: Vec<ClosureCaptureFrame>,
     closure_inference_stack: Vec<ClosureInferenceContext>,
@@ -481,6 +552,8 @@ struct TypeChecker<'a> {
     registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
     project_functions: BTreeMap<CallableDeclarationId, TypeKind>,
     project_function_signatures: BTreeMap<CallableDeclarationId, FunctionSignature>,
+    project_callable_references: Vec<ProjectCallableReference>,
+    project_entity_references: Vec<ProjectEntityReference>,
     local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
     semantic_scope_stack: Vec<SemanticScopeId>,
     next_semantic_scope: u32,
@@ -506,6 +579,12 @@ struct TypeCheckerScopeSnapshot {
     lifetime_guarantees: HashSet<LifetimeKey>,
     dropped_lifetime_keys: HashSet<LifetimeKey>,
     available_lifetimes: Vec<LifetimeScopeKind>,
+}
+
+#[derive(Clone, Debug)]
+struct TypedLoweringOwnerScope {
+    declaration: CallableDeclarationId,
+    expression_base: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -774,6 +853,7 @@ impl<'a> TypeChecker<'a> {
             stats: TypeCheckStats::default(),
             judgments: Vec::new(),
             typed_lowering_evidence: Vec::new(),
+            typed_lowering_owner: None,
             expression_source_ranges: HashMap::new(),
             closure_capture_stack: Vec::new(),
             closure_inference_stack: Vec::new(),
@@ -800,6 +880,8 @@ impl<'a> TypeChecker<'a> {
             registered_world,
             project_functions: BTreeMap::new(),
             project_function_signatures: BTreeMap::new(),
+            project_callable_references: Vec::new(),
+            project_entity_references: Vec::new(),
             local_symbol_identities: HashMap::new(),
             semantic_scope_stack: Vec::new(),
             next_semantic_scope: 0,
@@ -1006,7 +1088,18 @@ impl<'a> TypeChecker<'a> {
         id
     }
 
-    fn record_typed_lowering_evidence(&mut self, evidence: TypedLoweringEvidence) {
+    fn record_typed_lowering_evidence(&mut self, mut evidence: TypedLoweringEvidence) {
+        evidence.owner = self.typed_lowering_owner.as_ref().map(|owner| {
+            let local_index = evidence
+                .expression_id
+                .index()
+                .checked_sub(owner.expression_base)
+                .expect("typed lowering evidence must follow its callable expression base");
+            TypedLoweringEvidenceOwner {
+                declaration: owner.declaration.clone(),
+                expression_id: TypeExpressionId::from_index(local_index),
+            }
+        });
         self.typed_lowering_evidence.push(evidence);
     }
 
@@ -1680,6 +1773,13 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn function_effect_row(&mut self, name: &str) -> EffectRow {
+        if let Some(callable) = self
+            .resolve_project_callable(name)
+            .map(CallableId::project_function)
+            && let Some(row) = self.effect_collector.inferred_effect_row(&callable)
+        {
+            return row;
+        }
         let effects = self
             .global_function_effects
             .get(name)
@@ -1705,7 +1805,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn source_function_effect_callable(&self, name: &str) -> Option<CallableId> {
-        self.effect_collector.registered_callable(name).cloned()
+        self.resolve_project_callable(name)
+            .map(CallableId::project_function)
+            .or_else(|| self.effect_collector.registered_callable(name).cloned())
     }
 
     fn uses_final_group_effect_timing(&self, function_name: &str) -> bool {

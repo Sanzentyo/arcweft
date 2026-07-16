@@ -21,19 +21,21 @@ use lsp_types::notification::{
     Notification as LspNotification, PublishDiagnostics,
 };
 use lsp_types::request::{
-    CodeActionRequest, Completion, ExecuteCommand, GotoDefinition, HoverRequest, InlayHintRequest,
-    References, Request as LspRequest, SignatureHelpRequest,
+    CodeActionRequest, Completion, DocumentSymbolRequest, ExecuteCommand, GotoDefinition,
+    HoverRequest, InlayHintRequest, PrepareRenameRequest, References, Rename,
+    Request as LspRequest, SignatureHelpRequest, WorkspaceSymbolRequest,
 };
 use lsp_types::{
     CodeActionOrCommand, CodeActionParams, CodeActionResponse, CompletionParams,
     CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DidSaveTextDocumentParams, ExecuteCommandOptions,
-    ExecuteCommandParams, GotoDefinitionParams, HoverParams, HoverProviderCapability,
-    InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
-    OptionalVersionedTextDocumentIdentifier, ReferenceParams, ServerCapabilities,
-    SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit, TextDocumentSyncCapability,
-    TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbolParams,
+    ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams, HoverParams,
+    HoverProviderCapability, InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
+    OptionalVersionedTextDocumentIdentifier, ReferenceParams, RenameOptions, RenameParams,
+    ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit,
+    TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
+    WorkspaceSymbolParams,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -119,6 +121,12 @@ impl ArcweftLspSession {
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             definition_provider: Some(OneOf::Left(true)),
             references_provider: Some(OneOf::Left(true)),
+            document_symbol_provider: Some(OneOf::Left(true)),
+            workspace_symbol_provider: Some(OneOf::Left(true)),
+            rename_provider: Some(OneOf::Right(RenameOptions {
+                prepare_provider: Some(true),
+                work_done_progress_options: WorkDoneProgressOptions::default(),
+            })),
             completion_provider: Some(lsp_types::CompletionOptions {
                 trigger_characters: Some(vec![".".to_owned(), "@".to_owned(), ":".to_owned()]),
                 ..lsp_types::CompletionOptions::default()
@@ -330,6 +338,10 @@ impl ArcweftLspSession {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the LSP method dispatcher keeps protocol decoding and response ownership visible in one exhaustive match"
+    )]
     fn try_handle_request(
         &mut self,
         request: Request,
@@ -355,6 +367,61 @@ impl ArcweftLspSession {
                 Ok(Response::new_ok(id, result))
             }
             GotoDefinition::METHOD => self.handle_definition_request(request),
+            PrepareRenameRequest::METHOD => {
+                let (id, params) = extract::<lsp_types::TextDocumentPositionParams>(
+                    request,
+                    PrepareRenameRequest::METHOD,
+                )?;
+                let result = self
+                    .document_for_params(&params.text_document.uri)
+                    .and_then(|document| {
+                        features::rename::prepare(
+                            self.profile_for_uri(document.uri()),
+                            document,
+                            params.position,
+                        )
+                    });
+                Ok(Response::new_ok(id, result))
+            }
+            Rename::METHOD => {
+                let (id, params) = extract::<RenameParams>(request, Rename::METHOD)?;
+                let result = self
+                    .document_for_params(&params.text_document_position.text_document.uri)
+                    .and_then(|document| {
+                        let edit = features::rename::rename(
+                            self.profile_for_uri(document.uri()),
+                            &self.documents,
+                            document,
+                            params.text_document_position.position,
+                            &params.new_name,
+                        )?;
+                        Some(self.workspace_edit_policy.normalize(edit, &self.documents))
+                    });
+                Ok(Response::new_ok(id, result))
+            }
+            DocumentSymbolRequest::METHOD => {
+                let (id, params) =
+                    extract::<DocumentSymbolParams>(request, DocumentSymbolRequest::METHOD)?;
+                let result = self
+                    .document_for_params(&params.text_document.uri)
+                    .map(|document| {
+                        features::entry_roles::document_symbols(
+                            self.profile_for_uri(document.uri()),
+                            document,
+                        )
+                    });
+                Ok(Response::new_ok(id, result))
+            }
+            WorkspaceSymbolRequest::METHOD => {
+                let (id, params) =
+                    extract::<WorkspaceSymbolParams>(request, WorkspaceSymbolRequest::METHOD)?;
+                let result = features::entry_roles::workspace_symbols_for_profiles(
+                    self.profiles_by_uri.values(),
+                    &params.query,
+                    self.position_encoding,
+                );
+                Ok(Response::new_ok(id, result))
+            }
             References::METHOD => {
                 let (id, params) = extract::<ReferenceParams>(request, References::METHOD)?;
                 let result = self
@@ -501,10 +568,9 @@ impl ArcweftLspSession {
         )?
         .into_iter()
         .map(|mut action| {
-            action.edit = action.edit.map(|edit| {
-                self.workspace_edit_policy
-                    .normalize(edit, document.uri(), document.version())
-            });
+            action.edit = action
+                .edit
+                .map(|edit| self.workspace_edit_policy.normalize(edit, &self.documents));
             CodeActionOrCommand::CodeAction(action)
         })
         .collect();
@@ -529,9 +595,7 @@ impl ArcweftLspSession {
         ) else {
             return Value::Null;
         };
-        let edit = self
-            .workspace_edit_policy
-            .normalize(edit, document.uri(), document.version());
+        let edit = self.workspace_edit_policy.normalize(edit, &self.documents);
         serde_json::to_value(edit).unwrap_or(Value::Null)
     }
 
@@ -600,6 +664,14 @@ impl ArcweftLspSession {
     fn profile_for_uri(&self, uri: &lsp_types::Uri) -> &LspProfile {
         self.profiles_by_uri
             .get(&LspUriKey::from_uri(uri))
+            .or_else(|| {
+                self.profiles_by_uri.values().find(|profile| {
+                    profile
+                        .entry_selections()
+                        .iter()
+                        .any(|(_, selection)| selection.uri().as_ref() == Some(uri))
+                })
+            })
             .unwrap_or(&self.default_profile)
     }
 
@@ -881,21 +953,39 @@ impl WorkspaceEditPolicy {
     fn normalize(
         self,
         mut edit: WorkspaceEdit,
-        current_uri: &lsp_types::Uri,
-        current_version: i32,
+        documents: &crate::documents::DocumentStore,
     ) -> WorkspaceEdit {
-        if !self.document_changes || edit.document_changes.is_some() {
+        if edit.document_changes.is_some() {
             return edit;
         }
-        let Some(changes) = edit.changes.take() else {
+        let Some(mut changes) = edit.changes.take() else {
             return edit;
         };
+        for edits in changes.values_mut() {
+            edits.sort_by(|left, right| {
+                left.range
+                    .start
+                    .line
+                    .cmp(&right.range.start.line)
+                    .then_with(|| left.range.start.character.cmp(&right.range.start.character))
+                    .then_with(|| left.range.end.line.cmp(&right.range.end.line))
+                    .then_with(|| left.range.end.character.cmp(&right.range.end.character))
+                    .then_with(|| left.new_text.cmp(&right.new_text))
+            });
+            edits.dedup();
+        }
+        if !self.document_changes {
+            edit.changes = Some(changes);
+            return edit;
+        }
+        let mut changes = changes.into_iter().collect::<Vec<_>>();
+        changes.sort_by(|(left, _), (right, _)| left.as_str().cmp(right.as_str()));
         edit.document_changes = Some(lsp_types::DocumentChanges::Edits(
             changes
                 .into_iter()
                 .map(|(uri, edits)| TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier {
-                        version: (uri == *current_uri).then_some(current_version),
+                        version: documents.get(&uri).map(DocumentSnapshot::version),
                         uri,
                     },
                     edits: edits.into_iter().map(lsp_types::OneOf::Left).collect(),

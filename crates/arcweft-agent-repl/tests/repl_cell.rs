@@ -51,6 +51,27 @@ fn repl_cell_records_literal_binding_evidence() {
     }));
 }
 
+#[test]
+fn repl_item_cell_compiles_through_a_synthetic_controller_entry() {
+    let mut repl = test_repl("test.program.item");
+    let mut host = StaticAgentSession::new("test.program.item");
+    let mut debug = NullDebugEventSink;
+    let mut rag = NoopRagService;
+    let outcome = repl
+        .evaluate_cell(
+            &ReplCellInput::item("fn helper() -> i64 { 1 }"),
+            test_runtime(&mut host, &mut debug, &mut rag),
+        )
+        .expect("item cell should compile and execute through its exact Agent entry");
+
+    assert_eq!(outcome.record.kind, ReplCellKind::Item);
+    assert_eq!(outcome.record.synthetic_controller_name, "repl_cell_0");
+    assert_eq!(
+        outcome.record.entry.as_deref(),
+        Some("entry.agent.repl.cell_0")
+    );
+}
+
 fn test_repl(program_hash: &str) -> ReplSession {
     let project = ProjectSemanticIndex::new(ProgramHash::new(program_hash));
     ReplSession::new(

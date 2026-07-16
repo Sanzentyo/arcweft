@@ -1,0 +1,19 @@
+error[E0432]: unresolved imports `arcweft_lang_syntax::ast::items::AgentItem`, `arcweft_lang_syntax::ast::items::StateItem`
+ --> tests/ui/removed_role_items.rs:2:39
+  |
+2 | use arcweft_lang_syntax::ast::items::{AgentItem, StateItem};
+  |                                       ^^^^^^^^^  ^^^^^^^^^ no `StateItem` in `ast::items`
+  |                                       |
+  |                                       no `AgentItem` in `ast::items`
+  |
+help: a similar name exists in the module
+  |
+2 - use arcweft_lang_syntax::ast::items::{AgentItem, StateItem};
+2 + use arcweft_lang_syntax::ast::items::{TestItem, StateItem};
+  |
+
+error[E0599]: no variant, associated function, or constant named `Reducer` found for enum `CallableKind` in the current scope
+ --> tests/ui/removed_role_items.rs:8:27
+  |
+8 |     let _ = CallableKind::Reducer;
+  |                           ^^^^^^^ variant, associated function, or constant not found in `CallableKind`

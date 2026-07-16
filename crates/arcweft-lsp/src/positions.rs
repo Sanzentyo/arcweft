@@ -11,6 +11,8 @@ pub enum PositionEncoding {
     Utf16,
     /// UTF-8 byte offsets.
     Utf8,
+    /// UTF-32 scalar-value offsets.
+    Utf32,
 }
 
 /// Source-aware line index for converting Arcweft byte spans to LSP ranges.
@@ -44,17 +46,25 @@ pub enum CheckedPositionError {
 impl PositionEncoding {
     /// Selects the strongest encoding supported by both client and server.
     pub fn negotiate(client: &ClientCapabilities) -> Self {
-        client
+        let encodings = client
             .general
             .as_ref()
             .and_then(|general| general.position_encodings.as_ref())
-            .and_then(|encodings| {
-                encodings
-                    .iter()
-                    .any(|encoding| encoding == &PositionEncodingKind::UTF8)
-                    .then_some(Self::Utf8)
-            })
-            .unwrap_or(Self::Utf16)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if encodings
+            .iter()
+            .any(|encoding| encoding == &PositionEncodingKind::UTF8)
+        {
+            Self::Utf8
+        } else if encodings
+            .iter()
+            .any(|encoding| encoding == &PositionEncodingKind::UTF32)
+        {
+            Self::Utf32
+        } else {
+            Self::Utf16
+        }
     }
 
     /// LSP wire value for the selected encoding.
@@ -62,6 +72,7 @@ impl PositionEncoding {
         match self {
             Self::Utf16 => PositionEncodingKind::UTF16,
             Self::Utf8 => PositionEncodingKind::UTF8,
+            Self::Utf32 => PositionEncodingKind::UTF32,
         }
     }
 }
@@ -189,6 +200,27 @@ impl LineIndex {
                     })
                 }
             }
+            PositionEncoding::Utf32 => {
+                let mut units = 0usize;
+                for (relative_offset, _) in self.source[line_start..line_end].char_indices() {
+                    if units == target {
+                        return line_start
+                            .checked_add(relative_offset)
+                            .ok_or(CheckedPositionError::ArithmeticOverflow);
+                    }
+                    units = units
+                        .checked_add(1)
+                        .ok_or(CheckedPositionError::ArithmeticOverflow)?;
+                }
+                if units == target {
+                    Ok(line_end)
+                } else {
+                    Err(CheckedPositionError::CharacterOutOfBounds {
+                        line: position.line,
+                        character: position.character,
+                    })
+                }
+            }
         }
     }
 
@@ -216,6 +248,7 @@ impl LineIndex {
             units = units.saturating_add(match self.encoding {
                 PositionEncoding::Utf8 => ch.len_utf8(),
                 PositionEncoding::Utf16 => ch.len_utf16(),
+                PositionEncoding::Utf32 => 1,
             });
         }
         line_end
@@ -227,6 +260,7 @@ impl LineIndex {
             .map(|ch| match self.encoding {
                 PositionEncoding::Utf8 => ch.len_utf8(),
                 PositionEncoding::Utf16 => ch.len_utf16(),
+                PositionEncoding::Utf32 => 1,
             })
             .sum();
         saturating_u32(units)
@@ -281,6 +315,25 @@ mod tests {
 
         assert_eq!(index.position_from_byte_offset(5), Position::new(1, 3));
         assert_eq!(index.byte_offset_from_position(Position::new(1, 3)), 5);
+    }
+
+    #[test]
+    fn maps_utf32_positions_as_unicode_scalars() {
+        let index = LineIndex::new("a\n😀猫b\n", PositionEncoding::Utf32);
+
+        assert_eq!(index.position_from_byte_offset(6), Position::new(1, 1));
+        assert_eq!(index.position_from_byte_offset(9), Position::new(1, 2));
+        assert_eq!(
+            index.try_byte_offset_from_position(Position::new(1, 2)),
+            Ok(9)
+        );
+        assert_eq!(
+            index.try_byte_offset_from_position(Position::new(1, 4)),
+            Err(CheckedPositionError::CharacterOutOfBounds {
+                line: 1,
+                character: 4,
+            })
+        );
     }
 
     #[test]

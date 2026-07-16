@@ -113,13 +113,6 @@ where
                     self.visit_authored_expr(value);
                 }
             }
-            Item::Agent(agent) => {
-                self.visit_stmts(agent.body_statements());
-                if let Some(value) = agent.body_value() {
-                    self.visit_authored_expr(value);
-                }
-            }
-            Item::Callable(callable) => self.visit_stmts(callable.body_statements()),
             Item::Trait(trait_item) => {
                 for member in trait_item.members() {
                     if let TraitMember::Function {
@@ -156,7 +149,7 @@ where
                     self.visit_stmts(handler.body());
                 }
             }
-            Item::State(_)
+            Item::Callable(_)
             | Item::Enum(_)
             | Item::Struct(_)
             | Item::TypeAlias(_)

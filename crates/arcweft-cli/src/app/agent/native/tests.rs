@@ -38,6 +38,7 @@ fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
     let options = agent_mcp_script_run_options(&serde_json::json!({
         "path": "samples/agent-script/cli-run-smoke.awfagent",
         "native_source": "samples/rich-text-showcase.arcw",
+        "entry": "entry.main",
         "executor": "aot",
         "pure_backend": "jit",
         "pure_workers": 2,
@@ -54,6 +55,7 @@ fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
     }))
     .expect("script.run options parse native runtime arguments");
 
+    assert_eq!(options.entry.as_deref(), Some("entry.main"));
     assert_eq!(options.executor, CliRuntimeExecutorTier::Aot);
     assert_eq!(
         options.pure_backend,
@@ -2077,7 +2079,6 @@ fn test_repl_options() -> AgentReplOptions {
         path: None,
         profile: ProfileOptions::default(),
         entry: None,
-        flow: None,
         executor: CliRuntimeExecutorTier::BytecodeVm,
         pure_backend: None,
         pure_workers: None,

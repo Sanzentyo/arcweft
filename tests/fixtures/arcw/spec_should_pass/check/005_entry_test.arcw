@@ -1,7 +1,32 @@
+struct TestState {
+    passed: bool
+}
+
+enum TestEvent {
+    Start
+}
+
+fn initial_test_state() -> TestState
+effects {}
+{
+    initial_test_state()
+}
+
+fn reduce_test(state: &TestState, event: TestEvent)
+    -> Result<Reduction<TestState>, ReducerError>
+effects {}
+{
+    reduce_test(state, event)
+}
+
 entry test @entry.test {
+    state = TestState
+    initializer = initial_test_state
+    event = TestEvent
+    reducer = reduce_test
     goto @flow.main
 }
 
-flow @flow.main main {
+flow @flow.main main(state: TestState) {
     return "test"
 }

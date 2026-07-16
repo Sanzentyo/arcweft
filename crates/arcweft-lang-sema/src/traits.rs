@@ -1654,7 +1654,6 @@ fn collect_local_nominals(module: &HirModule) -> HashSet<String> {
             HirTopLevelDecl::Struct(item) => Some(item.name().to_owned()),
             HirTopLevelDecl::Enum(item) => Some(item.name().to_owned()),
             HirTopLevelDecl::TypeAlias(item) => Some(item.name().to_owned()),
-            HirTopLevelDecl::State(item) => Some(item.name().to_owned()),
             _ => None,
         })
         .collect()

@@ -12,10 +12,18 @@ use crate::ast::common::TextRange;
 pub struct ParseError {
     code: String,
     range: TextRange,
+    related: Vec<ParseRelatedRange>,
     expected: Vec<String>,
     found: Option<String>,
     message: String,
     recovery: Vec<RecoverySuggestion>,
+}
+
+/// Secondary source range attached to one syntax diagnostic.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParseRelatedRange {
+    range: TextRange,
+    message: Option<String>,
 }
 
 /// Suggested local edit or strategy for recovering from an error.
@@ -48,6 +56,7 @@ impl ParseError {
         Self {
             code: "syntax.parse".to_owned(),
             range,
+            related: Vec::new(),
             expected,
             found,
             message,
@@ -68,6 +77,18 @@ impl ParseError {
         self
     }
 
+    pub(crate) fn with_related(
+        mut self,
+        range: TextRange,
+        message: impl Into<Option<String>>,
+    ) -> Self {
+        self.related.push(ParseRelatedRange {
+            range,
+            message: message.into(),
+        });
+        self
+    }
+
     /// Stable diagnostic code used by compiler and tooling integrations.
     pub fn code(&self) -> &str {
         &self.code
@@ -76,6 +97,11 @@ impl ParseError {
     /// Error byte range.
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+
+    /// Secondary ranges that explain earlier or otherwise related syntax.
+    pub fn related(&self) -> &[ParseRelatedRange] {
+        &self.related
     }
 
     /// Expected syntax fragments.
@@ -115,6 +141,13 @@ impl ParseError {
                     .as_ref()
                     .map(|found| format!("found `{found}` here")),
             ));
+        for related in &self.related {
+            let span = document
+                .span(SourceRange::new(related.range.start(), related.range.end()))
+                .expect("a related parser range belongs to the parsed document");
+            diagnostic =
+                diagnostic.with_label(DiagnosticLabel::secondary(span, related.message.clone()));
+        }
         if !self.expected.is_empty() {
             diagnostic = diagnostic.with_note(format!("expected: {}", self.expected.join(", ")));
         }
@@ -122,6 +155,18 @@ impl ParseError {
             diagnostic = diagnostic.with_suggestion(suggestion.diagnostic_suggestion(document));
         }
         diagnostic
+    }
+}
+
+impl ParseRelatedRange {
+    /// Related byte range in the parsed source.
+    pub const fn range(&self) -> &TextRange {
+        &self.range
+    }
+
+    /// Optional explanation rendered with the secondary diagnostic label.
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_deref()
     }
 }
 

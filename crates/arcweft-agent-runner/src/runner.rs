@@ -3,8 +3,10 @@ use std::collections::BTreeMap;
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::{
     bytecode::BytecodeProgram,
-    engine::FlowFiberStatus,
+    engine::{EngineStartError, FlowFiberStatus},
+    entry::{AgentBudget, RuntimeCallableExecutableCode},
     executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor},
+    plan::{EntryRuntimeId, RuntimeEntryKind, RuntimeEntryTarget},
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
     task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence},
 };
@@ -34,8 +36,8 @@ use crate::runtime_payload::{project_graph_neighborhood, runtime_payload_from_re
 use crate::session::{AgentSession, RagService};
 
 use arcweft_agent_protocol::{
-    artifact::{AgentBudget, ProjectBinding, ProjectBindingMode},
-    ids::{AgentResourceUri, PublicId},
+    artifact::{AgentArtifactManifest, AgentBundleKind, ProjectBinding, ProjectBindingMode},
+    ids::{AgentResourceUri, PublicId, StableHash},
     protocol::{
         AgentAction, AgentAssertionRequest, AgentHostRequest, AgentHostResponse, CaptureRequest,
         ObservationEnvelope, ObserveRequest, RagRequest, WaitRequest,
@@ -66,6 +68,12 @@ where
     type Executor: RuntimeExecutor;
 
     fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R>;
+
+    fn start(
+        &mut self,
+        executor: &mut Self::Executor,
+        entry: &EntryRuntimeId,
+    ) -> Result<(), EngineStartError>;
 }
 
 /// Default Agent controller executor factory.
@@ -83,6 +91,14 @@ where
     fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R> {
         ArcweftRuntimeExecutor::from_bytecode(program, ArcweftExecutionTier::StructuredVm)
             .map_err(AgentRunError::Bytecode)
+    }
+
+    fn start(
+        &mut self,
+        executor: &mut Self::Executor,
+        entry: &EntryRuntimeId,
+    ) -> Result<(), EngineStartError> {
+        executor.start_structured_entry(entry)
     }
 }
 
@@ -221,6 +237,14 @@ where
             }
             Err(error) => Err(AgentRunError::Bytecode(error)),
         }
+    }
+
+    fn start(
+        &mut self,
+        executor: &mut Self::Executor,
+        entry: &EntryRuntimeId,
+    ) -> Result<(), EngineStartError> {
+        executor.start_structured_entry(entry)
     }
 }
 
@@ -580,11 +604,13 @@ where
     pub fn run_controller_bytecode(
         &mut self,
         program: BytecodeProgram,
+        entry: &EntryRuntimeId,
         config: AgentControllerRunConfig,
     ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
         let mut factory = BytecodeVmAgentControllerExecutorFactory;
         self.run_controller_bytecode_with_executor_factory_and_budget(
             program,
+            entry,
             config,
             effective_controller_budget(AgentBudget::default(), config),
             &mut factory,
@@ -596,6 +622,7 @@ where
     pub fn run_controller_bytecode_with_executor_factory<F>(
         &mut self,
         program: BytecodeProgram,
+        entry: &EntryRuntimeId,
         config: AgentControllerRunConfig,
         factory: &mut F,
     ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
@@ -604,6 +631,7 @@ where
     {
         self.run_controller_bytecode_with_executor_factory_and_budget(
             program,
+            entry,
             config,
             effective_controller_budget(AgentBudget::default(), config),
             factory,
@@ -613,6 +641,7 @@ where
     fn run_controller_bytecode_with_executor_factory_and_budget<F>(
         &mut self,
         program: BytecodeProgram,
+        entry: &EntryRuntimeId,
         config: AgentControllerRunConfig,
         budget: AgentBudget,
         factory: &mut F,
@@ -620,8 +649,95 @@ where
     where
         F: AgentControllerExecutorFactory<S, D, R>,
     {
+        Self::validate_controller_program_entry(&program, entry)?;
         let mut executor = factory.build(program)?;
+        factory
+            .start(&mut executor, entry)
+            .map_err(AgentRunError::ControllerEntryStart)?;
         self.run_controller_executor_with_budget(&mut executor, config, budget)
+    }
+
+    fn validate_controller_program_entry(
+        program: &BytecodeProgram,
+        selected: &EntryRuntimeId,
+    ) -> AgentRunnerResult<(), S, D, R> {
+        let invalid = |detail: String| AgentRunError::InvalidControllerEntry { detail };
+        let mut entries = program.entries.iter().filter(|entry| &entry.id == selected);
+        let Some(entry) = entries.next() else {
+            return Err(invalid(format!(
+                "selected entry `{}` is missing",
+                selected.canonical_label(),
+            )));
+        };
+        if entries.next().is_some() {
+            return Err(invalid(format!(
+                "selected entry `{}` is duplicated",
+                selected.canonical_label(),
+            )));
+        }
+        if entry.kind != RuntimeEntryKind::Agent {
+            return Err(invalid(format!(
+                "selected entry `{}` has kind `{}` instead of `agent`",
+                selected.canonical_label(),
+                entry.kind.as_str(),
+            )));
+        }
+        let RuntimeEntryTarget::Controller(controller_flow) = &entry.target else {
+            return Err(invalid(format!(
+                "selected entry `{}` does not target a controller flow",
+                selected.canonical_label(),
+            )));
+        };
+        let Some(roles) = entry.roles.agent() else {
+            return Err(invalid(format!(
+                "selected entry `{}` has no Agent roles",
+                selected.canonical_label(),
+            )));
+        };
+        if entry.binding != roles.binding {
+            return Err(invalid(format!(
+                "selected entry `{}` has conflicting binding identities",
+                selected.canonical_label(),
+            )));
+        }
+        let mut callables = program.callable_executables.iter().filter(|callable| {
+            callable.callable == roles.controller.callable
+                && callable.contract == roles.controller.contract
+                && matches!(
+                    &callable.code,
+                    RuntimeCallableExecutableCode::ControllerFlow(flow)
+                        if flow == controller_flow
+                )
+        });
+        if callables.next().is_none() || callables.next().is_some() {
+            return Err(invalid(format!(
+                "selected entry `{}` does not own exactly one controller executable",
+                selected.canonical_label(),
+            )));
+        }
+        let mut flow_executables = program.flow_executables.iter().filter(|flow| {
+            flow.flow == *controller_flow
+                && flow.parameters.is_empty()
+                && flow.controller.as_ref() == Some(&roles.controller)
+                && flow.contract.as_bytes() == roles.controller.contract.as_bytes()
+        });
+        if flow_executables.next().is_none() || flow_executables.next().is_some() {
+            return Err(invalid(format!(
+                "selected entry `{}` does not own exactly one controller flow executable",
+                selected.canonical_label(),
+            )));
+        }
+        let mut flows = program
+            .flows
+            .iter()
+            .filter(|flow| flow.id == *controller_flow);
+        if flows.next().is_none() || flows.next().is_some() {
+            return Err(invalid(format!(
+                "selected entry `{}` does not own exactly one bytecode flow",
+                selected.canonical_label(),
+            )));
+        }
+        Ok(())
     }
 
     fn run_controller_executor_with_budget<E>(
@@ -720,6 +836,7 @@ where
             .agent
             .as_ref()
             .ok_or(AgentRunError::MissingAgentManifest)?;
+        let entry = Self::validate_controller_artifact(bundle, manifest)?;
         self.validate_project_binding(&manifest.project_binding)?;
         let authorization = AgentEffectRegistry::canonical()
             .authorization_for_artifact(&manifest.verified_effects.inferred, &self.policy)
@@ -729,6 +846,7 @@ where
         let mut factory = BytecodeVmAgentControllerExecutorFactory;
         let result = self.run_controller_bytecode_with_executor_factory_and_budget(
             bundle.bytecode.program.clone(),
+            &entry,
             config,
             effective_controller_budget(manifest.budget, config),
             &mut factory,
@@ -736,6 +854,110 @@ where
         self.policy = previous_policy;
         self.authorization = previous_authorization;
         result
+    }
+
+    fn validate_controller_artifact(
+        bundle: &ArcweftBundle,
+        manifest: &AgentArtifactManifest,
+    ) -> AgentRunnerResult<EntryRuntimeId, S, D, R> {
+        let mismatch = |detail: String| AgentRunError::AgentArtifactMismatch { detail };
+        if manifest.schema_version != 1 || manifest.bundle_kind != AgentBundleKind::AgentController
+        {
+            return Err(mismatch(
+                "manifest is not the final Agent controller schema v1".to_owned(),
+            ));
+        }
+        let entry_id = EntryRuntimeId::from_source_entity_body(manifest.entry_id.as_str())
+            .map_err(|error| mismatch(format!("manifest entry ID is invalid: {error}")))?;
+        if bundle.manifest.entry.as_deref() != Some(manifest.entry_id.as_str()) {
+            return Err(mismatch(
+                "bundle launch entry does not match the Agent artifact entry".to_owned(),
+            ));
+        }
+        let [entry] = bundle.bytecode.program.entries.as_slice() else {
+            return Err(mismatch(format!(
+                "Agent controller artifact must contain exactly one entry, found {}",
+                bundle.bytecode.program.entries.len(),
+            )));
+        };
+        if entry.id != entry_id || entry.kind != RuntimeEntryKind::Agent {
+            return Err(mismatch(
+                "bytecode entry identity or kind does not match the Agent manifest".to_owned(),
+            ));
+        }
+        let RuntimeEntryTarget::Controller(controller_flow) = &entry.target else {
+            return Err(mismatch(
+                "Agent bytecode entry does not target a controller flow".to_owned(),
+            ));
+        };
+        let Some(roles) = entry.roles.agent() else {
+            return Err(mismatch(
+                "Agent bytecode entry is missing exact Agent roles".to_owned(),
+            ));
+        };
+        if StableHash::from_blake3_bytes(*entry.binding.as_bytes()) != manifest.entry_binding_hash
+            || StableHash::from_blake3_bytes(*roles.binding.as_bytes())
+                != manifest.entry_binding_hash
+            || roles.controller.callable.as_str() != manifest.controller_id.as_str()
+            || StableHash::from_blake3_bytes(*roles.controller.contract.as_bytes())
+                != manifest.controller_contract_hash
+            || StableHash::from_blake3_bytes(*roles.policy.as_bytes()) != manifest.policy_hash
+            || manifest.budget != roles.budget
+        {
+            return Err(mismatch(
+                "Agent manifest identity, contract, policy, or budget does not match bytecode roles"
+                    .to_owned(),
+            ));
+        }
+        let [callable] = bundle.bytecode.program.callable_executables.as_slice() else {
+            return Err(mismatch(format!(
+                "Agent controller artifact must contain exactly one callable executable, found {}",
+                bundle.bytecode.program.callable_executables.len(),
+            )));
+        };
+        if callable.callable != roles.controller.callable
+            || callable.contract != roles.controller.contract
+            || !matches!(
+                &callable.code,
+                RuntimeCallableExecutableCode::ControllerFlow(flow) if flow == controller_flow
+            )
+        {
+            return Err(mismatch(
+                "Agent callable executable does not match the selected controller role".to_owned(),
+            ));
+        }
+        let [flow_executable] = bundle.bytecode.program.flow_executables.as_slice() else {
+            return Err(mismatch(format!(
+                "Agent controller artifact must contain exactly one flow executable, found {}",
+                bundle.bytecode.program.flow_executables.len(),
+            )));
+        };
+        if flow_executable.flow != *controller_flow
+            || !flow_executable.parameters.is_empty()
+            || flow_executable.controller.as_ref() != Some(&roles.controller)
+            || StableHash::from_blake3_bytes(*flow_executable.contract.as_bytes())
+                != manifest.controller_contract_hash
+        {
+            return Err(mismatch(
+                "Agent flow executable does not match the selected controller role".to_owned(),
+            ));
+        }
+        let [flow] = bundle.bytecode.program.flows.as_slice() else {
+            return Err(mismatch(format!(
+                "Agent controller artifact must contain exactly one bytecode flow, found {}",
+                bundle.bytecode.program.flows.len(),
+            )));
+        };
+        let controller_label = controller_flow.public_label().into_string();
+        if flow.id != *controller_flow
+            || bundle.manifest.runtime.entry_flow.as_deref() != Some(controller_label.as_str())
+        {
+            return Err(mismatch(
+                "Agent bytecode flow or runtime summary does not match the selected controller"
+                    .to_owned(),
+            ));
+        }
+        Ok(entry_id)
     }
 
     fn validate_project_binding(

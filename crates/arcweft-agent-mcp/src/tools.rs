@@ -69,8 +69,7 @@ fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
                 "native_source": { "type": "string", "description": "Optional .arcw source to run the Agent script against using the native Agent session." },
                 "manifest": { "type": "string", "description": "Launch manifest path for profile-based native Agent session. Defaults to arcw.toml when profile is supplied." },
                 "profile": { "type": "string", "description": "Optional launch profile for the native Agent session. Mutually exclusive with native_source." },
-                "entry": { "type": "string" },
-                "flow": { "type": "string" },
+                "entry": { "type": "string", "pattern": "^entry\\.", "description": "Exact canonical native launch entry. Required with native_source." },
                 "executor": { "type": "string", "enum": ["bytecode-vm", "aot"], "default": "bytecode-vm" },
                 "pure_backend": { "type": "string", "enum": ["auto", "vm", "aot", "jit"] },
                 "pure_workers": {
@@ -107,7 +106,10 @@ fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
                 "capture_time": { "type": "number", "minimum": 0 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "dependentRequired": {
+                "native_source": ["entry"]
+            }
         }),
     }
 }
@@ -148,8 +150,7 @@ fn agent_action_tool_descriptor() -> McpToolDescriptor {
                 "source": { "type": "string", "description": "Optional .arcw source to observe before dispatching. Mutually exclusive with profile." },
                 "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-action. Defaults to arcw.toml when profile is supplied." },
                 "profile": { "type": "string", "description": "Optional launch profile to resolve before dispatching. Mutually exclusive with source." },
-                "entry": { "type": "string" },
-                "flow": { "type": "string" },
+                "entry": { "type": "string", "pattern": "^entry\\.", "description": "Exact canonical launch entry. Required with source." },
                 "steps": { "type": "integer", "minimum": 1 },
                 "capture_step": { "type": "integer", "minimum": 1 },
                 "max_ops": { "type": "integer", "minimum": 1 },
@@ -167,7 +168,10 @@ fn agent_action_tool_descriptor() -> McpToolDescriptor {
             "anyOf": [
                 { "required": ["action_id"] },
                 { "required": ["kind"] }
-            ]
+            ],
+            "dependentRequired": {
+                "source": ["entry"]
+            }
         }),
     }
 }
@@ -192,12 +196,14 @@ fn agent_session_step_frames_tool_descriptor() -> McpToolDescriptor {
                 "source": { "type": "string", "description": "Optional .arcw source to observe before stepping. Mutually exclusive with profile." },
                 "manifest": { "type": "string", "description": "Launch manifest path for profile-based observe-before-step. Defaults to arcw.toml when profile is supplied." },
                 "profile": { "type": "string", "description": "Optional launch profile to resolve before stepping. Mutually exclusive with source." },
-                "entry": { "type": "string" },
-                "flow": { "type": "string" },
+                "entry": { "type": "string", "pattern": "^entry\\.", "description": "Exact canonical launch entry. Required with source." },
                 "count": { "type": "integer", "minimum": 1, "default": 1 },
                 "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
                 "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
                 "max_ops": { "type": "integer", "minimum": 1 }
+            },
+            "dependentRequired": {
+                "source": ["entry"]
             }
         }),
     }
@@ -214,6 +220,7 @@ fn agent_observe_tool_descriptor() -> McpToolDescriptor {
                     "source": { "type": "string", "description": "Direct .arcw source path. Mutually exclusive with profile." },
                     "manifest": { "type": "string", "description": "Launch manifest path for profile-based observation. Defaults to arcw.toml when profile is supplied." },
                     "profile": { "type": "string", "description": "Launch profile to resolve before observing. Mutually exclusive with source." },
+                    "entry": { "type": "string", "pattern": "^entry\\.", "description": "Exact canonical launch entry. Required with source." },
                     "image": { "type": "string", "enum": ["overlay", "png", "raw-rgba"] },
                     "capture": { "type": "string", "enum": ["color", "object-id", "mask"], "default": "color" },
                     "layer": { "type": "string" },
@@ -229,7 +236,10 @@ fn agent_observe_tool_descriptor() -> McpToolDescriptor {
                 "anyOf": [
                     { "required": ["source"] },
                     { "required": ["profile"] }
-                ]
+                ],
+                "dependentRequired": {
+                    "source": ["entry"]
+                }
             }),
         }
 }

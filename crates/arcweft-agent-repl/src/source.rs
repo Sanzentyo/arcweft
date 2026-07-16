@@ -14,7 +14,8 @@ pub(crate) struct ParsedReplCell {
     pub(crate) source_hash: String,
     pub(crate) synthetic_source: String,
     pub(crate) synthetic_source_hash: String,
-    pub(crate) synthetic_agent_id: String,
+    pub(crate) synthetic_entry_id: String,
+    pub(crate) synthetic_controller_name: String,
     pub(crate) bindings: Vec<ReplBindingRecord>,
 }
 
@@ -43,10 +44,11 @@ pub(crate) fn classify_repl_cell(
             actual: kind,
         });
     }
-    let synthetic_agent_id = format!("agent.repl.cell_{}", id.as_u64());
+    let synthetic_entry_id = format!("entry.agent.repl.cell_{}", id.as_u64());
+    let synthetic_controller_name = format!("repl_cell_{}", id.as_u64());
     let synthetic_source = cell_source(
-        id,
-        &synthetic_agent_id,
+        &synthetic_entry_id,
+        &synthetic_controller_name,
         &source,
         &fragment,
         live_binding_prelude,
@@ -61,7 +63,8 @@ pub(crate) fn classify_repl_cell(
         ),
         source,
         synthetic_source,
-        synthetic_agent_id,
+        synthetic_entry_id,
+        synthetic_controller_name,
         bindings,
     })
 }
@@ -96,21 +99,21 @@ fn repl_cell_kind(fragment: &ParsedFragment) -> Result<ReplCellKind, ReplTransac
 }
 
 fn cell_source(
-    id: ReplCellId,
-    synthetic_agent_id: &str,
+    synthetic_entry_id: &str,
+    synthetic_controller_name: &str,
     input: &str,
     fragment: &ParsedFragment,
     live_binding_prelude: &str,
 ) -> String {
-    if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
-        return input.to_owned();
-    }
-    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
-        format!("    return {input}")
+    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_)))
+        .then(|| format!("{input}\n\n"))
+        .unwrap_or_default();
+    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
+        "    Ok(())".to_owned()
     } else if input.starts_with("return ") || input.contains("\nreturn ") {
         indent_body(input)
     } else {
-        format!("{}\n    return \"ok\"", indent_body(input))
+        format!("{}\n    Ok(())", indent_body(input))
     };
     let body = if live_binding_prelude.trim().is_empty() {
         cell_body
@@ -118,8 +121,7 @@ fn cell_source(
         format!("{}\n{}", indent_body(live_binding_prelude), cell_body)
     };
     format!(
-        "#[agent(version = 1)]\nagent @{synthetic_agent_id} repl_cell_{}()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n",
-        id.as_u64()
+        "{item_prefix}fn {synthetic_controller_name}() -> Result<Unit, AgentError>\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n\nentry agent @{synthetic_entry_id} {{\n    controller = {synthetic_controller_name}\n}}\n"
     )
 }
 
@@ -129,4 +131,30 @@ fn indent_body(input: &str) -> String {
         .map(|line| format!("    {line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cell::{ReplCellId, ReplCellInput};
+
+    use super::classify_repl_cell;
+
+    #[test]
+    fn repl_item_consumer_rejects_removed_role_declarations_before_synthesis() {
+        for source in [
+            "state GameState {\n    value: i32\n}\n",
+            "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
+            "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
+        ] {
+            let Err(error) =
+                classify_repl_cell(ReplCellId::new(1), &ReplCellInput::item(source), "")
+            else {
+                panic!("removed declaration must fail the REPL item consumer: {source}");
+            };
+            assert_eq!(
+                error.phase(),
+                crate::error::ReplTransactionPhase::ClassifyParse
+            );
+        }
+    }
 }

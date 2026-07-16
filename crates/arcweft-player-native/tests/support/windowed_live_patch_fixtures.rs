@@ -1011,12 +1011,9 @@ fn dialogue_runtime_plan(
             ops: vec![FlowOp::Return("extra".to_owned())],
         });
     }
-    RuntimePlan::new(
-        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
-        flows,
-        vec![LineTaskGroup::default()],
-    )
-    .expect("dialogue fixture runtime plan is valid")
+    RuntimePlan::new(flows, vec![LineTaskGroup::default()])
+        .expect("dialogue fixture runtime plan is valid")
+        .with_entries(vec![cli_main_entry()])
 }
 
 fn dialogue_main_ops(line: &RuntimeLineId, changed_main_code: bool) -> Vec<FlowOp> {
@@ -1080,7 +1077,7 @@ fn bundle_from_runtime_parts(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -1128,7 +1125,6 @@ fn with_optional_fixture_image(bundle: ArcweftBundle, image_bytes: Option<&[u8]>
 
 fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
         vec![RuntimeFlow {
             id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
             ops: vec![
@@ -1152,7 +1148,8 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         }],
         Vec::new(),
     )
-    .expect("await fixture runtime plan is valid");
+    .expect("await fixture runtime plan is valid")
+    .with_entries(vec![cli_main_entry()]);
     let display = LineDisplayCatalog::default();
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()
@@ -1164,7 +1161,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -1186,14 +1183,14 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
 
 fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let plan = RuntimePlan::new(
-        Some(FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id")),
         vec![RuntimeFlow {
             id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
             ops: vec![FlowOp::Return("changed".to_owned())],
         }],
         Vec::new(),
     )
-    .expect("await replacement runtime plan is valid");
+    .expect("await replacement runtime plan is valid")
+    .with_entries(vec![cli_main_entry()]);
     let display = LineDisplayCatalog::default();
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()
@@ -1205,7 +1202,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
@@ -1233,6 +1230,19 @@ fn source_map(label: &str, text: &str) -> SourceMapSection {
     )
     .expect("source document");
     SourceMapSection::try_from_documents(&[&document]).expect("source map")
+}
+
+fn cli_main_entry() -> arcweft_core::plan::RuntimeEntrySpec {
+    arcweft_core::plan::RuntimeEntrySpec {
+        id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+            .expect("test entry ID is valid"),
+        kind: arcweft_core::plan::RuntimeEntryKind::Cli,
+        binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
+        target: arcweft_core::plan::RuntimeEntryTarget::Flow(
+            FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
+        ),
+        roles: arcweft_core::entry::RuntimeEntryRoles::None,
+    }
 }
 
 fn fixture_image_object() -> BundleImageObject {

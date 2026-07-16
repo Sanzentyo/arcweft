@@ -1,6 +1,7 @@
 use super::options::CliRuntimeExecutorTier;
+use arcweft_core::engine::EngineStartError;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::plan::RuntimePlan;
+use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
@@ -17,21 +18,27 @@ pub(in crate::app) struct RuntimeExecutorCore {
 
 pub(in crate::app) struct RuntimeExecutorTemplate {
     plan: RuntimePlan,
+    entry: EntryRuntimeId,
     tier: ArcweftExecutionTier,
 }
 
 impl RuntimeExecutorTemplate {
-    pub(in crate::app) fn new(plan: &RuntimePlan, tier: CliRuntimeExecutorTier) -> Self {
+    pub(in crate::app) fn new(
+        plan: &RuntimePlan,
+        entry: EntryRuntimeId,
+        tier: CliRuntimeExecutorTier,
+    ) -> Self {
         Self {
             plan: plan.clone(),
+            entry,
             tier: arcweft_execution_tier(tier),
         }
     }
 
-    pub(in crate::app) fn instantiate(&self) -> RuntimeExecutorCore {
-        RuntimeExecutorCore {
-            executor: ArcweftRuntimeExecutor::from_runtime_plan(self.plan.clone(), self.tier),
-        }
+    pub(in crate::app) fn instantiate(&self) -> Result<RuntimeExecutorCore, EngineStartError> {
+        let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(self.plan.clone(), self.tier);
+        executor.start_structured_entry(&self.entry)?;
+        Ok(RuntimeExecutorCore { executor })
     }
 }
 
@@ -55,14 +62,15 @@ impl RuntimeExecutorCore {
 impl RuntimeExecutorInstance {
     pub(in crate::app) fn new(
         plan: RuntimePlan,
+        entry: &EntryRuntimeId,
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
-    ) -> Self {
+    ) -> Result<Self, EngineStartError> {
         let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-        Self {
-            executor: ArcweftRuntimeExecutor::from_runtime_plan(plan, arcweft_execution_tier(tier)),
-            pure,
-        }
+        let mut executor =
+            ArcweftRuntimeExecutor::from_runtime_plan(plan, arcweft_execution_tier(tier));
+        executor.start_structured_entry(entry)?;
+        Ok(Self { executor, pure })
     }
 
     pub(in crate::app) fn step_with_root_bindings(

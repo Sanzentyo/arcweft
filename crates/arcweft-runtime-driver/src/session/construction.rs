@@ -1,13 +1,13 @@
 //! Bundle product validation, runtime construction, and initial session assembly.
 
 use super::{
-    Arc, ArcweftBundle, ArcweftRuntimeExecutor, AwbcEntryId, AwbcFunctionId,
-    AwbcProductStepBuildError, AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError,
-    BundleFormat, BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
+    Arc, ArcweftBundle, ArcweftRuntimeExecutor, AwbcEntryId, AwbcProductStepBuildError,
+    AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError, BundleFormat,
+    BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
     BundleSessionArtifactIdentity, BundleSessionError, BundleSessionOptions, BundleView,
-    BundleViewRuntime, BundleViewRuntimeError, FxDefinitions, GenerationBuildError, GenerationId,
-    GenerationRuntimeImage, GenerationRuntimeTable, LineDisplayCatalog,
-    PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RuntimeEntityFamily,
+    BundleViewRuntime, BundleViewRuntimeError, EntryRuntimeId, FxDefinitions, GenerationBuildError,
+    GenerationId, GenerationRuntimeImage, GenerationRuntimeTable, LineDisplayCatalog,
+    PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
     RuntimeTaskRegistry, SessionEnvironmentState, SwapSession, SystemPaletteSet,
     ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
@@ -19,7 +19,6 @@ pub(super) struct SessionRuntime {
     pub(super) source_label: String,
     pub(super) program: AwbcProgram,
     pub(super) entry: AwbcEntryId,
-    launch_target: SessionLaunchTarget,
     pub(super) executor: ArcweftRuntimeExecutor,
     pub(super) display: LineDisplayCatalog,
     pub(super) image_objects: Vec<BundleImageObject>,
@@ -33,23 +32,6 @@ pub(super) struct SessionRuntime {
     pub(super) view_runtime: BundleViewRuntime,
     pub(super) view_theme_environment: PresentationEnvironmentOverrides,
     pub(super) view_style_palettes: SystemPaletteSet,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SessionLaunchTarget {
-    Entry(AwbcEntryId),
-    Function {
-        entry: AwbcEntryId,
-        function: AwbcFunctionId,
-    },
-}
-
-impl SessionLaunchTarget {
-    const fn entry(self) -> AwbcEntryId {
-        match self {
-            Self::Entry(entry) | Self::Function { entry, .. } => entry,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -160,6 +142,8 @@ impl BundleSession {
             pending_presentation_inputs: Vec::new(),
             pending_text_control_write_backs: Vec::new(),
             pending_host_call_results: Vec::new(),
+            pending_deferred_root_events: Vec::new(),
+            pending_root_command_results: BTreeMap::new(),
             waiting_action_receive_calls: Vec::new(),
             presentation: BundlePresentationSnapshot::default(),
             view_virtualization: ViewVirtualizationRuntime::default(),
@@ -189,8 +173,14 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
                 message: error.to_string(),
             }
         }
-        GenerationBuildError::AdapterRequirementFingerprint { message } => {
+        GenerationBuildError::ProductAwbcIdentity { message }
+        | GenerationBuildError::AdapterRequirementFingerprint { message } => {
             BundleSessionError::GenerationFingerprint { message }
+        }
+        GenerationBuildError::InvalidEntryKind { entry } => {
+            BundleSessionError::ProductAwbcVerification {
+                message: format!("failed to decode executable entry kind for `{entry}`"),
+            }
         }
     })
 }
@@ -199,27 +189,30 @@ impl SessionRuntime {
     fn new(
         source_label: String,
         program: AwbcProgram,
-        launch_target: SessionLaunchTarget,
+        entry: AwbcEntryId,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let entry = launch_target.entry();
-        let executor = match launch_target {
-            SessionLaunchTarget::Entry(entry) => {
-                ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?
-            }
-            SessionLaunchTarget::Function { entry, function } => {
-                ArcweftRuntimeExecutor::from_awbc_product_function(
-                    program.clone(),
-                    entry,
-                    function,
-                )?
-            }
-        };
-        Ok(Self {
+        let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
+        Ok(Self::with_executor(
             source_label,
             program,
             entry,
-            launch_target,
+            resources,
+            executor,
+        ))
+    }
+
+    fn with_executor(
+        source_label: String,
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        resources: SessionRuntimeResources,
+        executor: ArcweftRuntimeExecutor,
+    ) -> Self {
+        Self {
+            source_label,
+            program,
+            entry,
             executor,
             display: resources.display,
             image_objects: resources.image_objects,
@@ -233,24 +226,26 @@ impl SessionRuntime {
             view_runtime: resources.view_runtime,
             view_theme_environment: resources.view_theme_environment,
             view_style_palettes: resources.view_style_palettes,
-        })
+        }
     }
 
     pub(super) fn start_entry(
         &self,
         start: BundleEntryStart,
+        root_command_host_calls: &RootCommandHostCallCatalog,
     ) -> Result<Self, BundleEntryStartError> {
-        let launch_target = match start {
-            BundleEntryStart::SessionDefault => self.launch_target,
+        let entry = match start {
+            BundleEntryStart::SessionDefault => self.entry,
             BundleEntryStart::Entry(entry) => {
                 ensure_start_awbc_entry_selects_flow(&self.program, entry)?;
-                SessionLaunchTarget::Entry(entry)
+                entry
             }
         };
+        validate_root_command_host_call_catalog(&self.program, entry, root_command_host_calls)?;
         Self::new(
             self.source_label.clone(),
             self.program.clone(),
-            launch_target,
+            entry,
             SessionRuntimeResources {
                 display: self.display.clone(),
                 image_objects: self.image_objects.clone(),
@@ -274,6 +269,22 @@ pub(super) fn build_session_runtime(
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
 ) -> Result<SessionRuntime, BundleSessionError> {
+    build_session_runtime_with_executor(bundle, options, None)
+}
+
+pub(super) fn build_session_runtime_preserving_executor(
+    bundle: &ArcweftBundle,
+    options: &BundleSessionOptions,
+    executor: &ArcweftRuntimeExecutor,
+) -> Result<SessionRuntime, BundleSessionError> {
+    build_session_runtime_with_executor(bundle, options, Some(executor))
+}
+
+fn build_session_runtime_with_executor(
+    bundle: &ArcweftBundle,
+    options: &BundleSessionOptions,
+    preserved_executor: Option<&ArcweftRuntimeExecutor>,
+) -> Result<SessionRuntime, BundleSessionError> {
     if bundle.bundle_kind != BundleKind::Game {
         return Err(BundleSessionError::UnsupportedBundleKind(
             bundle.bundle_kind,
@@ -284,10 +295,9 @@ pub(super) fn build_session_runtime(
         .product_awbc_program()
         .map_err(|_| BundleSessionError::MissingProductAwbc)?
         .clone();
-    let launch_target = selected_awbc_launch_target(&program, bundle, options)?;
-    if let SessionLaunchTarget::Entry(entry) = launch_target {
-        ensure_session_awbc_entry_selects_flow(&program, entry)?;
-    }
+    let entry = selected_awbc_entry(&program, bundle, options)?;
+    ensure_session_awbc_entry_selects_flow(&program, entry)?;
+    validate_root_command_host_call_catalog(&program, entry, &options.root_command_host_calls)?;
     let text_inputs = bundle.view_input.as_ref().map_or_else(Vec::new, |input| {
         input.runtime_text_controls(bundle.view_text.as_ref(), bundle.view_program.as_ref())
     });
@@ -327,84 +337,106 @@ pub(super) fn build_session_runtime(
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
-    SessionRuntime::new(
-        bundle.source_display_name().to_owned(),
-        program,
-        launch_target,
-        SessionRuntimeResources {
-            display: bundle.display.clone(),
-            image_objects: bundle.image_objects.clone(),
-            text_inputs,
-            action_buttons,
-            scroll_regions,
-            surfaces,
-            focus_groups,
-            focus_navigation,
-            fx_definitions: bundle.fx_definitions.clone(),
-            view_runtime,
-            view_theme_environment,
-            view_style_palettes,
-        },
-    )
-    .map_err(BundleSessionError::from)
+    let resources = SessionRuntimeResources {
+        display: bundle.display.clone(),
+        image_objects: bundle.image_objects.clone(),
+        text_inputs,
+        action_buttons,
+        scroll_regions,
+        surfaces,
+        focus_groups,
+        focus_navigation,
+        fx_definitions: bundle.fx_definitions.clone(),
+        view_runtime,
+        view_theme_environment,
+        view_style_palettes,
+    };
+    match preserved_executor {
+        Some(executor) => {
+            let mut executor = executor.clone();
+            executor.replace_product_awbc_program(program.clone())?;
+            Ok(SessionRuntime::with_executor(
+                bundle.source_display_name().to_owned(),
+                program,
+                entry,
+                resources,
+                executor,
+            ))
+        }
+        None => SessionRuntime::new(
+            bundle.source_display_name().to_owned(),
+            program,
+            entry,
+            resources,
+        )
+        .map_err(BundleSessionError::from),
+    }
 }
 
-fn selected_awbc_launch_target(
+fn validate_root_command_host_call_catalog(
+    program: &AwbcProgram,
+    entry: AwbcEntryId,
+    catalog: &RootCommandHostCallCatalog,
+) -> Result<(), crate::session::RootCommandHostCallCatalogError> {
+    let contracts = program
+        .entries
+        .get(entry.index())
+        .and_then(|entry| match &entry.roles {
+            arcweft_core::plan::RuntimeEntryRoles::Stateful(roles) => {
+                Some(roles.command_policy.admitted.as_slice())
+            }
+            arcweft_core::plan::RuntimeEntryRoles::None
+            | arcweft_core::plan::RuntimeEntryRoles::Agent(_) => None,
+        })
+        .unwrap_or_default();
+    catalog.validate_policy(contracts)
+}
+
+pub(super) fn selected_awbc_entry(
     program: &AwbcProgram,
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
-) -> Result<SessionLaunchTarget, BundleSessionError> {
-    if options.entry.is_some() && options.flow.is_some() {
-        return Err(BundleSessionError::ConflictingEntrySelection);
-    }
-    if let Some(flow) = options.flow.as_deref() {
-        let selected = RuntimeEntityFamily::Flow.selector(flow);
-        return program
-            .functions
-            .iter()
-            .enumerate()
-            .find_map(|(index, function)| {
-                if !function.kind.is_flow() {
-                    return None;
-                }
-                let public_id = function
-                    .public_id
-                    .and_then(|public_id| program.strings.get(public_id.index()))?;
-                (public_id == &selected).then(|| SessionLaunchTarget::Function {
-                    entry: AwbcEntryId(0),
-                    function: AwbcFunctionId(u32::try_from(index).unwrap_or(u32::MAX)),
-                })
-            })
-            .ok_or(BundleSessionError::UnknownFlow { flow: selected });
-    }
-    let Some(entry) = selected_entry(bundle, options) else {
-        return Ok(SessionLaunchTarget::Entry(AwbcEntryId(0)));
+) -> Result<AwbcEntryId, BundleSessionError> {
+    let Some(entry) = selected_entry(bundle, options)? else {
+        return Err(BundleSessionError::MissingEntrySelection);
     };
-    let selected = RuntimeEntityFamily::Entry.selector(entry);
     program
         .entries
         .iter()
         .enumerate()
         .find_map(|(index, candidate)| {
-            let public_id = program.strings.get(candidate.public_id.index())?;
-            (public_id == entry || public_id == &selected).then(|| {
-                SessionLaunchTarget::Entry(AwbcEntryId(u32::try_from(index).unwrap_or(u32::MAX)))
+            (candidate.runtime_id == entry).then(|| {
+                AwbcEntryId(
+                    u32::try_from(index)
+                        .expect("verified AWBC entry table indices fit the u32 wire contract"),
+                )
             })
         })
-        .ok_or(BundleSessionError::ProductAwbcEntry { entry: selected })
+        .ok_or(BundleSessionError::ProductAwbcEntry {
+            entry: entry.public_label().into_string(),
+        })
 }
 
-fn selected_entry<'a>(
-    bundle: &'a ArcweftBundle,
-    options: &'a BundleSessionOptions,
-) -> Option<&'a str> {
-    options.entry.as_deref().or_else(|| {
-        options
-            .flow
-            .is_none()
-            .then_some(bundle.manifest.entry.as_deref())
-            .flatten()
-    })
+fn selected_entry(
+    bundle: &ArcweftBundle,
+    options: &BundleSessionOptions,
+) -> Result<Option<EntryRuntimeId>, BundleSessionError> {
+    if let Some(entry) = &options.entry {
+        return Ok(Some(entry.clone()));
+    }
+    bundle
+        .manifest
+        .entry
+        .as_deref()
+        .map(|entry| {
+            EntryRuntimeId::from_source_entity_body(entry).map_err(|error| {
+                BundleSessionError::InvalidEntrySelection {
+                    entry: entry.to_owned(),
+                    message: error.to_string(),
+                }
+            })
+        })
+        .transpose()
 }
 
 fn ensure_session_awbc_entry_selects_flow(
@@ -424,7 +456,7 @@ fn ensure_start_awbc_entry_selects_flow(
     program: &AwbcProgram,
     entry: AwbcEntryId,
 ) -> Result<(), BundleEntryStartError> {
-    if !awbc_entry_exists_or_empty_program_default(program, entry) {
+    if program.entries.get(entry.index()).is_none() {
         return Err(BundleEntryStartError::UnknownEntry { entry });
     }
     if awbc_entry_selects_flow(program, entry) {
@@ -434,15 +466,7 @@ fn ensure_start_awbc_entry_selects_flow(
     }
 }
 
-fn awbc_entry_exists_or_empty_program_default(program: &AwbcProgram, entry: AwbcEntryId) -> bool {
-    program.entries.get(entry.index()).is_some()
-        || (program.entries.is_empty() && entry == AwbcEntryId(0))
-}
-
 fn awbc_entry_selects_flow(program: &AwbcProgram, entry: AwbcEntryId) -> bool {
-    if program.entries.is_empty() && entry == AwbcEntryId(0) {
-        return true;
-    }
     let Some(entry) = program.entries.get(entry.index()) else {
         return false;
     };

@@ -38,11 +38,36 @@ pub view SideDialogue(dialogue: DialogueView) {
 signal current_flow: Watch<Ref<Flow>>
 metric gauge opening_lines: i32
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.opening
 }
 
-flow opening
+flow opening(state: GameState)
 effects { signal.write, metric.write }
 {
     log.info("enter opening")

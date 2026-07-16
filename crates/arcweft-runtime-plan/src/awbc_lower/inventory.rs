@@ -2,30 +2,33 @@ use crate::awbc_lower::audio::constant_audio_command;
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAwaitManyPolicy,
-    AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId, AwbcChildCancelPolicy, AwbcChildCleanup,
-    AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcConstantId,
-    AwbcContentUnit, AwbcContentUnitId, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan,
-    AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction,
-    AwbcInstructionId, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
-    AwbcLineTaskGroup, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
-    AwbcLineTaskTrigger, AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId,
-    AwbcPresentationCleanup, AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy,
-    AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
-    AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStreamPlan,
-    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan,
-    AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId, AwbcCallableExecutable, AwbcChildCancelPolicy,
+    AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId, AwbcChoiceOption,
+    AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId, AwbcDisplayMapEntry,
+    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry,
+    AwbcEntryKind, AwbcEntryTarget, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId,
+    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
+    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCancelHandler,
+    AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcOverflowPolicy,
+    AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcPrivacyPolicy,
+    AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
+    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId,
+    AwbcSourcePolicy, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator,
+    AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
+use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
 use arcweft_core::line_task::{
     AudioCleanup, ChildCancelPolicy, ChildJoinPolicy, ChildTaskCleanup, LineChildTask,
     LineCleanupPolicy, LineTaskGroup, LineTaskNode, LineTaskScope, ParallelPolicy,
     PresentationCleanup,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimeHostCallTarget, RuntimePlan,
+    FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeHostCallTarget,
+    RuntimePlan,
 };
 use arcweft_core::source::{
     BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
@@ -87,6 +90,8 @@ pub struct AwbcLowerStats {
     pub source_plans: usize,
     pub stream_plans: usize,
     pub trait_methods: usize,
+    pub callable_executables: usize,
+    pub flow_executables: usize,
     pub entries: usize,
 }
 
@@ -105,6 +110,8 @@ impl AwbcLowerStats {
             source_plans: program.source_plans.len(),
             stream_plans: program.stream_plans.len(),
             trait_methods: program.trait_methods.len(),
+            callable_executables: program.callable_executables.len(),
+            flow_executables: program.flow_executables.len(),
             entries: program.entries.len(),
         }
     }
@@ -980,89 +987,136 @@ impl AwbcInventory {
     }
 
     pub fn lower_entries(&mut self, plan: &RuntimePlan) {
+        self.lower_callable_executables(plan);
+        self.lower_flow_executables(plan);
         for entry in &plan.entries {
-            let entry_public_id = entry.id.public_label().into_string();
-            let public_id = self.intern_string(&entry_public_id);
-            let kind = match &entry.kind {
-                RuntimeEntryKind::Game => AwbcEntryKind::Game,
-                RuntimeEntryKind::Cli => AwbcEntryKind::Cli,
-                RuntimeEntryKind::Server => AwbcEntryKind::Server,
-                RuntimeEntryKind::Activity => AwbcEntryKind::Activity,
-                RuntimeEntryKind::Test => AwbcEntryKind::Test,
-                RuntimeEntryKind::Bench => AwbcEntryKind::Bench,
-                RuntimeEntryKind::Custom(value) => AwbcEntryKind::Custom(self.intern_string(value)),
+            self.lower_entry(entry);
+        }
+    }
+
+    fn lower_callable_executables(&mut self, plan: &RuntimePlan) {
+        for executable in &plan.callable_executables {
+            let function = match &executable.code {
+                RuntimeCallableExecutableCode::PureHelper(helper) => self
+                    .program
+                    .pure_helpers
+                    .get(helper.0)
+                    .map(|helper| helper.function),
+                RuntimeCallableExecutableCode::ControllerFlow(flow) => self.flow_function(flow),
             };
-            let mut signature = self.intern_unit_signature();
-            let target = match &entry.target {
-                RuntimeEntryTarget::Flow(flow) => {
-                    let flow_public_id = flow.public_label().into_string();
-                    if let Some(function) = self.flow_function(flow) {
-                        signature = self.program.functions[function.index()].signature;
-                        AwbcEntryTarget::Function(function)
-                    } else {
-                        self.diagnostic(AwbcLowerDiagnostic::error(
-                            entry_public_id.clone(),
-                            format!("entry targets missing flow {flow_public_id}"),
-                        ));
-                        AwbcEntryTarget::Function(AwbcFunctionId(0))
-                    }
-                }
-                RuntimeEntryTarget::Routes(routes) => {
-                    let routes = routes
-                        .iter()
-                        .map(|route| {
-                            let target_public_id = route.target.public_label().into_string();
-                            let target = self.flow_function(&route.target).unwrap_or_else(|| {
-                                self.diagnostic(AwbcLowerDiagnostic::error(
-                                    entry_public_id.clone(),
-                                    format!("route targets missing flow {target_public_id}"),
-                                ));
-                                AwbcFunctionId(0)
-                            });
-                            signature = self.program.functions[target.index()].signature;
-                            AwbcRoute {
-                                method: self.intern_string(&route.method),
-                                path: self.intern_string(&route.path),
-                                target,
-                                bindings: route
-                                    .bindings
-                                    .iter()
-                                    .enumerate()
-                                    .map(|(index, binding)| AwbcRouteBinding {
-                                        register: AwbcRegisterId(table_index(index)),
-                                        source: match &binding.source {
-                                            arcweft_core::plan::RuntimeRouteBindingSource::PathParam(value) => {
-                                                AwbcRouteBindingSource::PathParameter(self.intern_string(value))
-                                            }
-                                        },
-                                    })
-                                    .collect(),
-                            }
-                        })
-                        .collect();
-                    AwbcEntryTarget::Routes(routes)
-                }
+            let Some(function) = function else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    executable.callable.as_str(),
+                    "callable executable maps to missing Product AWBC function",
+                ));
+                continue;
             };
-            self.program.entries.push(AwbcEntry {
-                public_id,
-                kind,
-                signature,
-                target,
+            self.program
+                .callable_executables
+                .push(AwbcCallableExecutable {
+                    role: RuntimeCallableRole {
+                        callable: executable.callable.clone(),
+                        contract: executable.contract,
+                    },
+                    function,
+                });
+        }
+    }
+
+    fn lower_flow_executables(&mut self, plan: &RuntimePlan) {
+        for executable in &plan.flow_executables {
+            let Some(function) = self.flow_function(&executable.flow) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    executable.flow.canonical_label(),
+                    "flow executable maps to missing Product AWBC function",
+                ));
+                continue;
+            };
+            self.program.flow_executables.push(AwbcFlowExecutable {
+                metadata: executable.clone(),
+                function,
             });
         }
-        if self.program.entries.is_empty()
-            && let Some(entry_flow) = plan.entry_flow.as_ref()
-            && let Some(function) = self.flow_function(entry_flow)
-        {
-            let public_id = self.intern_string("entry.main");
-            let signature = self.program.functions[function.index()].signature;
-            self.program.entries.push(AwbcEntry {
-                public_id,
-                kind: AwbcEntryKind::Game,
-                signature,
-                target: AwbcEntryTarget::Function(function),
-            });
-        }
+    }
+
+    fn lower_entry(&mut self, entry: &RuntimeEntrySpec) {
+        let entry_public_id = entry.id.public_label().into_string();
+        let public_id = self.intern_string(&entry_public_id);
+        let kind = match &entry.kind {
+            RuntimeEntryKind::Game => AwbcEntryKind::Game,
+            RuntimeEntryKind::Editor => AwbcEntryKind::Editor,
+            RuntimeEntryKind::Cli => AwbcEntryKind::Cli,
+            RuntimeEntryKind::Server => AwbcEntryKind::Server,
+            RuntimeEntryKind::Activity => AwbcEntryKind::Activity,
+            RuntimeEntryKind::Test => AwbcEntryKind::Test,
+            RuntimeEntryKind::Bench => AwbcEntryKind::Bench,
+            RuntimeEntryKind::Agent => AwbcEntryKind::Agent,
+            RuntimeEntryKind::Custom(value) => AwbcEntryKind::Custom(self.intern_string(value)),
+        };
+        let mut signature = self.intern_unit_signature();
+        let target = match &entry.target {
+            RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
+                let flow_public_id = flow.public_label().into_string();
+                if let Some(function) = self.flow_function(flow) {
+                    signature = self.program.functions[function.index()].signature;
+                    AwbcEntryTarget::Function(function)
+                } else {
+                    self.diagnostic(AwbcLowerDiagnostic::error(
+                        entry_public_id.clone(),
+                        format!("entry targets missing flow {flow_public_id}"),
+                    ));
+                    AwbcEntryTarget::Function(AwbcFunctionId(0))
+                }
+            }
+            RuntimeEntryTarget::Routes(routes) => {
+                let routes = routes
+                    .iter()
+                    .map(|route| {
+                        let target_public_id = route.target.public_label().into_string();
+                        let target = self.flow_function(&route.target).unwrap_or_else(|| {
+                            self.diagnostic(AwbcLowerDiagnostic::error(
+                                entry_public_id.clone(),
+                                format!("route targets missing flow {target_public_id}"),
+                            ));
+                            AwbcFunctionId(0)
+                        });
+                        signature = self.program.functions[target.index()].signature;
+                        AwbcRoute {
+                            method: self.intern_string(&route.method),
+                            path: self.intern_string(&route.path),
+                            target,
+                            bindings: route
+                                .bindings
+                                .iter()
+                                .enumerate()
+                                .map(|(index, binding)| {
+                                    AwbcRouteBinding {
+                                    register: AwbcRegisterId(table_index(index)),
+                                    source: match &binding.source {
+                                        arcweft_core::plan::RuntimeRouteBindingSource::PathParam(
+                                            value,
+                                        ) => AwbcRouteBindingSource::PathParameter(
+                                            self.intern_string(value),
+                                        ),
+                                    },
+                                }
+                                })
+                                .collect(),
+                        }
+                    })
+                    .collect();
+                AwbcEntryTarget::Routes(routes)
+            }
+        };
+        self.program.entries.push(AwbcEntry {
+            runtime_id: entry.id.clone(),
+            binding: entry.binding,
+            public_id,
+            kind,
+            signature,
+            target,
+            roles: entry.roles.clone(),
+        });
     }
 
     pub fn synthetic_empty_function(&mut self, name: &str) -> AwbcFunctionId {

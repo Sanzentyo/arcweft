@@ -2,8 +2,9 @@
 
 use crate::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
-    AdapterEffectCapability, AdapterFunctionSignature, AdapterHostCall, AdapterManifest,
-    AdapterParameterGroup, AdapterRegistry, AdapterTypeKind,
+    AdapterCallableParameterIndex, AdapterEffectCapability, AdapterFunctionParam,
+    AdapterFunctionSignature, AdapterHostCall, AdapterManifest, AdapterParameterGroup,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry, AdapterTypeKind,
 };
 
 /// Adapter id for the default Sans I/O environment.
@@ -107,79 +108,132 @@ pub fn native_http_manifest() -> AdapterManifest {
 /// Optional forward-inference tensor manifest.
 pub fn inference_tensor_manifest() -> AdapterManifest {
     let tensor = AdapterTypeKind::Named("TensorF32".to_owned());
-    AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor")
+    let manifest = AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor")
         .with_symbol("conv2d", AdapterTypeKind::Named("Conv2dApi".to_owned()))
-        .with_symbol("infer", AdapterTypeKind::Named("InferApi".to_owned()))
-        .with_method_signature(
-            AdapterTypeKind::Named("Conv2dApi".to_owned()),
-            callable_name("valid_f32"),
-            overload_zero(),
-            return_only(tensor.clone()),
-            [],
-        )
+        .with_symbol("infer", AdapterTypeKind::Named("InferApi".to_owned()));
+    let manifest = with_conv2d_callable(manifest, &tensor);
+    let manifest = with_inference_callables(manifest, &tensor);
+    with_inference_host_calls(manifest)
+}
+
+fn with_conv2d_callable(manifest: AdapterManifest, tensor: &AdapterTypeKind) -> AdapterManifest {
+    manifest.with_method_signature(
+        AdapterTypeKind::Named("Conv2dApi".to_owned()),
+        callable_name("valid_f32"),
+        overload_zero(),
+        signature(
+            [
+                ("input", tensor.clone()),
+                ("kernel", tensor.clone()),
+                ("stride_y", AdapterTypeKind::USize),
+                ("stride_x", AdapterTypeKind::USize),
+            ],
+            tensor.clone(),
+        ),
+        [],
+    )
+}
+
+fn with_inference_callables(
+    manifest: AdapterManifest,
+    tensor: &AdapterTypeKind,
+) -> AdapterManifest {
+    manifest
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("matmul_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature(
+                [("lhs", tensor.clone()), ("rhs", tensor.clone())],
+                tensor.clone(),
+            ),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("add_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature(
+                [("lhs", tensor.clone()), ("rhs", tensor.clone())],
+                tensor.clone(),
+            ),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("bias_add_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature(
+                [("tensor", tensor.clone()), ("bias", tensor.clone())],
+                tensor.clone(),
+            ),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("matmul_bias_add_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature(
+                [
+                    ("lhs", tensor.clone()),
+                    ("rhs", tensor.clone()),
+                    ("bias", tensor.clone()),
+                ],
+                tensor.clone(),
+            ),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("relu_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("max_pool2d_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature(
+                [
+                    ("input", tensor.clone()),
+                    ("kernel_y", AdapterTypeKind::USize),
+                    ("kernel_x", AdapterTypeKind::USize),
+                    ("stride_y", AdapterTypeKind::USize),
+                    ("stride_x", AdapterTypeKind::USize),
+                ],
+                tensor.clone(),
+            ),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("softmax_last_dim_f32"),
             overload_zero(),
-            return_only(tensor.clone()),
+            signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("argmax_last_dim_f32"),
             overload_zero(),
-            return_only(AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize))),
+            signature(
+                [("input", tensor.clone())],
+                AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize)),
+            ),
             [],
         )
         .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
             callable_name("flatten_outer_f32"),
             overload_zero(),
-            return_only(tensor),
+            signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
+}
+
+fn with_inference_host_calls(manifest: AdapterManifest) -> AdapterManifest {
+    manifest
         .with_host_call(AdapterHostCall::new("conv2d.valid_f32", []))
         .with_host_call(AdapterHostCall::new("infer.matmul_f32", []))
         .with_host_call(AdapterHostCall::new("infer.add_f32", []))
@@ -239,19 +293,37 @@ fn overload_zero() -> AdapterCallableOverloadIndex {
         .expect("zero is a valid adapter callable overload")
 }
 
-fn return_only(return_type: AdapterTypeKind) -> AdapterFunctionSignature {
+fn signature<const N: usize>(
+    parameters: [(&str, AdapterTypeKind); N],
+    return_type: AdapterTypeKind,
+) -> AdapterFunctionSignature {
+    let parameters = parameters
+        .into_iter()
+        .enumerate()
+        .map(|(index, (name, ty))| {
+            AdapterFunctionParam::try_new(
+                AdapterCallableParameterIndex::try_from_usize(index)
+                    .expect("standard adapter parameter indices fit"),
+                Some(callable_name(name)),
+                ty,
+                AdapterParameterPassing::PositionalOrNamed,
+                AdapterParameterPresence::Required,
+            )
+            .expect("standard adapter parameters are valid")
+        })
+        .collect();
     AdapterFunctionSignature::try_new(
         vec![
             AdapterParameterGroup::try_new(
                 AdapterCallableGroupIndex::try_from_usize(0)
                     .expect("zero is a valid adapter callable group"),
-                Vec::new(),
+                parameters,
             )
-            .expect("an empty initial adapter group is valid"),
+            .expect("the standard adapter initial group is valid"),
         ],
         return_type,
     )
-    .expect("a standard return-only adapter signature is valid")
+    .expect("a standard adapter signature is valid")
 }
 
 #[cfg(test)]
@@ -282,6 +354,24 @@ mod tests {
                 && method.signature().return_type()
                     == &AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize))
         }));
+        let fused = manifest
+            .methods()
+            .iter()
+            .find(|method| method.name() == "matmul_bias_add_f32")
+            .expect("fused inference method");
+        assert_eq!(fused.signature().groups().len(), 1);
+        let parameters = fused.signature().groups()[0].parameters();
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(
+            parameters
+                .iter()
+                .map(|parameter| (
+                    parameter.name().expect("named parameter").as_str(),
+                    parameter.ty(),
+                ))
+                .collect::<Vec<_>>(),
+            vec![("lhs", &tensor), ("rhs", &tensor), ("bias", &tensor),]
+        );
         for call in [
             "conv2d.valid_f32",
             "infer.matmul_f32",

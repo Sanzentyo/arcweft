@@ -7,7 +7,7 @@ pub character @character.alice Alice as alice {
     }
 }
 
-entry game {
+entry cli @entry.vertical_lr_ruby_text_combine_golden {
     goto @flow.vertical_lr_ruby_text_combine_golden
 }
 

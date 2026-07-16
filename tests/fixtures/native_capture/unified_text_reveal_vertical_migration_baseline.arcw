@@ -12,7 +12,7 @@ pub character lumi {
     }
 }
 
-entry game {
+entry cli @entry.unified_text_reveal_vertical_migration_baseline {
     goto @flow.unified_text_reveal_vertical_migration_baseline
 }
 

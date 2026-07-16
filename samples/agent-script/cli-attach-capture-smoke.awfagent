@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.cli.attach_capture_smoke attach_capture_smoke()
+fn attach_capture_smoke() -> Result<Unit, AgentError>
 effects { agent.capture, debug.record }
 {
     let shot = try capture(
@@ -10,5 +9,9 @@ effects { agent.capture, debug.record }
     )
     attach(shot)
     checkpoint("after-attach-capture")
-    return shot.uri
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = attach_capture_smoke
 }

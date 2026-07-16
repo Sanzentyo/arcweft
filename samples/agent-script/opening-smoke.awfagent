@@ -1,7 +1,4 @@
-#[agent(version = 1)]
 
-#[launch(profile = "game.dev")]
-#[bind(program = compatible)]
 #[budget(
     timeout = 30s,
     steps = 128usize,
@@ -9,7 +6,7 @@
     rag_queries = 2usize,
     stored_bytes = 33_554_432u64,
 )]
-agent @agent.opening.listen opening_listen()
+fn opening_listen() -> Result<Unit, AgentError>
 effects {
     agent.observe,
     agent.act.semantic,
@@ -46,4 +43,8 @@ effects {
     checkpoint("opening-listen-complete")
 
     Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = opening_listen
 }

@@ -5,16 +5,6 @@ use crate::source::ParsedSource;
 use arcweft_source::SourceDocument;
 use std::sync::Arc;
 
-/// Source dialect selected before parsing.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum SourceDialect {
-    /// Ordinary Arcweft game source.
-    #[default]
-    Game,
-    /// Agent controller source using Arcweft syntax plus top-level `agent`.
-    Agent,
-}
-
 /// Fragment parser entrypoint used by REPL and LSP integrations.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FragmentKind {
@@ -25,9 +15,7 @@ pub enum FragmentKind {
 
 /// Parser options shared by full documents and fragments.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ParseOptions {
-    pub source_dialect: SourceDialect,
-}
+pub struct ParseOptions {}
 
 /// Completion state for an interactive parse.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,7 +47,7 @@ pub struct ParsedFragment {
     errors: Vec<ParseError>,
 }
 
-/// Parses a full source document using the selected dialect.
+/// Parses a full Arcweft source document.
 pub fn parse_document(source: impl Into<String>, options: ParseOptions) -> ParsedSource {
     super::parse_source_with_options(source, options)
 }
@@ -267,9 +255,7 @@ mod tests {
         let parsed = parse_fragment(
             "wait(signal(@signal.ready).eq(true)",
             FragmentKind::Expression,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
+            ParseOptions::default(),
         );
 
         let ParseCompletion::Incomplete { expected } = parsed.completion() else {
@@ -284,11 +270,9 @@ mod tests {
     #[test]
     fn fragment_reports_incomplete_nested_item_boundaries() {
         let parsed = parse_fragment(
-            "agent @agent.repl repl() {\n    let frame = try observe()",
+            "fn repl() {\n    let frame = try observe()",
             FragmentKind::Items,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
+            ParseOptions::default(),
         );
 
         let ParseCompletion::Incomplete { expected } = parsed.completion() else {
@@ -305,9 +289,7 @@ mod tests {
         let parsed = parse_fragment(
             "note(\"unterminated",
             FragmentKind::Expression,
-            ParseOptions {
-                source_dialect: SourceDialect::Agent,
-            },
+            ParseOptions::default(),
         );
 
         let ParseCompletion::Incomplete { expected } = parsed.completion() else {
@@ -333,13 +315,7 @@ mod tests {
             "state(\"route.phase\").eq(",
             "try observe() with { error e =>",
         ] {
-            let parsed = parse_fragment(
-                source,
-                FragmentKind::Statements,
-                ParseOptions {
-                    source_dialect: SourceDialect::Agent,
-                },
-            );
+            let parsed = parse_fragment(source, FragmentKind::Statements, ParseOptions::default());
 
             let ParseCompletion::Incomplete { expected } = parsed.completion() else {
                 panic!(
@@ -355,18 +331,12 @@ mod tests {
     }
 
     #[test]
-    fn fragment_reports_incomplete_agent_block_introducers() {
+    fn fragment_reports_incomplete_block_introducers() {
         for source in [
             "try observe() with",
             "if diagnostics().has_error() { return \"bad\" } else",
         ] {
-            let parsed = parse_fragment(
-                source,
-                FragmentKind::Statements,
-                ParseOptions {
-                    source_dialect: SourceDialect::Agent,
-                },
-            );
+            let parsed = parse_fragment(source, FragmentKind::Statements, ParseOptions::default());
 
             let ParseCompletion::Incomplete { expected } = parsed.completion() else {
                 panic!(

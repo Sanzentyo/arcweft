@@ -1,4 +1,4 @@
-use super::entry::apply_runtime_entry_selection;
+use super::entry::select_runtime_entry;
 use super::options::{
     CliRuntimeExecutorTier, CliRuntimeRunner, CliRuntimeStepMode, RuntimeRunOptions,
     ScriptBenchOptions,
@@ -140,7 +140,7 @@ fn runtime_run_headless_command(
             LaunchKind::Bench => {
                 return runtime_run_bench_selection(selection, options, adapter_registrars);
             }
-            LaunchKind::Game | LaunchKind::Cli => {}
+            LaunchKind::Game | LaunchKind::Editor | LaunchKind::Agent | LaunchKind::Cli => {}
         }
     }
 
@@ -148,7 +148,7 @@ fn runtime_run_headless_command(
     require_runtime_verification_safety(&checked)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let runtime_options = runtime_plan_options_for_selection(selection)?;
-    let mut plan = lower_source_runtime_plan_with_typecheck_and_options(
+    let plan = lower_source_runtime_plan_with_typecheck_and_options(
         &checked.hir,
         &checked.typecheck_report,
         &runtime_options,
@@ -159,11 +159,12 @@ fn runtime_run_headless_command(
         }
         ExitCode::FAILURE
     })?;
-    let entry = options.entry.as_deref().or(selection.entry());
-    apply_runtime_entry_selection(&mut plan, entry, options.flow.as_deref())?;
+    let entry = selection.command_entry(options.entry.as_deref())?;
+    let entry = select_runtime_entry(&plan, entry)?;
     let file_roots = selection.native_file_roots()?;
     let trace = run_runtime_steps(
         plan,
+        &entry,
         Some(NativeRunSource::new(selection.path(), &file_roots)),
         runtime_step_run_config_from_run_options(options, pure_config),
         &host_policy,
@@ -288,7 +289,6 @@ fn should_try_bundle_run(options: &RuntimeRunOptions, selection: &SourceSelectio
 
 fn has_headless_debug_options(options: &RuntimeRunOptions) -> bool {
     options.json
-        || options.flow.is_some()
         || options.executor != CliRuntimeExecutorTier::BytecodeVm
         || options.mode != CliRuntimeStepMode::OneOp
         || options.max_ops != 1
@@ -645,7 +645,6 @@ fn native_windowed_watch_producer_loop(
 
 fn has_headless_debug_options_for_watch(options: &RuntimeRunOptions) -> bool {
     options.json
-        || options.flow.is_some()
         || options.executor != CliRuntimeExecutorTier::BytecodeVm
         || options.mode != CliRuntimeStepMode::OneOp
         || options.max_ops != 1

@@ -77,6 +77,10 @@ impl Engine {
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in: 0,
             source_events_in: 0,
+            root_events_in: 0,
+            root_transitions: 0,
+            root_commands: 0,
+            root_events_deferred: 0,
             source_events_emitted: 0,
             stream_events_emitted: 0,
             line_effects: output.effects.line.len(),
@@ -100,6 +104,8 @@ impl Engine {
     ) -> bool {
         input.task_events.is_empty()
             && input.source_events.is_empty()
+            && input.root_events.is_empty()
+            && self.root.is_none()
             && self.plan.source_plans.is_empty()
             && self.plan.stream_plans.is_empty()
             && self.fiber.pending_ops.is_empty()

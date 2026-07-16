@@ -105,11 +105,36 @@ pub dialogue defaults {
     }
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.reactive_view_style {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.reactive_view_style
 }
 
-flow reactive_view_style {
+flow reactive_view_style(state: GameState) {
     designer(id=@say.reactive_view_style.intro, voice=auto):
         [font "Arcweft Demo"][color #64d2c8]Reactive View style sample[/color][/font] bundles typed, sheet-owned native Style resources.[r]
         Hover and press the choices below. The shared renderer consumes the same ordered native Style applications for each interaction state.[p]

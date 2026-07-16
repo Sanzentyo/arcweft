@@ -5,11 +5,13 @@ use arcweft_core::effect::{
     RuntimeWaitTarget,
 };
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::line_task::{LineOutRequest, LineTaskGroup, LineTaskNode, LineTaskScope};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeHostCallTarget,
+    ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeHostCallTarget,
     RuntimeIteratorEvidence, RuntimeLineId, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
     RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
 };
@@ -61,6 +63,20 @@ fn stream_id(value: &str) -> StreamRuntimeId {
     StreamRuntimeId::from_runtime_target_value(value).expect("test stream ID is valid")
 }
 
+fn parity_entry_id() -> EntryRuntimeId {
+    EntryRuntimeId::from_source_entity_body("entry.parity").expect("test entry ID is valid")
+}
+
+fn with_parity_entry(plan: RuntimePlan) -> RuntimePlan {
+    plan.with_entries(vec![RuntimeEntrySpec {
+        id: parity_entry_id(),
+        kind: RuntimeEntryKind::Cli,
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
+        target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
+        roles: RuntimeEntryRoles::None,
+    }])
+}
+
 fn run_parity(plan: RuntimePlan, inputs: Vec<RuntimeStepInput>) -> Vec<ParityStep> {
     run_parity_with_options(
         plan,
@@ -95,6 +111,7 @@ fn run_parity_with_options(
     options: RuntimeStepOptions,
     inputs: Vec<RuntimeStepInput>,
 ) -> Vec<ParityStep> {
+    let plan = with_parity_entry(plan);
     let display = LineDisplayCatalog::default();
     let awbc = AwbcLowerer::new(&plan, &display, "awbc_product_parity.arcw")
         .lower()
@@ -102,6 +119,9 @@ fn run_parity_with_options(
         .program;
     let mut structured =
         ArcweftRuntimeExecutor::from_runtime_plan(plan, ArcweftExecutionTier::StructuredVm);
+    structured
+        .start_structured_entry(&parity_entry_id())
+        .expect("structured parity entry starts explicitly");
     let mut awbc =
         ArcweftRuntimeExecutor::from_awbc_product(awbc, arcweft_core::awbc::schema::AwbcEntryId(0))
             .expect("AWBC product executor builds");
@@ -251,17 +271,14 @@ fn normalized_status(status: &FlowFiberStatus) -> FlowFiberStatus {
 }
 
 fn flow(ops: Vec<FlowOp>) -> RuntimePlan {
-    flows(
-        "flow.main",
-        vec![RuntimeFlow {
-            id: flow_id("flow.main"),
-            ops,
-        }],
-    )
+    flows(vec![RuntimeFlow {
+        id: flow_id("flow.main"),
+        ops,
+    }])
 }
 
-fn flows(entry: &str, flows: Vec<RuntimeFlow>) -> RuntimePlan {
-    RuntimePlan::new(Some(flow_id(entry)), flows, Vec::new()).expect("runtime plan builds")
+fn flows(flows: Vec<RuntimeFlow>) -> RuntimePlan {
+    RuntimePlan::new(flows, Vec::new()).expect("runtime plan builds")
 }
 
 fn input_event(kind: &str, payload: Option<&str>) -> RoutedInputEvent {
@@ -764,7 +781,6 @@ fn awbc_product_parity_for_range_dialogue_body_outputs() {
         ..LineTaskGroup::default()
     };
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
             id: flow_id("flow.main"),
             ops: vec![
@@ -836,7 +852,6 @@ fn awbc_product_parity_dialogue() {
         ..LineTaskGroup::default()
     };
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.main")),
         vec![RuntimeFlow {
             id: flow_id("flow.main"),
             ops: vec![
@@ -1306,22 +1321,19 @@ fn awbc_product_parity_control_effect_return() {
 fn awbc_product_parity_control_effect_goto() {
     let effect = LineEffectRequest::Goto("flow.next".to_owned());
     let steps = run_parity(
-        flows(
-            "flow.main",
-            vec![
-                RuntimeFlow {
-                    id: flow_id("flow.main"),
-                    ops: vec![
-                        FlowOp::Effect(effect.clone()),
-                        FlowOp::Return("unreachable".to_owned()),
-                    ],
-                },
-                RuntimeFlow {
-                    id: flow_id("flow.next"),
-                    ops: vec![FlowOp::Return("next-done".to_owned())],
-                },
-            ],
-        ),
+        flows(vec![
+            RuntimeFlow {
+                id: flow_id("flow.main"),
+                ops: vec![
+                    FlowOp::Effect(effect.clone()),
+                    FlowOp::Return("unreachable".to_owned()),
+                ],
+            },
+            RuntimeFlow {
+                id: flow_id("flow.next"),
+                ops: vec![FlowOp::Return("next-done".to_owned())],
+            },
+        ]),
         vec![RuntimeStepInput::default()],
     );
 
@@ -1346,24 +1358,21 @@ fn awbc_product_parity_control_effect_goto() {
 #[test]
 fn awbc_product_parity_dynamic_goto() {
     let steps = run_parity(
-        flows(
-            "flow.main",
-            vec![
-                RuntimeFlow {
-                    id: flow_id("flow.main"),
-                    ops: vec![
-                        FlowOp::GotoExpr(RuntimeExpr::Value(RuntimeValue::String(
-                            "flow.next".to_owned(),
-                        ))),
-                        FlowOp::Return("unreachable".to_owned()),
-                    ],
-                },
-                RuntimeFlow {
-                    id: flow_id("flow.next"),
-                    ops: vec![FlowOp::Return("next-done".to_owned())],
-                },
-            ],
-        ),
+        flows(vec![
+            RuntimeFlow {
+                id: flow_id("flow.main"),
+                ops: vec![
+                    FlowOp::GotoExpr(RuntimeExpr::Value(RuntimeValue::String(
+                        "flow.next".to_owned(),
+                    ))),
+                    FlowOp::Return("unreachable".to_owned()),
+                ],
+            },
+            RuntimeFlow {
+                id: flow_id("flow.next"),
+                ops: vec![FlowOp::Return("next-done".to_owned())],
+            },
+        ]),
         vec![RuntimeStepInput::default()],
     );
 
@@ -1470,20 +1479,22 @@ fn awbc_product_parity_source_evaluated_effect_uses_handler_binding() {
 
 #[test]
 fn awbc_product_parity_stream_for_next_binds_source_item() {
-    let plan = flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
-        vec![StreamPlan {
-            id: stream_id("passthrough"),
-            item_ty: "IteratorItem".to_owned(),
-            error_ty: "CaptureError".to_owned(),
-            ops: vec![StreamOp::ForNext {
-                pattern: RuntimePattern::Ident("frame".to_owned()),
-                source: RuntimeExpr::Local("frames".to_owned()),
-                body: vec![StreamOp::Yield {
-                    expr: RuntimeExpr::Local("frame".to_owned()),
+    let plan = with_parity_entry(
+        flow(vec![FlowOp::Return("done".to_owned())]).with_generation_plans(
+            vec![StreamPlan {
+                id: stream_id("passthrough"),
+                item_ty: "IteratorItem".to_owned(),
+                error_ty: "CaptureError".to_owned(),
+                ops: vec![StreamOp::ForNext {
+                    pattern: RuntimePattern::Ident("frame".to_owned()),
+                    source: RuntimeExpr::Local("frames".to_owned()),
+                    body: vec![StreamOp::Yield {
+                        expr: RuntimeExpr::Local("frame".to_owned()),
+                    }],
                 }],
             }],
-        }],
-        Vec::new(),
+            Vec::new(),
+        ),
     );
     let awbc = AwbcLowerer::new(
         &plan,

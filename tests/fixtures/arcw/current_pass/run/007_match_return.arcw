@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 flow @flow.main main {
     match 1i32 {
         1i32 => return "one"

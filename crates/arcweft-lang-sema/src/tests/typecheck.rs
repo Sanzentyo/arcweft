@@ -23,6 +23,48 @@ fn semantic_reference_types_preserve_borrow_kind() {
 }
 
 #[test]
+fn reduction_unchanged_is_a_typed_shared_borrow_constructor() {
+    let valid = parse_ok(
+        r"
+struct GameState {
+    score: i32
+}
+
+fn keep(state: &GameState) -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+",
+    );
+    let valid_hir = lower_to_hir(&valid).expect("Reduction constructor fixture lowers");
+    typecheck_hir(&valid_hir, &TypeCheckEnv::standard())
+        .expect("Reduction.unchanged preserves its shared state-borrow type");
+
+    let invalid = parse_ok(
+        r"
+struct GameState {
+    score: i32
+}
+
+fn keep(state: GameState) -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+",
+    );
+    let invalid_hir = lower_to_hir(&invalid).expect("invalid Reduction fixture lowers");
+    let errors = typecheck_hir(&invalid_hir, &TypeCheckEnv::standard())
+        .expect_err("Reduction.unchanged rejects an owned state value");
+    assert!(errors.iter().any(|error| {
+        error
+            .message()
+            .contains("`Reduction.unchanged` state must be a shared borrow")
+    }));
+}
+
+#[test]
 fn assignment_places_accept_mutable_deref_and_reject_borrow_expression() {
     let mutable = parse_ok(
         r"

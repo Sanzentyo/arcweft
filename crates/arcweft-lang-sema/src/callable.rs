@@ -52,9 +52,9 @@ pub use identity::{
     LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId, MathCallableId,
     OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId, ProjectCallablePath,
     ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId, ReceiverMethodKey,
-    ResultConstructorKind, RustItemPath, SpeakerCallableId, StandardEnvironmentId,
-    StdFloatCallableId, StdFloatOperation, TraitCallableId, TraitCallableSource,
-    TraitImplementationIndex, VectorDimensions,
+    ReductionConstructorKind, ResultConstructorKind, RustItemPath, SpeakerCallableId,
+    StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitCallableId,
+    TraitCallableSource, TraitImplementationIndex, VectorDimensions,
 };
 pub(crate) use limits::ResolverWork;
 pub use limits::{CallableLimits, PRODUCTION_CALLABLE_LIMITS, SignatureWorkReport};

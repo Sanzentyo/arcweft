@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 source @source.events: Source<Record, String> {
     from adapter.events()
     backpressure = latest

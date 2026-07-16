@@ -21,7 +21,7 @@ use crate::{
 pub struct EffectCollector {
     program: EffectProgram,
     current: Option<CallableId>,
-    known: BTreeMap<String, CallableId>,
+    known: BTreeMap<String, Option<CallableId>>,
     inferred_rows: BTreeMap<CallableId, EffectVar>,
     effect_vars: EffectVarSupply,
 }
@@ -50,7 +50,10 @@ impl EffectCollector {
         let source_name = source_name.into();
         self.program
             .insert(CallableFacts::new(id.clone(), kind, visibility).with_contract(contract))?;
-        self.known.insert(source_name, id);
+        self.known
+            .entry(source_name)
+            .and_modify(|existing| *existing = None)
+            .or_insert(Some(id));
         Ok(())
     }
 
@@ -74,7 +77,7 @@ impl EffectCollector {
 
     /// Returns the registered callable identity for a source-level name.
     pub(crate) fn registered_callable(&self, source_name: &str) -> Option<&CallableId> {
-        self.known.get(source_name)
+        self.known.get(source_name).and_then(Option::as_ref)
     }
 
     pub fn enter(&mut self, id: CallableId) -> Option<CallableId> {
@@ -98,7 +101,10 @@ impl EffectCollector {
         let Some(current) = self.current.clone() else {
             return;
         };
-        let Some(edge) = (match (self.known.get(source_name), external_effects) {
+        let Some(edge) = (match (
+            self.known.get(source_name).and_then(Option::as_ref),
+            external_effects,
+        ) {
             (Some(callee), _) => Some(CallEdge::local(callee.clone(), site)),
             (None, Some(effects)) => Some(CallEdge::external(
                 ExternalCallable::new(source_name, effects),

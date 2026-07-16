@@ -5,7 +5,11 @@ use std::{collections::HashSet, sync::Arc};
 use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_source::SourceSpan;
 
-use crate::{effect_row::EffectRow, types::TypeKind};
+use crate::{
+    effect_row::EffectRow,
+    env::{FunctionParam, FunctionSignature},
+    types::TypeKind,
+};
 
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
@@ -13,8 +17,8 @@ use super::{
     CallableSourceError, CapacityMethodId, CollectionMethodId, DataLastCallableId,
     DialogueCallableId, DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId,
     IntegerMethodId, LanguageDocumentationFamily, OptionConstructorKind, PresentationCallableId,
-    PresentationHandleMethodId, PromotionCallableId, ResultConstructorKind, RustItemPath,
-    RustProvenanceError, RustProvenanceField, TraitCallableId,
+    PresentationHandleMethodId, PromotionCallableId, ReductionConstructorKind,
+    ResultConstructorKind, RustItemPath, RustProvenanceError, RustProvenanceField, TraitCallableId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -451,6 +455,7 @@ pub enum CallableValidator {
     EnumConstructor(EnumVariantSignatureId),
     ResultConstructor(ResultConstructorKind),
     OptionConstructor(OptionConstructorKind),
+    ReductionConstructor(ReductionConstructorKind),
     Builtin(BuiltinCallableId),
     Agent(AgentIntrinsicSignatureId),
     Presentation(PresentationCallableId),
@@ -563,6 +568,49 @@ impl CallableSignatureSchema {
                 .zip(other.groups.iter())
                 .all(|(left, right)| left.semantic_eq(right))
     }
+
+    /// Whether this catalog schema exactly represents one source-level semantic signature.
+    pub(crate) fn matches_function_signature(&self, signature: &FunctionSignature) -> bool {
+        self.result == *signature.body_return_type()
+            && self.groups.len() == signature.remaining_call_groups().saturating_add(1)
+            && self.groups.iter().enumerate().all(|(index, group)| {
+                let parameters = if index == 0 {
+                    signature.params()
+                } else {
+                    signature
+                        .remaining_param_group(index - 1)
+                        .unwrap_or_default()
+                };
+                group.parameters().len() == parameters.len()
+                    && group
+                        .parameters()
+                        .iter()
+                        .zip(parameters)
+                        .all(|(catalog, source)| parameter_matches(catalog, source))
+            })
+    }
+}
+
+fn parameter_matches(catalog: &CallableParameter, source: &FunctionParam) -> bool {
+    let type_matches = match catalog.ty() {
+        CallableParameterType::Exact(ty) => ty == source.ty(),
+        CallableParameterType::Unchecked => false,
+    };
+    let passing_matches = match catalog.passing() {
+        CallableParameterPassing::PositionalOnly => source.name().is_none() && !source.is_rest(),
+        CallableParameterPassing::PositionalOrNamed => source.name().is_some() && !source.is_rest(),
+        CallableParameterPassing::RestPositional => source.is_rest(),
+        CallableParameterPassing::NamedOnly | CallableParameterPassing::RestNamed => false,
+    };
+    let presence_matches = match catalog.presence() {
+        CallableParameterPresence::Required => !source.has_default(),
+        CallableParameterPresence::Defaulted => source.has_default(),
+        CallableParameterPresence::Optional => false,
+    };
+    catalog.name().map(CallableName::as_str) == source.name()
+        && type_matches
+        && passing_matches
+        && presence_matches
 }
 
 impl CallableEffectSchema {

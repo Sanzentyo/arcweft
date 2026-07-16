@@ -1,4 +1,4 @@
-pub state GameState {
+pub struct GameState {
     pub route: Ref<Flow> = @flow.main
     pub current_bg: Option<ImageHandle> = None
 }

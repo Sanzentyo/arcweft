@@ -215,13 +215,13 @@ impl TypeChecker<'_> {
             return Some(ty);
         }
         if let Some(ty) = self.function_value_type(path) {
-            self.record_typed_lowering_evidence(TypedLoweringEvidence {
+            self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
                 expression_id,
-                kind: TypedLoweringEvidenceKind::FunctionValueReference {
+                TypedLoweringEvidenceKind::FunctionValueReference {
                     callee: path.to_owned(),
                     ty: ty.clone(),
                 },
-            });
+            ));
             return Some(ty);
         }
         if let Some(ty) = self.check_dotted_path_target(path) {

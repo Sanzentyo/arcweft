@@ -19,6 +19,10 @@ pub image @image.zundamon.stand.responsive {
     alignment.y = "bottom"
 }
 
+entry cli @entry.stand_top_right {
+    goto @flow.main
+}
+
 flow main {
     image(@image.zundamon.stand.responsive)
 }

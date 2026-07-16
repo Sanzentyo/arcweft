@@ -126,7 +126,7 @@ fn source_post_glow(
     )
 }
 
-entry game {
+entry cli @entry.rich_text_effects_animation {
     goto @flow.rich_text_effects_animation
 }
 

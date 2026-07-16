@@ -1,19 +1,25 @@
 use crate::effect::LineEffectRequest;
+use crate::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
 use crate::line_task::run_line_task_group_for_input;
 use crate::observation::RuntimeObservationState;
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{
-    ChoiceRuntimeOption, FlowEvent, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeMatchArm,
-    RuntimeMatchSelection, RuntimePlan,
+    ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
+    RuntimeFlow, RuntimeMatchArm, RuntimeMatchSelection, RuntimePlan,
 };
-use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
+use crate::pure::{RuntimeCallBackend, VmPureFunctionScratch, VmRuntimePureCallBackend};
+use crate::root::{
+    RootCallableEvaluationError, RootCallableEvaluator, RootEventInput, RootRuntime,
+    RootRuntimeError, RootStartupContract, RuntimeCommandEnvelope,
+};
 use crate::source::{
     RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
     SourcePolicy, SourceRuntimeState, normalize_source_events,
 };
 use crate::step::{
-    RuntimeDiagnostic, RuntimeHostCallId, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
-    RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats, RuntimeStepStopReason,
+    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepInput,
+    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
+    RuntimeStepStopReason,
 };
 use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
@@ -34,6 +40,7 @@ use crate::value::{
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, VecDeque};
+use thiserror::Error;
 pub mod aot;
 pub mod audio;
 pub mod eval;
@@ -48,6 +55,9 @@ pub mod suspend;
 pub struct Engine {
     plan: RuntimePlan,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
+    main_started: bool,
+    root: Option<RootRuntime>,
+    root_flow_binding: Option<RuntimeBinding>,
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
     run_child_next: bool,
@@ -160,6 +170,77 @@ pub enum FlowControlStackEntryKind {
 pub struct FlowCursor {
     pub flow_index: usize,
     pub op_index: usize,
+}
+
+/// Failure to select an explicit flow program before execution.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum EngineStartError {
+    #[error("runtime flow `{flow}` does not exist")]
+    MissingFlow { flow: String },
+    #[error("runtime entry `{entry}` does not exist")]
+    MissingEntry { entry: String },
+    #[error("runtime entry `{entry}` does not select one flow")]
+    EntryDoesNotSelectFlow { entry: String },
+    #[error("runtime engine already has a selected flow")]
+    AlreadyStarted,
+    #[error("runtime entry `{entry}` failed root startup validation: {message}")]
+    InvalidRootStartup { entry: String, message: String },
+}
+
+struct StructuredRootEvaluator<'a> {
+    plan: &'a RuntimePlan,
+    scratch: VmPureFunctionScratch,
+}
+
+impl<'a> StructuredRootEvaluator<'a> {
+    fn new(plan: &'a RuntimePlan) -> Self {
+        Self {
+            plan,
+            scratch: VmPureFunctionScratch::default(),
+        }
+    }
+}
+
+impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
+    fn evaluate_root_callable(
+        &mut self,
+        callable: &RuntimeCallableRole,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RootCallableEvaluationError> {
+        let executable = self
+            .plan
+            .callable_executables
+            .iter()
+            .find(|executable| {
+                executable.callable == callable.callable && executable.contract == callable.contract
+            })
+            .ok_or_else(|| {
+                RootCallableEvaluationError::new(format!(
+                    "missing executable callable `{}`",
+                    callable.callable.as_str()
+                ))
+            })?;
+        let RuntimeCallableExecutableCode::PureHelper(helper) = executable.code else {
+            return Err(RootCallableEvaluationError::new(format!(
+                "callable `{}` is not a pure root callable",
+                callable.callable.as_str()
+            )));
+        };
+        let helper = self
+            .plan
+            .pure_helpers
+            .iter()
+            .find(|candidate| candidate.id == helper)
+            .ok_or_else(|| {
+                RootCallableEvaluationError::new(format!(
+                    "callable `{}` maps to a missing pure helper",
+                    callable.callable.as_str()
+                ))
+            })?;
+        self.scratch
+            .evaluate_values(helper, args)
+            .map_err(|error| RootCallableEvaluationError::new(error.to_string()))
+    }
 }
 
 /// High-level flow status for the minimal runtime spine.
@@ -376,6 +457,11 @@ fn pure_helper_call_shapes(plan: &RuntimePlan) -> PureHelperCallShapes {
 }
 
 impl Engine {
+    /// Creates an engine without implicitly selecting a flow.
+    ///
+    /// Flow-bearing plans remain dormant until [`Self::start_flow`] or
+    /// [`Self::start_entry`] is called. Plans that contain only line tasks,
+    /// sources, or streams remain directly executable.
     pub fn new(plan: RuntimePlan) -> Self {
         let flow_positions: BTreeMap<_, _> = plan
             .flows
@@ -383,15 +469,7 @@ impl Engine {
             .enumerate()
             .map(|(index, flow)| (flow.id.clone(), index))
             .collect();
-        let cursor = plan.entry_flow.as_ref().and_then(|entry_flow| {
-            flow_positions
-                .get(entry_flow)
-                .copied()
-                .map(|flow_index| FlowCursor {
-                    flow_index,
-                    op_index: 0,
-                })
-        });
+        let main_started = plan.flows.is_empty();
         let status = if plan.is_empty() {
             FlowFiberStatus::Done(FlowExit::Done)
         } else {
@@ -416,9 +494,12 @@ impl Engine {
         Self {
             plan,
             flow_positions,
+            main_started,
+            root: None,
+            root_flow_binding: None,
             fiber: FlowFiber {
                 line_cursor: 0,
-                cursor,
+                cursor: None,
                 pending_ops: VecDeque::new(),
                 control_stack: Vec::new(),
                 root_cleanups: Vec::new(),
@@ -469,6 +550,121 @@ impl Engine {
         }
     }
 
+    /// Creates an engine and selects the requested flow exactly.
+    pub fn for_flow(plan: RuntimePlan, flow: &FlowRuntimeId) -> Result<Self, EngineStartError> {
+        let mut engine = Self::new(plan);
+        engine.start_flow(flow)?;
+        Ok(engine)
+    }
+
+    /// Creates an engine and selects the requested entry exactly.
+    pub fn for_entry(plan: RuntimePlan, entry: &EntryRuntimeId) -> Result<Self, EngineStartError> {
+        let mut engine = Self::new(plan);
+        engine.start_entry(entry)?;
+        Ok(engine)
+    }
+
+    /// Selects one flow before the first flow execution step.
+    pub fn start_flow(&mut self, flow: &FlowRuntimeId) -> Result<(), EngineStartError> {
+        if self.main_started {
+            return Err(EngineStartError::AlreadyStarted);
+        }
+        let flow_index = self
+            .flow_index(flow)
+            .ok_or_else(|| EngineStartError::MissingFlow {
+                flow: flow.canonical_label(),
+            })?;
+        self.fiber.cursor = Some(FlowCursor {
+            flow_index,
+            op_index: 0,
+        });
+        self.fiber.status = FlowFiberStatus::Running;
+        self.main_started = true;
+        Ok(())
+    }
+
+    /// Selects the single flow named by an exact entry identity.
+    pub fn start_entry(&mut self, entry: &EntryRuntimeId) -> Result<(), EngineStartError> {
+        if self.main_started {
+            return Err(EngineStartError::AlreadyStarted);
+        }
+        let target = self
+            .plan
+            .entries
+            .iter()
+            .find(|candidate| candidate.id == *entry)
+            .map(|candidate| candidate.target.clone())
+            .ok_or_else(|| EngineStartError::MissingEntry {
+                entry: entry.canonical_label(),
+            })?;
+        let flow = match target {
+            RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => flow,
+            RuntimeEntryTarget::Routes(_) => {
+                return Err(EngineStartError::EntryDoesNotSelectFlow {
+                    entry: entry.canonical_label(),
+                });
+            }
+        };
+        if matches!(
+            self.plan
+                .entries
+                .iter()
+                .find(|candidate| candidate.id == *entry)
+                .map(|candidate| &candidate.roles),
+            Some(crate::entry::RuntimeEntryRoles::Stateful(_))
+        ) {
+            let contract =
+                RootStartupContract::from_runtime_plan(&self.plan, entry).map_err(|error| {
+                    EngineStartError::InvalidRootStartup {
+                        entry: entry.canonical_label(),
+                        message: error.to_string(),
+                    }
+                })?;
+            let mut evaluator = StructuredRootEvaluator::new(&self.plan);
+            let startup = RootRuntime::start(contract, &mut evaluator).map_err(|error| {
+                EngineStartError::InvalidRootStartup {
+                    entry: entry.canonical_label(),
+                    message: error.to_string(),
+                }
+            })?;
+            let flow_index = self.flow_index(&startup.initial_flow).ok_or_else(|| {
+                EngineStartError::MissingFlow {
+                    flow: startup.initial_flow.canonical_label(),
+                }
+            })?;
+            self.fiber.cursor = Some(FlowCursor {
+                flow_index,
+                op_index: 0,
+            });
+            self.fiber.status = FlowFiberStatus::Running;
+            self.fiber.env.set_root(
+                startup.initial_state_binding.name.clone(),
+                startup.initial_state_binding.value.clone(),
+            );
+            self.root_flow_binding = Some(startup.initial_state_binding);
+            self.root = Some(startup.root);
+            self.main_started = true;
+            return Ok(());
+        }
+        self.start_flow(&flow)
+    }
+
+    #[must_use]
+    pub const fn root(&self) -> Option<&RootRuntime> {
+        self.root.as_ref()
+    }
+
+    pub fn acknowledge_root_commands(
+        &mut self,
+        accepted: &[RuntimeCommandEnvelope],
+    ) -> Result<(), RootRuntimeError> {
+        match self.root.as_mut() {
+            Some(root) => root.acknowledge_published_commands(accepted),
+            None if accepted.is_empty() => Ok(()),
+            None => Err(RootRuntimeError::CommandAcknowledgementMismatch),
+        }
+    }
+
     pub const fn fiber(&self) -> &FlowFiber {
         &self.fiber
     }
@@ -514,10 +710,43 @@ impl Engine {
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.pending_ops_len();
+        let root_events_in = input.root_events.len();
+        let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
+        let protected_root_flow_binding = self.root_flow_binding.as_ref().and_then(|binding| {
+            self.fiber
+                .env
+                .get_cloned(&binding.name)
+                .map(|value| RuntimeBinding {
+                    name: binding.name.clone(),
+                    value,
+                })
+        });
         self.fiber.env.bind_all_root_ref(root_bindings);
         self.fiber
             .env
             .bind_all_root(std::mem::take(&mut input.bindings));
+        if let Some(binding) = protected_root_flow_binding {
+            self.fiber.env.set_root(binding.name, binding.value);
+        }
+        if !self.run_root_phase(std::mem::take(&mut input.root_events), &mut output) {
+            let stats = RuntimeStepStats {
+                executed_ops,
+                pending_ops_before,
+                pending_ops_after: self.pending_ops_len(),
+                child_fibers: self.child_fibers.len(),
+                pure: pure_backend.stats().saturating_delta(pure_stats_before),
+                root_events_in,
+                root_transitions: output.root_transitions.len(),
+                root_commands: output.root_commands.len(),
+                diagnostics: output.diagnostics.len(),
+                ..RuntimeStepStats::default()
+            };
+            return self.step_result(output, options, stats);
+        }
+        output
+            .requests
+            .root_events_next_step
+            .extend(deferred_root_events);
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         let task_events_in = events.len();
@@ -547,6 +776,10 @@ impl Engine {
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in,
             source_events_in,
+            root_events_in,
+            root_transitions: output.root_transitions.len(),
+            root_commands: output.root_commands.len(),
+            root_events_deferred: output.requests.root_events_next_step.len(),
             source_events_emitted: output.effects.source_events.len(),
             stream_events_emitted: output.effects.stream_events.len(),
             line_effects: output.effects.line.len(),
@@ -554,6 +787,65 @@ impl Engine {
             diagnostics: output.diagnostics.len(),
         };
         self.step_result(output, options, stats)
+    }
+
+    fn run_root_phase(
+        &mut self,
+        events: Vec<RootEventInput>,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let Some(root) = self.root.as_mut() else {
+            if events.is_empty() {
+                return true;
+            }
+            let message = "non-stateful runtime entry cannot accept root events".to_owned();
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Input,
+                message,
+            ));
+            return false;
+        };
+        let result = {
+            let mut evaluator = StructuredRootEvaluator::new(&self.plan);
+            root.step(events, &mut evaluator)
+        };
+        match result {
+            Ok(result) => {
+                let failed = result.failed;
+                output.root_transitions.extend(result.outcomes);
+                output.root_commands.extend(result.commands);
+                if failed {
+                    let message = root
+                        .failure()
+                        .map_or_else(|| "root reducer trapped".to_owned(), ToString::to_string);
+                    self.fiber.status = FlowFiberStatus::Failed(message);
+                    false
+                } else {
+                    true
+                }
+            }
+            Err(error) => {
+                let step_input_rejection = matches!(
+                    &error,
+                    RootRuntimeError::InvalidEvent(_)
+                        | RootRuntimeError::EventQueueLimit { .. }
+                        | RootRuntimeError::TransitionSequenceExhausted
+                );
+                let category = if step_input_rejection {
+                    RuntimeDiagnosticCategory::Input
+                } else {
+                    RuntimeDiagnosticCategory::Internal
+                };
+                let message = error.to_string();
+                output
+                    .diagnostics
+                    .push(RuntimeDiagnostic::categorized(category, message.clone()));
+                if !step_input_rejection {
+                    self.fiber.status = FlowFiberStatus::Failed(message);
+                }
+                false
+            }
+        }
     }
 
     fn can_attempt_runtime_op(&self) -> bool {
@@ -590,10 +882,11 @@ impl Engine {
     }
 
     fn main_fiber_can_attempt_runtime_op(&self) -> bool {
-        !matches!(
-            self.fiber.status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        )
+        self.main_started
+            && !matches!(
+                self.fiber.status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+            )
     }
 
     pub(super) fn has_active_child_fibers(&self) -> bool {

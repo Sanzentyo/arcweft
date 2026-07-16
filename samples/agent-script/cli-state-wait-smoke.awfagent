@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.cli.state_wait state_wait()
+fn state_wait() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait, debug.read }
 {
     let route = state_path("route.phase")
@@ -13,5 +12,9 @@ effects { agent.observe, agent.wait, debug.read }
         stable_frames = 1u32,
         poll_frames = 1u32,
     )
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = state_wait
 }

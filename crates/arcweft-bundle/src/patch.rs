@@ -1414,6 +1414,16 @@ fn awbc_executable_compatibility(
     }
     let old_functions = awbc_function_fingerprints(&old)?;
     let new_functions = awbc_function_fingerprints(&new)?;
+    let old_executable =
+        old.executable_identity()
+            .map_err(|error| PatchBundleError::Compatibility {
+                message: error.to_string(),
+            })?;
+    let new_executable =
+        new.executable_identity()
+            .map_err(|error| PatchBundleError::Compatibility {
+                message: error.to_string(),
+            })?;
     if old_functions
         .keys()
         .any(|id| !new_functions.contains_key(id))
@@ -1433,6 +1443,7 @@ fn awbc_executable_compatibility(
             .get(id)
             .is_some_and(|new| old.body != new.body)
     }) || old_functions.len() != new_functions.len()
+        || old_executable != new_executable
     {
         Ok(PatchCompatibility::CodeCompatible)
     } else {

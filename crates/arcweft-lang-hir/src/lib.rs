@@ -7,6 +7,7 @@
 pub mod assertion;
 pub mod cache_facts;
 mod dialogue_identity;
+pub mod entry;
 pub mod fx;
 pub mod id_context;
 pub mod identity;

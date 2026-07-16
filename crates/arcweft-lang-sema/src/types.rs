@@ -1,10 +1,14 @@
-use crate::effect_row::{EffectRow, EffectRowTail};
+use crate::{
+    effect_row::{EffectRow, EffectRowTail},
+    effects::EffectSet,
+};
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_syntax::{
     expr::{IntSuffix, LifetimeScopeKind},
     reference::BorrowKind,
+    types::TypeRef,
 };
-use core::fmt;
+use core::fmt::{self, Write as _};
 
 mod character_nominal;
 mod mismatch;
@@ -252,6 +256,242 @@ impl From<IntSuffix> for TypeKind {
             IntSuffix::U128 => Self::U128,
             IntSuffix::USize => Self::USize,
         }
+    }
+}
+
+impl From<&TypeRef> for TypeKind {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the exhaustive surface-TypeRef projection is one closed conversion boundary"
+    )]
+    fn from(ty: &TypeRef) -> Self {
+        match ty {
+            TypeRef::Never => Self::Never,
+            TypeRef::ConstInt(value) => Self::Named(value.to_string()),
+            TypeRef::Path(path) => {
+                Self::primitive_name(path).unwrap_or_else(|| Self::Named(path.clone()))
+            }
+            TypeRef::Tuple(items) => Self::Tuple(items.iter().map(Self::from).collect()),
+            TypeRef::Function {
+                params,
+                return_type,
+                effects,
+            } => Self::function_with_effects(
+                params.iter().map(Self::from),
+                Self::from(return_type.as_ref()),
+                effects.as_ref().map_or_else(EffectRow::unknown, |effects| {
+                    EffectSet::from_labels(effects.effects())
+                        .map_or_else(|_| EffectRow::unknown(), EffectRow::closed)
+                }),
+            ),
+            TypeRef::Choice(alternatives) => {
+                let mut flattened = alternatives
+                    .iter()
+                    .map(Self::from)
+                    .flat_map(|ty| match ty {
+                        Self::Choice(alternatives) => alternatives,
+                        ty => vec![ty],
+                    })
+                    .collect::<Vec<_>>();
+                flattened.sort_by_key(Self::source_label);
+                flattened.dedup();
+                match flattened.as_slice() {
+                    [single] => single.clone(),
+                    _ => Self::Choice(flattened),
+                }
+            }
+            TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
+                Self::Vec(Box::new(Self::from(&args[0])))
+            }
+            TypeRef::Generic { base, args } if base == "Array" && args.len() == 2 => Self::Array {
+                item: Box::new(Self::from(&args[0])),
+                len: canonical_type_ref_label(&args[1]),
+            },
+            TypeRef::Generic { base, args } if base == "Seq" && args.len() == 1 => {
+                Self::Seq(Box::new(Self::from(&args[0])))
+            }
+            TypeRef::Generic { base, args }
+                if matches!(base.as_str(), "OrderedMap" | "SortedMap" | "BTreeMap")
+                    && args.len() == 2 =>
+            {
+                Self::Map {
+                    kind: match base.as_str() {
+                        "OrderedMap" => MapKind::Ordered,
+                        "SortedMap" => MapKind::Sorted,
+                        "BTreeMap" => MapKind::BTree,
+                        _ => unreachable!("map names are filtered by the match guard"),
+                    },
+                    key: Box::new(Self::from(&args[0])),
+                    value: Box::new(Self::from(&args[1])),
+                }
+            }
+            TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+                Self::Result {
+                    ok: Box::new(Self::from(&args[0])),
+                    error: Box::new(Self::from(&args[1])),
+                }
+            }
+            TypeRef::Generic { base, args } if base == "ArcResult" && args.len() == 1 => {
+                Self::Result {
+                    ok: Box::new(Self::from(&args[0])),
+                    error: Box::new(Self::Named("ArcError".to_owned())),
+                }
+            }
+            TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
+                Self::Option(Box::new(Self::from(&args[0])))
+            }
+            TypeRef::Generic { base, args } if base == "Speaker" && args.len() == 1 => {
+                entity_kind_from_type_ref(&args[0])
+                    .map_or_else(|| Self::Named(canonical_type_ref_label(ty)), Self::Speaker)
+            }
+            TypeRef::Generic { base, args } if base == "SpeakerPreset" && args.len() == 1 => {
+                entity_kind_from_type_ref(&args[0]).map_or_else(
+                    || Self::Named(canonical_type_ref_label(ty)),
+                    Self::SpeakerPreset,
+                )
+            }
+            TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => Self::Need {
+                ready: Box::new(Self::from(&args[0])),
+                error: Box::new(Self::from(&args[1])),
+            },
+            TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
+                Self::Stream {
+                    item: Box::new(Self::from(&args[0])),
+                    error: Box::new(Self::from(&args[1])),
+                }
+            }
+            TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+                Self::Source {
+                    item: Box::new(Self::from(&args[0])),
+                    error: Box::new(Self::from(&args[1])),
+                }
+            }
+            TypeRef::Projection { subject, assoc } => Self::Projection {
+                subject: Box::new(Self::from(subject.as_ref())),
+                trait_name: None,
+                assoc: assoc.clone(),
+            },
+            TypeRef::TraitBound(bound) => Self::primitive_name(bound.path())
+                .unwrap_or_else(|| Self::Named(bound.path().to_owned())),
+            TypeRef::Reference(reference) => Self::BorrowRef {
+                kind: reference.kind(),
+                lifetime: reference
+                    .region()
+                    .name()
+                    .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
+                inner: Box::new(Self::from(reference.referent())),
+            },
+            TypeRef::Slice(inner) => {
+                if let TypeRef::Path(path) = inner.as_ref()
+                    && let Some((item, len)) = path.split_once(';')
+                {
+                    return Self::Array {
+                        item: Box::new(
+                            Self::primitive_name(item.trim())
+                                .unwrap_or_else(|| Self::Named(item.trim().to_owned())),
+                        ),
+                        len: len.trim().to_owned(),
+                    };
+                }
+                Self::Slice(Box::new(Self::from(inner.as_ref())))
+            }
+            TypeRef::Generic { .. } => Self::Named(canonical_type_ref_label(ty)),
+        }
+    }
+}
+
+fn entity_kind_from_type_ref(ty: &TypeRef) -> Option<EntityKind> {
+    let TypeRef::Path(name) = ty else {
+        return None;
+    };
+    EntityKind::from_type_name(name)
+}
+
+fn canonical_type_ref_label(ty: &TypeRef) -> String {
+    match ty {
+        TypeRef::Never => "Never".to_owned(),
+        TypeRef::ConstInt(value) => value.to_string(),
+        TypeRef::Path(path) => path.clone(),
+        TypeRef::Tuple(items) => format!(
+            "({})",
+            items
+                .iter()
+                .map(canonical_type_ref_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeRef::Function {
+            params,
+            return_type,
+            effects,
+        } => {
+            let params = if params.len() == 1 {
+                canonical_type_ref_label(&params[0])
+            } else {
+                format!(
+                    "({})",
+                    params
+                        .iter()
+                        .map(canonical_type_ref_label)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            let mut label = format!("{params} -> {}", canonical_type_ref_label(return_type));
+            if let Some(effects) = effects {
+                let row = if effects.effects().is_empty() {
+                    "{ }".to_owned()
+                } else {
+                    format!("{{ {} }}", effects.effects().join(", "))
+                };
+                write!(&mut label, " effects {row}")
+                    .expect("writing canonical type text to String cannot fail");
+            }
+            label
+        }
+        TypeRef::Choice(alternatives) => alternatives
+            .iter()
+            .map(canonical_type_ref_label)
+            .collect::<Vec<_>>()
+            .join(" | "),
+        TypeRef::Generic { base, args } => format!(
+            "{base}<{}>",
+            args.iter()
+                .map(canonical_type_ref_label)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        TypeRef::TraitBound(bound) => {
+            let mut args = bound
+                .args()
+                .iter()
+                .map(canonical_type_ref_label)
+                .collect::<Vec<_>>();
+            args.extend(bound.assoc_bindings().iter().map(|binding| {
+                format!(
+                    "{} = {}",
+                    binding.name(),
+                    canonical_type_ref_label(binding.value())
+                )
+            }));
+            format!("{}<{}>", bound.path(), args.join(", "))
+        }
+        TypeRef::Projection { subject, assoc } => {
+            format!("{}::{assoc}", canonical_type_ref_label(subject))
+        }
+        TypeRef::Reference(reference) => {
+            let lifetime = reference
+                .region()
+                .name()
+                .map(|lifetime| format!("'{} ", lifetime.name()))
+                .unwrap_or_default();
+            format!(
+                "&{lifetime}{}{}",
+                reference.kind().source_qualifier(),
+                canonical_type_ref_label(reference.referent())
+            )
+        }
+        TypeRef::Slice(inner) => format!("[{}]", canonical_type_ref_label(inner)),
     }
 }
 

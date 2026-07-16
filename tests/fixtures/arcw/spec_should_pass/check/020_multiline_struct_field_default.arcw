@@ -1,4 +1,4 @@
-pub state GameState {
+pub struct GameState {
     pub config: Config = Config {
         text_speed = 1.0f32,
         volume = 0.8f32,

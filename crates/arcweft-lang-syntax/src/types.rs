@@ -709,7 +709,12 @@ fn take_angle_group(source: &str) -> Option<(&str, &str)> {
     Some((&source[1..close], &source[close + 1..]))
 }
 
-fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, TypeParseError> {
+/// Parses the comma-separated contents of one generic parameter list.
+///
+/// The surrounding `<` and `>` are owned by the declaration parser. Keeping
+/// this parser shared ensures nominal declarations and function signatures
+/// retain the same typed generic-parameter model.
+pub(crate) fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, TypeParseError> {
     split_top_level_punctuation(source, ',')
         .into_iter()
         .map(|param| {

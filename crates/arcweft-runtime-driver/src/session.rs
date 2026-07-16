@@ -21,7 +21,7 @@ use crate::session_save::{
 };
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
-    SwapSession, classify_swap,
+    SwapSession, classify_swap_for_entry,
 };
 use crate::task::{
     HostTaskDispatch, RuntimeTaskCancelOutcome, RuntimeTaskCancelTarget, RuntimeTaskListOptions,
@@ -47,7 +47,7 @@ use arcweft_bundle::resource_codec::{
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
-    schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram},
+    schema::{AwbcEntryId, AwbcProgram},
 };
 use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::LineEffectRequest;
@@ -56,8 +56,9 @@ use arcweft_core::executor::{
     ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
 };
 use arcweft_core::observation::RuntimeObservationState;
-use arcweft_core::plan::{FlowEvent, RuntimePlanError};
+use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimePlanError};
 use arcweft_core::pure::VmRuntimePureCallBackend;
+use arcweft_core::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use arcweft_core::source::{RuntimeSourceEvent, SourceId};
 use arcweft_core::step::{
     RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallId, RuntimeHostCallRequest,
@@ -91,24 +92,38 @@ mod fx;
 mod hot_swap;
 mod lifecycle;
 mod persistence;
+mod replay;
+mod root_command;
 mod text_control;
 mod virtualization;
 
 pub use self::environment::{
     PresentationEnvironmentUpdate, PresentationEnvironmentUpdateError, SessionEnvironmentState,
 };
+pub use self::replay::{
+    ROOT_REPLAY_ENGINE_IDENTITY, ROOT_REPLAY_SCHEMA_VERSION, RecordedExternalOutcome,
+    RecordedExternalOutcomePositionV1, RecordedExternalOutcomeResultV1,
+    RecordedHostCallErrorKindV1, RecordedRootOutcomeV1, RecordedRootTransitionV1, RootReplayError,
+    RootReplayRecorderV1, RootReplayRecordingError, RootReplayReportV1, RootReplayTraceV1,
+};
+pub use self::root_command::{
+    RootCommandHostArgument, RootCommandHostCallBinding, RootCommandHostCallCatalog,
+    RootCommandHostCallCatalogError, RootCommandHostCallEndpoint, RootCommandHostResultRoute,
+};
 pub use self::virtualization::BundleVirtualListMountError;
-use construction::{SessionRuntime, build_session_runtime};
+use construction::{
+    SessionRuntime, build_session_runtime, build_session_runtime_preserving_executor,
+};
 use text_control::apply_text_control_write_back_to_controls;
 
 /// Host-selected options for a portable bundle session.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BundleSessionOptions {
-    pub entry: Option<String>,
-    pub flow: Option<String>,
+    pub entry: Option<EntryRuntimeId>,
     pub mode: RuntimeStepMode,
     pub max_ops: usize,
     pub root_bindings: Vec<RuntimeBinding>,
+    pub root_command_host_calls: RootCommandHostCallCatalog,
     /// Complete host provider snapshot, or `None` when no provider is available.
     pub presentation_environment: Option<PresentationEnvironmentValues>,
 }
@@ -117,10 +132,10 @@ impl Default for BundleSessionOptions {
     fn default() -> Self {
         Self {
             entry: None,
-            flow: None,
             mode: RuntimeStepMode::Game,
             max_ops: 64,
             root_bindings: Vec::new(),
+            root_command_host_calls: RootCommandHostCallCatalog::default(),
             presentation_environment: None,
         }
     }
@@ -130,11 +145,15 @@ impl Default for BundleSessionOptions {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BundleStepInput {
     pub bindings: Vec<RuntimeBinding>,
+    pub root_events: Vec<RootEventInput>,
+    /// Typed later-phase/Agent events that become root ingress next step.
+    pub deferred_root_events: Vec<RootEventInput>,
     pub presentation_inputs: Vec<BundlePresentationInput>,
     pub input_events: Vec<RoutedInputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
+    pub host_call_results: Vec<RuntimeHostCallResult>,
 }
 
 /// Runtime-ready input after pending host work and presentation routing are resolved.
@@ -143,6 +162,7 @@ struct PreparedBundleStepInput {
     routed_input_events: Vec<RoutedInputEvent>,
     presentation_transitions: Vec<BundlePresentationTransition>,
     text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
+    diagnostics: Vec<String>,
 }
 
 /// One deterministic VM step plus the host work and presentation state it emitted.
@@ -158,6 +178,10 @@ pub struct BundleSessionStep {
     pub diagnostics: Vec<String>,
     pub observations: RuntimeObservationState,
     pub flow_events: Vec<FlowEvent>,
+    pub root_transitions: Vec<RootTransitionOutcome>,
+    pub root_commands: Vec<RuntimeCommandEnvelope>,
+    pub deferred_root_events: Vec<RootEventInput>,
+    pub requested_host_calls: Vec<RuntimeHostCallRequest>,
     pub line_effects: Vec<LineEffectRequest>,
     pub presentation_transitions: Vec<BundlePresentationTransition>,
     pub presentation: BundlePresentationSnapshot,
@@ -245,6 +269,8 @@ pub struct BundleSession {
     pending_presentation_inputs: Vec<BundlePresentationInput>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pending_host_call_results: Vec<RuntimeHostCallResult>,
+    pending_deferred_root_events: Vec<RootEventInput>,
+    pending_root_command_results: BTreeMap<RuntimeHostCallId, RootCommandHostResultRoute>,
     waiting_action_receive_calls: Vec<PendingActionReceiveCall>,
     presentation: BundlePresentationSnapshot,
     view_virtualization: ViewVirtualizationRuntime,
@@ -269,14 +295,16 @@ struct PendingActionReceiveCall {
 pub enum BundleSessionError {
     #[error("bundle kind `{0:?}` is not supported by the game session")]
     UnsupportedBundleKind(BundleKind),
-    #[error("entry and flow are mutually exclusive")]
-    ConflictingEntrySelection,
-    #[error("unknown flow `{flow}`")]
-    UnknownFlow { flow: String },
+    #[error("an exact entry selection is required to start a bundle session")]
+    MissingEntrySelection,
+    #[error("invalid canonical entry selection `{entry}`: {message}")]
+    InvalidEntrySelection { entry: String, message: String },
     #[error("unknown entry `{entry}`")]
     UnknownEntry { entry: String },
     #[error("entry `{entry}` does not select a single runnable flow")]
     NonFlowEntry { entry: String },
+    #[error(transparent)]
+    RootCommandHostCatalog(#[from] RootCommandHostCallCatalogError),
     #[error("failed to decode bundle bytecode: {0}")]
     DecodeBytecode(#[from] RuntimePlanError),
     #[error("failed to verify bundle bytecode: {0}")]
@@ -315,6 +343,8 @@ pub enum BundleEntryStartError {
     GenerationRuntime(#[from] GenerationRuntimeError),
     #[error(transparent)]
     ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
+    #[error(transparent)]
+    RootCommandHostCatalog(#[from] RootCommandHostCallCatalogError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -354,6 +384,19 @@ pub enum BundleHotSwapError {
     RestartRequired { compatibility: SwapCompatibility },
     #[error("failed to build replacement session runtime: {0}")]
     Session(#[from] BundleSessionError),
+    #[error("failed to inspect active entry for hot swap: {message}")]
+    ActiveEntry { message: String },
+    #[error(
+        "hot swap requires empty root work queues (reducer_active={reducer_active}, \
+         pending_events={pending_events}, pending_commands={pending_commands}, \
+         pending_command_results={pending_command_results})"
+    )]
+    PendingRootWork {
+        reducer_active: bool,
+        pending_events: usize,
+        pending_commands: u32,
+        pending_command_results: usize,
+    },
     #[error("failed to decode AWFB patch bundle: {0}")]
     DecodePatch(#[source] PatchBundleError),
     #[error("invalid AWFB patch artifact: {0}")]
@@ -440,30 +483,6 @@ impl RuntimeInputKind {
     fn event_kind(self) -> InputEventKind {
         InputEventKind::Custom {
             name: Identifier::new(self.as_str()).expect("static runtime input name is non-empty"),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RuntimeEntityFamily {
-    Entry,
-    Flow,
-}
-
-impl RuntimeEntityFamily {
-    const fn prefix(self) -> &'static str {
-        match self {
-            Self::Entry => "entry",
-            Self::Flow => "flow",
-        }
-    }
-
-    fn selector(self, value: &str) -> String {
-        let value = value.trim().trim_start_matches('@');
-        if value.contains('.') {
-            value.to_owned()
-        } else {
-            format!("{}.{value}", self.prefix())
         }
     }
 }
@@ -629,6 +648,7 @@ impl BundleSession {
             routed_input_events,
             presentation_transitions,
             text_control_write_backs,
+            diagnostics: input_diagnostics,
         } = self.prepare_step_input(clock, input);
         let mut pure_backend = VmRuntimePureCallBackend::default();
         let result = self.executor.step_with_root_bindings_and_pure_backend(
@@ -645,6 +665,11 @@ impl BundleSession {
         self.swap.finish_runtime_step();
 
         let mut output = result.output;
+        let root_transitions = std::mem::take(&mut output.root_transitions);
+        let root_commands = std::mem::take(&mut output.root_commands);
+        let deferred_root_events = std::mem::take(&mut output.requests.root_events_next_step);
+        self.pending_deferred_root_events
+            .extend(deferred_root_events.iter().cloned());
         let flow_events = std::mem::take(&mut output.flow_events);
         let line_effects = std::mem::take(&mut output.effects.line);
         let display = resolve_display_frames(&self.display, &flow_events);
@@ -653,12 +678,15 @@ impl BundleSession {
             .into_iter()
             .map(|diagnostic| diagnostic.message)
             .collect::<Vec<_>>();
+        diagnostics.extend(input_diagnostics);
         diagnostics.extend(
             presentation_transitions
                 .iter()
                 .filter_map(presentation_transition_diagnostic),
         );
         diagnostics.extend(display.diagnostics.iter().cloned());
+        let mut requested_host_calls =
+            self.publish_and_acknowledge_root_commands(&root_commands, &mut diagnostics);
         let previous_text_inputs = self.presentation.text_inputs.clone();
         self.update_presentation_snapshot(
             &display,
@@ -676,28 +704,15 @@ impl BundleSession {
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
-        self.capture_view_host_calls(
+        requested_host_calls.extend(self.capture_view_host_calls(
             output.requests.host_calls,
             &routed_input_events,
             &text_control_write_backs,
-            &mut diagnostics,
-        );
+        ));
         let cancel_scopes = output.requests.cancel_scopes;
-        for scope in &cancel_scopes {
-            self.tasks
-                .cancel(&RuntimeTaskCancelTarget::Scope(scope.0.clone()));
-        }
+        self.apply_task_cancellations(&cancel_scopes);
         let audio_commands = output.requests.audio;
-        let finished = matches!(
-            &result.fiber_status,
-            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
-        );
-        if finished {
-            self.runtime_generation_pin = None;
-            self.retire_unused_generations();
-        }
-        let index = self.next_step_index;
-        self.next_step_index = self.next_step_index.saturating_add(1);
+        let (index, finished) = self.finish_step_lifecycle(&result.fiber_status);
 
         BundleSessionStep {
             index,
@@ -712,6 +727,10 @@ impl BundleSession {
             diagnostics,
             observations,
             flow_events,
+            root_transitions,
+            root_commands,
+            deferred_root_events,
+            requested_host_calls,
             line_effects,
             presentation_transitions,
             presentation: self.presentation.clone(),
@@ -724,11 +743,41 @@ impl BundleSession {
         }
     }
 
+    fn finish_step_lifecycle(&mut self, fiber_status: &FlowFiberStatus) -> (usize, bool) {
+        let finished = matches!(
+            fiber_status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        );
+        if finished {
+            self.runtime_generation_pin = None;
+            self.retire_unused_generations();
+        }
+        let index = self.next_step_index;
+        self.next_step_index = self.next_step_index.saturating_add(1);
+        (index, finished)
+    }
+
+    fn apply_task_cancellations(&mut self, cancel_scopes: &[CancelScopeId]) {
+        for scope in cancel_scopes {
+            self.tasks
+                .cancel(&RuntimeTaskCancelTarget::Scope(scope.0.clone()));
+        }
+    }
+
     fn prepare_step_input(
         &mut self,
         clock: RuntimeClockStep,
         mut input: BundleStepInput,
     ) -> PreparedBundleStepInput {
+        let mut diagnostics = Vec::new();
+        let mut root_events = std::mem::take(&mut self.pending_deferred_root_events);
+        root_events.append(&mut input.root_events);
+        input.root_events = root_events;
+        let ordinary_host_call_results = self.route_host_call_results(
+            input.host_call_results,
+            &mut input.root_events,
+            &mut diagnostics,
+        );
         input.task_events.extend(self.tasks.drain_task_events());
         let task_events = self.tasks.apply_task_events(input.task_events);
         self.release_completed_task_generation_pins(&task_events);
@@ -745,15 +794,22 @@ impl BundleSession {
                 tick: clock.tick(),
                 dt: clock.dt(),
                 bindings: input.bindings,
+                root_events: input.root_events,
+                deferred_root_events: input.deferred_root_events,
                 input_events: input.input_events,
                 task_events,
                 audio_events: input.audio_events,
                 source_events: input.source_events,
-                host_call_results: std::mem::take(&mut self.pending_host_call_results),
+                host_call_results: self
+                    .pending_host_call_results
+                    .drain(..)
+                    .chain(ordinary_host_call_results)
+                    .collect(),
             },
             routed_input_events,
             presentation_transitions,
             text_control_write_backs,
+            diagnostics,
         }
     }
 
@@ -1036,8 +1092,8 @@ impl BundleSession {
         requests: Vec<RuntimeHostCallRequest>,
         step_input_events: &[RoutedInputEvent],
         text_control_write_backs: &[RuntimeTextControlWriteBack],
-        diagnostics: &mut Vec<String>,
-    ) {
+    ) -> Vec<RuntimeHostCallRequest> {
+        let mut external = Vec::new();
         for request in requests {
             if request.capability == "view.action" && request.operation == "await" {
                 match action_receive_action_id(&request) {
@@ -1071,12 +1127,10 @@ impl BundleSession {
                     }),
                 }
             } else {
-                diagnostics.push(format!(
-                    "unsupported runtime host call {}.{}",
-                    request.capability, request.operation
-                ));
+                external.push(request);
             }
         }
+        external
     }
 
     fn release_completed_task_generation_pins(&mut self, task_events: &[TaskEvent]) {

@@ -1089,7 +1089,6 @@ fn put_hir_facts(writer: &mut BinaryWriter, value: &HirBodyFactsObject) {
     writer.put_u64(value.attribute_count);
     writer.put_u64(value.flow_count);
     writer.put_u64(value.function_count);
-    writer.put_u64(value.agent_count);
     writer.put_u64(value.declaration_count);
     writer.put_u64(value.top_level_item_count);
     writer.put_u64(value.flow_item_count);
@@ -1109,7 +1108,6 @@ fn read_hir_facts(reader: &mut BinaryReader<'_>) -> Result<HirBodyFactsObject, A
         attribute_count: reader.read_u64("hir_facts.attribute_count")?,
         flow_count: reader.read_u64("hir_facts.flow_count")?,
         function_count: reader.read_u64("hir_facts.function_count")?,
-        agent_count: reader.read_u64("hir_facts.agent_count")?,
         declaration_count: reader.read_u64("hir_facts.declaration_count")?,
         top_level_item_count: reader.read_u64("hir_facts.top_level_item_count")?,
         flow_item_count: reader.read_u64("hir_facts.flow_item_count")?,
@@ -1222,7 +1220,6 @@ mod tests {
             attribute_count: 0,
             flow_count: 1,
             function_count: 0,
-            agent_count: 0,
             declaration_count: 0,
             top_level_item_count: 0,
             flow_item_count: 2,

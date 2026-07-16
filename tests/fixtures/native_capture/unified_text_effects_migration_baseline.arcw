@@ -88,7 +88,7 @@ fn source_drift(
     )
 }
 
-entry game {
+entry cli @entry.unified_text_effects_migration_baseline {
     goto @flow.unified_text_effects_migration_baseline
 }
 

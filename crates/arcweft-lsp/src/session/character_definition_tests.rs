@@ -513,6 +513,7 @@ name = "character-definition-test"
 
 [profiles.game]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 character_manifests = ["assets/akane.awchar"]
 "#,

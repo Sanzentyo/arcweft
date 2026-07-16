@@ -14,6 +14,7 @@ pub fn completions(
     document: Option<&DocumentSnapshot>,
 ) -> Vec<CompletionItem> {
     let mut items = profile_completions(&profile.context());
+    items.extend(crate::features::entry_roles::callable_completions(profile));
     items.extend(character_metadata_completions(profile));
     items.extend(enum_variant_completions(profile));
     items.extend(dialogue_view_completions(profile, document));
@@ -27,11 +28,16 @@ pub fn completions_at(
     position: Position,
 ) -> Vec<CompletionItem> {
     let mut items = completions(profile, document);
-    if let Some(document) = document
-        && let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document)
-    {
-        let offset = document.line_index().byte_offset_from_position(position);
-        items.extend(metadata.completions(document.text(), offset));
+    if let Some(document) = document {
+        let Ok(offset) = document
+            .line_index()
+            .try_byte_offset_from_position(position)
+        else {
+            return Vec::new();
+        };
+        if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
+            items.extend(metadata.completions(document.text(), offset));
+        }
     }
     dedup_completion_items(items)
 }

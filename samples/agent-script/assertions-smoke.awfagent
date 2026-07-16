@@ -1,5 +1,4 @@
-#[agent(version = 1)]
-agent @agent.assertions_smoke assertions_smoke()
+fn assertions_smoke() -> Result<Unit, AgentError>
 effects {}
 {
     let accepted = true
@@ -9,4 +8,8 @@ effects {}
     deny(blocked, message = "blocked should stay false")
 
     Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = assertions_smoke
 }

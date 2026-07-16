@@ -12,7 +12,7 @@ fn engine_steps_line_task_groups_as_sans_io_effects() {
         },
         ..LineTaskGroup::default()
     };
-    let mut engine = Engine::new(RuntimePlan::lines_only(vec![group]));
+    let mut engine = super::engine_for_test_plan(RuntimePlan::lines_only(vec![group]));
 
     let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
 
@@ -139,7 +139,7 @@ fn live_delay_uses_accumulated_time_since_line_activation() {
         ..LineTaskGroup::default()
     };
     let flow = super::flow_id("flow.delayed");
-    let plan = RuntimePlan::new(
+    let plan = super::runtime_plan(
         Some(flow.clone()),
         vec![RuntimeFlow {
             id: flow,
@@ -151,7 +151,7 @@ fn live_delay_uses_accumulated_time_since_line_activation() {
         vec![group],
     )
     .expect("delayed line plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let activated = super::runtime_step(
         &mut engine,

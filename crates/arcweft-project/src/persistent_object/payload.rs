@@ -87,7 +87,6 @@ pub struct HirBodyFactsObject {
     pub attribute_count: u64,
     pub flow_count: u64,
     pub function_count: u64,
-    pub agent_count: u64,
     pub declaration_count: u64,
     pub top_level_item_count: u64,
     pub flow_item_count: u64,
@@ -168,7 +167,6 @@ pub struct InterfaceSummaryObject {
 pub enum PublicSymbolKind {
     Flow,
     Function,
-    Agent,
     Declaration,
 }
 
@@ -905,7 +903,6 @@ impl PublicSymbolKind {
         match self {
             Self::Flow => "flow",
             Self::Function => "function",
-            Self::Agent => "agent",
             Self::Declaration => "declaration",
         }
     }
@@ -914,8 +911,7 @@ impl PublicSymbolKind {
         match self {
             Self::Flow => 0,
             Self::Function => 1,
-            Self::Agent => 2,
-            Self::Declaration => 3,
+            Self::Declaration => 2,
         }
     }
 
@@ -923,8 +919,7 @@ impl PublicSymbolKind {
         match tag {
             0 => Ok(Self::Flow),
             1 => Ok(Self::Function),
-            2 => Ok(Self::Agent),
-            3 => Ok(Self::Declaration),
+            2 => Ok(Self::Declaration),
             _ => Err(AwboError::UnsupportedWireTag {
                 domain: "public symbol kind",
                 tag,

@@ -6,23 +6,42 @@ use super::runtime::parse::parse_runtime_pure_workers;
 use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
-use arcweft_adapter_context::{manifest::AdapterManifest, standard};
-use arcweft_compiler::{
-    hir, parse,
-    project::{
-        ProjectCompilationContext, ProjectCompileDiagnostic, ProjectCompileError, compile_project,
-    },
+use arcweft_adapter_context::{
+    manifest::AdapterManifest, publication::AdapterManifestSource, standard,
 };
+use arcweft_compiler::project::{
+    ProjectCompilationContext, ProjectCompileDiagnostic, ProjectCompileError,
+    ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
+};
+use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_host_adapter::HostCallPolicy;
-use arcweft_lang_sema::{check::TypeCheckReport, env::TypeCheckEnv};
-use arcweft_lang_syntax::{lint::SyntaxLint, source::ParsedSource};
-use arcweft_launch::{
-    LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchPureBackend, ResolvedLaunchProfile,
+use arcweft_id::PublicId;
+use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_sema::{
+    callable::{EnvironmentCallablePublication, PRODUCTION_CALLABLE_LIMITS},
+    check::TypeCheckReport,
+    env::TypeCheckEnv,
+    registration::ProjectRegistrationFacts,
 };
-use arcweft_project::manifest::AuthoredResourceRoots;
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_launch::{
+    EntrySelectionId, LaunchKind, LaunchMathBackend, LaunchProfileManifest, LaunchProfileSelection,
+    LaunchPureBackend, ResolvedLaunchProfile,
+};
+use arcweft_project::{
+    manifest::{AuthoredResourceRoots, ProjectManifest},
+    sources::{ProjectSourceFile, ProjectSources},
+};
 use arcweft_project_loader::{
-    environment::{ProjectLoadRequest, load_project_registration},
+    environment::{
+        ProfileRegistrationLoadRequest, ProjectLoadRequest, load_profile_registration,
+        load_project_registration,
+    },
     project::LoadedProject,
+    topology::{
+        LoadedProfileTopology, ProfileTopologyLoadRequest, ProfileTopologyOwnerId,
+        load_profile_topology,
+    },
 };
 use arcweft_runtime_accelerator::{
     RuntimePureAcceleratorConfig, RuntimePureBackendMode, RuntimePureWorkerCount,
@@ -30,13 +49,9 @@ use arcweft_runtime_accelerator::{
 };
 use arcweft_runtime_host::{NativeFileRoots, NativeTaskBridge};
 use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
-use arcweft_rust_abi::ArcweftRustManifest;
-use arcweft_source::{
-    Diagnostic, DiagnosticSeverity, SourceDocument, SourceDocumentId, SourceName,
-};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use clap::Args;
 use std::fs;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -56,6 +71,23 @@ pub(in crate::app) struct ProfileOptions {
 pub(in crate::app) struct SelectionSemanticContext {
     base: TypeCheckEnv,
     adapter_manifests: Vec<AdapterManifest>,
+    profile_registration_supplements: Vec<AdapterManifest>,
+    profile_topology: Option<LoadedProfileTopology>,
+}
+
+pub(in crate::app) struct DirectProjectCompilationInput {
+    sources: ProjectSources,
+    context: ProjectCompilationContext,
+}
+
+impl DirectProjectCompilationInput {
+    pub(in crate::app) const fn sources(&self) -> &ProjectSources {
+        &self.sources
+    }
+
+    pub(in crate::app) const fn context(&self) -> &ProjectCompilationContext {
+        &self.context
+    }
 }
 
 impl SelectionSemanticContext {
@@ -65,6 +97,14 @@ impl SelectionSemanticContext {
 
     pub(in crate::app) fn adapter_manifests(&self) -> &[AdapterManifest] {
         &self.adapter_manifests
+    }
+
+    pub(in crate::app) fn profile_registration_supplements(&self) -> &[AdapterManifest] {
+        &self.profile_registration_supplements
+    }
+
+    pub(in crate::app) const fn profile_topology(&self) -> Option<&LoadedProfileTopology> {
+        self.profile_topology.as_ref()
     }
 }
 
@@ -149,8 +189,36 @@ impl SourceSelection {
         ))
     }
 
-    pub(in crate::app) fn entry(&self) -> Option<&str> {
-        self.profile().and_then(ResolvedLaunchProfile::entry)
+    pub(in crate::app) fn entry(&self) -> Option<&EntrySelectionId> {
+        self.profile().map(ResolvedLaunchProfile::entry)
+    }
+
+    pub(in crate::app) fn command_entry<'selection>(
+        &'selection self,
+        entry_override: Option<&'selection str>,
+    ) -> Result<&'selection str, ExitCode> {
+        match (self.profile(), entry_override) {
+            (Some(profile), None) => Ok(profile.entry().as_str()),
+            (Some(profile), Some(_)) => {
+                eprintln!(
+                    "error: launch profile `{}` already selects `{}`; --entry cannot override a profile",
+                    profile.id().as_str(),
+                    profile.entry()
+                );
+                Err(ExitCode::from(2))
+            }
+            (None, Some(entry)) => {
+                EntrySelectionId::new(entry).map_err(|error| {
+                    eprintln!("error: --entry must be a canonical entry.* ID: {error}");
+                    ExitCode::from(2)
+                })?;
+                Ok(entry)
+            }
+            (None, None) => {
+                eprintln!("error: direct source launch requires --entry entry.*");
+                Err(ExitCode::from(2))
+            }
+        }
     }
 
     pub(in crate::app) fn adapter(&self) -> Option<&str> {
@@ -187,7 +255,11 @@ pub(in crate::app) fn runtime_plan_options_for_selection(
         .map_or_else(RuntimePlanLowerOptions::default, |id| {
             RuntimePlanLowerOptions::default().with_dialogue_defaults(id)
         });
-    Ok(options.with_package_identity(selection.package_identity()?))
+    Ok(options
+        .with_package_identity(selection.package_identity()?)
+        .with_command_policy(RuntimeCommandPolicy::deny_all(
+            RootExecutionLimits::engine_default(),
+        )))
 }
 
 pub(in crate::app) fn runtime_pure_config_for_selection(
@@ -445,10 +517,20 @@ pub(in crate::app) fn load_and_check_selection(
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, adapter_override, &mut phases)?;
+    if let Some(topology) = semantic.profile_topology() {
+        let context = profile_project_compilation_context(topology, &semantic)?;
+        return load_and_check_loaded_project(
+            topology.loaded_project(),
+            &context,
+            &semantic,
+            phases,
+        );
+    }
     if let Some(manifest) = selection.project_manifest() {
         return load_and_check_project_with_env(manifest, selection, &semantic, phases);
     }
-    load_and_check_with_env(selection.path(), semantic.base(), phases)
+    let direct = direct_project_compilation_input(selection, &semantic, &mut phases)?;
+    load_and_check_project_sources(direct.sources(), direct.context(), semantic.base(), phases)
 }
 
 fn load_and_check_project_with_env(
@@ -463,28 +545,160 @@ fn load_and_check_project_with_env(
             ExitCode::FAILURE
         })
     })?;
-    let runtime_options = RuntimePlanLowerOptions::default();
-    let source_document = Arc::clone(
-        loaded
-            .module_document(loaded.sources().root_module().module())
-            .expect("loaded projects retain their root source document"),
-    );
     let context = project_compilation_context(&loaded, selection, semantic)?;
+    load_and_check_loaded_project(&loaded, &context, semantic, phases)
+}
+
+fn load_and_check_loaded_project(
+    loaded: &LoadedProject,
+    context: &ProjectCompilationContext,
+    semantic: &SelectionSemanticContext,
+    phases: Vec<RuntimeProfilePhase>,
+) -> Result<CheckedModule, ExitCode> {
+    load_and_check_project_sources(loaded.sources(), context, semantic.base(), phases)
+}
+
+fn load_and_check_project_sources(
+    sources: &ProjectSources,
+    context: &ProjectCompilationContext,
+    env: &TypeCheckEnv,
+    mut phases: Vec<RuntimeProfilePhase>,
+) -> Result<CheckedModule, ExitCode> {
+    let runtime_options = RuntimePlanLowerOptions::default().with_command_policy(
+        RuntimeCommandPolicy::deny_all(RootExecutionLimits::engine_default()),
+    );
+    let source_document = Arc::clone(sources.root_module().document());
     let compiled = run_profile_phase(&mut phases, "project_compile", || {
-        compile_project(loaded.sources(), &context, &runtime_options).map_err(|error| {
+        compile_project(sources, context, &runtime_options).map_err(|error| {
             print_project_compile_error(&error);
             ExitCode::FAILURE
         })
     })?;
     Ok(CheckedModule {
         hir: compiled.linked_hir().clone(),
-        env: semantic.base().clone(),
+        env: env.clone(),
         source_document,
         syntax_warnings: compiled.syntax_warnings(),
         line_task_groups: compiled.line_task_groups().to_vec(),
         typecheck_report: compiled.typecheck_report().clone(),
         phases,
     })
+}
+
+pub(in crate::app) fn direct_project_compilation_input(
+    selection: &SourceSelection,
+    semantic: &SelectionSemanticContext,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<DirectProjectCompilationInput, ExitCode> {
+    direct_project_compilation_input_with_env(
+        selection.path(),
+        &selection.package_identity()?,
+        semantic.base(),
+        semantic.adapter_manifests(),
+        phases,
+    )
+}
+
+fn direct_project_compilation_input_with_env(
+    path: &Path,
+    package_name: &str,
+    env: &TypeCheckEnv,
+    adapter_manifests: &[AdapterManifest],
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<DirectProjectCompilationInput, ExitCode> {
+    if !is_arcw_path(path) {
+        eprintln!("error: {} is not an .arcw source file", path.display());
+        return Err(ExitCode::from(2));
+    }
+    let source = run_profile_phase(phases, "read_source", || {
+        fs::read_to_string(path).map_err(|error| {
+            eprintln!("error: failed to read {}: {error}", path.display());
+            ExitCode::FAILURE
+        })
+    })?;
+    let document = Arc::new(source_document_for_path(path, source)?);
+    let manifest = ProjectManifest::parse_toml(&format!("[package]\nname = \"{package_name}\"\n"))
+        .map_err(|error| {
+            eprintln!(
+                "error: direct source has an invalid package identity `{package_name}`: {error}"
+            );
+            ExitCode::FAILURE
+        })?;
+    let sources = ProjectSources::new(
+        path.with_file_name("arcw.toml"),
+        path.parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf(),
+        manifest,
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            path.to_path_buf(),
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to construct direct-source project: {error}");
+        ExitCode::FAILURE
+    })?;
+
+    let mut documents = vec![Arc::clone(&document)];
+    let mut external_facts = Vec::new();
+    for (index, manifest) in adapter_manifests.iter().enumerate() {
+        let ordinal = u64::try_from(index).map_err(|_| {
+            eprintln!("error: direct-source adapter ordinal exceeds u64::MAX");
+            ExitCode::FAILURE
+        })?;
+        let registration = manifest
+            .source_backed_registration_facts(ordinal)
+            .map_err(|error| {
+                eprintln!(
+                    "error: failed to publish direct-source adapter registration facts: {error}"
+                );
+                ExitCode::FAILURE
+            })?;
+        let (adapter_document, facts) = registration.into_parts();
+        documents.push(adapter_document);
+        external_facts.extend(facts);
+    }
+
+    let package = CallablePackageId::try_new(package_name).map_err(|error| {
+        eprintln!("error: invalid direct-source callable package identity: {error}");
+        ExitCode::FAILURE
+    })?;
+    let world = ProjectSymbolWorldId::try_new(package, document.identity().id().clone(), "direct")
+        .map_err(|error| {
+            eprintln!("error: invalid direct-source semantic world: {error}");
+            ExitCode::FAILURE
+        })?;
+    let facts = ProjectRegistrationFacts::try_new(world, documents, external_facts, Vec::new())
+        .map_err(|report| {
+            for diagnostic in report.diagnostics() {
+                let diagnostic = diagnostic.diagnostic();
+                eprintln!(
+                    "error[{}]: {}",
+                    diagnostic
+                        .code()
+                        .map_or("registration", arcweft_source::DiagnosticCode::as_str),
+                    diagnostic.message()
+                );
+            }
+            if report.omitted_diagnostics() > 0 {
+                eprintln!(
+                    "error: {} direct-source registration diagnostic(s) omitted",
+                    report.omitted_diagnostics()
+                );
+            }
+            ExitCode::FAILURE
+        })?;
+    let context = ProjectCompilationContext::new(
+        Arc::new(env.clone()),
+        Arc::new(facts),
+        None,
+        None,
+        callable_publications(adapter_manifests)?,
+    );
+    Ok(DirectProjectCompilationInput { sources, context })
 }
 
 pub(in crate::app) fn project_compilation_context(
@@ -499,11 +713,97 @@ pub(in crate::app) fn project_compilation_context(
         ExitCode::FAILURE
     })?;
     let (facts, _) = registration.into_parts();
+    compilation_context_from_facts(facts, selection.profile(), semantic)
+}
+
+pub(in crate::app) fn profile_project_compilation_context(
+    topology: &LoadedProfileTopology,
+    semantic: &SelectionSemanticContext,
+) -> Result<ProjectCompilationContext, ExitCode> {
+    let request = ProfileRegistrationLoadRequest::new(topology)
+        .with_adapter_manifests(semantic.profile_registration_supplements());
+    let registration = load_profile_registration(&request).map_err(|error| {
+        eprintln!("error: failed to load profile registration facts: {error}");
+        ExitCode::FAILURE
+    })?;
+    let (facts, _) = registration.into_parts();
+    compilation_context_from_facts(facts, Some(topology.selected_profile()), semantic)
+}
+
+fn compilation_context_from_facts(
+    facts: ProjectRegistrationFacts,
+    profile: Option<&ResolvedLaunchProfile>,
+    semantic: &SelectionSemanticContext,
+) -> Result<ProjectCompilationContext, ExitCode> {
+    let entry_selection = profile
+        .map(|profile| {
+            PublicId::try_new(profile.entry().as_str())
+                .map(|id| ProjectEntrySelection::new(id, project_entry_kind(profile.kind())))
+                .map_err(|error| {
+                    eprintln!("error: invalid launch-profile entry identity: {error}");
+                    ExitCode::FAILURE
+                })
+        })
+        .transpose()?;
+    let callable_publications = callable_publications(semantic.adapter_manifests())?;
     Ok(ProjectCompilationContext::new(
         Arc::new(semantic.base().clone()),
         Arc::new(facts),
         None,
+        entry_selection,
+        callable_publications,
     ))
+}
+
+fn callable_publications(
+    adapter_manifests: &[AdapterManifest],
+) -> Result<Vec<EnvironmentCallablePublication>, ExitCode> {
+    let mut callable_publications = standard::callable_publications(&PRODUCTION_CALLABLE_LIMITS)
+        .map_err(|error| {
+            eprintln!("error: failed to publish standard callable catalog: {error}");
+            ExitCode::FAILURE
+        })?;
+    for manifest in adapter_manifests {
+        if let Some(source) = standard::manifest_source(manifest.id().as_str()) {
+            if !manifest.rust_functions().is_empty() {
+                callable_publications.push(
+                    manifest
+                        .try_rust_callable_publication(source, &PRODUCTION_CALLABLE_LIMITS)
+                        .map_err(|error| {
+                            eprintln!(
+                                "error: failed to publish Rust ABI callable catalog: {error}"
+                            );
+                            ExitCode::FAILURE
+                        })?,
+                );
+            }
+            continue;
+        }
+        callable_publications.push(
+            manifest
+                .try_callable_publication(
+                    AdapterManifestSource::SelectedAdapter,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .map_err(|error| {
+                    eprintln!("error: failed to publish adapter callable catalog: {error}");
+                    ExitCode::FAILURE
+                })?,
+        );
+    }
+    Ok(callable_publications)
+}
+
+const fn project_entry_kind(kind: LaunchKind) -> ProjectEntrySelectionKind {
+    match kind {
+        LaunchKind::Game => ProjectEntrySelectionKind::Game,
+        LaunchKind::Editor => ProjectEntrySelectionKind::Editor,
+        LaunchKind::Server => ProjectEntrySelectionKind::Server,
+        LaunchKind::Cli => ProjectEntrySelectionKind::Cli,
+        LaunchKind::Test => ProjectEntrySelectionKind::Test,
+        LaunchKind::Bench => ProjectEntrySelectionKind::Bench,
+        LaunchKind::Agent => ProjectEntrySelectionKind::Agent,
+    }
 }
 
 pub(in crate::app) fn source_document_for_path(
@@ -564,20 +864,11 @@ pub(in crate::app) fn semantic_context_for_selection(
     adapter_override: Option<&str>,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<SelectionSemanticContext, ExitCode> {
-    let mut manifest = adapter_manifest_for_selection(selection, adapter_override)?;
-    if adapter_override.is_none() && selection.profile().is_some() {
-        let manifests = run_profile_phase(phases, "rust_metadata", || {
-            rust_metadata_for_selection(selection)
-        })?;
-        for rust_manifest in manifests {
-            manifest = manifest
-                .try_with_rust_manifest(&rust_manifest)
-                .map_err(|error| {
-                    eprintln!("error: invalid Rust callable metadata: {error}");
-                    ExitCode::FAILURE
-                })?;
-        }
-    }
+    let profile_topology = load_selection_profile_topology(selection, phases)?;
+    let manifest = match profile_topology.as_ref() {
+        Some(topology) => adapter_manifest_from_topology(topology, adapter_override)?,
+        None => adapter_manifest_for_selection(selection, adapter_override)?,
+    };
     let env = if adapter_override.is_some() || selection.profile().is_some() {
         manifest.apply_to_target_env(TypeCheckEnv::standard())
     } else {
@@ -589,11 +880,93 @@ pub(in crate::app) fn semantic_context_for_selection(
         .fold(env, |env, manifest| manifest.apply_to_env(env));
     let mut adapter_manifests = Vec::with_capacity(desktop.len() + 1);
     adapter_manifests.push(manifest);
-    adapter_manifests.extend(desktop);
+    adapter_manifests.extend(desktop.iter().cloned());
     Ok(SelectionSemanticContext {
         base: env,
         adapter_manifests,
+        profile_registration_supplements: profile_topology
+            .as_ref()
+            .map_or_else(Vec::new, |_| desktop),
+        profile_topology,
     })
+}
+
+fn load_selection_profile_topology(
+    selection: &SourceSelection,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<Option<LoadedProfileTopology>, ExitCode> {
+    let SourceSelection::Profile { manifest, profile } = selection else {
+        return Ok(None);
+    };
+    let manifest = fs::canonicalize(manifest).map_err(|error| {
+        eprintln!(
+            "error: failed to resolve profile manifest {}: {error}",
+            manifest.display()
+        );
+        ExitCode::FAILURE
+    })?;
+    let project_root = manifest.parent().ok_or_else(|| {
+        eprintln!("error: profile manifest has no project root");
+        ExitCode::FAILURE
+    })?;
+    let owner = ProfileTopologyOwnerId::workspace(
+        file_uri_identity(project_root),
+        file_uri_identity(&manifest),
+    )
+    .map_err(|error| {
+        eprintln!("error: invalid profile topology owner: {error}");
+        ExitCode::FAILURE
+    })?;
+    run_profile_phase(phases, "profile_topology", || {
+        load_profile_topology(ProfileTopologyLoadRequest::new(
+            &manifest,
+            owner,
+            LaunchProfileSelection::Explicit(profile.id().as_str()),
+            &[],
+            standard::standard_registry(),
+        ))
+        .map(Some)
+        .map_err(|error| {
+            eprintln!("error: failed to load profile topology: {error}");
+            ExitCode::FAILURE
+        })
+    })
+}
+
+fn adapter_manifest_from_topology(
+    topology: &LoadedProfileTopology,
+    adapter_override: Option<&str>,
+) -> Result<AdapterManifest, ExitCode> {
+    let Some(adapter_id) = adapter_override else {
+        return Ok(topology.adapter().clone());
+    };
+    if let Some(manifest) = standard::standard_registry().get(adapter_id) {
+        return Ok(manifest.clone());
+    }
+    if let Some(manifest) = topology
+        .adapter_sources()
+        .iter()
+        .map(arcweft_project_loader::adapter_manifest::LoadedAdapterManifest::manifest)
+        .find(|manifest| manifest.id().as_str() == adapter_id)
+    {
+        return Ok(manifest.clone());
+    }
+    eprintln!("error: unknown adapter `{adapter_id}`");
+    Err(ExitCode::from(2))
+}
+
+fn file_uri_identity(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let body = if normalized
+        .as_bytes()
+        .get(1)
+        .is_some_and(|byte| *byte == b':')
+    {
+        format!("/{normalized}")
+    } else {
+        normalized
+    };
+    format!("file://{body}")
 }
 
 pub(in crate::app) fn adapter_manifest_for_selection(
@@ -650,29 +1023,6 @@ fn adapter_registry_for_selection(
         })
 }
 
-fn rust_metadata_for_selection(
-    selection: &SourceSelection,
-) -> Result<Vec<ArcweftRustManifest>, ExitCode> {
-    let Some(profile) = selection.profile() else {
-        return Ok(Vec::new());
-    };
-    profile
-        .rust_metadata()
-        .iter()
-        .map(|path| {
-            arcweft_project_loader::rust_metadata::load(path)
-                .map(|loaded| loaded.manifest().clone())
-                .map_err(|error| {
-                    eprintln!(
-                        "error: failed to load Rust ABI metadata {}: {error}",
-                        path.display()
-                    );
-                    ExitCode::FAILURE
-                })
-        })
-        .collect()
-}
-
 pub(crate) struct CheckedModule {
     pub(crate) hir: arcweft_lang_hir::model::HirModule,
     pub(crate) env: TypeCheckEnv,
@@ -683,155 +1033,22 @@ pub(crate) struct CheckedModule {
     pub(crate) phases: Vec<RuntimeProfilePhase>,
 }
 
-fn emit_phase_error_diagnostics(
-    emitter: &DiagnosticEmitter,
-    diagnostic_source: &DiagnosticSource<'_>,
-    code: &'static str,
-    messages: impl IntoIterator<Item = String>,
-) {
-    let diagnostics = messages
-        .into_iter()
-        .map(|message| Diagnostic::new(DiagnosticSeverity::Error, message).with_code(code))
-        .collect::<Vec<_>>();
-    emitter.emit_all(&diagnostics, diagnostic_source);
-}
-
-fn emit_parse_error_diagnostics(
-    parsed: &ParsedSource,
-    document: &SourceDocument,
-    emitter: &DiagnosticEmitter,
-    diagnostic_source: &DiagnosticSource<'_>,
-) {
-    let diagnostics = parsed
-        .errors()
-        .iter()
-        .map(|error| error.diagnostic(document))
-        .collect::<Vec<_>>();
-    emitter.emit_all(&diagnostics, diagnostic_source);
-}
-
-fn emit_syntax_lint_diagnostics(
-    lints: &[SyntaxLint],
-    document: &SourceDocument,
-    emitter: &DiagnosticEmitter,
-    diagnostic_source: &DiagnosticSource<'_>,
-) {
-    for lint in lints {
-        emitter.emit(&lint.diagnostic(document), diagnostic_source);
-    }
-}
-
 pub(in crate::app) fn load_and_check_with_env(
     path: &Path,
     env: &TypeCheckEnv,
     mut phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
-    if !is_arcw_path(path) {
-        eprintln!("error: {} is not an .arcw source file", path.display());
-        return Err(ExitCode::from(2));
-    }
-    let source = run_profile_phase(&mut phases, "read_source", || {
-        fs::read_to_string(path).map_err(|error| {
-            eprintln!("error: failed to read {}: {error}", path.display());
+    let package_name = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .ok_or_else(|| {
+            eprintln!("error: direct source has no package identity");
             ExitCode::FAILURE
-        })
-    })?;
-    let document = Arc::new(source_document_for_path(path, source)?);
-
-    let parsed = run_profile_phase(&mut phases, "parse", || {
-        catch_unwind(AssertUnwindSafe(|| {
-            parse::parse_source_text(document.text().to_owned())
-        }))
-        .map_err(|_| {
-            eprintln!("error: parser panicked while checking {}", path.display());
-            ExitCode::FAILURE
-        })
-    })?;
-    let source_text = parsed.source().to_owned();
-    debug_assert_eq!(source_text, document.text());
-    let diagnostic_source = DiagnosticSource::new(&document);
-    let emitter = DiagnosticEmitter::stderr();
-    if !parsed.errors().is_empty() {
-        emit_parse_error_diagnostics(&parsed, &document, &emitter, &diagnostic_source);
-        return Err(ExitCode::FAILURE);
-    }
-
-    let tree = parsed.into_typed_tree();
-    let lints = run_profile_phase(&mut phases, "lint", || {
-        Ok::<Vec<SyntaxLint>, ExitCode>(parse::lint_source_tree(&tree))
-    })?;
-    emit_syntax_lint_diagnostics(&lints, &document, &emitter, &diagnostic_source);
-    if parse::has_error_lints(&lints) {
-        return Err(ExitCode::FAILURE);
-    }
-
-    let hir = run_profile_phase(&mut phases, "lower_hir", || {
-        hir::lower_source_document(&document, &tree).map_err(|errors| {
-            emit_phase_error_diagnostics(
-                &emitter,
-                &diagnostic_source,
-                "hir.lower",
-                errors.into_iter().map(|error| error.message().to_owned()),
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-
-    run_profile_phase(&mut phases, "resolve", || {
-        hir::resolve_hir_references_with_env(&hir, env).map_err(|errors| {
-            emit_phase_error_diagnostics(
-                &emitter,
-                &diagnostic_source,
-                "sema.resolve",
-                errors.into_iter().map(|error| error.to_string()),
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-    run_profile_phase(&mut phases, "readiness", || {
-        hir::validate_hir_typecheck_ready(&hir).map_err(|errors| {
-            emit_phase_error_diagnostics(
-                &emitter,
-                &diagnostic_source,
-                "sema.readiness",
-                errors.into_iter().map(|error| error.message().to_owned()),
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-    let typecheck_report = run_profile_phase(&mut phases, "typecheck", || {
-        hir::typecheck_hir_with_env(&hir, env).map_err(|errors| {
-            emit_phase_error_diagnostics(
-                &emitter,
-                &diagnostic_source,
-                "sema.typecheck",
-                errors.into_iter().map(|error| error.message().to_owned()),
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-
-    let line_task_groups = run_profile_phase(&mut phases, "line_task_lower", || {
-        arcweft_compiler::lower::lower_source_line_tasks(&hir).map_err(|errors| {
-            emit_phase_error_diagnostics(
-                &emitter,
-                &diagnostic_source,
-                "runtime.line_task.lower",
-                errors.into_iter().map(|error| error.message().to_owned()),
-            );
-            ExitCode::FAILURE
-        })
-    })?;
-
-    Ok(CheckedModule {
-        hir,
-        env: env.clone(),
-        source_document: document,
-        syntax_warnings: parse::count_warning_lints(&lints),
-        line_task_groups,
-        typecheck_report,
-        phases,
-    })
+        })?;
+    let direct =
+        direct_project_compilation_input_with_env(path, package_name, env, &[], &mut phases)?;
+    load_and_check_project_sources(direct.sources(), direct.context(), env, phases)
 }
 
 #[cfg(test)]
@@ -847,10 +1064,12 @@ default = "mobile"
 [profiles.desktop]
 kind = "game"
 source = "main.arcw"
+entry = "entry.desktop"
 
 [profiles.mobile]
 kind = "game"
 source = "main.arcw"
+entry = "entry.mobile"
 "#,
         )
         .expect("manifest parses");
@@ -869,10 +1088,12 @@ source = "main.arcw"
 [profiles."game.main"]
 kind = "game"
 source = "game.arcw"
+entry = "entry.game.main"
 
 [profiles."server.dev"]
 kind = "server"
 source = "server.arcw"
+entry = "entry.server.dev"
 "#,
         )
         .expect("manifest parses");
@@ -908,14 +1129,65 @@ name = "smoke_project"
 [profiles.desktop]
 kind = "game"
 source = "main.arcw"
+entry = "entry.desktop"
 
 [profiles.mobile]
 kind = "game"
 source = "main.arcw"
+entry = "entry.mobile"
 "#,
         )
         .expect("manifest parses");
 
         assert!(default_profile_id(&manifest, Path::new("arcw.toml"), LaunchKind::Game).is_err());
+    }
+
+    #[test]
+    fn direct_source_entry_is_required_and_canonical() {
+        let selection = SourceSelection::Direct {
+            path: PathBuf::from("main.arcw"),
+        };
+
+        assert!(selection.command_entry(None).is_err());
+        assert!(selection.command_entry(Some("main")).is_err());
+        assert!(selection.command_entry(Some("@entry.main")).is_err());
+        assert_eq!(
+            selection.command_entry(Some("entry.game.main")),
+            Ok("entry.game.main")
+        );
+    }
+
+    #[test]
+    fn profile_entry_is_the_only_profile_selector() {
+        let manifest = LaunchProfileManifest::parse_toml(
+            "[profiles.game]\nkind = \"game\"\nsource = \"main.arcw\"\nentry = \"entry.game.main\"\n",
+        )
+        .expect("profile manifest");
+        let selection = SourceSelection::Profile {
+            manifest: PathBuf::from("arcw.toml"),
+            profile: Box::new(
+                manifest
+                    .resolve_profile("game", Path::new("."))
+                    .expect("resolved profile"),
+            ),
+        };
+
+        assert_eq!(selection.command_entry(None), Ok("entry.game.main"));
+        assert!(selection.command_entry(Some("entry.other")).is_err());
+    }
+
+    #[test]
+    fn launch_kind_maps_to_the_compiler_entry_selection_without_string_dispatch() {
+        for (launch, compiler) in [
+            (LaunchKind::Game, ProjectEntrySelectionKind::Game),
+            (LaunchKind::Editor, ProjectEntrySelectionKind::Editor),
+            (LaunchKind::Server, ProjectEntrySelectionKind::Server),
+            (LaunchKind::Cli, ProjectEntrySelectionKind::Cli),
+            (LaunchKind::Test, ProjectEntrySelectionKind::Test),
+            (LaunchKind::Bench, ProjectEntrySelectionKind::Bench),
+            (LaunchKind::Agent, ProjectEntrySelectionKind::Agent),
+        ] {
+            assert_eq!(project_entry_kind(launch), compiler);
+        }
     }
 }

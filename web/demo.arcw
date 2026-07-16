@@ -126,9 +126,36 @@ pub image @image.generated.webp_pulse {
     height = 96px
 }
 
-entry game @entry.main { goto @flow.main }
+struct GameState {
+    started: bool
+}
 
-flow main {
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.main
+}
+
+flow main(state: GameState) {
     image(@image.generated.background)
     image(@image.generated.character_stand)
     image(@image.generated.gif_pulse)

@@ -1,7 +1,10 @@
-#[agent(version = 1)]
-agent @agent.cli.advance_text advance_text()
+fn advance_text_smoke() -> Result<Unit, AgentError>
 effects { agent.act.semantic }
 {
     advance_text()
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = advance_text_smoke
 }

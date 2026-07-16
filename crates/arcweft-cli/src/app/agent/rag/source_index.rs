@@ -430,9 +430,10 @@ pub(in crate::app::agent) fn agent_project_semantic_rag_candidates(
             project,
         )?);
     }
-    for (name, callable) in project.project_callables() {
+    for (declaration, callable) in project.project_callables() {
+        let name = QualifiedName::new(declaration.qualified_name());
         candidates.push(agent_project_callable_rag_candidate(
-            name,
+            &name,
             callable,
             source_key_prefix,
         )?);
@@ -487,9 +488,10 @@ pub(in crate::app::agent) fn agent_project_graph_symbols(
         project
             .project_callables()
             .iter()
-            .map(|(name, callable)| {
+            .map(|(declaration, callable)| {
+                let name = QualifiedName::new(declaration.qualified_name());
                 agent_project_callable_graph_symbol(
-                    name,
+                    &name,
                     callable,
                     source_key_prefix,
                     &program_hash,
@@ -557,12 +559,16 @@ pub(in crate::app::agent) fn agent_project_graph_edges(
         project
             .project_callables()
             .keys()
-            .map(|name| DebugGraphEdge {
+            .map(|declaration| DebugGraphEdge {
                 program_hash: program_hash.clone(),
                 from_symbol_id: summary_symbol_id.clone(),
                 to_symbol_id: agent_project_callable_graph_symbol_id(
                     source_key_prefix,
-                    name.as_str(),
+                    &format!(
+                        "{}:{}",
+                        declaration.owner().as_str(),
+                        declaration.qualified_name()
+                    ),
                 ),
                 edge_kind: "contains_callable".to_owned(),
                 weight: 0.85,
@@ -800,8 +806,13 @@ pub(in crate::app::agent) fn agent_project_callable_graph_symbol(
     program_hash: &StableHash,
 ) -> Result<DebugGraphSymbol, String> {
     let source_anchor = debug_anchor_from_source_anchor(callable.source())?;
+    let identity = format!(
+        "{}:{}",
+        callable.declaration().owner().as_str(),
+        name.as_str()
+    );
     Ok(DebugGraphSymbol {
-        symbol_id: agent_project_callable_graph_symbol_id(source_key_prefix, name.as_str()),
+        symbol_id: agent_project_callable_graph_symbol_id(source_key_prefix, &identity),
         program_hash: program_hash.clone(),
         public_id: None,
         qualified_name: Some(name.as_str().to_owned()),
@@ -910,7 +921,10 @@ pub(in crate::app::agent) fn agent_project_graph_symbol_ref_id(
             agent_project_entity_graph_symbol_id(source_key_prefix, id)
         }
         arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Callable(name) => {
-            agent_project_callable_graph_symbol_id(source_key_prefix, name.as_str())
+            agent_project_callable_graph_symbol_id(
+                source_key_prefix,
+                &format!("function:{}", name.as_str()),
+            )
         }
     }
 }
@@ -1411,6 +1425,11 @@ pub(in crate::app::agent) fn agent_project_callable_rag_candidate(
     callable: &ProjectCallableSymbol,
     source_key_prefix: &str,
 ) -> Result<AgentRagCandidate, String> {
+    let identity = format!(
+        "{}:{}",
+        callable.declaration().owner().as_str(),
+        name.as_str()
+    );
     let body = serde_json::to_string_pretty(&serde_json::json!({
         "kind": "project_callable",
         "name": name.as_str(),
@@ -1426,7 +1445,7 @@ pub(in crate::app::agent) fn agent_project_callable_rag_candidate(
         serde_json::Value::String(callable.kind().as_str().to_owned()),
     );
     Ok(agent_rag_candidate(
-        &format!("{source_key_prefix}.project.callable.{}", name.as_str()),
+        &format!("{source_key_prefix}.project.callable.{identity}"),
         &format!(
             "Project {} callable {}",
             callable.kind().as_str(),

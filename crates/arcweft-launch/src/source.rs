@@ -16,6 +16,13 @@ impl LaunchKeyPath {
         &self.0
     }
 
+    pub(crate) fn profile_field(&self) -> Option<&str> {
+        match self.0.as_slice() {
+            [profiles, _, field] if profiles == "profiles" => Some(field),
+            _ => None,
+        }
+    }
+
     pub(crate) fn extended(&self, segments: impl IntoIterator<Item = String>) -> Self {
         let mut path = self.0.clone();
         path.extend(segments);

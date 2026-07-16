@@ -8,11 +8,18 @@ effect grammar.
 `flow` remains the core story/control unit, but it is no longer the program entry point. Entry points are explicit.
 
 ```text
-EntryDecl := Visibility? 'entry' EntryKind EntryId? EntryBlock
-EntryKind := 'game' | 'cli' | 'server' | 'activity' | 'test' | 'bench' | Ident
-EntryId   := EntityRef | RelativeId | FamilyRelativeEntityRef
+EntryDecl := Visibility? 'entry' EntryKind EntryId EntryBlock
+EntryKind := 'game' | 'editor' | 'cli' | 'server' | 'activity'
+           | 'test' | 'bench' | 'agent' | Ident
+EntryId   := EntityRef
 EntryBlock := '{' EntryItem* '}'
-EntryItem := 'start' EntityRef | 'run' EntityRef | RouteDecl | EntryOption
+EntryItem := StatefulRole | AgentRole | 'start' EntityRef | 'run' EntityRef
+           | 'goto' EntityRef | RouteDecl | EntryOption
+StatefulRole := 'state' '=' Type
+              | 'initializer' '=' ProjectSymbolPath
+              | 'event' '=' Type
+              | 'reducer' '=' ProjectSymbolPath
+AgentRole := 'controller' '=' ProjectSymbolPath
 RouteDecl := 'route' HttpMethod String '->' EntityRef RouteArgList?
 RouteArgList := '(' RouteArg (',' RouteArg)* ')'
 RouteArg := Ident '=' ':' Ident
@@ -22,20 +29,72 @@ HttpMethod := 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 ### Game entry
 
 ```arcw
-entry game @entry.main {
+struct GameState {
+    score: i32
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { score = 0 }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.game.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.opening
 }
 
-flow @flow.opening opening {
+flow @flow.opening opening(state: GameState) {
     log.info("game started")
     return "ok"
 }
 ```
 
+`game`, `editor`, and `test` entries each require exactly one `state`,
+`initializer`, `event`, `reducer`, and initial `goto`. These roles resolve to
+ordinary nominal types, functions, and flows. There is no separate state or
+reducer callable family.
+
+An Agent entry binds an ordinary function in the same way:
+
+```arcw
+#[budget(timeout = 20s, steps = 100000usize)]
+fn opening_smoke() -> Result<Unit, AgentError>
+effects { agent.observe }
+{
+    agent.observe()
+    Ok(())
+}
+
+entry agent @entry.agent.opening_smoke {
+    controller = opening_smoke
+}
+```
+
+Launch profiles select one complete `entry.*` ID and expected kind. They do
+not bind source roles; profile keys named `state`, `initializer`, `event`,
+`reducer`, or `controller` are invalid. This keeps role identity in checked
+source and leaves launch manifests responsible only for selection and host
+policy.
+
 ### CLI entry
 
 ```arcw
-entry cli @entry.main {
+entry cli @entry.cli.main {
     goto @flow.cli_main
 }
 

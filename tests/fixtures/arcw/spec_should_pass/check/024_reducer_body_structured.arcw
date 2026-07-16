@@ -1,6 +1,8 @@
-pub reducer update(state: GameState, event: GameEvent) -> Result<Update<GameState>, GameError> {
-    let next = state
-    Ok(next.to_update())
+pub fn update(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
 }
 
 flow @flow.main main { return "done" }

@@ -13,10 +13,15 @@ arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-compiler = { path = "../arcweft-compiler" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
+arcweft-id = { path = "../arcweft-id" }
+arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-project = { path = "../arcweft-project" }
 arcweft-runtime-codegen = { path = "../arcweft-runtime-codegen" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
+arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
+arcweft-source = { path = "../arcweft-source" }
 arcweft-tooling = { path = "../arcweft-tooling" }
 
 blake3.workspace = true

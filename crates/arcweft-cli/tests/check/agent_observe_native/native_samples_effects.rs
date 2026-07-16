@@ -2696,7 +2696,7 @@ fn agent_observe_reports_authored_scroll_view_capture_and_release_filtering() {
 const AUTHORED_SCROLL_AGENT_SOURCE: &str = r#"
 pub action feedback.submit(value: String)
 
-entry game @entry.scroll_agent_parity {
+entry cli @entry.scroll_agent_parity {
   goto @flow.scroll_agent_live
 }
 

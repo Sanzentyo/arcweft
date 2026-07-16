@@ -36,7 +36,7 @@ use arcweft_compiler::{
         ProjectCompileCache, ProjectCompileCacheStatus, compile_project_with_cache,
     },
 };
-use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_hir};
+use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_checked_project};
 use arcweft_lang_syntax::source::ParsedSource;
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
@@ -2143,12 +2143,7 @@ where
             allow_trusted_proofs: verification_mode != VerificationMode::Release,
         },
     );
-    append_release_dynamic_goto_diagnostics(
-        &mut verification,
-        &compiled,
-        &source_document,
-        verification_mode,
-    );
+    append_release_dynamic_goto_diagnostics(&mut verification, &compiled, verification_mode);
     let snapshot = snapshot_compiled_project(
         loaded.sources(),
         &compiled,
@@ -2201,16 +2196,15 @@ fn selected_snapshot_entries(selection: &SourceSelection) -> Vec<String> {
 fn append_release_dynamic_goto_diagnostics(
     verification: &mut VerificationReport,
     compiled: &CompiledProject,
-    document: &SourceDocument,
     verification_mode: VerificationMode,
 ) {
     if verification_mode != VerificationMode::Release {
         return;
     }
-    let Ok(index) = project_semantic_index_from_hir(
-        compiled.linked_hir(),
+    let Ok(index) = project_semantic_index_from_checked_project(
+        compiled.hir_project(),
         ProgramHash::new("project.release"),
-        document,
+        compiled.checked_entries(),
     ) else {
         verification.diagnostics.push(VerificationDiagnostic {
             id: "diagnostic.release.dynamic_control_index".to_owned(),

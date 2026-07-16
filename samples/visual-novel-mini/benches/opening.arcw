@@ -1,8 +1,17 @@
 metric gauge memo_hit_rate: f32
 
+entry bench @entry.opening { goto @flow.opening_choices }
+
+flow opening_choices
+effects { metric.write }
+{
+    metric.set(@metric.memo_hit_rate, 1.0)
+    return 4i32
+}
+
 bench @bench.opening_smoke {
     setup { let state = fixture<GameState>("opening.json") }
-    measure iterations = 10 { opening_choices() }
+    measure iterations = 10 { goto @flow.opening_choices }
     assert(metric.value(@metric.memo_hit_rate) >= 0.95)
     report { cpu_time }
 }

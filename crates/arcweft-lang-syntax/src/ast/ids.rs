@@ -6,6 +6,7 @@ pub struct EntityRef {
     body: String,
     delimited: bool,
     range: TextRange,
+    authored_body_range: Option<TextRange>,
 }
 
 /// ID-bearing reference accepted by declaration-like ID positions.
@@ -60,6 +61,18 @@ impl EntityRef {
             body,
             delimited,
             range,
+            authored_body_range: None,
+        }
+    }
+
+    pub(crate) fn authored(body: String, delimited: bool, range: TextRange) -> Self {
+        let start = range.start() + if delimited { 2 } else { 1 };
+        let authored_body_range = TextRange::new(start, start + body.len());
+        Self {
+            body,
+            delimited,
+            range,
+            authored_body_range: Some(authored_body_range),
         }
     }
 
@@ -101,6 +114,14 @@ impl EntityRef {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+
+    /// Exact parser-owned byte range of the authored public-ID body.
+    ///
+    /// Normalized and synthetic references return `None`; their canonical body
+    /// is not necessarily present in the retained source range.
+    pub const fn authored_body_range(&self) -> Option<TextRange> {
+        self.authored_body_range
     }
 }
 
@@ -246,6 +267,33 @@ impl EntityRefSyntax {
             Self::FamilyRelative(relative) => relative.range(),
         }
     }
+
+    pub(crate) fn with_authored_range(&self, range: TextRange) -> Self {
+        match self {
+            Self::Absolute(entity) => Self::Absolute(EntityRef::authored(
+                entity.body().to_owned(),
+                entity.is_delimited(),
+                range,
+            )),
+            Self::FamilyRelative(relative) => {
+                let delta = range.start().saturating_sub(relative.range().start());
+                let relative_range = TextRange::new(
+                    relative.relative().range().start() + delta,
+                    relative.relative().range().end() + delta,
+                );
+                Self::FamilyRelative(FamilyRelativeEntityRef::new(
+                    relative.family().to_owned(),
+                    RelativeId::new(
+                        relative.relative().suffix().to_owned(),
+                        relative.relative().parent_depth(),
+                        relative.relative().spelling(),
+                        relative_range,
+                    ),
+                    range,
+                ))
+            }
+        }
+    }
 }
 
 impl FamilyRelativeEntityRef {
@@ -285,5 +333,50 @@ impl WikiLink {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn authored_entity_body_ranges_exclude_absolute_and_delimited_markers() {
+        let absolute = EntityRef::authored("entry.main".to_owned(), false, TextRange::new(10, 21));
+        assert_eq!(absolute.authored_body_range(), Some(TextRange::new(11, 21)));
+
+        let delimited = EntityRef::authored("entry.main".to_owned(), true, TextRange::new(20, 33));
+        assert_eq!(
+            delimited.authored_body_range(),
+            Some(TextRange::new(22, 32))
+        );
+    }
+
+    #[test]
+    fn normalized_and_synthetic_entity_refs_do_not_claim_authored_body_ranges() {
+        let synthetic = EntityRef::new("entry.synthetic".to_owned(), false, TextRange::new(4, 9));
+        assert_eq!(synthetic.authored_body_range(), None);
+        assert_eq!(
+            EntityRef::module_scoped_declaration(
+                "entry",
+                "main",
+                Some("crate.feature"),
+                TextRange::new(0, 5),
+            )
+            .authored_body_range(),
+            None
+        );
+
+        let relative = EntityRefSyntax::family_relative(FamilyRelativeEntityRef::new(
+            "entry".to_owned(),
+            RelativeId::new(
+                "main".to_owned(),
+                0,
+                RelativeIdSpelling::DotRun,
+                TextRange::new(7, 12),
+            ),
+            TextRange::new(0, 12),
+        ));
+        assert_eq!(relative.canonical_entity_ref().authored_body_range(), None);
     }
 }

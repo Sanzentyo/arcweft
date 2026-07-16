@@ -184,11 +184,6 @@ pub enum ToolingError {
         expected_len: usize,
         actual_len: usize,
     },
-    #[error("format option `{option}` is not supported for {dialect} sources")]
-    UnsupportedFormatOption {
-        option: &'static str,
-        dialect: &'static str,
-    },
     #[error("text edit range {start}..{end} is outside source length {len}")]
     RangeOutOfBounds {
         start: usize,
@@ -217,8 +212,7 @@ impl ToolingError {
             Self::RangeOutOfBounds { .. }
             | Self::OverlappingEdit { .. }
             | Self::InvalidCharBoundary { .. }
-            | Self::DialogueCanonicalization { .. }
-            | Self::UnsupportedFormatOption { .. } => "AWT-EDIT-001",
+            | Self::DialogueCanonicalization { .. } => "AWT-EDIT-001",
         }
     }
 }

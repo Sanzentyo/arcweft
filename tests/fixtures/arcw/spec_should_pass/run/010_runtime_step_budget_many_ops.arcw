@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 flow @flow.main main {
     let a = 1i32
     let b = 2i32

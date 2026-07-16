@@ -1,4 +1,4 @@
-use crate::{engine::*, pattern::*, plan::*, source::*, step::*, task::*, value::*};
+use crate::{pattern::*, source::*, step::*, task::*, value::*};
 
 #[test]
 fn source_policy_is_pure_data() {
@@ -102,10 +102,10 @@ fn engine_records_source_events_without_running_adapters() {
         policy: SourcePolicy::default(),
         handlers: Vec::new(),
     };
-    let plan = RuntimePlan::new(None, Vec::new(), Vec::new())
+    let plan = super::runtime_plan(None, Vec::new(), Vec::new())
         .expect("empty plan is valid")
         .with_generation_plans(Vec::new(), vec![source]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     let output = super::runtime_step(
         &mut engine,
@@ -153,10 +153,10 @@ fn source_handler_yield_controls_source_queue() {
             ops: vec![SourceOp::Yield(RuntimeExpr::Local("frame".to_owned()))],
         }],
     };
-    let plan = RuntimePlan::new(None, Vec::new(), Vec::new())
+    let plan = super::runtime_plan(None, Vec::new(), Vec::new())
         .expect("empty plan is valid")
         .with_generation_plans(Vec::new(), vec![source]);
-    let mut engine = Engine::new(plan);
+    let mut engine = super::engine_for_test_plan(plan);
 
     super::runtime_step(
         &mut engine,

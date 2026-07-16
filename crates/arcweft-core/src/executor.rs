@@ -4,9 +4,13 @@ use crate::awbc::product_step::{
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::bytecode::BytecodeProgram;
-use crate::engine::{Engine, FlowFiber};
-use crate::plan::{RuntimePlan, RuntimePlanError};
+use crate::engine::{Engine, EngineStartError, FlowFiber};
+use crate::entry::ActiveEntrySnapshotV1;
+use crate::plan::{EntryRuntimeId, RuntimePlan, RuntimePlanError};
 use crate::pure::RuntimeCallBackend;
+use crate::root::{
+    RootRuntimeError, RootSaveBlockers, RootStateSnapshotV1, RuntimeCommandEnvelope,
+};
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 use crate::value::RuntimeBinding;
 use serde::{Deserialize, Serialize};
@@ -133,6 +137,10 @@ impl VmExecutor {
         &mut self.engine
     }
 
+    pub(crate) fn start_entry(&mut self, entry: &EntryRuntimeId) -> Result<(), EngineStartError> {
+        self.engine.start_entry(entry)
+    }
+
     pub(crate) fn step_with_root_bindings_and_pure_backend(
         &mut self,
         input: RuntimeStepInput,
@@ -167,6 +175,10 @@ impl AotExecutor {
 
     pub(crate) const fn fast_path_ops(&self) -> usize {
         self.fast_path_ops
+    }
+
+    pub(crate) fn start_entry(&mut self, entry: &EntryRuntimeId) -> Result<(), EngineStartError> {
+        self.vm.start_entry(entry)
     }
 
     pub(crate) fn step_with_root_bindings_and_pure_backend(
@@ -214,6 +226,10 @@ impl BytecodeVmExecutor {
         Self {
             vm: VmExecutor::new(plan),
         }
+    }
+
+    pub(crate) fn start_entry(&mut self, entry: &EntryRuntimeId) -> Result<(), EngineStartError> {
+        self.vm.start_entry(entry)
     }
 
     pub(crate) fn step_with_root_bindings_and_pure_backend(
@@ -307,12 +323,47 @@ impl ArcweftRuntimeExecutor {
         }
     }
 
+    pub fn start_structured_entry(
+        &mut self,
+        entry: &EntryRuntimeId,
+    ) -> Result<(), EngineStartError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor.start_entry(entry),
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.start_entry(entry),
+            ArcweftRuntimeExecutorInner::AwbcProduct(_) => {
+                Err(EngineStartError::EntryDoesNotSelectFlow {
+                    entry: entry.canonical_label(),
+                })
+            }
+        }
+    }
+
     /// Returns the canonical program that owns Product AWBC fiber values.
     pub const fn product_awbc_program(&self) -> Option<&AwbcProgram> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Some(executor.vm.program()),
             ArcweftRuntimeExecutorInner::StructuredVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+        }
+    }
+
+    /// Installs a code-compatible Product AWBC program while preserving the
+    /// current executor, fiber, and durable root transaction state.
+    pub fn replace_product_awbc_program(
+        &mut self,
+        program: AwbcProgram,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.replace_program_preserving_state(program)
+            }
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+                Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "code-compatible Product AWBC replacement requires Product AWBC tier"
+                        .to_owned(),
+                })
+            }
         }
     }
 
@@ -358,6 +409,71 @@ impl ArcweftRuntimeExecutor {
                     snapshot: ArcweftExecutionTier::AwbcProduct.as_str(),
                     actual: self.tier().as_str(),
                 })
+            }
+        }
+    }
+
+    /// Confirms the exact committed root-command prefix after the driver has
+    /// accepted it into its dispatch/result boundary.
+    pub fn acknowledge_root_commands(
+        &mut self,
+        accepted: &[RuntimeCommandEnvelope],
+    ) -> Result<(), RootRuntimeError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::StructuredVm(executor) => {
+                executor.vm.engine_mut().acknowledge_root_commands(accepted)
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine_mut().acknowledge_root_commands(accepted)
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.acknowledge_root_commands(accepted)
+            }
+        }
+    }
+
+    pub fn product_active_entry_snapshot_identity(
+        &self,
+    ) -> Result<Option<ActiveEntrySnapshotV1>, RootRuntimeError> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.active_entry_snapshot_identity().map(Some)
+            }
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => Ok(None),
+        }
+    }
+
+    #[must_use]
+    pub fn product_root_state_snapshot(&self) -> Option<RootStateSnapshotV1> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_state_snapshot(),
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn product_root_save_blockers(&self) -> Option<RootSaveBlockers> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_save_blockers(),
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+        }
+    }
+
+    pub fn restore_product_root_snapshot(
+        &mut self,
+        active: &ActiveEntrySnapshotV1,
+        snapshot: Option<RootStateSnapshotV1>,
+    ) -> Result<(), RootRuntimeError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.restore_root_snapshot(active, snapshot)
+            }
+            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+                Err(RootRuntimeError::SnapshotRoleMismatch("executor tier"))
             }
         }
     }

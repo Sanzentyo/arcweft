@@ -85,10 +85,8 @@ pub(super) struct AgentObserveOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
     profile: ProfileOptions,
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     entry: Option<String>,
-    #[arg(long, conflicts_with = "entry")]
-    flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
     #[arg(long, value_enum)]
@@ -152,10 +150,8 @@ pub(super) struct AgentHitTestOptions {
     path: Option<PathBuf>,
     #[command(flatten)]
     profile: ProfileOptions,
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     entry: Option<String>,
-    #[arg(long, conflicts_with = "entry")]
-    flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
     #[arg(long, value_enum)]
@@ -215,11 +211,8 @@ pub(super) struct AgentReplOptions {
     #[command(flatten)]
     profile: ProfileOptions,
     #[cfg(feature = "native-capture")]
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     entry: Option<String>,
-    #[cfg(feature = "native-capture")]
-    #[arg(long, conflicts_with = "entry")]
-    flow: Option<String>,
     #[cfg(feature = "native-capture")]
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
@@ -355,6 +348,8 @@ pub(super) struct AgentRagContextReadOptions {
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptCheckOptions {
     path: PathBuf,
+    #[arg(long = "controller-entry", default_value = "entry.agent.main")]
+    controller_entry: String,
     #[arg(long)]
     json: bool,
 }
@@ -364,6 +359,8 @@ pub(super) struct AgentScriptBuildOptions {
     path: PathBuf,
     #[arg(long, short = 'o')]
     output: PathBuf,
+    #[arg(long = "controller-entry", default_value = "entry.agent.main")]
+    controller_entry: String,
     #[arg(long)]
     json: bool,
     #[arg(long = "signal", value_parser = parse_agent_script_signal_arg)]
@@ -373,6 +370,8 @@ pub(super) struct AgentScriptBuildOptions {
 #[derive(Args, Clone, Debug)]
 pub(super) struct AgentScriptRunOptions {
     path: PathBuf,
+    #[arg(long = "controller-entry", default_value = "entry.agent.main")]
+    controller_entry: String,
     #[arg(long)]
     json: bool,
     #[cfg(feature = "native-capture")]
@@ -382,11 +381,8 @@ pub(super) struct AgentScriptRunOptions {
     #[command(flatten)]
     native_profile: ProfileOptions,
     #[cfg(feature = "native-capture")]
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     entry: Option<String>,
-    #[cfg(feature = "native-capture")]
-    #[arg(long, conflicts_with = "entry")]
-    flow: Option<String>,
     #[cfg(feature = "native-capture")]
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,

@@ -24,13 +24,14 @@ use super::{
     CallableLookupKey, CallableName, CallableParameterIndex, CallablePath, CallableRecord,
     CallableSignatureSchema, EnvironmentCallableOwner, EquivalentCallableSource,
     FunctionValueSignatureId, LanguageCallableFamily, LocalCallableId, ProjectCallablePath,
-    ProjectNameBinding, PromotionCallableId, ResolveCallError, ResolverWork, TraitCallableId,
+    ProjectNameBinding, PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolverWork,
+    TraitCallableId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
     dead_code,
-    reason = "selected, dialogue, and function-value inputs belong to the following ordered resolver cuts"
+    reason = "dialogue and function-value inputs belong to the following ordered resolver cuts"
 )]
 pub(crate) enum CallCallee<'a> {
     Free {
@@ -339,33 +340,77 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
     if let Err(error) = check_query_step(&mut request) {
         return ResolveCallOutcome::Rejected(error);
     }
-    let path = match &request.callee {
-        CallCallee::Free { path } => (*path).clone(),
-        _ => {
-            return ResolveCallOutcome::Missing(UnknownCallTarget::new(
-                match &request.callee {
-                    CallCallee::Selected { .. } => UnknownCallKind::Method,
-                    CallCallee::Dialogue { .. } => UnknownCallKind::Dialogue,
-                    CallCallee::FunctionValue { .. } | CallCallee::Free { .. } => {
-                        UnknownCallKind::Free
-                    }
-                },
-                None,
-                None,
-                None,
-            ));
+    match request.callee.clone() {
+        CallCallee::Free { path } => {
+            let path = path.clone();
+            match resolve_free_call(&mut request, &path) {
+                Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
+                Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+                    UnknownCallKind::Free,
+                    Some(path),
+                    None,
+                    None,
+                )),
+                Err(error) => ResolveCallOutcome::Rejected(error),
+            }
         }
-    };
-    match resolve_free_call(&mut request, &path) {
-        Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
-        Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
-            UnknownCallKind::Free,
-            Some(path),
+        CallCallee::Selected {
+            receiver_type,
+            method,
+            ..
+        } => {
+            let receiver_type = receiver_type.clone();
+            let method = method.clone();
+            match resolve_selected_environment_method(&mut request, &receiver_type, &method) {
+                Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
+                Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+                    UnknownCallKind::Method,
+                    None,
+                    Some(receiver_type),
+                    Some(method),
+                )),
+                Err(error) => ResolveCallOutcome::Rejected(error),
+            }
+        }
+        CallCallee::Dialogue { .. } => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+            UnknownCallKind::Dialogue,
+            None,
             None,
             None,
         )),
-        Err(error) => ResolveCallOutcome::Rejected(error),
+        CallCallee::FunctionValue { .. } => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+            UnknownCallKind::Free,
+            None,
+            None,
+            None,
+        )),
     }
+}
+
+#[allow(clippy::result_large_err)]
+fn resolve_selected_environment_method(
+    request: &mut CallResolverRequest<'_>,
+    receiver_type: &TypeKind,
+    method: &CallableName,
+) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    check_query_step(request)?;
+    let key = ReceiverMethodKey::new(receiver_type.clone(), method.clone());
+    let Some(candidates) = request.world.environment().callable_catalog().method(&key) else {
+        return Ok(None);
+    };
+    let mut resolved = Vec::with_capacity(candidates.len().get() as usize);
+    for entry in candidates.as_slice() {
+        check_query_step(request)?;
+        resolved.push(resolve_catalog_record(
+            entry.primary(),
+            entry.equivalent_sources(),
+            None,
+            request,
+        )?);
+    }
+    NonEmptyResolvedCandidates::try_new(resolved, request.limits)
+        .map(ResolvedCallTarget::Candidates)
+        .map(Some)
 }
 
 #[allow(clippy::result_large_err)]
@@ -485,6 +530,23 @@ fn resolve_project_binding(
                 .environment()
                 .callable_catalog()
                 .project_record(declaration)
+                .ok_or_else(|| {
+                    corrupt(
+                        record_key(path),
+                        super::CorruptCallableCatalogReason::MissingRecord,
+                    )
+                })?
+                .clone();
+            let callable = resolve_catalog_record(&record, &[], Some(path), request)?;
+            NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+                .map(ResolvedCallTarget::Candidates)
+        }
+        ProjectNameBinding::Environment(id) => {
+            let record = request
+                .world
+                .environment()
+                .callable_catalog()
+                .environment_record(id)
                 .ok_or_else(|| {
                     corrupt(
                         record_key(path),

@@ -1,10 +1,35 @@
 signal current_flow: Watch<Ref<Flow>>
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.opening
 }
 
-flow opening effects { signal.write } {
+flow opening(state: GameState) effects { signal.write } {
     signal.set(@signal.current_flow, @flow.opening)
 
     choice @choice.opening.first {

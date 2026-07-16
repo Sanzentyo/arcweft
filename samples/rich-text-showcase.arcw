@@ -102,11 +102,36 @@ pub dialogue defaults {
     }
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.rich_text_showcase
 }
 
-flow rich_text_showcase {
+flow rich_text_showcase(state: GameState) {
     let alice_panel = alice(text_color="#9fdcff")
 
     alice_panel(id=@say.rich_text.001, voice=auto, look=.smile, text_color="#8fd7ff", rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[

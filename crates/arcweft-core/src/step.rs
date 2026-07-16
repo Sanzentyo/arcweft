@@ -1,5 +1,6 @@
 use crate::effect::LineEffectRequest;
 use crate::plan::{FlowEvent, RuntimeLineId};
+use crate::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use crate::source::{RuntimeSourceEvent, SourceId};
 use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
@@ -25,6 +26,10 @@ pub struct RuntimeStepInput {
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
+    pub root_events: Vec<RootEventInput>,
+    /// Typed events emitted by a later-phase owner for root ingress on the
+    /// following step. They never participate in the current root phase.
+    pub deferred_root_events: Vec<RootEventInput>,
 }
 
 /// Borrowed adapter-facing view of runtime step inputs.
@@ -42,6 +47,7 @@ pub struct RuntimeStepInputRef<'a> {
     audio_events: &'a [AudioEvent],
     source_events: &'a [RuntimeSourceEvent],
     host_call_results: &'a [RuntimeHostCallResult],
+    root_events: &'a [RootEventInput],
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -50,6 +56,8 @@ pub struct RuntimeStepOutput {
     pub flow_events: Vec<FlowEvent>,
     pub effects: RuntimeEffectBatch,
     pub requests: HostRequestBatch,
+    pub root_transitions: Vec<RootTransitionOutcome>,
+    pub root_commands: Vec<RuntimeCommandEnvelope>,
 }
 
 /// Runtime-produced events and effect requests, kept as pure data for hosts.
@@ -69,6 +77,9 @@ pub struct HostRequestBatch {
     pub source_close: Vec<SourceId>,
     pub ensure_content: Vec<RuntimeContentRequest>,
     pub host_calls: Vec<RuntimeHostCallRequest>,
+    /// Events accepted from later-phase owners for deterministic next-step
+    /// root ingress. The session driver owns the queue after this step.
+    pub root_events_next_step: Vec<RootEventInput>,
 }
 
 /// Stable identifier for one host call request/result exchange.
@@ -171,6 +182,10 @@ pub struct RuntimeStepStats {
     pub pure: RuntimePureCallStats,
     pub task_events_in: usize,
     pub source_events_in: usize,
+    pub root_events_in: usize,
+    pub root_transitions: usize,
+    pub root_commands: usize,
+    pub root_events_deferred: usize,
     pub source_events_emitted: usize,
     pub stream_events_emitted: usize,
     pub line_effects: usize,
@@ -463,6 +478,7 @@ impl RuntimeStepInput {
             audio_events: self.audio_events.as_slice(),
             source_events: self.source_events.as_slice(),
             host_call_results: self.host_call_results.as_slice(),
+            root_events: self.root_events.as_slice(),
         }
     }
 
@@ -545,6 +561,10 @@ impl<'a> RuntimeStepInputRef<'a> {
     pub const fn host_call_results(&self) -> &'a [RuntimeHostCallResult] {
         self.host_call_results
     }
+
+    pub const fn root_events(&self) -> &'a [RootEventInput] {
+        self.root_events
+    }
 }
 
 impl RuntimeStepOutput {
@@ -574,6 +594,8 @@ impl RuntimeStepOutput {
             .ensure_content
             .extend(other.requests.ensure_content);
         self.requests.host_calls.extend(other.requests.host_calls);
+        self.root_transitions.extend(other.root_transitions);
+        self.root_commands.extend(other.root_commands);
     }
 }
 

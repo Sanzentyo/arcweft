@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 signal @signal.ready: Watch<bool>
 metric gauge @metric.count: i32
 

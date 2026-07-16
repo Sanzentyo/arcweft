@@ -3,7 +3,8 @@ use crate::ast::flow::ContractClause;
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling,
 };
-use crate::ast::items::{CallableKind, EntityDeclKind, FunctionKind};
+use crate::ast::items::{EntityDeclKind, ExternModSource, FunctionKind};
+use crate::ast::symbol_path::ProjectSymbolPath;
 use crate::cst::{
     split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
     split_leading_relative_id, split_top_level_keyword_once, split_top_level_punctuation,
@@ -70,14 +71,23 @@ pub(super) fn split_function_header_lines<'a>(
     (!signature.is_empty()).then(|| (signature.join("\n"), lines[end_index..].to_vec()))
 }
 
-pub(super) fn parse_extern_mod_head(head: &str) -> Option<(String, String, Option<String>)> {
+pub(super) fn parse_extern_mod_head(
+    head: &str,
+) -> Option<(String, ProjectSymbolPath, Option<ExternModSource>)> {
     let rest = head.trim_start().strip_prefix("extern")?.trim_start();
     let (abi, Some(rest)) = split_top_level_keyword_once(rest, "mod") else {
         return None;
     };
     let (path, source) = split_top_level_keyword_once(rest, "from");
-    let source = source.map(|source| source.trim().to_owned());
-    Some((abi.trim().to_owned(), path.trim().to_owned(), source))
+    let path = path.trim().parse::<ProjectSymbolPath>().ok()?;
+    let source = source.and_then(parse_extern_mod_source);
+    Some((abi.trim().to_owned(), path, source))
+}
+
+fn parse_extern_mod_source(source: &str) -> Option<ExternModSource> {
+    let crate_name = source.trim().strip_prefix("crate")?.trim_start();
+    let crate_name = crate_name.strip_prefix('"')?.strip_suffix('"')?;
+    (!crate_name.is_empty()).then(|| ExternModSource::Crate(crate_name.to_owned()))
 }
 
 pub(super) fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
@@ -354,13 +364,6 @@ pub(super) fn normalize_trailing_colon_id(entity: EntityRef, rest: &str) -> (Ent
         EntityRef::new(body, false, range),
         format!(": {}", rest.trim_start()),
     )
-}
-
-pub(super) fn parse_callable_kind(input: &str) -> Option<(CallableKind, &str)> {
-    if let Some(rest) = input.strip_prefix("reducer") {
-        return Some((CallableKind::Reducer, rest.trim_start()));
-    }
-    None
 }
 
 pub(super) fn parse_flow_head(input: &str) -> Option<&str> {
@@ -705,7 +708,7 @@ pub(super) fn parse_required_entity_ref<'a>(
             return None;
         }
         return Some((
-            EntityRef::new(
+            EntityRef::authored(
                 entity_ref.body.to_owned(),
                 true,
                 TextRange::new(base, base + entity_ref.raw.len()),
@@ -733,7 +736,7 @@ pub(super) fn parse_required_entity_ref<'a>(
             return None;
         }
         return Some((
-            EntityRef::new(
+            EntityRef::authored(
                 entity_ref.body.to_owned(),
                 false,
                 TextRange::new(base, base + entity_ref.raw.len()),

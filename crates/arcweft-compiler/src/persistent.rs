@@ -653,19 +653,6 @@ fn hir_body_facts(
         counts.statements += to_u64("function statements", function.statements().len())?;
     }
 
-    for agent in hir.agents() {
-        put_str(&mut symbols, "agent")?;
-        put_str(&mut symbols, agent.item().name())?;
-        put_len(
-            &mut shape,
-            "agent statements",
-            agent.item().body_statements().len(),
-        )?;
-        put_bool(&mut shape, agent.item().body_value().is_some());
-        counts.agents += 1;
-        counts.statements += to_u64("agent statements", agent.item().body_statements().len())?;
-    }
-
     for declaration in hir.declarations() {
         record_hir_declaration(declaration, &mut symbols, &mut shape)?;
         counts.declarations += 1;
@@ -679,7 +666,6 @@ fn hir_body_facts(
         attribute_count: to_u64("hir attributes", hir.attributes().len())?,
         flow_count: counts.flows,
         function_count: counts.functions,
-        agent_count: counts.agents,
         declaration_count: counts.declarations,
         top_level_item_count: counts.top_level_items,
         flow_item_count: counts.flow_items,
@@ -718,16 +704,6 @@ fn interface_public_symbols(
             module,
             function.name(),
             signature_digest("function", function.name(), Some(function.signature()))?,
-        ));
-    }
-
-    for agent in hir.agents() {
-        let name = agent.item().name();
-        symbols.push(public_symbol(
-            PublicSymbolKind::Agent,
-            module,
-            name,
-            signature_digest("agent", name, agent.item().signature())?,
         ));
     }
 
@@ -1107,7 +1083,6 @@ struct SyntaxShapeCounts {
 struct HirBodyCounts {
     flows: u64,
     functions: u64,
-    agents: u64,
     declarations: u64,
     top_level_items: u64,
     flow_items: u64,
@@ -1130,7 +1105,7 @@ mod tests {
     };
 
     const SOURCE: &str = r#"
-pub reducer current_route() -> Ref<Flow> {
+pub fn current_route() -> Ref<Flow> {
 return @flow.done
 }
 
@@ -1224,7 +1199,7 @@ return "done"
         .expect("HIR facts build");
 
         assert_eq!(object.facts.flow_count, 2);
-        assert_eq!(object.facts.function_count, 0);
+        assert_eq!(object.facts.function_count, 1);
         assert_eq!(object.body_digest, object.facts.body_shape_digest);
 
         let bytes = AwboEnvelope::new(&key, CompilerObjectPayload::HirBody(object))

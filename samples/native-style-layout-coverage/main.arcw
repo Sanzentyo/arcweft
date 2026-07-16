@@ -75,11 +75,36 @@ pub dialogue defaults {
     view = @view.CoveragePanel
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.native_style_layout_coverage {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.native_style_layout_coverage
 }
 
-flow native_style_layout_coverage {
+flow native_style_layout_coverage(state: GameState) {
     layout_agent(id=@say.native_style_layout_coverage.main, voice=auto):
         Native Style layout coverage uses a retained View fixture separate from text raster parity.[p]
         Typed selectors, tokens, overflow, radius, opacity, interaction state, and z-index are represented in one sheet-owned application.[p]

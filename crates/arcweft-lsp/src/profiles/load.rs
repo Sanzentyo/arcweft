@@ -39,11 +39,22 @@ pub(crate) fn apply_registered_topology(
     profile.dialogue_defaults_selection = selected.dialogue_defaults().and_then(|_| {
         dialogue_defaults_selection(
             topology.loaded_project().sources().manifest_path(),
-            manifest.text(),
+            manifest,
             selected.id().as_str(),
             topology.loaded_project().launch().source_map(),
         )
     });
+    profile.entry_selection = entry_selection(
+        topology.loaded_project().sources().manifest_path(),
+        manifest,
+        selected.id().as_str(),
+        topology.loaded_project().launch().source_map(),
+    );
+    profile.entry_selections = entry_selections(
+        topology.loaded_project().sources().manifest_path(),
+        manifest,
+        topology.loaded_project().launch(),
+    );
     profile.characters = characters;
     profile.resolved_profile = Some(selected.clone());
 }
@@ -172,11 +183,22 @@ impl LspProfileResolver {
             dialogue_defaults_selection: profile.dialogue_defaults().and_then(|_| {
                 dialogue_defaults_selection(
                     topology.loaded_project().sources().manifest_path(),
-                    manifest.text(),
+                    manifest,
                     profile.id().as_str(),
                     topology.loaded_project().launch().source_map(),
                 )
             }),
+            entry_selection: entry_selection(
+                topology.loaded_project().sources().manifest_path(),
+                manifest,
+                profile.id().as_str(),
+                topology.loaded_project().launch().source_map(),
+            ),
+            entry_selections: entry_selections(
+                topology.loaded_project().sources().manifest_path(),
+                manifest,
+                topology.loaded_project().launch(),
+            ),
             characters,
             resolved_profile: Some(profile.clone()),
             state,
@@ -199,7 +221,7 @@ impl LspProfileResolver {
 
 fn dialogue_defaults_selection(
     manifest_path: &Path,
-    source: &str,
+    document: &Arc<arcweft_source::SourceDocument>,
     profile_id: &str,
     source_map: &LaunchManifestSourceMap,
 ) -> Option<ProfileSourceSelection> {
@@ -217,7 +239,48 @@ fn dialogue_defaults_selection(
         .as_range();
     Some(ProfileSourceSelection {
         path: manifest_path.to_path_buf(),
-        source: source.to_owned(),
+        document: Arc::clone(document),
         value_range,
     })
+}
+
+fn entry_selection(
+    manifest_path: &Path,
+    document: &Arc<arcweft_source::SourceDocument>,
+    profile_id: &str,
+    source_map: &LaunchManifestSourceMap,
+) -> Option<ProfileSourceSelection> {
+    let value_range = source_map
+        .token(&LaunchTokenPath::Key {
+            path: LaunchKeyPath::new(vec![
+                "profiles".to_owned(),
+                profile_id.to_owned(),
+                "entry".to_owned(),
+            ]),
+            occurrence: 0,
+        })?
+        .string_content()?
+        .range()
+        .as_range();
+    Some(ProfileSourceSelection {
+        path: manifest_path.to_path_buf(),
+        document: Arc::clone(document),
+        value_range,
+    })
+}
+
+fn entry_selections(
+    manifest_path: &Path,
+    document: &Arc<arcweft_source::SourceDocument>,
+    launch: &arcweft_launch::SourceBackedLaunchManifest,
+) -> Vec<(String, ProfileSourceSelection)> {
+    launch
+        .manifest()
+        .profiles()
+        .iter()
+        .filter_map(|(profile_id, profile)| {
+            entry_selection(manifest_path, document, profile_id, launch.source_map())
+                .map(|selection| (profile.entry().as_str().to_owned(), selection))
+        })
+        .collect()
 }

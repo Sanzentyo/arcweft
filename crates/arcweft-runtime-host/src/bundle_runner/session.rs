@@ -1,8 +1,8 @@
 use super::{
     BundleRunnerError, BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerPhase,
     BundleRunnerReport, BundleRunnerStepMode, BundleRunnerStepSummary, MaterializedBundleWorkspace,
-    RuntimeExecutorInstance, bundle_host_policy, bundle_runner_bytecode, bundle_runner_entry,
-    run_bundle_runner_phase, step_options, validate_bundle_image_assets, validate_bundle_kind,
+    RuntimeExecutorInstance, bundle_host_policy, bundle_runner_bytecode, run_bundle_runner_phase,
+    step_options, validate_bundle_image_assets, validate_bundle_kind,
 };
 use crate::native_task::{NativeFileRoots, NativeTaskBridge, standard_cli_registry_builder};
 use arcweft_bundle::ArcweftBundle;
@@ -79,16 +79,9 @@ impl BundleRunnerSession {
         let workspace = run_bundle_runner_phase(&mut phases, "materialize_bundle", || {
             MaterializedBundleWorkspace::create(bundle)
         })?;
-        let selected_bytecode = run_bundle_runner_phase(&mut phases, "bytecode_decode", || {
+        let (bytecode, entry) = run_bundle_runner_phase(&mut phases, "bytecode_decode", || {
             bundle_runner_bytecode(bundle, options)
         })?;
-        let direct_bytecode =
-            bundle_runner_entry(bundle, options).is_none() && options.flow.is_none();
-        let bytecode = if direct_bytecode {
-            bundle.bytecode.program.clone()
-        } else {
-            selected_bytecode
-        };
 
         let policy = bundle_host_policy(bundle);
         let run_started = Instant::now();
@@ -103,6 +96,7 @@ impl BundleRunnerSession {
             .map_err(BundleRunnerError::NativeAdapter)?;
         let executor = RuntimeExecutorInstance::from_bytecode(
             bytecode,
+            &entry,
             options.executor,
             options.pure_config,
         )?;

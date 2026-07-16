@@ -257,11 +257,6 @@ fn function_let_sites(tree: &TypedSyntaxTree, source: &str) -> Vec<LetTypeInlayS
     let mut sites = Vec::new();
 
     for item in tree.items() {
-        if let Item::Agent(agent) = item {
-            collect_stmt_sites(agent.body_statements(), source, &mut sites);
-        }
-    }
-    for item in tree.items() {
         if let Item::Flow(flow) = item {
             collect_flow_item_sites(flow.body(), source, &mut sites);
         }

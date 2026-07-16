@@ -928,15 +928,15 @@ pub(super) fn agent_repl_hir(
     fragment_source: &str,
 ) -> AgentReplCellReport {
     let fragment = agent_repl_parse_fragment(fragment_source);
-    let Some(source) = agent_repl_inspection_source(index, fragment_source, &fragment) else {
+    if agent_repl_inspection_source(index, fragment_source, &fragment).is_none() {
         return agent_repl_error(
             index,
             input,
             "meta",
             "fragment is not complete enough to lower to HIR".to_owned(),
         );
-    };
-    match arcweft_compiler::agent::compile_agent_source(source) {
+    }
+    match agent_repl_compile_fragment(index, fragment_source, &fragment) {
         Ok(compiled) => agent_repl_ok(
             index,
             input,
@@ -946,7 +946,7 @@ pub(super) fn agent_repl_hir(
                 "hir": format!("{:#?}", compiled.hir),
             }),
         ),
-        Err(error) => agent_repl_error(index, input, "meta", error.to_string()),
+        Err(error) => agent_repl_error(index, input, "meta", error.clone()),
     }
 }
 
@@ -967,8 +967,9 @@ pub(super) fn agent_repl_bytecode(
         "meta",
         serde_json::json!({
             "parse": agent_repl_fragment_report(&fragment),
-            "agent_id": compiled.manifest.agent_id.as_str(),
-            "entry_flow": compiled.bundle.bytecode.program.entry_flow.as_ref().map(|flow| flow.public_label().into_string()),
+            "entry_id": compiled.manifest.entry_id.as_str(),
+            "controller_id": compiled.manifest.controller_id.as_str(),
+            "entries": &compiled.bundle.bytecode.program.entries,
             "stats": {
                 "flows": stats.flows,
                 "instructions": stats.instructions,
@@ -1194,7 +1195,13 @@ pub(super) fn agent_repl_save(
 ) -> AgentReplCellReport {
     let path = PathBuf::from(raw_path);
     let source = agent_repl_saved_source(state);
-    if let Err(error) = arcweft_compiler::agent::compile_agent_source(source.clone()) {
+    let project = match agent_script_project_index(&[]) {
+        Ok(project) => project,
+        Err(error) => return agent_repl_error(index, input, "meta", error),
+    };
+    if let Err(error) =
+        compile_agent_script_source(&path, source.clone(), "entry.agent.main", &project)
+    {
         return agent_repl_error(
             index,
             input,
@@ -1242,12 +1249,12 @@ pub(super) fn agent_repl_saved_source(state: &AgentReplState) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     if body.trim().is_empty() {
-        "    return \"empty\"".clone_into(&mut body);
+        "    Ok(())".clone_into(&mut body);
     } else if !body.contains("\n    return ") && !body.starts_with("    return ") {
-        body.push_str("\n    return \"saved\"");
+        body.push_str("\n    Ok(())");
     }
     format!(
-        "#[agent(version = 1)]\nagent @agent.repl.saved repl_saved()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+        "fn repl_saved() -> Result<Unit, AgentError>\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n\nentry agent @entry.agent.main {{\n    controller = repl_saved\n}}\n"
     )
 }
 
@@ -1259,7 +1266,6 @@ pub(super) fn agent_repl_observe_options(
         path: options.path.clone(),
         profile: options.profile.clone(),
         entry: options.entry.clone(),
-        flow: options.flow.clone(),
         executor: options.executor,
         pure_backend: options.pure_backend,
         pure_workers: options.pure_workers,
@@ -1322,8 +1328,12 @@ pub(super) fn agent_repl_compile_fragment(
     let source = agent_repl_inspection_source(index, input, fragment)
         .ok_or_else(|| "fragment is not complete enough to compile".to_owned())?;
     let project = agent_script_project_index(&[])?;
-    arcweft_compiler::agent::compile_agent_bundle_with_project(source, &project)
-        .map_err(|error| error.to_string())
+    compile_agent_script_source(
+        Path::new("<agent-repl>"),
+        source,
+        &format!("entry.agent.repl.cell_{index}"),
+        &project,
+    )
 }
 
 pub(super) fn agent_repl_cell_source(
@@ -1332,15 +1342,15 @@ pub(super) fn agent_repl_cell_source(
     fragment: &ParsedFragment,
     live_binding_prelude: &str,
 ) -> String {
-    if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
-        return input.to_owned();
-    }
-    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Expression(_))) {
-        format!("    return {input}")
+    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_)))
+        .then(|| format!("{input}\n\n"))
+        .unwrap_or_default();
+    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
+        "    Ok(())".to_owned()
     } else if input.starts_with("return ") || input.contains("\nreturn ") {
         indent_agent_repl_body(input)
     } else {
-        format!("{}\n    return \"ok\"", indent_agent_repl_body(input))
+        format!("{}\n    Ok(())", indent_agent_repl_body(input))
     };
     let body = if live_binding_prelude.trim().is_empty() {
         cell_body
@@ -1352,7 +1362,7 @@ pub(super) fn agent_repl_cell_source(
         )
     };
     format!(
-        "#[agent(version = 1)]\nagent @agent.repl.cell_{index} repl_cell_{index}()\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n"
+        "{item_prefix}fn repl_cell_{index}() -> Result<Unit, AgentError>\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n\nentry agent @entry.agent.repl.cell_{index} {{\n    controller = repl_cell_{index}\n}}\n"
     )
 }
 

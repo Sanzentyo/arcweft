@@ -1,7 +1,10 @@
-#[agent(version = 1)]
-agent @agent.cli.run_smoke run_smoke()
+fn run_smoke() -> Result<Unit, AgentError>
 effects { agent.observe }
 {
     observe()
-    return "done"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = run_smoke
 }

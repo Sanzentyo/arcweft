@@ -68,10 +68,8 @@ pub(in crate::app) struct RuntimeRunOptions {
     pub(in crate::app) profile: ProfileOptions,
     #[arg(long, value_enum, default_value_t = CliRuntimeRunner::Auto)]
     pub(in crate::app) runner: CliRuntimeRunner,
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     pub(in crate::app) entry: Option<String>,
-    #[arg(long, conflicts_with = "entry")]
-    pub(in crate::app) flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     pub(in crate::app) executor: CliRuntimeExecutorTier,
     #[arg(long, value_enum)]
@@ -115,10 +113,8 @@ pub(in crate::app) struct RuntimeProfileOptions {
     pub(in crate::app) path: Option<PathBuf>,
     #[command(flatten)]
     pub(in crate::app) profile: ProfileOptions,
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     pub(in crate::app) entry: Option<String>,
-    #[arg(long, conflicts_with = "entry")]
-    pub(in crate::app) flow: Option<String>,
     #[arg(long)]
     pub(in crate::app) adapter: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]

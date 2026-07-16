@@ -96,11 +96,36 @@ pub character alice {
     }
 }
 
-entry game {
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.profiled_rich_text
 }
 
-flow profiled_rich_text {
+flow profiled_rich_text(state: GameState) {
     alice.say(id=@say.profiled.001, voice=auto)[
         Profile selected defaults decide ruby size and dialogue View style: |[星影](ほしかげ) と [.shake amp=1px seed=profiled]揺れる文字[/]。[p]
     ]

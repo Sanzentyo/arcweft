@@ -160,12 +160,9 @@ impl<'a> RuntimeTypeValidator<'a> {
     }
 
     fn validate_entry_targets(&mut self) {
-        if let Some(entry) = &self.plan.entry_flow {
-            self.validate_flow_target("entry_flow", entry);
-        }
         for entry in &self.plan.entries {
             match &entry.target {
-                RuntimeEntryTarget::Flow(flow) => {
+                RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
                     self.report.stats.route_targets += 1;
                     self.validate_flow_target(&entry.id.public_label().into_string(), flow);
                 }
@@ -789,7 +786,11 @@ fn has_required_type_evidence(types: &TypeCheckReport) -> bool {
 mod tests {
     use super::*;
     use arcweft_core::effect::RuntimeEffectExpr;
-    use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
+    use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+    use arcweft_core::plan::{
+        EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
+        RuntimeEntryTarget, RuntimeFlow,
+    };
     use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
     use arcweft_lang_sema::check::{
         TypeCheckStats, TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
@@ -800,10 +801,21 @@ mod tests {
         FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
     }
 
+    fn cli_entry(flow: &str) -> RuntimeEntrySpec {
+        RuntimeEntrySpec {
+            id: EntryRuntimeId::from_source_entity_body("entry.main")
+                .expect("test entry ID is valid"),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([1; 32]),
+            target: RuntimeEntryTarget::Flow(flow_id(flow)),
+            roles: RuntimeEntryRoles::None,
+        }
+    }
+
     #[test]
     fn runtime_type_validation_accepts_bool_conditions_and_existing_targets() {
         let plan = RuntimePlan {
-            entry_flow: Some(flow_id("flow.main")),
+            entries: vec![cli_entry("flow.main")],
             flows: vec![RuntimeFlow {
                 id: flow_id("flow.main"),
                 ops: vec![FlowOp::If {
@@ -832,7 +844,7 @@ mod tests {
     #[test]
     fn runtime_type_validation_rejects_structural_type_conflicts() {
         let plan = RuntimePlan {
-            entry_flow: Some(flow_id("flow.missing")),
+            entries: vec![cli_entry("flow.missing")],
             flows: vec![RuntimeFlow {
                 id: flow_id("flow.main"),
                 ops: vec![
@@ -924,6 +936,8 @@ mod tests {
             view_part_catalog: arcweft_lang_sema::view_part::CheckedViewPartCatalog::default(),
             view_part_diagnostics: Vec::new(),
             canonicalization_inventories: Vec::new(),
+            project_callable_references: Vec::new(),
+            project_entity_references: Vec::new(),
         }));
     }
 
@@ -980,6 +994,8 @@ mod tests {
             view_part_catalog: arcweft_lang_sema::view_part::CheckedViewPartCatalog::default(),
             view_part_diagnostics: Vec::new(),
             canonicalization_inventories: Vec::new(),
+            project_callable_references: Vec::new(),
+            project_entity_references: Vec::new(),
         }
     }
 }

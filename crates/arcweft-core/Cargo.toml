@@ -14,11 +14,10 @@ arcweft-id = { path = "../arcweft-id" }
 arcweft-interaction-model.workspace = true
 arcweft-need = { path = "../arcweft-need" }
 arcweft-source = { path = "../arcweft-source" }
+blake3.workspace = true
 serde = { workspace = true, features = ["derive", "rc"] }
-thiserror.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
+thiserror.workspace = true
 
 [lib]
 path = "src/lib.rs"

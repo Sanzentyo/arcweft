@@ -1,18 +1,18 @@
 use super::{
-    CallArg, ChoiceAction, EntityRef, EntryItem, Expr, HirFlowItem, HirModule, HirTopLevelDecl,
-    MatchExprArm, ProjectGraphDependencyRelation, ProjectGraphDependencyRelationKind,
-    ProjectGraphRelation, ProjectGraphRelationKind, ProjectGraphSymbolRef, ProjectSemanticIndex,
+    CallArg, ChoiceAction, EntityRef, Expr, HirEntryItem, HirFlowItem, HirModule, MatchExprArm,
+    ProjectGraphDependencyRelation, ProjectGraphDependencyRelationKind, ProjectGraphRelation,
+    ProjectGraphRelationKind, ProjectGraphSymbolRef, ProjectSemanticIndex,
     ProjectSemanticIndexError, PublicId, QualifiedName, Stmt,
 };
 
 pub(super) fn index_entry_relations(
     entry_id: &EntityRef,
-    items: &[EntryItem],
+    items: &[HirEntryItem],
     mut index: ProjectSemanticIndex,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for item in items {
         match item {
-            EntryItem::Goto(target) => {
+            HirEntryItem::Goto(target) => {
                 index = index_entity_relation(
                     entry_id,
                     target,
@@ -20,7 +20,7 @@ pub(super) fn index_entry_relations(
                     index,
                 )?;
             }
-            EntryItem::Route { target, .. } => {
+            HirEntryItem::Route { target, .. } => {
                 index = index_entity_relation(
                     entry_id,
                     target,
@@ -28,7 +28,13 @@ pub(super) fn index_entry_relations(
                     index,
                 )?;
             }
-            EntryItem::Option { .. } | EntryItem::Raw(_) => {}
+            HirEntryItem::StateType { .. }
+            | HirEntryItem::Initializer { .. }
+            | HirEntryItem::EventType { .. }
+            | HirEntryItem::Reducer { .. }
+            | HirEntryItem::Controller { .. }
+            | HirEntryItem::Option { .. }
+            | HirEntryItem::Raw(_) => {}
         }
     }
     Ok(index)
@@ -62,17 +68,11 @@ pub(super) fn index_project_symbol_dependency_relations(
             ProjectGraphSymbolRef::Entity(public_id_for_relation(id, "flow dependency source")?);
         index = index_flow_items_symbol_dependency_relations(&parent, flow.body(), index)?;
     }
-    for declaration in module.declarations() {
-        if let HirTopLevelDecl::Callable(item) = declaration {
-            let parent = ProjectGraphSymbolRef::Callable(QualifiedName::new(item.name()));
-            index = index_stmt_body_symbol_dependency_relations(
-                &parent,
-                item.body_statements(),
-                index,
-            )?;
-            if let Some(value) = item.body_value() {
-                index = index_expr_symbol_dependency_relations(&parent, value, index)?;
-            }
+    for function in module.functions() {
+        let parent = ProjectGraphSymbolRef::Callable(QualifiedName::new(function.qualified_name()));
+        index = index_stmt_body_symbol_dependency_relations(&parent, function.statements(), index)?;
+        if let Some(value) = function.value() {
+            index = index_expr_symbol_dependency_relations(&parent, value.expr(), index)?;
         }
     }
     Ok(index)
@@ -431,10 +431,7 @@ fn project_callable_callee(callee: &Expr, index: &ProjectSemanticIndex) -> Optio
         return None;
     };
     let name = QualifiedName::new(path.as_label());
-    index
-        .project_callables()
-        .contains_key(&name)
-        .then_some(name)
+    index.project_callable(&name).is_some().then_some(name)
 }
 
 fn index_two_expr_symbol_dependency_relations(

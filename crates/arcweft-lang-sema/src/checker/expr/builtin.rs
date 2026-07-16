@@ -1,4 +1,7 @@
-use crate::types::TypeKind;
+use crate::{
+    callable::{BuiltinCallableId, CallableName, CallablePath, ReductionConstructorKind},
+    types::TypeKind,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum BuiltinCallSpec {
@@ -9,12 +12,24 @@ pub(super) enum BuiltinCallSpec {
     InlineFailureFallback,
     Math(MathIntrinsic),
     Never,
+    Reduction(ReductionConstructorKind),
     StdFloat(StdFloatIntrinsic),
     Vector(usize),
 }
 
 impl BuiltinCallSpec {
     pub(super) fn resolve(path: &str) -> Option<Self> {
+        let callable_path = CallablePath::try_new(
+            path.split('.')
+                .map(CallableName::try_new)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?,
+        )
+        .ok()?;
+        if let Some(BuiltinCallableId::Reduction(kind)) = BuiltinCallableId::resolve(&callable_path)
+        {
+            return Some(Self::Reduction(kind));
+        }
         let segments = path.split('.').collect::<Vec<_>>();
         StdFloatIntrinsic::resolve(&segments)
             .map(Self::StdFloat)

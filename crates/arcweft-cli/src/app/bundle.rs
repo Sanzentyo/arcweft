@@ -55,7 +55,7 @@ use arcweft_compiler::style::CompiledViewStyleArtifact;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
-    plan::{FlowOp, RuntimeEntryKind, RuntimePlan},
+    plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
@@ -115,10 +115,8 @@ pub(in crate::app) struct RunBundleOptions {
     bundle: PathBuf,
     #[arg(long)]
     patch: Option<PathBuf>,
-    #[arg(long, conflicts_with = "flow")]
+    #[arg(long)]
     entry: Option<String>,
-    #[arg(long, conflicts_with = "entry")]
-    flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 8)]
@@ -173,19 +171,25 @@ impl BundleOptions {
     }
 }
 
-impl From<&RunBundleOptions> for BundleRunnerOptions {
-    fn from(options: &RunBundleOptions) -> Self {
-        Self {
-            entry: options.entry.clone(),
-            flow: options.flow.clone(),
-            executor: options.executor.into(),
-            steps: options.steps,
-            mode: options.mode.into(),
-            max_ops: options.max_ops,
-            values: options.values.clone(),
-            pure_config: RuntimePureAcceleratorConfig::default(),
-        }
-    }
+fn bundle_runner_options(options: &RunBundleOptions) -> Result<BundleRunnerOptions, ExitCode> {
+    let entry = options
+        .entry
+        .as_deref()
+        .map(EntryRuntimeId::from_source_entity_body)
+        .transpose()
+        .map_err(|error| {
+            eprintln!("error: --entry must be an exact canonical entry.* ID: {error}");
+            ExitCode::from(2)
+        })?;
+    Ok(BundleRunnerOptions {
+        entry,
+        executor: options.executor.into(),
+        steps: options.steps,
+        mode: options.mode.into(),
+        max_ops: options.max_ops,
+        values: options.values.clone(),
+        pure_config: RuntimePureAcceleratorConfig::default(),
+    })
 }
 
 fn parse_bundle_format_arg(value: &str) -> Result<BundleFormat, String> {
@@ -205,10 +209,12 @@ fn parse_bundle_format_arg(value: &str) -> Result<BundleFormat, String> {
 fn bundle_launch_kind(kind: LaunchKind) -> BundleLaunchKind {
     match kind {
         LaunchKind::Game => BundleLaunchKind::Game,
+        LaunchKind::Editor => BundleLaunchKind::Editor,
         LaunchKind::Cli => BundleLaunchKind::Cli,
         LaunchKind::Server => BundleLaunchKind::Server,
         LaunchKind::Test => BundleLaunchKind::Test,
         LaunchKind::Bench => BundleLaunchKind::Bench,
+        LaunchKind::Agent => BundleLaunchKind::Agent,
     }
 }
 
@@ -705,16 +711,24 @@ fn bundle_manifest(
         profile_kind: selection
             .profile()
             .map(|profile| bundle_launch_kind(profile.kind())),
-        entry: selection.entry().map(str::to_owned),
+        entry: selection.entry().map(|entry| entry.as_str().to_owned()),
         adapter: selection.adapter().map(str::to_owned),
         adapter_manifest_ids,
         required_host_calls,
         runtime: BundleRuntimeSummary {
-            entry_flow: compiled
-                .plan
-                .entry_flow
-                .as_ref()
-                .map(|flow| flow.public_label().into_string()),
+            entry_flow: selection.entry().and_then(|selected| {
+                compiled
+                    .plan
+                    .entries
+                    .iter()
+                    .find(|entry| entry.id.public_label().as_str() == selected.as_str())
+                    .and_then(|entry| match &entry.target {
+                        RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
+                            Some(flow.public_label().into_string())
+                        }
+                        RuntimeEntryTarget::Routes(_) => None,
+                    })
+            }),
             flows: compiled.bytecode_stats.flows,
             bytecode_instructions: compiled.bytecode_stats.instructions,
             line_task_groups: compiled.bytecode_stats.line_task_groups,
@@ -781,7 +795,7 @@ pub(super) fn run_bundle_command(
     options: &RunBundleOptions,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<(), ExitCode> {
-    let runner_options = BundleRunnerOptions::from(options);
+    let runner_options = bundle_runner_options(options)?;
     let execution = if let Some(patch) = options.patch.as_ref() {
         run_patched_bundle_with_native_adapters(
             &options.bundle,
@@ -950,7 +964,8 @@ fn run_patched_bundle_with_native_adapters(
 
 fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
     match error {
-        BundleRunnerError::ConflictingEntrySelection
+        BundleRunnerError::MissingEntrySelection
+        | BundleRunnerError::InvalidEntrySelection { .. }
         | BundleRunnerError::ExpectedAwfbProduct { .. } => ExitCode::from(2),
         BundleRunnerError::ReadBundle { .. }
         | BundleRunnerError::DecodeBundle(_)
@@ -967,9 +982,9 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::CreateVirtualFileDirectory(_)
         | BundleRunnerError::MaterializeVirtualFile(_)
         | BundleRunnerError::InvalidVirtualFilePath
-        | BundleRunnerError::UnknownFlow { .. }
         | BundleRunnerError::UnknownEntry { .. }
         | BundleRunnerError::NonFlowEntry { .. }
+        | BundleRunnerError::StartEntry(_)
         | BundleRunnerError::NativeAdapter(_) => ExitCode::FAILURE,
     }
 }

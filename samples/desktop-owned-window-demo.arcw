@@ -3,11 +3,36 @@ pub character narrator {
     default_voice = auto
 }
 
+struct GameState {
+    started: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    GameState { started = false }
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
 entry game @entry.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
     goto @flow.main
 }
 
-flow main effects { desktop.window.owned.control } {
+flow main(state: GameState) effects { desktop.window.owned.control } {
     narrator:
         Owned window demo: starting in normal window mode.[p]
 

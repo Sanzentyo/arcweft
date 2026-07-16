@@ -688,6 +688,8 @@ pub dialogue defaults @dialogue.mobile {
 pub character alice {
 }
 
+entry cli @entry.main { goto @flow.opening }
+
 flow opening {
     alice: |[夢](ゆめ)[p]
 }
@@ -698,8 +700,12 @@ flow opening {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "plan-profile-dialogue-defaults"
+
 [profiles.dev]
-kind = "game"
+kind = "cli"
+entry = "entry.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 dialogue_defaults = "dialogue.mobile"
@@ -1149,8 +1155,9 @@ fn profile_json_can_select_aot_executor_without_absolute_source() {
     let path = temp_arcw(
         "profile-aot",
         r#"
+entry cli @entry.profile { goto @flow.profile }
+
 flow @flow.profile profile {
-    log.info("profile aot")
     return "done"
 }
 "#,
@@ -1159,6 +1166,8 @@ flow @flow.profile profile {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("profile")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.profile")
         .arg("--executor")
         .arg("aot")
         .arg("--mode")
@@ -1174,17 +1183,24 @@ flow @flow.profile profile {
         "AOT profile should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"executor\": \"aot\"")
-            && stdout.contains("\"aot_fast_path_ops\": 2")
-            && stdout.contains("\"name\": \"run\"")
-            && stdout.contains("\"source\": \"arcweft-cli-profile-aot-"),
-        "profile JSON should include AOT executor, fast-path stats, and relative source label: {stdout}"
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("profile output is structured JSON");
+    assert_eq!(json["runtime"]["executor"], "aot");
+    assert_eq!(json["runtime"]["executor_stats"]["aot_fast_path_ops"], 1);
+    assert_eq!(
+        json["phases"]
+            .as_array()
+            .and_then(|phases| phases.last())
+            .and_then(|phase| phase["name"].as_str()),
+        Some("run")
     );
+    assert!(json["source"]
+        .as_str()
+        .is_some_and(|source| source.starts_with("arcweft-cli-profile-aot-")));
     assert!(
-        !stdout.contains(&std::env::temp_dir().display().to_string()),
-        "profile JSON must not record absolute temp paths: {stdout}"
+        !String::from_utf8_lossy(&output.stdout)
+            .contains(&std::env::temp_dir().display().to_string()),
+        "profile JSON must not record absolute temp paths: {json}"
     );
 }
 
@@ -1193,6 +1209,8 @@ fn profile_json_reports_runtime_math_backend_selection() {
     let path = temp_arcw(
         "profile-math-backend",
         r#"
+entry cli @entry.profile { goto @flow.profile }
+
 flow @flow.profile profile {
     log.info("profile math")
     return "done"
@@ -1203,6 +1221,8 @@ flow @flow.profile profile {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("profile")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.profile")
         .arg("--math-backend")
         .arg("ndarray")
         .arg("--math-wgpu-min-elements")
@@ -1400,6 +1420,8 @@ fn profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source(
     let path = temp_arcw(
         "profile-json",
         r#"
+entry cli @entry.profile { goto @flow.profile }
+
 flow @flow.profile profile {
     log.info("profile")
     return "done"
@@ -1410,6 +1432,8 @@ flow @flow.profile profile {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("profile")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.profile")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -1473,6 +1497,7 @@ extern capability fs {
     fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
+entry cli @entry.profile_io { goto @flow.profile_io }
 flow @flow.profile_io profile_io effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
@@ -1485,6 +1510,8 @@ flow @flow.profile_io profile_io effects { fs.read(save), fs.write(save) } {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("profile")
         .arg(&source_path)
+        .arg("--entry")
+        .arg("entry.profile_io")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -2023,7 +2050,6 @@ fn assert_run_bundle_output(fixture: &BundleNativeFileFixture, run_stdout: &str)
 fn run_build_bundle_command(fixture: &BundleNativeFileFixture) -> String {
     let build_bundle_path = fixture.dir.join("game-build.awfb");
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("build")
         .arg("bundle")
         .arg(&fixture.source_path)
         .arg("--output")
@@ -2062,7 +2088,6 @@ fn run_bundle_uses_embedding_registered_custom_adapter() {
         .expect("custom adapter output lock") = Some(fixture.marker_path.clone());
 
     let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("build")
         .arg("bundle")
         .arg("--manifest")
         .arg(&fixture.manifest_path)
@@ -2079,7 +2104,13 @@ fn run_bundle_uses_embedding_registered_custom_adapter() {
         "custom adapter bundle build should succeed, stderr: {}",
         String::from_utf8_lossy(&build_output.stderr)
     );
-    let bundle_json = fs::read_to_string(&fixture.bundle_path).expect("bundle is written");
+    let bundle = arcweft_bundle::ArcweftBundle::from_format_slice(
+        arcweft_bundle::BundleFormat::Awfb,
+        &fs::read(&fixture.bundle_path).expect("bundle AWFB is written"),
+    )
+    .expect("bundle AWFB decodes");
+    let bundle_json =
+        serde_json::to_string_pretty(&bundle).expect("decoded bundle serializes for assertions");
     assert!(
         bundle_json.contains("\"adapter_manifests\"")
             && bundle_json.contains("custom-file")
@@ -2127,7 +2158,7 @@ struct CustomAdapterBundleFixture {
 
 fn custom_adapter_bundle_fixture() -> CustomAdapterBundleFixture {
     let dir = temp_dir("bundle-custom-adapter");
-    let source_path = dir.join("game.arcw");
+    let source_path = dir.join("src/main.arcw");
     let manifest_path = dir.join("arcw.toml");
     let adapter_manifest_path = dir.join("custom-adapter.toml");
     let bundle_path = dir.join("custom.awfb");
@@ -2140,7 +2171,36 @@ extern capability custom {
     fn read(path: String) -> Need<String, CustomError> effects { custom.read }
 }
 
-flow @flow.opening opening effects { custom.read } {
+struct GameState {
+    ready: bool
+}
+
+enum GameEvent {
+    Start
+}
+
+fn initial_game_state() -> GameState
+effects {}
+{
+    initial_game_state()
+}
+
+fn reduce_game(state: &GameState, event: GameEvent)
+    -> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+    reduce_game(state, event)
+}
+
+entry game @entry.game.main {
+    state = GameState
+    initializer = initial_game_state
+    event = GameEvent
+    reducer = reduce_game
+    goto @flow.opening
+}
+
+flow @flow.opening opening(state: GameState) effects { custom.read } {
     let body = try await custom.read(path = "opening.txt") with { error e => return "failed" }
     return body
 }
@@ -2157,16 +2217,22 @@ effects = ["custom.read"]
 
 [[host_calls]]
 id = "custom.read"
+return_type = "String"
 effects = ["custom.read"]
+params = [{ name = "path", ty = "String" }]
 "#,
     )
     .expect("write custom adapter manifest");
     fs::write(
         &manifest_path,
         r#"
+[package]
+name = "bundle-custom-adapter"
+
 [profiles.game]
 kind = "game"
-source = "game.arcw"
+entry = "entry.game.main"
+source = "src/main.arcw"
 adapter = "custom-file"
 adapter_manifests = ["custom-adapter.toml"]
 "#,
@@ -2669,7 +2735,7 @@ fn fmt_preserves_sugar_by_default() {
 
 #[test]
 fn fmt_accepts_awfagent_path_and_preserves_agent_source_json() {
-    let source = "#[agent(version = 1)]\nagent @agent.cli.format_smoke format_smoke()\neffects { agent.resource.read, debug.record }\n{\n    // Keep comments and Agent calls stable.\n    let resource = try read_resource(\"arcweft://session/cli/observation/latest.json\")\n    attach(resource)\n    return resource.uri\n}\n";
+    let source = "fn format_smoke() -> Result<Unit, AgentError>\neffects { agent.resource.read, debug.record }\n{\n    // Keep comments and Agent calls stable.\n    let resource = try read_resource(\"arcweft://session/cli/observation/latest.json\")\n    attach(resource)\n    return Ok(())\n}\n\nentry agent @entry.agent.format_smoke {\n    controller = format_smoke\n}\n";
     let path = temp_file("fmt-agent-preserve", "awfagent", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -2695,7 +2761,7 @@ fn fmt_accepts_awfagent_path_and_preserves_agent_source_json() {
 
 #[test]
 fn fmt_rejects_unknown_option_without_rewriting_source() {
-    let source = "#[agent(version = 1)]\nagent @agent.cli.format_smoke format_smoke()\n{\n    return \"ok\"\n}\n";
+    let source = "fn format_smoke() -> Result<Unit, AgentError> {\n    return Ok(())\n}\n\nentry agent @entry.agent.format_smoke {\n    controller = format_smoke\n}\n";
     let path = temp_file("fmt-agent-reject-unknown", "awfagent", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -5447,11 +5513,13 @@ fn profile_inference_matmul_bias_adapter_measurement(math_backend: &str) -> serd
     let dir = temp_dir(&format!(
         "bench-profile-inference-matmul-bias-{math_backend}"
     ));
-    let source = dir.join("infer_bench.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
         r"
+entry bench @entry.infer { goto @flow.infer_matmul_bias_add_f32 }
+
 bench @bench.infer_matmul_bias_add_f32 {
     measure iterations = 3 { goto @flow.infer_matmul_bias_add_f32 }
 }
@@ -5466,9 +5534,13 @@ flow @flow.infer_matmul_bias_add_f32 infer_matmul_bias_add_f32(lhs: TensorF32, r
     fs::write(
         &manifest,
         r#"
+[package]
+name = "bench-profile-inference"
+
 [profiles."bench.infer"]
 kind = "bench"
-source = "infer_bench.arcw"
+entry = "entry.infer"
+source = "src/main.arcw"
 adapter = "inference-tensor"
 "#,
     )
@@ -7133,7 +7205,7 @@ flow @flow.main main {
 #[test]
 fn profile_check_accepts_explicit_route_parameters() {
     let dir = temp_dir("profile-check-explicit-routes");
-    let source = dir.join("server.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
@@ -7151,10 +7223,13 @@ flow @flow.hello hello(name: String) {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-explicit-routes"
+
 [profiles."server.dev"]
 kind = "server"
-source = "server.arcw"
-entry = "http"
+source = "src/main.arcw"
+entry = "entry.http"
 adapter = "native-http"
 "#,
     )
@@ -7180,12 +7255,14 @@ adapter = "native-http"
 #[test]
 fn profile_check_loads_project_adapter_manifest() {
     let dir = temp_dir("profile-check-custom-adapter-manifest");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     let adapter_manifest = dir.join("custom-adapter.toml");
     fs::write(
         &source,
         r#"
+entry cli @entry.main { goto @flow.opening }
+
 flow @flow.opening opening {
     let body = custom.read(path = "opening.txt")
     return body
@@ -7209,16 +7286,22 @@ params = [{ name = "path", ty = "String" }]
 
 [[host_calls]]
 id = "custom.read"
+return_type = "String"
 effects = ["custom.read"]
+params = [{ name = "path", ty = "String" }]
 "#,
     )
     .expect("write adapter manifest");
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-custom-adapter"
+
 [profiles.game]
-kind = "game"
-source = "game.arcw"
+kind = "cli"
+entry = "entry.main"
+source = "src/main.arcw"
 adapter = "custom-file"
 adapter_manifests = ["custom-adapter.toml"]
 "#,
@@ -7263,15 +7346,19 @@ adapter_manifests = ["custom-adapter.toml"]
 #[test]
 fn profile_check_reports_adapter_manifest_read_error() {
     let dir = temp_dir("profile-check-adapter-manifest-read-error");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(&source, "flow @flow.opening opening { return \"ok\" }\n").expect("write source");
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-adapter-read-error"
+
 [profiles.game]
 kind = "game"
-source = "game.arcw"
+entry = "entry.game.main"
+source = "src/main.arcw"
 adapter = "missing"
 adapter_manifests = ["missing-adapter.toml"]
 "#,
@@ -7299,7 +7386,7 @@ adapter_manifests = ["missing-adapter.toml"]
 #[test]
 fn profile_check_reports_adapter_manifest_parse_error() {
     let dir = temp_dir("profile-check-adapter-manifest-parse-error");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     let adapter_manifest = dir.join("bad-adapter.toml");
     fs::write(&source, "flow @flow.opening opening { return \"ok\" }\n").expect("write source");
@@ -7307,9 +7394,13 @@ fn profile_check_reports_adapter_manifest_parse_error() {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-adapter-parse-error"
+
 [profiles.game]
 kind = "game"
-source = "game.arcw"
+entry = "entry.game.main"
+source = "src/main.arcw"
 adapter = "missing"
 adapter_manifests = ["bad-adapter.toml"]
 "#,
@@ -7338,7 +7429,7 @@ adapter_manifests = ["bad-adapter.toml"]
 fn profile_check_loads_rust_metadata_for_extern_module() {
     let dir = temp_dir("profile-check-rust-metadata");
     let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     let metadata = metadata_dir.join("truck_game.json");
     fs::create_dir_all(&metadata_dir).expect("create metadata dir");
@@ -7349,6 +7440,8 @@ extern rust mod mini_games.truck from crate "truck_game" {
     pub type Rank
     pub fn score_to_rank(score: i32) -> Rank
 }
+
+entry cli @entry.main { goto @flow.opening }
 
 flow @flow.opening opening {
     let rank = mini_games.truck.score_to_rank(score = 42i32)
@@ -7367,9 +7460,13 @@ flow @flow.opening opening {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-rust-metadata"
+
 [profiles.game]
-kind = "game"
-source = "game.arcw"
+kind = "cli"
+entry = "entry.main"
+source = "src/main.arcw"
 rust_metadata = ["target/arcweft/truck_game.json"]
 "#,
     )
@@ -7405,20 +7502,17 @@ rust_metadata = ["target/arcweft/truck_game.json"]
     );
     let json: serde_json::Value =
         serde_json::from_slice(&profiled.stdout).expect("profiled check output is JSON");
-    assert!(
-        json["phases"]
-            .as_array()
-            .expect("phases are reported")
-            .iter()
-            .any(|phase| phase["name"] == "rust_metadata"),
-        "profiled check should report rust_metadata phase: {json}"
+    assert_eq!(json["status"], "ok", "profiled check should succeed: {json}");
+    assert_eq!(
+        json["package"], "profile-check-rust-metadata",
+        "profiled check should compile the selected project: {json}"
     );
 }
 
 #[test]
 fn profile_check_reports_rust_metadata_read_error() {
     let dir = temp_dir("profile-check-rust-metadata-read-error");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
@@ -7437,9 +7531,13 @@ flow @flow.opening opening {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-rust-read-error"
+
 [profiles.game]
 kind = "game"
-source = "game.arcw"
+entry = "entry.game.main"
+source = "src/main.arcw"
 rust_metadata = ["target/arcweft/missing.json"]
 "#,
     )
@@ -7467,7 +7565,7 @@ rust_metadata = ["target/arcweft/missing.json"]
 fn profile_check_reports_rust_metadata_parse_error() {
     let dir = temp_dir("profile-check-rust-metadata-parse-error");
     let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     let metadata = metadata_dir.join("bad.json");
     fs::create_dir_all(&metadata_dir).expect("create metadata dir");
@@ -7489,9 +7587,13 @@ flow @flow.opening opening {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-rust-parse-error"
+
 [profiles.game]
 kind = "game"
-source = "game.arcw"
+entry = "entry.game.main"
+source = "src/main.arcw"
 rust_metadata = ["target/arcweft/bad.json"]
 "#,
     )
@@ -7519,7 +7621,7 @@ rust_metadata = ["target/arcweft/bad.json"]
 fn profile_json_loads_rust_metadata_for_extern_module() {
     let dir = temp_dir("profile-rust-metadata");
     let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("game.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     let metadata = metadata_dir.join("truck_game.json");
     fs::create_dir_all(&metadata_dir).expect("create metadata dir");
@@ -7530,6 +7632,8 @@ extern rust mod mini_games.truck from crate "truck_game" {
     pub type Rank
     pub fn score_to_rank(score: i32) -> Rank
 }
+
+entry cli @entry.main { goto @flow.opening }
 
 flow @flow.opening opening {
     return "ok"
@@ -7547,9 +7651,13 @@ flow @flow.opening opening {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-rust-metadata"
+
 [profiles.game]
-kind = "game"
-source = "game.arcw"
+kind = "cli"
+entry = "entry.main"
+source = "src/main.arcw"
 rust_metadata = ["target/arcweft/truck_game.json"]
 "#,
     )
@@ -7581,8 +7689,8 @@ rust_metadata = ["target/arcweft/truck_game.json"]
             .as_array()
             .expect("phases are reported")
             .iter()
-            .any(|phase| phase["name"] == "rust_metadata"),
-        "profile should report rust_metadata phase: {json}"
+            .any(|phase| phase["name"] == "profile_topology"),
+        "profile should report the unified profile_topology phase: {json}"
     );
     assert!(
         !json
@@ -7595,7 +7703,7 @@ rust_metadata = ["target/arcweft/truck_game.json"]
 #[test]
 fn profile_check_rejects_ambient_route_params() {
     let dir = temp_dir("profile-check-route-params-rejected");
-    let source = dir.join("server.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
@@ -7613,10 +7721,13 @@ flow @flow.hello hello {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-check-route-params"
+
 [profiles."server.dev"]
 kind = "server"
-source = "server.arcw"
-entry = "http"
+source = "src/main.arcw"
+entry = "entry.http"
 adapter = "native-http"
 "#,
     )
@@ -7645,7 +7756,7 @@ adapter = "native-http"
 #[test]
 fn serve_profile_alias_lists_server_routes() {
     let dir = temp_dir("serve-profile-routes");
-    let source = dir.join("server.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
@@ -7663,10 +7774,13 @@ flow @flow.health health {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "serve-profile-routes"
+
 [profiles."server.plan"]
 kind = "server"
-source = "server.arcw"
-entry = "http"
+source = "src/main.arcw"
+entry = "entry.http"
 adapter = "native-http"
 "#,
     )
@@ -7701,7 +7815,7 @@ adapter = "native-http"
 fn serve_profile_preserves_rust_metadata_when_adapter_comes_from_profile() {
     let dir = temp_dir("serve-profile-rust-metadata");
     let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("server.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     let metadata = metadata_dir.join("truck_game.json");
     fs::create_dir_all(&metadata_dir).expect("create metadata dir");
@@ -7734,10 +7848,13 @@ flow @flow.rank rank {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "serve-profile-rust-metadata"
+
 [profiles."server.rust"]
 kind = "server"
-source = "server.arcw"
-entry = "http"
+source = "src/main.arcw"
+entry = "entry.http"
 adapter = "native-http"
 rust_metadata = ["target/arcweft/truck_game.json"]
 "#,
@@ -7773,7 +7890,7 @@ rust_metadata = ["target/arcweft/truck_game.json"]
 #[test]
 fn profile_source_and_path_are_mutually_exclusive() {
     let dir = temp_dir("profile-mutual-exclusion");
-    let source = dir.join("main.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
@@ -7787,9 +7904,13 @@ flow @flow.main main {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-mutual-exclusion"
+
 [profiles.game]
 kind = "game"
-source = "main.arcw"
+entry = "entry.game.main"
+source = "src/main.arcw"
 "#,
     )
     .expect("write launch manifest");
@@ -7817,7 +7938,7 @@ source = "main.arcw"
 #[test]
 fn profile_rejects_unknown_adapter() {
     let dir = temp_dir("profile-unknown-adapter");
-    let source = dir.join("server.arcw");
+    let source = dir.join("src/main.arcw");
     let manifest = dir.join("arcw.toml");
     fs::write(
         &source,
@@ -7833,10 +7954,13 @@ flow @flow.main main {
     fs::write(
         &manifest,
         r#"
+[package]
+name = "profile-unknown-adapter"
+
 [profiles.bad]
 kind = "server"
-source = "server.arcw"
-entry = "http"
+source = "src/main.arcw"
+entry = "entry.http"
 adapter = "custom-http"
 "#,
     )
@@ -7856,115 +7980,5 @@ adapter = "custom-http"
         String::from_utf8_lossy(&output.stderr).contains("unknown adapter `custom-http`"),
         "stderr should explain unknown adapter: {}",
         String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[test]
-fn cli_test_and_bench_profiles_use_profile_sources() {
-    let dir = temp_dir("profile-cli-test-bench");
-    let cli_source = dir.join("tool.arcw");
-    let test_source = dir.join("opening_test.arcw");
-    let bench_source = dir.join("opening_bench.arcw");
-    let manifest = dir.join("arcw.toml");
-    fs::write(
-        &cli_source,
-        r"
-entry cli @entry.main { goto @flow.main }
-
-flow @flow.main main(argc: i32) {
-    return argc
-}
-",
-    )
-    .expect("write cli source");
-    fs::write(
-        &test_source,
-        r#"
-test @test.opening scenario {
-    goto @flow.opening
-    expect.no_assertion_failures()
-}
-
-flow @flow.opening opening {
-    return "done"
-}
-"#,
-    )
-    .expect("write test source");
-    fs::write(
-        &bench_source,
-        r#"
-bench @bench.opening {
-    setup { let state = fixture<GameState>("opening.json") }
-    measure iterations = 1 { opening_choices() }
-}
-"#,
-    )
-    .expect("write bench source");
-    fs::write(
-        &manifest,
-        r#"
-[profiles."cli.main"]
-kind = "cli"
-source = "tool.arcw"
-entry = "main"
-
-[profiles."test.opening"]
-kind = "test"
-source = "opening_test.arcw"
-
-[profiles."bench.opening"]
-kind = "bench"
-source = "opening_bench.arcw"
-"#,
-    )
-    .expect("write launch manifest");
-
-    let cli = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("cli")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("cli.main")
-        .arg("--json")
-        .arg("--")
-        .arg("alice")
-        .output()
-        .expect("arcw cli --profile runs");
-    assert!(
-        cli.status.success(),
-        "cli profile should run, stderr: {}",
-        String::from_utf8_lossy(&cli.stderr)
-    );
-
-    let test = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("test")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("test.opening")
-        .arg("--json")
-        .output()
-        .expect("arcw test --profile runs");
-    assert!(
-        test.status.success(),
-        "test profile should run, stderr: {}",
-        String::from_utf8_lossy(&test.stderr)
-    );
-
-    let bench = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("bench")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("bench.opening")
-        .arg("--json")
-        .output()
-        .expect("arcw bench --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-    assert!(
-        bench.status.success(),
-        "bench profile should run, stderr: {}",
-        String::from_utf8_lossy(&bench.stderr)
     );
 }

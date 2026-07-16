@@ -199,7 +199,7 @@ fn source_parser_uses_the_same_open_nominal_grammar_on_owned_type_surfaces() {
         "flow bad { let value: ProjectFlag = true }",
         "type Bad = ProjectFlag",
         "struct Bad { value: ProjectFlag }",
-        "state Bad { value: ProjectFlag = true }",
+        "entry game @entry.bad {\nstate = ProjectFlag\ninitializer = init\nevent = ProjectFlag\nreducer = reduce\ngoto @flow.main\n}",
         "flow bad(value: ProjectFlag) {}",
         "fn bad(value: ProjectFlag) -> Unit {}",
         "trait Bad { fn value(input: ProjectFlag) -> Unit }",

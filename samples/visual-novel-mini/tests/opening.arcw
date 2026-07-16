@@ -1,6 +1,35 @@
 signal current_flow: Watch<Ref<Flow>>
 
-flow opening
+struct TestState {
+    started: bool
+}
+
+enum TestEvent {
+    Start
+}
+
+fn initial_test_state() -> TestState
+effects {}
+{
+    TestState { started = false }
+}
+
+fn reduce_test(state: &TestState, event: TestEvent)
+    -> Result<Reduction<TestState>, ReducerError>
+effects {}
+{
+    Ok(Reduction.unchanged(state))
+}
+
+entry test @entry.opening {
+    state = TestState
+    initializer = initial_test_state
+    event = TestEvent
+    reducer = reduce_test
+    goto @flow.opening
+}
+
+flow opening(state: TestState)
   effects { signal.write }
 {
     log.info("test opening")

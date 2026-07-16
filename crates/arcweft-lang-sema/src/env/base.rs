@@ -77,7 +77,6 @@ pub struct MethodSignature {
 /// Rust exports contributed by one adapter crate metadata manifest.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RustPackageExports {
-    pub(crate) functions: HashMap<String, FunctionSignature>,
     pub(crate) types: HashSet<String>,
 }
 
@@ -442,9 +441,9 @@ impl AgentActionEnvParam {
 }
 
 impl TypeCheckEnv {
-    /// Creates an empty type-checking environment.
+    /// Creates the core source environment with always-available runtime callables.
     pub fn new() -> Self {
-        Self::default()
+        Self::default().with_standard_runtime_callables()
     }
 
     /// Creates the standard source type-checking environment.
@@ -518,6 +517,83 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
+    }
+
+    /// Installs the finite source-visible runtime callable surface.
+    ///
+    /// These records are the single source for both standalone type checking
+    /// and the immutable core publication accepted by a registered world.
+    #[must_use]
+    fn with_standard_runtime_callables(self) -> Self {
+        let unit_callables = [
+            "log.trace",
+            "log.debug",
+            "log.info",
+            "log.warn",
+            "log.error",
+            "drop",
+            "drop_optional",
+            "on_drop",
+            "signal.set",
+            "metric.set",
+            "event.emit",
+            "adapter.events",
+            "scene.show",
+            "scene.clear",
+            "progress.set",
+            "meter.show",
+            "text.show",
+            "text.flush",
+            "voice.stop",
+            "cues.stop",
+            "ensure",
+            "assert",
+            "debug_assert",
+        ];
+        let env = unit_callables.into_iter().fold(self, |env, name| {
+            env.with_function_signature(name, FunctionSignature::return_only(TypeKind::Unit))
+        });
+        [
+            ("panic", TypeKind::Never),
+            ("fail", TypeKind::Never),
+            ("bail", TypeKind::Never),
+            (
+                "load_bg",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+                    error: Box::new(TypeKind::Named("ArcError".to_owned())),
+                },
+            ),
+            (
+                "asset.image",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+                    error: Box::new(TypeKind::Named("AssetError".to_owned())),
+                },
+            ),
+            (
+                "voice.load",
+                TypeKind::Need {
+                    ready: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
+                    error: Box::new(TypeKind::Named("VoiceError".to_owned())),
+                },
+            ),
+            ("len", TypeKind::I64),
+        ]
+        .into_iter()
+        .fold(env, |env, (name, result)| {
+            env.with_function_signature(name, FunctionSignature::return_only(result))
+        })
+        .with_method(
+            TypeKind::Named("VoiceHandle".to_owned()),
+            "stop",
+            TypeKind::Unit,
+        )
+        .with_method(
+            TypeKind::Named("DialogueText".to_owned()),
+            "flush",
+            TypeKind::Unit,
+        )
     }
 
     #[must_use]
@@ -887,23 +963,6 @@ impl TypeCheckEnv {
         self
     }
 
-    /// Registers one Rust function export under the adapter crate package.
-    #[must_use]
-    pub fn with_rust_function_export(
-        mut self,
-        package: impl Into<String>,
-        name: impl Into<String>,
-        signature: FunctionSignature,
-    ) -> Self {
-        let signature = normalize_function_signature(signature);
-        self.rust_packages
-            .entry(package.into())
-            .or_default()
-            .functions
-            .insert(name.into(), signature);
-        self
-    }
-
     /// Registers one Rust type export under the adapter crate package.
     #[must_use]
     pub fn with_rust_type_export(
@@ -1151,10 +1210,6 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
 }
 
 impl RustPackageExports {
-    pub(crate) fn function(&self, name: &str) -> Option<&FunctionSignature> {
-        self.functions.get(name)
-    }
-
     pub(crate) fn has_type(&self, name: &str) -> bool {
         self.types.contains(name)
     }

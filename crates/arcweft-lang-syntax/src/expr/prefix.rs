@@ -7,9 +7,10 @@ use crate::reference::{BorrowExpr, BorrowKind, DerefExpr};
 impl ExprParser {
     pub(super) fn parse_prefix(&mut self) -> Result<Expr, ExprParseError> {
         let prefix = self.bump_lexed();
+        let prefix_range = self.absolute_range(&prefix);
         match prefix.token {
-            Token::Amp => self.parse_borrow_prefix(self.absolute_range(&prefix)),
-            Token::Star => self.parse_deref_prefix(self.absolute_range(&prefix)),
+            Token::Amp => self.parse_borrow_prefix(prefix_range),
+            Token::Star => self.parse_deref_prefix(prefix_range),
             Token::Ident(keyword) if keyword == "try" && self.peek_ident("await") => {
                 self.bump();
                 Ok(Expr::Await {
@@ -37,11 +38,11 @@ impl ExprParser {
             Token::Ident(keyword) if keyword == "match" => self.parse_match_expr_after_keyword(),
             Token::Bang => Ok(Expr::Unary {
                 op: UnaryOp::Not,
-                expr: Box::new(self.parse_prefix_operand(self.absolute_range(&prefix))?),
+                expr: Box::new(self.parse_prefix_operand(prefix_range)?),
             }),
             Token::Op(ExprOp::NegOrSub) => Ok(Expr::Unary {
                 op: UnaryOp::Neg,
-                expr: Box::new(self.parse_prefix_operand(self.absolute_range(&prefix))?),
+                expr: Box::new(self.parse_prefix_operand(prefix_range)?),
             }),
             Token::Op(ExprOp::Or) => self.parse_zero_arg_closure(),
             Token::Op(ExprOp::ClosurePipe) => self.parse_closure_after_open_pipe(),
@@ -63,7 +64,7 @@ impl ExprParser {
             }
             Token::Literal(literal) => Ok(Expr::Literal(literal)),
             Token::Invalid(message) => Err(ExprParseError::new(&message)),
-            Token::Entity(entity) => Ok(Expr::EntityRef(entity)),
+            Token::Entity(entity) => Ok(Expr::EntityRef(entity.with_authored_range(prefix_range))),
             Token::LifetimePath { key, optional } => Ok(Expr::LifetimePath { key, optional }),
             Token::Ident(path) => {
                 if self.peek() == &Token::LBrace {

@@ -19,6 +19,7 @@ name = "lsp-character-completions"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 character_manifests = ["assets/zundamon.awchar"]
@@ -59,6 +60,7 @@ name = "lsp-character-hover"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 character_manifests = ["assets/zundamon.awchar"]
@@ -91,6 +93,7 @@ name = "lsp-character-missing"
 
 [profiles.dev]
 kind = "game"
+entry = "entry.game.main"
 source = "src/main.arcw"
 adapter = "sans-io"
 character_manifests = ["assets/missing.awchar"]

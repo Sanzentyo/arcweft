@@ -391,6 +391,67 @@ pub fn decode_typed_json_save<T>(
 where
     T: DeserializeOwned,
 {
+    let payload =
+        decode_typed_json_payload(input, expected_schema_id, current_schema_version, options)?;
+    serde_json::from_slice(&payload).map_err(|error| {
+        DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("failed to decode typed JSON save payload: {error}"),
+        )
+    })
+}
+
+/// Decodes a typed JSON save while rejecting ignored fields anywhere in the
+/// payload tree.
+///
+/// This is intended for fixed, versioned payloads whose current schema must be
+/// matched exactly. It does not add a migration or predecessor reader.
+pub fn decode_strict_typed_json_save<T>(
+    input: &[u8],
+    expected_schema_id: &SaveSchemaId,
+    current_schema_version: u32,
+    options: &SaveDecodeOptions,
+) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    let payload =
+        decode_typed_json_payload(input, expected_schema_id, current_schema_version, options)?;
+    let mut deserializer = serde_json::Deserializer::from_slice(&payload);
+    let mut ignored = Vec::new();
+    let value = serde_ignored::deserialize(&mut deserializer, |path| {
+        ignored.push(path.to_string());
+    })
+    .map_err(|error| {
+        DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("failed to decode typed JSON save payload: {error}"),
+        )
+    })?;
+    deserializer.end().map_err(|error| {
+        DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("failed to decode typed JSON save payload: {error}"),
+        )
+    })?;
+    if !ignored.is_empty() {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!(
+                "typed JSON save payload contains unknown field `{}`",
+                ignored.join("`, `")
+            ),
+        ));
+    }
+    Ok(value)
+}
+
+fn decode_typed_json_payload(
+    input: &[u8],
+    expected_schema_id: &SaveSchemaId,
+    current_schema_version: u32,
+    options: &SaveDecodeOptions,
+) -> Result<Vec<u8>> {
     let envelope = SaveEnvelope::decode_bytes(input, options)?;
     if &envelope.schema_id != expected_schema_id {
         return Err(DataError::new(
@@ -429,12 +490,7 @@ where
             ),
         ));
     }
-    serde_json::from_slice(&envelope.payload).map_err(|error| {
-        DataError::new(
-            DataErrorKind::InvalidEncoding,
-            format!("failed to decode typed JSON save payload: {error}"),
-        )
-    })
+    Ok(envelope.payload)
 }
 
 struct Cursor<'a> {
@@ -568,5 +624,31 @@ mod typed_json_tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("trailing data"));
+    }
+
+    #[test]
+    fn strict_typed_json_save_rejects_unknown_nested_fields() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Nested {
+            payload: TypedPayload,
+        }
+
+        let bytes = SaveEnvelope::new(
+            schema(),
+            1,
+            TYPED_JSON_CODEC_ID,
+            br#"{"payload":{"value":7,"predecessor":true}}"#.to_vec(),
+        )
+        .encode_bytes()
+        .unwrap();
+        let error = decode_strict_typed_json_save::<Nested>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("payload.predecessor"));
     }
 }

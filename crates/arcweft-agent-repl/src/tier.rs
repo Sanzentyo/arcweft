@@ -37,8 +37,8 @@ pub struct ReplExecutableCell {
     pub ordinal: u64,
     pub commit_hash: String,
     pub source_hash: String,
-    pub synthetic_agent_id: String,
-    pub entry_flow: Option<String>,
+    pub synthetic_controller_name: String,
+    pub entry: Option<String>,
     pub bytecode: BytecodeProgram,
 }
 

@@ -67,9 +67,6 @@ pub(super) fn declaration_kind(keywords: &[&str]) -> Option<SyntaxKind> {
         "fn" => SyntaxKind::FunctionItem,
         "predicate" => SyntaxKind::PredicateItem,
         "proof" => SyntaxKind::ProofItem,
-        "agent" => SyntaxKind::AgentItem,
-        "callable" => SyntaxKind::CallableItem,
-        "state" => SyntaxKind::StateItem,
         "trait" => SyntaxKind::TraitItem,
         "impl" => SyntaxKind::ImplItem,
         "enum" => SyntaxKind::EnumItem,
@@ -97,9 +94,6 @@ pub(super) const fn is_declaration_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::FunctionItem
             | SyntaxKind::PredicateItem
             | SyntaxKind::ProofItem
-            | SyntaxKind::AgentItem
-            | SyntaxKind::CallableItem
-            | SyntaxKind::StateItem
             | SyntaxKind::TraitItem
             | SyntaxKind::ImplItem
             | SyntaxKind::EnumItem

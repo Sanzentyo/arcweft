@@ -148,7 +148,7 @@ impl AwbcProductStepExecutor {
         Ok(())
     }
 
-    fn validate_snapshot(
+    pub(super) fn validate_snapshot(
         &self,
         snapshot: &AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
@@ -216,7 +216,7 @@ impl AwbcProductStepExecutor {
         Ok(())
     }
 
-    fn rebuild_facade_source_states_from_compact(&mut self) {
+    pub(super) fn rebuild_facade_source_states_from_compact(&mut self) {
         self.facade_fiber.source_states.clear();
         for (index, source) in self.program.source_plans.iter().enumerate() {
             let Some(index) = u32::try_from(index).ok() else {
@@ -240,7 +240,7 @@ impl AwbcProductStepExecutor {
         }
     }
 
-    fn rebuild_facade_stream_states_from_compact(&mut self) {
+    pub(super) fn rebuild_facade_stream_states_from_compact(&mut self) {
         self.facade_fiber.stream_states.clear();
         for (index, _) in self.program.stream_plans.iter().enumerate() {
             let Some(index) = u32::try_from(index).ok() else {

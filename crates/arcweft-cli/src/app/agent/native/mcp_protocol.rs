@@ -950,7 +950,7 @@ pub(super) fn agent_mcp_call_script_run(
         Err(error) => AgentScriptRunReport {
             path: options.path.display().to_string(),
             ok: false,
-            agents: 0,
+            agent_entries: 0,
             steps: 0,
             host_calls: 0,
             events_emitted: 0,
@@ -980,9 +980,19 @@ pub(super) fn agent_mcp_call_script_run(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the MCP boundary constructs one complete Agent Script option record with field-local validation"
+)]
 pub(super) fn agent_mcp_script_run_options(
     arguments: &serde_json::Value,
 ) -> Result<AgentScriptRunOptions, String> {
+    if arguments.get("flow").is_some() {
+        return Err(
+            "arcweft.script.run does not accept arguments.flow; select an exact entry.* ID"
+                .to_owned(),
+        );
+    }
     let path = arguments
         .get("path")
         .and_then(serde_json::Value::as_str)
@@ -1002,8 +1012,18 @@ pub(super) fn agent_mcp_script_run_options(
                 .to_owned(),
         );
     }
+    if native_source.is_some() && arguments.get("entry").is_none() {
+        return Err(
+            "arcweft.script.run with arguments.native_source requires arguments.entry".to_owned(),
+        );
+    }
     Ok(AgentScriptRunOptions {
         path,
+        controller_entry: arguments
+            .get("controller_entry")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("entry.agent.main")
+            .to_owned(),
         json: true,
         native_source,
         native_profile: ProfileOptions {
@@ -1015,10 +1035,6 @@ pub(super) fn agent_mcp_script_run_options(
         },
         entry: arguments
             .get("entry")
-            .and_then(serde_json::Value::as_str)
-            .map(ToOwned::to_owned),
-        flow: arguments
-            .get("flow")
             .and_then(serde_json::Value::as_str)
             .map(ToOwned::to_owned),
         executor: agent_mcp_value_enum_argument(arguments, "executor", "arcweft.script.run")?

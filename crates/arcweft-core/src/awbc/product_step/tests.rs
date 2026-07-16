@@ -296,10 +296,14 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             flags: AwbcFunctionFlags::default(),
         }],
         entries: vec![crate::awbc::schema::AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
-            kind: crate::awbc::schema::AwbcEntryKind::Game,
+            kind: crate::awbc::schema::AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     }
@@ -346,10 +350,14 @@ fn content_ensure_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::default(),
         }],
         entries: vec![crate::awbc::schema::AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
-            kind: crate::awbc::schema::AwbcEntryKind::Game,
+            kind: crate::awbc::schema::AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     }
@@ -427,10 +435,14 @@ fn host_call_program() -> AwbcProgram {
             flags: AwbcFunctionFlags(AwbcFunctionFlags::MAY_SUSPEND),
         }],
         entries: vec![crate::awbc::schema::AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
-            kind: crate::awbc::schema::AwbcEntryKind::Game,
+            kind: crate::awbc::schema::AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
     }

@@ -108,14 +108,14 @@ impl TypeChecker<'_> {
             let returned_arity = signature.return_type().function_arity().unwrap_or_default();
             self.record_function_value_effect_call(None, effect_callable, 1, returned_arity);
         }
-        self.record_typed_lowering_evidence(TypedLoweringEvidence {
+        self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
             expression_id,
-            kind: TypedLoweringEvidenceKind::DataLastMethodFallback {
+            TypedLoweringEvidenceKind::DataLastMethodFallback {
                 method: method_name.to_owned(),
                 arg_count: args.len(),
                 arg_order,
             },
-        });
+        ));
         Some(shape.result_type)
     }
 

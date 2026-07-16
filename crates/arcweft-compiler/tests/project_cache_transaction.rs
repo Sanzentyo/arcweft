@@ -92,7 +92,7 @@ fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrat
 }
 
 fn context(base: TypeCheckEnv, facts: Arc<ProjectRegistrationFacts>) -> ProjectCompilationContext {
-    ProjectCompilationContext::new(Arc::new(base), facts, None)
+    ProjectCompilationContext::new(Arc::new(base), facts, None, None, Vec::new())
 }
 
 #[test]

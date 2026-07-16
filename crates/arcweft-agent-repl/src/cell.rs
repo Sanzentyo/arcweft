@@ -1,5 +1,5 @@
 use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_core::plan::FlowRuntimeId;
+use arcweft_core::plan::EntryRuntimeId;
 
 use crate::binding::ReplBindingRecord;
 use crate::evidence::{ReplExecutionRecord, ReplGenerationId};
@@ -51,12 +51,12 @@ pub struct ReplCellRecord {
     pub source: String,
     pub source_hash: String,
     pub synthetic_source_hash: String,
-    pub synthetic_agent_id: String,
+    pub synthetic_controller_name: String,
     pub base_program_hash: String,
     pub generation: ReplGenerationId,
     pub commit_hash: String,
     pub overlay_hash: String,
-    pub entry_flow: Option<String>,
+    pub entry: Option<String>,
     pub bytecode_stats: ReplBytecodeStats,
     pub verified_effects: Vec<String>,
     pub bindings: Vec<ReplBindingRecord>,
@@ -197,11 +197,11 @@ impl ReplCellRecord {
         source: String,
         source_hash: String,
         synthetic_source_hash: String,
-        synthetic_agent_id: String,
+        synthetic_controller_name: String,
         base_program_hash: String,
         generation: ReplGenerationId,
         commit_hash: String,
-        entry_flow: Option<FlowRuntimeId>,
+        entry: Option<EntryRuntimeId>,
         bytecode_stats: ReplBytecodeStats,
         verified_effects: Vec<String>,
         bindings: Vec<ReplBindingRecord>,
@@ -214,12 +214,12 @@ impl ReplCellRecord {
             source,
             source_hash,
             synthetic_source_hash,
-            synthetic_agent_id,
+            synthetic_controller_name,
             base_program_hash,
             generation,
             commit_hash,
             overlay_hash: String::new(),
-            entry_flow: entry_flow.map(|flow| flow.public_label().into_string()),
+            entry: entry.map(|entry| entry.public_label().into_string()),
             bytecode_stats,
             verified_effects,
             bindings,

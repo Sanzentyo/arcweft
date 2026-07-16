@@ -11,16 +11,21 @@ use std::{
 
 use arcweft_lang_hir::{
     callable_source::HirCallableSignatureSource,
+    model::HirTopLevelDecl,
     project::HirProject,
-    symbol::{ProjectSymbolTable, ProjectSymbolTargetId},
+    symbol::{CallableDeclarationOwner, ProjectSymbolTable, ProjectSymbolTargetId},
 };
 use arcweft_lang_syntax::{
+    ast::items::{ExternModMember, ExternModSource},
     ast::pattern::Pattern,
     types::{FnParam, FnParamGroup, FnParamKind},
 };
 
 use crate::{
-    checker::helpers::{signature_generic_names, type_ref_kind_with_generics},
+    checker::{
+        helpers::{signature_generic_names, type_ref_kind_with_generics},
+        signature::function_signature_type,
+    },
     effect_row::EffectRow,
     effects::EffectSet,
     env::{FunctionParam, FunctionSignature, TypeCheckEnv},
@@ -49,6 +54,7 @@ pub(crate) struct RegisteredCallableCatalogBuilder {
     project_modules: Vec<RegisteredProjectModuleCallables>,
     project_records: Vec<Arc<CallableRecord>>,
     project_bindings: Vec<(ProjectCallablePath, ProjectNameBinding)>,
+    rust_extern_aliases: Vec<RustExternAliasSeed>,
     environment_publications: Vec<EnvironmentCallablePublication>,
     work: CatalogBuildWork,
 }
@@ -59,6 +65,13 @@ struct ProjectParameterPublication {
     sources: Vec<CallableParameterSource>,
 }
 
+struct RustExternAliasSeed {
+    path: ProjectCallablePath,
+    package: String,
+    export: CallableName,
+    signature: FunctionSignature,
+}
+
 impl RegisteredCallableCatalogBuilder {
     pub(crate) fn new(limits: CallableLimits) -> Self {
         Self {
@@ -66,6 +79,7 @@ impl RegisteredCallableCatalogBuilder {
             project_modules: Vec::new(),
             project_records: Vec::new(),
             project_bindings: Vec::new(),
+            rust_extern_aliases: Vec::new(),
             environment_publications: Vec::new(),
             work: CatalogBuildWork::new(limits.max_catalog_build_work()),
         }
@@ -89,7 +103,7 @@ impl RegisteredCallableCatalogBuilder {
             }
             .into());
         }
-        for (module, _) in project.modules() {
+        for (module, hir) in project.modules() {
             self.work.charge(1)?;
             let source = project.source(module).ok_or_else(|| {
                 CallableCatalogBuildError::MissingProjectModuleSource {
@@ -111,6 +125,22 @@ impl RegisteredCallableCatalogBuilder {
                     &mut self.work,
                 )?);
                 declarations.push(source_record.declaration().clone());
+                if source_record.declaration().owner() == CallableDeclarationOwner::ExternCapability
+                {
+                    let CallableLookupKey::Free(path) = record.key() else {
+                        return Err(CallableCatalogBuildError::InvalidRecord(
+                            super::CallableCatalogError::IdKeyMismatch,
+                        ));
+                    };
+                    self.project_bindings.push((
+                        ProjectCallablePath::new(
+                            project.package().clone(),
+                            module.clone(),
+                            path.clone(),
+                        ),
+                        ProjectNameBinding::Callable(source_record.declaration().clone()),
+                    ));
+                }
                 self.project_records.push(record);
                 let record_count = self
                     .environment_publications
@@ -132,6 +162,51 @@ impl RegisteredCallableCatalogBuilder {
                     source.clone(),
                     declarations,
                 ));
+            self.add_rust_extern_aliases(project, module, hir)?;
+        }
+        Ok(())
+    }
+
+    fn add_rust_extern_aliases(
+        &mut self,
+        project: &HirProject,
+        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
+        hir: &arcweft_lang_hir::model::HirModule,
+    ) -> Result<(), CallableCatalogBuildError> {
+        for declaration in hir.declarations() {
+            let HirTopLevelDecl::ExternMod(item) = declaration else {
+                continue;
+            };
+            if item.abi() != "rust" {
+                continue;
+            }
+            let Some(ExternModSource::Crate(package)) = item.source() else {
+                continue;
+            };
+            for member in item.members() {
+                let ExternModMember::Function(function) = member else {
+                    continue;
+                };
+                self.work.charge(1)?;
+                let export = CallableName::try_new(function.signature().name())
+                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+                let path = item
+                    .path()
+                    .segments()
+                    .iter()
+                    .map(|segment| CallableName::try_new(segment.as_str()))
+                    .chain(std::iter::once(Ok(export.clone())))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+                let path = CallablePath::try_new(path)
+                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+                self.rust_extern_aliases.push(RustExternAliasSeed {
+                    path: ProjectCallablePath::new(project.package().clone(), module.clone(), path),
+                    package: package.clone(),
+                    export,
+                    signature: function_signature_type(function.signature()),
+                });
+            }
         }
         Ok(())
     }
@@ -207,16 +282,58 @@ impl RegisteredCallableCatalogBuilder {
     }
 
     pub(crate) fn finish(mut self) -> Result<RegisteredCallableCatalog, CallableCatalogBuildError> {
+        let environment =
+            finish_environment(self.environment_publications, &self.limits, &mut self.work)?;
+        bind_rust_extern_aliases(
+            self.rust_extern_aliases,
+            &environment,
+            &mut self.project_bindings,
+            &mut self.work,
+        )?;
         let project = finish_project(
             self.project_modules,
             self.project_records,
             self.project_bindings,
             &mut self.work,
         )?;
-        let environment =
-            finish_environment(self.environment_publications, &self.limits, &mut self.work)?;
         Ok(RegisteredCallableCatalog::new(project, environment))
     }
+}
+
+fn bind_rust_extern_aliases(
+    aliases: Vec<RustExternAliasSeed>,
+    environment: &EnvironmentCallableCatalog,
+    bindings: &mut Vec<(ProjectCallablePath, ProjectNameBinding)>,
+    work: &mut CatalogBuildWork,
+) -> Result<(), CallableCatalogBuildError> {
+    for alias in aliases {
+        work.charge(1)?;
+        let matching = environment
+            .rust_exports(&alias.package, &alias.export)
+            .into_iter()
+            .filter(|record| record.schema().matches_function_signature(&alias.signature))
+            .collect::<Vec<_>>();
+        match matching.as_slice() {
+            [] => {}
+            [record] => {
+                let CallableCandidateId::Environment(id) = record.id() else {
+                    return Err(CallableCatalogBuildError::InvalidRecord(
+                        super::CallableCatalogError::IdKeyMismatch,
+                    ));
+                };
+                bindings.push((alias.path, ProjectNameBinding::Environment(id.clone())));
+            }
+            candidates => {
+                return Err(CallableCatalogBuildError::AmbiguousRustExternBinding {
+                    path: alias.path,
+                    package: alias.package.clone(),
+                    export: alias.export.clone(),
+                    candidates: candidates.len(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn project_record(
@@ -245,6 +362,11 @@ fn project_record(
             .map(arcweft_lang_hir::callable_source::HirEffectName::as_str),
     )
     .map_err(|_| identity_mismatch(source))?;
+    let effects = if source.declaration().owner() == CallableDeclarationOwner::ExternCapability {
+        CallableEffectSchema::fixed(EffectRow::closed(declared))
+    } else {
+        CallableEffectSchema::project(source.declaration().clone(), EffectRow::closed(declared))
+    };
     let schema = Arc::new(CallableSignatureSchema::try_new(
         parameters.groups,
         source
@@ -253,7 +375,7 @@ fn project_record(
             .map_or(TypeKind::Unit, |ty| {
                 type_ref_kind_with_generics(ty, &generic_names)
             }),
-        CallableEffectSchema::project(source.declaration().clone(), EffectRow::closed(declared)),
+        effects,
         CallableArgumentPolicy::new(
             UnknownNamedArgumentPolicy::Reject,
             if source
@@ -720,15 +842,33 @@ impl TypeCheckEnv {
     ) -> Result<EnvironmentCallablePublication, super::CallablePublicationError> {
         let owner = EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core);
         let mut records = Vec::new();
-        let mut functions = self.function_signatures.iter().collect::<Vec<_>>();
-        functions.sort_by_cached_key(|(path, _)| (*path).clone());
+        let mut functions = self
+            .functions
+            .iter()
+            .map(|(path, result)| {
+                (
+                    path.clone(),
+                    self.function_signatures
+                        .get(path)
+                        .cloned()
+                        .unwrap_or_else(|| FunctionSignature::return_only(result.clone())),
+                )
+            })
+            .collect::<Vec<_>>();
+        functions.extend(
+            self.function_signatures
+                .iter()
+                .filter(|(path, _)| !self.functions.contains_key(*path))
+                .map(|(path, signature)| (path.clone(), signature.clone())),
+        );
+        functions.sort_by(|(left, _), (right, _)| left.cmp(right));
         for (ordinal, (path, signature)) in functions.into_iter().enumerate() {
-            let key = CallableLookupKey::Free(callable_path_from_storage(path)?);
+            let key = CallableLookupKey::Free(callable_path_from_storage(&path)?);
             records.push(environment_record_from_signature(
                 EnvironmentCallableKind::Function,
                 key,
-                signature,
-                self.function_effects.get(path).map(Vec::as_slice),
+                &signature,
+                self.function_effects.get(&path).map(Vec::as_slice),
                 ordinal,
                 limits,
             )?);

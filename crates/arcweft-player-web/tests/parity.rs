@@ -15,7 +15,10 @@ use arcweft_bundle::{
     BundleImageObjectFit, BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest,
     BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileSpace,
 };
-use arcweft_core::{bytecode::BytecodeProgram, plan::RuntimePlan};
+use arcweft_core::{
+    bytecode::BytecodeProgram,
+    plan::{EntryRuntimeId, RuntimePlan},
+};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_player_scene::{
@@ -162,7 +165,10 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
     let mut session = BundleSession::new(
         &bundle,
         BundleSessionOptions {
-            flow: Some("opening".to_owned()),
+            entry: Some(
+                EntryRuntimeId::from_source_entity_body("entry.opening")
+                    .expect("authored entry ID is valid"),
+            ),
             ..BundleSessionOptions::default()
         },
     )
@@ -283,6 +289,10 @@ fn wave(amplitude: Length = 3px) -> Fx {
 flow opening {
   narrator: [fx wave()]typed Fx[/fx][p]
 }
+
+entry cli @entry.opening {
+  goto @flow.opening
+}
 "##;
     let parsed = parse_source(SOURCE);
     assert_eq!(parsed.errors(), &[]);
@@ -299,9 +309,14 @@ flow opening {
     .lower()
     .expect("product AWBC lowers")
     .program;
-    let mut bundle = bundle_from_runtime_plan(&report.plan, SOURCE, "web-rich-text-fx.arcw")
-        .with_product_awbc(product_awbc)
-        .with_fx_definitions(definitions);
+    let mut bundle = bundle_from_runtime_plan(
+        &report.plan,
+        SOURCE,
+        "web-rich-text-fx.arcw",
+        "entry.opening",
+    )
+    .with_product_awbc(product_awbc)
+    .with_fx_definitions(definitions);
     bundle.display = report.line_display_catalog;
     bundle
 }
@@ -700,7 +715,10 @@ fn authored_flow_presentation(
     let mut session = BundleSession::new(
         bundle,
         BundleSessionOptions {
-            flow: Some(flow.to_owned()),
+            entry: Some(
+                EntryRuntimeId::from_source_entity_body(&format!("entry.{flow}"))
+                    .expect("authored entry ID is valid"),
+            ),
             ..BundleSessionOptions::default()
         },
     )
@@ -773,15 +791,25 @@ flow scoped_disposed {
   let sprite = image(@image.card)
   return "disposed"
 }
+
+entry cli @entry.manual_live { goto @flow.manual_live }
+entry cli @entry.manual_released { goto @flow.manual_released }
+entry cli @entry.manual_destroyed { goto @flow.manual_destroyed }
+entry cli @entry.scoped_disposed { goto @flow.scoped_disposed }
 "#;
     let parsed = parse_source(SOURCE);
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_to_hir(parsed.typed_tree()).expect("authored fixture lowers to HIR");
     let plan = lower_runtime_plan(&hir).expect("authored fixture lowers to runtime plan");
-    bundle_from_runtime_plan(&plan, SOURCE, "web-authored-image-handle.arcw")
-        .with_virtual_files([authored_image_virtual_file()])
-        .with_image_assets([authored_image_asset()])
-        .with_image_objects([authored_image_object()])
+    bundle_from_runtime_plan(
+        &plan,
+        SOURCE,
+        "web-authored-image-handle.arcw",
+        "entry.manual_live",
+    )
+    .with_virtual_files([authored_image_virtual_file()])
+    .with_image_assets([authored_image_asset()])
+    .with_image_objects([authored_image_object()])
 }
 
 fn authored_view_control_bundle() -> ArcweftBundle {
@@ -819,19 +847,35 @@ flow view_scoped_disposed {
   let panel = view(@view.WebPanel)
   return "disposed"
 }
+
+entry cli @entry.view_manual_live { goto @flow.view_manual_live }
+entry cli @entry.view_manual_released { goto @flow.view_manual_released }
+entry cli @entry.view_manual_unmounted { goto @flow.view_manual_unmounted }
+entry cli @entry.view_manual_destroyed { goto @flow.view_manual_destroyed }
+entry cli @entry.view_scoped_disposed { goto @flow.view_scoped_disposed }
 "#;
     let parsed = parse_source(SOURCE);
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_to_hir(parsed.typed_tree()).expect("authored view fixture lowers to HIR");
     let plan = lower_runtime_plan(&hir).expect("authored view fixture lowers to runtime plan");
-    bundle_from_runtime_plan(&plan, SOURCE, "web-authored-view-controls.arcw")
-        .with_view_text(authored_view_text_resource())
-        .with_view_resources(Some(authored_view_program_resource()), None)
-        .expect("authored View resources merge")
-        .with_view_input(authored_view_input_resource())
+    bundle_from_runtime_plan(
+        &plan,
+        SOURCE,
+        "web-authored-view-controls.arcw",
+        "entry.view_manual_live",
+    )
+    .with_view_text(authored_view_text_resource())
+    .with_view_resources(Some(authored_view_program_resource()), None)
+    .expect("authored View resources merge")
+    .with_view_input(authored_view_input_resource())
 }
 
-fn bundle_from_runtime_plan(plan: &RuntimePlan, source: &str, source_label: &str) -> ArcweftBundle {
+fn bundle_from_runtime_plan(
+    plan: &RuntimePlan,
+    source: &str,
+    source_label: &str,
+    manifest_entry: &str,
+) -> ArcweftBundle {
     let bytecode = BytecodeProgram::from_runtime_plan(plan.clone());
     let stats = bytecode.stats();
     let display = arcweft_render_text::LineDisplayCatalog::default();
@@ -843,7 +887,7 @@ fn bundle_from_runtime_plan(plan: &RuntimePlan, source: &str, source_label: &str
         BundleManifest {
             profile_id: None,
             profile_kind: None,
-            entry: None,
+            entry: Some(manifest_entry.to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),

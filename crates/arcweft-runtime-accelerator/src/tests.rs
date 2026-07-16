@@ -195,7 +195,6 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
     let conv_target = RuntimeCallTarget::from_label("conv2d.valid_f32");
     assert!(matches!(conv_target, RuntimeCallTarget::Named(_)));
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.infer")),
         vec![RuntimeFlow {
             id: flow_id("flow.infer"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Let {
@@ -250,7 +249,8 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
         Vec::new(),
     )
     .expect("runtime plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine =
+        Engine::for_flow(plan, &flow_id("flow.infer")).expect("test flow starts explicitly");
     let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, &[]);
 
     let result = engine.step_with_pure_backend(
@@ -297,7 +297,6 @@ fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
     )
     .expect("matrix shape is valid");
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.math")),
         vec![RuntimeFlow {
             id: flow_id("flow.math"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
@@ -311,7 +310,8 @@ fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
         Vec::new(),
     )
     .expect("runtime plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine =
+        Engine::for_flow(plan, &flow_id("flow.math")).expect("test flow starts explicitly");
     let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, &[]);
 
     let result = engine.step_with_pure_backend(
@@ -338,7 +338,6 @@ fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
     let lhs = DenseMatrixF64::new(2, 2, vec![1.5, 2.0, 3.25, 4.5]).expect("matrix shape is valid");
     let rhs = DenseMatrixF64::new(2, 2, vec![5.0, 6.5, 7.0, 8.25]).expect("matrix shape is valid");
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.math_f64")),
         vec![RuntimeFlow {
             id: flow_id("flow.math_f64"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
@@ -352,7 +351,8 @@ fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
         Vec::new(),
     )
     .expect("runtime plan is valid");
-    let mut engine = Engine::new(plan);
+    let mut engine =
+        Engine::for_flow(plan, &flow_id("flow.math_f64")).expect("test flow starts explicitly");
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             math: math::RuntimeMathAcceleratorConfig {
@@ -1824,7 +1824,6 @@ fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
         origin: RuntimePureHelperOrigin::Annotated,
     };
     let plan = RuntimePlan::new(
-        Some(flow_id("flow.u32")),
         vec![RuntimeFlow {
             id: flow_id("flow.u32"),
             ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
@@ -1847,7 +1846,8 @@ fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
     )
     .expect("runtime plan is valid")
     .with_pure_helpers(vec![helper.clone()]);
-    let mut engine = Engine::new(plan);
+    let mut engine =
+        Engine::for_flow(plan, &flow_id("flow.u32")).expect("test flow starts explicitly");
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,

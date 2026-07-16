@@ -29,12 +29,12 @@ use super::{
     EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, FloatWidth, FunctionValueOrdinal,
     FunctionValueSignatureId, FxCallableSignatureId, FxResolution, LanguageCallableFamily,
     LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates,
-    PresentationCallableId, ProjectCallablePath, ReceiverMethodKey, ResolveCallError,
-    ResolvedCallable, ResolvedCharacterOwner, ResolvedFunctionValue, RustItemPath,
-    SemanticParameter, SemanticParameterGroup, SemanticSignature, SemanticSignatureError,
-    SemanticSignatureHelp, SemanticSignatureIndex, SignatureOrigin, SignatureWorkReport,
-    SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation,
-    TraitImplementationIndex, UnknownNamedArgumentPolicy,
+    PresentationCallableId, ProjectCallablePath, ReceiverMethodKey, ReductionConstructorKind,
+    ResolveCallError, ResolvedCallable, ResolvedCharacterOwner, ResolvedFunctionValue,
+    RustItemPath, SemanticParameter, SemanticParameterGroup, SemanticSignature,
+    SemanticSignatureError, SemanticSignatureHelp, SemanticSignatureIndex, SignatureOrigin,
+    SignatureWorkReport, SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId,
+    StdFloatOperation, TraitImplementationIndex, UnknownNamedArgumentPolicy,
 };
 
 fn name(value: &str) -> CallableName {
@@ -461,6 +461,10 @@ fn builtin_identity_table_and_near_misses() {
         (&["rgb"][..], BuiltinCallableId::Rgb),
         (&["sin"][..], BuiltinCallableId::Sin),
         (&["cos"][..], BuiltinCallableId::Cos),
+        (
+            &["Reduction", "unchanged"][..],
+            BuiltinCallableId::Reduction(ReductionConstructorKind::Unchanged),
+        ),
     ];
     for (segments, expected) in cases {
         assert_eq!(BuiltinCallableId::resolve(&path(segments)), Some(expected));
@@ -669,6 +673,17 @@ fn family_schemas_preserve_validator_result_effect_and_structural_owner() {
     assert_eq!(
         capture.validator(),
         &CallableValidator::Agent(AgentIntrinsicSignatureId::Capture)
+    );
+
+    let unchanged = ReductionConstructorKind::Unchanged.signature_schema();
+    assert_eq!(
+        unchanged.result(),
+        &TypeKind::Named("Reduction<_>".to_owned())
+    );
+    assert_eq!(unchanged.groups()[0].parameters().len(), 1);
+    assert_eq!(
+        unchanged.validator(),
+        &CallableValidator::ReductionConstructor(ReductionConstructorKind::Unchanged)
     );
 
     let character = CharacterId::try_new("character.alice").expect("character id");

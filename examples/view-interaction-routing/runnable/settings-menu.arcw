@@ -2,7 +2,7 @@ character guide {
     display = "Guide"
 }
 
-entry game @entry.main { goto @flow.main }
+entry cli @entry.main { goto @flow.main }
 
 flow main {
     guide: Settings sample. Use pointer hover, keyboard focus, and activation to move through the menu.

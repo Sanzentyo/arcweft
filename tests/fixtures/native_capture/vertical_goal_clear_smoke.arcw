@@ -7,7 +7,7 @@ pub character @character.audit Audit as audit {
     }
 }
 
-entry game {
+entry cli @entry.vertical_goal_clear_smoke {
     goto @flow.vertical_goal_clear_smoke
 }
 

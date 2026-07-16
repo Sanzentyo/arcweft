@@ -67,11 +67,11 @@ pub character narrator {
     }
 }
 
-entry game {
+entry cli @entry.image_static_png {
     goto @flow.image_static_png
 }
 
-entry game @entry.image_sprite_released {
+entry cli @entry.image_sprite_released {
     goto @flow.image_sprite_released
 }
 

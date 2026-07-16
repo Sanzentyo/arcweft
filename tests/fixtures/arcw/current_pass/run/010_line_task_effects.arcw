@@ -1,3 +1,5 @@
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {
 }
 

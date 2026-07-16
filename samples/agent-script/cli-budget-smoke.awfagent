@@ -1,4 +1,3 @@
-#[agent(version = 1)]
 #[budget(
     timeout = 5s,
     steps = 8usize,
@@ -9,9 +8,13 @@
     stored_bytes = 0u64,
     context_bytes = 0u64,
 )]
-agent @agent.cli.budget_smoke budget_smoke()
+fn budget_smoke() -> Result<Unit, AgentError>
 effects { agent.observe }
 {
     observe()
-    return "budget-ok"
+    return Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = budget_smoke
 }
