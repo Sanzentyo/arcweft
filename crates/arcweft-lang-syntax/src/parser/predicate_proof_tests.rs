@@ -2,8 +2,9 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::document::parse_shadow_document;
 use super::statement::parse_test_statement_block;
-use crate::grammar::build::UnattachedGrammarEntry;
+use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::kinds::SyntaxKind;
+use crate::incremental::SyntaxLimit;
 
 fn document(text: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -25,6 +26,10 @@ fn green_kind_count(node: &rowan::GreenNodeData, kind: SyntaxKind) -> usize {
             .sum::<usize>()
 }
 
+fn comma_separated(count: usize, element: impl Fn(usize) -> String) -> String {
+    (0..count).map(element).collect::<Vec<_>>().join(", ")
+}
+
 #[test]
 fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
     let source = "pub proof ordered<'a, T>((left, right): (T, T), cmp: Comparator<T>) -> Bool where T: Ord requires cmp.ready() ensures result = left == right\n";
@@ -40,6 +45,7 @@ fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
         SyntaxKind::Visibility,
         SyntaxKind::NameDefinition,
         SyntaxKind::GenericParameterGroup,
+        SyntaxKind::GenericParameter,
         SyntaxKind::LifetimeParameter,
         SyntaxKind::TypeParameter,
         SyntaxKind::FixedParameterGroup,
@@ -212,7 +218,7 @@ fn missing_body_does_not_consume_following_clean_declaration() {
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.decl.missing_body")
+            .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_body")
     );
     assert_eq!(built.green().to_string(), source);
 }
@@ -241,7 +247,7 @@ fn missing_parameter_close_synchronizes_before_the_following_declaration() {
             .diagnostics()
             .iter()
             .any(
-                |diagnostic| diagnostic.code() == "syntax.decl.unclosed_parameters"
+                |diagnostic| diagnostic.code() == "syntax.proof.missing_parameter_close"
                     && diagnostic.range().start() == next_start
                     && diagnostic.range().end() == next_start
             )
@@ -871,7 +877,7 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
     assert_eq!(missing_name.missing_tokens().len(), 1);
     assert_eq!(
         missing_name.diagnostics()[0].code(),
-        "syntax.decl.missing_name"
+        "syntax.proof.missing_name"
     );
 
     let missing_parameters = parse_shadow_document(&document("predicate ready = true\n")).unwrap();
@@ -880,7 +886,7 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
         missing_parameters
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.decl.invalid_header")
+            .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_parameters")
     );
 
     let malformed =
@@ -890,8 +896,8 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
         .iter()
         .map(crate::grammar::event::PendingSyntaxDiagnostic::code)
         .collect::<Vec<_>>();
-    assert!(codes.contains(&"syntax.decl.invalid_header"));
-    assert!(codes.contains(&"syntax.decl.clause_order"));
+    assert!(codes.contains(&"syntax.proof.malformed_header"));
+    assert!(codes.contains(&"syntax.contract.invalid_clause_order"));
     assert_eq!(
         malformed.green().to_string(),
         "proof p()() ensures true requires true = ()\n"
@@ -899,7 +905,7 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
 }
 
 #[test]
-fn declaration_contract_modes_are_retained_with_the_canonical_diagnostic() {
+fn words_before_contract_values_use_ordinary_expression_recovery() {
     let source = concat!(
         "predicate ready(value: Bool)\n",
         "requires check value\n",
@@ -909,15 +915,37 @@ fn declaration_contract_modes_are_retained_with_the_canonical_diagnostic() {
         "= ()\n",
     );
     let built = parse_shadow_document(&document(source)).unwrap();
-    let diagnostics = built
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::ErrorExpression)
+            .count(),
+        2
+    );
+    assert!(built.diagnostics().is_empty());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn missing_contract_expression_has_the_shared_canonical_diagnostic() {
+    let source = "proof missing()\nrequires\n= ()\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    assert!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .any(|entry| entry.kind() == SyntaxKind::MissingExpression)
+    );
+    let diagnostic = built
         .diagnostics()
         .iter()
-        .filter(|diagnostic| diagnostic.code() == "syntax.decl.contract_mode_not_allowed")
-        .collect::<Vec<_>>();
-
-    assert_eq!(diagnostics.len(), 2);
-    assert_eq!(&source[diagnostics[0].range().as_range()], "check");
-    assert_eq!(&source[diagnostics[1].range().as_range()], "prove");
+        .find(|diagnostic| diagnostic.code() == "syntax.contract.missing_expression")
+        .expect("missing contract expression diagnostic");
+    assert_eq!(diagnostic.range().start(), source.find("= ()").unwrap());
+    assert_eq!(diagnostic.range().start(), diagnostic.range().end());
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -939,4 +967,93 @@ fn predicate_authored_return_is_retained_as_current_typed_recovery() {
             .any(|diagnostic| diagnostic.code() == "syntax.predicate.return_not_allowed")
     );
     assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn predicate_and_proof_parameter_limits_are_inclusive() {
+    for (keyword, limit) in [
+        ("predicate", SyntaxLimit::PredicateParameters),
+        ("proof", SyntaxLimit::ProofParameters),
+    ] {
+        let exact = comma_separated(limit.maximum(), |index| format!("p{index}: Bool"));
+        let source = format!("{keyword} within({exact}) = true\n");
+        assert_eq!(
+            parse_shadow_document(&document(&source))
+                .expect("the exact parameter limit must build")
+                .green()
+                .to_string(),
+            source
+        );
+
+        let over = comma_separated(limit.maximum() + 1, |index| format!("p{index}: Bool"));
+        let source = format!("{keyword} over({over}) = true\n");
+        assert_eq!(
+            parse_shadow_document(&document(&source)).unwrap_err(),
+            GrammarBuildError::LimitExceeded(limit)
+        );
+    }
+}
+
+#[test]
+fn generic_where_and_contract_limits_are_per_declaration_and_inclusive() {
+    let generic_limit = SyntaxLimit::GenericParameters;
+    let exact_generics = comma_separated(generic_limit.maximum(), |index| format!("T{index}"));
+    let source =
+        format!("proof first<{exact_generics}>() = ()\nproof second<{exact_generics}>() = ()\n");
+    parse_shadow_document(&document(&source))
+        .expect("each declaration owns an independent exact generic budget");
+    let over_generics = comma_separated(generic_limit.maximum() + 1, |index| format!("T{index}"));
+    let source = format!("proof over<{over_generics}>() = ()\n");
+    assert_eq!(
+        parse_shadow_document(&document(&source)).unwrap_err(),
+        GrammarBuildError::LimitExceeded(generic_limit)
+    );
+
+    let where_limit = SyntaxLimit::WherePredicates;
+    let exact_where = comma_separated(where_limit.maximum(), |index| format!("T{index}: Ord"));
+    let source = format!("proof within() where {exact_where} = ()\n");
+    parse_shadow_document(&document(&source)).expect("the exact where-predicate limit must build");
+    let over_where = comma_separated(where_limit.maximum() + 1, |index| format!("T{index}: Ord"));
+    let source = format!("proof over() where {over_where} = ()\n");
+    assert_eq!(
+        parse_shadow_document(&document(&source)).unwrap_err(),
+        GrammarBuildError::LimitExceeded(where_limit)
+    );
+
+    let clause_limit = SyntaxLimit::ContractClauses;
+    let exact_clauses = "requires true\n".repeat(clause_limit.maximum());
+    let source = format!("proof within()\n{exact_clauses}= ()\n");
+    parse_shadow_document(&document(&source)).expect("the exact contract-clause limit must build");
+    let over_clauses = "requires true\n".repeat(clause_limit.maximum() + 1);
+    let source = format!("proof over()\n{over_clauses}= ()\n");
+    assert_eq!(
+        parse_shadow_document(&document(&source)).unwrap_err(),
+        GrammarBuildError::LimitExceeded(clause_limit)
+    );
+}
+
+#[test]
+fn assertion_conditions_are_independent_typed_expressions_with_an_inclusive_limit() {
+    let limit = SyntaxLimit::AssertionConditions;
+    let exact = comma_separated(limit.maximum(), |index| format!("condition_{index}"));
+    let source = format!("proof within() {{ assert.prove({exact}) }}\n");
+    let built = parse_shadow_document(&document(&source))
+        .expect("the exact assertion-condition limit must build");
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::PathExpression)
+            .count(),
+        limit.maximum()
+    );
+    assert_eq!(built.green().to_string(), source);
+
+    let over = comma_separated(limit.maximum() + 1, |index| format!("condition_{index}"));
+    let source = format!("proof over() {{ assert.prove({over}) }}\n");
+    assert_eq!(
+        parse_shadow_document(&document(&source)).unwrap_err(),
+        GrammarBuildError::LimitExceeded(limit)
+    );
 }

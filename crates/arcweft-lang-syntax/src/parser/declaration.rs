@@ -139,7 +139,11 @@ pub(super) fn emit_name(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &str
         at,
     });
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        "syntax.decl.missing_name",
+        match keyword {
+            "predicate" => "syntax.predicate.missing_name",
+            "proof" => "syntax.proof.missing_name",
+            _ => "syntax.decl.missing_name",
+        },
         SourceRange::new(at, at),
         format!("missing ordinary name after `{keyword}`"),
     )));
@@ -168,7 +172,11 @@ pub(super) fn emit_generic_parameters(parser: &mut ShadowDocumentParser<'_, '_>)
                 }
             },
         );
-        parser.start(kind, SyntaxRole::GenericParameter(ordinal));
+        parser.start(
+            SyntaxKind::GenericParameter,
+            SyntaxRole::GenericParameter(ordinal),
+        );
+        parser.start(kind, SyntaxRole::Element(0));
         if let Some(name) = first {
             parser.bump_through(name.saturating_sub(1));
             parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
@@ -176,6 +184,7 @@ pub(super) fn emit_generic_parameters(parser: &mut ShadowDocumentParser<'_, '_>)
             parser.finish();
         }
         bump_until(parser, end);
+        parser.finish();
         parser.finish();
         ordinal = ordinal.saturating_add(1);
         if parser.at(",") {
@@ -195,6 +204,7 @@ pub(super) fn emit_generic_parameters(parser: &mut ShadowDocumentParser<'_, '_>)
 pub(super) fn emit_fixed_parameters(
     parser: &mut ShadowDocumentParser<'_, '_>,
     missing_type_message: &'static str,
+    missing_close_code: &'static str,
 ) {
     parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
     emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
@@ -213,12 +223,7 @@ pub(super) fn emit_fixed_parameters(
         }
     }
     parser.finish();
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseParenNode,
-        ")",
-        "syntax.decl.unclosed_parameters",
-    );
+    emit_close_delimiter(parser, SyntaxKind::CloseParenNode, ")", missing_close_code);
     parser.finish();
 }
 
@@ -238,7 +243,11 @@ pub(super) fn emit_missing_parameter_group(
         SyntaxRole::CloseDelimiter,
     );
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        "syntax.decl.invalid_header",
+        match keyword {
+            "predicate" => "syntax.predicate.missing_parameters",
+            "proof" => "syntax.proof.missing_parameters",
+            _ => "syntax.decl.invalid_header",
+        },
         SourceRange::new(at, at),
         format!("`{keyword}` requires {requirement}"),
     )));
@@ -262,7 +271,11 @@ pub(super) fn emit_extra_parameter_group_recovery(
         }
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.decl.invalid_header",
+            match keyword {
+                "predicate" => "syntax.predicate.malformed_header",
+                "proof" => "syntax.proof.malformed_header",
+                _ => "syntax.decl.invalid_header",
+            },
             SourceRange::new(start, parser.current_offset()),
             format!("`{keyword}` accepts exactly one fixed parameter group"),
         )));
@@ -424,7 +437,7 @@ pub(super) fn emit_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>) {
             );
             if saw_ensures {
                 parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                    "syntax.decl.clause_order",
+                    "syntax.contract.invalid_clause_order",
                     SourceRange::new(clause_start, parser.current_offset()),
                     "`requires` clauses must precede every `ensures` clause",
                 )));
@@ -451,17 +464,17 @@ fn emit_contract_clause(
     parser.start(kind, role);
     parser.bump();
     parser.bump_trivia();
-    if matches!(parser.current_text(), Some("prove" | "check" | "debug"))
-        && let Some(token) = parser.current()
-    {
+    let end = find_header_boundary(parser, parser.cursor());
+    let expression_start = parser.cursor();
+    emit_expression(parser, end, SyntaxRole::Condition);
+    if trimmed_end(parser, expression_start, end) == expression_start {
+        let at = parser.current_offset();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.decl.contract_mode_not_allowed",
-            token.range(),
-            "declaration contract clauses do not accept an assertion mode",
+            "syntax.contract.missing_expression",
+            SourceRange::new(at, at),
+            "contract clause requires an expression",
         )));
     }
-    let end = find_header_boundary(parser, parser.cursor());
-    emit_expression(parser, end, SyntaxRole::Condition);
     bump_until(parser, end);
     parser.finish();
 }

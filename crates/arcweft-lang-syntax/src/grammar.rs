@@ -6,6 +6,7 @@
 //! shadow parser use the accepted contract without exposing a second public
 //! syntax model.
 
+pub(crate) mod budget;
 pub(crate) mod build;
 pub(crate) mod event;
 pub(crate) mod kinds;

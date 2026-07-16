@@ -10,6 +10,7 @@ use super::declaration::{
 use super::document::ShadowDocumentParser;
 use super::lexer::LexToken;
 use super::statement::emit_braced_block;
+use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -18,8 +19,9 @@ pub(super) fn emit_declaration(
     tokens: &[LexToken],
     role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events);
+    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::FlowItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -37,7 +39,11 @@ pub(super) fn emit_declaration(
         parser.bump_trivia();
     }
     if parser.at("(") {
-        emit_fixed_parameters(&mut parser, "Flow parameters require an authored type");
+        emit_fixed_parameters(
+            &mut parser,
+            "Flow parameters require an authored type",
+            "syntax.decl.unclosed_parameters",
+        );
         parser.bump_trivia();
     }
     emit_extra_parameter_group_recovery(&mut parser, "flow");

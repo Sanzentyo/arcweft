@@ -246,9 +246,12 @@ pub(super) fn parse_test_statement_block(
 ) -> Result<crate::grammar::build::GrammarBuild, crate::grammar::build::GrammarBuildError> {
     let tokens = super::lexer::DocumentLexer::new(document.text()).lex();
     let mut events = Vec::with_capacity(tokens.len() + 8);
+    let mut budget = crate::grammar::budget::GrammarBudget::default();
+    assert!(budget.start(SyntaxKind::SourceFile, SyntaxRole::Root));
     events.push(SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root));
     {
-        let mut parser = ShadowDocumentParser::new(document.text(), &tokens, &mut events);
+        let mut parser =
+            ShadowDocumentParser::new(document.text(), &tokens, &mut events, &mut budget);
         emit_braced_block(
             &mut parser,
             SyntaxKind::FunctionItem,
@@ -258,10 +261,13 @@ pub(super) fn parse_test_statement_block(
         );
         while parser.bump().is_some() {}
     }
-    events.push(SyntaxEvent::token(
+    let eof = SyntaxEvent::token(
         SyntaxKind::EofToken,
         SourceRange::new(document.text().len(), document.text().len()),
-    ));
+    );
+    assert!(budget.event(&eof));
+    events.push(eof);
+    assert!(budget.finish());
     events.push(SyntaxEvent::FinishNode);
     crate::grammar::build::build_grammar(document, &events)
 }
@@ -336,9 +342,24 @@ fn emit_assertion_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize
     let close = find_matching_close(parser, parser.cursor(), "(")
         .unwrap_or(end)
         .min(end);
-    if parser.cursor() < close {
-        emit_expression(parser, close, SyntaxRole::Condition);
+    parser.start(SyntaxKind::ExpressionList, SyntaxRole::Element(0));
+    while parser.cursor() < close {
+        parser.bump_trivia();
+        if parser.cursor() >= close {
+            break;
+        }
+        let condition_end =
+            find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+        parser.charge_assertion_condition();
+        emit_expression(parser, condition_end, SyntaxRole::Condition);
+        bump_until(parser, condition_end);
+        if parser.at(",") {
+            parser.bump();
+        } else {
+            break;
+        }
     }
+    parser.finish();
     bump_until(parser, end);
 }
 

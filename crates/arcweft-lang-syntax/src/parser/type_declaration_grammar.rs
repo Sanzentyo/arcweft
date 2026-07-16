@@ -14,6 +14,7 @@ use super::shadow_recovery::{
     trimmed_end,
 };
 use super::type_ref::emit_type;
+use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -23,12 +24,13 @@ pub(super) fn emit_declaration(
     kind: SyntaxKind,
     role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
 ) {
     debug_assert!(matches!(
         kind,
         SyntaxKind::EnumItem | SyntaxKind::StructItem | SyntaxKind::TypeAliasItem
     ));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events);
+    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
     parser.start(kind, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();

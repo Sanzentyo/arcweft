@@ -12,6 +12,7 @@ use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{bump_until, token_count, trimmed_end};
 use super::statement::emit_block_body;
+use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -21,12 +22,13 @@ pub(super) fn emit_declaration(
     kind: SyntaxKind,
     role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
 ) {
     debug_assert!(matches!(
         kind,
         SyntaxKind::PredicateItem | SyntaxKind::ProofItem
     ));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events);
+    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
     parser.start(kind, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -53,6 +55,11 @@ pub(super) fn emit_declaration(
         emit_fixed_parameters(
             &mut parser,
             "predicate and proof parameters require an authored type",
+            if kind == SyntaxKind::PredicateItem {
+                "syntax.predicate.missing_parameter_close"
+            } else {
+                "syntax.proof.missing_parameter_close"
+            },
         );
     } else {
         emit_missing_parameter_group(&mut parser, keyword, "exactly one fixed parameter group");
@@ -103,7 +110,11 @@ fn emit_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind, k
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        "syntax.decl.missing_body",
+        if item_kind == SyntaxKind::PredicateItem {
+            "syntax.predicate.missing_body"
+        } else {
+            "syntax.proof.missing_body"
+        },
         SourceRange::new(at, at),
         format!("missing `{keyword}` expression or block body"),
     )));

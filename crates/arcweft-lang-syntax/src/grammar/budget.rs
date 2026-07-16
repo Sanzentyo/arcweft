@@ -1,0 +1,417 @@
+//! Inclusive allocation budgets for the staged full-source grammar.
+
+#![allow(
+    dead_code,
+    reason = "the shadow grammar remains crate-private until the atomic syntax switch"
+)]
+
+use std::collections::BTreeSet;
+
+use super::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use super::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
+use crate::incremental::SyntaxLimit;
+
+/// Transaction-local budget state shared by every parser over one document.
+///
+/// A one-over start event is rejected before it enters the event vector. Once
+/// a limit fails, the parser may continue consuming source tokens for control
+/// flow, but this state accepts no more events and the whole shadow build is
+/// discarded.
+#[derive(Debug, Default)]
+pub(crate) struct GrammarBudget {
+    stack: Vec<BudgetFrame>,
+    top_level_items: usize,
+    statements: usize,
+    expressions: usize,
+    type_nodes: usize,
+    pattern_nodes: usize,
+    identity_nodes: usize,
+    diagnostics: BTreeSet<DiagnosticKey>,
+    failure: Option<SyntaxLimit>,
+}
+
+#[derive(Debug)]
+struct BudgetFrame {
+    kind: SyntaxKind,
+    generic_parameters: usize,
+    where_predicates: usize,
+    contract_clauses: usize,
+    predicate_parameters: usize,
+    proof_parameters: usize,
+    assertion_conditions: usize,
+}
+
+impl BudgetFrame {
+    const fn new(kind: SyntaxKind) -> Self {
+        Self {
+            kind,
+            generic_parameters: 0,
+            where_predicates: 0,
+            contract_clauses: 0,
+            predicate_parameters: 0,
+            proof_parameters: 0,
+            assertion_conditions: 0,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct DiagnosticKey {
+    code: &'static str,
+    start: usize,
+    end: usize,
+    message: String,
+}
+
+impl GrammarBudget {
+    /// Accepts one node start if doing so stays inside every inclusive budget.
+    pub(crate) fn start(&mut self, kind: SyntaxKind, role: SyntaxRole) -> bool {
+        if self.failure.is_some() {
+            return false;
+        }
+        if let Err(limit) = self.charge_start(kind, role) {
+            self.failure = Some(limit);
+            return false;
+        }
+        self.stack.push(BudgetFrame::new(kind));
+        true
+    }
+
+    /// Charges one direct condition in the current assertion statement.
+    pub(crate) fn assertion_condition(&mut self) -> bool {
+        if self.failure.is_some() {
+            return false;
+        }
+        let Some(assertion) = self
+            .stack
+            .iter()
+            .rposition(|frame| frame.kind == SyntaxKind::AssertionStatement)
+        else {
+            return true;
+        };
+        if let Err(limit) = charge(
+            &mut self.stack[assertion].assertion_conditions,
+            SyntaxLimit::AssertionConditions,
+        ) {
+            self.failure = Some(limit);
+            return false;
+        }
+        true
+    }
+
+    /// Completes the most recently accepted node.
+    pub(crate) fn finish(&mut self) -> bool {
+        if self.failure.is_some() {
+            return false;
+        }
+        self.stack.pop().is_some()
+    }
+
+    /// Accepts a non-node event, charging normalized diagnostics once.
+    pub(crate) fn event(&mut self, event: &SyntaxEvent) -> bool {
+        if self.failure.is_some() {
+            return false;
+        }
+        let SyntaxEvent::Diagnostic(diagnostic) = event else {
+            return true;
+        };
+        let key = DiagnosticKey::from(diagnostic);
+        if self.diagnostics.contains(&key) {
+            return true;
+        }
+        if self.diagnostics.len() >= SyntaxLimit::Diagnostics.maximum() {
+            self.failure = Some(SyntaxLimit::Diagnostics);
+            return false;
+        }
+        self.diagnostics.insert(key);
+        true
+    }
+
+    /// First inclusive budget exceeded by the deterministic event stream.
+    pub(crate) const fn failure(&self) -> Option<SyntaxLimit> {
+        self.failure
+    }
+
+    fn charge_start(&mut self, kind: SyntaxKind, _role: SyntaxRole) -> Result<(), SyntaxLimit> {
+        if kind.identity_class() == IdentityClass::IdentityBearing {
+            charge(&mut self.identity_nodes, SyntaxLimit::IdentityBearingNodes)?;
+        }
+        if kind.is_statement() {
+            charge(&mut self.statements, SyntaxLimit::Statements)?;
+        }
+        if kind.is_expression() {
+            charge(&mut self.expressions, SyntaxLimit::Expressions)?;
+        }
+        if kind.is_type_node() {
+            charge(&mut self.type_nodes, SyntaxLimit::TypeNodes)?;
+        }
+        if kind.is_pattern_node() {
+            charge(&mut self.pattern_nodes, SyntaxLimit::PatternNodes)?;
+        }
+        if kind.is_item() && !self.stack.iter().any(|frame| frame.kind.is_item()) {
+            charge(&mut self.top_level_items, SyntaxLimit::TopLevelItems)?;
+        }
+
+        match kind {
+            SyntaxKind::GenericParameter => {
+                let frame = self.declaration_frame_mut()?;
+                charge(
+                    &mut frame.generic_parameters,
+                    SyntaxLimit::GenericParameters,
+                )?;
+            }
+            SyntaxKind::WherePredicate => {
+                let frame = self.declaration_frame_mut()?;
+                charge(&mut frame.where_predicates, SyntaxLimit::WherePredicates)?;
+            }
+            SyntaxKind::RequiresClause | SyntaxKind::EnsuresClause => {
+                let frame = self.declaration_frame_mut()?;
+                charge(&mut frame.contract_clauses, SyntaxLimit::ContractClauses)?;
+            }
+            SyntaxKind::Parameter => {
+                let frame = self.declaration_frame_mut()?;
+                match frame.kind {
+                    SyntaxKind::PredicateItem => charge(
+                        &mut frame.predicate_parameters,
+                        SyntaxLimit::PredicateParameters,
+                    )?,
+                    SyntaxKind::ProofItem => {
+                        charge(&mut frame.proof_parameters, SyntaxLimit::ProofParameters)?;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn declaration_frame_mut(&mut self) -> Result<&mut BudgetFrame, SyntaxLimit> {
+        self.stack
+            .iter_mut()
+            .rev()
+            .find(|frame| frame.kind.is_item())
+            .ok_or(SyntaxLimit::TopLevelItems)
+    }
+
+    fn is_direct_assertion_condition(&self, kind: SyntaxKind, role: SyntaxRole) -> bool {
+        if !kind.is_expression() || role != SyntaxRole::Condition {
+            return false;
+        }
+        let Some(assertion) = self
+            .stack
+            .iter()
+            .rposition(|frame| frame.kind == SyntaxKind::AssertionStatement)
+        else {
+            return false;
+        };
+        !self.stack[assertion + 1..]
+            .iter()
+            .any(|frame| frame.kind.is_expression())
+    }
+}
+
+impl From<&PendingSyntaxDiagnostic> for DiagnosticKey {
+    fn from(diagnostic: &PendingSyntaxDiagnostic) -> Self {
+        let range = diagnostic.range();
+        Self {
+            code: diagnostic.code(),
+            start: range.start(),
+            end: range.end(),
+            message: diagnostic.message().to_owned(),
+        }
+    }
+}
+
+fn charge(counter: &mut usize, limit: SyntaxLimit) -> Result<(), SyntaxLimit> {
+    if *counter >= limit.maximum() {
+        return Err(limit);
+    }
+    *counter += 1;
+    Ok(())
+}
+
+impl SyntaxKind {
+    const fn is_item(self) -> bool {
+        matches!(
+            self,
+            Self::ModuleDeclaration
+                | Self::UseDeclaration
+                | Self::FlowItem
+                | Self::FunctionItem
+                | Self::PredicateItem
+                | Self::ProofItem
+                | Self::AgentItem
+                | Self::CallableItem
+                | Self::StateItem
+                | Self::TraitItem
+                | Self::ImplItem
+                | Self::EnumItem
+                | Self::StructItem
+                | Self::TypeAliasItem
+                | Self::ResourceDeclarationItem
+                | Self::EntryDeclarationItem
+                | Self::ExternCapabilityItem
+                | Self::ExternModuleItem
+                | Self::DialogueDefaultsItem
+                | Self::TestItem
+                | Self::BenchItem
+                | Self::SourceItem
+                | Self::StyleItem
+                | Self::TopLevelFlowItem
+                | Self::ErrorItem
+        )
+    }
+
+    const fn is_statement(self) -> bool {
+        matches!(
+            self,
+            Self::AssertionStatement
+                | Self::LetStatement
+                | Self::AssignmentStatement
+                | Self::LetElseStatement
+                | Self::LetChoiceStatement
+                | Self::LetScopeStatement
+                | Self::LetLoopStatement
+                | Self::LetAwaitStatement
+                | Self::LetActionReceiveStatement
+                | Self::ReturnStatement
+                | Self::OutStatement
+                | Self::GotoStatement
+                | Self::ThreadStatement
+                | Self::DeferBlockStatement
+                | Self::DeferStatement
+                | Self::YieldStatement
+                | Self::SignalStatement
+                | Self::LifetimeSetStatement
+                | Self::WaitStatement
+                | Self::OnStatement
+                | Self::UnsafeLifetimeStatement
+                | Self::IfStatement
+                | Self::LoopStatement
+                | Self::WhileStatement
+                | Self::WhileLetStatement
+                | Self::ForStatement
+                | Self::MatchStatement
+                | Self::CloseStatement
+                | Self::SelectStatement
+                | Self::BreakStatement
+                | Self::ContinueStatement
+                | Self::ExpressionStatement
+                | Self::ProofCallStatement
+                | Self::ErrorStatement
+        )
+    }
+
+    const fn is_expression(self) -> bool {
+        matches!(
+            self,
+            Self::LiteralExpression
+                | Self::EntityReferenceExpression
+                | Self::LifetimePathExpression
+                | Self::PathExpression
+                | Self::ShortVariantExpression
+                | Self::PlaceholderExpression
+                | Self::TupleExpression
+                | Self::BracketSequenceExpression
+                | Self::NumericBracketSequenceExpression
+                | Self::ArrayRepeatExpression
+                | Self::CallExpression
+                | Self::SelectExpression
+                | Self::DialogueCallExpression
+                | Self::IndexExpression
+                | Self::PipeExpression
+                | Self::TryExpression
+                | Self::AwaitExpression
+                | Self::ThreadExpression
+                | Self::RangeExpression
+                | Self::RecordExpression
+                | Self::RecordLiteralExpression
+                | Self::BinaryExpression
+                | Self::BorrowExpression
+                | Self::DereferenceExpression
+                | Self::ClosureExpression
+                | Self::UnaryExpression
+                | Self::BlockExpression
+                | Self::ComputationBlockExpression
+                | Self::NamedBlockExpression
+                | Self::IfExpression
+                | Self::IfLetExpression
+                | Self::MatchExpression
+                | Self::MissingExpression
+                | Self::ErrorExpression
+        )
+    }
+
+    const fn is_pattern_node(self) -> bool {
+        matches!(
+            self,
+            Self::WildcardPattern
+                | Self::BindingPattern
+                | Self::MutableBindingPattern
+                | Self::LiteralPattern
+                | Self::EntityReferencePattern
+                | Self::TuplePattern
+                | Self::RecordPattern
+                | Self::VariantPattern
+                | Self::SequencePattern
+                | Self::RestPattern
+                | Self::WholeBindingPattern
+                | Self::OrPattern
+                | Self::MissingPattern
+                | Self::ErrorPattern
+        )
+    }
+
+    const fn is_type_node(self) -> bool {
+        matches!(
+            self,
+            Self::PrimitiveType
+                | Self::PathType
+                | Self::GenericApplicationType
+                | Self::TupleType
+                | Self::ReferenceType
+                | Self::SliceType
+                | Self::ArrayType
+                | Self::FunctionType
+                | Self::SumType
+                | Self::InferType
+                | Self::LifetimeType
+                | Self::ElidedRegionType
+                | Self::MissingType
+                | Self::ErrorType
+        )
+    }
+}
+
+/// Revalidates budget behavior for event streams constructed outside the
+/// shared parser cursor, including direct event-builder tests.
+pub(crate) fn validate_events(events: &[SyntaxEvent]) -> Result<(), SyntaxLimit> {
+    let mut budget = GrammarBudget::default();
+    for event in events {
+        match event {
+            SyntaxEvent::StartNode { kind, role } => {
+                if budget.is_direct_assertion_condition(*kind, *role)
+                    && !budget.assertion_condition()
+                {
+                    return Err(budget
+                        .failure()
+                        .expect("failed assertion budget has a limit"));
+                }
+                if !budget.start(*kind, *role) {
+                    return Err(budget.failure().expect("failed budget start has a limit"));
+                }
+            }
+            SyntaxEvent::FinishNode => {
+                budget.finish();
+            }
+            _ => {
+                if !budget.event(event) {
+                    return Err(budget.failure().expect("failed budget event has a limit"));
+                }
+            }
+        }
+    }
+    budget.failure().map_or(Ok(()), Err)
+}

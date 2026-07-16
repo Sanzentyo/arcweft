@@ -7,6 +7,7 @@
 
 use arcweft_source::{SourceDocument, SourceRange};
 
+use crate::grammar::budget::GrammarBudget;
 use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar};
 use crate::grammar::event::SyntaxEvent;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
@@ -20,6 +21,7 @@ pub(super) struct ShadowDocumentParser<'source, 'events> {
     tokens: &'source [LexToken],
     cursor: usize,
     events: &'events mut Vec<SyntaxEvent>,
+    budget: &'events mut GrammarBudget,
 }
 
 impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
@@ -27,12 +29,14 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         source: &'source str,
         tokens: &'source [LexToken],
         events: &'events mut Vec<SyntaxEvent>,
+        budget: &'events mut GrammarBudget,
     ) -> Self {
         Self {
             source,
             tokens,
             cursor: 0,
             events,
+            budget,
         }
     }
 
@@ -66,14 +70,18 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 
     pub(super) fn bump(&mut self) -> Option<LexToken> {
         let token = self.current()?;
-        self.events
-            .push(SyntaxEvent::token(token.kind(), token.range()));
+        let event = SyntaxEvent::token(token.kind(), token.range());
+        if self.budget.event(&event) {
+            self.events.push(event);
+        }
         self.cursor += 1;
         Some(token)
     }
 
     pub(super) fn start(&mut self, kind: SyntaxKind, role: SyntaxRole) {
-        self.events.push(SyntaxEvent::start(kind, role));
+        if self.budget.start(kind, role) {
+            self.events.push(SyntaxEvent::start(kind, role));
+        }
     }
 
     pub(super) fn event_position(&self) -> usize {
@@ -81,10 +89,15 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
     }
 
     pub(super) fn insert_start(&mut self, position: usize, kind: SyntaxKind, role: SyntaxRole) {
-        self.events.insert(position, SyntaxEvent::start(kind, role));
+        if self.budget.start(kind, role) {
+            self.events.insert(position, SyntaxEvent::start(kind, role));
+        }
     }
 
     pub(super) fn set_start_role(&mut self, position: usize, role: SyntaxRole) {
+        if self.budget.failure().is_some() {
+            return;
+        }
         let Some(SyntaxEvent::StartNode {
             role: current_role, ..
         }) = self.events.get_mut(position)
@@ -95,11 +108,19 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
     }
 
     pub(super) fn finish(&mut self) {
-        self.events.push(SyntaxEvent::FinishNode);
+        if self.budget.finish() {
+            self.events.push(SyntaxEvent::FinishNode);
+        }
     }
 
     pub(super) fn push(&mut self, event: SyntaxEvent) {
-        self.events.push(event);
+        if self.budget.event(&event) {
+            self.events.push(event);
+        }
+    }
+
+    pub(super) fn charge_assertion_condition(&mut self) {
+        self.budget.assertion_condition();
     }
 
     pub(super) fn bump_trivia(&mut self) {
@@ -148,18 +169,31 @@ pub(super) fn parse_shadow_document(
 ) -> Result<GrammarBuild, GrammarBuildError> {
     let tokens = DocumentLexer::new(document.text()).lex();
     let mut events = Vec::with_capacity(tokens.len() + 8);
-    events.push(SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root));
-    events.push(SyntaxEvent::start(
+    let mut budget = GrammarBudget::default();
+    start_event(
+        &mut events,
+        &mut budget,
+        SyntaxKind::SourceFile,
+        SyntaxRole::Root,
+    );
+    start_event(
+        &mut events,
+        &mut budget,
         SyntaxKind::ItemList,
         SyntaxRole::Element(0),
-    ));
-    emit_logical_lines(document.text(), &tokens, &mut events)?;
-    events.push(SyntaxEvent::token(
-        SyntaxKind::EofToken,
-        SourceRange::new(document.text().len(), document.text().len()),
-    ));
-    events.push(SyntaxEvent::FinishNode);
-    events.push(SyntaxEvent::FinishNode);
+    );
+    emit_logical_lines(document.text(), &tokens, &mut events, &mut budget)?;
+    push_event(
+        &mut events,
+        &mut budget,
+        SyntaxEvent::token(
+            SyntaxKind::EofToken,
+            SourceRange::new(document.text().len(), document.text().len()),
+        ),
+    );
+    finish_event(&mut events, &mut budget);
+    finish_event(&mut events, &mut budget);
+    budget_failure(&budget)?;
     build_grammar(document, &events)
 }
 
@@ -167,6 +201,7 @@ fn emit_logical_lines(
     source: &str,
     tokens: &[LexToken],
     events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
 ) -> Result<(), GrammarBuildError> {
     let lines = logical_token_ranges(source, tokens);
     let mut line = 0_usize;
@@ -177,12 +212,12 @@ fn emit_logical_lines(
         {
             let last = declaration_group_end(source, tokens, &lines, declaration_line, kind);
             let grouped = &tokens[lines[line].start..lines[last].end];
-            emit_declaration_item(source, grouped, kind, ordinal, events);
+            emit_declaration_item(source, grouped, kind, ordinal, events, budget)?;
             line = last + 1;
         } else {
             let range = lines[line];
             let line_tokens = &tokens[range.start..range.end];
-            emit_logical_line(source, line_tokens, ordinal, events);
+            emit_logical_line(source, line_tokens, ordinal, events, budget)?;
             line += 1;
         }
         ordinal = ordinal
@@ -442,7 +477,8 @@ fn emit_declaration_item(
     kind: SyntaxKind,
     ordinal: u32,
     events: &mut Vec<SyntaxEvent>,
-) {
+    budget: &mut GrammarBudget,
+) -> Result<(), GrammarBuildError> {
     let item_start = events.len();
     match kind {
         SyntaxKind::FlowItem => super::shadow_flow::emit_declaration(
@@ -450,12 +486,14 @@ fn emit_declaration_item(
             tokens,
             SyntaxRole::Element(ordinal),
             events,
+            budget,
         ),
         SyntaxKind::FunctionItem => super::function_grammar::emit_declaration(
             source,
             tokens,
             SyntaxRole::Element(ordinal),
             events,
+            budget,
         ),
         SyntaxKind::PredicateItem | SyntaxKind::ProofItem => {
             super::predicate_proof::emit_declaration(
@@ -464,6 +502,7 @@ fn emit_declaration_item(
                 kind,
                 SyntaxRole::Element(ordinal),
                 events,
+                budget,
             );
         }
         SyntaxKind::EnumItem | SyntaxKind::StructItem | SyntaxKind::TypeAliasItem => {
@@ -473,6 +512,7 @@ fn emit_declaration_item(
                 kind,
                 SyntaxRole::Element(ordinal),
                 events,
+                budget,
             );
         }
         SyntaxKind::TraitItem | SyntaxKind::ImplItem => {
@@ -482,6 +522,7 @@ fn emit_declaration_item(
                 kind,
                 SyntaxRole::Element(ordinal),
                 events,
+                budget,
             );
         }
         SyntaxKind::ResourceDeclarationItem => super::resource_grammar::emit_declaration(
@@ -489,10 +530,13 @@ fn emit_declaration_item(
             tokens,
             SyntaxRole::Element(ordinal),
             events,
+            budget,
         ),
         _ => unreachable!("only structured declaration kinds are grouped"),
     }
+    budget_failure(budget)?;
     wrap_declaration_logical_lines(source, item_start, events);
+    Ok(())
 }
 
 fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut Vec<SyntaxEvent>) {
@@ -590,11 +634,14 @@ fn emit_logical_line(
     tokens: &[LexToken],
     ordinal: u32,
     events: &mut Vec<SyntaxEvent>,
-) {
-    events.push(SyntaxEvent::start(
+    budget: &mut GrammarBudget,
+) -> Result<(), GrammarBuildError> {
+    start_event(
+        events,
+        budget,
         SyntaxKind::LogicalLine,
         SyntaxRole::Element(ordinal),
-    ));
+    );
     let item = classify_top_level_item(source, tokens);
     match item {
         Some(kind @ (SyntaxKind::ModuleDeclaration | SyntaxKind::UseDeclaration)) => {
@@ -604,6 +651,7 @@ fn emit_logical_line(
                 kind,
                 SyntaxRole::Element(ordinal),
                 events,
+                budget,
             );
         }
         Some(SyntaxKind::FlowItem) => {
@@ -612,26 +660,53 @@ fn emit_logical_line(
                 tokens,
                 SyntaxRole::Element(ordinal),
                 events,
+                budget,
             );
         }
         Some(kind) => {
-            events.push(SyntaxEvent::start(kind, SyntaxRole::Element(ordinal)));
-            events.extend(
-                tokens
-                    .iter()
-                    .map(|token| SyntaxEvent::token(token.kind, token.range)),
-            );
-            events.push(SyntaxEvent::FinishNode);
+            start_event(events, budget, kind, SyntaxRole::Element(ordinal));
+            for token in tokens {
+                push_event(events, budget, SyntaxEvent::token(token.kind, token.range));
+            }
+            finish_event(events, budget);
         }
         None => {
-            events.extend(
-                tokens
-                    .iter()
-                    .map(|token| SyntaxEvent::token(token.kind, token.range)),
-            );
+            for token in tokens {
+                push_event(events, budget, SyntaxEvent::token(token.kind, token.range));
+            }
         }
     }
-    events.push(SyntaxEvent::FinishNode);
+    finish_event(events, budget);
+    budget_failure(budget)
+}
+
+fn start_event(
+    events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+) {
+    if budget.start(kind, role) {
+        events.push(SyntaxEvent::start(kind, role));
+    }
+}
+
+fn finish_event(events: &mut Vec<SyntaxEvent>, budget: &mut GrammarBudget) {
+    if budget.finish() {
+        events.push(SyntaxEvent::FinishNode);
+    }
+}
+
+fn push_event(events: &mut Vec<SyntaxEvent>, budget: &mut GrammarBudget, event: SyntaxEvent) {
+    if budget.event(&event) {
+        events.push(event);
+    }
+}
+
+fn budget_failure(budget: &GrammarBudget) -> Result<(), GrammarBuildError> {
+    budget
+        .failure()
+        .map_or(Ok(()), |limit| Err(GrammarBuildError::LimitExceeded(limit)))
 }
 
 fn delimiter_depth_after(

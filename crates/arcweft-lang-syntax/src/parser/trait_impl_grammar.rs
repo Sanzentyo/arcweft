@@ -15,6 +15,7 @@ use super::shadow_recovery::{
 };
 use super::statement::emit_braced_block;
 use super::type_ref::emit_type;
+use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -24,9 +25,10 @@ pub(super) fn emit_declaration(
     kind: SyntaxKind,
     role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
 ) {
     debug_assert!(matches!(kind, SyntaxKind::TraitItem | SyntaxKind::ImplItem));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events);
+    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
     parser.start(kind, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -254,7 +256,11 @@ fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, o
 
     let mut groups = 0_u16;
     while parser.at("(") && parser.cursor() < end {
-        emit_fixed_parameters(parser, "trait and impl function parameters require a type");
+        emit_fixed_parameters(
+            parser,
+            "trait and impl function parameters require a type",
+            "syntax.decl.unclosed_parameters",
+        );
         groups = groups.saturating_add(1);
         parser.bump_trivia();
     }

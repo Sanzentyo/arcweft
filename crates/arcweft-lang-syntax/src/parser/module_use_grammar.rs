@@ -10,6 +10,7 @@ use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
     find_matching_close, first_significant, token_count, token_text, trimmed_end,
 };
+use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -19,12 +20,13 @@ pub(super) fn emit_declaration(
     kind: SyntaxKind,
     role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
 ) {
     debug_assert!(matches!(
         kind,
         SyntaxKind::ModuleDeclaration | SyntaxKind::UseDeclaration
     ));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events);
+    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
     parser.start(kind, role);
     parser.bump_trivia();
     if kind == SyntaxKind::ModuleDeclaration {

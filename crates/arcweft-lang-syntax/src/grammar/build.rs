@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use super::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
 use super::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
+use crate::incremental::SyntaxLimit;
 
 /// Element-index path from the green root to one identity-bearing node.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -153,6 +154,8 @@ pub(crate) enum GrammarBuildError {
     IncompleteTokenCoverage { covered: usize, source_len: usize },
     #[error("grammar child count exceeds the u32 event-path domain")]
     ChildIndexExhausted,
+    #[error("syntax limit {0:?} was exceeded while staging the grammar tree")]
+    LimitExceeded(SyntaxLimit),
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +170,7 @@ pub(crate) fn build_grammar(
     events: &[SyntaxEvent],
 ) -> Result<GrammarBuild, GrammarBuildError> {
     validate_events(document, events)?;
+    super::budget::validate_events(events).map_err(GrammarBuildError::LimitExceeded)?;
 
     let mut builder = GreenNodeBuilder::new();
     let mut stack = Vec::<OpenNode>::new();
