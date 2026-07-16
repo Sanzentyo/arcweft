@@ -12,8 +12,8 @@ pub use registry::{
 };
 
 /// Stable identifier for a view call/property schema.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewSchemaId(pub u32);
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct ViewSchemaId(pub u64);
 
 /// Runtime-allocated occurrence of one mounted View.
 ///

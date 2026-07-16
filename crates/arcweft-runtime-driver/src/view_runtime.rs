@@ -6,6 +6,7 @@
 //! exact save state, and renderer-neutral frame output.
 
 mod axis_seed;
+mod catalog;
 mod evaluator;
 mod part;
 mod style_scope;
@@ -15,12 +16,12 @@ use crate::dialogue::{DialogueViewInput, DialogueViewState};
 use crate::presentation_handles::{PresentationHandleId, PresentationHandleRecord};
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::resource_codec::view::{
-    DialogueViewContractError, ViewObserveClassification, ViewTextSelectionPolicy,
-    ViewTextSourceKind,
+    DialogueViewContractError, ValidatedViewProduct, ViewObserveClassification,
+    ViewProductValidationLimits, ViewTextSelectionPolicy, ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
-    ViewDefinitionResource, ViewProgramResource, ViewRuntimeControlVisualStyle, ViewStyleResource,
-    ViewTextBlockBounds, ViewTextResource,
+    ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewStyleResource, ViewTextBlockBounds,
+    ViewTextResource,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_presentation::fx::{
@@ -29,21 +30,21 @@ use arcweft_presentation::fx::{
 };
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
-    ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState,
-    ViewProgramId, ViewStyleProgram, ViewValueEvaluationError, ViewValueInventoryError,
-    ViewValueProgramInventory,
+    ViewId, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot,
+    ViewMountState, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId, ViewStyleProgram,
+    ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use thiserror::Error;
 
-use self::part::AcceptedViewProgram;
 pub use axis_seed::{
     BundleViewAxisSeedError, BundleViewAxisSeedRegistrySnapshot, BundleViewAxisSeedUpdate,
     BundleViewAxisSeedUpdateOutcome, BundleViewMountedAxisSeedSnapshot,
     BundleViewPendingAxisSeedSnapshot,
 };
+pub use catalog::{ViewProgramCatalog, ViewProgramCatalogError};
 
 pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
@@ -287,7 +288,7 @@ impl BundleViewFrame {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleViewRuntimeSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub program_id: Option<String>,
+    pub program_id: Option<ViewProgramId>,
     pub logical_time: FxLogicalTime,
     pub next_mount_id: u64,
     pub root_bindings: Vec<RuntimeBinding>,
@@ -300,7 +301,7 @@ pub struct BundleViewRuntimeSnapshot {
 pub struct BundleViewMountRuntimeSnapshot {
     pub handle: PresentationHandleId,
     pub path: BundleViewInstancePath,
-    pub definition: String,
+    pub definition: ViewId,
     pub activation_logical_time: FxLogicalTime,
     pub deterministic_seed: u64,
     pub state: ViewMountSnapshot,
@@ -317,6 +318,12 @@ pub enum BundleViewRuntimeError {
     #[error(transparent)]
     Program(#[from] arcweft_bundle::resource_codec::SectionCodecError),
     #[error(transparent)]
+    Catalog(#[from] ViewProgramCatalogError),
+    #[error(transparent)]
+    ProductValidation(#[from] arcweft_bundle::resource_codec::ViewProductValidationError),
+    #[error(transparent)]
+    Registry(#[from] ViewRegistryError),
+    #[error(transparent)]
     DialogueContract(#[from] DialogueViewContractError),
     #[error(transparent)]
     Inventory(#[from] ViewValueInventoryError),
@@ -327,13 +334,13 @@ pub enum BundleViewRuntimeError {
     #[error(transparent)]
     LogicalTime(#[from] FiniteF32Error),
     #[error("View program repeats definition `{definition}`")]
-    DuplicateDefinition { definition: String },
+    DuplicateDefinition { definition: ViewId },
     #[error("View definition `{definition}` has an invalid instruction span")]
-    InvalidDefinitionSpan { definition: String },
+    InvalidDefinitionSpan { definition: ViewId },
     #[error("View snapshot belongs to program {saved:?}, expected {expected:?}")]
     ProgramMismatch {
-        saved: Option<String>,
-        expected: Option<String>,
+        saved: Option<ViewProgramId>,
+        expected: Option<ViewProgramId>,
     },
     #[error("View snapshot repeats occurrence `{handle}` at path {path:?}")]
     DuplicateOccurrence {
@@ -345,7 +352,7 @@ pub enum BundleViewRuntimeError {
     #[error("View mount {mount:?} was not issued below shared allocator cursor {next}")]
     UnallocatedMount { mount: ViewMountId, next: u64 },
     #[error("View snapshot references unknown definition `{definition}`")]
-    UnknownDefinition { definition: String },
+    UnknownDefinition { definition: ViewId },
     #[error("View snapshot path exceeds the maximum depth of {limit}")]
     InstancePathTooDeep { limit: usize },
     #[error("View snapshot mount activates after the saved logical time")]
@@ -368,7 +375,7 @@ struct ViewOccurrenceKey {
 
 #[derive(Clone, Debug, PartialEq)]
 struct MountedView {
-    definition: String,
+    definition: ViewId,
     activation_logical_time: FxLogicalTime,
     deterministic_seed: u64,
     state: ViewMountState,
@@ -380,10 +387,11 @@ struct MountedView {
 /// Sans I/O evaluator and persistent mount table for one active View program.
 #[derive(Clone, Debug)]
 pub struct BundleViewRuntime {
-    program: Option<AcceptedViewProgram>,
+    product: ValidatedViewProduct,
+    catalog: Option<ViewProgramCatalog>,
+    registry: ViewRegistry,
     style_program: Option<ViewStyleProgram>,
     text: Option<ViewTextResource>,
-    definitions: BTreeMap<String, usize>,
     inventory: ViewValueProgramInventory,
     logical_time: FxLogicalTime,
     allocator: ViewMountAllocator,
@@ -394,7 +402,10 @@ pub struct BundleViewRuntime {
 
 impl Default for BundleViewRuntime {
     fn default() -> Self {
-        Self::try_new(None, None, None).expect("an empty View runtime is valid")
+        let product =
+            ValidatedViewProduct::try_new(None, None, ViewProductValidationLimits::default())
+                .expect("an empty View product is valid");
+        Self::try_new(product, None, None).expect("an empty View runtime is valid")
     }
 }
 
@@ -427,14 +438,30 @@ impl BundleViewInstancePath {
 }
 
 impl BundleViewRuntime {
-    /// Builds an evaluator from already-decoded, typed bundle resources.
+    /// Builds an evaluator only from a complete validated View product.
     pub fn try_new(
-        program: Option<ViewProgramResource>,
+        product: ValidatedViewProduct,
         text: Option<ViewTextResource>,
         style: Option<&ViewStyleResource>,
     ) -> Result<Self, BundleViewRuntimeError> {
-        match &program {
-            Some(program) => program.validate_dialogue_contract(text.as_ref())?,
+        Self::try_new_with_registry(product, text, style, ViewRegistry::default())
+    }
+
+    /// Builds an evaluator while preserving already registered host Views.
+    ///
+    /// The supplied registry is consumed as a candidate. Arcweft definitions
+    /// are inserted only into that candidate, so a public-owner collision
+    /// fails without mutating any previously published registry.
+    pub fn try_new_with_registry(
+        product: ValidatedViewProduct,
+        text: Option<ViewTextResource>,
+        style: Option<&ViewStyleResource>,
+        mut registry: ViewRegistry,
+    ) -> Result<Self, BundleViewRuntimeError> {
+        match product.program() {
+            Some(program) => program
+                .resource()
+                .validate_dialogue_contract(text.as_ref())?,
             None => {
                 if let Some(source) = text.as_ref().and_then(|text| {
                     text.sources
@@ -448,32 +475,27 @@ impl BundleViewRuntime {
                 }
             }
         }
-        let program = program.map(AcceptedViewProgram::try_new).transpose()?;
-        let inventory = ViewValueProgramInventory::from_programs(
-            program.as_ref().map_or_else(Vec::new, |program| {
-                program.resource().value_programs.clone()
-            }),
-        )?;
-        let mut definitions = BTreeMap::new();
-        if let Some(accepted) = &program {
-            let program = accepted.resource();
-            for (index, definition) in program.definitions.iter().enumerate() {
-                if definitions
-                    .insert(definition.public_id.clone(), index)
-                    .is_some()
-                {
-                    return Err(BundleViewRuntimeError::DuplicateDefinition {
-                        definition: definition.public_id.clone(),
-                    });
-                }
-                validate_definition_span(definition, program.instructions.len())?;
+        let catalog = ViewProgramCatalog::try_from_validated(&product)?;
+        if let Some(catalog) = &catalog {
+            for (view, definition) in catalog.definitions() {
+                registry.register_arcweft(
+                    view.clone(),
+                    ViewSchemaId(definition.state_schema_hash()),
+                    catalog.program_id().clone(),
+                )?;
             }
         }
+        let inventory = ViewValueProgramInventory::from_programs(
+            catalog.as_ref().map_or_else(Vec::new, |catalog| {
+                catalog.resource().value_programs.clone()
+            }),
+        )?;
         Ok(Self {
-            program,
+            product,
+            catalog,
+            registry,
             style_program: style.map(|style| style.program.clone()),
             text,
-            definitions,
             inventory,
             logical_time: FxLogicalTime::zero(),
             allocator: ViewMountAllocator::default(),
@@ -483,8 +505,26 @@ impl BundleViewRuntime {
         })
     }
 
+    /// Returns the immutable registry accepted with the current View product.
+    #[must_use]
+    pub const fn registry(&self) -> &ViewRegistry {
+        &self.registry
+    }
+
+    /// Returns the immutable accepted Arcweft catalog, when the product has one.
+    #[must_use]
+    pub const fn catalog(&self) -> Option<&ViewProgramCatalog> {
+        self.catalog.as_ref()
+    }
+
+    /// Returns the complete validated product owned by this runtime generation.
+    #[must_use]
+    pub const fn product(&self) -> &ValidatedViewProduct {
+        &self.product
+    }
+
     fn accepted_program_id(&self) -> Option<&ViewProgramId> {
-        self.program.as_ref().map(AcceptedViewProgram::program_id)
+        self.catalog.as_ref().map(ViewProgramCatalog::program_id)
     }
 
     #[must_use]
@@ -544,7 +584,7 @@ impl BundleViewRuntime {
                     ),
                 }
             })?;
-            if mounted.definition != *view {
+            if mounted.definition.as_str() != *view {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "dialogue occurrence `{}` retains View `{}`, expected `{}`",
@@ -571,7 +611,12 @@ impl BundleViewRuntime {
         let ordinary = presentation_handles
             .iter()
             .filter(|handle| !handle.is_terminal())
-            .filter(|handle| self.definitions.contains_key(&handle.resource_id))
+            .filter(|handle| {
+                ViewId::try_new_engine_owned(handle.resource_id.clone())
+                    .ok()
+                    .and_then(|view| self.catalog.as_ref()?.definition_index(&view))
+                    .is_some()
+            })
             .map(|handle| handle.id.clone())
             .collect::<BTreeSet<_>>();
         if let Some(orphan) = self
@@ -636,7 +681,7 @@ impl BundleViewRuntime {
                     ),
                 }
             })?;
-            if mounted.definition != output.view || mounted.state.mount() != output.mount {
+            if mounted.definition.as_str() != output.view || mounted.state.mount() != output.mount {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "dialogue occurrence `{}` at path {:?} records view `{}`/mount {:?}, expected `{}`/{:?}",
@@ -670,20 +715,23 @@ impl BundleViewRuntime {
     }
 
     pub(crate) fn has_program(&self) -> bool {
-        self.program.is_some()
+        self.catalog.is_some()
     }
 
-    pub(crate) fn definition_ids(&self) -> BTreeSet<String> {
-        self.definitions.keys().cloned().collect()
+    pub(crate) fn definition_ids(&self) -> BTreeSet<ViewId> {
+        self.catalog
+            .as_ref()
+            .map(|catalog| catalog.view_ids().cloned().collect())
+            .unwrap_or_default()
     }
 
     #[must_use]
     pub fn snapshot(&self) -> BundleViewRuntimeSnapshot {
         BundleViewRuntimeSnapshot {
             program_id: self
-                .program
+                .catalog
                 .as_ref()
-                .map(|program| program.resource().program_id.clone()),
+                .map(|catalog| catalog.program_id().clone()),
             logical_time: self.logical_time,
             next_mount_id: self.allocator.next(),
             root_bindings: self
@@ -731,9 +779,9 @@ impl BundleViewRuntime {
         reconciled_root_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
         let expected_program = self
-            .program
+            .catalog
             .as_ref()
-            .map(|program| program.resource().program_id.clone());
+            .map(|catalog| catalog.program_id().clone());
         if snapshot.program_id != expected_program {
             return Err(BundleViewRuntimeError::ProgramMismatch {
                 saved: snapshot.program_id.clone(),
@@ -906,7 +954,7 @@ impl BundleViewRuntime {
                     ),
                 });
             };
-            if mounted.definition != output.view || mounted.state.mount() != output.mount {
+            if mounted.definition.as_str() != output.view || mounted.state.mount() != output.mount {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "occurrence `{}` at path {:?} records view `{}`/mount {:?}, expected `{}`/{:?}",
@@ -948,21 +996,23 @@ impl BundleViewRuntime {
         Ok(())
     }
 
-    fn definition_index(&self, definition: &str) -> Result<usize, BundleViewRuntimeError> {
-        self.definitions.get(definition).copied().ok_or_else(|| {
-            BundleViewRuntimeError::UnknownDefinition {
-                definition: definition.to_owned(),
-            }
-        })
+    fn definition_index(
+        &self,
+        definition: &ViewId,
+    ) -> Result<catalog::ViewDefinitionIndex, BundleViewRuntimeError> {
+        self.catalog
+            .as_ref()
+            .and_then(|catalog| catalog.definition_index(definition))
+            .ok_or_else(|| BundleViewRuntimeError::UnknownDefinition {
+                definition: definition.clone(),
+            })
     }
 
-    fn definition(&self, index: usize) -> &ViewDefinitionResource {
-        &self
-            .program
+    fn definition(&self, index: catalog::ViewDefinitionIndex) -> &ViewDefinitionResource {
+        self.catalog
             .as_ref()
             .expect("a definition index requires a View program")
-            .resource()
-            .definitions[index]
+            .execution_definition(index)
     }
 }
 
@@ -994,21 +1044,6 @@ pub(crate) fn reconciled_root_handles_for_restore(
     Ok(reconciled.into_values().collect())
 }
 
-fn validate_definition_span(
-    definition: &ViewDefinitionResource,
-    instruction_count: usize,
-) -> Result<(), BundleViewRuntimeError> {
-    let start = usize::try_from(definition.body.start_instruction).ok();
-    let end = usize::try_from(definition.body.end_instruction).ok();
-    if !matches!((start, end), (Some(start), Some(end)) if start <= end && end <= instruction_count)
-    {
-        return Err(BundleViewRuntimeError::InvalidDefinitionSpan {
-            definition: definition.public_id.clone(),
-        });
-    }
-    Ok(())
-}
-
 fn validated_initialized_slots(
     kind: &'static str,
     slots: &[u16],
@@ -1026,11 +1061,11 @@ fn validated_initialized_slots(
 fn deterministic_mount_seed(
     handle: &PresentationHandleId,
     path: &BundleViewInstancePath,
-    definition: &str,
+    definition: &ViewId,
 ) -> u64 {
     let mut transcript = b"arcweft.view-mount.v1".to_vec();
     append_seed_part(&mut transcript, handle.as_str().as_bytes());
-    append_seed_part(&mut transcript, definition.as_bytes());
+    append_seed_part(&mut transcript, definition.as_str().as_bytes());
     for segment in path.segments() {
         match segment {
             BundleViewInstancePathSegment::Call {

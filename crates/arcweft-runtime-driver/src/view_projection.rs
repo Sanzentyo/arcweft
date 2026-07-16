@@ -10,6 +10,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
+use arcweft_view::ViewId;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -24,7 +25,7 @@ pub(crate) struct ProjectedViewResources {
 }
 
 pub(crate) struct ViewProjectionInput<'a> {
-    pub(crate) executable_definitions: &'a BTreeSet<String>,
+    pub(crate) executable_definitions: &'a BTreeSet<ViewId>,
     pub(crate) current_images: &'a [BundleImageObject],
     pub(crate) current_text_inputs: &'a [ViewRuntimeTextControl],
     pub(crate) images: &'a [BundleImageObject],
@@ -295,16 +296,18 @@ trait ViewOwnedResource {
     fn view_owner(&self) -> Option<&str>;
 }
 
-fn retain_non_executable<T>(resources: &[T], executable_definitions: &BTreeSet<String>) -> Vec<T>
+fn retain_non_executable<T>(resources: &[T], executable_definitions: &BTreeSet<ViewId>) -> Vec<T>
 where
     T: Clone + ViewOwnedResource,
 {
     resources
         .iter()
         .filter(|resource| {
-            resource
-                .view_owner()
-                .is_none_or(|view| !executable_definitions.contains(view))
+            resource.view_owner().is_none_or(|view| {
+                !executable_definitions
+                    .iter()
+                    .any(|definition| definition.as_str() == view)
+            })
         })
         .cloned()
         .collect()

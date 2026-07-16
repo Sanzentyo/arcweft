@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use arcweft_id::IdError;
 use arcweft_source::{SourceRevision, SourceSetRevision};
 use arcweft_view::{AcceptedViewProgramRevision, ViewIdentityError, ViewProgramId};
 use thiserror::Error;
@@ -29,7 +28,6 @@ pub struct ValidatedViewProgramResource {
     program_id: ViewProgramId,
     accepted_revision: AcceptedViewProgramRevision,
     source_set_revision: SourceSetRevision,
-    source_index: ValidatedViewSourceIndex,
 }
 
 /// Source map and optional View program accepted as one indivisible product.
@@ -82,8 +80,6 @@ pub enum ViewProductValidationError {
     },
     #[error("View product validation arithmetic overflow")]
     ArithmeticOverflow,
-    #[error("invalid View program identity: {0}")]
-    InvalidProgramId(IdError),
     #[error("invalid accepted View program revision: {0}")]
     InvalidAcceptedRevision(ViewIdentityError),
     #[error(transparent)]
@@ -107,7 +103,7 @@ impl ValidatedViewProduct {
         limits: ViewProductValidationLimits,
     ) -> Result<Self, ViewProductValidationError> {
         let program = program
-            .map(|candidate| validate_program(candidate, source_map.as_ref(), limits))
+            .map(|candidate| validate_program(&candidate, source_map.as_ref(), limits))
             .transpose()?
             .map(Arc::new);
         let source_map = match source_map {
@@ -148,9 +144,7 @@ impl ValidatedViewProgramResource {
     }
 
     pub fn source_ref(&self, index: ProductSourceRefIndex) -> &ProductSourceRef {
-        let index = index.index();
-        let _document_index = self.source_index.documents[index];
-        &self.resource.source_refs[index]
+        &self.resource.source_refs[index.index()]
     }
 
     pub const fn resource(&self) -> &ViewProgramResource {
@@ -159,7 +153,7 @@ impl ValidatedViewProgramResource {
 }
 
 fn validate_program(
-    candidate: ViewProgramResource,
+    candidate: &ViewProgramResource,
     source_map: Option<&SourceMapSection>,
     limits: ViewProductValidationLimits,
 ) -> Result<ValidatedViewProgramResource, ViewProductValidationError> {
@@ -175,14 +169,13 @@ fn validate_program(
             &empty_source_map
         }
     };
-    validate_candidate_sources(&candidate, source_map, limits)?;
+    validate_candidate_sources(candidate, source_map, limits)?;
 
     let encoded = candidate.encode_canonical_section()?;
     let resource = ViewProgramResource::decode_canonical_section(&encoded)?;
-    let source_index = validate_candidate_sources(&resource, source_map, limits)?;
+    validate_candidate_sources(&resource, source_map, limits)?;
 
-    let program_id = ViewProgramId::try_new(resource.program_id.clone())
-        .map_err(ViewProductValidationError::InvalidProgramId)?;
+    let program_id = resource.program_id.clone();
     let digest = resource.canonical_digest()?;
     let accepted_revision = AcceptedViewProgramRevision::try_from_bytes(digest.as_bytes())
         .map_err(ViewProductValidationError::InvalidAcceptedRevision)?;
@@ -191,7 +184,6 @@ fn validate_program(
         program_id,
         accepted_revision,
         source_set_revision: source_map.source_set_revision(),
-        source_index,
     })
 }
 
@@ -215,11 +207,11 @@ fn validate_candidate_sources(
         .ok_or(ViewProductValidationError::ArithmeticOverflow)?;
     enforce_u64("validation_work", work, limits.validation_work)?;
 
-    let source_index = validate_source_refs(&resource, source_map)?;
+    let source_index = validate_source_refs(resource, source_map)?;
     for range in resource.source_ranges() {
-        validate_range(range, &resource, source_map, &source_index)?;
+        validate_range(range, resource, source_map, &source_index)?;
     }
-    validate_export_relations(&resource, source_map, &source_index)?;
+    validate_export_relations(resource, source_map, &source_index)?;
 
     Ok(source_index)
 }

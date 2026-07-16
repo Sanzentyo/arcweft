@@ -13,6 +13,7 @@ use super::style_scope::{
     ViewStyleScopeRuntime, ViewStyleScopeStack,
 };
 
+use super::catalog::{ViewDefinitionIndex, ViewProgramCatalog};
 use super::part::ViewPartRuntimeCatalog;
 use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
 use super::{
@@ -36,7 +37,7 @@ use arcweft_presentation::fx::{
     FxEvaluationBudget, FxEvaluationError, FxGraphChildPath, FxRuntimeValue, FxSampleContext,
 };
 use arcweft_view::{
-    ViewMountState, ViewValueEvaluationError, ViewValueProgramId, ViewValueProgramInventory,
+    ViewId, ViewMountState, ViewValueEvaluationError, ViewValueProgramId, ViewValueProgramInventory,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -138,11 +139,11 @@ impl MountRenderBuilder {
 }
 
 struct ViewEvaluator<'a> {
+    catalog: &'a ViewProgramCatalog,
     program: &'a ViewProgramResource,
     program_id: &'a arcweft_view::ViewProgramId,
     parts: &'a ViewPartRuntimeCatalog,
     text: Option<&'a ViewTextResource>,
-    definitions: &'a BTreeMap<String, usize>,
     inventory: &'a ViewValueProgramInventory,
     logical_time: arcweft_presentation::fx::FxLogicalTime,
     allocator: &'a mut arcweft_view::ViewMountAllocator,
@@ -260,7 +261,7 @@ impl BundleViewRuntime {
                 .insert(binding.name.clone(), binding.value.clone());
         }
         let mut axis_diagnostics = self.discard_invalid_axis_seed_reservations(handles);
-        let Some(accepted) = self.program.as_ref() else {
+        let Some(catalog) = self.catalog.as_ref() else {
             self.mounts.clear();
             self.axis_seeds.retain_mounts(&BTreeSet::new());
             return BundleViewFrame {
@@ -268,13 +269,18 @@ impl BundleViewRuntime {
                 diagnostics: axis_diagnostics,
             };
         };
-        let program = accepted.resource();
+        let program = catalog.resource();
 
         let (all_handles, dialogue_inputs, collisions) = reconcile_root_handles(handles, dialogue);
         let live_handles = all_handles
             .iter()
             .filter(|handle| !handle.is_terminal())
-            .filter(|handle| self.definitions.contains_key(&handle.resource_id))
+            .filter(|handle| {
+                ViewId::try_new_engine_owned(handle.resource_id.clone())
+                    .ok()
+                    .and_then(|view| catalog.definition_index(&view))
+                    .is_some()
+            })
             .map(|handle| handle.id.clone())
             .collect::<BTreeSet<_>>();
         self.mounts
@@ -288,11 +294,11 @@ impl BundleViewRuntime {
         self.axis_seeds.retain_mounts(&live_root_mounts);
 
         let mut evaluator = ViewEvaluator {
+            catalog,
             program,
-            program_id: accepted.program_id(),
-            parts: accepted.parts(),
+            program_id: catalog.program_id(),
+            parts: catalog.parts(),
             text: self.text.as_ref(),
-            definitions: &self.definitions,
             inventory: &self.inventory,
             logical_time: self.logical_time,
             allocator: &mut self.allocator,
@@ -317,8 +323,25 @@ impl BundleViewRuntime {
             if handle.is_terminal() {
                 continue;
             }
-            let Some(definition_index) = evaluator.definitions.get(&handle.resource_id).copied()
-            else {
+            let Ok(view) = ViewId::try_new_engine_owned(handle.resource_id.clone()) else {
+                if handle.kind == PresentationHandleKind::View
+                    && handle.state == PresentationResourceState::Mounted
+                {
+                    evaluator.diagnostics.push(BundleViewDiagnostic {
+                        code: BundleViewDiagnosticCode::MissingDefinition,
+                        handle: Some(handle.id.clone()),
+                        mount: None,
+                        view: Some(handle.resource_id.clone()),
+                        instruction: None,
+                        message: format!(
+                            "presentation handle `{}` references missing View definition `{}`",
+                            handle.id, handle.resource_id
+                        ),
+                    });
+                }
+                continue;
+            };
+            let Some(definition_index) = evaluator.catalog.definition_index(&view) else {
                 if handle.kind == PresentationHandleKind::View
                     && handle.state == PresentationResourceState::Mounted
                 {
@@ -345,7 +368,7 @@ impl BundleViewRuntime {
                     evaluator.visited.insert(key.clone());
                 }
                 Err(error) => {
-                    evaluator.record_failure(&key, &handle.resource_id, None, error);
+                    evaluator.record_failure(&key, &view, None, error);
                     continue;
                 }
             }
@@ -397,12 +420,13 @@ impl ViewEvaluator<'_> {
     fn prepare_occurrence(
         &mut self,
         key: &ViewOccurrenceKey,
-        definition_index: usize,
+        definition_index: ViewDefinitionIndex,
         call_arguments: Option<&BTreeMap<u16, FxRuntimeValue>>,
     ) -> Result<(), EvaluationFailure> {
         let definition = self.definition(definition_index).clone();
+        let definition_view = definition.public_id.to_view_id();
         if let Some(existing) = self.mounts.get(key)
-            && existing.definition != definition.public_id
+            && existing.definition != definition_view
         {
             return Err(EvaluationFailure::new(
                 BundleViewDiagnosticCode::InvalidControlFlow,
@@ -460,12 +484,12 @@ impl ViewEvaluator<'_> {
             self.mounts.insert(
                 key.clone(),
                 MountedView {
-                    definition: definition.public_id.clone(),
+                    definition: definition_view.clone(),
                     activation_logical_time: self.logical_time,
                     deterministic_seed: deterministic_mount_seed(
                         &key.handle,
                         &key.path,
-                        &definition.public_id,
+                        &definition_view,
                     ),
                     state: mount_state,
                     initialized_parameters: BTreeSet::new(),
@@ -671,7 +695,7 @@ impl ViewEvaluator<'_> {
     fn evaluate_occurrence(
         &mut self,
         key: ViewOccurrenceKey,
-        definition_index: usize,
+        definition_index: ViewDefinitionIndex,
         depth: usize,
         style_scopes: ViewStyleScopeStack,
     ) -> Vec<BundleViewMountOutput> {
@@ -679,7 +703,7 @@ impl ViewEvaluator<'_> {
         if depth >= VIEW_RECURSION_LIMIT {
             self.record_failure(
                 &key,
-                &definition.public_id,
+                &definition.public_id.to_view_id(),
                 None,
                 EvaluationFailure::new(
                     BundleViewDiagnosticCode::RecursionLimitExceeded,
@@ -724,7 +748,7 @@ impl ViewEvaluator<'_> {
                         self.mounts.insert(key.clone(), mounted);
                         self.record_failure(
                             &key,
-                            &definition.public_id,
+                            &definition.public_id.to_view_id(),
                             Some(mount_id),
                             EvaluationFailure::new(
                                 BundleViewDiagnosticCode::InvalidControlFlow,
@@ -746,7 +770,7 @@ impl ViewEvaluator<'_> {
                 let mut output = vec![BundleViewMountOutput {
                     handle: key.handle,
                     mount: mount_id,
-                    view: definition.public_id,
+                    view: definition.public_id.as_str().to_owned(),
                     path: key.path,
                     host_axis_seed,
                     dialogue,
@@ -763,7 +787,7 @@ impl ViewEvaluator<'_> {
             Err(error) => {
                 let mount = rollback.state.mount();
                 self.mounts.insert(key.clone(), rollback);
-                self.record_failure(&key, &definition.public_id, Some(mount), error);
+                self.record_failure(&key, &definition.public_id.to_view_id(), Some(mount), error);
                 Vec::new()
             }
         }
@@ -884,7 +908,8 @@ impl ViewEvaluator<'_> {
                             format!("repeat count {count} is outside 0..={VIEW_REPEAT_LIMIT}"),
                         ));
                     }
-                    let repeat_slots = self.repeat_slots(*key_program, &definition.public_id)?;
+                    let repeat_slots =
+                        self.repeat_slots(*key_program, definition.public_id.as_str())?;
                     let mut keys = BTreeSet::new();
                     for ordinal in 0..count {
                         for slot in &repeat_slots {
@@ -1029,10 +1054,12 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id,
+                                view: &definition.public_id.to_view_id(),
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
-                                kind: BundleViewStyleNodeKind::CallView { view: view.clone() },
+                                kind: BundleViewStyleNodeKind::CallView {
+                                    view: view.as_str().to_owned(),
+                                },
                                 part: part.as_ref(),
                                 local: styles,
                                 root,
@@ -1044,7 +1071,8 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .for_nested_view(&local_styles)
                         .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
-                    let Some(child_index) = self.definitions.get(view).copied() else {
+                    let child_view = view.to_view_id();
+                    let Some(child_index) = self.catalog.definition_index(&child_view) else {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::MissingDefinition,
                             Some(cursor),
@@ -1113,7 +1141,7 @@ impl ViewEvaluator<'_> {
                             descendants.extend(child_output);
                         }
                         Err(error) => {
-                            self.record_failure(&child_key, view, None, error);
+                            self.record_failure(&child_key, &child_view, None, error);
                         }
                     }
                     cursor += 1;
@@ -1132,7 +1160,7 @@ impl ViewEvaluator<'_> {
                         &mut self.value_budget,
                         Some(cursor),
                     )?;
-                    let slots = self.local_slots(&definition.public_id, binding);
+                    let slots = self.local_slots(definition.public_id.as_str(), binding);
                     if slots.is_empty() {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::InvalidControlFlow,
@@ -1195,7 +1223,7 @@ impl ViewEvaluator<'_> {
                         }
                         None => None,
                     };
-                    let target = builder.fx_target(&definition.public_id);
+                    let target = builder.fx_target(definition.public_id.as_str());
                     let instance = derive_fx_instance(
                         fx,
                         key,
@@ -1235,7 +1263,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id,
+                                view: &definition.public_id.to_view_id(),
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Element {
@@ -1285,7 +1313,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id,
+                                view: &definition.public_id.to_view_id(),
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Text {
@@ -1324,7 +1352,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id,
+                                view: &definition.public_id.to_view_id(),
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Image {
@@ -1377,7 +1405,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id,
+                                view: &definition.public_id.to_view_id(),
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Custom {
@@ -1486,14 +1514,14 @@ impl ViewEvaluator<'_> {
         }
     }
 
-    fn definition(&self, index: usize) -> &ViewDefinitionResource {
-        &self.program.definitions[index]
+    fn definition(&self, index: ViewDefinitionIndex) -> &ViewDefinitionResource {
+        self.catalog.execution_definition(index)
     }
 
     fn record_failure(
         &mut self,
         key: &ViewOccurrenceKey,
-        view: &str,
+        view: &ViewId,
         mount: Option<arcweft_view::ViewMountId>,
         failure: EvaluationFailure,
     ) {
@@ -1501,7 +1529,7 @@ impl ViewEvaluator<'_> {
             code: failure.code,
             handle: Some(key.handle.clone()),
             mount,
-            view: Some(view.to_owned()),
+            view: Some(view.as_str().to_owned()),
             instruction: failure.instruction,
             message: failure.message,
         });

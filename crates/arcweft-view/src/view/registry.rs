@@ -143,9 +143,8 @@ impl ViewRegistry {
         id: ViewId,
         schema: ViewSchemaId,
         program: ViewProgramId,
-    ) -> Result<(), ViewRegistryError> {
+    ) -> Result<ViewRegistryId, ViewRegistryError> {
         self.register(ViewDescriptor::arcweft(id, schema, program))
-            .map(drop)
     }
 
     /// Retires one Arcweft implementation by stable owner and expected program.

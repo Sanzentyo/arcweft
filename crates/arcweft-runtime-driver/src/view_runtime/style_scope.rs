@@ -3,7 +3,7 @@
 use super::BundleViewInstancePath;
 use arcweft_bundle::resource_codec::view::ViewElementKind;
 use arcweft_view::{
-    ViewPartLocalName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewId, ViewPartLocalName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
     ViewStyleBoundaryFacts, ViewStyleScopeId,
 };
 use serde::{Deserialize, Serialize};
@@ -100,7 +100,7 @@ pub(crate) struct ViewStyleScopeRuntime {
 /// One node-producer evaluation at the Style scope boundary.
 pub(crate) struct ViewStyleNodeInput<'a> {
     pub(crate) parts: &'a ViewPartRuntimeCatalog,
-    pub(crate) view: &'a str,
+    pub(crate) view: &'a ViewId,
     pub(crate) path: &'a BundleViewInstancePath,
     pub(crate) instruction: u32,
     pub(crate) kind: BundleViewStyleNodeKind,

@@ -50,7 +50,7 @@ impl ViewProgramResource {
                 })
             {
                 return Err(ViewStyleContractError::InlineDefinitionPatch {
-                    view: definition.public_id.clone(),
+                    view: definition.public_id.as_str().to_owned(),
                     patch,
                 });
             }

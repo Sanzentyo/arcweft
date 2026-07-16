@@ -7,7 +7,7 @@ use arcweft_bundle::resource_codec::view::{
 #[test]
 fn runtime_action_button_resolves_label_and_noop_action() {
     let program = ViewProgramResource {
-        program_id: "view.program.test".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.test").unwrap(),
         source_refs: Vec::new(),
         definitions: Vec::new(),
         value_programs: Vec::new(),
@@ -56,7 +56,7 @@ fn runtime_action_button_resolves_label_and_noop_action() {
 #[test]
 fn runtime_action_button_resolves_action_invoke_action() {
     let program = ViewProgramResource {
-        program_id: "view.program.test".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.test").unwrap(),
         source_refs: Vec::new(),
         definitions: Vec::new(),
         value_programs: Vec::new(),

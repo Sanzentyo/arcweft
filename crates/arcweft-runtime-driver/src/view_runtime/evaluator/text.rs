@@ -207,7 +207,7 @@ impl ViewEvaluator<'_> {
         name: &str,
         instruction: usize,
     ) -> Result<BundleViewTextValue, EvaluationFailure> {
-        let slots = self.local_slots(&definition.public_id, name);
+        let slots = self.local_slots(definition.public_id.as_str(), name);
         let slot = slots.first().copied().ok_or_else(|| {
             EvaluationFailure::new(
                 BundleViewDiagnosticCode::MissingInput,

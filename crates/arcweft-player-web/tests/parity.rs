@@ -889,10 +889,14 @@ fn literal_text_source(public_id: &str, value: &str) -> ViewTextSourceRecord {
 
 fn authored_view_program_resource() -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "view.web_panel".to_owned(),
+        program_id: arcweft_bundle::resource_codec::ViewProgramId::try_new("view.web_panel")
+            .unwrap(),
         source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.WebPanel".to_owned(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                "view.WebPanel",
+            )
+            .unwrap(),
             body: ViewInstructionSpan::new(0, 6),
             styles: Vec::new(),
             parameters: Vec::new(),

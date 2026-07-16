@@ -186,21 +186,53 @@ Increment 3 verification on Jujutsu change `lktlozot`:
   files, 1,545 Rust files, and 708,347 Rust physical LOC with 0 errors and 128
   repository-wide warnings.
 
+## Increment 4 implementation
+
+The accepted runtime boundary now preserves program and definition ownership
+as `ViewProgramId`, `ViewDefinitionRef`, and `ViewId`; definition and call
+targets are no longer reparsed from strings. `ViewProgramCatalog` is built
+fallibly from an owned `ValidatedViewProduct`, sorts definitions by semantic
+`ViewId`, allocates only crate-private `ViewDefinitionIndex` values, and owns
+the single typed semantic-program and exported-part catalog used by execution.
+The former raw `ViewProgramResource` runtime constructor and the duplicate
+string-indexed definition/part maps are deleted.
+
+Runtime construction first clones or consumes a candidate `ViewRegistry`,
+preserves anonymous and public Rust descriptors, then registers every Arcweft
+definition with its exact schema and program identity. A public-owner
+collision rejects the candidate before any runtime is published. Engine-owned
+reserved View identities have an explicit checked constructor; authored
+`PublicId::try_new` remains unable to create the reserved namespace, while
+standard product decode and save-oriented semantic identity can represent it.
+
+Increment 4 verification after rebasing onto Git `06e502403861`:
+
+- `cargo fmt --all -- --check` — passed;
+- focused `arcweft-id`, `arcweft-view`, bundle product/codec/standard-dialogue,
+  and runtime View suites — all passed, including 17 runtime integration tests;
+- `cargo clippy -p arcweft-id -p arcweft-view -p arcweft-bundle --all-targets
+  --all-features -- -D warnings` — passed, including the six reported
+  Increment 3 bundle findings;
+- runtime-driver all-target/all-feature clippy passed for this slice while
+  exempting the pre-existing `session/hot_swap.rs` `assigning_clones` finding;
+  no View warning was exempted; and
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .` — scanned 3,138
+  files, 1,575 Rust files, and 721,479 Rust physical LOC with 0 errors and 128
+  repository-wide warnings.
+
 ## Remaining correction increments
 
 The following package requirements are explicitly not complete:
 
-1. typed product definition/call tables and immutable runtime
-   `ViewProgramCatalog`/`ViewDefinitionIndex` authority;
-2. typed static instruction inventory, canonical semantic transcript, and
+1. canonical semantic transcript, per-definition fingerprints, and
    accepted program revision derivation;
-3. semantic occurrence reconciliation, opaque direct-boundary capability, and
+2. semantic occurrence reconciliation, opaque direct-boundary capability, and
    persistent-owner rejection for anonymous Rust Views;
-4. six-phase candidate-first replacement with exact rollback, generation, and
+3. six-phase candidate-first replacement with exact rollback, generation, and
    targeted cache/trace invalidation;
-5. final ordinary-parser rejection accounting with no historical recognizer;
+4. final ordinary-parser rejection accounting with no historical recognizer;
    and
-6. contextual Style application edges plus atomic LSP rename, symbols,
+5. contextual Style application edges plus atomic LSP rename, symbols,
    semantic tokens, limits, and the remaining test matrix.
 
 The correction must remain open until those increments and their Tier-0/Tier-1,

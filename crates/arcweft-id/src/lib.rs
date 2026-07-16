@@ -56,6 +56,15 @@ impl PublicId {
         validate_id_text(&value.into(), true, true).map(Self)
     }
 
+    /// Constructs an engine-owned public identity whose reserved prefix is
+    /// intentionally unavailable to authored source.
+    ///
+    /// This remains checked for reference markers, whitespace, and control
+    /// characters; only the reserved-prefix rule differs from [`Self::try_new`].
+    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
+        validate_id_text(&value.into(), true, false).map(Self)
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -160,6 +169,22 @@ mod tests {
     fn public_id_rejects_reserved_prefix() {
         let err = PublicId::try_new("arcweft.internal").expect_err("reserved prefix must fail");
         assert_eq!(err.kind(), IdErrorKind::ReservedPrefix);
+    }
+
+    #[test]
+    fn engine_owned_public_id_accepts_reserved_prefix_without_weakening_text_checks() {
+        assert_eq!(
+            PublicId::try_new_engine_owned("std.view.dialogue")
+                .unwrap()
+                .as_str(),
+            "std.view.dialogue"
+        );
+        assert_eq!(
+            PublicId::try_new_engine_owned("#std.view.dialogue")
+                .unwrap_err()
+                .kind(),
+            IdErrorKind::StartsWithReferenceMarker
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Stable semantic identities for authored and public Views.
 
 use arcweft_id::{IdError, PublicId};
+use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -28,6 +29,11 @@ pub enum ViewIdentityError {
 impl ViewId {
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
         PublicId::try_new(value).map(Self)
+    }
+
+    /// Constructs a semantic identity for an engine-owned reserved View.
+    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
+        PublicId::try_new_engine_owned(value).map(Self)
     }
 
     pub const fn from_public_id(value: PublicId) -> Self {
@@ -69,6 +75,18 @@ impl ViewProgramId {
     }
 }
 
+impl fmt::Display for ViewId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl fmt::Display for ViewProgramId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 impl AcceptedViewProgramRevision {
     pub fn try_from_bytes(bytes: [u8; 32]) -> Result<Self, ViewIdentityError> {
         if bytes == [0; 32] {
@@ -107,7 +125,8 @@ impl<'de> Deserialize<'de> for ViewId {
     where
         D: Deserializer<'de>,
     {
-        Self::try_new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        Self::try_new_engine_owned(String::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
     }
 }
 

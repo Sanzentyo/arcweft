@@ -200,7 +200,10 @@ fn direct_json_program_sidecar_rejects_unknown_fields_on_every_node_producer() {
         (
             "CallView unknown field",
             ViewProgramInstruction::CallView {
-                view: "view.strict.child".to_owned(),
+                view: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                    "view.strict.child",
+                )
+                .unwrap(),
                 arguments: Vec::new(),
                 styles: Vec::new(),
                 part: None,

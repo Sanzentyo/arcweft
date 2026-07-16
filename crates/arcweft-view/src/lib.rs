@@ -65,10 +65,11 @@ pub use part::{
 };
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
-    ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind,
-    ViewElementSpec, ViewElementTextInputKind, ViewEventBindingSpec, ViewHandlerProgram,
-    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewProgram, ViewProgramBuilder,
-    ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec,
+    ViewElementKind, ViewElementLayoutKind, ViewElementSpec, ViewElementTextInputKind,
+    ViewEventBindingSpec, ViewFxApplicationInstruction, ViewFxCallArgument, ViewHandlerProgram,
+    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewLocalBinding, ViewProgram,
+    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{

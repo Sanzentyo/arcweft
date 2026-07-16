@@ -2,11 +2,11 @@
 
 use crate::resource_codec::view::{
     DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
-    ViewDefinitionResource, ViewElementKind, ViewInstructionSpan, ViewParameterResource,
-    ViewParameterRole, ViewProgramInstruction, ViewProgramResource, ViewRuntimeButtonBounds,
-    ViewRuntimeSurfaceBounds, ViewStyleResource, ViewSurfaceResource, ViewTextBlockBounds,
-    ViewTextBlockResource, ViewTextResource, ViewTextSourceKind, ViewTextSourceRecord,
-    ViewTextSurface,
+    ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
+    ViewParameterResource, ViewParameterRole, ViewProgramInstruction, ViewProgramResource,
+    ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds, ViewStyleResource, ViewSurfaceResource,
+    ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewTextSourceKind,
+    ViewTextSourceRecord, ViewTextSurface,
 };
 use crate::resource_codec::{ProductSourceRef, SourceMapSection, SourceRangeRef};
 use arcweft_presentation::appearance::PresentationColor;
@@ -37,12 +37,19 @@ const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
 const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";
 
 /// Minimal default dialogue View program linked through the normal View runtime.
+///
+/// # Panics
+///
+/// Panics only if an engine-owned standard View or part identity stops satisfying
+/// the canonical identity grammar. Such a change is a build-time programming error.
 #[must_use]
 pub fn dialogue_program() -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "view.standard.dialogue.program".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.standard.dialogue.program")
+            .expect("the standard dialogue View program identity is valid"),
         definitions: vec![ViewDefinitionResource {
-            public_id: DIALOGUE_VIEW_ID.to_owned(),
+            public_id: ViewDefinitionRef::try_new_engine_owned(DIALOGUE_VIEW_ID)
+                .expect("the standard dialogue View identity is valid"),
             body: ViewInstructionSpan::new(0, 6),
             styles: vec![dialogue_style_ref()],
             parameters: vec![ViewParameterResource {
@@ -184,7 +191,7 @@ pub fn dialogue_style() -> ViewStyleResource {
     let section = SourceMapSection::try_from_documents(&[&document])
         .expect("standard dialogue Style source map is canonical");
     let source_ref = ProductSourceRef::from_document(
-        &section
+        section
             .documents()
             .next()
             .expect("standard dialogue Style source map is non-empty"),

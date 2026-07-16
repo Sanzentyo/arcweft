@@ -20,6 +20,7 @@ pub mod types;
 pub mod view;
 pub mod wire;
 
+pub use arcweft_source::SourceSetRevision;
 pub use budget::SectionCodecBudget;
 pub use error::SectionCodecError;
 pub use field::{
@@ -62,7 +63,7 @@ pub use view::{
     ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewFxArgumentBindingRef, ViewInputResource,
     ViewInstructionSpan, ViewLayoutBoundsKind, ViewLayoutBoundsResource, ViewLocalizedTextResource,
     ViewLogicalRect, ViewParameterResource, ViewProductValidationError,
-    ViewProductValidationLimits, ViewProgramResource, ViewProgramStyleResources,
+    ViewProductValidationLimits, ViewProgramId, ViewProgramResource, ViewProgramStyleResources,
     ViewResourceBudget, ViewResourceCompatibility, ViewResourceMergeError,
     ViewRichTextDocumentResource, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
     ViewRuntimeButtonBounds, ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle,

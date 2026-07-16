@@ -281,6 +281,26 @@ impl ViewEvaluationSiteId {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Derives a stable semantic site from its owner, local name, and instruction family.
+    pub fn from_part(
+        view: &crate::ViewId,
+        local: &ViewPartLocalName,
+        kind: ViewPartInstructionKind,
+    ) -> Self {
+        let mut transcript = Vec::with_capacity(view.as_str().len() + local.as_str().len() + 32);
+        transcript.extend_from_slice(b"arcweft.view-part-site.v1\0");
+        append_site_part(&mut transcript, view.as_str().as_bytes());
+        append_site_part(&mut transcript, local.as_str().as_bytes());
+        transcript.push(kind.wire_tag());
+        Self(*blake3::hash(&transcript).as_bytes())
+    }
+}
+
+fn append_site_part(transcript: &mut Vec<u8>, value: &[u8]) {
+    let length = u64::try_from(value.len()).expect("slice lengths fit the u64 hash transcript");
+    transcript.extend_from_slice(&length.to_le_bytes());
+    transcript.extend_from_slice(value);
 }
 
 impl ViewStaticPart {

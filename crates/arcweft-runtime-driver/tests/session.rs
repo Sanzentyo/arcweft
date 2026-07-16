@@ -9,7 +9,7 @@ use arcweft_bundle::patch::{
 };
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
+    CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewDefinitionRef,
     ViewDefinitionResource, ViewElementKind, ViewInputKind, ViewInputOptions, ViewInputPurpose,
     ViewInputResource, ViewInstructionSpan, ViewLogicalRect, ViewParameterResource,
     ViewProgramInstruction, ViewProgramResource, ViewScrollAxis, ViewScrollRegionResource,
@@ -77,6 +77,7 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_view::ViewProgramId;
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
 use arcweft_view::{
@@ -165,9 +166,9 @@ fn paged_inventory_fixture_bundle() -> ArcweftBundle {
     paged_fixture_bundle()
         .with_view_resources(
             Some(ViewProgramResource {
-                program_id: "view.program.inventory".to_owned(),
+                program_id: ViewProgramId::try_new("view.program.inventory").unwrap(),
                 definitions: vec![ViewDefinitionResource {
-                    public_id: "view.inventory".to_owned(),
+                    public_id: ViewDefinitionRef::try_new("view.inventory").unwrap(),
                     body: ViewInstructionSpan::new(0, 0),
                     styles: Vec::new(),
                     parameters: Vec::new(),
@@ -260,9 +261,9 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
     )
     .with_product_awbc(product_awbc);
     bundle.view_program = Some(ViewProgramResource {
-        program_id: "view.program.session".to_owned(),
+        program_id: ViewProgramId::try_new("view.program.session").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Root".to_owned(),
+            public_id: ViewDefinitionRef::try_new("view.Root").unwrap(),
             body: ViewInstructionSpan::new(0, 5),
             styles: Vec::new(),
             parameters: vec![ViewParameterResource {

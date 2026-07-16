@@ -139,14 +139,14 @@ fn complete_product_rejects_cross_source_and_uncontained_export_ranges() {
         .expect("right source")
         .clone();
 
-    let mut cross_source = exported_program(source_refs.clone(), &left);
+    let mut cross_source = exported_program(&source_refs, &left);
     cross_source.exported_parts[0].source.public_name = source_range(&source_refs, &right, 24, 31);
     assert!(matches!(
         validate(source_map.clone(), cross_source).expect_err("cross-source export rejects"),
         ViewProductValidationError::CrossSource { .. }
     ));
 
-    let mut outside = exported_program(source_refs.clone(), &left);
+    let mut outside = exported_program(&source_refs, &left);
     outside.exported_parts[0].source.local_name = source_range(&source_refs, &left, 33, 34);
     assert_eq!(
         validate(source_map, outside).expect_err("uncontained export operand rejects"),
@@ -215,7 +215,7 @@ fn ranged_program(label: &str, text: &str) -> (SourceMapSection, ViewProgramReso
     let source = source_refs[0].clone();
     let end = u32::try_from(text.len()).expect("test source length");
     let program = ViewProgramResource {
-        program_id: "view.program.validation".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.validation").unwrap(),
         source_refs: source_refs.clone(),
         semantic_targets: vec![ViewSemanticTarget {
             public_id: "target.validation".to_owned(),
@@ -230,14 +230,17 @@ fn ranged_program(label: &str, text: &str) -> (SourceMapSection, ViewProgramReso
 }
 
 fn exported_program(
-    source_refs: Vec<ProductSourceRef>,
+    source_refs: &[ProductSourceRef],
     source: &ProductSourceRef,
 ) -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "view.program.export-validation".to_owned(),
-        source_refs: source_refs.clone(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.export-validation").unwrap(),
+        source_refs: source_refs.to_owned(),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Validation".to_owned(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                "view.Validation",
+            )
+            .unwrap(),
             body: ViewInstructionSpan::new(0, 1),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -256,9 +259,9 @@ fn exported_program(
             ),
             public_name: ViewPartName::try_new("part.public").expect("public part"),
             source: ViewPartExportSourceRef {
-                declaration: source_range(&source_refs, source, 0, 32),
-                local_name: source_range(&source_refs, source, 12, 20),
-                public_name: source_range(&source_refs, source, 24, 31),
+                declaration: source_range(source_refs, source, 0, 32),
+                local_name: source_range(source_refs, source, 12, 20),
+                public_name: source_range(source_refs, source, 24, 31),
             },
         }],
         ..ViewProgramResource::default()

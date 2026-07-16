@@ -44,7 +44,8 @@ fn style_program_contract_rejects_dangling_targets_and_inline_definition_roots()
     let style = style_resource("view.style.alpha", "style.alpha", 0);
     let mut program = ViewProgramResource::default();
     program.definitions.push(ViewDefinitionResource {
-        public_id: "view.main".to_owned(),
+        public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new("view.main")
+            .unwrap(),
         body: ViewInstructionSpan::new(0, 0),
         styles: vec![ViewStyleApplicationTarget::named(sheet_id("style.missing"))],
         parameters: Vec::new(),
@@ -230,14 +231,13 @@ fn style_resource_with_source_inventory(
     if reversed_sources {
         source_map_refs.reverse();
     }
-    let resource = ViewStyleResource {
+    ViewStyleResource {
         style_program_id: program_id.to_owned(),
         program: ViewStyleProgram::try_new(vec![sheet], vec![patch]).expect("valid Style program"),
         source_refs,
         source_map_refs,
         adapter_requirements: Vec::new(),
-    };
-    resource
+    }
 }
 
 fn source_document(id: &str) -> SourceDocument {

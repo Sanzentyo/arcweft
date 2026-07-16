@@ -272,11 +272,11 @@ impl ViewProgramResource {
     }
 
     fn validate_identity_contracts(&self) -> Result<(), SectionCodecError> {
-        if !valid_resource_identity(&self.program_id)
+        if !valid_resource_identity(self.program_id.as_str())
             || self
                 .definitions
                 .iter()
-                .any(|definition| !valid_resource_identity(&definition.public_id))
+                .any(|definition| !valid_resource_identity(definition.public_id.as_str()))
         {
             return Err(SectionCodecError::NonCanonicalTable(
                 "view_program_identities",
@@ -522,7 +522,7 @@ impl ViewProgramResource {
         reject_duplicates(
             self.definitions
                 .iter()
-                .map(|definition| definition.public_id.clone()),
+                .map(|definition| definition.public_id.as_str().to_owned()),
             "view_definitions",
         )?;
         let mut spans = self
@@ -578,7 +578,7 @@ impl ViewProgramResource {
                 match (parameter.value_type, parameter.value_slot) {
                     (Some(value_type), Some(value_slot)) => {
                         let expected_source = ViewValueInputSource::DefinitionParameter {
-                            view: definition.public_id.clone(),
+                            view: definition.public_id.as_str().to_owned(),
                             name: parameter.name.clone(),
                         };
                         if !self.value_inputs.iter().any(|input| {
@@ -833,7 +833,7 @@ impl ViewProgramResource {
             let Some(definition) = button.view.as_deref().and_then(|view| {
                 self.definitions
                     .iter()
-                    .find(|definition| definition.public_id == view)
+                    .find(|definition| definition.public_id.as_str() == view)
             }) else {
                 return Err(SectionCodecError::NonCanonicalTable(
                     "view_dialogue_primary_action_owner",
@@ -963,7 +963,7 @@ impl ViewProgramResource {
 
     fn public_ids(&self) -> Vec<String> {
         unique_strings(
-            [self.program_id.clone()]
+            [self.program_id.as_str().to_owned()]
                 .into_iter()
                 .chain(
                     self.source_refs
@@ -971,7 +971,7 @@ impl ViewProgramResource {
                         .map(|source| source.id().as_str().to_owned()),
                 )
                 .chain(self.definitions.iter().flat_map(|definition| {
-                    std::iter::once(definition.public_id.clone())
+                    std::iter::once(definition.public_id.as_str().to_owned())
                         .chain(
                             definition
                                 .parameters
@@ -1449,7 +1449,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         ViewProgramInstruction::CallView {
             view, styles, part, ..
         } => [
-            Some(view.clone()),
+            Some(view.as_str().to_owned()),
             part.as_ref()
                 .map(|part| part.as_public_id().as_str().to_owned()),
         ]

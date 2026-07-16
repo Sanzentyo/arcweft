@@ -33,7 +33,7 @@ fn view_input_resource_emits_runtime_text_control_shape() {
         redactions: Vec::new(),
     };
     let program = ViewProgramResource {
-        program_id: "view.program.main".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.main").unwrap(),
         source_refs: Vec::new(),
         definitions: Vec::new(),
         value_programs: Vec::new(),
@@ -197,7 +197,7 @@ fn view_program_layout_bounds_override_stacked_runtime_text_control_fallback() {
         redactions: Vec::new(),
     };
     let program = ViewProgramResource {
-        program_id: "view.program.feedback".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.feedback").unwrap(),
         source_refs: Vec::new(),
         definitions: Vec::new(),
         value_programs: Vec::new(),

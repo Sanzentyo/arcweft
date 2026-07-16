@@ -90,7 +90,7 @@ impl ViewProgramResource {
                 let definition = self
                     .definitions
                     .iter()
-                    .find(|definition| definition.public_id == view)
+                    .find(|definition| definition.public_id.as_str() == view)
                     .ok_or_else(|| DialogueViewContractError::MissingViewDefinition {
                         text_source: source.public_id.clone(),
                         view: view.to_owned(),
@@ -133,7 +133,7 @@ impl ViewProgramResource {
             let definition = self
                 .definitions
                 .iter()
-                .find(|definition| definition.public_id == view)
+                .find(|definition| definition.public_id.as_str() == view)
                 .ok_or_else(|| DialogueViewContractError::MissingActionViewDefinition {
                     button: button.public_id.clone(),
                     view: view.to_owned(),

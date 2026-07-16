@@ -18,7 +18,7 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
     let text = dialogue_text();
     let style = dialogue_style();
 
-    assert_eq!(program.definitions[0].public_id, DIALOGUE_VIEW_ID);
+    assert_eq!(program.definitions[0].public_id.as_str(), DIALOGUE_VIEW_ID);
     assert_eq!(program.definitions[0].parameters[0].name, "dialogue");
     assert!(matches!(
         &program.action_buttons[0].action,
@@ -80,9 +80,12 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
 #[test]
 fn authored_program_is_merged_without_replacing_the_reserved_standard_definition() {
     let authored = ViewProgramResource {
-        program_id: "view.project".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.project").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.CustomDialogue".to_owned(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                "view.CustomDialogue",
+            )
+            .unwrap(),
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -95,27 +98,31 @@ fn authored_program_is_merged_without_replacing_the_reserved_standard_definition
         .expect("authored View resources merge");
     let program = bundle.view_program.expect("bundle retains View program");
 
-    assert_eq!(program.program_id, "view.project");
+    assert_eq!(program.program_id.as_str(), "view.project");
     assert!(
         program
             .definitions
             .iter()
-            .any(|definition| definition.public_id == DIALOGUE_VIEW_ID)
+            .any(|definition| definition.public_id.as_str() == DIALOGUE_VIEW_ID)
     );
     assert!(
         program
             .definitions
             .iter()
-            .any(|definition| definition.public_id == "view.CustomDialogue")
+            .any(|definition| definition.public_id.as_str() == "view.CustomDialogue")
     );
 }
 
 #[test]
 fn reserved_standard_dialogue_view_id_cannot_be_overridden() {
     let authored = ViewProgramResource {
-        program_id: "view.project".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.project").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id: DIALOGUE_VIEW_ID.to_owned(),
+            public_id:
+                arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new_engine_owned(
+                    DIALOGUE_VIEW_ID,
+                )
+                .unwrap(),
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),

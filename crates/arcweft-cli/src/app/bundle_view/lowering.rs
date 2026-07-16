@@ -70,7 +70,7 @@ use arcweft_lang_syntax::{
 };
 use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
-use arcweft_view::{ViewPartLocalName, part::ViewPartNameError};
+use arcweft_view::{ViewPartLocalName, ViewProgramId, part::ViewPartNameError};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -264,7 +264,7 @@ pub(in crate::app) fn view_sidecars(
             state.dialogue_parameters.clear();
             let end_instruction = usize_to_u32_saturating(state.instructions.len());
             state.definitions.push(ViewDefinitionResource {
-                public_id,
+                public_id: ViewDefinitionRef::from_public_id(typed_public_id),
                 styles: root_styles,
                 body: ViewInstructionSpan::new(start_instruction, end_instruction),
                 parameters,
@@ -275,15 +275,8 @@ pub(in crate::app) fn view_sidecars(
     let emitted_owners = state
         .definitions
         .iter()
-        .map(|definition| {
-            ViewDefinitionRef::try_new(definition.public_id.clone()).map_err(|source| {
-                ViewSidecarError::InvalidViewPublicId {
-                    value: definition.public_id.clone(),
-                    source,
-                }
-            })
-        })
-        .collect::<Result<BTreeSet<_>, _>>()?;
+        .map(|definition| definition.public_id.clone())
+        .collect::<BTreeSet<_>>();
     (state.source_refs, state.exported_parts) =
         lower_view_part_exports(view_part_catalog, &emitted_owners, source_map)?.into_parts();
     finish_view_sidecars(first, state)
@@ -311,7 +304,12 @@ fn finish_view_sidecars(
         return Ok(ViewBundleSidecars::default());
     }
     let program = ViewProgramResource {
-        program_id: format!("view.program.{}", first.id().body()),
+        program_id: ViewProgramId::try_new(format!("view.program.{}", first.id().body())).map_err(
+            |source| ViewSidecarError::InvalidViewPublicId {
+                value: format!("view.program.{}", first.id().body()),
+                source,
+            },
+        )?,
         definitions: state.definitions,
         value_programs: compiled_values.programs,
         value_inputs: compiled_values.inputs,
@@ -606,7 +604,12 @@ fn lower_nested_view_call(
     }
     let styles = state.producer_styles(call.range());
     state.instructions.push(ViewProgramInstruction::CallView {
-        view,
+        view: ViewDefinitionRef::try_new(view.clone()).map_err(|source| {
+            ViewSidecarError::InvalidViewPublicId {
+                value: view,
+                source,
+            }
+        })?,
         arguments,
         styles,
         part: first_part(call.modifiers())?,

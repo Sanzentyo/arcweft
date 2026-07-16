@@ -5,8 +5,14 @@ use crate::presentation_handles::PresentationResourceState;
 use crate::view_runtime::{BundleViewDiagnosticCode, BundleViewRuntime};
 use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 use arcweft_bundle::resource_codec::{
-    ViewDefinitionResource, ViewInstructionSpan, ViewProgramResource,
+    ValidatedViewProduct, ViewDefinitionResource, ViewInstructionSpan, ViewProductValidationLimits,
+    ViewProgramResource,
 };
+use arcweft_view::ViewProgramId;
+
+fn validated(program: Option<ViewProgramResource>) -> ValidatedViewProduct {
+    ValidatedViewProduct::try_new(None, program, ViewProductValidationLimits::default()).unwrap()
+}
 
 fn handle_id(value: &str) -> PresentationHandleId {
     PresentationHandleId::try_new(value).unwrap()
@@ -400,7 +406,7 @@ fn hidden_unmounted_terminal_and_remount_lifecycle_retains_or_replaces_exact_sta
 #[test]
 fn same_evaluation_non_view_resolution_discards_pending_seed_and_emits_one_diagnostic() {
     let handle = handle_id("handle.prospective");
-    let mut runtime = BundleViewRuntime::try_new(None, None, None).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(validated(None), None, None).unwrap();
     runtime
         .configure_next_axis_seed(
             handle.clone(),
@@ -428,17 +434,23 @@ fn same_evaluation_non_view_resolution_discards_pending_seed_and_emits_one_diagn
 #[test]
 fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
     let program = ViewProgramResource {
-        program_id: "view.program.nested-axis-update".to_owned(),
+        program_id: ViewProgramId::try_new("view.program.nested-axis-update").unwrap(),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: "view.Parent".to_owned(),
+                public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                    "view.Parent",
+                )
+                .unwrap(),
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
-                public_id: "view.Child".to_owned(),
+                public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                    "view.Child",
+                )
+                .unwrap(),
                 body: ViewInstructionSpan::new(1, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
@@ -446,7 +458,8 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
             },
         ],
         instructions: vec![ViewProgramInstruction::CallView {
-            view: "view.Child".to_owned(),
+            view: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new("view.Child")
+                .unwrap(),
             arguments: Vec::new(),
             styles: Vec::new(),
             part: None,
@@ -455,7 +468,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
         }],
         ..ViewProgramResource::default()
     };
-    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(validated(Some(program)), None, None).unwrap();
     let parent = PresentationHandleRecord::new(
         handle_id("handle.nested.parent"),
         PresentationHandleKind::View,

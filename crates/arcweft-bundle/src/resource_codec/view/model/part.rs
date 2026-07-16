@@ -2,7 +2,8 @@
 
 use crate::resource_codec::SourceRangeRef;
 use arcweft_id::{IdError, PublicId};
-use arcweft_view::{ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
+use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Canonical product reference to one View definition.
@@ -40,6 +41,11 @@ impl ViewDefinitionRef {
         PublicId::try_new(value).map(Self)
     }
 
+    /// Constructs a product reference for an engine-owned reserved View.
+    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
+        PublicId::try_new_engine_owned(value).map(Self)
+    }
+
     pub const fn from_public_id(id: PublicId) -> Self {
         Self(id)
     }
@@ -47,11 +53,26 @@ impl ViewDefinitionRef {
     pub const fn public_id(&self) -> &PublicId {
         &self.0
     }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Projects this accepted product definition owner into its semantic View identity.
+    pub fn to_view_id(&self) -> ViewId {
+        ViewId::from_public_id(self.0.clone())
+    }
 }
 
 impl ViewOwnedPartRef {
     pub const fn new(view: ViewDefinitionRef, part: ViewPartLocalName) -> Self {
         Self { view, part }
+    }
+}
+
+impl fmt::Display for ViewDefinitionRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -84,6 +105,6 @@ impl<'de> Deserialize<'de> for ViewDefinitionRef {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        Self::try_new(value).map_err(serde::de::Error::custom)
+        Self::try_new_engine_owned(value).map_err(serde::de::Error::custom)
     }
 }

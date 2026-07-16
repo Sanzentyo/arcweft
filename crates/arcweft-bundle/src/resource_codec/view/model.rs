@@ -7,6 +7,7 @@ use arcweft_presentation::appearance::{
 };
 use arcweft_presentation::fx::{FxId, FxRuntimeType};
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
+pub use arcweft_view::ViewProgramId;
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{
@@ -27,10 +28,10 @@ mod style;
 pub use style::*;
 
 /// Product View program section decoded from `ViewProgram`.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewProgramResource {
-    pub program_id: String,
+    pub program_id: ViewProgramId,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_refs: Vec<ProductSourceRef>,
     pub definitions: Vec<ViewDefinitionResource>,
@@ -96,7 +97,7 @@ pub enum ViewProgramInstruction {
         source: Option<SourceRangeRef>,
     },
     CallView {
-        view: String,
+        view: ViewDefinitionRef,
         arguments: Vec<ViewCallArgumentBindingRef>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         styles: Vec<ViewStyleApplicationTarget>,
@@ -264,12 +265,37 @@ pub struct ViewCallArgumentBindingRef {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViewDefinitionResource {
-    pub public_id: String,
+    pub public_id: ViewDefinitionRef,
     pub body: ViewInstructionSpan,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<ViewStyleApplicationTarget>,
     pub parameters: Vec<ViewParameterResource>,
     pub state_schema_hash: u64,
+}
+
+impl Default for ViewProgramResource {
+    fn default() -> Self {
+        Self {
+            program_id: ViewProgramId::try_new("view.empty.program")
+                .expect("the built-in empty View program identity is valid"),
+            source_refs: Vec::new(),
+            definitions: Vec::new(),
+            value_programs: Vec::new(),
+            value_inputs: Vec::new(),
+            instructions: Vec::new(),
+            handlers: Vec::new(),
+            exported_parts: Vec::new(),
+            semantic_targets: Vec::new(),
+            layout_bounds: Vec::new(),
+            scroll_regions: Vec::new(),
+            surfaces: Vec::new(),
+            text_blocks: Vec::new(),
+            action_buttons: Vec::new(),
+            focus_groups: Vec::new(),
+            focus_navigation: Vec::new(),
+            adapter_requirements: Vec::new(),
+        }
+    }
 }
 
 /// One ordered View parameter and its optional executable scalar default.

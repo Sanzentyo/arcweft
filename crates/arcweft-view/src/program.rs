@@ -15,6 +15,7 @@ use crate::{
     ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
+use arcweft_presentation::fx::FxId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -52,6 +53,9 @@ pub enum ViewInstruction {
     CallView(ViewCall),
     Branch(ViewBranch),
     RepeatKeyed(ViewRepeat),
+    Await(ViewAwait),
+    BindLocal(ViewLocalBinding),
+    ApplyFx(ViewFxApplicationInstruction),
     BindEvent(ViewEventBindingSpec),
     AttachSemantic(ViewSemanticSpec),
 }
@@ -269,6 +273,41 @@ pub struct ViewRepeat {
     pub source: ViewValueProgramId,
     pub key: ViewValueProgramId,
     pub body: ViewInstructionRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewAwaitBranch {
+    pub start_offset: u32,
+    pub body_span: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewAwait {
+    pub source: ViewValueProgramId,
+    pub pending: Option<ViewAwaitBranch>,
+    pub ready: Option<ViewAwaitBranch>,
+    pub error: Option<ViewAwaitBranch>,
+    pub denied: Option<ViewAwaitBranch>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewLocalBinding {
+    pub binding: String,
+    pub value: ViewValueProgramId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewFxCallArgument {
+    pub parameter: String,
+    pub value: ViewValueProgramId,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewFxApplicationInstruction {
+    pub fx: FxId,
+    pub arguments: Vec<ViewFxCallArgument>,
+    pub key: Option<ViewValueProgramId>,
+    pub application_ordinal: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -523,6 +562,9 @@ impl ViewInstruction {
             Self::CloseElement
             | Self::Branch(_)
             | Self::RepeatKeyed(_)
+            | Self::Await(_)
+            | Self::BindLocal(_)
+            | Self::ApplyFx(_)
             | Self::BindEvent(_)
             | Self::AttachSemantic(_) => None,
         }
@@ -538,6 +580,9 @@ impl ViewInstruction {
             Self::CloseElement
             | Self::Branch(_)
             | Self::RepeatKeyed(_)
+            | Self::Await(_)
+            | Self::BindLocal(_)
+            | Self::ApplyFx(_)
             | Self::BindEvent(_)
             | Self::AttachSemantic(_) => None,
         }
@@ -553,6 +598,9 @@ impl ViewInstruction {
             Self::CloseElement
             | Self::Branch(_)
             | Self::RepeatKeyed(_)
+            | Self::Await(_)
+            | Self::BindLocal(_)
+            | Self::ApplyFx(_)
             | Self::BindEvent(_)
             | Self::AttachSemantic(_) => {
                 unreachable!("part IDs are assigned only to node-producing instructions")

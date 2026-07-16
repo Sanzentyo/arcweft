@@ -399,17 +399,17 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
         .unwrap()
     };
     let program = |arguments| ViewProgramResource {
-        program_id: "view.program.nested".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.nested").unwrap(),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: "view.Caller".to_owned(),
+                public_id: ViewDefinitionRef::try_new("view.Caller").unwrap(),
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
-                public_id: "view.Child".to_owned(),
+                public_id: ViewDefinitionRef::try_new("view.Child").unwrap(),
                 body: ViewInstructionSpan::new(1, 1),
                 styles: Vec::new(),
                 parameters: vec![
@@ -458,7 +458,7 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
             },
         ],
         instructions: vec![ViewProgramInstruction::CallView {
-            view: "view.Child".to_owned(),
+            view: ViewDefinitionRef::try_new("view.Child").unwrap(),
             arguments,
             styles: Vec::new(),
             part: None,
@@ -656,27 +656,8 @@ fn exported_part_source_ranges_reject_structural_tampering() {
 #[test]
 fn view_program_identities_reject_malformed_resource_ids() {
     for malformed in MALFORMED_RESOURCE_IDENTITIES {
-        let mut invalid_program = exported_part_program();
-        invalid_program.program_id = malformed.to_owned();
-        assert_eq!(
-            invalid_program
-                .encode_canonical_section()
-                .expect_err("a View program ID must follow resource identity rules"),
-            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-                "view_program_identities",
-            ),
-        );
-
-        let mut invalid_view = exported_part_program();
-        invalid_view.definitions[0].public_id = malformed.to_owned();
-        assert_eq!(
-            invalid_view
-                .encode_canonical_section()
-                .expect_err("a View ID must follow resource identity rules"),
-            arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-                "view_program_identities",
-            ),
-        );
+        assert!(arcweft_view::ViewProgramId::try_new(malformed).is_err());
+        assert!(ViewDefinitionRef::try_new(malformed).is_err());
     }
 }
 
@@ -1193,18 +1174,18 @@ fn exported_part_program() -> ViewProgramResource {
     let source_refs = source_refs(&sources);
     let source = source_refs[0].clone();
     ViewProgramResource {
-        program_id: "program.exported-parts".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("program.exported-parts").unwrap(),
         source_refs: source_refs.clone(),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: "view.Left".to_owned(),
+                public_id: ViewDefinitionRef::try_new("view.Left").unwrap(),
                 body: ViewInstructionSpan::new(0, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 0,
             },
             ViewDefinitionResource {
-                public_id: "view.Right".to_owned(),
+                public_id: ViewDefinitionRef::try_new("view.Right").unwrap(),
                 body: ViewInstructionSpan::new(2, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
@@ -1289,10 +1270,10 @@ fn sourced_program(view_id: &str) -> ViewProgramResource {
     let source_refs = source_refs(&sources);
     let source = source_refs[0].clone();
     ViewProgramResource {
-        program_id: format!("program.{view_id}"),
+        program_id: arcweft_view::ViewProgramId::try_new(format!("program.{view_id}")).unwrap(),
         source_refs: source_refs.clone(),
         definitions: vec![ViewDefinitionResource {
-            public_id: view_id.to_owned(),
+            public_id: ViewDefinitionRef::try_new(view_id).unwrap(),
             body: ViewInstructionSpan::new(0, 1),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -1310,10 +1291,10 @@ fn sourced_program(view_id: &str) -> ViewProgramResource {
 
 fn fixture_program() -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "view.program.dialogue".to_owned(),
+        program_id: arcweft_view::ViewProgramId::try_new("view.program.dialogue").unwrap(),
         source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.dialogue".to_owned(),
+            public_id: ViewDefinitionRef::try_new("view.dialogue").unwrap(),
             body: ViewInstructionSpan::new(0, 4),
             styles: vec![named_style("style.dialogue")],
             parameters: Vec::new(),

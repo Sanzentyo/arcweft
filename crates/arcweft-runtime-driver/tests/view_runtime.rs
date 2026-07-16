@@ -5,10 +5,11 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
-    ProductSourceRef, SourceMapSection, SourceRangeRef, ViewCallArgumentBindingRef,
-    ViewDefinitionResource, ViewDisplayFrameResource, ViewInstructionSpan,
-    ViewLocalizedTextResource, ViewParameterResource, ViewProgramResource,
-    ViewRichTextDocumentResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
+    ProductSourceRef, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
+    ViewCallArgumentBindingRef, ViewDefinitionResource, ViewDisplayFrameResource,
+    ViewInstructionSpan, ViewLocalizedTextResource, ViewParameterResource,
+    ViewProductValidationLimits, ViewProgramResource, ViewRichTextDocumentResource,
+    ViewStyleResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
     ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
 };
 use arcweft_core::plan::RuntimeLineId;
@@ -28,15 +29,59 @@ use arcweft_runtime_driver::presentation_handles::{
 };
 use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewInstancePathSegment, BundleViewMountOutput,
-    BundleViewPaintItem, BundleViewRuntime, BundleViewStyleNode, BundleViewStyleNodeKind,
-    BundleViewTextValue,
+    BundleViewPaintItem, BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError,
+    BundleViewStyleNode, BundleViewStyleNodeKind, BundleViewTextValue,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{
-    DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex,
-    ViewPartLocalName, ViewPartName,
+    DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex, RustViewId,
+    ViewDescriptor, ViewId, ViewImplementation, ViewPartLocalName, ViewPartName, ViewProgramId,
+    ViewRegistry, ViewRegistryError, ViewSchemaId,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
+
+struct BundleViewRuntime;
+
+impl BundleViewRuntime {
+    fn try_new(
+        program: Option<ViewProgramResource>,
+        text: Option<ViewTextResource>,
+        style: Option<&ViewStyleResource>,
+    ) -> Result<AcceptedBundleViewRuntime, BundleViewRuntimeError> {
+        let source_map = program
+            .as_ref()
+            .is_some_and(|program| !program.source_refs.is_empty())
+            .then(view_source_map);
+        let product = ValidatedViewProduct::try_new(
+            source_map,
+            program,
+            ViewProductValidationLimits::default(),
+        )?;
+        AcceptedBundleViewRuntime::try_new(product, text, style)
+    }
+}
+
+fn program_id(value: &str) -> ViewProgramId {
+    ViewProgramId::try_new(value).unwrap()
+}
+
+fn definition_ref(value: &str) -> ViewDefinitionRef {
+    ViewDefinitionRef::try_new(value).unwrap()
+}
+
+fn minimal_program(program: &str, view: &str, schema: u64) -> ViewProgramResource {
+    ViewProgramResource {
+        program_id: program_id(program),
+        definitions: vec![ViewDefinitionResource {
+            public_id: definition_ref(view),
+            body: ViewInstructionSpan::new(0, 0),
+            styles: Vec::new(),
+            parameters: Vec::new(),
+            state_schema_hash: schema,
+        }],
+        ..ViewProgramResource::default()
+    }
+}
 
 fn handle(id: &str, view: &str) -> PresentationHandleRecord {
     PresentationHandleRecord::new(
@@ -78,6 +123,77 @@ fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
     );
 }
 
+#[test]
+fn accepted_catalog_preserves_host_views_and_registers_arcweft_definitions() {
+    let host = ViewId::try_new("view.host.public").unwrap();
+    let authored = ViewId::try_new("view.Authored").unwrap();
+    let mut registry = ViewRegistry::default();
+    registry
+        .register(ViewDescriptor::public_rust(
+            host.clone(),
+            ViewSchemaId(7),
+            RustViewId(3),
+        ))
+        .unwrap();
+    let product = ValidatedViewProduct::try_new(
+        None,
+        Some(minimal_program("view.program.catalog", "view.Authored", 11)),
+        ViewProductValidationLimits::default(),
+    )
+    .unwrap();
+
+    let runtime =
+        AcceptedBundleViewRuntime::try_new_with_registry(product, None, None, registry).unwrap();
+    let host_descriptor = runtime
+        .registry()
+        .get(runtime.registry().resolve(&host).unwrap())
+        .unwrap();
+    assert_eq!(
+        host_descriptor.implementation(),
+        &ViewImplementation::Rust(RustViewId(3))
+    );
+    let authored_descriptor = runtime
+        .registry()
+        .get(runtime.registry().resolve(&authored).unwrap())
+        .unwrap();
+    assert_eq!(authored_descriptor.schema(), ViewSchemaId(11));
+    assert!(matches!(
+        authored_descriptor.implementation(),
+        ViewImplementation::Arcweft { program }
+            if program == &program_id("view.program.catalog")
+    ));
+}
+
+#[test]
+fn accepted_catalog_rejects_host_owner_collision_before_publication() {
+    let collision = ViewId::try_new("view.Collision").unwrap();
+    let mut registry = ViewRegistry::default();
+    registry
+        .register(ViewDescriptor::public_rust(
+            collision.clone(),
+            ViewSchemaId(1),
+            RustViewId(4),
+        ))
+        .unwrap();
+    let product = ValidatedViewProduct::try_new(
+        None,
+        Some(minimal_program(
+            "view.program.collision",
+            "view.Collision",
+            2,
+        )),
+        ViewProductValidationLimits::default(),
+    )
+    .unwrap();
+
+    assert!(matches!(
+        AcceptedBundleViewRuntime::try_new_with_registry(product, None, None, registry),
+        Err(BundleViewRuntimeError::Registry(
+            ViewRegistryError::DuplicateViewId(id)
+        )) if id == collision
+    ));
+}
+
 fn local_part(value: &str) -> ViewPartLocalName {
     ViewPartLocalName::try_new(value).expect("valid local part identity")
 }
@@ -108,17 +224,20 @@ fn exported_part(
 }
 
 fn view_source_refs() -> Vec<ProductSourceRef> {
+    view_source_map()
+        .documents()
+        .map(ProductSourceRef::from_document)
+        .collect()
+}
+
+fn view_source_map() -> SourceMapSection {
     let document = SourceDocument::try_new(
         SourceDocumentId::try_new("view-runtime.arcw").expect("source ID"),
         SourceName::path("view-runtime.arcw"),
         "x".repeat(64),
     )
     .expect("source document");
-    SourceMapSection::try_from_documents(&[&document])
-        .expect("source map")
-        .documents()
-        .map(ProductSourceRef::from_document)
-        .collect()
+    SourceMapSection::try_from_documents(&[&document]).expect("source map")
 }
 
 fn source_range(
@@ -175,9 +294,9 @@ fn style_scope_follows_subtrees_without_leaking_to_siblings() {
     let second_sheet = ViewStyleSheetId::try_new("style.second").unwrap();
     let inline_patch = ViewStylePatchId::new(7);
     let program = ViewProgramResource {
-        program_id: "view.program.style-subtrees".to_owned(),
+        program_id: program_id("view.program.style-subtrees"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Root".to_owned(),
+            public_id: definition_ref("view.Root"),
             body: ViewInstructionSpan::new(0, 7),
             styles: vec![ViewStyleApplicationTarget::named(root_sheet.clone())],
             parameters: Vec::new(),
@@ -277,18 +396,18 @@ fn call_boundary_style_program(
 ) -> ViewProgramResource {
     let source_refs = view_source_refs();
     ViewProgramResource {
-        program_id: "view.program.style-call-boundary".to_owned(),
+        program_id: program_id("view.program.style-call-boundary"),
         source_refs: source_refs.clone(),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: "view.Parent".to_owned(),
+                public_id: definition_ref("view.Parent"),
                 body: ViewInstructionSpan::new(0, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
-                public_id: "view.Child".to_owned(),
+                public_id: definition_ref("view.Child"),
                 body: ViewInstructionSpan::new(2, 6),
                 styles: vec![ViewStyleApplicationTarget::named(child_sheet.clone())],
                 parameters: Vec::new(),
@@ -297,7 +416,7 @@ fn call_boundary_style_program(
         ],
         instructions: vec![
             ViewProgramInstruction::CallView {
-                view: "view.Child".to_owned(),
+                view: definition_ref("view.Child"),
                 arguments: Vec::new(),
                 styles: vec![
                     ViewStyleApplicationTarget::named(external_sheet.clone()),
@@ -471,25 +590,25 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
     let external_sheet = ViewStyleSheetId::try_new("style.external.owner").unwrap();
     let source_refs = view_source_refs();
     let program = ViewProgramResource {
-        program_id: "view.program.non-transitive-export".to_owned(),
+        program_id: program_id("view.program.non-transitive-export"),
         source_refs: source_refs.clone(),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: "view.A".to_owned(),
+                public_id: definition_ref("view.A"),
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
-                public_id: "view.B".to_owned(),
+                public_id: definition_ref("view.B"),
                 body: ViewInstructionSpan::new(1, 2),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 2,
             },
             ViewDefinitionResource {
-                public_id: "view.C".to_owned(),
+                public_id: definition_ref("view.C"),
                 body: ViewInstructionSpan::new(2, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
@@ -498,7 +617,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
         ],
         instructions: vec![
             ViewProgramInstruction::CallView {
-                view: "view.B".to_owned(),
+                view: definition_ref("view.B"),
                 arguments: Vec::new(),
                 styles: vec![ViewStyleApplicationTarget::named(external_sheet.clone())],
                 part: None,
@@ -506,7 +625,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
                 source: None,
             },
             ViewProgramInstruction::CallView {
-                view: "view.C".to_owned(),
+                view: definition_ref("view.C"),
                 arguments: Vec::new(),
                 styles: Vec::new(),
                 part: None,
@@ -562,9 +681,9 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
 #[test]
 fn style_scope_rejects_inline_patch_on_non_rendered_definition_root() {
     let program = ViewProgramResource {
-        program_id: "view.program.invalid-root-inline".to_owned(),
+        program_id: program_id("view.program.invalid-root-inline"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Root".to_owned(),
+            public_id: definition_ref("view.Root"),
             body: ViewInstructionSpan::new(0, 0),
             styles: vec![ViewStyleApplicationTarget::inline(ViewStylePatchId::new(
                 17,
@@ -597,9 +716,9 @@ fn style_scope_rejects_inline_patch_on_non_rendered_definition_root() {
 fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     let branch_style = ViewStyleSheetId::try_new("style.branch.inventory").unwrap();
     let program = ViewProgramResource {
-        program_id: "view.program.branch".to_owned(),
+        program_id: program_id("view.program.branch"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Root".to_owned(),
+            public_id: definition_ref("view.Root"),
             body: ViewInstructionSpan::new(0, 3),
             styles: vec![ViewStyleApplicationTarget::named(branch_style)],
             parameters: vec![ViewParameterResource {
@@ -758,17 +877,17 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
         ],
     );
     let program = ViewProgramResource {
-        program_id: "view.program.nested-runtime".to_owned(),
+        program_id: program_id("view.program.nested-runtime"),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: "view.Parent".to_owned(),
+                public_id: definition_ref("view.Parent"),
                 body: ViewInstructionSpan::new(0, 3),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 21,
             },
             ViewDefinitionResource {
-                public_id: "view.Child".to_owned(),
+                public_id: definition_ref("view.Child"),
                 body: ViewInstructionSpan::new(3, 4),
                 styles: Vec::new(),
                 parameters: vec![ViewParameterResource {
@@ -801,7 +920,7 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
                 source: None,
             },
             ViewProgramInstruction::CallView {
-                view: "view.Child".to_owned(),
+                view: definition_ref("view.Child"),
                 arguments: vec![ViewCallArgumentBindingRef {
                     ordinal: 0,
                     name: Some("count".to_owned()),
@@ -970,9 +1089,9 @@ fn duplicate_repeat_keys_fail_structurally_instead_of_reusing_one_child() {
         ],
     );
     let program = ViewProgramResource {
-        program_id: "view.program.repeat".to_owned(),
+        program_id: program_id("view.program.repeat"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Repeat".to_owned(),
+            public_id: definition_ref("view.Repeat"),
             body: ViewInstructionSpan::new(0, 2),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -1047,9 +1166,9 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
     );
     let sheet = ViewStyleSheetId::try_new("style.repeat.inventory").unwrap();
     let program = ViewProgramResource {
-        program_id: "view.program.repeat-style-inventory".to_owned(),
+        program_id: program_id("view.program.repeat-style-inventory"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.RepeatStyle".to_owned(),
+            public_id: definition_ref("view.RepeatStyle"),
             body: ViewInstructionSpan::new(0, 2),
             styles: vec![ViewStyleApplicationTarget::named(sheet)],
             parameters: Vec::new(),
@@ -1114,9 +1233,9 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
 #[test]
 fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
     let program = ViewProgramResource {
-        program_id: "view.program.time".to_owned(),
+        program_id: program_id("view.program.time"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Time".to_owned(),
+            public_id: definition_ref("view.Time"),
             body: ViewInstructionSpan::new(0, 2),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -1186,9 +1305,9 @@ fn logical_time_updates_context_cache_and_reduce_motion_freezes_it() {
 #[test]
 fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
     let program = ViewProgramResource {
-        program_id: "view.program.i32".to_owned(),
+        program_id: program_id("view.program.i32"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Exact".to_owned(),
+            public_id: definition_ref("view.Exact"),
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: vec![ViewParameterResource {
@@ -1248,9 +1367,9 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
 )]
 fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_fallback() {
     let program = ViewProgramResource {
-        program_id: "view.program.typed_text".to_owned(),
+        program_id: program_id("view.program.typed_text"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.TypedText".to_owned(),
+            public_id: definition_ref("view.TypedText"),
             body: ViewInstructionSpan::new(0, 3),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -1471,9 +1590,9 @@ fn runtime_rejects_handcrafted_dialogue_projection_with_wrong_parameter_role() {
 
 fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
     let program = ViewProgramResource {
-        program_id: "view.program.dialogue".to_owned(),
+        program_id: program_id("view.program.dialogue"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.Dialogue".to_owned(),
+            public_id: definition_ref("view.Dialogue"),
             body: ViewInstructionSpan::new(0, 2),
             styles: Vec::new(),
             parameters: vec![ViewParameterResource {

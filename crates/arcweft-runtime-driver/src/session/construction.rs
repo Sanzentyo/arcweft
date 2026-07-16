@@ -5,12 +5,13 @@ use super::{
     AwbcProductStepBuildError, AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError,
     BundleFormat, BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
     BundleSessionArtifactIdentity, BundleSessionError, BundleSessionOptions, BundleView,
-    BundleViewRuntime, FxDefinitions, GenerationBuildError, GenerationId, GenerationRuntimeImage,
-    GenerationRuntimeTable, LineDisplayCatalog, PresentationEnvironmentOverrides,
-    ProgramGeneration, ReadBudget, RuntimeEntityFamily, RuntimeTaskRegistry,
-    SessionEnvironmentState, SwapSession, SystemPaletteSet, ViewProgramResource,
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    BundleViewRuntime, BundleViewRuntimeError, FxDefinitions, GenerationBuildError, GenerationId,
+    GenerationRuntimeImage, GenerationRuntimeTable, LineDisplayCatalog,
+    PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RuntimeEntityFamily,
+    RuntimeTaskRegistry, SessionEnvironmentState, SwapSession, SystemPaletteSet,
+    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
+    ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
 
 #[derive(Clone, Debug)]
@@ -312,8 +313,14 @@ pub(super) fn build_session_runtime(
         .view_program
         .as_ref()
         .map_or_else(Vec::new, ViewProgramResource::runtime_focus_navigation);
-    let view_runtime = BundleViewRuntime::try_new(
+    let view_product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
+        Some(bundle.source_map.clone()),
         bundle.view_program.clone(),
+        arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
+    )
+    .map_err(BundleViewRuntimeError::from)?;
+    let view_runtime = BundleViewRuntime::try_new(
+        view_product,
         bundle.view_text.clone(),
         bundle.view_style.as_ref(),
     )?;

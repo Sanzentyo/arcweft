@@ -178,17 +178,17 @@ flow test {
     let child = program
         .definitions
         .iter()
-        .find(|definition| definition.public_id == "view.Child")
+        .find(|definition| definition.public_id.as_str() == "view.Child")
         .expect("transitively reachable child definition");
     let parent = program
         .definitions
         .iter()
-        .find(|definition| definition.public_id == "view.Parent")
+        .find(|definition| definition.public_id.as_str() == "view.Parent")
         .expect("mounted parent definition");
     let toggle = program
         .definitions
         .iter()
-        .find(|definition| definition.public_id == "view.Toggle")
+        .find(|definition| definition.public_id.as_str() == "view.Toggle")
         .expect("second transitively reachable child definition");
     assert_eq!(child.body.start_instruction, 0);
     assert_eq!(child.body.end_instruction, toggle.body.start_instruction);
@@ -244,7 +244,7 @@ fn assert_nested_view_call_bindings(
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
         ViewProgramInstruction::CallView { view, arguments, .. }
-            if view == "view.Child"
+            if view.as_str() == "view.Child"
                 && arguments.len() == 1
                 && arguments[0].ordinal == 0
                 && arguments[0].name.as_deref() == Some("value")
@@ -252,7 +252,7 @@ fn assert_nested_view_call_bindings(
     assert!(program.instructions.iter().any(|instruction| matches!(
         instruction,
         ViewProgramInstruction::CallView { view, arguments, .. }
-            if view == "view.Toggle"
+            if view.as_str() == "view.Toggle"
                 && arguments.len() == 1
                 && arguments[0].ordinal == 0
     )));
@@ -1323,7 +1323,7 @@ flow test {
     let showcase_definition = program
         .definitions
         .iter()
-        .find(|definition| definition.public_id == "view.Showcase")
+        .find(|definition| definition.public_id.as_str() == "view.Showcase")
         .expect("authored View definition survives standard-resource linking");
     let showcase_body = &program.instructions[showcase_definition.body.start_instruction as usize
         ..showcase_definition.body.end_instruction as usize];
@@ -1455,7 +1455,7 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
     let definition = program
         .definitions
         .iter()
-        .find(|definition| definition.public_id == "view.StoryPanel")
+        .find(|definition| definition.public_id.as_str() == "view.StoryPanel")
         .expect("custom View definition");
     assert!(definition.parameters.iter().any(|parameter| {
         parameter.name == "line" && parameter.role == ViewParameterRole::Dialogue
@@ -1500,7 +1500,13 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
     dialogue
         .synchronize_waiting_line(Some(&line_id))
         .expect("primary action synchronizes");
-    let mut runtime = BundleViewRuntime::try_new(Some(program), Some(text), None)
+    let product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
+        None,
+        Some(program),
+        arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
+    )
+    .expect("custom dialogue View product validates");
+    let mut runtime = BundleViewRuntime::try_new(product, Some(text), None)
         .expect("custom dialogue View runtime builds");
     let frame = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
 

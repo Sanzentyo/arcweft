@@ -1,5 +1,6 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::ViewRuntimeActionButtonAction;
+use arcweft_bundle::resource_codec::{ValidatedViewProduct, ViewProductValidationLimits};
 use arcweft_bundle::standard_view::{dialogue_program, dialogue_style, dialogue_text};
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_player_scene::{
@@ -134,9 +135,14 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         .synchronize_waiting_line(Some(&line))
         .expect("waiting entry synchronizes");
 
-    let mut runtime =
-        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), Some(&style))
-            .expect("standard View runtime");
+    let product = ValidatedViewProduct::try_new(
+        None,
+        Some(program.clone()),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("standard View product");
+    let mut runtime = BundleViewRuntime::try_new(product, Some(text.clone()), Some(&style))
+        .expect("standard View runtime");
     presentation.view =
         runtime.evaluate_with_dialogue(&[], &presentation.dialogue.view_inputs(), &[], false);
     assert!(presentation.view.diagnostics.is_empty());
