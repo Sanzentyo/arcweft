@@ -173,7 +173,7 @@ fn emit_logical_lines(
     let mut ordinal = 0_u32;
     while line < lines.len() {
         if let Some((declaration_line, kind)) =
-            predicate_or_proof_after_outer_prefixes(source, tokens, &lines, line)
+            structured_declaration_after_outer_prefixes(source, tokens, &lines, line)
         {
             let last = declaration_group_end(source, tokens, &lines, declaration_line);
             let grouped = &tokens[lines[line].start..lines[last].end];
@@ -192,7 +192,7 @@ fn emit_logical_lines(
     Ok(())
 }
 
-fn predicate_or_proof_after_outer_prefixes(
+fn structured_declaration_after_outer_prefixes(
     source: &str,
     tokens: &[LexToken],
     lines: &[LogicalTokenRange],
@@ -209,7 +209,11 @@ fn predicate_or_proof_after_outer_prefixes(
 
     let range = lines.get(declaration).copied()?;
     let kind = classify_top_level_item(source, &tokens[range.start..range.end])?;
-    matches!(kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem).then_some((declaration, kind))
+    matches!(
+        kind,
+        SyntaxKind::FunctionItem | SyntaxKind::PredicateItem | SyntaxKind::ProofItem
+    )
+    .then_some((declaration, kind))
 }
 
 fn is_outer_prefix_line(source: &str, tokens: &[LexToken]) -> bool {
@@ -394,13 +398,24 @@ fn emit_declaration_item(
     events: &mut Vec<SyntaxEvent>,
 ) {
     let item_start = events.len();
-    super::predicate_proof::emit_declaration(
-        source,
-        tokens,
-        kind,
-        SyntaxRole::Element(ordinal),
-        events,
-    );
+    match kind {
+        SyntaxKind::FunctionItem => super::function_grammar::emit_declaration(
+            source,
+            tokens,
+            SyntaxRole::Element(ordinal),
+            events,
+        ),
+        SyntaxKind::PredicateItem | SyntaxKind::ProofItem => {
+            super::predicate_proof::emit_declaration(
+                source,
+                tokens,
+                kind,
+                SyntaxRole::Element(ordinal),
+                events,
+            );
+        }
+        _ => unreachable!("only structured declaration kinds are grouped"),
+    }
     wrap_declaration_logical_lines(source, item_start, events);
 }
 

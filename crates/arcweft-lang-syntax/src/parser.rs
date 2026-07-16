@@ -32,6 +32,7 @@ pub mod assertion;
 pub mod await_;
 pub mod choice;
 pub mod control_flow;
+mod declaration;
 pub mod dialogue;
 #[cfg(test)]
 mod dialogue_expression_tests;
@@ -39,6 +40,9 @@ mod document;
 mod expression;
 pub mod flow;
 pub mod fragment;
+mod function_grammar;
+#[cfg(test)]
+mod function_grammar_tests;
 pub mod headers;
 pub mod helpers;
 mod item;

@@ -1,0 +1,435 @@
+//! Shared declaration-header grammar over the private document cursor.
+
+use arcweft_source::SourceRange;
+
+use super::document::ShadowDocumentParser;
+use super::expression::emit_expression;
+use super::pattern::emit_pattern;
+use super::shadow_recovery::{
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
+    find_header_boundary, find_top_level_boundary, first_significant, token_count, token_text,
+    trimmed_end,
+};
+use super::type_ref::emit_type;
+use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OuterPrefixKind {
+    Documentation,
+    Attribute,
+}
+
+pub(super) fn emit_outer_prefixes(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let mut attribute_ordinal = 0_u16;
+    loop {
+        match outer_prefix_kind(parser) {
+            Some(OuterPrefixKind::Documentation) => {
+                parser.start(SyntaxKind::DocBlock, SyntaxRole::Documentation);
+                let mut line_ordinal = 0_u32;
+                while outer_prefix_kind(parser) == Some(OuterPrefixKind::Documentation) {
+                    parser.start(SyntaxKind::LogicalLine, SyntaxRole::Element(line_ordinal));
+                    bump_outer_prefix_line(parser);
+                    parser.finish();
+                    line_ordinal = line_ordinal.saturating_add(1);
+                }
+                parser.finish();
+            }
+            Some(OuterPrefixKind::Attribute) => {
+                parser.start(SyntaxKind::AttributeList, SyntaxRole::Element(0));
+                let mut line_ordinal = 0_u32;
+                while outer_prefix_kind(parser) == Some(OuterPrefixKind::Attribute) {
+                    parser.start(SyntaxKind::LogicalLine, SyntaxRole::Element(line_ordinal));
+                    parser.start(
+                        SyntaxKind::OuterAttribute,
+                        SyntaxRole::Attribute(attribute_ordinal),
+                    );
+                    bump_outer_prefix_line(parser);
+                    parser.finish();
+                    parser.finish();
+                    attribute_ordinal = attribute_ordinal.saturating_add(1);
+                    line_ordinal = line_ordinal.saturating_add(1);
+                }
+                parser.finish();
+            }
+            None => break,
+        }
+    }
+}
+
+fn outer_prefix_kind(parser: &ShadowDocumentParser<'_, '_>) -> Option<OuterPrefixKind> {
+    let mut cursor = parser.cursor();
+    loop {
+        let token = parser.token_at(cursor)?;
+        match token.kind() {
+            SyntaxKind::WhitespaceToken => cursor += 1,
+            SyntaxKind::DocCommentToken => return Some(OuterPrefixKind::Documentation),
+            SyntaxKind::PunctuationToken if parser.text_of(token) == "#" => {
+                cursor += 1;
+                while parser
+                    .token_at(cursor)
+                    .is_some_and(|token| token.kind() == SyntaxKind::WhitespaceToken)
+                {
+                    cursor += 1;
+                }
+                return parser
+                    .token_at(cursor)
+                    .filter(|token| parser.text_of(*token) == "[")
+                    .map(|_| OuterPrefixKind::Attribute);
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn bump_outer_prefix_line(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let mut delimiter_depth = 0_usize;
+    while let Some(token) = parser.current() {
+        let is_line_end = token.kind() == SyntaxKind::NewlineToken && delimiter_depth == 0;
+        if token.kind() == SyntaxKind::PunctuationToken {
+            match parser.text_of(token) {
+                "(" | "[" | "{" => delimiter_depth += 1,
+                ")" | "]" | "}" => delimiter_depth = delimiter_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        parser.bump();
+        if is_line_end {
+            break;
+        }
+    }
+}
+
+pub(super) fn emit_visibility(parser: &mut ShadowDocumentParser<'_, '_>) {
+    if !parser.at("pub") {
+        return;
+    }
+    parser.start(SyntaxKind::Visibility, SyntaxRole::Visibility);
+    parser.bump();
+    if parser.at("(") {
+        let mut depth = 0_usize;
+        while let Some(text) = parser.current_text() {
+            match text {
+                "(" => depth += 1,
+                ")" if depth == 1 => {
+                    parser.bump();
+                    break;
+                }
+                ")" => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+            parser.bump();
+        }
+    }
+    parser.finish();
+}
+
+pub(super) fn emit_name(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &str) {
+    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
+        parser.bump();
+        parser.finish();
+        return;
+    }
+
+    parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
+    let at = parser.current_offset();
+    parser.push(SyntaxEvent::MissingToken {
+        expected: expected(SyntaxKind::IdentifierToken),
+        at,
+    });
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.decl.missing_name",
+        SourceRange::new(at, at),
+        format!("missing ordinary name after `{keyword}`"),
+    )));
+    parser.finish();
+}
+
+pub(super) fn emit_generic_parameters(parser: &mut ShadowDocumentParser<'_, '_>) {
+    parser.start(SyntaxKind::GenericParameterGroup, SyntaxRole::GenericGroup);
+    emit_open_delimiter(parser, SyntaxKind::OpenAngleNode, "<");
+    parser.start(SyntaxKind::GenericParameterList, SyntaxRole::Element(0));
+    let mut ordinal = 0_u16;
+    loop {
+        parser.bump_trivia();
+        if parser.is_at_end() || parser.at(">") {
+            break;
+        }
+        let end = find_top_level_boundary(parser, parser.cursor(), &[",", ">"]);
+        let first = first_significant(parser, parser.cursor(), end);
+        let kind = first.and_then(|index| parser.token_at(index)).map_or(
+            SyntaxKind::TypeParameter,
+            |token| {
+                if token.kind() == SyntaxKind::LifetimeToken {
+                    SyntaxKind::LifetimeParameter
+                } else {
+                    SyntaxKind::TypeParameter
+                }
+            },
+        );
+        parser.start(kind, SyntaxRole::GenericParameter(ordinal));
+        if let Some(name) = first {
+            parser.bump_through(name.saturating_sub(1));
+            parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
+            parser.bump();
+            parser.finish();
+        }
+        bump_until(parser, end);
+        parser.finish();
+        ordinal = ordinal.saturating_add(1);
+        if parser.at(",") {
+            parser.bump();
+        }
+    }
+    parser.finish();
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseAngleNode,
+        ">",
+        "syntax.generic.missing_close",
+    );
+    parser.finish();
+}
+
+pub(super) fn emit_fixed_parameters(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    missing_type_message: &'static str,
+) {
+    parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
+    emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
+    parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
+    let mut ordinal = 0_u16;
+    loop {
+        parser.bump_trivia();
+        if parser.is_at_end() || parser.at(")") {
+            break;
+        }
+        let end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]);
+        emit_parameter(parser, end, ordinal, missing_type_message);
+        ordinal = ordinal.saturating_add(1);
+        if parser.at(",") {
+            parser.bump();
+        }
+    }
+    parser.finish();
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseParenNode,
+        ")",
+        "syntax.decl.unclosed_parameters",
+    );
+    parser.finish();
+}
+
+pub(super) fn emit_missing_parameter_group(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    keyword: &str,
+    requirement: &str,
+) {
+    let at = parser.current_offset();
+    parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
+    emit_missing_delimiter(parser, SyntaxKind::OpenParenNode, SyntaxRole::OpenDelimiter);
+    parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
+    parser.finish();
+    emit_missing_delimiter(
+        parser,
+        SyntaxKind::CloseParenNode,
+        SyntaxRole::CloseDelimiter,
+    );
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.decl.invalid_header",
+        SourceRange::new(at, at),
+        format!("`{keyword}` requires {requirement}"),
+    )));
+    parser.finish();
+}
+
+pub(super) fn emit_extra_parameter_group_recovery(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    keyword: &str,
+) {
+    let mut ordinal = 0_u32;
+    while parser.at("(") {
+        let start = parser.current_offset();
+        parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(ordinal));
+        parser.bump();
+        let close = super::shadow_recovery::find_matching_close(parser, parser.cursor(), "(");
+        if let Some(close) = close {
+            bump_until(parser, close + 1);
+        } else {
+            bump_until(parser, token_count(parser));
+        }
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.decl.invalid_header",
+            SourceRange::new(start, parser.current_offset()),
+            format!("`{keyword}` accepts exactly one fixed parameter group"),
+        )));
+        ordinal = ordinal.saturating_add(1);
+        parser.bump_trivia();
+    }
+}
+
+fn emit_parameter(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u16,
+    missing_type_message: &'static str,
+) {
+    parser.start(SyntaxKind::Parameter, SyntaxRole::Parameter(ordinal));
+    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]);
+    let colon = (colon < end && token_text(parser, colon) == Some(":")).then_some(colon);
+    let pattern_end = colon.unwrap_or(end);
+    emit_pattern(parser, pattern_end, SyntaxRole::ParameterPattern);
+    bump_until(parser, pattern_end);
+    if let Some(colon) = colon {
+        debug_assert_eq!(parser.cursor(), colon);
+        parser.bump();
+        parser.bump_trivia();
+        emit_type(parser, end, SyntaxRole::ParameterType);
+    } else {
+        let at = parser.current_offset();
+        parser.start(SyntaxKind::MissingType, SyntaxRole::ParameterType);
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.parameter.missing_type",
+            SourceRange::new(at, at),
+            missing_type_message,
+        )));
+    }
+    bump_until(parser, end);
+    parser.finish();
+}
+
+pub(super) fn emit_return_type(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind) {
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
+    parser.bump();
+    parser.bump_trivia();
+    let end = find_header_boundary(parser, parser.cursor());
+    emit_type(parser, end, SyntaxRole::Type);
+    bump_until(parser, end);
+    parser.finish();
+    if item_kind == SyntaxKind::PredicateItem {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.predicate.return_not_allowed",
+            SourceRange::new(start, parser.current_offset()),
+            "predicates have an implicit `Bool` return type",
+        )));
+    }
+}
+
+pub(super) fn emit_where_clause(parser: &mut ShadowDocumentParser<'_, '_>) {
+    parser.start(SyntaxKind::WhereClause, SyntaxRole::WhereClause);
+    parser.bump();
+    parser.bump_trivia();
+    let clause_end = find_header_boundary(parser, parser.cursor());
+    parser.start(SyntaxKind::WherePredicateList, SyntaxRole::Element(0));
+    let mut ordinal = 0_u16;
+    while parser.cursor() < clause_end {
+        parser.bump_trivia();
+        if parser.cursor() >= clause_end {
+            break;
+        }
+        let end = find_top_level_boundary(parser, parser.cursor(), &[","]).min(clause_end);
+        parser.start(
+            SyntaxKind::WherePredicate,
+            SyntaxRole::WherePredicate(ordinal),
+        );
+        emit_where_predicate_children(parser, trimmed_end(parser, parser.cursor(), end));
+        parser.finish();
+        bump_until(parser, end);
+        ordinal = ordinal.saturating_add(1);
+        if parser.at(",") && parser.cursor() < clause_end {
+            parser.bump();
+        }
+    }
+    parser.finish();
+    bump_until(parser, clause_end);
+    parser.finish();
+}
+
+fn emit_where_predicate_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]).min(end);
+    if colon == end {
+        emit_type(parser, end, SyntaxRole::Type);
+        return;
+    }
+
+    emit_type(parser, colon, SyntaxRole::LeftOperand);
+    bump_until(parser, colon);
+    parser.bump();
+    let mut ordinal = 0_u32;
+    loop {
+        parser.bump_trivia();
+        if parser.cursor() >= end {
+            break;
+        }
+        let bound_end = find_top_level_boundary(parser, parser.cursor(), &["+"]).min(end);
+        emit_type(parser, bound_end, SyntaxRole::Element(ordinal));
+        bump_until(parser, bound_end);
+        ordinal = ordinal.saturating_add(1);
+        if parser.at("+") {
+            parser.bump();
+        } else {
+            break;
+        }
+    }
+}
+
+pub(super) fn emit_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let mut requires = 0_u16;
+    let mut ensures = 0_u16;
+    let mut saw_ensures = false;
+    while matches!(parser.current_text(), Some("requires" | "ensures")) {
+        if parser.at("requires") {
+            let clause_start = parser.current_offset();
+            emit_contract_clause(
+                parser,
+                SyntaxKind::RequiresClause,
+                SyntaxRole::RequiresClause(requires),
+            );
+            if saw_ensures {
+                parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                    "syntax.decl.clause_order",
+                    SourceRange::new(clause_start, parser.current_offset()),
+                    "`requires` clauses must precede every `ensures` clause",
+                )));
+            }
+            requires = requires.saturating_add(1);
+        } else {
+            saw_ensures = true;
+            emit_contract_clause(
+                parser,
+                SyntaxKind::EnsuresClause,
+                SyntaxRole::EnsuresClause(ensures),
+            );
+            ensures = ensures.saturating_add(1);
+        }
+        parser.bump_trivia();
+    }
+}
+
+fn emit_contract_clause(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+) {
+    parser.start(kind, role);
+    parser.bump();
+    parser.bump_trivia();
+    if matches!(parser.current_text(), Some("prove" | "check" | "debug"))
+        && let Some(token) = parser.current()
+    {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.decl.contract_mode_not_allowed",
+            token.range(),
+            "declaration contract clauses do not accept an assertion mode",
+        )));
+    }
+    let end = find_header_boundary(parser, parser.cursor());
+    emit_expression(parser, end, SyntaxRole::Condition);
+    bump_until(parser, end);
+    parser.finish();
+}
