@@ -34,19 +34,28 @@ pub mod choice;
 pub mod control_flow;
 pub mod dialogue;
 mod document;
+mod expression;
 pub mod flow;
 pub mod fragment;
 pub mod headers;
 pub mod helpers;
 pub mod hooks;
 pub mod items;
+mod lexer;
 pub mod line_plan;
+mod pattern;
+mod predicate_proof;
+#[cfg(test)]
+mod predicate_proof_tests;
 pub mod proof;
 pub mod recovery;
+mod shadow_recovery;
 pub mod source;
+mod statement;
 pub mod statements;
 pub mod style;
 pub mod top_level;
+mod type_ref;
 pub mod view;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{

@@ -469,7 +469,7 @@ mod tests {
         let entries = built.index().entries();
         assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].kind(), SyntaxKind::SourceFile);
-        assert_eq!(entries[0].path().elements(), &[]);
+        assert!(entries[0].path().elements().is_empty());
         assert_eq!(entries[1].path().elements(), &[0]);
         assert_eq!(entries[2].role(), SyntaxRole::Name);
         assert_eq!(entries[2].path().elements(), &[0, 2]);
