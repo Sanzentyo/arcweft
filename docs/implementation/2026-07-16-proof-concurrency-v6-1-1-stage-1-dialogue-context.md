@@ -89,4 +89,7 @@ Stage 1 remains open. Complete descendants for the remaining item families and
 the remaining malformed/recovery cross-products still need direct full-source
 events and tests. Stages 2 through 8 remain open; this cut does not allocate
 production syntax identity, publish the shadow tree, switch AST/HIR, or change
-runtime assertion identity.
+runtime assertion identity. The following
+`2026-07-16-proof-concurrency-v6-1-1-stage-1-declaration-diagnostics.md` cut
+reconciles the shared predicate/proof recovery codes without changing this
+Flow/dialogue ownership boundary.

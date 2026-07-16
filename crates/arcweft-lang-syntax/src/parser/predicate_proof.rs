@@ -51,7 +51,7 @@ pub(super) fn emit_declaration(
         parser.bump_trivia();
     }
     if parser.at("(") {
-        emit_fixed_parameters(&mut parser, keyword);
+        emit_fixed_parameters(&mut parser);
     } else {
         emit_missing_parameter_group(&mut parser, keyword);
     }
@@ -80,7 +80,7 @@ pub(super) fn emit_declaration(
             );
             if saw_ensures {
                 parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                    "syntax.contract.invalid_clause_order",
+                    "syntax.decl.clause_order",
                     SourceRange::new(clause_start, parser.current_offset()),
                     "`requires` clauses must precede every `ensures` clause",
                 )));
@@ -228,11 +228,7 @@ fn emit_name(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &str) {
         at,
     });
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        if keyword == "predicate" {
-            "syntax.predicate.missing_name"
-        } else {
-            "syntax.proof.missing_name"
-        },
+        "syntax.decl.missing_name",
         SourceRange::new(at, at),
         format!("missing ordinary name after `{keyword}`"),
     )));
@@ -285,7 +281,7 @@ fn emit_generic_parameters(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_fixed_parameters(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &str) {
+fn emit_fixed_parameters(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
     emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
     parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
@@ -307,11 +303,7 @@ fn emit_fixed_parameters(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &st
         parser,
         SyntaxKind::CloseParenNode,
         ")",
-        if keyword == "predicate" {
-            "syntax.predicate.missing_parameter_close"
-        } else {
-            "syntax.proof.missing_parameter_close"
-        },
+        "syntax.decl.unclosed_parameters",
     );
     parser.finish();
 }
@@ -328,11 +320,7 @@ fn emit_missing_parameter_group(parser: &mut ShadowDocumentParser<'_, '_>, keywo
         SyntaxRole::CloseDelimiter,
     );
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        if keyword == "predicate" {
-            "syntax.predicate.missing_parameters"
-        } else {
-            "syntax.proof.missing_parameters"
-        },
+        "syntax.decl.invalid_header",
         SourceRange::new(at, at),
         format!("`{keyword}` requires exactly one fixed parameter group"),
     )));
@@ -353,11 +341,7 @@ fn emit_extra_parameter_group_recovery(parser: &mut ShadowDocumentParser<'_, '_>
         }
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            if keyword == "predicate" {
-                "syntax.predicate.malformed_header"
-            } else {
-                "syntax.proof.malformed_header"
-            },
+            "syntax.decl.invalid_header",
             SourceRange::new(start, parser.current_offset()),
             format!("`{keyword}` accepts exactly one fixed parameter group"),
         )));
@@ -476,6 +460,15 @@ fn emit_contract_clause(
     parser.start(kind, role);
     parser.bump();
     parser.bump_trivia();
+    if matches!(parser.current_text(), Some("prove" | "check" | "debug"))
+        && let Some(token) = parser.current()
+    {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.decl.contract_mode_not_allowed",
+            token.range(),
+            "declaration contract clauses do not accept an assertion mode",
+        )));
+    }
     let end = find_header_boundary(parser, parser.cursor());
     emit_expression(parser, end, SyntaxRole::Condition);
     bump_until(parser, end);
@@ -510,11 +503,7 @@ fn emit_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind, k
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        if keyword == "predicate" {
-            "syntax.predicate.missing_body"
-        } else {
-            "syntax.proof.missing_body"
-        },
+        "syntax.decl.missing_body",
         SourceRange::new(at, at),
         format!("missing `{keyword}` expression or block body"),
     )));

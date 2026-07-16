@@ -212,7 +212,7 @@ fn missing_body_does_not_consume_following_clean_declaration() {
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_body")
+            .any(|diagnostic| diagnostic.code() == "syntax.decl.missing_body")
     );
     assert_eq!(built.green().to_string(), source);
 }
@@ -241,7 +241,7 @@ fn missing_parameter_close_synchronizes_before_the_following_declaration() {
             .diagnostics()
             .iter()
             .any(
-                |diagnostic| diagnostic.code() == "syntax.proof.missing_parameter_close"
+                |diagnostic| diagnostic.code() == "syntax.decl.unclosed_parameters"
                     && diagnostic.range().start() == next_start
                     && diagnostic.range().end() == next_start
             )
@@ -871,7 +871,7 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
     assert_eq!(missing_name.missing_tokens().len(), 1);
     assert_eq!(
         missing_name.diagnostics()[0].code(),
-        "syntax.proof.missing_name"
+        "syntax.decl.missing_name"
     );
 
     let missing_parameters = parse_shadow_document(&document("predicate ready = true\n")).unwrap();
@@ -880,7 +880,7 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
         missing_parameters
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_parameters")
+            .any(|diagnostic| diagnostic.code() == "syntax.decl.invalid_header")
     );
 
     let malformed =
@@ -890,12 +890,35 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
         .iter()
         .map(crate::grammar::event::PendingSyntaxDiagnostic::code)
         .collect::<Vec<_>>();
-    assert!(codes.contains(&"syntax.proof.malformed_header"));
-    assert!(codes.contains(&"syntax.contract.invalid_clause_order"));
+    assert!(codes.contains(&"syntax.decl.invalid_header"));
+    assert!(codes.contains(&"syntax.decl.clause_order"));
     assert_eq!(
         malformed.green().to_string(),
         "proof p()() ensures true requires true = ()\n"
     );
+}
+
+#[test]
+fn declaration_contract_modes_are_retained_with_the_canonical_diagnostic() {
+    let source = concat!(
+        "predicate ready(value: Bool)\n",
+        "requires check value\n",
+        "= value\n",
+        "proof established(value: Bool)\n",
+        "ensures prove value\n",
+        "= ()\n",
+    );
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let diagnostics = built
+        .diagnostics()
+        .iter()
+        .filter(|diagnostic| diagnostic.code() == "syntax.decl.contract_mode_not_allowed")
+        .collect::<Vec<_>>();
+
+    assert_eq!(diagnostics.len(), 2);
+    assert_eq!(&source[diagnostics[0].range().as_range()], "check");
+    assert_eq!(&source[diagnostics[1].range().as_range()], "prove");
+    assert_eq!(built.green().to_string(), source);
 }
 
 #[test]
