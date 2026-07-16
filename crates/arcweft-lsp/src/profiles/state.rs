@@ -9,6 +9,10 @@ use std::{
 };
 
 use arcweft_lang_hir::symbol::{ProjectSymbolRevision, ProjectSymbolWorldId};
+use arcweft_lang_sema::character_definition::{
+    CharacterDefinitionQueryResult, CharacterDefinitionRequestBudget,
+    CharacterDefinitionResourceError, CharacterDefinitionWorkReceipt, CharacterReferenceInventory,
+};
 use arcweft_lang_sema::registration::RegisteredSemanticWorld;
 use arcweft_launch::ProfileId;
 use arcweft_source::{SourceDocumentIdentity, SourceSetRevision};
@@ -314,31 +318,35 @@ impl AcceptedProfileEnvironment {
     pub(crate) fn cached_character_references(
         &self,
         key: &CharacterReferenceCacheKey,
-    ) -> Option<Arc<arcweft_lang_sema::character_definition::CharacterReferenceInventory>> {
-        self.caches.cached_character_references(key)
+        budget: &mut CharacterDefinitionRequestBudget,
+    ) -> Result<Option<Arc<CharacterReferenceInventory>>, CharacterDefinitionResourceError> {
+        self.caches.cached_character_references(key, budget)
     }
 
     pub(crate) fn cache_character_references(
         &self,
         key: CharacterReferenceCacheKey,
-        inventory: Arc<arcweft_lang_sema::character_definition::CharacterReferenceInventory>,
+        inventory: Arc<CharacterReferenceInventory>,
+        work: CharacterDefinitionWorkReceipt,
     ) {
-        self.caches.cache_character_references(key, inventory);
+        self.caches.cache_character_references(key, inventory, work);
     }
 
     pub(crate) fn cached_character_definition(
         &self,
         key: &CharacterDefinitionCacheKey,
-    ) -> Option<arcweft_lang_sema::character_definition::CharacterDefinitionQueryResult> {
-        self.caches.cached_character_definition(key)
+        budget: &mut CharacterDefinitionRequestBudget,
+    ) -> Result<Option<Arc<CharacterDefinitionQueryResult>>, CharacterDefinitionResourceError> {
+        self.caches.cached_character_definition(key, budget)
     }
 
     pub(crate) fn cache_character_definition(
         &self,
         key: CharacterDefinitionCacheKey,
-        result: arcweft_lang_sema::character_definition::CharacterDefinitionQueryResult,
+        result: Arc<CharacterDefinitionQueryResult>,
+        work: CharacterDefinitionWorkReceipt,
     ) {
-        self.caches.cache_character_definition(key, result);
+        self.caches.cache_character_definition(key, result, work);
     }
 
     #[cfg(test)]
@@ -349,6 +357,11 @@ impl AcceptedProfileEnvironment {
     #[cfg(test)]
     pub(crate) fn cache_snapshot_for_test(&self) -> (Vec<(String, String)>, u64) {
         self.caches.snapshot_for_test()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn character_cache_entries_for_test(&self) -> (bool, bool) {
+        self.caches.character_entries_for_test()
     }
 }
 

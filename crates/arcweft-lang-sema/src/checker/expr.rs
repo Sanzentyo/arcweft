@@ -168,7 +168,7 @@ impl TypeChecker<'_> {
             Expr::Literal(literal) => {
                 Some(self.check_literal_expr(literal, expected, expression_id))
             }
-            Expr::EntityRef(entity) => self.check_entity_ref_expr(entity),
+            Expr::EntityRef(entity) => self.check_entity_ref_expr(entity, expected),
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
             Expr::Path(path) => {
                 self.check_path_expr_with_expected(path.as_label(), expected, expression_id)
@@ -304,12 +304,21 @@ impl TypeChecker<'_> {
         TypeKind::ThreadHandle(Box::new(TypeKind::Unit))
     }
 
-    fn check_entity_ref_expr(&mut self, entity: &EntityRefSyntax) -> Option<TypeKind> {
+    fn check_entity_ref_expr(
+        &mut self,
+        entity: &EntityRefSyntax,
+        expected: Option<&TypeKind>,
+    ) -> Option<TypeKind> {
         if let Some(ty) = self.symbol_type(entity.body()).cloned() {
             return Some(ty);
         }
         entity_syntax_kind(entity)
             .map(TypeKind::entity_ref)
+            .or_else(|| {
+                expected
+                    .filter(|ty| matches!(ty, TypeKind::Ref(_)))
+                    .cloned()
+            })
             .or_else(|| {
                 self.errors.push(TypeCheckError::new(format!(
                     "unknown entity reference kind: {}",

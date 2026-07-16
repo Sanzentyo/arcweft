@@ -1,7 +1,13 @@
 //! Request-scoped character references and Sans-I/O definition queries.
 
+mod query;
 mod request_budget;
 
+#[cfg(test)]
+#[path = "character_definition/tests.rs"]
+mod tests;
+
+pub use query::query_character_definition;
 pub use request_budget::{
     CharacterDefinitionBudgetCheckpoint, CharacterDefinitionRequestBudget,
     CharacterDefinitionWorkKind, CharacterDefinitionWorkReceipt,
@@ -268,6 +274,25 @@ pub enum CharacterReferenceInventoryError {
     },
 }
 
+impl From<CharacterDefinitionResourceError> for CharacterReferenceInventoryError {
+    fn from(error: CharacterDefinitionResourceError) -> Self {
+        match error {
+            CharacterDefinitionResourceError::Limit {
+                kind,
+                observed,
+                maximum,
+            } => Self::Limit {
+                kind,
+                observed,
+                maximum,
+            },
+            CharacterDefinitionResourceError::ArithmeticOverflow { counter } => {
+                Self::ArithmeticOverflow { counter }
+            }
+        }
+    }
+}
+
 /// Collects typed owner/member references from one current source analysis.
 #[allow(
     clippy::result_large_err,
@@ -276,9 +301,14 @@ pub enum CharacterReferenceInventoryError {
 pub fn collect_character_references(
     world: &RegisteredSemanticWorld,
     input: CharacterReferenceInput<'_>,
+    budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<CharacterReferenceInventory, CharacterReferenceInventoryError> {
-    ensure_world_integrity(world)?;
+    ensure_world_integrity(world, budget)?;
+    budget
+        .charge(CharacterDefinitionWorkKind::IdentityCheck)
+        .map_err(CharacterReferenceInventoryError::from)?;
     if input.typed_tree.source() != input.document.text() {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
         let actual = SourceDocument::try_new(
             input.document.identity().id().clone(),
             input.document.display_name().clone(),
@@ -294,10 +324,12 @@ pub fn collect_character_references(
     }
 
     let limits = CharacterDefinitionLimits::PRODUCTION;
-    let mut work = 0_u64;
     let mut facts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for judgment in &input.type_report.judgments {
+        budget
+            .charge(CharacterDefinitionWorkKind::ParserFact)
+            .map_err(CharacterReferenceInventoryError::from)?;
         let TypeJudgmentSubject::Expr { kind, .. } = &judgment.subject else {
             continue;
         };
@@ -310,13 +342,16 @@ pub fn collect_character_references(
         if !seen.insert((range, *kind)) {
             continue;
         }
-        charge_inventory_work(&mut work, limits)?;
         let Some(source) = input.document.text().get(range.as_range()) else {
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
             return Err(CharacterReferenceInventoryError::DocumentMismatch {
                 expected: input.document.identity().clone(),
                 actual: input.document.identity().clone(),
             });
         };
+        budget
+            .charge(CharacterDefinitionWorkKind::ParserFact)
+            .map_err(CharacterReferenceInventoryError::from)?;
         let Ok(expr) = parse_expr(source) else {
             continue;
         };
@@ -327,26 +362,22 @@ pub fn collect_character_references(
                         .expected_type()
                         .is_some_and(|ty| ty.is_entity_ref_kind(&EntityKind::Character)) =>
             {
-                owner_fact(world, &input, range, &entity.canonical_body(), source)?
+                owner_fact(
+                    world,
+                    &input,
+                    range,
+                    &entity.canonical_body(),
+                    source,
+                    budget,
+                )?
             }
-            Expr::ShortVariant(name) => local_member_fact(world, &input, range, name.as_str())?,
+            Expr::ShortVariant(name) => {
+                local_member_fact(world, &input, range, name.as_str(), budget)?
+            }
             _ => None,
         };
         if let Some(fact) = fact {
-            let observed = u64::try_from(facts.len())
-                .ok()
-                .and_then(|count| count.checked_add(1))
-                .ok_or(CharacterReferenceInventoryError::ArithmeticOverflow {
-                    counter: CharacterDefinitionLimitKind::Candidates,
-                })?;
-            if observed > limits.candidates() {
-                return Err(CharacterReferenceInventoryError::Limit {
-                    kind: CharacterDefinitionLimitKind::Candidates,
-                    observed,
-                    maximum: limits.candidates(),
-                });
-            }
-            facts.push(fact);
+            admit_reference_fact(&mut facts, fact, limits.candidates())?;
         }
     }
     facts.sort();
@@ -365,12 +396,39 @@ pub fn collect_character_references(
     clippy::result_large_err,
     reason = "inventory failures retain complete typed stale identities"
 )]
+fn admit_reference_fact(
+    facts: &mut Vec<CharacterReferenceFact>,
+    fact: CharacterReferenceFact,
+    maximum: u64,
+) -> Result<(), CharacterReferenceInventoryError> {
+    let observed = u64::try_from(facts.len())
+        .ok()
+        .and_then(|count| count.checked_add(1))
+        .ok_or(CharacterReferenceInventoryError::ArithmeticOverflow {
+            counter: CharacterDefinitionLimitKind::Candidates,
+        })?;
+    if observed > maximum {
+        return Err(CharacterReferenceInventoryError::Limit {
+            kind: CharacterDefinitionLimitKind::Candidates,
+            observed,
+            maximum,
+        });
+    }
+    facts.push(fact);
+    Ok(())
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "inventory failures retain complete typed stale identities"
+)]
 fn owner_fact(
     world: &RegisteredSemanticWorld,
     input: &CharacterReferenceInput<'_>,
     range: arcweft_lang_syntax::ast::common::TextRange,
     canonical_body: &str,
     authored: &str,
+    budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<Option<CharacterReferenceFact>, CharacterReferenceInventoryError> {
     let Some(body) = authored.strip_prefix('@') else {
         return Ok(None);
@@ -399,7 +457,8 @@ fn owner_fact(
         ))
         .expect("a parsed path segment range belongs to its source");
     let form = CharacterReferenceForm::OwnerPath { path: path.clone() };
-    let resolution = if intersects_recovery(range, input.parse_diagnostics) {
+    let resolution = if intersects_recovery(range, input.parse_diagnostics, budget)? {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
         CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::RecoveredToken {
             source: reference_span.clone(),
         })
@@ -411,11 +470,14 @@ fn owner_fact(
             &reference_span,
         ) {
             Ok(character) => {
+                budget
+                    .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
+                    .map_err(CharacterReferenceInventoryError::from)?;
                 CharacterReferenceResolution::Resolved(CharacterSymbolDescriptor::Owner {
                     character,
                 })
             }
-            Err(error) => map_owner_issue(path, error)?,
+            Err(error) => map_owner_issue(path, error, budget)?,
         }
     };
     Ok(Some(CharacterReferenceFact {
@@ -433,18 +495,46 @@ fn owner_fact(
 fn map_owner_issue(
     reference: SymbolPath,
     error: RegisteredCharacterResolutionError,
+    budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<CharacterReferenceResolution, CharacterReferenceInventoryError> {
     Ok(CharacterReferenceResolution::Unresolved(match error {
         RegisteredCharacterResolutionError::Symbol(
             ProjectSymbolResolutionError::Unknown { .. }
             | ProjectSymbolResolutionError::InvalidPath { .. },
-        ) => CharacterDefinitionIssue::UnknownOwner { reference },
+        )
+        | RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::Unknown { .. }) => {
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+            CharacterDefinitionIssue::UnknownOwner { reference }
+        }
         RegisteredCharacterResolutionError::Symbol(ProjectSymbolResolutionError::Ambiguous {
             mut candidates,
             ..
         }) => {
             candidates.sort();
             candidates.dedup();
+            let maximum = CharacterDefinitionLimits::PRODUCTION.candidates();
+            let mut candidate_count = 0_u64;
+            for _ in &candidates {
+                budget
+                    .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
+                    .map_err(CharacterReferenceInventoryError::from)?;
+                let observed = candidate_count.checked_add(1).ok_or(
+                    CharacterReferenceInventoryError::ArithmeticOverflow {
+                        counter: CharacterDefinitionLimitKind::Candidates,
+                    },
+                )?;
+                if observed > maximum {
+                    return Err(CharacterReferenceInventoryError::Limit {
+                        kind: CharacterDefinitionLimitKind::Candidates,
+                        observed,
+                        maximum,
+                    });
+                }
+                candidate_count = observed;
+            }
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+            let candidates = admit_error_payload(budget, candidates.iter())
+                .map_err(CharacterReferenceInventoryError::from)?;
             CharacterDefinitionIssue::AmbiguousAlias {
                 reference,
                 candidates,
@@ -455,17 +545,24 @@ fn map_owner_issue(
             ..
         })
         | RegisteredCharacterResolutionError::NotExternal { actual } => {
+            budget
+                .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
+                .map_err(CharacterReferenceInventoryError::from)?;
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
             CharacterDefinitionIssue::WrongOwnerKind { reference, actual }
         }
         RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::WrongKind {
             declaration,
             ..
-        }) => CharacterDefinitionIssue::WrongOwnerKind {
-            reference,
-            actual: ProjectSymbolTargetId::External(declaration),
-        },
-        RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::Unknown { .. }) => {
-            CharacterDefinitionIssue::UnknownOwner { reference }
+        }) => {
+            budget
+                .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
+                .map_err(CharacterReferenceInventoryError::from)?;
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+            CharacterDefinitionIssue::WrongOwnerKind {
+                reference,
+                actual: ProjectSymbolTargetId::External(declaration),
+            }
         }
         RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::Stale {
             expected_world,
@@ -473,6 +570,7 @@ fn map_owner_issue(
             expected_revision,
             actual_revision,
         }) => {
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
             if expected_world != actual_world {
                 return Err(CharacterReferenceInventoryError::StaleWorld {
                     expected: expected_world,
@@ -496,6 +594,7 @@ fn local_member_fact(
     input: &CharacterReferenceInput<'_>,
     range: arcweft_lang_syntax::ast::common::TextRange,
     spelling: &str,
+    budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<Option<CharacterReferenceFact>, CharacterReferenceInventoryError> {
     let Some(selection_start) = range.start().checked_add(1) else {
         return Err(CharacterReferenceInventoryError::ArithmeticOverflow {
@@ -513,7 +612,7 @@ fn local_member_fact(
         .document
         .span(SourceRange::new(selection_start, range.end()))
         .expect("a local-member identifier belongs to its parsed source");
-    let expected = expected_nominal(input.type_report, selection_span.range());
+    let expected = expected_nominal(input.type_report, selection_span.range(), budget)?;
     let form_expected = match &expected {
         ExpectedNominal::Missing | ExpectedNominal::Ambiguous(_) => None,
         ExpectedNominal::Unique(expected) => Some(expected.clone()),
@@ -522,22 +621,27 @@ fn local_member_fact(
         spelling: spelling.to_owned(),
         expected: form_expected,
     };
-    let resolution = if intersects_recovery(range, input.parse_diagnostics) {
+    let resolution = if intersects_recovery(range, input.parse_diagnostics, budget)? {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
         CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::RecoveredToken {
             source: reference_span.clone(),
         })
     } else {
         match expected {
-            ExpectedNominal::Missing => resolve_local_member(world, spelling, None),
+            ExpectedNominal::Missing => resolve_local_member(world, spelling, None, budget)?,
             ExpectedNominal::Unique(expected) => {
-                resolve_local_member(world, spelling, Some(expected))
+                resolve_local_member(world, spelling, Some(expected), budget)?
             }
-            ExpectedNominal::Ambiguous(candidates) => CharacterReferenceResolution::Unresolved(
-                CharacterDefinitionIssue::AmbiguousSemanticContext {
-                    spelling: spelling.to_owned(),
-                    candidates,
-                },
-            ),
+            ExpectedNominal::Ambiguous(candidates) => {
+                admit_nonresource_error(budget, candidates.len())
+                    .map_err(CharacterReferenceInventoryError::from)?;
+                CharacterReferenceResolution::Unresolved(
+                    CharacterDefinitionIssue::AmbiguousSemanticContext {
+                        spelling: spelling.to_owned(),
+                        candidates,
+                    },
+                )
+            }
         }
     };
     Ok(Some(CharacterReferenceFact {
@@ -554,82 +658,92 @@ enum ExpectedNominal {
     Ambiguous(Vec<CharacterNominalType>),
 }
 
-fn expected_nominal(report: &TypeCheckReport, selection: SourceRange) -> ExpectedNominal {
-    let mut candidates = report
-        .judgments
-        .iter()
-        .filter_map(|judgment| {
-            let range = judgment.source_range?;
-            (range.start() <= selection.start() && selection.end() <= range.end()).then(|| {
-                judgment
-                    .expected_type()
-                    .and_then(|ty| ty.character_nominal())
-                    .or_else(|| judgment.ty.character_nominal())
-                    .map(|nominal| (range.end() - range.start(), nominal.clone()))
-            })?
-        })
-        .collect::<Vec<_>>();
-    candidates.sort();
-    let Some(width) = candidates.first().map(|candidate| candidate.0) else {
-        return ExpectedNominal::Missing;
-    };
-    let mut closest = candidates
-        .into_iter()
-        .take_while(|(candidate_width, _)| *candidate_width == width)
-        .map(|(_, nominal)| nominal)
-        .collect::<Vec<_>>();
-    closest.sort();
-    closest.dedup();
+#[allow(
+    clippy::result_large_err,
+    reason = "inventory failures retain complete typed stale identities"
+)]
+fn expected_nominal(
+    report: &TypeCheckReport,
+    selection: SourceRange,
+    budget: &mut CharacterDefinitionRequestBudget,
+) -> Result<ExpectedNominal, CharacterReferenceInventoryError> {
+    let mut closest_width = None;
+    let mut closest = std::collections::BTreeSet::new();
+    for judgment in &report.judgments {
+        budget
+            .charge(CharacterDefinitionWorkKind::ParserFact)
+            .map_err(CharacterReferenceInventoryError::from)?;
+        let Some(range) = judgment.source_range else {
+            continue;
+        };
+        if selection.start() < range.start() || range.end() < selection.end() {
+            continue;
+        }
+        let Some(nominal) = judgment
+            .expected_type()
+            .and_then(|ty| ty.character_nominal())
+            .or_else(|| judgment.ty.character_nominal())
+        else {
+            continue;
+        };
+        let width = range.end().checked_sub(range.start()).ok_or(
+            CharacterReferenceInventoryError::ArithmeticOverflow {
+                counter: CharacterDefinitionLimitKind::QueryWork,
+            },
+        )?;
+        match closest_width {
+            Some(current) if current < width => continue,
+            Some(current) if width < current => {
+                closest.clear();
+                closest_width = Some(width);
+            }
+            None => closest_width = Some(width),
+            Some(_) => {}
+        }
+        if closest.contains(nominal) {
+            continue;
+        }
+        let observed = u64::try_from(closest.len())
+            .ok()
+            .and_then(|count| count.checked_add(1))
+            .ok_or(CharacterReferenceInventoryError::ArithmeticOverflow {
+                counter: CharacterDefinitionLimitKind::Candidates,
+            })?;
+        let maximum = CharacterDefinitionLimits::PRODUCTION.candidates();
+        if observed > maximum {
+            return Err(CharacterReferenceInventoryError::Limit {
+                kind: CharacterDefinitionLimitKind::Candidates,
+                observed,
+                maximum,
+            });
+        }
+        closest.insert(nominal.clone());
+    }
+    let closest = closest.into_iter().collect::<Vec<_>>();
     match closest.as_slice() {
-        [expected] => ExpectedNominal::Unique(expected.clone()),
-        [] => ExpectedNominal::Missing,
-        _ => ExpectedNominal::Ambiguous(closest),
+        [expected] => Ok(ExpectedNominal::Unique(expected.clone())),
+        [] => Ok(ExpectedNominal::Missing),
+        _ => Ok(ExpectedNominal::Ambiguous(closest)),
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    clippy::too_many_lines,
+    reason = "the linear charged scan keeps candidate admission, classification, and payload materialization in canonical order"
+)]
 fn resolve_local_member(
     world: &RegisteredSemanticWorld,
     spelling: &str,
     expected: Option<CharacterNominalType>,
-) -> CharacterReferenceResolution {
+    budget: &mut CharacterDefinitionRequestBudget,
+) -> Result<CharacterReferenceResolution, CharacterReferenceInventoryError> {
     let index = world.character_definition_index();
-    let all_candidates = || {
-        let mut candidates = Vec::new();
-        if let Ok(id) = CharacterLookId::try_new(spelling) {
-            candidates.extend_from_slice(index.look_candidates(&id));
-        }
-        if let Ok(id) = CharacterPartId::try_new(spelling) {
-            candidates.extend_from_slice(index.part_candidates(&id));
-        }
-        if let Ok(id) = CharacterVariantId::try_new(spelling) {
-            candidates.extend_from_slice(index.variant_candidates(&id));
-        }
-        candidates.sort();
-        candidates.dedup();
-        candidates
-    };
-
-    let Some(expected) = expected else {
-        let candidates = all_candidates();
-        return match candidates.as_slice() {
-            [descriptor] => CharacterReferenceResolution::Resolved(descriptor.clone()),
-            [] => {
-                CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::UnknownMember {
-                    spelling: spelling.to_owned(),
-                    expected: None,
-                })
-            }
-            _ => CharacterReferenceResolution::Unresolved(
-                CharacterDefinitionIssue::AmbiguousMember {
-                    spelling: spelling.to_owned(),
-                    candidates,
-                },
-            ),
-        };
-    };
-
-    let descriptor =
-        match &expected {
+    if let Some(expected) = expected.as_ref() {
+        budget
+            .charge(CharacterDefinitionWorkKind::TypedMemberCandidate)
+            .map_err(CharacterReferenceInventoryError::from)?;
+        let descriptor = match expected {
             CharacterNominalType::Look { character } => CharacterLookId::try_new(spelling)
                 .ok()
                 .map(|look| CharacterSymbolDescriptor::Look {
@@ -652,45 +766,128 @@ fn resolve_local_member(
                 })
             }
         };
-    if let Some(descriptor) = descriptor
-        && index.declaration(&descriptor).is_some()
-    {
-        return CharacterReferenceResolution::Resolved(descriptor);
+        if let Some(descriptor) = descriptor
+            && index.declaration(&descriptor).is_some()
+        {
+            return Ok(CharacterReferenceResolution::Resolved(descriptor));
+        }
     }
 
-    let candidates = all_candidates();
-    if matches!(&expected, CharacterNominalType::Variant { character, part }
-        if candidates.iter().any(|candidate| matches!(candidate,
-            CharacterSymbolDescriptor::Variant { character: actual_character, part: actual_part, .. }
-                if actual_character == character && actual_part != part)))
-    {
-        CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::WrongOwningPart {
-            spelling: spelling.to_owned(),
-            expected,
-            candidates,
-        })
-    } else if !candidates.is_empty() {
-        CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::WrongNominalFamily {
-            spelling: spelling.to_owned(),
-            expected,
-            candidates,
-        })
-    } else {
-        CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::UnknownMember {
-            spelling: spelling.to_owned(),
-            expected: Some(expected),
-        })
+    let maximum = CharacterDefinitionLimits::PRODUCTION.candidates();
+    let mut candidate_count = 0_u64;
+    let mut wrong_owning_part = false;
+    for candidate in index.member_candidates(spelling) {
+        budget
+            .charge(CharacterDefinitionWorkKind::TypedMemberCandidate)
+            .map_err(CharacterReferenceInventoryError::from)?;
+        let observed = candidate_count.checked_add(1).ok_or(
+            CharacterReferenceInventoryError::ArithmeticOverflow {
+                counter: CharacterDefinitionLimitKind::Candidates,
+            },
+        )?;
+        if observed > maximum {
+            return Err(CharacterReferenceInventoryError::Limit {
+                kind: CharacterDefinitionLimitKind::Candidates,
+                observed,
+                maximum,
+            });
+        }
+        candidate_count = observed;
+        wrong_owning_part |= matches!(
+            (&expected, candidate),
+            (
+                Some(CharacterNominalType::Variant { character, part }),
+                CharacterSymbolDescriptor::Variant {
+                    character: actual_character,
+                    part: actual_part,
+                    ..
+                }
+            ) if actual_character == character && actual_part != part
+        );
     }
+
+    if expected.is_none() && candidate_count == 1 {
+        let descriptor = index
+            .member_candidates(spelling)
+            .next()
+            .expect("the charged immutable member index contained one candidate")
+            .clone();
+        return Ok(CharacterReferenceResolution::Resolved(descriptor));
+    }
+    if candidate_count == 0 {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+        return Ok(CharacterReferenceResolution::Unresolved(
+            CharacterDefinitionIssue::UnknownMember {
+                spelling: spelling.to_owned(),
+                expected,
+            },
+        ));
+    }
+
+    admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+    let candidates = admit_error_payload(budget, index.member_candidates(spelling))
+        .map_err(CharacterReferenceInventoryError::from)?;
+    let issue = match expected {
+        None => CharacterDefinitionIssue::AmbiguousMember {
+            spelling: spelling.to_owned(),
+            candidates,
+        },
+        Some(expected) if wrong_owning_part => CharacterDefinitionIssue::WrongOwningPart {
+            spelling: spelling.to_owned(),
+            expected,
+            candidates,
+        },
+        Some(expected) => CharacterDefinitionIssue::WrongNominalFamily {
+            spelling: spelling.to_owned(),
+            expected,
+            candidates,
+        },
+    };
+    Ok(CharacterReferenceResolution::Unresolved(issue))
 }
 
+fn admit_nonresource_error(
+    budget: &mut CharacterDefinitionRequestBudget,
+    payload_len: usize,
+) -> Result<(), CharacterDefinitionResourceError> {
+    budget.charge(CharacterDefinitionWorkKind::AdmittedErrorCandidate)?;
+    for _ in 0..payload_len {
+        budget.charge(CharacterDefinitionWorkKind::AdmittedErrorCandidate)?;
+    }
+    Ok(())
+}
+
+fn admit_error_payload<'a, T: Clone + 'a>(
+    budget: &mut CharacterDefinitionRequestBudget,
+    candidates: impl Iterator<Item = &'a T>,
+) -> Result<Vec<T>, CharacterDefinitionResourceError> {
+    let mut payload = Vec::new();
+    for candidate in candidates {
+        budget.charge(CharacterDefinitionWorkKind::AdmittedErrorCandidate)?;
+        payload.push(candidate.clone());
+    }
+    Ok(payload)
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "inventory failures retain complete typed stale identities"
+)]
 fn intersects_recovery(
     reference: arcweft_lang_syntax::ast::common::TextRange,
     diagnostics: &[ParseError],
-) -> bool {
-    diagnostics.iter().any(|diagnostic| {
+    budget: &mut CharacterDefinitionRequestBudget,
+) -> Result<bool, CharacterReferenceInventoryError> {
+    for diagnostic in diagnostics {
+        budget
+            .charge(CharacterDefinitionWorkKind::ParserFact)
+            .map_err(CharacterReferenceInventoryError::from)?;
         let recovery = diagnostic.range();
-        reference.start() < recovery.end() && recovery.start() < reference.end()
-    })
+        if reference.start() < recovery.end() && recovery.start() < reference.end() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 #[allow(
@@ -699,13 +896,18 @@ fn intersects_recovery(
 )]
 fn ensure_world_integrity(
     world: &RegisteredSemanticWorld,
+    budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<(), CharacterReferenceInventoryError> {
     let expected_world = world.symbols().world();
     for actual in [
         world.environment().world(),
         world.character_definition_index().world(),
     ] {
+        budget
+            .charge(CharacterDefinitionWorkKind::IdentityCheck)
+            .map_err(CharacterReferenceInventoryError::from)?;
         if actual != expected_world {
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
             return Err(CharacterReferenceInventoryError::StaleWorld {
                 expected: expected_world.clone(),
                 actual: actual.clone(),
@@ -717,37 +919,17 @@ fn ensure_world_integrity(
         world.environment().symbol_revision(),
         world.character_definition_index().symbol_revision(),
     ] {
+        budget
+            .charge(CharacterDefinitionWorkKind::IdentityCheck)
+            .map_err(CharacterReferenceInventoryError::from)?;
         if actual != expected_revision {
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
             return Err(CharacterReferenceInventoryError::StaleSymbolRevision {
                 expected: *expected_revision,
                 actual: *actual,
             });
         }
     }
-    Ok(())
-}
-
-#[allow(
-    clippy::result_large_err,
-    reason = "inventory failures retain complete typed stale identities"
-)]
-fn charge_inventory_work(
-    work: &mut u64,
-    limits: CharacterDefinitionLimits,
-) -> Result<(), CharacterReferenceInventoryError> {
-    let observed =
-        work.checked_add(1)
-            .ok_or(CharacterReferenceInventoryError::ArithmeticOverflow {
-                counter: CharacterDefinitionLimitKind::QueryWork,
-            })?;
-    if observed > limits.query_work() {
-        return Err(CharacterReferenceInventoryError::Limit {
-            kind: CharacterDefinitionLimitKind::QueryWork,
-            observed,
-            maximum: limits.query_work(),
-        });
-    }
-    *work = observed;
     Ok(())
 }
 
@@ -842,183 +1024,11 @@ pub enum CharacterDefinitionIntegrityError {
         source: SourceSpan,
         candidates: Vec<CharacterSymbolDescriptor>,
     },
+    InvalidSourceRange {
+        source: SourceSpan,
+    },
     AcceptedWorldInvariant {
         world: ProjectSymbolWorldId,
         revision: ProjectSymbolRevision,
     },
-}
-
-/// Resolves one byte cursor through an exact current reference inventory.
-pub fn query_character_definition(
-    world: &RegisteredSemanticWorld,
-    inventory: &CharacterReferenceInventory,
-    document: &SourceDocumentIdentity,
-    cursor: usize,
-) -> CharacterDefinitionQueryResult {
-    if let Some(outcome) = query_context_outcome(world, inventory, document, cursor) {
-        return outcome;
-    }
-
-    let mut selected = inventory
-        .facts()
-        .filter(|fact| {
-            fact.selection_span().range().start() <= cursor
-                && cursor < fact.selection_span().range().end()
-        })
-        .collect::<Vec<_>>();
-    selected.sort_by(|left, right| {
-        span_width(left.selection_span())
-            .cmp(&span_width(right.selection_span()))
-            .then_with(|| {
-                span_width(left.reference_span()).cmp(&span_width(right.reference_span()))
-            })
-            .then_with(|| left.cmp(right))
-    });
-    if selected.len() > 1 {
-        let mut candidates = selected
-            .iter()
-            .filter_map(|fact| match fact.resolution() {
-                CharacterReferenceResolution::Resolved(descriptor) => Some(descriptor.clone()),
-                CharacterReferenceResolution::Unresolved(_) => None,
-            })
-            .collect::<Vec<_>>();
-        candidates.sort();
-        candidates.dedup();
-        return CharacterDefinitionQueryResult::Integrity(
-            CharacterDefinitionIntegrityError::AmbiguousCursorFacts {
-                source: selected[0].selection_span().clone(),
-                candidates,
-            },
-        );
-    }
-    let Some(fact) = selected.first().copied() else {
-        return classify_unselected_cursor(inventory, cursor);
-    };
-    let descriptor = match fact.resolution() {
-        CharacterReferenceResolution::Resolved(descriptor) => descriptor,
-        CharacterReferenceResolution::Unresolved(issue) => {
-            return CharacterDefinitionQueryResult::Unresolved(issue.clone());
-        }
-    };
-    let Some(set) = world.character_definition_index().declaration(descriptor) else {
-        return CharacterDefinitionQueryResult::Integrity(
-            CharacterDefinitionIntegrityError::MissingDeclaration {
-                descriptor: descriptor.clone(),
-            },
-        );
-    };
-    let declarations = set.sources().cloned().collect::<Vec<_>>();
-    let observed = u64::try_from(declarations.len()).unwrap_or(u64::MAX);
-    let maximum = CharacterDefinitionLimits::PRODUCTION.declaration_sources_per_descriptor();
-    if observed > maximum {
-        return CharacterDefinitionQueryResult::Exhausted(
-            CharacterDefinitionResourceError::Limit {
-                kind: CharacterDefinitionLimitKind::DeclarationSourcesPerDescriptor,
-                observed,
-                maximum,
-            },
-        );
-    }
-    if let Some(missing) = declarations.iter().find(|declaration| {
-        world
-            .character_definition_index()
-            .document(declaration.selection_span().source())
-            .is_none()
-    }) {
-        return CharacterDefinitionQueryResult::Integrity(
-            CharacterDefinitionIntegrityError::MissingOwnedDocument {
-                source: missing.selection_span().source().clone(),
-            },
-        );
-    }
-    CharacterDefinitionQueryResult::Resolved(CharacterDefinition {
-        descriptor: descriptor.clone(),
-        origin_selection: fact.selection_span().clone(),
-        declarations,
-    })
-}
-
-fn query_context_outcome(
-    world: &RegisteredSemanticWorld,
-    inventory: &CharacterReferenceInventory,
-    document: &SourceDocumentIdentity,
-    cursor: usize,
-) -> Option<CharacterDefinitionQueryResult> {
-    if ensure_world_integrity(world).is_err() {
-        return Some(CharacterDefinitionQueryResult::Integrity(
-            CharacterDefinitionIntegrityError::AcceptedWorldInvariant {
-                world: world.symbols().world().clone(),
-                revision: *world.symbols().revision(),
-            },
-        ));
-    }
-    if inventory.world() != world.symbols().world() {
-        return Some(CharacterDefinitionQueryResult::Stale(
-            CharacterDefinitionStale::World {
-                expected: world.symbols().world().clone(),
-                actual: inventory.world().clone(),
-            },
-        ));
-    }
-    if inventory.symbol_revision() != world.symbols().revision() {
-        return Some(CharacterDefinitionQueryResult::Stale(
-            CharacterDefinitionStale::SymbolRevision {
-                expected: *world.symbols().revision(),
-                actual: *inventory.symbol_revision(),
-            },
-        ));
-    }
-    if inventory.document() != document {
-        return Some(CharacterDefinitionQueryResult::Stale(
-            CharacterDefinitionStale::Document {
-                expected: inventory.document().clone(),
-                actual: document.clone(),
-            },
-        ));
-    }
-    let Ok(source_len) = usize::try_from(document.source_len()) else {
-        return Some(CharacterDefinitionQueryResult::Exhausted(
-            CharacterDefinitionResourceError::ArithmeticOverflow {
-                counter: CharacterDefinitionLimitKind::QueryWork,
-            },
-        ));
-    };
-    if cursor >= source_len {
-        return Some(CharacterDefinitionQueryResult::NotApplicable(
-            CharacterDefinitionNotApplicable::EndBoundary,
-        ));
-    }
-    None
-}
-
-fn classify_unselected_cursor(
-    inventory: &CharacterReferenceInventory,
-    cursor: usize,
-) -> CharacterDefinitionQueryResult {
-    for fact in inventory.facts() {
-        let selection = fact.selection_span().range();
-        if cursor == selection.end() {
-            return CharacterDefinitionQueryResult::NotApplicable(
-                CharacterDefinitionNotApplicable::EndBoundary,
-            );
-        }
-        let reference = fact.reference_span().range();
-        if reference.start() <= cursor && cursor < reference.end() {
-            return CharacterDefinitionQueryResult::NotApplicable(match fact.form() {
-                CharacterReferenceForm::OwnerPath { .. } => {
-                    CharacterDefinitionNotApplicable::Qualification
-                }
-                CharacterReferenceForm::LocalMember { .. } => {
-                    CharacterDefinitionNotApplicable::Delimiter
-                }
-            });
-        }
-    }
-    CharacterDefinitionQueryResult::NotApplicable(
-        CharacterDefinitionNotApplicable::NonCharacterToken,
-    )
-}
-
-fn span_width(span: &SourceSpan) -> usize {
-    span.range().end().saturating_sub(span.range().start())
 }

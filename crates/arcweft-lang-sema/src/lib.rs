@@ -35,4 +35,7 @@ pub mod types;
 pub mod view_part;
 
 #[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
 mod tests;

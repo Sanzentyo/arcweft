@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use arcweft_lang_hir::symbol::{ProjectSymbolRevision, ProjectSymbolWorldId};
 use arcweft_lang_sema::character_definition::{
-    CharacterDefinitionQueryResult, CharacterReferenceInventory,
+    CharacterDefinitionQueryResult, CharacterDefinitionRequestBudget,
+    CharacterDefinitionResourceError, CharacterDefinitionWorkKind, CharacterDefinitionWorkReceipt,
+    CharacterReferenceInventory,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocumentIdentity, SourceSetRevision, identity::SourceSnapshotId};
@@ -17,14 +19,34 @@ use super::state::{AcceptedEnvironmentGeneration, AcceptedProfileKey};
 /// Broad semantic caches owned exclusively by one accepted generation.
 #[derive(Debug, Default)]
 pub(crate) struct ProfileSemanticCaches {
-    character_references:
-        Mutex<Option<(CharacterReferenceCacheKey, Arc<CharacterReferenceInventory>)>>,
-    character_definitions:
-        Mutex<Option<(CharacterDefinitionCacheKey, CharacterDefinitionQueryResult)>>,
+    character_references: Mutex<
+        Option<(
+            CharacterReferenceCacheKey,
+            Arc<CharacterReferenceCacheEntry>,
+        )>,
+    >,
+    character_definitions: Mutex<
+        Option<(
+            CharacterDefinitionCacheKey,
+            Arc<CharacterDefinitionCacheEntry>,
+        )>,
+    >,
     #[cfg(test)]
     entries: Mutex<Vec<(String, String)>>,
     #[cfg(test)]
     hits: AtomicU64,
+}
+
+#[derive(Debug)]
+struct CharacterReferenceCacheEntry {
+    inventory: Arc<CharacterReferenceInventory>,
+    work: CharacterDefinitionWorkReceipt,
+}
+
+#[derive(Debug)]
+struct CharacterDefinitionCacheEntry {
+    result: Arc<CharacterDefinitionQueryResult>,
+    work: CharacterDefinitionWorkReceipt,
 }
 
 /// Exact identity of one request-scoped character-reference inventory.
@@ -70,47 +92,77 @@ impl ProfileSemanticCaches {
     pub(crate) fn cached_character_references(
         &self,
         key: &CharacterReferenceCacheKey,
-    ) -> Option<Arc<CharacterReferenceInventory>> {
-        self.character_references
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .filter(|(candidate, _)| candidate == key)
-            .map(|(_, inventory)| Arc::clone(inventory))
+        budget: &mut CharacterDefinitionRequestBudget,
+    ) -> Result<Option<Arc<CharacterReferenceInventory>>, CharacterDefinitionResourceError> {
+        let entry = {
+            let cache = self
+                .character_references
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
+            cache
+                .as_ref()
+                .filter(|(candidate, _)| candidate == key)
+                .map(|(_, entry)| Arc::clone(entry))
+        };
+        let Some(entry) = entry else {
+            return Ok(None);
+        };
+        budget.replay(&entry.work)?;
+        Ok(Some(Arc::clone(&entry.inventory)))
     }
 
     pub(crate) fn cache_character_references(
         &self,
         key: CharacterReferenceCacheKey,
         inventory: Arc<CharacterReferenceInventory>,
+        work: CharacterDefinitionWorkReceipt,
     ) {
         self.character_references
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .replace((key, inventory));
+            .replace((
+                key,
+                Arc::new(CharacterReferenceCacheEntry { inventory, work }),
+            ));
     }
 
     pub(crate) fn cached_character_definition(
         &self,
         key: &CharacterDefinitionCacheKey,
-    ) -> Option<CharacterDefinitionQueryResult> {
-        self.character_definitions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .filter(|(candidate, _)| candidate == key)
-            .map(|(_, result)| result.clone())
+        budget: &mut CharacterDefinitionRequestBudget,
+    ) -> Result<Option<Arc<CharacterDefinitionQueryResult>>, CharacterDefinitionResourceError> {
+        let entry = {
+            let cache = self
+                .character_definitions
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
+            cache
+                .as_ref()
+                .filter(|(candidate, _)| candidate == key)
+                .map(|(_, entry)| Arc::clone(entry))
+        };
+        let Some(entry) = entry else {
+            return Ok(None);
+        };
+        budget.replay(&entry.work)?;
+        Ok(Some(Arc::clone(&entry.result)))
     }
 
     pub(crate) fn cache_character_definition(
         &self,
         key: CharacterDefinitionCacheKey,
-        result: CharacterDefinitionQueryResult,
+        result: Arc<CharacterDefinitionQueryResult>,
+        work: CharacterDefinitionWorkReceipt,
     ) {
         self.character_definitions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .replace((key, result));
+            .replace((
+                key,
+                Arc::new(CharacterDefinitionCacheEntry { result, work }),
+            ));
     }
 
     #[cfg(test)]
@@ -130,6 +182,20 @@ impl ProfileSemanticCaches {
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone(),
             self.hits.load(Ordering::Acquire),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn character_entries_for_test(&self) -> (bool, bool) {
+        (
+            self.character_references
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_some(),
+            self.character_definitions
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_some(),
         )
     }
 }

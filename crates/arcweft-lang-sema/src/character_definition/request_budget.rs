@@ -163,6 +163,11 @@ impl CharacterDefinitionRequestBudget {
         Self::with_maximum(maximum)
     }
 
+    #[cfg(test)]
+    pub(crate) fn transcript_for_test(&self) -> &[CharacterDefinitionWorkKind] {
+        &self.sequence
+    }
+
     fn checked_next_sequence_count<T>(count: T) -> Result<u64, CharacterDefinitionResourceError>
     where
         u64: TryFrom<T>,

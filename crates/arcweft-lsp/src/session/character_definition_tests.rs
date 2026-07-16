@@ -1,5 +1,8 @@
 use super::*;
 
+use arcweft_lang_sema::character_definition::{
+    CharacterDefinitionRequestBudget, CharacterDefinitionWorkKind,
+};
 use lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     GotoDefinitionResponse, Position, TextDocumentContentChangeEvent, TextDocumentIdentifier,
@@ -11,6 +14,90 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+#[test]
+fn character_definition_cache_hit_replays_identical_shared_work() {
+    let project = CharacterDefinitionProject::new("character-cache-receipt");
+    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    project.write_project(source, character_manifest());
+    let uri = file_uri(&project.path("src/main.arcw"));
+    let mut session = ArcweftLspSession::new(
+        &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
+            .with_profile_id("game"),
+    );
+    open(&mut session, uri.clone(), source);
+
+    let document = session.documents.get(&uri).expect("open source");
+    let profile = session.profile_for_uri(&uri);
+    let cursor = source.find("akane").expect("character reference");
+    let mut miss_budget = CharacterDefinitionRequestBudget::for_request();
+    let miss_checkpoint = miss_budget.checkpoint();
+    let miss = crate::features::character_definition::character_definition_with_budget(
+        profile,
+        &session.documents,
+        document,
+        cursor,
+        &mut miss_budget,
+    )
+    .expect("cache miss definition");
+    assert!(matches!(
+        miss,
+        crate::features::character_definition::CharacterDefinitionDispatch::Character(Some(_))
+    ));
+    let miss_work = miss_budget
+        .receipt_since(miss_checkpoint)
+        .expect("complete cache-miss work");
+
+    let mut hit_budget = CharacterDefinitionRequestBudget::for_request();
+    let hit_checkpoint = hit_budget.checkpoint();
+    let hit = crate::features::character_definition::character_definition_with_budget(
+        profile,
+        &session.documents,
+        document,
+        cursor,
+        &mut hit_budget,
+    )
+    .expect("cache hit definition");
+    assert!(matches!(
+        hit,
+        crate::features::character_definition::CharacterDefinitionDispatch::Character(Some(_))
+    ));
+    let hit_work = hit_budget
+        .receipt_since(hit_checkpoint)
+        .expect("complete cache-hit work");
+    assert_eq!(hit_budget.consumed(), miss_budget.consumed());
+    assert_eq!(hit_work, miss_work);
+
+    let mut exhausted = CharacterDefinitionRequestBudget::for_request();
+    let precharge = exhausted
+        .maximum()
+        .checked_sub(miss_budget.consumed())
+        .and_then(|remaining| remaining.checked_add(1))
+        .expect("request work fits production budget");
+    for _ in 0..precharge {
+        exhausted
+            .charge(CharacterDefinitionWorkKind::IdentityCheck)
+            .expect("precharge remains in budget");
+    }
+    let error = crate::features::character_definition::character_definition_with_budget(
+        profile,
+        &session.documents,
+        document,
+        cursor,
+        &mut exhausted,
+    )
+    .expect_err("receipt replay and live adaptation must exhaust the shared budget");
+    assert!(matches!(
+        error,
+        crate::features::character_definition::CharacterDefinitionRequestError::Resource(_)
+    ));
+    assert_eq!(exhausted.consumed(), exhausted.maximum() + 1);
+
+    let accepted = profile.accepted_environment().expect("accepted generation");
+    assert_eq!(accepted.character_cache_entries_for_test(), (true, true));
+    accepted.clear_caches();
+    assert_eq!(accepted.character_cache_entries_for_test(), (false, false));
+}
 
 #[test]
 fn character_owner_definition_returns_exact_manifest_location_link() {
