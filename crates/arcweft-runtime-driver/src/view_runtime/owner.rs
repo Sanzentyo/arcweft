@@ -14,7 +14,7 @@ use super::catalog::{ViewDefinitionIndex, ViewProgramCatalog};
 /// Monotonic identity of one accepted semantic View-program generation.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct AcceptedViewProgramGeneration(NonZeroU64);
+pub struct AcceptedViewProgramGeneration(pub(super) NonZeroU64);
 
 /// Public owner evidence that never exposes a process-local registry slot.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

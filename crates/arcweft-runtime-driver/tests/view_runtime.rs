@@ -1,8 +1,8 @@
 use arcweft_bundle::resource_codec::view::{
     DialogueTextProjection, ViewDefinitionRef, ViewElementKind, ViewExportedPart,
     ViewObserveClassification, ViewOwnedPartRef, ViewPartExportSourceRef, ViewProgramInstruction,
-    ViewSecureRedactionMetadata, ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId,
-    ViewTextSourceKind, ViewTextSourceRecord,
+    ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleApplicationTarget, ViewStylePatchId,
+    ViewStyleSheetId, ViewTextSourceKind, ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
     ProductSourceRef, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
@@ -31,7 +31,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewInstancePathSegment, BundleViewMountOutput,
     BundleViewPaintItem, BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError,
     BundleViewStyleNode, BundleViewStyleNodeKind, BundleViewTextValue, SavedViewOwner,
-    ViewOwnerEvidence,
+    ViewOwnerEvidence, ViewProgramReplacementError, ViewProgramReplacementOutcome,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{
@@ -40,6 +40,7 @@ use arcweft_view::{
     ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
+use std::collections::BTreeSet;
 
 struct BundleViewRuntime;
 
@@ -213,6 +214,333 @@ fn accepted_catalog_rejects_host_owner_collision_before_publication() {
     ));
 }
 
+#[test]
+fn hot_reload_unchanged_and_source_only_candidates_preserve_runtime_generation() {
+    let first = sourced_product("first.arcw", "first source text");
+    let second = sourced_product("renamed.arcw", "different source text and length");
+    assert_eq!(
+        first.program().unwrap().accepted_revision(),
+        second.program().unwrap().accepted_revision(),
+    );
+    assert_ne!(
+        first.program().unwrap().source_set_revision(),
+        second.program().unwrap().source_set_revision(),
+    );
+    let mut runtime = AcceptedBundleViewRuntime::try_new(first.clone(), None, None).unwrap();
+    let initial_generation = runtime.accepted_generation();
+    let initial_frame = runtime.frame_revision();
+
+    let unchanged = runtime
+        .prepare_view_program_replacement(first)
+        .expect("equal candidate prepares");
+    assert_eq!(
+        runtime.commit_view_program_replacement(unchanged),
+        Ok(ViewProgramReplacementOutcome::Unchanged),
+    );
+    assert_eq!(runtime.accepted_generation(), initial_generation);
+    assert_eq!(runtime.frame_revision(), initial_frame);
+
+    let source_only = runtime
+        .prepare_view_program_replacement(second)
+        .expect("source-only candidate prepares");
+    assert_eq!(
+        runtime.commit_view_program_replacement(source_only),
+        Ok(ViewProgramReplacementOutcome::SourceOnly),
+    );
+    assert_eq!(runtime.accepted_generation(), initial_generation);
+    assert_eq!(runtime.frame_revision(), initial_frame);
+    assert!(runtime.last_invalidation().is_none());
+}
+
+#[test]
+fn hot_reload_semantic_replacement_reconciles_multiple_mounts_and_reintroduction_is_fresh() {
+    let initial = validated_product(minimal_program("view.program.hot-reload", "view.Hot", 1));
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let handles = [
+        handle("handle.hot.first", "view.Hot"),
+        handle("handle.hot.second", "view.Hot"),
+    ];
+    let initial_frame = runtime.evaluate(&handles, &[], false);
+    let initial_mounts = initial_frame
+        .mounts
+        .iter()
+        .map(|mount| mount.mount)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(initial_mounts.len(), 2);
+
+    let schema_change =
+        validated_product(minimal_program("view.program.hot-reload", "view.Hot", 2));
+    let prepared = runtime
+        .prepare_view_program_replacement(schema_change)
+        .expect("semantic candidate prepares");
+    assert!(matches!(
+        runtime.commit_view_program_replacement(prepared),
+        Ok(ViewProgramReplacementOutcome::Semantic { generation, .. })
+            if generation.get() == 2
+    ));
+    assert_eq!(runtime.frame_revision(), 1);
+    let after_schema = runtime.evaluate(&handles, &[], false);
+    assert_eq!(
+        after_schema
+            .mounts
+            .iter()
+            .map(|mount| mount.mount)
+            .collect::<BTreeSet<_>>(),
+        initial_mounts,
+    );
+
+    let removed = validated_product(ViewProgramResource {
+        program_id: program_id("view.program.hot-reload"),
+        ..ViewProgramResource::default()
+    });
+    let prepared = runtime
+        .prepare_view_program_replacement(removed)
+        .expect("definition removal prepares");
+    runtime
+        .commit_view_program_replacement(prepared)
+        .expect("definition removal commits");
+    assert_eq!(
+        runtime.last_invalidation().unwrap().retired_mounts(),
+        &initial_mounts,
+    );
+    assert!(runtime.evaluate(&handles, &[], false).mounts.is_empty());
+
+    let reintroduced = validated_product(minimal_program("view.program.hot-reload", "view.Hot", 2));
+    let prepared = runtime
+        .prepare_view_program_replacement(reintroduced)
+        .expect("reintroduction prepares");
+    runtime
+        .commit_view_program_replacement(prepared)
+        .expect("reintroduction commits");
+    let reintroduced_frame = runtime.evaluate(&handles[..1], &[], false);
+    assert_eq!(reintroduced_frame.mounts.len(), 1);
+    assert!(!initial_mounts.contains(&reintroduced_frame.mounts[0].mount));
+}
+
+#[test]
+fn hot_reload_prepared_candidate_rejects_stale_runtime_without_mutation() {
+    let initial = validated_product(minimal_program("view.program.stale", "view.Stale", 1));
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let candidate = validated_product(minimal_program("view.program.stale", "view.Stale", 2));
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate)
+        .expect("candidate prepares");
+    runtime.evaluate(&[handle("handle.stale", "view.Stale")], &[], false);
+    let before = runtime.snapshot().unwrap();
+
+    assert_eq!(
+        runtime.commit_view_program_replacement(prepared),
+        Err(ViewProgramReplacementError::StalePreparedState),
+    );
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    assert_eq!(runtime.accepted_generation().get(), 1);
+    assert_eq!(runtime.frame_revision(), 0);
+}
+
+#[test]
+fn hot_reload_invalid_catalog_and_program_identity_leave_runtime_unchanged() {
+    let initial = validated_product(minimal_program("view.program.atomic", "view.Atomic", 1));
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    runtime.evaluate(&[handle("handle.atomic", "view.Atomic")], &[], false);
+    let before = runtime.snapshot().unwrap();
+    let mut invalid = minimal_program("view.program.atomic", "view.Atomic", 1);
+    invalid.definitions[0].body = ViewInstructionSpan::new(0, 1);
+    invalid.instructions = vec![ViewProgramInstruction::BindHandler {
+        event: "unsupported_event".to_owned(),
+        handler: "handler.invalid".to_owned(),
+        source: None,
+    }];
+    invalid.handlers = vec![arcweft_bundle::resource_codec::view::ViewHandlerRef {
+        handler_id: "handler.invalid".to_owned(),
+        event: "unsupported_event".to_owned(),
+        awbc_function_index: 0,
+        handler_abi: arcweft_bundle::container::BundleDigest::of(b"handler.invalid"),
+        function_binding: None,
+    }];
+
+    assert!(matches!(
+        runtime.prepare_view_program_replacement(validated_product(invalid)),
+        Err(ViewProgramReplacementError::Catalog(_))
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    assert_eq!(runtime.accepted_generation().get(), 1);
+
+    let other = validated_product(minimal_program("view.program.other", "view.Atomic", 2));
+    assert!(matches!(
+        runtime.prepare_view_program_replacement(other),
+        Err(ViewProgramReplacementError::ProgramIdentityMismatch)
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+}
+
+#[test]
+fn hot_reload_exported_part_change_invalidates_owner_and_direct_caller_only() {
+    let initial = validated_product(replacement_graph_program(
+        "ChildElement",
+        "part.public",
+        true,
+    ));
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let candidate = validated_product(replacement_graph_program(
+        "ChildElement",
+        "part.renamed",
+        true,
+    ));
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate)
+        .expect("export change prepares");
+    runtime
+        .commit_view_program_replacement(prepared)
+        .expect("export change commits");
+    let invalidation = runtime.last_invalidation().expect("semantic invalidation");
+
+    assert_eq!(
+        invalidation.export_owners(),
+        &BTreeSet::from([ViewId::try_new("view.Child").unwrap()]),
+    );
+    assert_eq!(
+        invalidation.direct_callers(),
+        &BTreeSet::from([ViewId::try_new("view.Parent").unwrap()]),
+    );
+    assert!(
+        !invalidation
+            .owners()
+            .contains(&ViewId::try_new("view.Unrelated").unwrap())
+    );
+}
+
+#[test]
+fn hot_reload_unexported_local_edit_does_not_invalidate_direct_caller() {
+    let initial = validated_product(replacement_graph_program(
+        "ChildElement",
+        "part.public",
+        true,
+    ));
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let candidate = validated_product(replacement_graph_program(
+        "ChangedChildElement",
+        "part.public",
+        true,
+    ));
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate)
+        .expect("local edit prepares");
+    runtime
+        .commit_view_program_replacement(prepared)
+        .expect("local edit commits");
+    let invalidation = runtime.last_invalidation().expect("semantic invalidation");
+
+    assert_eq!(
+        invalidation.owners(),
+        &BTreeSet::from([ViewId::try_new("view.Child").unwrap()]),
+    );
+    assert!(invalidation.export_owners().is_empty());
+    assert!(invalidation.direct_callers().is_empty());
+}
+
+#[test]
+fn hot_reload_removed_nested_call_retires_only_the_child_mount() {
+    let initial = validated_product(replacement_graph_program(
+        "ChildElement",
+        "part.public",
+        true,
+    ));
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mounted = handle("handle.nested-reload", "view.Parent");
+    let initial_frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
+    assert_eq!(initial_frame.mounts.len(), 2);
+    let root_mount = initial_frame
+        .mounts
+        .iter()
+        .find(|mount| mount.path.segments().is_empty())
+        .unwrap()
+        .mount;
+    let child_mount = initial_frame
+        .mounts
+        .iter()
+        .find(|mount| !mount.path.segments().is_empty())
+        .unwrap()
+        .mount;
+    let candidate = validated_product(replacement_graph_program(
+        "ChildElement",
+        "part.public",
+        false,
+    ));
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate)
+        .expect("call removal prepares");
+    runtime
+        .commit_view_program_replacement(prepared)
+        .expect("call removal commits");
+
+    assert_eq!(
+        runtime.last_invalidation().unwrap().retired_mounts(),
+        &BTreeSet::from([child_mount]),
+    );
+    let frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
+    assert_eq!(frame.mounts.len(), 1);
+    assert_eq!(frame.mounts[0].mount, root_mount);
+}
+
+#[test]
+fn hot_reload_definition_removal_retires_repeat_nested_mounts_atomically() {
+    let initial = validated_product(replacement_repeat_graph_program());
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mounted = handle("handle.repeat-reload", "view.RepeatRoot");
+    let initial_frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
+    assert!(initial_frame.diagnostics.is_empty(), "{initial_frame:#?}");
+    assert_eq!(initial_frame.mounts.len(), 3);
+    let root_mount = initial_frame
+        .mounts
+        .iter()
+        .find(|mount| mount.path.segments().is_empty())
+        .unwrap()
+        .mount;
+    let repeated_children = initial_frame
+        .mounts
+        .iter()
+        .filter(|mount| !mount.path.segments().is_empty())
+        .map(|mount| mount.mount)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(repeated_children.len(), 2);
+    assert!(
+        initial_frame
+            .mounts
+            .iter()
+            .filter(|mount| {
+                matches!(
+                    mount.path.segments(),
+                    [
+                        BundleViewInstancePathSegment::Repeat { instruction: 0, .. },
+                        BundleViewInstancePathSegment::Call { instruction: 1, .. }
+                    ]
+                )
+            })
+            .count()
+            == 2
+    );
+
+    let candidate = validated_product(minimal_program(
+        "view.program.repeat-replacement",
+        "view.RepeatRoot",
+        1,
+    ));
+    let prepared = runtime
+        .prepare_view_program_replacement(candidate)
+        .expect("repeat child removal prepares");
+    runtime
+        .commit_view_program_replacement(prepared)
+        .expect("repeat child removal commits");
+
+    assert_eq!(
+        runtime.last_invalidation().unwrap().retired_mounts(),
+        &repeated_children,
+    );
+    let frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
+    assert_eq!(frame.mounts.len(), 1);
+    assert_eq!(frame.mounts[0].mount, root_mount);
+}
+
 fn local_part(value: &str) -> ViewPartLocalName {
     ViewPartLocalName::try_new(value).expect("valid local part identity")
 }
@@ -257,6 +585,207 @@ fn view_source_map() -> SourceMapSection {
     )
     .expect("source document");
     SourceMapSection::try_from_documents(&[&document]).expect("source map")
+}
+
+fn validated_product(program: ViewProgramResource) -> ValidatedViewProduct {
+    let source_map = (!program.source_refs.is_empty()).then(view_source_map);
+    ValidatedViewProduct::try_new(
+        source_map,
+        Some(program),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("test View product validates")
+}
+
+fn sourced_product(label: &str, text: &str) -> ValidatedViewProduct {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceName::path(label),
+        text,
+    )
+    .expect("source document");
+    let source_map = SourceMapSection::try_from_documents(&[&document]).expect("source map");
+    let source_refs = source_map
+        .documents()
+        .map(ProductSourceRef::from_document)
+        .collect::<Vec<_>>();
+    let source = source_refs[0].clone();
+    let mut program = minimal_program("view.program.source-only", "view.SourceOnly", 1);
+    program.source_refs.clone_from(&source_refs);
+    program.semantic_targets = vec![ViewSemanticTarget {
+        public_id: "target.source-only".to_owned(),
+        target: "target.source-only".to_owned(),
+        view: Some("view.SourceOnly".to_owned()),
+        label_text_source: None,
+        source: Some(source_range(
+            &source_refs,
+            &source,
+            0,
+            u32::try_from(text.len()).expect("source length"),
+        )),
+    }];
+    ValidatedViewProduct::try_new(
+        Some(source_map),
+        Some(program),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("sourced product validates")
+}
+
+fn replacement_graph_program(
+    child_element: &str,
+    exported_name: &str,
+    parent_calls_child: bool,
+) -> ViewProgramResource {
+    let source_refs = view_source_refs();
+    let parent = if parent_calls_child {
+        ViewProgramInstruction::CallView {
+            view: definition_ref("view.Child"),
+            arguments: Vec::new(),
+            styles: Vec::new(),
+            part: None,
+            key: Some(7),
+            source: None,
+        }
+    } else {
+        ViewProgramInstruction::EmitCustom {
+            element: "ParentWithoutCall".to_owned(),
+            styles: Vec::new(),
+            part: None,
+            source: None,
+        }
+    };
+    ViewProgramResource {
+        program_id: program_id("view.program.replacement-graph"),
+        source_refs: source_refs.clone(),
+        definitions: vec![
+            ViewDefinitionResource {
+                public_id: definition_ref("view.Parent"),
+                body: ViewInstructionSpan::new(0, 1),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 1,
+            },
+            ViewDefinitionResource {
+                public_id: definition_ref("view.Child"),
+                body: ViewInstructionSpan::new(1, 2),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 2,
+            },
+            ViewDefinitionResource {
+                public_id: definition_ref("view.Unrelated"),
+                body: ViewInstructionSpan::new(2, 3),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 3,
+            },
+        ],
+        instructions: vec![
+            parent,
+            ViewProgramInstruction::EmitCustom {
+                element: child_element.to_owned(),
+                styles: Vec::new(),
+                part: Some(local_part("part.local")),
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "UnrelatedElement".to_owned(),
+                styles: Vec::new(),
+                part: None,
+                source: None,
+            },
+        ],
+        exported_parts: vec![exported_part(
+            "view.Child",
+            "part.local",
+            exported_name,
+            &source_refs,
+        )],
+        ..ViewProgramResource::default()
+    }
+}
+
+fn replacement_repeat_graph_program() -> ViewProgramResource {
+    let state_types = vec![FxRuntimeType::I32];
+    ViewProgramResource {
+        program_id: program_id("view.program.repeat-replacement"),
+        definitions: vec![
+            ViewDefinitionResource {
+                public_id: definition_ref("view.RepeatRoot"),
+                body: ViewInstructionSpan::new(0, 2),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 1,
+            },
+            ViewDefinitionResource {
+                public_id: definition_ref("view.RepeatChild"),
+                body: ViewInstructionSpan::new(2, 3),
+                styles: Vec::new(),
+                parameters: Vec::new(),
+                state_schema_hash: 2,
+            },
+        ],
+        value_programs: vec![
+            value_program(
+                0,
+                Vec::new(),
+                state_types.clone(),
+                FxRuntimeType::I32,
+                vec![
+                    ValueInstruction::Constant {
+                        value: FxRuntimeValue::I32(2),
+                    },
+                    ValueInstruction::Return,
+                ],
+            ),
+            value_program(
+                1,
+                Vec::new(),
+                state_types,
+                FxRuntimeType::I32,
+                vec![
+                    ValueInstruction::LoadState {
+                        slot: 0,
+                        ty: FxRuntimeType::I32,
+                    },
+                    ValueInstruction::Return,
+                ],
+            ),
+        ],
+        value_inputs: vec![ViewValueInputResource {
+            namespace: ViewValueInputNamespace::State,
+            slot: 0,
+            value_type: FxRuntimeType::I32,
+            source: ViewValueInputSource::RepeatOrdinal {
+                view: "view.RepeatRoot".to_owned(),
+                binding: "item".to_owned(),
+            },
+        }],
+        instructions: vec![
+            ViewProgramInstruction::RepeatKeyed {
+                source_program: ViewValueProgramId(0),
+                key_program: ViewValueProgramId(1),
+                body_span: 1,
+                source: None,
+            },
+            ViewProgramInstruction::CallView {
+                view: definition_ref("view.RepeatChild"),
+                arguments: Vec::new(),
+                styles: Vec::new(),
+                part: None,
+                key: None,
+                source: None,
+            },
+            ViewProgramInstruction::EmitCustom {
+                element: "RepeatChild".to_owned(),
+                styles: Vec::new(),
+                part: None,
+                source: None,
+            },
+        ],
+        ..ViewProgramResource::default()
+    }
 }
 
 fn source_range(

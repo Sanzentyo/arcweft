@@ -13,6 +13,7 @@ mod dialogue_contract;
 mod merge;
 mod model;
 mod runtime_control_style;
+mod semantic;
 mod style_contract;
 mod validated;
 

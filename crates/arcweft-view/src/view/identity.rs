@@ -88,6 +88,18 @@ impl fmt::Display for ViewProgramId {
 }
 
 impl AcceptedViewProgramRevision {
+    /// Hashes one canonical typed View-program transcript.
+    ///
+    /// Transcript construction belongs to the typed producer. This identity
+    /// boundary owns the hash algorithm and domain separation so callers
+    /// cannot accidentally substitute a bundle, source-map, or file digest.
+    pub fn try_for_semantic_transcript(transcript: &[u8]) -> Result<Self, ViewIdentityError> {
+        let mut hasher =
+            blake3::Hasher::new_derive_key("arcweft.view.accepted-program-semantic-revision.v1");
+        hasher.update(transcript);
+        Self::try_from_bytes(*hasher.finalize().as_bytes())
+    }
+
     pub fn try_from_bytes(bytes: [u8; 32]) -> Result<Self, ViewIdentityError> {
         if bytes == [0; 32] {
             return Err(ViewIdentityError::ZeroAcceptedRevision);
@@ -244,5 +256,17 @@ mod tests {
             ))
             .is_err()
         );
+    }
+
+    #[test]
+    fn semantic_revision_is_domain_owned_and_content_sensitive() {
+        let first = AcceptedViewProgramRevision::try_for_semantic_transcript(b"program-a").unwrap();
+        let first_again =
+            AcceptedViewProgramRevision::try_for_semantic_transcript(b"program-a").unwrap();
+        let second =
+            AcceptedViewProgramRevision::try_for_semantic_transcript(b"program-b").unwrap();
+
+        assert_eq!(first, first_again);
+        assert_ne!(first, second);
     }
 }

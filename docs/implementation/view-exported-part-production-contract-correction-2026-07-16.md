@@ -4,10 +4,10 @@
 - Package: `arcweft-seq-06.11d.2.1.1.1.1-view-exported-part-production-contract-correction-final-contract.zip`
 - Package SHA-256: `b4662f3ecd79c157ee93656a173e9809fff31696aaded1fedb9411cdb1e9732e`
 - Package basis: Git `8984661d5679efccf7a16255f921530cd0b7cacc`
-- Production base for the current increment after final validation rebase:
-  Jujutsu change `vmlrxuvm` / Git `b7be621bab0f`
-- Working change: Jujutsu change `osskwmts`
-- Status: Increments 1 through 5 are implemented; the complete correction remains open
+- Production base for Increment 6: Git `2966a182a369`
+- Working change: Jujutsu change `rtlwtrqq`
+- Status: Increments 1 through 6 are implemented; final parser accounting and
+  repository completion validation remain open
 
 ## Package intake
 
@@ -285,18 +285,121 @@ was added.
 
 The following package requirements are explicitly not complete:
 
-1. canonical semantic transcript, per-definition fingerprints, and
-   accepted program revision derivation;
-2. semantic occurrence reconciliation and the six-phase candidate-first
-   replacement with exact rollback, generation, and targeted cache/trace
-   invalidation;
-3. final ordinary-parser rejection accounting with no historical recognizer;
+1. final ordinary-parser rejection accounting with no historical recognizer;
    and
-4. contextual Style application edges plus atomic LSP rename, symbols,
-   semantic tokens, limits, and the remaining test matrix.
+2. final repository-wide verification, structural audit, and completion note.
 
 The correction must remain open until those increments and their Tier-0/Tier-1,
 codec, runtime, replacement, tooling, structural, and migration gates pass.
+
+## Increment 6 implementation
+
+`AcceptedViewProgramRevision` is no longer the digest of the complete bundle
+resource. `arcweft-view` owns the domain-separated BLAKE3 operation, while
+`arcweft-bundle` supplies a canonical typed semantic transcript. The transcript
+includes program identity, definitions, state/schema facts, typed value and
+instruction programs, handlers, local parts, exports, direct call targets, and
+runtime metadata. Product source identities, display names, source bytes,
+source-table order, and every source range are explicitly excluded. Definition
+table reordering is canonicalized before transcript construction. Tests prove
+that source-only products have equal accepted revisions and distinct
+`SourceSetRevision` values, while typed semantic edits change the accepted
+revision.
+
+The immutable runtime catalog now records separate per-definition local and
+export fingerprints plus typed direct-call edges. Local fingerprints include
+the exact definition/body, referenced value programs and typed input slots,
+referenced handlers, state schema, and local parts. Export fingerprints contain
+only typed owner/local/public identities and exclude provenance. Catalog diff
+therefore distinguishes an owner-local implementation edit from a public export
+add/remove/rename and computes direct callers without string reconstruction.
+
+`BundleViewRuntime` exposes a prepared replacement transaction. Preparation
+validates program identity, dialogue contract, candidate catalog, registry
+collisions, value inventory, checked generation/frame counters, mount graph,
+and invalidation facts entirely in scratch state. Commit first compares the
+captured program/revision/source/generation/frame plus logical time, allocator,
+root bindings, mounts, and axis seeds; a stale prepared value is consumed with
+no mutation. The commit path itself performs only infallible field publication.
+
+Equal semantic/source candidates are true no-ops. Source-only candidates replace
+only product/catalog provenance and preserve generation, frame, mounts, caches,
+registry, and the last semantic invalidation. Semantic candidates increment a
+nonzero checked generation and checked frame revision, retire/re-register
+Arcweft registry entries in a clone, reconcile all occurrences, prune axis-seed
+facts, and publish one targeted invalidation. Stable paths retain mount IDs and
+typed state when schema-compatible; incompatible private state is reset from
+the candidate inventory. Removed definitions and invalid call/repeat paths are
+retired, so a later definition reintroduction keeps its `ViewId` but receives a
+fresh private mount identity.
+
+The replacement tests cover unchanged and source-only candidates, stale commit,
+catalog and program-identity rollback, exact export owner/direct caller
+invalidation, isolation of unexported local edits, two simultaneous root mounts,
+schema reset, definition removal/reintroduction, nested call removal, and two
+repeat-nested child mounts retired atomically. Exact `u64::MAX` generation/frame
+acceptance and one-over exhaustion are tested without a public test hook.
+
+The new responsibilities are split across `view/semantic.rs`,
+`view_runtime/catalog/fingerprint.rs`, `view_runtime/replacement.rs`, and
+`view_runtime/replacement/reconcile.rs`; replacement logic was not added to the
+existing evaluator hotspot. No compatibility reader, dual revision, alias,
+removed-syntax recognizer, source gate, `unsafe`, or unchecked counter was
+introduced.
+
+### Increment 6 focused verification
+
+All Cargo commands used `CARGO_INCREMENTAL=0`:
+
+- `cargo test -p arcweft-bundle --test view_product_validation` — 8 passed;
+- `cargo test -p arcweft-runtime-driver --test view_runtime` — 25 passed;
+- the exact replacement counter unit filter — one passed;
+- `cargo check -p arcweft-runtime-driver --all-targets` — passed; and
+- `cargo clippy -p arcweft-view -p arcweft-bundle
+  -p arcweft-runtime-driver --all-targets --all-features -- -D warnings` —
+  passed.
+
+The final Increment 6 cut also passed `cargo fmt --all -- --check` and
+`cargo check --workspace --all-targets` with the same incremental setting.
+
+### Increment 6 structural audit
+
+The canonical dry-run audit on Jujutsu change `rtlwtrqq`, based on Git
+`2966a182a369`, scanned 3,154 files, 1,585 Rust files, 724,936 Rust physical
+LOC, and 92 package manifests. It reported 0 errors and 128 repository-wide
+warnings. No duplicate report directory was written.
+
+Exact current-checkout metrics for every changed Rust file are:
+
+| Path | Bytes | Physical LOC | Role | Embedded test LOC |
+| --- | ---: | ---: | --- | ---: |
+| `crates/arcweft-runtime-driver/tests/view_runtime.rs` | 85,527 | 2,368 | integration tests | n/a |
+| `crates/arcweft-runtime-driver/src/view_runtime.rs` | 44,891 | 1,170 | runtime facade/orchestration | 0 |
+| `crates/arcweft-runtime-driver/src/view_runtime/catalog.rs` | 21,376 | 567 | immutable catalog/diff | 0 |
+| `crates/arcweft-runtime-driver/src/view_runtime/axis_seed.rs` | 17,463 | 468 | axis-seed lifecycle | 0 |
+| `crates/arcweft-bundle/tests/view_product_validation.rs` | 14,128 | 398 | integration tests | n/a |
+| `crates/arcweft-runtime-driver/src/view_runtime/replacement.rs` | 13,125 | 368 | prepared transaction | 24 |
+| `crates/arcweft-bundle/src/resource_codec/view/validated.rs` | 12,285 | 353 | complete-product typestate | 0 |
+| `crates/arcweft-runtime-driver/src/view_runtime/owner.rs` | 9,711 | 278 | mount-owner/generation identities | 0 |
+| `crates/arcweft-view/src/view/identity.rs` | 8,241 | 272 | stable identities/revision hash | 66 |
+| `crates/arcweft-runtime-driver/src/view_runtime/catalog/fingerprint.rs` | 9,008 | 250 | local/export fingerprints | 0 |
+| `crates/arcweft-runtime-driver/src/view_runtime/replacement/reconcile.rs` | 6,623 | 188 | scratch mount reconciliation | 0 |
+| `crates/arcweft-bundle/src/resource_codec/view/semantic.rs` | 4,833 | 115 | source-free semantic transcript | 0 |
+| `crates/arcweft-bundle/src/resource_codec/view.rs` | 1,230 | 33 | resource-codec facade | 0 |
+
+The runtime facade remains below the 1,200-LOC production warning threshold,
+and the expanded integration test remains below the 2,500-LOC test warning
+threshold. Replacement was split before review: its 368-LOC transaction module
+delegates the 188-LOC mount/path responsibility to `reconcile.rs`; fingerprint
+construction is a separate 250-LOC module. No production file crossed a review
+threshold.
+
+`arcweft-runtime-driver` has six workspace fan-in edges, 12 normal fan-out
+edges, and three dev-only fan-out edges. The one new normal edge is `blake3`,
+used only for private domain-separated per-definition fingerprints. Accepted
+program revision hashing remains owned by the pre-existing
+`arcweft-view -> blake3` edge; no upward or reverse architecture dependency was
+introduced.
 
 ## Increment 2 implementation
 

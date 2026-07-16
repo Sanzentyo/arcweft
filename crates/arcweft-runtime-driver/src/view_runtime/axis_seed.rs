@@ -130,7 +130,7 @@ struct MountedAxisSeed {
     derived: ViewInheritedBoxAxes,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct BundleViewAxisSeedRegistry {
     pending: BTreeMap<PresentationHandleId, ViewBoxAxisHostSeed>,
     mounted: BTreeMap<ViewMountId, MountedAxisSeed>,

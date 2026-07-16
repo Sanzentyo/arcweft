@@ -19,6 +19,9 @@ use thiserror::Error;
 
 use super::part::ViewPartRuntimeCatalog;
 
+mod fingerprint;
+use fingerprint::ViewDefinitionFingerprints;
+
 /// Dense definition position private to one immutable accepted catalog.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct ViewDefinitionIndex(u32);
@@ -27,7 +30,15 @@ pub(crate) struct ViewDefinitionIndex(u32);
 pub(super) struct RuntimeViewDefinition {
     pub(super) view: ViewId,
     pub(super) semantic: ViewProgram,
+    fingerprints: ViewDefinitionFingerprints,
     execution: ViewDefinitionResource,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct ViewCatalogSemanticDiff {
+    pub(super) owners: std::collections::BTreeSet<ViewId>,
+    pub(super) export_owners: std::collections::BTreeSet<ViewId>,
+    pub(super) direct_callers: std::collections::BTreeSet<ViewId>,
 }
 
 /// Canonically ordered typed View definitions accepted by the runtime.
@@ -57,6 +68,8 @@ pub enum ViewProgramCatalogError {
     InvalidSemanticTarget { target: String },
     #[error("View instruction table index cannot be represented")]
     InstructionIndexOverflow,
+    #[error("View semantic fingerprint transcript could not be encoded")]
+    FingerprintEncoding,
     #[error(transparent)]
     ValueInventory(#[from] ViewValueInventoryError),
     #[error(transparent)]
@@ -102,9 +115,11 @@ impl ViewProgramCatalog {
                 &view,
                 inventory.clone(),
             )?;
+            let fingerprints = ViewDefinitionFingerprints::try_new(&resource, &definition, &view)?;
             definitions.push(RuntimeViewDefinition {
                 view,
                 semantic,
+                fingerprints,
                 execution: definition,
             });
         }
@@ -164,6 +179,58 @@ impl ViewProgramCatalog {
 
     pub(crate) fn view_ids(&self) -> impl Iterator<Item = &ViewId> {
         self.by_view.keys()
+    }
+
+    pub(super) fn runtime_definition(&self, view: &ViewId) -> Option<&RuntimeViewDefinition> {
+        self.definition_index(view)
+            .map(|index| &self.definitions[index.index()])
+    }
+
+    pub(super) fn semantic_diff(&self, candidate: &Self) -> ViewCatalogSemanticDiff {
+        let views = self
+            .view_ids()
+            .chain(candidate.view_ids())
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut diff = ViewCatalogSemanticDiff::default();
+        for view in views {
+            match (
+                self.runtime_definition(&view),
+                candidate.runtime_definition(&view),
+            ) {
+                (Some(previous), Some(next)) => {
+                    if previous.fingerprints.local_changed(&next.fingerprints) {
+                        diff.owners.insert(view.clone());
+                    }
+                    if previous.fingerprints.exports_changed(&next.fingerprints) {
+                        diff.owners.insert(view.clone());
+                        diff.export_owners.insert(view);
+                    }
+                }
+                (Some(_), None) | (None, Some(_)) => {
+                    diff.owners.insert(view.clone());
+                    diff.export_owners.insert(view);
+                }
+                (None, None) => unreachable!("the union contains only catalog owners"),
+            }
+        }
+        for catalog in [self, candidate] {
+            for definition in &catalog.definitions {
+                if definition
+                    .fingerprints
+                    .direct_calls()
+                    .iter()
+                    .any(|target| diff.export_owners.contains(target))
+                {
+                    diff.direct_callers.insert(definition.view.clone());
+                }
+            }
+        }
+        if diff.owners.is_empty() && self.revision != candidate.revision {
+            diff.owners
+                .extend(self.view_ids().chain(candidate.view_ids()).cloned());
+        }
+        diff
     }
 }
 

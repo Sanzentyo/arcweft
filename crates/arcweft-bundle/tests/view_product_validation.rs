@@ -206,6 +206,76 @@ fn complete_product_enforces_exact_candidate_first_limits() {
     }
 }
 
+#[test]
+fn accepted_revision_excludes_source_identity_text_and_ranges() {
+    let (first_map, first_program) = ranged_program("first.arcw", "hello");
+    let (second_map, second_program) = ranged_program("renamed.arcw", "longer source text");
+
+    let first = validate(first_map, first_program).expect("first product validates");
+    let second = validate(second_map, second_program).expect("second product validates");
+    let first = first.program().expect("first program");
+    let second = second.program().expect("second program");
+
+    assert_eq!(first.accepted_revision(), second.accepted_revision());
+    assert_ne!(first.source_set_revision(), second.source_set_revision());
+}
+
+#[test]
+fn accepted_revision_is_independent_of_definition_table_order() {
+    let instructions = vec![
+        ViewProgramInstruction::EmitCustom {
+            element: "first".to_owned(),
+            styles: Vec::new(),
+            part: None,
+            source: None,
+        },
+        ViewProgramInstruction::EmitCustom {
+            element: "second".to_owned(),
+            styles: Vec::new(),
+            part: None,
+            source: None,
+        },
+    ];
+    let first_definition = definition("view.First", 0, 1);
+    let second_definition = definition("view.Second", 1, 2);
+    let first = ViewProgramResource {
+        definitions: vec![first_definition.clone(), second_definition.clone()],
+        instructions: instructions.clone(),
+        ..ViewProgramResource::default()
+    };
+    let second = ViewProgramResource {
+        definitions: vec![second_definition, first_definition],
+        instructions,
+        ..ViewProgramResource::default()
+    };
+
+    let first = validate_without_sources(first);
+    let second = validate_without_sources(second);
+
+    assert_eq!(first, second);
+}
+
+#[test]
+fn accepted_revision_changes_with_typed_semantics() {
+    let (source_map, program) = ranged_program("main.arcw", "hello");
+    let mut changed = program.clone();
+    changed.semantic_targets[0].target = "target.changed".to_owned();
+
+    let original = validate(source_map.clone(), program).expect("original validates");
+    let changed = validate(source_map, changed).expect("semantic change validates");
+
+    assert_ne!(
+        original
+            .program()
+            .expect("original program")
+            .accepted_revision(),
+        changed
+            .program()
+            .expect("changed program")
+            .accepted_revision(),
+    );
+}
+
 fn ranged_program(label: &str, text: &str) -> (SourceMapSection, ViewProgramResource) {
     let source_map = source_map(&[(label, text)]);
     let source_refs = source_map
@@ -266,6 +336,26 @@ fn exported_program(
         }],
         ..ViewProgramResource::default()
     }
+}
+
+fn definition(public_id: &str, start: u32, end: u32) -> ViewDefinitionResource {
+    ViewDefinitionResource {
+        public_id: ViewDefinitionRef::try_new(public_id).expect("definition ID"),
+        body: ViewInstructionSpan::new(start, end),
+        styles: Vec::new(),
+        parameters: Vec::new(),
+        state_schema_hash: 0,
+    }
+}
+
+fn validate_without_sources(
+    program: ViewProgramResource,
+) -> arcweft_view::AcceptedViewProgramRevision {
+    ValidatedViewProduct::try_new(None, Some(program), ViewProductValidationLimits::default())
+        .expect("source-free program validates")
+        .program()
+        .expect("validated program")
+        .accepted_revision()
 }
 
 fn source_map(entries: &[(&str, &str)]) -> SourceMapSection {

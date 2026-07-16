@@ -176,9 +176,7 @@ fn validate_program(
     validate_candidate_sources(&resource, source_map, limits)?;
 
     let program_id = resource.program_id.clone();
-    let digest = resource.canonical_digest()?;
-    let accepted_revision = AcceptedViewProgramRevision::try_from_bytes(digest.as_bytes())
-        .map_err(ViewProductValidationError::InvalidAcceptedRevision)?;
+    let accepted_revision = super::semantic::accepted_revision(&resource)?;
     Ok(ValidatedViewProgramResource {
         resource,
         program_id,

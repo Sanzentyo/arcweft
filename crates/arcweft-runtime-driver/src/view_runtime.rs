@@ -12,6 +12,7 @@ mod owner;
 #[cfg(test)]
 mod owner_tests;
 mod part;
+mod replacement;
 mod style_scope;
 mod value;
 
@@ -50,6 +51,10 @@ pub use axis_seed::{
 };
 pub use catalog::{ViewProgramCatalog, ViewProgramCatalogError};
 pub use owner::{AcceptedViewProgramGeneration, SavedViewOwner, ViewOwnerEvidence, ViewSaveError};
+pub use replacement::{
+    PreparedViewProgramReplacement, ViewMountReconcileError, ViewProgramInvalidation,
+    ViewProgramReplacementError, ViewProgramReplacementOutcome,
+};
 
 pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
@@ -431,6 +436,8 @@ pub struct BundleViewRuntime {
     catalog: Option<ViewProgramCatalog>,
     registry: ViewRegistry,
     generation: AcceptedViewProgramGeneration,
+    frame_revision: u64,
+    last_invalidation: Option<ViewProgramInvalidation>,
     style_program: Option<ViewStyleProgram>,
     text: Option<ViewTextResource>,
     inventory: ViewValueProgramInventory,
@@ -536,6 +543,8 @@ impl BundleViewRuntime {
             catalog,
             registry,
             generation: AcceptedViewProgramGeneration::INITIAL,
+            frame_revision: 0,
+            last_invalidation: None,
             style_program: style.map(|style| style.program.clone()),
             text,
             inventory,
