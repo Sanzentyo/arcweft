@@ -103,6 +103,27 @@ pub enum ProjectLoadError {
 }
 
 impl LoadedProject {
+    pub(crate) fn from_exact_documents(
+        manifest_path: PathBuf,
+        project_root: PathBuf,
+        manifest: ProjectManifest,
+        manifest_document: Arc<SourceDocument>,
+        launch: SourceBackedLaunchManifest,
+        modules: Vec<ProjectSourceFile>,
+    ) -> Result<Self, ProjectLoadError> {
+        let module_documents = modules
+            .iter()
+            .map(|module| (module.module().clone(), Arc::clone(module.document())))
+            .collect();
+        let sources = ProjectSources::new(manifest_path, project_root, manifest, modules)?;
+        Ok(Self {
+            sources,
+            manifest_document,
+            module_documents,
+            launch,
+        })
+    }
+
     pub const fn sources(&self) -> &ProjectSources {
         &self.sources
     }
@@ -385,7 +406,7 @@ fn longest_known_module_prefix(
     })
 }
 
-fn inferred_module_path(
+pub(crate) fn inferred_module_path(
     source_root: &Path,
     path: &Path,
 ) -> Result<CanonicalModulePath, ProjectLoadError> {

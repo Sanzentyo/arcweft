@@ -49,14 +49,66 @@ checking also reaches existing tests that unconditionally import the optional
 runtime-driver crate. Neither failure is caused by this loader change; the
 production libraries and changed call paths pass their isolated checks.
 
+## Completed cut: bounded exact topology transaction
+
+`arcweft-project-loader::topology` now owns validated workspace/dependency
+resource IDs, immutable retained resource records, overlay and dependency
+seeds, fixed production limits, checked counters, and the all-or-nothing
+`LoadedProfileTopology` product. Loading is overlay-first and admits only the
+selected manifest, the exact typed `use` closure, declared character, adapter,
+Rust resources, and exact dependency seeds. It does not call `read_dir`,
+`collect_arcw_files`, or `project::load`.
+
+The selected source must map to the crate root. Module candidates are derived
+from typed import prefixes and probed at one exact `<segments>.arcw` path.
+Malformed resources, unresolved imports, duplicate logical IDs, duplicate
+paths, duplicate adapter IDs, and missing selected adapters are fatal. Rust
+metadata is applied only after every declared metadata document decodes. The
+frozen source revision and consumed-overlay IDs cover the complete retained
+resource registry.
+
+Direct topology tests cover overlay-only and overlay-over-disk manifests,
+unsaved import closure members, unrelated-file exclusion, `.awchar` and direct
+character paths, adapter/Rust authority, fatal partial-input cases, exact
+dependency ownership, duplicate rules, bounded parser diagnostics, byte limits,
+and retained-byte behavior after disk deletion. The production resource test
+admits exactly 4,095 resources and rejects the 4,096th.
+
+## Completed cut: topology-only registration input
+
+`ProfileRegistrationLoadRequest` and `load_profile_registration` construct
+registration facts solely from one `LoadedProfileTopology`. Every file-backed
+topology resource becomes an accepted file record with its retained ownership
+and access class. Character manifests are decoded again from retained documents
+without I/O, while registration receives exactly the final selected adapter
+after Rust metadata application. A direct test deletes the manifest, root
+module, and character file after topology loading and still completes semantic
+registration from the retained values.
+
+Validation for these cuts:
+
+- `cargo test -p arcweft-project-loader --lib`: 119 passed;
+- topology-focused direct tests: 27 passed;
+- `cargo check -p arcweft-project-loader --all-targets --all-features`: passed;
+- `cargo clippy -p arcweft-project-loader --all-targets --all-features --
+  -D warnings`: passed;
+- `cargo check -p arcweft-lsp --lib`: passed;
+- `cargo fmt --all`: passed;
+- structural audit: 0 errors and 128 threshold warnings; reports are under
+  `structure-audits/aw-ah-009-2-1-1-exact-topology-2026-07-16/`.
+
+Changed topology production modules are below the repository review threshold:
+the largest is `topology/loader.rs` at 37,124 bytes and 954 physical lines.
+The split keeps identity, model/error ownership, checked budgets, orchestration,
+and tests in separate responsibility modules.
+
 ## Remaining package work
 
 The following remain part of AW-AH-009.2.1.1 and are not completion claims for
 this cut:
 
-- immutable document snapshots and exact import-closure loading;
-- overlay-first topology resolution without directory enumeration in the LSP
-  request path;
+- immutable LSP document snapshots and manifest ancestor discovery;
+- joining the exact topology loader to the LSP rebuild snapshot;
 - workspace-keyed profile slots, input tokens, permits, and accepted-candidate
   identity rules;
 - begin, commit, fail, and capture transaction APIs;

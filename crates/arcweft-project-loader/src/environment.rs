@@ -32,7 +32,14 @@ use arcweft_launch::ResolvedLaunchProfile;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceDocumentIdentity};
 use thiserror::Error;
 
-use crate::{character_manifest, project::LoadedProject};
+use crate::{
+    character_manifest,
+    project::LoadedProject,
+    topology::{
+        LoadedDocumentAccess, LoadedDocumentOwnership, LoadedProfileTopology,
+        ProfileTopologyResourceKind,
+    },
+};
 
 /// Registration facts and the explicit file records that supplied them.
 #[derive(Clone, Debug)]
@@ -50,21 +57,6 @@ pub struct LoadedFileDocument {
     access: LoadedDocumentAccess,
 }
 
-/// Project ownership of one file-backed registration source.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LoadedDocumentOwnership {
-    Workspace,
-    Dependency,
-}
-
-/// Mutability observed for one file-backed registration source.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum LoadedDocumentAccess {
-    Writable,
-    ReadOnly,
-    Unknown,
-}
-
 /// Complete loader inputs for one semantic project world.
 pub struct ProjectLoadRequest<'a> {
     loaded: &'a LoadedProject,
@@ -72,6 +64,11 @@ pub struct ProjectLoadRequest<'a> {
     additional_documents: Vec<Arc<SourceDocument>>,
     external_facts: Vec<ExternalRegistrationFact>,
     adapter_manifests: Vec<AdapterManifest>,
+}
+
+/// Exact topology input for one profile registration transaction.
+pub struct ProfileRegistrationLoadRequest<'a> {
+    topology: &'a LoadedProfileTopology,
 }
 
 /// Failure while loading or checking a complete registration-fact set.
@@ -101,6 +98,11 @@ pub enum ProjectRegistrationLoadError {
     MissingRootModule,
     #[error("loaded character manifest `{path}` has no retained character declaration span")]
     MissingCharacterDeclaration { path: std::path::PathBuf },
+    #[error("loaded profile topology has no `{kind:?}` resource at `{path}`")]
+    MissingTopologyResource {
+        path: PathBuf,
+        kind: ProfileTopologyResourceKind,
+    },
     #[error("overlay document id occurs with conflicting exact identities")]
     ConflictingOverlay {
         id: SourceDocumentId,
@@ -136,6 +138,12 @@ impl<'a> ProjectLoadRequest<'a> {
         self.adapter_manifests
             .sort_by(|left, right| left.id().cmp(right.id()));
         self
+    }
+}
+
+impl<'a> ProfileRegistrationLoadRequest<'a> {
+    pub const fn new(topology: &'a LoadedProfileTopology) -> Self {
+        Self { topology }
     }
 }
 
@@ -216,6 +224,75 @@ pub fn load_project_registration(
     } else {
         vec![SourceBackedCharacterCatalog::try_new(
             request.loaded.manifest_document().identity().clone(),
+            sources.character_manifests,
+        )?]
+    };
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        sources.documents,
+        sources.external_facts,
+        catalogs,
+    )
+    .map_err(|report| ProjectRegistrationLoadError::Registration(Box::new(report)))?;
+    sources.file_documents.sort_by(|left, right| {
+        left.document
+            .identity()
+            .cmp(right.document.identity())
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    sources.file_documents.dedup();
+    Ok(LoadedProjectRegistration {
+        facts,
+        file_documents: sources.file_documents,
+    })
+}
+
+/// Builds profile registration facts solely from one immutable loaded topology.
+#[allow(
+    clippy::result_large_err,
+    reason = "loader failures retain typed resource and registration errors"
+)]
+pub fn load_profile_registration(
+    request: &ProfileRegistrationLoadRequest<'_>,
+) -> Result<LoadedProjectRegistration, ProjectRegistrationLoadError> {
+    let topology = request.topology;
+    let loaded = topology.loaded_project();
+    let root_document = loaded
+        .module_document(&CanonicalModulePath::crate_root())
+        .ok_or(ProjectRegistrationLoadError::MissingRootModule)?;
+    let package_name = loaded.sources().manifest().package().name().as_str();
+    let package = CallablePackageId::try_new(package_name)?;
+    let world = ProjectSymbolWorldId::try_new(
+        package,
+        root_document.identity().id().clone(),
+        topology.selected_profile().id().as_str(),
+    )?;
+
+    let mut sources = RegistrationSources {
+        documents: topology
+            .resources()
+            .map(|resource| Arc::clone(resource.document()))
+            .collect(),
+        file_documents: topology
+            .resources()
+            .map(|resource| LoadedFileDocument {
+                document: Arc::clone(resource.document()),
+                path: resource.path().to_path_buf(),
+                ownership: resource.ownership(),
+                access: resource.access(),
+            })
+            .collect(),
+        external_facts: Vec::new(),
+        character_manifests: Vec::new(),
+    };
+    append_adapter_sources(&mut sources, topology.registration_adapter_manifests())?;
+    append_topology_character_sources(&mut sources, topology)?;
+
+    let catalogs = if sources.character_manifests.is_empty() {
+        Vec::new()
+    } else {
+        vec![SourceBackedCharacterCatalog::try_new(
+            loaded.manifest_document().identity().clone(),
             sources.character_manifests,
         )?]
     };
@@ -340,6 +417,41 @@ fn append_adapter_sources(
     Ok(())
 }
 
+fn append_topology_character_sources(
+    sources: &mut RegistrationSources,
+    topology: &LoadedProfileTopology,
+) -> Result<(), ProjectRegistrationLoadError> {
+    for requested_path in topology.selected_profile().character_manifests() {
+        let path = character_manifest::manifest_path(requested_path);
+        let resource = topology
+            .resources()
+            .find(|resource| {
+                resource.kind() == &ProfileTopologyResourceKind::CharacterManifest
+                    && resource.path() == path
+            })
+            .ok_or_else(|| ProjectRegistrationLoadError::MissingTopologyResource {
+                path: path.clone(),
+                kind: ProfileTopologyResourceKind::CharacterManifest,
+            })?;
+        let loaded = character_manifest::decode(path.clone(), Arc::clone(resource.document()))
+            .map_err(|source| ProjectRegistrationLoadError::CharacterManifest {
+                path: path.clone(),
+                source: Box::new(source),
+            })?;
+        let (document, path, manifest) = loaded.into_parts();
+        let source = character_registration_source(
+            document,
+            path,
+            manifest,
+            resource.ownership(),
+            resource.access(),
+        )?;
+        sources.external_facts.push(source.external_fact);
+        sources.character_manifests.push(source.manifest);
+    }
+    Ok(())
+}
+
 fn append_character_sources(
     sources: &mut RegistrationSources,
     profile: &ResolvedLaunchProfile,
@@ -378,6 +490,27 @@ fn load_character_source(
             },
         )?;
     }
+    let file_document = loaded_file_document(
+        Arc::clone(&document),
+        path.clone(),
+        LoadedDocumentOwnership::Workspace,
+    );
+    character_registration_source(
+        document,
+        path,
+        manifest,
+        file_document.ownership,
+        file_document.access,
+    )
+}
+
+fn character_registration_source(
+    document: Arc<SourceDocument>,
+    path: PathBuf,
+    manifest: SourceBackedCharacterManifest,
+    ownership: LoadedDocumentOwnership,
+    access: LoadedDocumentAccess,
+) -> Result<CharacterRegistrationSource, ProjectRegistrationLoadError> {
     let owner = manifest.manifest().character().clone();
     let declaration = manifest
         .source_map()
@@ -411,11 +544,12 @@ fn load_character_source(
     )?;
     let external_fact =
         ExternalRegistrationFact::new(seed, RegisteredExternalOwner::Character(owner), declaration);
-    let file_document = loaded_file_document(
-        Arc::clone(&document),
+    let file_document = LoadedFileDocument {
+        document: Arc::clone(&document),
         path,
-        LoadedDocumentOwnership::Workspace,
-    );
+        ownership,
+        access,
+    };
     Ok(CharacterRegistrationSource {
         document,
         file_document,
@@ -455,8 +589,16 @@ fn loaded_file_document(
 
 #[cfg(test)]
 mod tests {
-    use super::{ProjectLoadRequest, load_project_registration};
-    use crate::project;
+    use super::{
+        ProfileRegistrationLoadRequest, ProjectLoadRequest, load_profile_registration,
+        load_project_registration,
+    };
+    use crate::{
+        project,
+        topology::{ProfileTopologyLoadRequest, ProfileTopologyOwnerId, load_profile_topology},
+    };
+    use arcweft_adapter_context::standard::standard_registry;
+    use arcweft_launch::LaunchProfileSelection;
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -521,6 +663,67 @@ character_manifests = ["characters/zundamon.awchar"]
             manifest_file.path(),
             fixture.path("characters/zundamon.awchar/character.awchar.json")
         );
+    }
+
+    #[test]
+    fn profile_registration_uses_only_retained_topology_documents() {
+        let fixture = TestProject::new("profile-registration-topology-only");
+        fixture.write(
+            "arcw.toml",
+            r#"
+[package]
+name = "profile-registration-topology-only"
+version = "0.1.0"
+
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+character_manifests = ["characters/zundamon.awchar"]
+"#,
+        );
+        fixture.write("src/main.arcw", "fn main() -> Unit { () }\n");
+        fixture.write(
+            "characters/zundamon.awchar/character.awchar.json",
+            include_str!(
+                "../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
+            ),
+        );
+        let manifest_path = fixture.path("arcw.toml");
+        let owner = ProfileTopologyOwnerId::workspace(
+            format!("file:///{}", slash(fixture.root())),
+            format!("file:///{}", slash(&manifest_path)),
+        )
+        .expect("workspace owner");
+        let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            owner,
+            LaunchProfileSelection::Explicit("dev"),
+            &[],
+            standard_registry(),
+        ))
+        .expect("topology loads");
+
+        fs::remove_file(&manifest_path).expect("manifest removed");
+        fs::remove_file(fixture.path("src/main.arcw")).expect("module removed");
+        fs::remove_file(fixture.path("characters/zundamon.awchar/character.awchar.json"))
+            .expect("character removed");
+
+        let registration =
+            load_profile_registration(&ProfileRegistrationLoadRequest::new(&topology))
+                .expect("registration uses retained documents");
+
+        assert_eq!(registration.file_documents().len(), 3);
+        assert_eq!(registration.facts().catalogs().count(), 1);
+        assert!(registration.file_documents().all(|file| {
+            topology.resources().any(|resource| {
+                resource.path() == file.path()
+                    && resource.document().identity() == file.document().identity()
+            })
+        }));
+    }
+
+    fn slash(path: &std::path::Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
     }
 
     struct TestProject {

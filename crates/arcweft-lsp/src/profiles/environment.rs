@@ -273,21 +273,21 @@ fn accepted_source_seeds(
                 Arc::clone(file.document()),
                 locator,
                 match file.ownership() {
-                    arcweft_project_loader::environment::LoadedDocumentOwnership::Workspace => {
+                    arcweft_project_loader::topology::LoadedDocumentOwnership::Workspace => {
                         AcceptedSourceOwnership::Workspace
                     }
-                    arcweft_project_loader::environment::LoadedDocumentOwnership::Dependency => {
+                    arcweft_project_loader::topology::LoadedDocumentOwnership::Dependency => {
                         AcceptedSourceOwnership::Dependency
                     }
                 },
                 match file.access() {
-                    arcweft_project_loader::environment::LoadedDocumentAccess::Writable => {
+                    arcweft_project_loader::topology::LoadedDocumentAccess::Writable => {
                         AcceptedSourceAccess::Writable
                     }
-                    arcweft_project_loader::environment::LoadedDocumentAccess::ReadOnly => {
+                    arcweft_project_loader::topology::LoadedDocumentAccess::ReadOnly => {
                         AcceptedSourceAccess::ReadOnly
                     }
-                    arcweft_project_loader::environment::LoadedDocumentAccess::Unknown => {
+                    arcweft_project_loader::topology::LoadedDocumentAccess::Unknown => {
                         AcceptedSourceAccess::Unknown
                     }
                 },

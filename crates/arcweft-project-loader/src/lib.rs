@@ -11,3 +11,4 @@ pub mod project;
 pub mod release_adapter;
 pub mod rust_metadata;
 pub mod source_document;
+pub mod topology;
