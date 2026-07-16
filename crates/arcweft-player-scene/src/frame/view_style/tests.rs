@@ -116,7 +116,7 @@ fn column_gap_repositions_each_direct_child_subtree_from_actual_bounds() {
             parent: None,
             element: Some(ViewElementKind::Column),
             keys: Vec::new(),
-            style: projected_style([length(ViewPropertyKind::Gap, 14_000)]),
+            style: projected_style([length(ViewPropertyKind::RowGap, 14_000)]),
         },
         ResolvedLayoutNode {
             id: first,

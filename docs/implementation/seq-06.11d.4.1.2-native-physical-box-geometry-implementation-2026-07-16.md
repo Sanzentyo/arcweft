@@ -50,6 +50,9 @@ not copied as an assumed production-quality overlay.
 - `Gap` expands to the `RowGap` and `ColumnGap` canonical slots before cascade
   resolution. The property owner exposes exhaustive supported,
   represented-only, and not-geometry metadata.
+- Player-scene container spacing now consumes only those canonical slots:
+  columns read `RowGap`, rows read `ColumnGap`, and no runtime `Gap` fallback
+  remains.
 - A dedicated `PHYSICAL_GEOMETRY` invalidation bit reaches layout, transform,
   clip, paint-outset, hit, focus, avoidance, and scroll domains as appropriate.
 - Player-scene and render-wgpu now read scale from the canonical physical box
@@ -57,6 +60,27 @@ not copied as an assumed production-quality overlay.
 
 No new dependency, compatibility layer, source gate, CSS/Takumi path, unsafe
 code, or serialized provisional geometry format was added.
+
+### Canonical player gap follow-up
+
+A narrow follow-up at parent revision
+`1aa5ad6d395ea2b8a643567c1b98e3ed765485be` removed the player-scene
+compatibility read of noncanonical `Gap`. The existing column fixture now
+provides the owner-projected `RowGap` value directly. This does not enter the
+unsettled retained-tree, cache, packet, or consumer reconciliation scope below;
+it only makes the existing spacing adapter obey the already implemented Style
+owner boundary.
+
+The changed Rust files remain responsibility-sized at the current checkout:
+
+- `frame/view_style/consumer.rs`: production consumer policy, 20,633 bytes and
+  541 physical LOC;
+- `frame/view_style/layout.rs`: production layout offset adaptation, 11,031
+  bytes and 330 physical LOC;
+- `frame/view_style/tests.rs`: unit tests, 40,570 bytes and 1,159 physical LOC.
+
+No crate dependency, public contract, feature, or serialization boundary
+changed in this follow-up.
 
 ## Package deviations and excluded production work
 
@@ -116,6 +140,24 @@ cargo fmt --all -- --check
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
+The canonical player-gap follow-up completed successfully with:
+
+```bash
+CARGO_INCREMENTAL=0 cargo test -p arcweft-player-scene --lib frame::view_style::tests::column_gap_repositions_each_direct_child_subtree_from_actual_bounds -- --exact
+CARGO_INCREMENTAL=0 cargo test -p arcweft-player-scene --lib frame::view_style::tests
+CARGO_INCREMENTAL=0 cargo test -p arcweft-view --test style_metadata --test logical_axis_cascade
+CARGO_INCREMENTAL=0 cargo check -p arcweft-player-scene --all-targets
+CARGO_INCREMENTAL=0 cargo clippy -p arcweft-player-scene --all-targets -- -D warnings
+cargo fmt --all -- --check
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+That dry-run structural audit scanned 2,959 files, including 1,459 Rust files
+and 681,657 physical Rust LOC. It reported 0 errors and 129 repository-wide
+warnings. The largest Rust source remains the explicitly generated Unicode
+vertical-orientation table; none of the changed files crosses an audit warning
+threshold.
+
 The final structural audit scanned 1,416 Rust files and 665,304 physical Rust
 LOC. It reported 0 errors and 128 pre-existing or repository-wide warnings. An
 earlier run showed that this change had pushed `style/property.rs` above its
@@ -129,14 +171,15 @@ in:
 - [public type duplicates](structure-audits/native-physical-box-geometry-2026-07-16/public_type_duplicates.csv)
 - [violations](structure-audits/native-physical-box-geometry-2026-07-16/violations.md)
 
-## Validation gap unrelated to this change
+## Validation prerequisite
 
-The combined player-scene/render-wgpu all-target check cannot currently compile
-because the checkout has no `web/assets/noto-sans-jp-vf.ttf`, while existing
-test and player font owners use `include_bytes!` at that path. The failure
-occurs before geometry tests and was not repaired by adding a generated or
-placeholder font. Bundle all-target clippy and render-wgpu library clippy pass;
-player-scene all-target validation remains blocked by that existing asset gap.
+`web/assets/noto-sans-jp-vf.ttf` is intentionally ignored but is required by
+existing `include_bytes!` owners. The dedicated workspace initially lacked it,
+so an early exact-test compile stopped before running the test. A hard link to
+the main checkout's existing 9,590,844-byte font was installed as an ignored
+local validation prerequisite; no generated or placeholder font and no
+repository diff was introduced. The player-scene validations listed above then
+passed.
 
 ## Remaining TODO
 

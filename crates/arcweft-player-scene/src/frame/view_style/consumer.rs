@@ -313,7 +313,7 @@ const fn container_gap_property(element: ViewElementKind, property: ViewProperty
     matches!(element, ViewElementKind::Column | ViewElementKind::Row)
         && matches!(
             property,
-            ViewPropertyKind::Gap | ViewPropertyKind::RowGap | ViewPropertyKind::ColumnGap
+            ViewPropertyKind::RowGap | ViewPropertyKind::ColumnGap
         )
 }
 

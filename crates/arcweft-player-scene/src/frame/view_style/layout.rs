@@ -181,11 +181,7 @@ fn container_gap(node: &ResolvedLayoutNode) -> Option<(LayoutAxis, i32)> {
         | ViewElementKind::TextArea
         | ViewElementKind::SecureField => return None,
     };
-    let value = node
-        .style
-        .layout()
-        .value(axis_property)
-        .or_else(|| node.style.layout().value(ViewPropertyKind::Gap));
+    let value = node.style.layout().value(axis_property);
     match value {
         Some(ViewSpecifiedValue::Length { value }) => Some((axis, value.value())),
         _ => None,
