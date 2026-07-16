@@ -185,6 +185,16 @@ fn classify_statement(
     item_kind: SyntaxKind,
 ) -> SyntaxKind {
     let start = parser.cursor();
+    if matches!(item_kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem) {
+        return match parser.current_text() {
+            Some("let") => SyntaxKind::LetStatement,
+            Some("assert") => SyntaxKind::AssertionStatement,
+            _ if item_kind == SyntaxKind::ProofItem && expression_is_call(parser, start, end) => {
+                SyntaxKind::ProofCallStatement
+            }
+            _ => SyntaxKind::ErrorStatement,
+        };
+    }
     match parser.current_text() {
         Some("assert") => SyntaxKind::AssertionStatement,
         Some("let") => classify_let_statement(parser, end),
@@ -225,6 +235,32 @@ fn classify_statement(
         _ if expression_statement_start(parser) => SyntaxKind::ExpressionStatement,
         _ => SyntaxKind::ErrorStatement,
     }
+}
+
+#[cfg(test)]
+pub(super) fn parse_test_statement_block(
+    document: &arcweft_source::SourceDocument,
+) -> Result<crate::grammar::build::GrammarBuild, crate::grammar::build::GrammarBuildError> {
+    let tokens = super::lexer::DocumentLexer::new(document.text()).lex();
+    let mut events = Vec::with_capacity(tokens.len() + 8);
+    events.push(SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root));
+    {
+        let mut parser = ShadowDocumentParser::new(document.text(), &tokens, &mut events);
+        emit_braced_block(
+            &mut parser,
+            SyntaxKind::FunctionItem,
+            SyntaxKind::Block,
+            SyntaxRole::Body,
+            "syntax.statement.missing_block_close",
+        );
+        while parser.bump().is_some() {}
+    }
+    events.push(SyntaxEvent::token(
+        SyntaxKind::EofToken,
+        SourceRange::new(document.text().len(), document.text().len()),
+    ));
+    events.push(SyntaxEvent::FinishNode);
+    crate::grammar::build::build_grammar(document, &events)
 }
 
 fn classify_let_statement(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> SyntaxKind {

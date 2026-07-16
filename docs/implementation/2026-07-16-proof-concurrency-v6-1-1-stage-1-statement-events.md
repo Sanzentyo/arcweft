@@ -29,9 +29,11 @@ inventory from the one document cursor:
 
 Predicate/proof blocks and nested control blocks reuse one braced-block event
 authority. Every token is emitted once in source order, and the validated green
-text remains byte-for-byte equal to the source. Context legality remains a
-later semantic concern: the syntax grammar retains assertion and control nodes
-inside predicate/proof blocks so sema can issue the final context diagnostic.
+text remains byte-for-byte equal to the source. The shared statement inventory
+is exercised through a generic block. Predicate/proof blocks admit only their
+final let/assertion/proof-call/error surfaces; other terminated statement
+families become ordinary `ErrorStatement` recovery. Assertion mode and proof
+call resolution remain later semantic context checks.
 
 No removed form, historical kind, spelling-specific diagnostic, source gate,
 or compatibility shim was added.
@@ -61,7 +63,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 git diff --check
 ```
 
-The library suite contains 156 passing tests. The combined landing validation
+The library suite contains 157 passing tests. The combined landing validation
 completed successfully in 94.4 seconds.
 
 ## Structure
@@ -79,6 +81,9 @@ warning names an in-scope file.
 
 The statement responsibility module remains inside the package's explicit
 450-800 LOC target.
+
+The predicate/proof context correction and its current metrics are recorded in
+`2026-07-16-proof-concurrency-v6-1-1-stage-1-statement-context-correction.md`.
 
 ## Remaining boundary
 

@@ -1,6 +1,7 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::document::parse_shadow_document;
+use super::statement::parse_test_statement_block;
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
 
@@ -166,8 +167,8 @@ fn nested_type_and_pattern_families_have_independent_events() {
 
 #[test]
 fn shared_statement_families_keep_typed_identity_and_children() {
-    let source = "proof statements(x: Int) { let y: Int = x; target = y; 'line <- y; return y; out 'exit y; goto next; defer cleanup(); yield y; signal y; wait(y); on ready => lemma(y); close y; select y; break 'loop y; continue 'loop; lemma(y); y; }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let source = "{ let y: Int = x; target = y; 'line <- y; return y; out 'exit y; goto next; defer cleanup(); yield y; signal y; wait(y); on ready => lemma(y); close y; select y; break 'loop y; continue 'loop; lemma(y); y; }\n";
+    let built = parse_test_statement_block(&document(source)).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -191,7 +192,6 @@ fn shared_statement_families_keep_typed_identity_and_children() {
         SyntaxKind::SelectStatement,
         SyntaxKind::BreakStatement,
         SyntaxKind::ContinueStatement,
-        SyntaxKind::ProofCallStatement,
         SyntaxKind::ExpressionStatement,
     ] {
         assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
@@ -201,8 +201,8 @@ fn shared_statement_families_keep_typed_identity_and_children() {
 
 #[test]
 fn control_statements_own_conditions_patterns_blocks_and_match_arms() {
-    let source = "proof control(xs: List<Int>, ready: Bool) { if ready { lemma(1); } else { lemma(0); }; while ready { break; }; while let .Some(x) = next when ready { continue; }; for item in xs { lemma(item); }; loop { break 1; }; match next { .Some(x) when ready => lemma(x), .None => { return 0; } }; thread worker { yield 1; }; defer { close resource; }; unsafe lifetime @unsafe.test { lemma(1); }; }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let source = "{ if ready { lemma(1); } else { lemma(0); }; while ready { break; }; while let .Some(x) = next when ready { continue; }; for item in xs { lemma(item); }; loop { break 1; }; match next { .Some(x) when ready => lemma(x), .None => { return 0; } }; thread worker { yield 1; }; defer { close resource; }; unsafe lifetime @unsafe.test { lemma(1); }; }\n";
+    let built = parse_test_statement_block(&document(source)).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -238,8 +238,8 @@ fn control_statements_own_conditions_patterns_blocks_and_match_arms() {
 
 #[test]
 fn let_statement_variants_share_pattern_and_initializer_authority() {
-    let source = "proof lets(value: Option<Int>) { let .Some(x) = value else { return; }; let picked = choice @choice.test { }; let scoped = scope named { 1 }; let repeated = loop { break 1; }; let waited = try await task(); let action = receive action(@action.ok); }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let source = "{ let .Some(x) = value else { return; }; let picked = choice @choice.test { }; let scoped = scope named { 1 }; let repeated = loop { break 1; }; let waited = try await task(); let action = receive action(@action.ok); }\n";
+    let built = parse_test_statement_block(&document(source)).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -264,8 +264,8 @@ fn let_statement_variants_share_pattern_and_initializer_authority() {
 
 #[test]
 fn malformed_statement_is_typed_without_consuming_following_sibling() {
-    let source = "proof recovered() { ???; lemma(); }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let source = "{ ???; lemma(); }\n";
+    let built = parse_test_statement_block(&document(source)).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -273,7 +273,32 @@ fn malformed_statement_is_typed_without_consuming_following_sibling() {
         .map(UnattachedGrammarEntry::kind)
         .collect::<Vec<_>>();
     assert!(kinds.contains(&SyntaxKind::ErrorStatement));
+    assert!(kinds.contains(&SyntaxKind::ExpressionStatement));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn predicate_and_proof_blocks_reject_non_contract_statement_families() {
+    let source = "predicate p(x: Bool) { if x { return; }; x }\nproof q() { let picked = choice @choice.test { }; while true { break; }; lemma(); }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+    assert!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::ErrorStatement)
+            .count()
+            >= 2
+    );
+    assert!(kinds.contains(&SyntaxKind::LetStatement));
     assert!(kinds.contains(&SyntaxKind::ProofCallStatement));
+    assert!(!kinds.contains(&SyntaxKind::IfStatement));
+    assert!(!kinds.contains(&SyntaxKind::WhileStatement));
+    assert!(!kinds.contains(&SyntaxKind::LetChoiceStatement));
     assert_eq!(built.green().to_string(), source);
 }
 
