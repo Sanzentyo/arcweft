@@ -32,7 +32,7 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
         "type Count = Int\n",
         "res actor: Character {}\n",
         "entry start {}\n",
-        "extern capability audio\n",
+        "extern capability audio {}\n",
         "extern mod native\n",
         "dialogue defaults {}\n",
         "test @test.smoke scenario {}\n",

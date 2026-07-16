@@ -38,6 +38,9 @@ pub mod dialogue;
 mod dialogue_expression_tests;
 mod document;
 mod expression;
+mod extern_capability_grammar;
+#[cfg(test)]
+mod extern_capability_grammar_tests;
 pub mod flow;
 pub mod fragment;
 mod function_grammar;

@@ -256,6 +256,7 @@ fn structured_declaration_after_outer_prefixes(
             | SyntaxKind::TraitItem
             | SyntaxKind::ImplItem
             | SyntaxKind::ResourceDeclarationItem
+            | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
     )
@@ -528,6 +529,13 @@ fn emit_declaration_item(
             );
         }
         SyntaxKind::ResourceDeclarationItem => super::resource_grammar::emit_declaration(
+            source,
+            tokens,
+            SyntaxRole::Element(ordinal),
+            events,
+            budget,
+        ),
+        SyntaxKind::ExternCapabilityItem => super::extern_capability_grammar::emit_declaration(
             source,
             tokens,
             SyntaxRole::Element(ordinal),
