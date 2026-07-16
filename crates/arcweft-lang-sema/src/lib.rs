@@ -6,6 +6,7 @@
 
 pub mod assertion;
 pub mod borrow;
+pub mod callable;
 pub mod canonicalization;
 pub mod character_definition;
 pub mod check;

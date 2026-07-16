@@ -1,0 +1,76 @@
+//! Typed callable identities, schemas, catalogs, and semantic query results.
+//!
+//! This module owns the common in-memory contract used by accepted-world
+//! registration, type checking, and semantic call queries. It intentionally
+//! exposes immutable read models while keeping catalog construction and
+//! resolver mutation crate-private.
+
+mod arguments;
+mod catalog;
+mod dialogue;
+mod error;
+mod facts;
+mod identity;
+mod limits;
+mod presentation;
+mod publication;
+mod resolver;
+mod schema;
+
+pub use arguments::CallableParameterCoordinate;
+pub use catalog::{
+    CallableRecord, CatalogCallableEntry, EnvironmentCallableCatalog,
+    EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
+    ProjectCallableCatalog, RegisteredCallableCatalog, RegisteredProjectModuleCallables,
+};
+pub use dialogue::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
+pub use error::{
+    BuiltinIdentityError, CallTargetFactError, CallableBuildLimitError, CallableCatalogBuildError,
+    CallableCatalogError, CallableDiagnosticCode, CallableDocumentationError,
+    CallableFamilyInvariantCode, CallableIdentityError, CallableIndexKind, CallablePathError,
+    CallablePublicationError, CallableQueryLimitError, CallableScalarError, CallableScalarKind,
+    CallableSchemaError, CallableSourceError, CorruptCallableCatalogReason, ResolveCallError,
+    RustProvenanceError, RustProvenanceField, SemanticSignatureError,
+};
+pub use facts::{
+    CallPoison, CallTargetFact, CallTargetFactMode, CallTargetFacts, CallableDiagnostic,
+    CallableDiagnosticRelated, CallableDiagnosticSeverity, CallableDiagnosticSubject,
+    CheckedCallArgumentFact, CheckedCallArgumentSlotFact, SemanticParameter,
+    SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp, SemanticSignatureIndex,
+};
+pub use identity::{
+    AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentIndex,
+    CallableArgumentSlotIndex, CallableAuthorityRank, CallableCandidateId, CallableFamily,
+    CallableGroupIndex, CallableLookupKey, CallableName, CallableOverloadIndex,
+    CallableParameterIndex, CallablePath, CallableProviderId, CapabilityCallableId,
+    CapacityMethodId, CollectionMethodId, CurriedCallableId, DataLastCallableId, DomainMethodId,
+    DropCallableId, EnumVariantSignatureId, EnvironmentCallableId, EnvironmentCallableKind,
+    EnvironmentCallableOwner, FloatWidth, FunctionValueOrdinal, FunctionValueSignatureId,
+    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily,
+    LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId, MathCallableId,
+    OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId, ProjectCallablePath,
+    ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId, ReceiverMethodKey,
+    ResultConstructorKind, RustItemPath, SpeakerCallableId, StandardEnvironmentId,
+    StdFloatCallableId, StdFloatOperation, TraitCallableId, TraitCallableSource,
+    TraitImplementationIndex, VectorDimensions,
+};
+pub use limits::{CallableLimits, PRODUCTION_CALLABLE_LIMITS, SignatureWorkReport};
+pub use presentation::{PresentationCallableId, PresentationSchemaContext};
+pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
+pub use resolver::{
+    CallableInstantiation, CharacterOwnerResolution, CharacterOwnerSource, NonCallableSource,
+    NonEmptyResolvedCandidates, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
+    ResolvedCharacterOwner, ResolvedFunctionValue, ResolvedNonCallableTarget, SignatureOrigin,
+    UnknownCallKind, UnknownCallTarget,
+};
+pub use schema::{
+    CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableGroupKind,
+    CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
+    CallableParameterType, CallableSignatureSchema, CallableSource, CallableValidator,
+    DocumentationProvenance, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
+    SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+};
+
+#[cfg(test)]
+mod tests;
