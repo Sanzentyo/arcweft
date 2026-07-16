@@ -31,6 +31,7 @@ pub mod await_;
 pub mod choice;
 pub mod control_flow;
 pub mod dialogue;
+mod document;
 pub mod flow;
 pub mod fragment;
 pub mod headers;
