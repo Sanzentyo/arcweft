@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::symbol::CallableDeclarationId;
+use arcweft_lang_hir::symbol::{CallableDeclarationId, ProjectSymbolTargetId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use thiserror::Error;
 
@@ -76,8 +76,8 @@ pub enum BuiltinIdentityError {
 pub enum CallableIdentityError {
     #[error(transparent)]
     Scalar(#[from] CallableScalarError),
-    #[error("callable {base:?} has no group {group:?}")]
-    MissingGroup {
+    #[error("callable {base:?} cannot use group {group:?} as a curried next group")]
+    InvalidCurriedGroup {
         base: Box<CallableCandidateId>,
         group: CallableGroupIndex,
     },
@@ -429,6 +429,8 @@ pub enum CallableCatalogBuildError {
         first: ProjectNameBinding,
         second: ProjectNameBinding,
     },
+    #[error("project binding target {target:?} has no registered semantic type")]
+    MissingProjectBindingType { target: ProjectSymbolTargetId },
     #[error("project module {module:?} has no source")]
     MissingProjectModuleSource { module: CanonicalModulePath },
     #[error("project callable identity mismatch for {declaration:?}")]
@@ -454,6 +456,7 @@ impl CallableCatalogBuildError {
             | Self::DuplicateProviderOverload { .. }
             | Self::NonContiguousOverloads { .. }
             | Self::ProjectBindingCollision { .. }
+            | Self::MissingProjectBindingType { .. }
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
             | Self::InvalidRecord(_)

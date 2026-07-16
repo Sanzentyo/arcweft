@@ -248,18 +248,18 @@ fn rust_metadata_overlay_applies_before_base_environment() {
     );
     project.write("src/main.arcw", ROOT_SOURCE);
     project.write("adapters/custom.toml", &adapter_manifest("custom"));
-    project.write("metadata/custom.json", &rust_manifest_json("disk.export"));
+    project.write("metadata/custom.json", &rust_manifest_json("disk_export"));
     let overlays = vec![project.overlay(
         "metadata/custom.json",
-        &rust_manifest_json("overlay.export"),
+        &rust_manifest_json("overlay_export"),
     )];
 
     let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
 
     assert_eq!(topology.adapter().rust_functions().len(), 1);
     assert_eq!(
-        topology.adapter().rust_functions()[0].name(),
-        "overlay.export"
+        topology.adapter().rust_functions()[0].path().segments()[0].as_str(),
+        "overlay_export"
     );
 }
 
@@ -276,7 +276,7 @@ fn declared_rust_failure_has_no_partial_application() {
     );
     project.write("src/main.arcw", ROOT_SOURCE);
     project.write("adapters/custom.toml", &adapter_manifest("custom"));
-    project.write("metadata/first.json", &rust_manifest_json("first.export"));
+    project.write("metadata/first.json", &rust_manifest_json("first_export"));
     project.write("metadata/second.json", "{ malformed");
 
     let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);

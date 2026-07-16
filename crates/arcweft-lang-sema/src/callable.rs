@@ -6,6 +6,7 @@
 //! resolver mutation crate-private.
 
 mod arguments;
+mod builder;
 mod catalog;
 mod dialogue;
 mod error;
@@ -18,6 +19,7 @@ mod resolver;
 mod schema;
 
 pub use arguments::CallableParameterCoordinate;
+pub(crate) use builder::RegisteredCallableCatalogBuilder;
 pub use catalog::{
     CallableRecord, CatalogCallableEntry, EnvironmentCallableCatalog,
     EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,

@@ -1,13 +1,20 @@
 //! Multi-module HIR container and transitional crate-level link view.
 
-use crate::model::{HirFlowItem, HirModule};
+use crate::callable_source::{
+    HirCallableEffects, HirCallableParameterSource, HirCallableSignatureSource, HirEffectName,
+};
+use crate::model::{HirFlowItem, HirFunction, HirModule};
 use crate::symbol::{
-    CallablePackageId, CallablePackageIdError, ProjectExternalDeclarations,
+    CallableDeclarationId, CallablePackageId, CallablePackageIdError, ProjectExternalDeclarations,
     ProjectSymbolLinkOutput, ProjectSymbolLinkReport, ProjectSymbolTable,
 };
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::ast::{
+    flow::ContractClause,
+    module_path::{CanonicalModulePath, ModulePathRoot},
+    symbol_path::SymbolPath,
+};
 use arcweft_source::SourceDocumentIdentity;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Range};
 use thiserror::Error;
 
 /// One canonical module and its independently lowered HIR.
@@ -24,7 +31,14 @@ pub struct HirProject {
     package: CallablePackageId,
     modules: BTreeMap<CanonicalModulePath, HirModule>,
     sources: BTreeMap<CanonicalModulePath, SourceDocumentIdentity>,
+    callable_signature_sources: Vec<HirCallableSignatureSource>,
+    callable_signature_ranges: BTreeMap<CanonicalModulePath, Range<usize>>,
 }
+
+type CallableSignaturePublication = (
+    Vec<HirCallableSignatureSource>,
+    BTreeMap<CanonicalModulePath, Range<usize>>,
+);
 
 /// Invalid module-preserving HIR project.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -35,6 +49,12 @@ pub enum HirProjectError {
     DuplicateModule { module: CanonicalModulePath },
     #[error("HIR project does not contain the crate root module")]
     MissingRootModule,
+    #[error("HIR callable `{name}` in module `{module}` has invalid source publication: {reason}")]
+    InvalidCallableSource {
+        module: CanonicalModulePath,
+        name: String,
+        reason: String,
+    },
 }
 
 /// Invalid binding between one canonical module and its lowered HIR source.
@@ -116,10 +136,14 @@ impl HirProject {
         if !module_map.contains_key(&CanonicalModulePath::crate_root()) {
             return Err(HirProjectError::MissingRootModule);
         }
+        let (callable_signature_sources, callable_signature_ranges) =
+            build_callable_signature_sources(&package, &module_map)?;
         Ok(Self {
             package,
             modules: module_map,
             sources,
+            callable_signature_sources,
+            callable_signature_ranges,
         })
     }
 
@@ -137,6 +161,22 @@ impl HirProject {
 
     pub fn source(&self, path: &CanonicalModulePath) -> Option<&SourceDocumentIdentity> {
         self.sources.get(path)
+    }
+
+    /// Callable signatures in canonical module order and source declaration order.
+    pub fn callable_signature_sources(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &HirCallableSignatureSource> {
+        self.callable_signature_sources.iter()
+    }
+
+    /// Callable signatures owned by one canonical module, including empty modules.
+    pub fn module_callable_signature_sources(
+        &self,
+        module: &CanonicalModulePath,
+    ) -> Option<&[HirCallableSignatureSource]> {
+        let range = self.callable_signature_ranges.get(module)?.clone();
+        self.callable_signature_sources.get(range)
     }
 
     pub(crate) fn source_identities(
@@ -178,6 +218,91 @@ impl HirProject {
         }
         linked
     }
+}
+
+fn build_callable_signature_sources(
+    package: &CallablePackageId,
+    modules: &BTreeMap<CanonicalModulePath, HirModule>,
+) -> Result<CallableSignaturePublication, HirProjectError> {
+    let mut records = Vec::new();
+    let mut ranges = BTreeMap::new();
+    for (module, hir) in modules {
+        let start = records.len();
+        for function in hir.functions() {
+            records.push(build_callable_signature_source(
+                package, module, hir, function,
+            )?);
+        }
+        ranges.insert(module.clone(), start..records.len());
+    }
+    Ok((records, ranges))
+}
+
+fn build_callable_signature_source(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    hir: &HirModule,
+    function: &HirFunction,
+) -> Result<HirCallableSignatureSource, HirProjectError> {
+    let invalid = |reason: String| HirProjectError::InvalidCallableSource {
+        module: module.clone(),
+        name: function.name().to_owned(),
+        reason,
+    };
+    let declaration = CallableDeclarationId::for_function(package, function)
+        .map_err(|error| invalid(error.to_string()))?;
+    let path = SymbolPath::try_new(
+        ModulePathRoot::ImplicitCrate,
+        module.segments().to_vec(),
+        function.name(),
+    )
+    .map_err(|error| invalid(error.to_string()))?;
+    let source = function.signature_source();
+    let span = |range| {
+        hir.source_span(range)
+            .ok_or_else(|| invalid("source range is not bound to the lowered document".to_owned()))
+    };
+    let parameter_spans = source
+        .parameters()
+        .iter()
+        .map(|parameter| {
+            Ok(HirCallableParameterSource::new(
+                parameter.group(),
+                parameter.parameter(),
+                span(parameter.whole())?,
+                parameter.name().map(&span).transpose()?,
+                parameter.ty().map(&span).transpose()?,
+                parameter.default().map(&span).transpose()?,
+            ))
+        })
+        .collect::<Result<Vec<_>, HirProjectError>>()?;
+    let mut declared_effects = Vec::new();
+    for contract in function.contracts() {
+        let ContractClause::Effects(effects) = contract else {
+            continue;
+        };
+        for effect in effects {
+            let label = effect.dotted_selector_label().ok_or_else(|| {
+                invalid("declared effect is not a dotted capability path".to_owned())
+            })?;
+            declared_effects
+                .push(HirEffectName::try_new(label).map_err(|error| invalid(error.to_string()))?);
+        }
+    }
+    Ok(HirCallableSignatureSource::new(
+        declaration,
+        package.clone(),
+        module.clone(),
+        path,
+        function.signature().clone(),
+        function.documentation().cloned(),
+        span(*function.range())?,
+        span(source.name())?,
+        span(source.signature())?,
+        source.result().map(&span).transpose()?,
+        parameter_spans,
+        HirCallableEffects::new(declared_effects),
+    ))
 }
 
 impl HirModule {
@@ -578,5 +703,87 @@ mod tests {
             linked.style_patches()[3].declarations()[0].value().source(),
             "3px"
         );
+    }
+
+    #[test]
+    fn callable_signature_publication_preserves_exact_typed_source_rows() {
+        let root_source = r#"/// Summarizes a curried request.
+pub fn summarize(first: i32 = 7)(rest: ...String) -> String
+effects { agent.observe }
+{
+    "done"
+}
+"#;
+        let (root_document, root) = lower_bound("callable-root", root_source);
+        let empty_source = "";
+        let (empty_document, empty) = lower_bound("callable-empty", empty_source);
+        let empty_path =
+            CanonicalModulePath::crate_root().join(ModuleSegment::new("empty").unwrap());
+        let project = HirProject::new(
+            "game",
+            [
+                HirProjectModule::try_new(
+                    empty_path.clone(),
+                    empty_document.identity().clone(),
+                    empty,
+                )
+                .unwrap(),
+                HirProjectModule::try_new(
+                    CanonicalModulePath::crate_root(),
+                    root_document.identity().clone(),
+                    root,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert!(
+            project
+                .module_callable_signature_sources(&empty_path)
+                .is_some_and(<[crate::callable_source::HirCallableSignatureSource]>::is_empty)
+        );
+        let records = project.callable_signature_sources().collect::<Vec<_>>();
+        assert_eq!(records.len(), 1);
+        let record = records[0];
+        assert_eq!(record.declaration().name(), "summarize");
+        assert_eq!(
+            record.documentation().unwrap().text(),
+            "Summarizes a curried request."
+        );
+        assert_eq!(source_slice(root_source, record.name_span()), "summarize");
+        assert_eq!(
+            source_slice(root_source, record.result_span().unwrap()),
+            "String"
+        );
+        assert_eq!(record.signature().param_groups().len(), 2);
+        assert_eq!(record.parameter_spans().len(), 2);
+        assert_eq!(
+            source_slice(root_source, record.parameter_spans()[0].whole()),
+            "first: i32 = 7"
+        );
+        assert_eq!(
+            source_slice(root_source, record.parameter_spans()[0].name().unwrap()),
+            "first"
+        );
+        assert_eq!(
+            source_slice(root_source, record.parameter_spans()[0].ty().unwrap()),
+            "i32"
+        );
+        assert_eq!(
+            source_slice(root_source, record.parameter_spans()[0].default().unwrap()),
+            "7"
+        );
+        assert_eq!(
+            source_slice(root_source, record.parameter_spans()[1].whole()),
+            "rest: ...String"
+        );
+        assert_eq!(record.parameter_spans()[1].group(), 1);
+        assert_eq!(record.parameter_spans()[1].parameter(), 0);
+        assert_eq!(record.effects().declared()[0].as_str(), "agent.observe");
+    }
+
+    fn source_slice<'a>(source: &'a str, span: &arcweft_source::SourceSpan) -> &'a str {
+        &source[span.range().start()..span.range().end()]
     }
 }

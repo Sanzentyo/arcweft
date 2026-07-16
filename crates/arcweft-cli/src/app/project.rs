@@ -570,7 +570,12 @@ pub(in crate::app) fn semantic_context_for_selection(
             rust_metadata_for_selection(selection)
         })?;
         for rust_manifest in manifests {
-            manifest = manifest.with_rust_manifest(&rust_manifest);
+            manifest = manifest
+                .try_with_rust_manifest(&rust_manifest)
+                .map_err(|error| {
+                    eprintln!("error: invalid Rust callable metadata: {error}");
+                    ExitCode::FAILURE
+                })?;
         }
     }
     let env = if adapter_override.is_some() || selection.profile().is_some() {

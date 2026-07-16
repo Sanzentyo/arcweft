@@ -53,7 +53,7 @@ return_type = "Unit"
         metadata_hash: None,
     })
     .with_function(ArcweftRustFunction {
-        name: "custom.score".to_owned(),
+        name: "custom_score".to_owned(),
         rust_path: "custom_adapter::score".to_owned(),
         params: vec![ArcweftRustParam {
             name: "value".to_owned(),
@@ -77,20 +77,18 @@ return_type = "Unit"
         profile.diagnostics()
     );
     assert_eq!(profile.adapter().id().as_str(), "custom-echo");
-    assert!(
-        profile
-            .adapter()
-            .functions()
+    assert!(profile.adapter().functions().iter().any(|function| {
+        function
+            .path()
+            .segments()
             .iter()
-            .any(|function| function.name() == "custom.echo")
-    );
-    assert!(
-        profile
-            .adapter()
-            .rust_functions()
-            .iter()
-            .any(|function| function.name() == "custom.score")
-    );
+            .map(arcweft_adapter_context::callable::AdapterCallableName::as_str)
+            .eq(["custom", "echo"])
+    }));
+    assert!(profile.adapter().rust_functions().iter().any(|function| {
+        function.path().segments().len() == 1
+            && function.path().segments()[0].as_str() == "custom_score"
+    }));
 }
 
 #[test]

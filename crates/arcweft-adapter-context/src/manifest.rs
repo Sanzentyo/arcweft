@@ -5,7 +5,7 @@ use arcweft_lang_hir::symbol::{
     ExternalDeclarationSeed, ExternalDeclarationSeedError, ProjectDirectBinding,
 };
 #[cfg(feature = "sema")]
-use arcweft_lang_sema::env::{EffectCapability, FunctionParam, FunctionSignature, TypeCheckEnv};
+use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv};
 #[cfg(feature = "sema")]
 use arcweft_lang_sema::registration::{
     EnvironmentBindingId, EnvironmentBindingIdError, ExternalRegistrationFact,
@@ -22,8 +22,8 @@ use arcweft_lang_syntax::ast::{
 #[cfg(feature = "sema")]
 use arcweft_rust_abi::ArcweftRustTypeKind;
 use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustParam, ArcweftRustTypeDecl,
-    ArcweftRustTypeRef,
+    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
+    ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeRef,
 };
 #[cfg(feature = "sema")]
 use arcweft_source::{
@@ -33,6 +33,14 @@ use arcweft_source::{
 #[cfg(feature = "sema")]
 use std::{fmt::Write as _, sync::Arc};
 use thiserror::Error;
+
+pub use crate::callable::{
+    AdapterCallableGroupIndex, AdapterCallableModelError, AdapterCallableName,
+    AdapterCallableOverloadIndex, AdapterCallableParameterIndex, AdapterCallablePath,
+    AdapterFreeCallableKind, AdapterFunctionParam, AdapterFunctionSignature, AdapterParameterGroup,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterToolingDoc,
+    AdapterToolingParameterDoc, AdapterToolingSubject,
+};
 
 /// Stable adapter identifier used by launch profiles and tooling.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -103,20 +111,6 @@ pub enum AdapterTypeKind {
     Named(String),
 }
 
-/// One adapter callable parameter.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdapterFunctionParam {
-    name: String,
-    ty: AdapterTypeKind,
-}
-
-/// Adapter callable signature independent of Arcweft semantic internals.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdapterFunctionSignature {
-    return_type: AdapterTypeKind,
-    params: Vec<AdapterFunctionParam>,
-}
-
 /// A symbol injected by a host adapter into the checked source environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterSymbol {
@@ -128,14 +122,17 @@ pub struct AdapterSymbol {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterMethod {
     receiver: AdapterTypeKind,
-    name: String,
+    name: AdapterCallableName,
+    overload: AdapterCallableOverloadIndex,
     signature: AdapterFunctionSignature,
+    effects: Vec<AdapterEffectCapability>,
 }
 
 /// A free function injected by a host adapter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterFunction {
-    name: String,
+    path: AdapterCallablePath,
+    overload: AdapterCallableOverloadIndex,
     signature: AdapterFunctionSignature,
     effects: Vec<AdapterEffectCapability>,
 }
@@ -158,20 +155,16 @@ pub struct AdapterHostCall {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AdapterHostCallId(String);
 
-/// Tooling-facing docs supplied by an adapter manifest.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdapterToolingDoc {
-    subject: String,
-    docs: String,
-}
-
 /// A Rust function export injected into type checking and LSP tooling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterRustFunction {
-    package: String,
-    name: String,
+    package: ArcweftRustPackage,
+    path: AdapterCallablePath,
+    overload: AdapterCallableOverloadIndex,
     rust_path: String,
     signature: AdapterFunctionSignature,
+    purity: ArcweftRustPurity,
+    effects: Vec<AdapterEffectCapability>,
 }
 
 /// A Rust ADT export injected into tooling metadata.
@@ -281,54 +274,6 @@ impl AdapterTypeKind {
     }
 }
 
-impl AdapterFunctionParam {
-    /// Creates a required adapter function parameter.
-    pub fn required(name: impl Into<String>, ty: AdapterTypeKind) -> Self {
-        Self {
-            name: name.into(),
-            ty,
-        }
-    }
-
-    /// Parameter name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Parameter type.
-    pub const fn ty(&self) -> &AdapterTypeKind {
-        &self.ty
-    }
-}
-
-impl AdapterFunctionSignature {
-    /// Creates a signature from a return type and ordered parameters.
-    pub fn new(
-        return_type: AdapterTypeKind,
-        params: impl IntoIterator<Item = AdapterFunctionParam>,
-    ) -> Self {
-        Self {
-            return_type,
-            params: params.into_iter().collect(),
-        }
-    }
-
-    /// Creates a signature without parameters.
-    pub fn return_only(return_type: AdapterTypeKind) -> Self {
-        Self::new(return_type, [])
-    }
-
-    /// Return type.
-    pub const fn return_type(&self) -> &AdapterTypeKind {
-        &self.return_type
-    }
-
-    /// Ordered parameters.
-    pub fn params(&self) -> &[AdapterFunctionParam] {
-        &self.params
-    }
-}
-
 impl AdapterSymbol {
     /// Creates a typed adapter symbol.
     pub fn new(name: impl Into<String>, ty: AdapterTypeKind) -> Self {
@@ -357,19 +302,39 @@ impl AdapterMethod {
 
     /// Arcweft-visible method name.
     pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    /// Typed Arcweft-visible method name.
+    pub const fn callable_name(&self) -> &AdapterCallableName {
         &self.name
+    }
+
+    /// Typed overload position within this provider and method key.
+    pub const fn overload(&self) -> AdapterCallableOverloadIndex {
+        self.overload
     }
 
     /// Method signature.
     pub const fn signature(&self) -> &AdapterFunctionSignature {
         &self.signature
     }
+
+    /// Effects required when calling the method.
+    pub fn effects(&self) -> &[AdapterEffectCapability] {
+        &self.effects
+    }
 }
 
 impl AdapterFunction {
-    /// Arcweft-visible function name.
-    pub fn name(&self) -> &str {
-        &self.name
+    /// Arcweft-visible typed function path.
+    pub const fn path(&self) -> &AdapterCallablePath {
+        &self.path
+    }
+
+    /// Typed overload position within this provider and function path.
+    pub const fn overload(&self) -> AdapterCallableOverloadIndex {
+        self.overload
     }
 
     /// Full callable signature.
@@ -408,7 +373,7 @@ impl AdapterHostCall {
     ) -> Self {
         Self {
             id: AdapterHostCallId::new(id),
-            signature: AdapterFunctionSignature::return_only(AdapterTypeKind::Unit),
+            signature: empty_adapter_signature(AdapterTypeKind::Unit),
             effects: effects.into_iter().collect(),
         }
     }
@@ -454,35 +419,20 @@ impl AdapterHostCallId {
     }
 }
 
-impl AdapterToolingDoc {
-    /// Creates one tooling documentation entry.
-    pub fn new(subject: impl Into<String>, docs: impl Into<String>) -> Self {
-        Self {
-            subject: subject.into(),
-            docs: docs.into(),
-        }
-    }
-
-    /// Documented adapter item.
-    pub fn subject(&self) -> &str {
-        &self.subject
-    }
-
-    /// Documentation body.
-    pub fn docs(&self) -> &str {
-        &self.docs
-    }
-}
-
 impl AdapterRustFunction {
     /// Rust adapter package that exported this function.
-    pub fn package(&self) -> &str {
+    pub const fn package(&self) -> &ArcweftRustPackage {
         &self.package
     }
 
     /// Arcweft-visible function path.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn path(&self) -> &AdapterCallablePath {
+        &self.path
+    }
+
+    /// Typed overload position within this provider and function path.
+    pub const fn overload(&self) -> AdapterCallableOverloadIndex {
+        self.overload
     }
 
     /// Rust path recorded in the adapter metadata.
@@ -493,6 +443,16 @@ impl AdapterRustFunction {
     /// Full callable signature.
     pub const fn signature(&self) -> &AdapterFunctionSignature {
         &self.signature
+    }
+
+    /// Purity class preserved from Rust ABI metadata.
+    pub const fn purity(&self) -> ArcweftRustPurity {
+        self.purity
+    }
+
+    /// Effects declared by Rust ABI metadata.
+    pub fn effects(&self) -> &[AdapterEffectCapability] {
+        &self.effects
     }
 }
 
@@ -602,34 +562,22 @@ impl AdapterManifest {
         self
     }
 
-    /// Adds one injected method.
-    #[must_use]
-    pub fn with_method(
-        mut self,
-        receiver: AdapterTypeKind,
-        name: impl Into<String>,
-        return_type: AdapterTypeKind,
-    ) -> Self {
-        self.methods.push(AdapterMethod {
-            receiver,
-            name: name.into(),
-            signature: AdapterFunctionSignature::return_only(return_type),
-        });
-        self
-    }
-
     /// Adds one injected method with full parameter signature.
     #[must_use]
     pub fn with_method_signature(
         mut self,
         receiver: AdapterTypeKind,
-        name: impl Into<String>,
+        name: AdapterCallableName,
+        overload: AdapterCallableOverloadIndex,
         signature: AdapterFunctionSignature,
+        effects: impl IntoIterator<Item = AdapterEffectCapability>,
     ) -> Self {
         self.methods.push(AdapterMethod {
             receiver,
-            name: name.into(),
+            name,
+            overload,
             signature,
+            effects: effects.into_iter().collect(),
         });
         self
     }
@@ -638,12 +586,14 @@ impl AdapterManifest {
     #[must_use]
     pub fn with_function_signature(
         mut self,
-        name: impl Into<String>,
+        path: AdapterCallablePath,
+        overload: AdapterCallableOverloadIndex,
         signature: AdapterFunctionSignature,
         effects: impl IntoIterator<Item = AdapterEffectCapability>,
     ) -> Self {
         self.functions.push(AdapterFunction {
-            name: name.into(),
+            path,
+            overload,
             signature,
             effects: effects.into_iter().collect(),
         });
@@ -672,21 +622,21 @@ impl AdapterManifest {
     }
 
     /// Adds Rust ABI metadata exported by an adapter crate.
-    #[must_use]
-    pub fn with_rust_manifest(mut self, manifest: &ArcweftRustManifest) -> Self {
-        let package = manifest.package.name.clone();
+    pub fn try_with_rust_manifest(
+        mut self,
+        manifest: &ArcweftRustManifest,
+    ) -> Result<Self, AdapterCallableModelError> {
+        let package = manifest.package.clone();
         self.rust_types
             .extend(manifest.types.iter().cloned().map(|decl| AdapterRustType {
-                package: package.clone(),
+                package: package.name.clone(),
                 decl,
             }));
-        self.rust_functions.extend(
-            manifest
-                .functions
-                .iter()
-                .map(|function| adapter_rust_function(manifest.package.name.clone(), function)),
-        );
-        self
+        for (overload, function) in manifest.functions.iter().enumerate() {
+            self.rust_functions
+                .push(adapter_rust_function(package.clone(), overload, function)?);
+        }
+        Ok(self)
     }
 
     /// Applies this adapter manifest to an existing checker environment.
@@ -695,34 +645,8 @@ impl AdapterManifest {
         let env = self.symbols.iter().fold(env, |env, symbol| {
             env.with_symbol(symbol.name(), symbol.ty().to_sema_type_kind())
         });
-        let env = self.methods.iter().fold(env, |env, method| {
-            env.with_method_signature(
-                method.receiver.to_sema_type_kind(),
-                method.name.clone(),
-                method.signature.to_sema_function_signature(),
-            )
-        });
-        let env = self.functions.iter().fold(env, |env, function| {
-            let effects = function
-                .effects()
-                .iter()
-                .map(AdapterEffectCapability::to_sema_effect_capability)
-                .collect::<Vec<_>>();
-            let signature = function.signature.to_sema_function_signature();
-            env.with_function_signature(function.name.clone(), signature.clone())
-                .with_function_effects(function.name.clone(), effects)
-        });
         let env = self.effects.iter().fold(env, |env, effect| {
             env.with_capability(effect.to_sema_effect_capability())
-        });
-        let env = self.rust_functions.iter().fold(env, |env, function| {
-            let signature = function.signature.to_sema_function_signature();
-            env.with_function_signature(function.name.clone(), signature.clone())
-                .with_rust_function_export(
-                    function.package.clone(),
-                    function.name.clone(),
-                    signature,
-                )
         });
         self.rust_types.iter().fold(env, apply_rust_type_to_env)
     }
@@ -863,25 +787,59 @@ impl AdapterRegistry {
 }
 
 fn adapter_rust_function(
-    package: impl Into<String>,
+    package: ArcweftRustPackage,
+    overload: usize,
     function: &ArcweftRustFunction,
-) -> AdapterRustFunction {
-    AdapterRustFunction {
-        package: package.into(),
-        name: function.name.clone(),
+) -> Result<AdapterRustFunction, AdapterCallableModelError> {
+    Ok(AdapterRustFunction {
+        package,
+        path: AdapterCallablePath::single(AdapterCallableName::try_new(function.name.clone())?),
+        overload: AdapterCallableOverloadIndex::try_from_usize(overload)?,
         rust_path: function.rust_path.clone(),
-        signature: AdapterFunctionSignature::new(
+        signature: adapter_function_signature(
+            function
+                .params
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| adapter_function_param(index, parameter))
+                .collect::<Result<Vec<_>, _>>()?,
             rust_type_ref_to_adapter_type_kind(&function.return_type),
-            function.params.iter().map(adapter_function_param),
-        ),
-    }
+        )?,
+        purity: function.purity,
+        effects: function
+            .effects
+            .iter()
+            .cloned()
+            .map(AdapterEffectCapability::new)
+            .collect(),
+    })
 }
 
-fn adapter_function_param(param: &ArcweftRustParam) -> AdapterFunctionParam {
-    AdapterFunctionParam::required(
-        param.name.clone(),
-        rust_type_ref_to_adapter_type_kind(&param.ty),
+fn adapter_function_param(
+    index: usize,
+    parameter: &ArcweftRustParam,
+) -> Result<AdapterFunctionParam, AdapterCallableModelError> {
+    AdapterFunctionParam::try_new(
+        AdapterCallableParameterIndex::try_from_usize(index)?,
+        Some(AdapterCallableName::try_new(parameter.name.clone())?),
+        rust_type_ref_to_adapter_type_kind(&parameter.ty),
+        AdapterParameterPassing::PositionalOrNamed,
+        AdapterParameterPresence::Required,
     )
+}
+
+fn adapter_function_signature(
+    parameters: Vec<AdapterFunctionParam>,
+    return_type: AdapterTypeKind,
+) -> Result<AdapterFunctionSignature, AdapterCallableModelError> {
+    let group =
+        AdapterParameterGroup::try_new(AdapterCallableGroupIndex::try_from_usize(0)?, parameters)?;
+    AdapterFunctionSignature::try_new(vec![group], return_type)
+}
+
+fn empty_adapter_signature(return_type: AdapterTypeKind) -> AdapterFunctionSignature {
+    adapter_function_signature(Vec::new(), return_type)
+        .expect("empty initial adapter signature is structurally valid")
 }
 
 #[cfg(feature = "sema")]
@@ -992,27 +950,6 @@ impl AdapterTypeKind {
 }
 
 #[cfg(feature = "sema")]
-impl AdapterFunctionParam {
-    /// Converts this parameter into the semantic checker parameter model.
-    pub fn to_sema_function_param(&self) -> FunctionParam {
-        FunctionParam::required(self.name.clone(), self.ty.to_sema_type_kind())
-    }
-}
-
-#[cfg(feature = "sema")]
-impl AdapterFunctionSignature {
-    /// Converts this signature into the semantic checker signature model.
-    pub fn to_sema_function_signature(&self) -> FunctionSignature {
-        FunctionSignature::new(
-            self.return_type.to_sema_type_kind(),
-            self.params
-                .iter()
-                .map(AdapterFunctionParam::to_sema_function_param),
-        )
-    }
-}
-
-#[cfg(feature = "sema")]
 impl AdapterEffectCapability {
     /// Converts this capability into the semantic checker capability model.
     pub fn to_sema_effect_capability(&self) -> EffectCapability {
@@ -1047,32 +984,25 @@ mod tests {
         let manifest = AdapterManifest::new("fixture", "Fixture")
             .with_effect(AdapterEffectCapability::new("fs.read"))
             .with_function_signature(
-                "adapter.read_text",
-                AdapterFunctionSignature::new(
-                    AdapterTypeKind::String,
-                    [AdapterFunctionParam::required(
-                        "path",
-                        AdapterTypeKind::String,
-                    )],
-                ),
+                adapter_path(["adapter", "read_text"]),
+                adapter_overload(0),
+                adapter_signature([("path", AdapterTypeKind::String)], AdapterTypeKind::String),
                 [AdapterEffectCapability::new("fs.read")],
             );
         let env = manifest.apply_to_env(TypeCheckEnv::new());
 
         assert!(env.has_capability("fs.read"));
-        assert_eq!(
-            env.function_effects("adapter.read_text").map(|effects| {
-                effects
-                    .iter()
-                    .map(EffectCapability::as_str)
-                    .collect::<Vec<_>>()
-            }),
-            Some(vec!["fs.read"])
-        );
         assert!(
             env.available_effects().is_none(),
             "surface application must not select target availability"
         );
+        let publication = manifest
+            .try_callable_publication(
+                crate::publication::AdapterManifestSource::SelectedAdapter,
+                &arcweft_lang_sema::callable::PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("typed callable publication succeeds");
+        assert_eq!(publication.records().len(), 1);
 
         let target_env = manifest.apply_to_target_env(TypeCheckEnv::new());
         assert!(
@@ -1080,6 +1010,171 @@ mod tests {
                 .available_effects()
                 .is_some_and(|effects| effects.contains(&EffectCapability::new("fs.read")))
         );
+    }
+
+    #[cfg(feature = "sema")]
+    #[test]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one end-to-end publication test keeps the grouped signature, effects, and documentation assertions on the same record"
+    )]
+    fn callable_publication_preserves_groups_defaults_rest_effects_and_docs() {
+        use arcweft_lang_sema::{
+            callable::{
+                AdapterPackageId, CallableLookupKey, CallableParameterPassing,
+                CallableParameterPresence, DocumentationProvenance, EnvironmentCallableOwner,
+                SpreadArgumentPolicy,
+            },
+            effects::EffectId,
+        };
+
+        let path = adapter_path(["network", "request"]);
+        let overload = adapter_overload(0);
+        let first = AdapterFunctionParam::try_new(
+            AdapterCallableParameterIndex::try_from_usize(0).unwrap(),
+            Some(AdapterCallableName::try_new("url").unwrap()),
+            AdapterTypeKind::String,
+            AdapterParameterPassing::PositionalOrNamed,
+            AdapterParameterPresence::Defaulted,
+        )
+        .unwrap();
+        let rest = AdapterFunctionParam::try_new(
+            AdapterCallableParameterIndex::try_from_usize(0).unwrap(),
+            Some(AdapterCallableName::try_new("headers").unwrap()),
+            AdapterTypeKind::String,
+            AdapterParameterPassing::RestNamed,
+            AdapterParameterPresence::Required,
+        )
+        .unwrap();
+        let signature = AdapterFunctionSignature::try_new(
+            vec![
+                AdapterParameterGroup::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+                    vec![first],
+                )
+                .unwrap(),
+                AdapterParameterGroup::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(1).unwrap(),
+                    vec![rest],
+                )
+                .unwrap(),
+            ],
+            AdapterTypeKind::String,
+        )
+        .unwrap();
+        let subject = AdapterToolingSubject::Free {
+            kind: AdapterFreeCallableKind::Function,
+            path: path.clone(),
+            overload,
+        };
+        let documentation = AdapterToolingDoc::try_new(
+            subject,
+            Some("Sends a request.".to_owned()),
+            Some("Uses the selected host adapter.".to_owned()),
+            vec![
+                AdapterToolingParameterDoc::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(1).unwrap(),
+                    AdapterCallableParameterIndex::try_from_usize(0).unwrap(),
+                    "Additional named headers.",
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+        let publication = AdapterManifest::new("custom-network", "Custom Network")
+            .with_function_signature(
+                path,
+                overload,
+                signature,
+                [AdapterEffectCapability::new("network.request")],
+            )
+            .with_tooling_doc(documentation)
+            .try_callable_publication(
+                crate::publication::AdapterManifestSource::SelectedAdapter,
+                &arcweft_lang_sema::callable::PRODUCTION_CALLABLE_LIMITS,
+            )
+            .unwrap();
+
+        assert_eq!(
+            publication.owner(),
+            &EnvironmentCallableOwner::Adapter(
+                AdapterPackageId::try_new("custom-network").unwrap()
+            )
+        );
+        let record = &publication.records()[0];
+        let CallableLookupKey::Free(path) = record.key() else {
+            panic!("free function publication must retain a typed path");
+        };
+        assert_eq!(
+            path.segments()
+                .iter()
+                .map(arcweft_lang_sema::callable::CallableName::as_str)
+                .collect::<Vec<_>>(),
+            ["network", "request"]
+        );
+        assert_eq!(record.schema().groups().len(), 2);
+        assert_eq!(
+            record.schema().groups()[0].parameters()[0].presence(),
+            CallableParameterPresence::Defaulted
+        );
+        assert_eq!(
+            record.schema().groups()[1].parameters()[0].passing(),
+            CallableParameterPassing::RestNamed
+        );
+        assert_eq!(
+            record.schema().argument_policy().spread(),
+            SpreadArgumentPolicy::TypedRest
+        );
+        assert!(
+            record
+                .schema()
+                .effects()
+                .declared()
+                .concrete()
+                .contains(&EffectId::parse("network.request").unwrap())
+        );
+        assert_eq!(record.documentation().summary(), Some("Sends a request."));
+        assert_eq!(
+            record.documentation().parameter(
+                arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(1).unwrap(),
+                arcweft_lang_sema::callable::CallableParameterIndex::try_from_usize(0).unwrap(),
+            ),
+            Some("Additional named headers.")
+        );
+        assert!(matches!(
+            record.documentation().provenance(),
+            DocumentationProvenance::AdapterTooling { package }
+                if package.as_str() == "custom-network"
+        ));
+    }
+
+    #[cfg(feature = "sema")]
+    #[test]
+    fn callable_publication_rejects_reserved_and_mismatched_standard_owners() {
+        use crate::publication::{AdapterCallablePublicationError, AdapterManifestSource};
+        use arcweft_lang_sema::callable::{PRODUCTION_CALLABLE_LIMITS, StandardEnvironmentId};
+
+        let reserved = AdapterManifest::new(crate::standard::SANS_IO_ADAPTER_ID, "Reserved")
+            .try_callable_publication(
+                AdapterManifestSource::SelectedAdapter,
+                &PRODUCTION_CALLABLE_LIMITS,
+            );
+        assert!(matches!(
+            reserved,
+            Err(AdapterCallablePublicationError::ReservedStandardIdClaimed { .. })
+        ));
+
+        let mismatch = AdapterManifest::new("not-sans-io", "Mismatch").try_callable_publication(
+            AdapterManifestSource::Standard(StandardEnvironmentId::SansIo),
+            &PRODUCTION_CALLABLE_LIMITS,
+        );
+        assert!(matches!(
+            mismatch,
+            Err(AdapterCallablePublicationError::StandardIdMismatch {
+                source: StandardEnvironmentId::SansIo,
+                ..
+            })
+        ));
     }
 
     #[cfg(feature = "sema")]
@@ -1145,7 +1240,7 @@ mod tests {
             },
         })
         .with_function(ArcweftRustFunction {
-            name: "mini_games.truck.score_to_rank".to_owned(),
+            name: "score_to_rank".to_owned(),
             rust_path: "truck_game::score_to_rank".to_owned(),
             params: vec![ArcweftRustParam {
                 name: "score".to_owned(),
@@ -1158,18 +1253,22 @@ mod tests {
             effects: Vec::new(),
         });
 
-        let context = AdapterManifest::new("fixture", "Fixture").with_rust_manifest(&manifest);
+        let context = AdapterManifest::new("fixture", "Fixture")
+            .try_with_rust_manifest(&manifest)
+            .expect("Rust callable metadata is typed");
 
         assert_eq!(context.rust_functions().len(), 1);
-        assert_eq!(context.rust_functions()[0].signature().params().len(), 1);
+        assert_eq!(
+            context.rust_functions()[0].signature().groups()[0]
+                .parameters()
+                .len(),
+            1
+        );
         assert_eq!(
             context.rust_functions()[0].signature(),
-            &AdapterFunctionSignature::new(
-                AdapterTypeKind::Named("Rank".to_owned()),
-                [AdapterFunctionParam::required(
-                    "score",
-                    AdapterTypeKind::I32
-                )]
+            &adapter_signature(
+                [("score", AdapterTypeKind::I32)],
+                AdapterTypeKind::Named("Rank".to_owned())
             )
         );
     }
@@ -1202,7 +1301,7 @@ mod tests {
             },
         })
         .with_function(ArcweftRustFunction {
-            name: "mini_games.truck.score_to_rank".to_owned(),
+            name: "score_to_rank".to_owned(),
             rust_path: "truck_game::score_to_rank".to_owned(),
             params: vec![ArcweftRustParam {
                 name: "score".to_owned(),
@@ -1216,30 +1315,62 @@ mod tests {
         });
 
         let env = AdapterManifest::new("fixture", "Fixture")
-            .with_rust_manifest(&manifest)
+            .try_with_rust_manifest(&manifest)
+            .expect("Rust callable metadata is typed")
             .apply_to_env(TypeCheckEnv::new());
 
         assert_eq!(
             env,
             TypeCheckEnv::new()
-                .with_function_signature(
-                    "mini_games.truck.score_to_rank",
-                    FunctionSignature::new(
-                        TypeKind::Named("Rank".to_owned()),
-                        [FunctionParam::required("score", TypeKind::I32)]
-                    )
-                )
-                .with_rust_function_export(
-                    "truck_game",
-                    "mini_games.truck.score_to_rank",
-                    FunctionSignature::new(
-                        TypeKind::Named("Rank".to_owned()),
-                        [FunctionParam::required("score", TypeKind::I32)]
-                    )
-                )
                 .with_rust_type_export("truck_game", "Rank")
                 .try_with_enum_variants(TypeKind::Named("Rank".to_owned()), ["Bronze"])
-                .expect("non-character Rust enum variants are accepted")
+                .expect("non-character Rust enum variants are accepted"),
+            "only non-callable Rust type metadata stays on the existing environment route"
         );
+    }
+
+    fn adapter_overload(value: usize) -> AdapterCallableOverloadIndex {
+        AdapterCallableOverloadIndex::try_from_usize(value).expect("test overload fits")
+    }
+
+    fn adapter_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
+        AdapterCallablePath::try_new(
+            segments
+                .into_iter()
+                .map(|segment| AdapterCallableName::try_new(segment).expect("valid test segment")),
+        )
+        .expect("test path is non-empty")
+    }
+
+    fn adapter_signature<const N: usize>(
+        parameters: [(&str, AdapterTypeKind); N],
+        result: AdapterTypeKind,
+    ) -> AdapterFunctionSignature {
+        let parameters = parameters
+            .into_iter()
+            .enumerate()
+            .map(|(index, (name, ty))| {
+                AdapterFunctionParam::try_new(
+                    AdapterCallableParameterIndex::try_from_usize(index)
+                        .expect("test parameter index fits"),
+                    Some(AdapterCallableName::try_new(name).expect("valid test parameter name")),
+                    ty,
+                    AdapterParameterPassing::PositionalOrNamed,
+                    AdapterParameterPresence::Required,
+                )
+                .expect("test parameter is valid")
+            })
+            .collect();
+        AdapterFunctionSignature::try_new(
+            vec![
+                AdapterParameterGroup::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(0).expect("initial group index fits"),
+                    parameters,
+                )
+                .expect("test initial group is valid"),
+            ],
+            result,
+        )
+        .expect("test signature is valid")
     }
 }

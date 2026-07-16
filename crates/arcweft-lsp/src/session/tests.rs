@@ -1559,7 +1559,7 @@ rust_metadata = ["target/arcweft/quest.json"]
     assert!(
         !completion_labels(&mut session, uri.clone())
             .iter()
-            .any(|item| item.label == "quest.evaluate")
+            .any(|item| item.label == "quest_evaluate")
     );
 
     project.write(
@@ -1580,7 +1580,7 @@ rust_metadata = ["target/arcweft/quest.json"]
     assert!(
         completion_labels(&mut session, uri)
             .iter()
-            .any(|item| item.label == "quest.evaluate")
+            .any(|item| item.label == "quest_evaluate")
     );
 }
 
@@ -1612,7 +1612,7 @@ rust_metadata = ["target/arcweft/quest.json"]
             .expect("metadata json"),
     );
     let source =
-        "flow @.main main {\n    let result = quest.evaluate\n    let ty = PlayerStats\n}\n";
+        "flow @.main main {\n    let result = quest_evaluate\n    let ty = PlayerStats\n}\n";
     project.write("src/main.arcw", source);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
@@ -1628,13 +1628,13 @@ rust_metadata = ["target/arcweft/quest.json"]
     }));
     let evaluate = completions
         .iter()
-        .find(|item| item.label == "quest.evaluate")
-        .expect("quest.evaluate completion");
+        .find(|item| item.label == "quest_evaluate")
+        .expect("quest_evaluate completion");
     assert!(
         evaluate
             .detail
             .as_deref()
-            .is_some_and(|detail| detail == "quest.evaluate(stats: PlayerStats) -> String")
+            .is_some_and(|detail| detail == "quest_evaluate(stats: PlayerStats) -> String")
     );
 
     let hover = hover_text(&mut session, uri, source, "PlayerStats");
@@ -1669,16 +1669,16 @@ rust_metadata = ["target/arcweft/quest.json"]
             .to_json_pretty()
             .expect("metadata json"),
     );
-    let source = "flow @.main main {\n    let result = quest.evaluate\n}\n";
+    let source = "flow @.main main {\n    let result = quest_evaluate\n}\n";
     project.write("src/main.arcw", source);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), source);
 
-    let signature = signature_help(&mut session, uri, source, "quest.evaluate");
+    let signature = signature_help(&mut session, uri, source, "quest_evaluate");
 
     let first = signature.signatures.first().expect("signature item");
-    assert_eq!(first.label, "quest.evaluate(stats: PlayerStats) -> String");
+    assert_eq!(first.label, "quest_evaluate(stats: PlayerStats) -> String");
     assert_eq!(first.parameters.as_ref().expect("parameters").len(), 1);
 }
 
@@ -2328,7 +2328,7 @@ fn quest_rust_manifest() -> ArcweftRustManifest {
         },
     })
     .with_function(ArcweftRustFunction {
-        name: "quest.evaluate".to_owned(),
+        name: "quest_evaluate".to_owned(),
         rust_path: "quest_logic::evaluate".to_owned(),
         params: vec![ArcweftRustParam {
             name: "stats".to_owned(),

@@ -61,7 +61,7 @@ pub fn decode(
     Ok(LoadedAdapterManifest {
         document,
         path,
-        manifest: file.into_manifest(),
+        manifest: file.into_manifest().map_err(LoadError::Parse)?,
     })
 }
 

@@ -289,7 +289,12 @@ impl<'a> TopologyBuilder<'a> {
         }
         for loaded in &rust_metadata_sources {
             self.budget.charge_work(1)?;
-            adapter = adapter.with_rust_manifest(loaded.manifest());
+            adapter = adapter
+                .try_with_rust_manifest(loaded.manifest())
+                .map_err(|source| ProfileTopologyLoadError::RustCallableModel {
+                    path: loaded.path().to_path_buf(),
+                    source,
+                })?;
         }
         Ok((adapter_sources, adapter, rust_metadata_sources))
     }

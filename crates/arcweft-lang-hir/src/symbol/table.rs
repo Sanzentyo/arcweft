@@ -309,6 +309,23 @@ impl ProjectSymbolTable {
         })
     }
 
+    /// Every typed binding installed in a project module scope.
+    ///
+    /// The iterator is deterministic by module, spelling, and target order.
+    /// Multiple source sites for the same target remain coalesced into one row;
+    /// callers consume the binding identity rather than its diagnostic sites.
+    pub fn scope_bindings(
+        &self,
+    ) -> impl Iterator<Item = (&CanonicalModulePath, &str, &ProjectSymbolTargetId)> {
+        self.scopes.iter().flat_map(|(module, scope)| {
+            scope.iter().flat_map(move |(spelling, bindings)| {
+                bindings
+                    .iter()
+                    .map(move |binding| (module, spelling.as_str(), &binding.target))
+            })
+        })
+    }
+
     /// Returns every deterministic scope collision that contains `expected`.
     ///
     /// This is a domain-neutral projection used by registrars that require a

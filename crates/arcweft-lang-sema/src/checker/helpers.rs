@@ -1008,7 +1008,7 @@ pub(super) fn function_param_local_type_with_generics(
     }
 }
 
-pub(super) fn signature_generic_names(signature: &FnSignature) -> HashSet<String> {
+pub(crate) fn signature_generic_names(signature: &FnSignature) -> HashSet<String> {
     signature
         .generic_params()
         .iter()
@@ -1017,7 +1017,7 @@ pub(super) fn signature_generic_names(signature: &FnSignature) -> HashSet<String
         .collect()
 }
 
-pub(super) fn type_ref_kind_with_generics(
+pub(crate) fn type_ref_kind_with_generics(
     ty: &TypeRef,
     generic_names: &HashSet<String>,
 ) -> TypeKind {

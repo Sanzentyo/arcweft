@@ -213,8 +213,10 @@ impl<'a> CstLineEvents<'a> {
             );
         }
         let head = self.collect_virtual_fragment(start, index, 0, open);
+        let head_range = self.source_range_for_virtual_fragment(start, index, 0, open);
         let body = self.collect_virtual_fragment(start, index, open + 1, close);
         CstBlockEvent::new(trim_cow(head), body, end, true, index)
+            .with_head_range(head_range)
             .with_body_range(self.source_range_for_virtual_fragment(start, index, open + 1, close))
             .with_body_line_range(self.full_line_range_for_virtual_fragment(
                 start,
@@ -776,6 +778,7 @@ impl<'a> CstBlockEvent<'a> {
     ) -> Self {
         Self {
             head,
+            head_range: None,
             body,
             body_range: None,
             end,
@@ -783,6 +786,11 @@ impl<'a> CstBlockEvent<'a> {
             next_index,
             body_line_range: None,
         }
+    }
+
+    fn with_head_range(mut self, head_range: Option<Range<usize>>) -> Self {
+        self.head_range = head_range;
+        self
     }
 
     fn with_body_range(mut self, body_range: Option<Range<usize>>) -> Self {

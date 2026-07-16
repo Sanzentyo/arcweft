@@ -1,8 +1,12 @@
 //! Data codecs for project-local adapter manifests.
 
 use crate::manifest::{
-    AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
-    AdapterManifest, AdapterToolingDoc, AdapterTypeKind,
+    AdapterCallableGroupIndex, AdapterCallableModelError, AdapterCallableName,
+    AdapterCallableOverloadIndex, AdapterCallableParameterIndex, AdapterCallablePath,
+    AdapterEffectCapability, AdapterFreeCallableKind, AdapterFunctionParam,
+    AdapterFunctionSignature, AdapterHostCall, AdapterManifest, AdapterParameterGroup,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterToolingDoc, AdapterToolingSubject,
+    AdapterTypeKind,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -43,6 +47,10 @@ struct AdapterMethodFile {
     return_type: String,
     #[serde(default)]
     params: Vec<AdapterParamFile>,
+    #[serde(default)]
+    effects: Vec<String>,
+    #[serde(default)]
+    overload: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -53,6 +61,8 @@ struct AdapterFunctionFile {
     params: Vec<AdapterParamFile>,
     #[serde(default)]
     effects: Vec<String>,
+    #[serde(default)]
+    overload: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -86,6 +96,8 @@ pub enum AdapterManifestCodecError {
     Toml(#[from] toml::de::Error),
     #[error("unsupported adapter manifest schema {found}, expected {expected}")]
     UnsupportedSchema { found: u32, expected: u32 },
+    #[error(transparent)]
+    Model(#[from] AdapterCallableModelError),
 }
 
 impl AdapterManifestFile {
@@ -109,56 +121,52 @@ impl AdapterManifestFile {
     }
 
     /// Converts file data into the typed manifest used by sema and tooling.
-    pub fn into_manifest(self) -> AdapterManifest {
-        let manifest = AdapterManifest::new(self.id, self.display_name);
-        let manifest = self.symbols.into_iter().fold(manifest, |manifest, symbol| {
-            manifest.with_symbol(symbol.name, parse_adapter_type_kind_label(&symbol.ty))
-        });
-        let manifest = self.methods.into_iter().fold(manifest, |manifest, method| {
-            let signature = AdapterFunctionSignature::new(
-                parse_adapter_type_kind_label(&method.return_type),
-                method.params.into_iter().map(function_param_from_file),
-            );
-            manifest.with_method_signature(
+    pub fn into_manifest(self) -> Result<AdapterManifest, AdapterManifestCodecError> {
+        let mut manifest = AdapterManifest::new(self.id, self.display_name);
+        for symbol in self.symbols {
+            manifest = manifest.with_symbol(symbol.name, parse_adapter_type_kind_label(&symbol.ty));
+        }
+        for method in self.methods {
+            let signature = signature_from_file(&method.return_type, method.params)?;
+            manifest = manifest.with_method_signature(
                 parse_adapter_type_kind_label(&method.receiver),
-                method.name,
+                AdapterCallableName::try_new(method.name)?,
+                AdapterCallableOverloadIndex::try_from_usize(usize::from(method.overload))?,
                 signature,
-            )
-        });
-        let manifest = self
-            .functions
-            .into_iter()
-            .fold(manifest, |manifest, function| {
-                manifest.with_function_signature(
-                    function.name,
-                    AdapterFunctionSignature::new(
-                        parse_adapter_type_kind_label(&function.return_type),
-                        function.params.into_iter().map(function_param_from_file),
-                    ),
-                    effect_capabilities(function.effects),
-                )
-            });
-        let manifest = self.effects.into_iter().fold(manifest, |manifest, effect| {
-            manifest.with_effect(AdapterEffectCapability::new(effect))
-        });
-        let manifest = self
-            .host_calls
-            .into_iter()
-            .fold(manifest, |manifest, host_call| {
-                manifest.with_host_call(AdapterHostCall::with_signature(
-                    host_call.id,
-                    AdapterFunctionSignature::new(
-                        parse_adapter_type_kind_label(&host_call.return_type),
-                        host_call.params.into_iter().map(function_param_from_file),
-                    ),
-                    effect_capabilities(host_call.effects),
-                ))
-            });
-        self.tooling_docs
-            .into_iter()
-            .fold(manifest, |manifest, doc| {
-                manifest.with_tooling_doc(AdapterToolingDoc::new(doc.subject, doc.docs))
-            })
+                effect_capabilities(method.effects),
+            );
+        }
+        for function in self.functions {
+            manifest = manifest.with_function_signature(
+                callable_path_from_file(&function.name)?,
+                AdapterCallableOverloadIndex::try_from_usize(usize::from(function.overload))?,
+                signature_from_file(&function.return_type, function.params)?,
+                effect_capabilities(function.effects),
+            );
+        }
+        for effect in self.effects {
+            manifest = manifest.with_effect(AdapterEffectCapability::new(effect));
+        }
+        for host_call in self.host_calls {
+            manifest = manifest.with_host_call(AdapterHostCall::with_signature(
+                host_call.id,
+                signature_from_file(&host_call.return_type, host_call.params)?,
+                effect_capabilities(host_call.effects),
+            ));
+        }
+        for doc in self.tooling_docs {
+            manifest = manifest.with_tooling_doc(AdapterToolingDoc::try_new(
+                AdapterToolingSubject::Free {
+                    kind: AdapterFreeCallableKind::Function,
+                    path: callable_path_from_file(&doc.subject)?,
+                    overload: AdapterCallableOverloadIndex::try_from_usize(0)?,
+                },
+                Some(doc.docs),
+                None,
+                Vec::new(),
+            )?);
+        }
+        Ok(manifest)
     }
 
     fn validate_schema_version(&self) -> Result<(), AdapterManifestCodecError> {
@@ -173,8 +181,38 @@ impl AdapterManifestFile {
     }
 }
 
-fn function_param_from_file(param: AdapterParamFile) -> AdapterFunctionParam {
-    AdapterFunctionParam::required(param.name, parse_adapter_type_kind_label(&param.ty))
+fn signature_from_file(
+    return_type: &str,
+    params: Vec<AdapterParamFile>,
+) -> Result<AdapterFunctionSignature, AdapterCallableModelError> {
+    let parameters = params
+        .into_iter()
+        .enumerate()
+        .map(|(index, parameter)| {
+            AdapterFunctionParam::try_new(
+                AdapterCallableParameterIndex::try_from_usize(index)?,
+                Some(AdapterCallableName::try_new(parameter.name)?),
+                parse_adapter_type_kind_label(&parameter.ty),
+                AdapterParameterPassing::PositionalOrNamed,
+                AdapterParameterPresence::Required,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    AdapterFunctionSignature::try_new(
+        vec![AdapterParameterGroup::try_new(
+            AdapterCallableGroupIndex::try_from_usize(0)?,
+            parameters,
+        )?],
+        parse_adapter_type_kind_label(return_type),
+    )
+}
+
+fn callable_path_from_file(path: &str) -> Result<AdapterCallablePath, AdapterCallableModelError> {
+    AdapterCallablePath::try_new(
+        path.split('.')
+            .map(|segment| AdapterCallableName::try_new(segment.to_owned()))
+            .collect::<Result<Vec<_>, _>>()?,
+    )
 }
 
 fn effect_capabilities(
@@ -254,7 +292,7 @@ docs = "Read custom content."
         )
         .expect("adapter manifest parses");
         assert_eq!(file.schema_version(), ADAPTER_MANIFEST_SCHEMA_VERSION);
-        let manifest = file.into_manifest();
+        let manifest = file.into_manifest().expect("typed manifest is valid");
 
         assert_eq!(manifest.id().as_str(), "custom-file");
         assert_eq!(manifest.symbols().len(), 1);
@@ -262,12 +300,22 @@ docs = "Read custom content."
         assert_eq!(manifest.functions().len(), 1);
         assert_eq!(manifest.effects()[0].as_str(), "custom.read");
         assert_eq!(manifest.host_calls()[0].id(), "custom.read");
-        assert_eq!(manifest.host_calls()[0].signature().params().len(), 1);
+        assert_eq!(
+            manifest.host_calls()[0].signature().groups()[0]
+                .parameters()
+                .len(),
+            1
+        );
         assert_eq!(
             manifest.host_calls()[0].signature().return_type(),
             &AdapterTypeKind::String
         );
-        assert_eq!(manifest.tooling_docs()[0].subject(), "custom.read");
+        assert!(matches!(
+            manifest.tooling_docs()[0].subject(),
+            AdapterToolingSubject::Free { path, .. }
+                if path.segments().iter().map(AdapterCallableName::as_str).collect::<Vec<_>>()
+                    == ["custom", "read"]
+        ));
     }
 
     #[test]
@@ -296,11 +344,16 @@ docs = "Read custom content."
 "#,
         )
         .expect("json adapter manifest parses");
-        let manifest = file.into_manifest();
+        let manifest = file.into_manifest().expect("typed manifest is valid");
 
         assert_eq!(manifest.id().as_str(), "custom-http");
         assert_eq!(manifest.host_calls()[0].id(), "http.respond");
-        assert_eq!(manifest.tooling_docs()[0].subject(), "http.respond");
+        assert!(matches!(
+            manifest.tooling_docs()[0].subject(),
+            AdapterToolingSubject::Free { path, .. }
+                if path.segments().iter().map(AdapterCallableName::as_str).collect::<Vec<_>>()
+                    == ["http", "respond"]
+        ));
     }
 
     #[test]

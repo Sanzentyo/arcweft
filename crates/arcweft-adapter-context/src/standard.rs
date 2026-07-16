@@ -1,7 +1,9 @@
 //! Standard adapter manifests bundled with Arcweft tooling.
 
 use crate::manifest::{
-    AdapterEffectCapability, AdapterHostCall, AdapterManifest, AdapterRegistry, AdapterTypeKind,
+    AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
+    AdapterEffectCapability, AdapterFunctionSignature, AdapterHostCall, AdapterManifest,
+    AdapterParameterGroup, AdapterRegistry, AdapterTypeKind,
 };
 
 /// Adapter id for the default Sans I/O environment.
@@ -34,6 +36,55 @@ pub fn standard_registry() -> AdapterRegistry {
     ])
 }
 
+/// Publishes every accepted standard adapter through its fixed typed owner.
+#[cfg(feature = "sema")]
+pub fn callable_publications(
+    limits: &arcweft_lang_sema::callable::CallableLimits,
+) -> Result<
+    Vec<arcweft_lang_sema::callable::EnvironmentCallablePublication>,
+    crate::publication::AdapterCallablePublicationError,
+> {
+    use arcweft_lang_sema::callable::StandardEnvironmentId;
+
+    [
+        (sans_io_manifest(), StandardEnvironmentId::SansIo),
+        (native_http_manifest(), StandardEnvironmentId::NativeHttp),
+        (
+            inference_tensor_manifest(),
+            StandardEnvironmentId::InferenceTensor,
+        ),
+        (system_info_manifest(), StandardEnvironmentId::SystemInfo),
+        (native_file_manifest(), StandardEnvironmentId::NativeFile),
+        (math_manifest(), StandardEnvironmentId::Math),
+    ]
+    .into_iter()
+    .map(|(manifest, id)| {
+        manifest.try_callable_publication(
+            crate::publication::AdapterManifestSource::Standard(id),
+            limits,
+        )
+    })
+    .collect()
+}
+
+/// Returns the fixed standard owner for one reserved adapter manifest ID.
+#[cfg(feature = "sema")]
+pub fn manifest_source(id: &str) -> Option<crate::publication::AdapterManifestSource> {
+    use arcweft_lang_sema::callable::StandardEnvironmentId;
+
+    Some(crate::publication::AdapterManifestSource::Standard(
+        match id {
+            SANS_IO_ADAPTER_ID => StandardEnvironmentId::SansIo,
+            NATIVE_HTTP_ADAPTER_ID => StandardEnvironmentId::NativeHttp,
+            INFERENCE_TENSOR_ADAPTER_ID => StandardEnvironmentId::InferenceTensor,
+            SYSTEM_INFO_ADAPTER_ID => StandardEnvironmentId::SystemInfo,
+            NATIVE_FILE_ADAPTER_ID => StandardEnvironmentId::NativeFile,
+            MATH_ADAPTER_ID => StandardEnvironmentId::Math,
+            _ => return None,
+        },
+    ))
+}
+
 /// Default Sans I/O manifest.
 pub fn sans_io_manifest() -> AdapterManifest {
     AdapterManifest::new(SANS_IO_ADAPTER_ID, "Sans I/O")
@@ -59,55 +110,75 @@ pub fn inference_tensor_manifest() -> AdapterManifest {
     AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor")
         .with_symbol("conv2d", AdapterTypeKind::Named("Conv2dApi".to_owned()))
         .with_symbol("infer", AdapterTypeKind::Named("InferApi".to_owned()))
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("Conv2dApi".to_owned()),
-            "valid_f32",
-            tensor.clone(),
+            callable_name("valid_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "matmul_f32",
-            tensor.clone(),
+            callable_name("matmul_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "add_f32",
-            tensor.clone(),
+            callable_name("add_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "bias_add_f32",
-            tensor.clone(),
+            callable_name("bias_add_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "matmul_bias_add_f32",
-            tensor.clone(),
+            callable_name("matmul_bias_add_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "relu_f32",
-            tensor.clone(),
+            callable_name("relu_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "max_pool2d_f32",
-            tensor.clone(),
+            callable_name("max_pool2d_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "softmax_last_dim_f32",
-            tensor.clone(),
+            callable_name("softmax_last_dim_f32"),
+            overload_zero(),
+            return_only(tensor.clone()),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "argmax_last_dim_f32",
-            AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize)),
+            callable_name("argmax_last_dim_f32"),
+            overload_zero(),
+            return_only(AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize))),
+            [],
         )
-        .with_method(
+        .with_method_signature(
             AdapterTypeKind::Named("InferApi".to_owned()),
-            "flatten_outer_f32",
-            tensor,
+            callable_name("flatten_outer_f32"),
+            overload_zero(),
+            return_only(tensor),
+            [],
         )
         .with_host_call(AdapterHostCall::new("conv2d.valid_f32", []))
         .with_host_call(AdapterHostCall::new("infer.matmul_f32", []))
@@ -157,6 +228,30 @@ pub fn math_manifest() -> AdapterManifest {
         .with_host_call(AdapterHostCall::new("math.matmul_f64", []))
         .with_host_call(AdapterHostCall::new("math.tensor.add_f32", []))
         .with_host_call(AdapterHostCall::new("math.tensor.relu_f32", []))
+}
+
+fn callable_name(value: &str) -> AdapterCallableName {
+    AdapterCallableName::try_new(value).expect("standard callable names are valid typed segments")
+}
+
+fn overload_zero() -> AdapterCallableOverloadIndex {
+    AdapterCallableOverloadIndex::try_from_usize(0)
+        .expect("zero is a valid adapter callable overload")
+}
+
+fn return_only(return_type: AdapterTypeKind) -> AdapterFunctionSignature {
+    AdapterFunctionSignature::try_new(
+        vec![
+            AdapterParameterGroup::try_new(
+                AdapterCallableGroupIndex::try_from_usize(0)
+                    .expect("zero is a valid adapter callable group"),
+                Vec::new(),
+            )
+            .expect("an empty initial adapter group is valid"),
+        ],
+        return_type,
+    )
+    .expect("a standard return-only adapter signature is valid")
 }
 
 #[cfg(test)]

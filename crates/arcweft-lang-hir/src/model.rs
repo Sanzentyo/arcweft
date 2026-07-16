@@ -2,14 +2,14 @@ use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath,
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
-        common::{TextRange, UseItem, Visibility},
+        common::{DocBlock, TextRange, UseItem, Visibility},
         dialogue::{DialogueContent, DialogueDefaultsItem, LineArg, SpeakerLineSurface},
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
             AgentItem, Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EnumItem,
-            ExternCapabilityItem, ExternModItem, FunctionKind, ImplItem, StateItem, StructItem,
-            TraitItem, TypeAliasItem,
+            ExternCapabilityItem, ExternModItem, FunctionKind, FunctionSignatureSource, ImplItem,
+            StateItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -75,10 +75,12 @@ pub struct HirFlow {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirFunction {
     pub(crate) attributes: Vec<Attribute>,
+    pub(crate) documentation: Option<DocBlock>,
     pub(crate) module_path: Option<CanonicalModulePath>,
     pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
+    pub(crate) signature_source: FunctionSignatureSource,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) statements: Vec<Stmt>,
     pub(crate) value: Option<AuthoredExpr>,
@@ -544,6 +546,10 @@ impl HirFunction {
         &self.attributes
     }
 
+    pub const fn documentation(&self) -> Option<&DocBlock> {
+        self.documentation.as_ref()
+    }
+
     pub fn has_attribute(&self, name: &str) -> bool {
         self.attributes
             .iter()
@@ -576,6 +582,10 @@ impl HirFunction {
 
     pub const fn signature(&self) -> &FnSignature {
         &self.signature
+    }
+
+    pub const fn signature_source(&self) -> &FunctionSignatureSource {
+        &self.signature_source
     }
 
     pub fn contracts(&self) -> &[ContractClause] {

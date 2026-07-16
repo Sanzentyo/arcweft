@@ -1,6 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arcweft_character::id::CharacterId;
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use crate::{
@@ -12,23 +16,25 @@ use super::limits::{CatalogBuildWork, ResolverWork};
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallPoison,
     CallableArgumentIndex, CallableArgumentPolicy, CallableArgumentSlotIndex,
-    CallableBuildLimitError, CallableCatalogError, CallableDocumentation, CallableEffectSchema,
-    CallableGroupIndex, CallableGroupKind, CallableIdentityError, CallableIndexKind,
-    CallableInstantiation, CallableLimits, CallableName, CallableOverloadIndex, CallableParameter,
+    CallableAuthorityRank, CallableBuildLimitError, CallableCandidateId, CallableCatalogError,
+    CallableDiagnosticCode, CallableDocumentation, CallableEffectSchema, CallableGroupIndex,
+    CallableGroupKind, CallableIdentityError, CallableIndexKind, CallableInstantiation,
+    CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
     CallableParameterCoordinate, CallableParameterGroup, CallableParameterIndex,
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
     CallableParameterType, CallablePath, CallablePathError, CallableQueryLimitError,
     CallableScalarError, CallableScalarKind, CallableSchemaError, CallableSignatureSchema,
     CallableSource, CallableValidator, CharacterOwnerSource, CurriedCallableId, DataLastCallableId,
-    DialogueCallableId, DialogueCalleeIdentity, EnvironmentDeclarationOrdinal, FloatWidth,
-    FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, FxResolution,
-    LanguageCallableFamily, LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet,
-    NonEmptyResolvedCandidates, PresentationCallableId, ReceiverMethodKey, ResolveCallError,
+    DialogueCallableId, DialogueCalleeIdentity, EnvironmentCallableId, EnvironmentCallableKind,
+    EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, FloatWidth, FunctionValueOrdinal,
+    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, LanguageCallableFamily,
+    LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates,
+    PresentationCallableId, ProjectCallablePath, ReceiverMethodKey, ResolveCallError,
     ResolvedCallable, ResolvedCharacterOwner, ResolvedFunctionValue, RustItemPath,
     SemanticParameter, SemanticParameterGroup, SemanticSignature, SemanticSignatureError,
     SemanticSignatureHelp, SemanticSignatureIndex, SignatureOrigin, SignatureWorkReport,
-    SpreadArgumentPolicy, StdFloatCallableId, StdFloatOperation, TraitImplementationIndex,
-    UnknownNamedArgumentPolicy,
+    SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation,
+    TraitImplementationIndex, UnknownNamedArgumentPolicy,
 };
 
 fn name(value: &str) -> CallableName {
@@ -50,6 +56,166 @@ fn group(value: usize) -> CallableGroupIndex {
 
 fn limits(groups: usize, parameters: usize, work: u64) -> CallableLimits {
     CallableLimits::for_test(32, groups, parameters, 32, 256, 256, 128, work, work)
+}
+
+struct ResolvedFixture {
+    base: CallableCandidateId,
+    origin: SignatureOrigin,
+    authority: Option<CallableAuthorityRank>,
+}
+
+fn multi_group_schema(group_count: usize) -> Arc<CallableSignatureSchema> {
+    let groups = (0..group_count)
+        .map(|index| {
+            CallableParameterGroup::try_new(
+                group(index),
+                if index == 0 {
+                    CallableGroupKind::Initial
+                } else {
+                    CallableGroupKind::Curried
+                },
+                Vec::new(),
+                &limits(group_count, 4, 20),
+            )
+            .expect("valid empty parameter group")
+        })
+        .collect();
+    Arc::new(
+        CallableSignatureSchema::try_new(
+            groups,
+            TypeKind::String,
+            CallableEffectSchema::fixed(EffectRow::default()),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::Reject,
+            ),
+            CallableValidator::Ordinary,
+            &limits(group_count, 4, 20),
+        )
+        .expect("valid multi-group schema"),
+    )
+}
+
+fn project_fixture(name_value: &str) -> ResolvedFixture {
+    let package = CallablePackageId::try_new("game").expect("package");
+    let module = CanonicalModulePath::crate_root();
+    let declaration = CallableDeclarationId::try_new(
+        package.clone(),
+        module.clone(),
+        CallableDeclarationOwner::Function,
+        name_value,
+    )
+    .expect("project declaration");
+    ResolvedFixture {
+        base: CallableCandidateId::Project(declaration.clone()),
+        origin: SignatureOrigin::Project {
+            declaration,
+            path: ProjectCallablePath::new(package, module, path(&[name_value])),
+        },
+        authority: Some(CallableAuthorityRank::Project),
+    }
+}
+
+fn standard_fixture() -> ResolvedFixture {
+    let owner = StandardEnvironmentId::Core;
+    let id = EnvironmentCallableId::new(
+        EnvironmentCallableOwner::Standard(owner),
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(path(&["standard_curried"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+    );
+    ResolvedFixture {
+        base: CallableCandidateId::Environment(id.clone()),
+        origin: SignatureOrigin::Standard {
+            owner,
+            id: id.clone(),
+        },
+        authority: Some(CallableAuthorityRank::Standard),
+    }
+}
+
+fn adapter_fixture() -> ResolvedFixture {
+    let package = AdapterPackageId::try_new("adapter.test").expect("adapter package");
+    let id = EnvironmentCallableId::new(
+        EnvironmentCallableOwner::Adapter(package.clone()),
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(path(&["adapter_curried"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+    );
+    ResolvedFixture {
+        base: CallableCandidateId::Environment(id.clone()),
+        origin: SignatureOrigin::Adapter {
+            package,
+            id: id.clone(),
+        },
+        authority: Some(CallableAuthorityRank::Adapter),
+    }
+}
+
+fn data_last_candidate() -> CallableCandidateId {
+    let parameter = CallableParameter::try_new(
+        index(0),
+        Some(name("value")),
+        CallableParameterType::Exact(TypeKind::String),
+        CallableParameterPassing::PositionalOrNamed,
+        CallableParameterPresence::Required,
+        None,
+        None,
+    )
+    .expect("data-last parameter");
+    let schema = CallableSignatureSchema::try_new(
+        vec![
+            CallableParameterGroup::try_new(
+                group(0),
+                CallableGroupKind::Initial,
+                vec![parameter],
+                &limits(2, 4, 20),
+            )
+            .expect("data-last group"),
+        ],
+        TypeKind::Unit,
+        CallableEffectSchema::fixed(EffectRow::default()),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::Reject,
+        ),
+        CallableValidator::Ordinary,
+        &limits(2, 4, 20),
+    )
+    .expect("data-last schema");
+    let base = CallableCandidateId::Local(LocalCallableId::new(
+        SemanticScopeId(77),
+        LexicalBindingIndex::try_from_usize(0).expect("binding index"),
+    ));
+    CallableCandidateId::DataLast(
+        DataLastCallableId::try_new(base, group(0), index(0), &schema).expect("valid data-last ID"),
+    )
+}
+
+fn assert_curried_one_over(fixture: ResolvedFixture) {
+    let schema = multi_group_schema(1);
+    let one_over = CallableGroupIndex::try_from_usize(schema.groups().len())
+        .expect("one-over group index fits");
+    let curried = CurriedCallableId::try_new(fixture.base.clone(), one_over)
+        .expect("nonzero curried identity");
+    assert_eq!(
+        ResolvedCallable::try_new(
+            CallableCandidateId::Curried(curried),
+            fixture.origin,
+            schema,
+            CallableInstantiation::Curried {
+                base: fixture.base.clone(),
+                group: one_over,
+            },
+            Vec::new(),
+            fixture.authority,
+            &limits(2, 4, 20),
+        ),
+        Err(ResolveCallError::InvalidCallGroup {
+            candidate: fixture.base,
+            group: one_over,
+        })
+    );
 }
 
 #[test]
@@ -690,18 +856,263 @@ fn resolved_callable_validates_origin_family_and_function_value_type() {
 }
 
 #[test]
-fn curried_and_data_last_ids_enforce_context_free_coordinates() {
-    let builtin = super::CallableCandidateId::Builtin(BuiltinCallableId::Panic);
-    assert!(matches!(
-        CurriedCallableId::try_new(builtin.clone(), group(0)),
-        Err(CallableIdentityError::MissingGroup { .. })
-    ));
-    let curried = CurriedCallableId::try_new(builtin, group(1)).expect("structural curried id");
-    assert!(matches!(
-        CurriedCallableId::try_new(super::CallableCandidateId::Curried(curried), group(2)),
-        Err(CallableIdentityError::InvalidCurriedBase { .. })
-    ));
+fn curried_id_accepts_nonzero_without_schema() {
+    let base = CallableCandidateId::Builtin(BuiltinCallableId::Panic);
+    let next_group = group(1);
+    let curried =
+        CurriedCallableId::try_new(base.clone(), next_group).expect("structural curried ID");
+    assert_eq!(curried.base(), &base);
+    assert_eq!(curried.next_group(), next_group);
+}
 
+#[test]
+fn curried_id_rejects_initial_group() {
+    let base = CallableCandidateId::Builtin(BuiltinCallableId::Panic);
+    let initial = group(0);
+    assert_eq!(
+        CurriedCallableId::try_new(base.clone(), initial),
+        Err(CallableIdentityError::InvalidCurriedGroup {
+            base: Box::new(base),
+            group: initial,
+        })
+    );
+}
+
+#[test]
+fn curried_id_rejects_curried_base() {
+    let base = CallableCandidateId::Builtin(BuiltinCallableId::Panic);
+    let wrapped = CallableCandidateId::Curried(
+        CurriedCallableId::try_new(base, group(1)).expect("first curried ID"),
+    );
+    assert_eq!(
+        CurriedCallableId::try_new(wrapped.clone(), group(2)),
+        Err(CallableIdentityError::InvalidCurriedBase {
+            base: Box::new(wrapped),
+        })
+    );
+}
+
+#[test]
+fn curried_id_rejects_data_last_base() {
+    let wrapped = data_last_candidate();
+    assert_eq!(
+        CurriedCallableId::try_new(wrapped.clone(), group(1)),
+        Err(CallableIdentityError::InvalidCurriedBase {
+            base: Box::new(wrapped),
+        })
+    );
+}
+
+#[test]
+fn curried_id_wrapper_error_precedes_initial_group_error() {
+    let base = CallableCandidateId::Builtin(BuiltinCallableId::Panic);
+    let curried = CallableCandidateId::Curried(
+        CurriedCallableId::try_new(base, group(1)).expect("first curried ID"),
+    );
+    for wrapped in [curried, data_last_candidate()] {
+        assert_eq!(
+            CurriedCallableId::try_new(wrapped.clone(), group(0)),
+            Err(CallableIdentityError::InvalidCurriedBase {
+                base: Box::new(wrapped),
+            })
+        );
+    }
+}
+
+#[test]
+fn resolved_curried_accepts_exact_multi_group_schema() {
+    let ResolvedFixture {
+        base,
+        origin,
+        authority,
+    } = project_fixture("curried_ok");
+    let schema = multi_group_schema(2);
+    let next_group = group(1);
+    let expected_group = schema.group(next_group).expect("group 1");
+    let curried = CurriedCallableId::try_new(base.clone(), next_group).expect("curried ID");
+    let expected_id = CallableCandidateId::Curried(curried.clone());
+    let expected_instantiation = CallableInstantiation::Curried {
+        base: base.clone(),
+        group: next_group,
+    };
+    let resolved = ResolvedCallable::try_new(
+        expected_id.clone(),
+        origin,
+        Arc::clone(&schema),
+        expected_instantiation.clone(),
+        Vec::new(),
+        authority,
+        &limits(2, 4, 20),
+    )
+    .expect("canonical curried product");
+    assert_eq!(resolved.id(), &expected_id);
+    assert_eq!(resolved.instantiation(), &expected_instantiation);
+    assert!(std::ptr::eq(schema.as_ref(), resolved.schema()));
+    assert!(std::ptr::eq(
+        expected_group,
+        resolved
+            .schema()
+            .group(next_group)
+            .expect("published group 1")
+    ));
+}
+
+#[test]
+fn resolved_curried_rejects_project_one_over_group() {
+    assert_curried_one_over(project_fixture("project_one_over"));
+}
+
+#[test]
+fn resolved_curried_rejects_standard_one_over_group() {
+    assert_curried_one_over(standard_fixture());
+}
+
+#[test]
+fn resolved_curried_rejects_adapter_one_over_group() {
+    assert_curried_one_over(adapter_fixture());
+}
+
+#[test]
+fn resolved_curried_rejects_base_id_representation() {
+    let ResolvedFixture {
+        base,
+        origin,
+        authority,
+    } = project_fixture("base_representation");
+    assert_eq!(
+        ResolvedCallable::try_new(
+            base.clone(),
+            origin,
+            multi_group_schema(2),
+            CallableInstantiation::Curried {
+                base,
+                group: group(1),
+            },
+            Vec::new(),
+            authority,
+            &limits(2, 4, 20),
+        ),
+        Err(ResolveCallError::InvalidResolvedCallable)
+    );
+}
+
+#[test]
+fn resolved_curried_rejects_mismatched_base() {
+    let ResolvedFixture {
+        base,
+        origin,
+        authority,
+    } = project_fixture("curried_base_a");
+    let other = project_fixture("curried_base_b").base;
+    let curried = CurriedCallableId::try_new(base, group(1)).expect("curried ID");
+    assert_eq!(
+        ResolvedCallable::try_new(
+            CallableCandidateId::Curried(curried),
+            origin,
+            multi_group_schema(2),
+            CallableInstantiation::Curried {
+                base: other,
+                group: group(1),
+            },
+            Vec::new(),
+            authority,
+            &limits(2, 4, 20),
+        ),
+        Err(ResolveCallError::InvalidResolvedCallable)
+    );
+}
+
+#[test]
+fn resolved_curried_rejects_mismatched_group() {
+    let ResolvedFixture {
+        base,
+        origin,
+        authority,
+    } = project_fixture("curried_group_mismatch");
+    let curried = CurriedCallableId::try_new(base.clone(), group(1)).expect("curried ID");
+    assert_eq!(
+        ResolvedCallable::try_new(
+            CallableCandidateId::Curried(curried),
+            origin,
+            multi_group_schema(3),
+            CallableInstantiation::Curried {
+                base,
+                group: group(2),
+            },
+            Vec::new(),
+            authority,
+            &limits(3, 4, 20),
+        ),
+        Err(ResolveCallError::InvalidResolvedCallable)
+    );
+}
+
+#[test]
+fn resolved_curried_rejects_non_curried_instantiation() {
+    let ResolvedFixture {
+        base,
+        origin,
+        authority,
+    } = project_fixture("curried_non_curried_instantiation");
+    let curried = CurriedCallableId::try_new(base, group(1)).expect("curried ID");
+    assert_eq!(
+        ResolvedCallable::try_new(
+            CallableCandidateId::Curried(curried),
+            origin,
+            multi_group_schema(2),
+            CallableInstantiation::None,
+            Vec::new(),
+            authority,
+            &limits(2, 4, 20),
+        ),
+        Err(ResolveCallError::InvalidResolvedCallable)
+    );
+}
+
+#[test]
+fn resolved_curried_rejects_corrupt_world_prebuilt_candidate() {
+    let ResolvedFixture {
+        base,
+        origin,
+        authority,
+    } = project_fixture("corrupt_curried");
+    let missing_group = group(1);
+    let curried =
+        CurriedCallableId::try_new(base.clone(), missing_group).expect("structural curried ID");
+    assert_eq!(
+        ResolvedCallable::try_new(
+            CallableCandidateId::Curried(curried),
+            origin,
+            multi_group_schema(1),
+            CallableInstantiation::Curried {
+                base: base.clone(),
+                group: missing_group,
+            },
+            Vec::new(),
+            authority,
+            &limits(2, 4, 20),
+        ),
+        Err(ResolveCallError::InvalidCallGroup {
+            candidate: base,
+            group: missing_group,
+        })
+    );
+}
+
+#[test]
+fn invalid_call_group_has_stable_diagnostic_code() {
+    assert_eq!(
+        ResolveCallError::InvalidCallGroup {
+            candidate: CallableCandidateId::Builtin(BuiltinCallableId::Panic),
+            group: group(1),
+        }
+        .code(),
+        CallableDiagnosticCode::InvalidCallGroup
+    );
+}
+
+#[test]
+fn data_last_ids_enforce_context_free_coordinates() {
     let parameter = |parameter_index, passing| {
         CallableParameter::try_new(
             index(parameter_index),

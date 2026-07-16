@@ -16,6 +16,8 @@ use arcweft_source::{
     SourceRange, SourceRevision, SourceSpan, SourceSpanError,
 };
 
+use crate::callable::CallableDiagnosticCode;
+
 use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
@@ -44,6 +46,7 @@ pub enum CharacterRegistrationCode {
     StaleSource,
     SourceDigestCollision,
     Project(ProjectSymbolDiagnosticCode),
+    CallableCatalog(CallableDiagnosticCode),
     ExternalUnknown,
     ExternalDuplicate,
     ExternalConflict,
@@ -78,6 +81,7 @@ impl CharacterRegistrationCode {
             Self::StaleSource => "aw.character.registration.stale_source",
             Self::SourceDigestCollision => "aw.character.source.digest_collision",
             Self::Project(code) => code.as_str(),
+            Self::CallableCatalog(_) => "aw.callable.catalog.registration",
             Self::ExternalUnknown => "aw.character.registration.external_unknown",
             Self::ExternalDuplicate => "aw.character.registration.external_duplicate",
             Self::ExternalConflict => "aw.character.registration.external_conflict",
@@ -171,6 +175,9 @@ pub enum CharacterRegistrationDiagnosticKind {
     },
     ProjectSymbol {
         error: ProjectSymbolLinkError,
+    },
+    CallableCatalog {
+        code: CallableDiagnosticCode,
     },
     ExternalUnknown {
         declaration: ExternalDeclarationId,
@@ -289,6 +296,9 @@ impl CharacterRegistrationDiagnosticKind {
             }
             CharacterRegistrationDiagnosticKind::ProjectSymbol { error } => {
                 CharacterRegistrationCode::Project(error.code())
+            }
+            CharacterRegistrationDiagnosticKind::CallableCatalog { code } => {
+                CharacterRegistrationCode::CallableCatalog(*code)
             }
             CharacterRegistrationDiagnosticKind::ExternalUnknown { .. } => {
                 CharacterRegistrationCode::ExternalUnknown

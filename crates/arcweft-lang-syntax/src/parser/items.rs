@@ -5,15 +5,16 @@ use crate::ast::items::{
     EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem, EntryItem, EntryKind,
     EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
     ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
-    ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
-    ImplItemInit, ImplMember, StateField, StateItem, StructField, StructItem, TraitItem,
-    TraitMember, TypeAliasItem, ViewDeclBody,
+    ExternModTypeKind, FunctionInit, FunctionItem, FunctionParameterSource,
+    FunctionSignatureSource, ImageDeclBody, ImageDeclField, ImplItem, ImplItemInit, ImplMember,
+    StateField, StateItem, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
+    ViewDeclBody,
 };
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
     find_top_level_punctuation, split_first_string_literal, split_leading_ident,
-    split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
-    split_top_level_punctuation_once,
+    split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
+    split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::types::{parse_fn_signature, parse_where_clause_list};
 
@@ -74,6 +75,14 @@ impl Parser<'_> {
             }
         };
         let contracts = parse_contract_clauses(&contract_lines);
+        let head_range = block.head_range.as_ref()?;
+        let head_source = self.source.get(head_range.clone())?;
+        let signature_source = function_signature_source(
+            head_source,
+            head_range.start,
+            contract_lines.first().copied(),
+            &signature,
+        )?;
         let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
             || parse_scope_authored_expr_body(body),
             |range| parse_scope_authored_expr_body_with_base(body, range.start),
@@ -86,6 +95,7 @@ impl Parser<'_> {
             visibility,
             signature,
             signature_text,
+            signature_source,
             contracts,
             body: body.clone().into_owned(),
             body_statements,
@@ -1407,6 +1417,203 @@ fn parse_associated_type_head(source: &str) -> (String, Vec<String>) {
         .map(str::to_owned)
         .collect();
     (source[..open].trim().to_owned(), params)
+}
+
+fn function_signature_source(
+    head: &str,
+    head_base: usize,
+    first_contract_line: Option<&str>,
+    signature: &crate::types::FnSignature,
+) -> Option<FunctionSignatureSource> {
+    let signature_start = find_fn_token(head)?;
+    let signature_end = first_contract_line
+        .and_then(|contract| find_exact_line_start(head, contract, signature_start))
+        .unwrap_or(head.len());
+    let signature_source = head.get(signature_start..signature_end)?.trim_end();
+    let signature_end = signature_start + signature_source.len();
+    let signature_source = head.get(signature_start..signature_end)?;
+
+    let after_fn = signature_source.get(2..)?;
+    let name_source = after_fn.trim_start();
+    let name_offset = signature_source.len() - name_source.len();
+    let (authored_name, _) = split_leading_ident(name_source)?;
+    if authored_name != signature.name() {
+        return None;
+    }
+    let name_start = signature_start + name_offset;
+    let name_range = absolute_range(head_base, name_start, name_start + authored_name.len());
+
+    let mut cursor = name_offset + authored_name.len();
+    cursor = skip_whitespace(signature_source, cursor);
+    if signature_source.get(cursor..)?.starts_with('<') {
+        cursor = find_matching_angle_group(signature_source, cursor)? + 1;
+    }
+
+    let (mut cursor, parameters) = function_parameter_sources(
+        signature_source,
+        signature_start,
+        head_base,
+        signature,
+        cursor,
+    )?;
+
+    cursor = skip_whitespace(signature_source, cursor);
+    let result = signature.return_type().and_then(|_| {
+        let rest = signature_source.get(cursor..)?.trim_start();
+        let after_arrow = rest.strip_prefix("->")?.trim_start();
+        let (result_source, _) = split_top_level_keyword_once(after_arrow, "where");
+        let result_source = result_source.trim();
+        let offset = subslice_offset(signature_source, result_source)?;
+        Some(absolute_range(
+            head_base,
+            signature_start + offset,
+            signature_start + offset + result_source.len(),
+        ))
+    });
+
+    Some(FunctionSignatureSource::new(
+        absolute_range(
+            head_base,
+            signature_start,
+            signature_start + signature_source.len(),
+        ),
+        name_range,
+        result,
+        parameters,
+    ))
+}
+
+fn function_parameter_sources(
+    signature_source: &str,
+    signature_start: usize,
+    head_base: usize,
+    signature: &crate::types::FnSignature,
+    mut cursor: usize,
+) -> Option<(usize, Vec<FunctionParameterSource>)> {
+    let mut parameters = Vec::new();
+    for (group_index, parameter_group) in signature.param_groups().iter().enumerate() {
+        cursor = skip_whitespace(signature_source, cursor);
+        if !signature_source.get(cursor..)?.starts_with('(') {
+            return None;
+        }
+        let close = find_matching_punctuation(signature_source, cursor, '(', ')')?;
+        let group_source = signature_source.get(cursor + 1..close)?;
+        let parts = split_top_level_punctuation(group_source, ',')
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>();
+        if parts.len() != parameter_group.params().len() {
+            return None;
+        }
+        for (parameter_index, (part, parameter)) in
+            parts.into_iter().zip(parameter_group.params()).enumerate()
+        {
+            let group = u16::try_from(group_index).ok()?;
+            let parameter_ordinal = u16::try_from(parameter_index).ok()?;
+            let part_start = signature_start + cursor + 1 + subslice_offset(group_source, part)?;
+            let whole = absolute_range(head_base, part_start, part_start + part.len());
+
+            let (name, ty, default) = if parameter.receiver_kind().is_some() {
+                let name = find_identifier_range(part, "self", head_base + part_start);
+                (name, None, None)
+            } else {
+                let (pattern_source, type_source) = split_top_level_punctuation_once(part, ':')?;
+                let name = parameter.pattern().simple_binding_name().and_then(|name| {
+                    find_identifier_range(pattern_source, name, head_base + part_start)
+                });
+                let (type_source, default_source) =
+                    split_top_level_punctuation_once(type_source, '=')
+                        .map_or((type_source, None), |(ty, default)| (ty, Some(default)));
+                let type_source = type_source
+                    .trim()
+                    .strip_prefix("...")
+                    .map_or(type_source.trim(), str::trim_start);
+                let type_offset = subslice_offset(part, type_source)?;
+                let ty = Some(absolute_range(
+                    head_base,
+                    part_start + type_offset,
+                    part_start + type_offset + type_source.len(),
+                ));
+                let default = default_source.map(|default| {
+                    let offset = subslice_offset(part, default)
+                        .expect("top-level split returns a source subslice");
+                    absolute_range(
+                        head_base,
+                        part_start + offset,
+                        part_start + offset + default.len(),
+                    )
+                });
+                (name, ty, default)
+            };
+            parameters.push(FunctionParameterSource::new(
+                group,
+                parameter_ordinal,
+                whole,
+                name,
+                ty,
+                default,
+            ));
+        }
+        cursor = close + 1;
+    }
+    Some((cursor, parameters))
+}
+
+fn find_fn_token(source: &str) -> Option<usize> {
+    source.match_indices("fn").find_map(|(offset, _)| {
+        let before = source[..offset].chars().next_back();
+        let after = source[offset + 2..].chars().next();
+        (before.is_none_or(|character| !is_identifier_character(character))
+            && after.is_some_and(char::is_whitespace))
+        .then_some(offset)
+    })
+}
+
+fn find_exact_line_start(source: &str, expected: &str, after: usize) -> Option<usize> {
+    let mut start = 0usize;
+    for line in source.split_inclusive('\n') {
+        if start >= after && line.trim() == expected {
+            return Some(start + line.len() - line.trim_start().len());
+        }
+        start += line.len();
+    }
+    None
+}
+
+fn skip_whitespace(source: &str, mut cursor: usize) -> usize {
+    while let Some(character) = source.get(cursor..).and_then(|rest| rest.chars().next()) {
+        if !character.is_whitespace() {
+            break;
+        }
+        cursor += character.len_utf8();
+    }
+    cursor
+}
+
+fn subslice_offset(source: &str, fragment: &str) -> Option<usize> {
+    let source_start = source.as_ptr() as usize;
+    let fragment_start = fragment.as_ptr() as usize;
+    fragment_start
+        .checked_sub(source_start)
+        .filter(|offset| offset.saturating_add(fragment.len()) <= source.len())
+}
+
+fn find_identifier_range(source: &str, name: &str, base: usize) -> Option<TextRange> {
+    source.match_indices(name).find_map(|(offset, _)| {
+        let before = source[..offset].chars().next_back();
+        let after = source[offset + name.len()..].chars().next();
+        (before.is_none_or(|character| !is_identifier_character(character))
+            && after.is_none_or(|character| !is_identifier_character(character)))
+        .then(|| TextRange::new(base + offset, base + offset + name.len()))
+    })
+}
+
+fn is_identifier_character(character: char) -> bool {
+    character == '_' || character.is_alphanumeric()
+}
+
+const fn absolute_range(base: usize, start: usize, end: usize) -> TextRange {
+    TextRange::new(base + start, base + end)
 }
 
 fn parse_agent_signature_text(name: &str, signature_tail: &str) -> Option<String> {

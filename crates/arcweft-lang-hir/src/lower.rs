@@ -247,10 +247,12 @@ fn lower_function(
 ) -> HirFunction {
     HirFunction {
         attributes: function.attrs().to_vec(),
+        documentation: function.doc().cloned(),
         module_path,
         kind: function.kind(),
         visibility: function.visibility(),
         signature: function.signature().clone(),
+        signature_source: function.signature_source().clone(),
         contracts: function.contracts().to_vec(),
         statements: function.body_statements().to_vec(),
         value: function.body_value().cloned(),

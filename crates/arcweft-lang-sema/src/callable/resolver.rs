@@ -98,7 +98,7 @@ impl ResolvedCallable {
     ) -> Result<Self, ResolveCallError> {
         if equivalent_sources.len().saturating_add(1) > limits.max_candidates_per_call()
             || !origin_matches(&id, &origin, authority)
-            || !instantiation_matches(&id, &instantiation, &schema)
+            || !instantiation_matches(&id, &instantiation)
         {
             return Err(ResolveCallError::InvalidResolvedCallable);
         }
@@ -109,6 +109,20 @@ impl ResolvedCallable {
             .any(|source| !ids.insert(source.id().clone()))
         {
             return Err(ResolveCallError::InvalidResolvedCallable);
+        }
+        if let (
+            CallableCandidateId::Curried(curried),
+            CallableInstantiation::Curried { base, group },
+        ) = (&id, &instantiation)
+        {
+            debug_assert_eq!(curried.base(), base);
+            debug_assert_eq!(curried.next_group(), *group);
+            if schema.group(*group).is_none() {
+                return Err(ResolveCallError::InvalidCallGroup {
+                    candidate: base.clone(),
+                    group: *group,
+                });
+            }
         }
         Ok(Self {
             id,
@@ -250,20 +264,13 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
     )
 }
 
-fn instantiation_matches(
-    id: &CallableCandidateId,
-    instantiation: &CallableInstantiation,
-    schema: &CallableSignatureSchema,
-) -> bool {
+fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInstantiation) -> bool {
     match (id, instantiation) {
         (CallableCandidateId::Result(id_kind), CallableInstantiation::Result { kind, .. }) => {
             id_kind == kind
         }
         (CallableCandidateId::Curried(id), CallableInstantiation::Curried { base, group }) => {
-            id.base() == base && id.next_group() == *group && schema.group(*group).is_some()
-        }
-        (id, CallableInstantiation::Curried { base, group }) => {
-            id == base && schema.group(*group).is_some()
+            id.base() == base && id.next_group() == *group
         }
         (
             CallableCandidateId::DataLast(id),

@@ -4,6 +4,7 @@ use arcweft_lang_hir::{
     project::{HirProject, HirProjectModule},
 };
 use arcweft_lang_sema::{
+    callable::PRODUCTION_CALLABLE_LIMITS,
     env::TypeCheckEnv,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, RegisteredTypeCheckEnv},
 };
@@ -176,7 +177,31 @@ pub(crate) fn register_loaded_environment(
         .map_err(RegisterProfileEnvironmentError::RegistrationLoad)?;
     let (facts, file_documents) = registration.into_parts();
     let base = topology.adapter().apply_to_env(TypeCheckEnv::standard());
-    let world = register_semantic_world(base, project.as_ref(), &facts, previous)?;
+    let mut callable_publications =
+        arcweft_adapter_context::standard::callable_publications(&PRODUCTION_CALLABLE_LIMITS)
+            .map_err(|error| RegisterProfileEnvironmentError::Registration(error.to_string()))?;
+    if arcweft_adapter_context::standard::manifest_source(topology.adapter().id().as_str())
+        .is_none()
+    {
+        callable_publications.push(
+            topology
+                .adapter()
+                .try_callable_publication(
+                    arcweft_adapter_context::publication::AdapterManifestSource::SelectedAdapter,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .map_err(|error| {
+                    RegisterProfileEnvironmentError::Registration(error.to_string())
+                })?,
+        );
+    }
+    let world = register_semantic_world(
+        base,
+        project.as_ref(),
+        &facts,
+        previous,
+        callable_publications,
+    )?;
     let characters = registered_character_catalog(&facts)?;
     let source_seeds = accepted_source_seeds(&facts, file_documents);
     let project = Arc::new(
@@ -198,26 +223,26 @@ fn register_semantic_world(
     project: &HirProject,
     facts: &arcweft_lang_sema::registration::ProjectRegistrationFacts,
     previous: Option<&RegisteredTypeCheckEnv>,
+    callable_publications: Vec<arcweft_lang_sema::callable::EnvironmentCallablePublication>,
 ) -> Result<
     Arc<arcweft_lang_sema::registration::RegisteredSemanticWorld>,
     RegisterProfileEnvironmentError,
 > {
-    CharacterRegistrar::register(CharacterRegistrationRequest::new(
-        Arc::new(base),
-        project,
-        facts,
-        previous,
-    ))
-    .map(Arc::new)
-    .map_err(|report| {
-        let details = report
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
-            .collect::<Vec<_>>()
-            .join("; ");
-        RegisterProfileEnvironmentError::Registration(details)
-    })
+    let request = callable_publications.into_iter().fold(
+        CharacterRegistrationRequest::new(Arc::new(base), project, facts, previous),
+        CharacterRegistrationRequest::with_callable_publication,
+    );
+    CharacterRegistrar::register(request)
+        .map(Arc::new)
+        .map_err(|report| {
+            let details = report
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+                .collect::<Vec<_>>()
+                .join("; ");
+            RegisterProfileEnvironmentError::Registration(details)
+        })
 }
 
 fn registered_character_catalog(

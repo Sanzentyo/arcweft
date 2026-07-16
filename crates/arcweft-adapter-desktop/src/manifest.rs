@@ -1,6 +1,8 @@
 use arcweft_adapter_context::manifest::{
-    AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
-    AdapterManifest, AdapterTypeKind,
+    AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
+    AdapterCallableParameterIndex, AdapterCallablePath, AdapterEffectCapability,
+    AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall, AdapterManifest,
+    AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterTypeKind,
 };
 use arcweft_rust_abi::{
     ArcweftRustManifest, ArcweftRustPackage, ArcweftRustTypeDecl, ArcweftRustTypeKind,
@@ -47,15 +49,24 @@ pub fn desktop_platform_manifest() -> AdapterManifest {
     )
 }
 
+/// Returns the complete typed callable surface for the owned-window adapter.
+///
+/// # Panics
+///
+/// Panics only if the statically declared desktop callable metadata violates
+/// the adapter callable model. Such a panic is a programming error in this
+/// crate rather than an error caused by project input.
 pub fn desktop_owned_window_manifest() -> AdapterManifest {
     let effect = AdapterEffectCapability::new("desktop.window.owned.control");
     [
         owned_call(
             DESKTOP_OWNED_WINDOW_SET_TITLE_CALL,
+            ["desktop", "window", "owned", "set_title"],
             [param("title", AdapterTypeKind::String)],
         ),
         owned_call(
             DESKTOP_OWNED_WINDOW_SET_BOUNDS_CALL,
+            ["desktop", "window", "owned", "set_bounds"],
             [
                 param("x", AdapterTypeKind::I32),
                 param("y", AdapterTypeKind::I32),
@@ -63,16 +74,34 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
                 param("height", AdapterTypeKind::U32),
             ],
         ),
-        owned_call(DESKTOP_OWNED_WINDOW_SET_MODE_CALL, [window_mode_param()]),
-        owned_call::<0>(DESKTOP_OWNED_WINDOW_REQUEST_FOCUS_CALL, []),
-        owned_call::<0>(DESKTOP_OWNED_WINDOW_REQUEST_CLOSE_CALL, []),
-        owned_call(DESKTOP_OWNED_CURSOR_SET_ICON_CALL, [cursor_icon_param()]),
+        owned_call(
+            DESKTOP_OWNED_WINDOW_SET_MODE_CALL,
+            ["desktop", "window", "owned", "set_mode"],
+            [window_mode_param()],
+        ),
+        owned_call(
+            DESKTOP_OWNED_WINDOW_REQUEST_FOCUS_CALL,
+            ["desktop", "window", "owned", "request_focus"],
+            [],
+        ),
+        owned_call(
+            DESKTOP_OWNED_WINDOW_REQUEST_CLOSE_CALL,
+            ["desktop", "window", "owned", "request_close"],
+            [],
+        ),
+        owned_call(
+            DESKTOP_OWNED_CURSOR_SET_ICON_CALL,
+            ["desktop", "cursor", "owned", "set_icon"],
+            [cursor_icon_param()],
+        ),
         owned_call(
             DESKTOP_OWNED_CURSOR_SET_VISIBLE_CALL,
+            ["desktop", "cursor", "owned", "set_visible"],
             [param("visible", AdapterTypeKind::Bool)],
         ),
         owned_call(
             DESKTOP_OWNED_CURSOR_SET_POSITION_CALL,
+            ["desktop", "cursor", "owned", "set_position"],
             [
                 param("x", AdapterTypeKind::I32),
                 param("y", AdapterTypeKind::I32),
@@ -83,15 +112,18 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
     .fold(
         AdapterManifest::new(DESKTOP_OWNED_WINDOW_ADAPTER_ID, "Owned Desktop Window")
             .with_effect(effect.clone())
-            .with_rust_manifest(&owned_window_rust_manifest()),
-        |manifest, (call, signature)| {
+            .try_with_rust_manifest(&owned_window_rust_manifest())
+            .expect("owned-window Rust metadata has typed callable names"),
+        |manifest, (call, path, signature)| {
             manifest
                 .with_function_signature(
-                    call,
-                    AdapterFunctionSignature::new(
+                    path,
+                    overload_zero(),
+                    AdapterFunctionSignature::try_new(
+                        signature.groups().to_vec(),
                         need_string_desktop_error(),
-                        signature.params().iter().cloned(),
-                    ),
+                    )
+                    .expect("owned-window callable signature stays structurally valid"),
                     [effect.clone()],
                 )
                 .with_host_call(AdapterHostCall::with_signature(
@@ -227,32 +259,79 @@ fn manifest<const N: usize>(
     )
 }
 
-fn owned_call<const N: usize>(
+fn owned_call<const N: usize, const M: usize>(
     call: &'static str,
-    params: [AdapterFunctionParam; N],
-) -> (&'static str, AdapterFunctionSignature) {
+    path: [&'static str; M],
+    params: [(&'static str, AdapterTypeKind); N],
+) -> (&'static str, AdapterCallablePath, AdapterFunctionSignature) {
     (
         call,
-        AdapterFunctionSignature::new(AdapterTypeKind::String, params),
+        callable_path(path),
+        signature(params, AdapterTypeKind::String),
     )
 }
 
-fn param(name: &'static str, ty: AdapterTypeKind) -> AdapterFunctionParam {
-    AdapterFunctionParam::required(name, ty)
+fn param(name: &'static str, ty: AdapterTypeKind) -> (&'static str, AdapterTypeKind) {
+    (name, ty)
 }
 
-fn window_mode_param() -> AdapterFunctionParam {
+fn window_mode_param() -> (&'static str, AdapterTypeKind) {
     param(
         "mode",
         AdapterTypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned()),
     )
 }
 
-fn cursor_icon_param() -> AdapterFunctionParam {
+fn cursor_icon_param() -> (&'static str, AdapterTypeKind) {
     param(
         "icon",
         AdapterTypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned()),
     )
+}
+
+fn callable_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
+    AdapterCallablePath::try_new(
+        segments
+            .into_iter()
+            .map(|segment| AdapterCallableName::try_new(segment).expect("valid callable segment")),
+    )
+    .expect("desktop callable paths are non-empty")
+}
+
+fn overload_zero() -> AdapterCallableOverloadIndex {
+    AdapterCallableOverloadIndex::try_from_usize(0).expect("zero overload fits")
+}
+
+fn signature<const N: usize>(
+    parameters: [(&str, AdapterTypeKind); N],
+    result: AdapterTypeKind,
+) -> AdapterFunctionSignature {
+    let parameters = parameters
+        .into_iter()
+        .enumerate()
+        .map(|(index, (name, ty))| {
+            AdapterFunctionParam::try_new(
+                AdapterCallableParameterIndex::try_from_usize(index)
+                    .expect("desktop parameter index fits"),
+                Some(AdapterCallableName::try_new(name).expect("valid desktop parameter name")),
+                ty,
+                AdapterParameterPassing::PositionalOrNamed,
+                AdapterParameterPresence::Required,
+            )
+            .expect("desktop parameter is valid")
+        })
+        .collect();
+    AdapterFunctionSignature::try_new(
+        vec![
+            AdapterParameterGroup::try_new(
+                AdapterCallableGroupIndex::try_from_usize(0).expect("initial group index fits"),
+                parameters,
+            )
+            .expect("desktop initial group is valid"),
+        ],
+        result,
+    )
+    .expect("desktop signature is valid")
 }
 
 fn owned_window_rust_manifest() -> ArcweftRustManifest {
@@ -376,9 +455,11 @@ mod tests {
         let set_bounds = manifest
             .functions()
             .iter()
-            .find(|function| function.name() == DESKTOP_OWNED_WINDOW_SET_BOUNDS_CALL)
+            .find(|function| {
+                function.path() == &callable_path(["desktop", "window", "owned", "set_bounds"])
+            })
             .expect("set_bounds function");
-        assert_eq!(set_bounds.signature().params().len(), 4);
+        assert_eq!(set_bounds.signature().groups()[0].parameters().len(), 4);
         assert_eq!(
             set_bounds.signature().return_type(),
             &AdapterTypeKind::Need {
@@ -390,20 +471,24 @@ mod tests {
         let set_mode = manifest
             .functions()
             .iter()
-            .find(|function| function.name() == DESKTOP_OWNED_WINDOW_SET_MODE_CALL)
+            .find(|function| {
+                function.path() == &callable_path(["desktop", "window", "owned", "set_mode"])
+            })
             .expect("set_mode function");
         assert_eq!(
-            set_mode.signature().params()[0].ty(),
+            set_mode.signature().groups()[0].parameters()[0].ty(),
             &AdapterTypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned())
         );
 
         let set_icon = manifest
             .functions()
             .iter()
-            .find(|function| function.name() == DESKTOP_OWNED_CURSOR_SET_ICON_CALL)
+            .find(|function| {
+                function.path() == &callable_path(["desktop", "cursor", "owned", "set_icon"])
+            })
             .expect("set_icon function");
         assert_eq!(
-            set_icon.signature().params()[0].ty(),
+            set_icon.signature().groups()[0].parameters()[0].ty(),
             &AdapterTypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned())
         );
 
@@ -412,7 +497,11 @@ mod tests {
             .iter()
             .find(|call| call.id() == DESKTOP_OWNED_WINDOW_REQUEST_CLOSE_CALL)
             .expect("request_close host call");
-        assert!(request_close.signature().params().is_empty());
+        assert!(
+            request_close.signature().groups()[0]
+                .parameters()
+                .is_empty()
+        );
         assert_eq!(
             request_close.signature().return_type(),
             &AdapterTypeKind::String

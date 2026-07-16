@@ -266,11 +266,32 @@ pub struct FunctionItem {
     visibility: Option<Visibility>,
     signature: FnSignature,
     signature_text: String,
+    signature_source: FunctionSignatureSource,
     contracts: Vec<ContractClause>,
     body: String,
     body_statements: Vec<Stmt>,
     body_value: Option<AuthoredExpr>,
     range: TextRange,
+}
+
+/// Exact source ranges for one parsed function signature.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionSignatureSource {
+    signature: TextRange,
+    name: TextRange,
+    result: Option<TextRange>,
+    parameters: Vec<FunctionParameterSource>,
+}
+
+/// Exact source ranges for one function parameter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FunctionParameterSource {
+    group: u16,
+    parameter: u16,
+    whole: TextRange,
+    name: Option<TextRange>,
+    ty: Option<TextRange>,
+    default: Option<TextRange>,
 }
 
 /// Agent controller entry point declared in an Agent dialect source.
@@ -555,6 +576,7 @@ pub(crate) struct FunctionInit {
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
     pub(crate) signature_text: String,
+    pub(crate) signature_source: FunctionSignatureSource,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: String,
     pub(crate) body_statements: Vec<Stmt>,
@@ -742,6 +764,7 @@ impl FunctionItem {
             visibility: init.visibility,
             signature: init.signature,
             signature_text: init.signature_text,
+            signature_source: init.signature_source,
             contracts: init.contracts,
             body: init.body,
             body_statements: init.body_statements,
@@ -774,6 +797,11 @@ impl FunctionItem {
         &self.signature_text
     }
 
+    /// Exact source ranges for the parsed signature and its parameters.
+    pub const fn signature_source(&self) -> &FunctionSignatureSource {
+        &self.signature_source
+    }
+
     pub fn contracts(&self) -> &[ContractClause] {
         &self.contracts
     }
@@ -792,6 +820,86 @@ impl FunctionItem {
 
     pub const fn range(&self) -> &TextRange {
         &self.range
+    }
+}
+
+impl FunctionSignatureSource {
+    pub(crate) fn new(
+        signature: TextRange,
+        name: TextRange,
+        result: Option<TextRange>,
+        parameters: Vec<FunctionParameterSource>,
+    ) -> Self {
+        Self {
+            signature,
+            name,
+            result,
+            parameters,
+        }
+    }
+
+    /// Complete function-signature range, excluding attributes and contracts.
+    pub const fn signature(&self) -> TextRange {
+        self.signature
+    }
+
+    /// Function-name range.
+    pub const fn name(&self) -> TextRange {
+        self.name
+    }
+
+    /// Declared result-type range.
+    pub const fn result(&self) -> Option<TextRange> {
+        self.result
+    }
+
+    /// Parameter ranges in group and source order.
+    pub fn parameters(&self) -> &[FunctionParameterSource] {
+        &self.parameters
+    }
+}
+
+impl FunctionParameterSource {
+    pub(crate) const fn new(
+        group: u16,
+        parameter: u16,
+        whole: TextRange,
+        name: Option<TextRange>,
+        ty: Option<TextRange>,
+        default: Option<TextRange>,
+    ) -> Self {
+        Self {
+            group,
+            parameter,
+            whole,
+            name,
+            ty,
+            default,
+        }
+    }
+
+    pub const fn group(&self) -> u16 {
+        self.group
+    }
+
+    pub const fn parameter(&self) -> u16 {
+        self.parameter
+    }
+
+    pub const fn whole(&self) -> TextRange {
+        self.whole
+    }
+
+    pub const fn name(&self) -> Option<TextRange> {
+        self.name
+    }
+
+    pub const fn ty(&self) -> Option<TextRange> {
+        self.ty
+    }
+
+    pub const fn default(&self) -> Option<TextRange> {
+        self.default
     }
 }
 

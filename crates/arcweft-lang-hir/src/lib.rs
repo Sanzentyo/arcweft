@@ -30,3 +30,4 @@ pub mod syntax {
         assertion, ast, cst, expr, lint, parser, pattern, reference, source, text, types,
     };
 }
+pub mod callable_source;

@@ -25,6 +25,7 @@ use arcweft_source::{
 use thiserror::Error;
 
 use crate::{
+    callable::{EnvironmentCallablePublication, RegisteredCallableCatalog},
     env::TypeCheckEnv,
     types::{CharacterNominalType, TypeKind},
 };
@@ -91,6 +92,7 @@ pub struct CharacterRegistrationRequest<'a> {
     pub(crate) project: &'a HirProject,
     pub(crate) facts: &'a ProjectRegistrationFacts,
     pub(crate) previous: Option<&'a RegisteredTypeCheckEnv>,
+    pub(crate) callable_publications: Vec<EnvironmentCallablePublication>,
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +181,7 @@ pub struct CharacterInventoryDescriptorV1 {
 #[derive(Clone, Debug)]
 pub struct RegisteredTypeCheckEnv {
     pub(crate) base: Arc<TypeCheckEnv>,
+    pub(crate) callables: Arc<RegisteredCallableCatalog>,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, BTreeSet<String>>,
     pub(crate) external_owners: ExternalOwnerRegistry,
@@ -630,7 +633,19 @@ impl<'a> CharacterRegistrationRequest<'a> {
             project,
             facts,
             previous,
+            callable_publications: Vec::new(),
         }
+    }
+
+    /// Adds one typed selected-environment callable publication to the same
+    /// fail-closed transaction that accepts the semantic world.
+    #[must_use]
+    pub fn with_callable_publication(
+        mut self,
+        publication: EnvironmentCallablePublication,
+    ) -> Self {
+        self.callable_publications.push(publication);
+        self
     }
 }
 
@@ -671,6 +686,11 @@ impl CharacterInventoryRevision {
 }
 
 impl RegisteredTypeCheckEnv {
+    /// Immutable callable catalog accepted with this exact semantic world.
+    pub fn callable_catalog(&self) -> &RegisteredCallableCatalog {
+        &self.callables
+    }
+
     pub const fn world(&self) -> &ProjectSymbolWorldId {
         &self.world
     }

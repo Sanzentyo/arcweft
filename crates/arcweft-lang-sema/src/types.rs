@@ -8,6 +8,7 @@ use core::fmt;
 
 mod character_nominal;
 mod mismatch;
+mod order;
 
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};

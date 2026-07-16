@@ -921,7 +921,7 @@ impl CurriedCallableId {
             });
         }
         if next_group.get() == 0 {
-            return Err(CallableIdentityError::MissingGroup {
+            return Err(CallableIdentityError::InvalidCurriedGroup {
                 base: Box::new(base),
                 group: next_group,
             });

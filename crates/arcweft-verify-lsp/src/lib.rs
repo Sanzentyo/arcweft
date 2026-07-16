@@ -5,7 +5,8 @@
 //! editor plugin, or tests can reuse.
 
 use arcweft_adapter_context::manifest::{
-    AdapterEffectCapability, AdapterFunctionSignature, AdapterHostCallId, AdapterManifest,
+    AdapterCallablePath, AdapterEffectCapability, AdapterFreeCallableKind,
+    AdapterFunctionSignature, AdapterHostCallId, AdapterManifest, AdapterToolingSubject,
     AdapterTypeKind,
 };
 use arcweft_runtime_host::{
@@ -339,21 +340,20 @@ pub fn runtime_host_hover(runtime_host: &RuntimeHostCapabilities, name: &str) ->
 
 /// Completes Rust adapter functions and exported Rust types visible to Arcweft.
 pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<CompletionItem> {
-    let functions = context
-        .adapter()
-        .rust_functions()
-        .iter()
-        .map(|function| CompletionItem {
-            label: function.name().to_owned(),
+    let functions = context.adapter().rust_functions().iter().map(|function| {
+        let label = callable_path_label(function.path());
+        CompletionItem {
+            label: label.clone(),
             kind: Some(CompletionItemKind::FUNCTION),
-            detail: Some(signature_label(function.name(), function.signature())),
+            detail: Some(signature_label(&label, function.signature())),
             documentation: Some(lsp_types::Documentation::String(format!(
                 "Rust export: {}\nPackage: {}",
                 function.rust_path(),
-                function.package()
+                function.package().name
             ))),
             ..CompletionItem::default()
-        });
+        }
+    });
     let types = context
         .adapter()
         .rust_types()
@@ -375,16 +375,20 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
 /// Completes all adapter manifest facts visible to Arcweft tooling.
 pub fn adapter_manifest_completions(context: &ArcweftLspContext<'_>) -> Vec<CompletionItem> {
     let adapter = context.adapter();
-    let docs = |subject: &str| tooling_doc(adapter, subject);
     let symbols = adapter.symbols().iter().map(|symbol| CompletionItem {
         label: symbol.name().to_owned(),
         kind: Some(CompletionItemKind::VARIABLE),
         detail: Some(type_kind_label(symbol.ty())),
-        documentation: docs(symbol.name()),
+        documentation: None,
         ..CompletionItem::default()
     });
     let methods = adapter.methods().iter().map(|method| {
         let label = method_label(method.receiver(), method.name());
+        let subject = AdapterToolingSubject::Method {
+            receiver: method.receiver().clone(),
+            name: method.callable_name().clone(),
+            overload: method.overload(),
+        };
         CompletionItem {
             label: label.clone(),
             kind: Some(CompletionItemKind::METHOD),
@@ -393,29 +397,37 @@ pub fn adapter_manifest_completions(context: &ArcweftLspContext<'_>) -> Vec<Comp
                 method.name(),
                 method.signature(),
             )),
-            documentation: docs(&label),
+            documentation: tooling_doc(adapter, &subject),
             ..CompletionItem::default()
         }
     });
-    let functions = adapter.functions().iter().map(|function| CompletionItem {
-        label: function.name().to_owned(),
-        kind: Some(CompletionItemKind::FUNCTION),
-        detail: Some(signature_label(function.name(), function.signature())),
-        documentation: docs(function.name()),
-        ..CompletionItem::default()
+    let functions = adapter.functions().iter().map(|function| {
+        let label = callable_path_label(function.path());
+        let subject = AdapterToolingSubject::Free {
+            kind: AdapterFreeCallableKind::Function,
+            path: function.path().clone(),
+            overload: function.overload(),
+        };
+        CompletionItem {
+            label: label.clone(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some(signature_label(&label, function.signature())),
+            documentation: tooling_doc(adapter, &subject),
+            ..CompletionItem::default()
+        }
     });
     let effects = adapter.effects().iter().map(|effect| CompletionItem {
         label: effect.as_str().to_owned(),
         kind: Some(CompletionItemKind::INTERFACE),
         detail: Some("effect capability".to_owned()),
-        documentation: docs(effect.as_str()),
+        documentation: None,
         ..CompletionItem::default()
     });
     let host_calls = adapter.host_calls().iter().map(|host_call| CompletionItem {
         label: host_call.id().to_owned(),
         kind: Some(CompletionItemKind::FUNCTION),
         detail: Some("host call".to_owned()),
-        documentation: docs(host_call.id()),
+        documentation: None,
         ..CompletionItem::default()
     });
     symbols
@@ -433,14 +445,15 @@ pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option
         .adapter()
         .rust_functions()
         .iter()
-        .find(|function| function.name() == name)
+        .find(|function| callable_path_label(function.path()) == name)
     {
+        let label = callable_path_label(function.path());
         return Some(Hover {
             contents: HoverContents::Scalar(MarkedString::String(format!(
                 "{}\nRust: {}\nPackage: {}",
-                signature_label(function.name(), function.signature()),
+                signature_label(&label, function.signature()),
                 function.rust_path(),
-                function.package()
+                function.package().name
             ))),
             range: None,
         });
@@ -470,10 +483,9 @@ pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Op
         .find(|symbol| symbol.name() == name)
     {
         return Some(string_hover(format!(
-            "{}: {}{}",
+            "{}: {}",
             symbol.name(),
-            type_kind_label(symbol.ty()),
-            tooling_doc_text(adapter, name)
+            type_kind_label(symbol.ty())
         )));
     }
     if let Some(method) = adapter
@@ -481,21 +493,31 @@ pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Op
         .iter()
         .find(|method| method_label(method.receiver(), method.name()) == name)
     {
+        let subject = AdapterToolingSubject::Method {
+            receiver: method.receiver().clone(),
+            name: method.callable_name().clone(),
+            overload: method.overload(),
+        };
         return Some(string_hover(format!(
             "{}{}",
             method_signature_label(method.receiver(), method.name(), method.signature()),
-            tooling_doc_text(adapter, name)
+            tooling_doc_text(adapter, &subject)
         )));
     }
     if let Some(function) = adapter
         .functions()
         .iter()
-        .find(|function| function.name() == name)
+        .find(|function| callable_path_label(function.path()) == name)
     {
+        let subject = AdapterToolingSubject::Free {
+            kind: AdapterFreeCallableKind::Function,
+            path: function.path().clone(),
+            overload: function.overload(),
+        };
         return Some(string_hover(format!(
             "{}{}",
-            signature_label(function.name(), function.signature()),
-            tooling_doc_text(adapter, name)
+            signature_label(name, function.signature()),
+            tooling_doc_text(adapter, &subject)
         )));
     }
     if adapter
@@ -503,20 +525,14 @@ pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Op
         .iter()
         .any(|effect| effect.as_str() == name)
     {
-        return Some(string_hover(format!(
-            "effect capability {name}{}",
-            tooling_doc_text(adapter, name)
-        )));
+        return Some(string_hover(format!("effect capability {name}")));
     }
     if adapter
         .host_calls()
         .iter()
         .any(|host_call| host_call.id() == name)
     {
-        return Some(string_hover(format!(
-            "host call {name}{}",
-            tooling_doc_text(adapter, name)
-        )));
+        return Some(string_hover(format!("host call {name}")));
     }
     rust_adapter_hover(context, name)
 }
@@ -530,10 +546,10 @@ pub fn rust_adapter_signature_help(
         .adapter()
         .rust_functions()
         .iter()
-        .find(|function| function.name() == name)?;
+        .find(|function| callable_path_label(function.path()) == name)?;
     Some(SignatureHelp {
         signatures: vec![SignatureInformation {
-            label: signature_label(function.name(), function.signature()),
+            label: signature_label(name, function.signature()),
             documentation: Some(lsp_types::Documentation::String(format!(
                 "Rust export: {}",
                 function.rust_path()
@@ -541,10 +557,13 @@ pub fn rust_adapter_signature_help(
             parameters: Some(
                 function
                     .signature()
-                    .params()
+                    .groups()
                     .iter()
+                    .flat_map(arcweft_adapter_context::callable::AdapterParameterGroup::parameters)
                     .map(|param| ParameterInformation {
-                        label: ParameterLabel::Simple(param.name().to_owned()),
+                        label: ParameterLabel::Simple(
+                            param.name().map_or("_", |name| name.as_str()).to_owned(),
+                        ),
                         documentation: Some(lsp_types::Documentation::String(type_kind_label(
                             param.ty(),
                         ))),
@@ -961,19 +980,22 @@ fn default_range() -> Range {
 }
 
 fn signature_label(name: &str, signature: &AdapterFunctionSignature) -> String {
-    let params = signature
-        .params()
-        .iter()
-        .map(|param| {
-            let name = param.name();
-            format!("{name}: {}", type_kind_label(param.ty()))
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "{name}({params}) -> {}",
-        type_kind_label(signature.return_type())
-    )
+    let mut label = String::from(name);
+    for group in signature.groups() {
+        label.push('(');
+        for (index, parameter) in group.parameters().iter().enumerate() {
+            if index > 0 {
+                label.push_str(", ");
+            }
+            label.push_str(parameter.name().map_or("_", |name| name.as_str()));
+            label.push_str(": ");
+            label.push_str(&type_kind_label(parameter.ty()));
+        }
+        label.push(')');
+    }
+    label.push_str(" -> ");
+    label.push_str(&type_kind_label(signature.return_type()));
+    label
 }
 
 fn method_signature_label(
@@ -1004,19 +1026,38 @@ fn string_hover(value: String) -> Hover {
     }
 }
 
-fn tooling_doc(adapter: &AdapterManifest, subject: &str) -> Option<lsp_types::Documentation> {
+fn tooling_doc(
+    adapter: &AdapterManifest,
+    subject: &AdapterToolingSubject,
+) -> Option<lsp_types::Documentation> {
     adapter
         .tooling_docs()
         .iter()
         .find(|doc| doc.subject() == subject)
-        .map(|doc| lsp_types::Documentation::String(doc.docs().to_owned()))
+        .map(|doc| {
+            lsp_types::Documentation::String(
+                doc.summary()
+                    .into_iter()
+                    .chain(doc.details())
+                    .collect::<Vec<_>>()
+                    .join("\n\n"),
+            )
+        })
 }
 
-fn tooling_doc_text(adapter: &AdapterManifest, subject: &str) -> String {
+fn tooling_doc_text(adapter: &AdapterManifest, subject: &AdapterToolingSubject) -> String {
     tooling_doc(adapter, subject).map_or_else(String::new, |doc| match doc {
         lsp_types::Documentation::String(text) => format!("\n{text}"),
         lsp_types::Documentation::MarkupContent(markup) => format!("\n{}", markup.value),
     })
+}
+
+fn callable_path_label(path: &AdapterCallablePath) -> String {
+    path.segments()
+        .iter()
+        .map(arcweft_adapter_context::callable::AdapterCallableName::as_str)
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 fn type_kind_label(ty: &AdapterTypeKind) -> String {
@@ -1071,8 +1112,12 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_adapter_context::manifest::AdapterFunctionParam;
-    use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest, AdapterToolingDoc};
+    use arcweft_adapter_context::manifest::{
+        AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
+        AdapterCallableParameterIndex, AdapterFunctionParam, AdapterHostCall, AdapterManifest,
+        AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence,
+        AdapterToolingDoc,
+    };
     use arcweft_rust_abi::{
         ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
         ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
@@ -1400,7 +1445,7 @@ mod tests {
             },
         })
         .with_function(ArcweftRustFunction {
-            name: "mini_games.truck.score_to_rank".to_owned(),
+            name: "score_to_rank".to_owned(),
             rust_path: "truck_game::score_to_rank".to_owned(),
             params: vec![ArcweftRustParam {
                 name: "score".to_owned(),
@@ -1412,33 +1457,32 @@ mod tests {
             purity: ArcweftRustPurity::Pure,
             effects: Vec::new(),
         });
-        let adapter = AdapterManifest::new("fixture", "Fixture").with_rust_manifest(&manifest);
+        let adapter = AdapterManifest::new("fixture", "Fixture")
+            .try_with_rust_manifest(&manifest)
+            .expect("Rust callable metadata is typed");
         let context = ArcweftLspContext::new(&adapter);
 
         let completions = rust_adapter_completions(&context);
-        assert!(
-            completions
-                .iter()
-                .any(|item| item.label == "mini_games.truck.score_to_rank")
-        );
+        assert!(completions.iter().any(|item| item.label == "score_to_rank"));
         assert!(completions.iter().any(|item| item.label == "Rank"));
-        let hover = rust_adapter_hover(&context, "mini_games.truck.score_to_rank")
-            .expect("hover is available");
+        let hover = rust_adapter_hover(&context, "score_to_rank").expect("hover is available");
         assert!(
             matches!(hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("score: i32"))
         );
-        let signature = rust_adapter_signature_help(&context, "mini_games.truck.score_to_rank")
+        let signature = rust_adapter_signature_help(&context, "score_to_rank")
             .expect("signature help is available");
         assert_eq!(
             signature.signatures[0].label,
-            "mini_games.truck.score_to_rank(score: i32) -> Rank"
+            "score_to_rank(score: i32) -> Rank"
         );
     }
 
     #[test]
     fn exposes_complex_rust_adapter_type_shapes_from_metadata() {
         let manifest = complex_rust_manifest();
-        let adapter = AdapterManifest::new("fixture", "Fixture").with_rust_manifest(&manifest);
+        let adapter = AdapterManifest::new("fixture", "Fixture")
+            .try_with_rust_manifest(&manifest)
+            .expect("Rust callable metadata is typed");
         let context = ArcweftLspContext::new(&adapter);
 
         let completions = rust_adapter_completions(&context);
@@ -1472,10 +1516,10 @@ mod tests {
         );
 
         let signature =
-            rust_adapter_signature_help(&context, "quest.evaluate").expect("signature help");
+            rust_adapter_signature_help(&context, "quest_evaluate").expect("signature help");
         assert_eq!(
             signature.signatures[0].label,
-            "quest.evaluate(stats: PlayerStats, seed: Result<(u32, u32), String>) -> Rank"
+            "quest_evaluate(stats: PlayerStats, seed: Result<(u32, u32), String>) -> Rank"
         );
     }
 
@@ -1554,7 +1598,7 @@ mod tests {
 
     fn evaluate_function() -> ArcweftRustFunction {
         ArcweftRustFunction {
-            name: "quest.evaluate".to_owned(),
+            name: "quest_evaluate".to_owned(),
             rust_path: "quest_logic::evaluate".to_owned(),
             params: vec![
                 ArcweftRustParam {
@@ -1587,24 +1631,15 @@ mod tests {
             .with_symbol("custom", AdapterTypeKind::Named("CustomApi".to_owned()))
             .with_method_signature(
                 AdapterTypeKind::Named("CustomApi".to_owned()),
-                "read",
-                AdapterFunctionSignature::new(
-                    AdapterTypeKind::String,
-                    [AdapterFunctionParam::required(
-                        "path",
-                        AdapterTypeKind::String,
-                    )],
-                ),
+                adapter_name("read"),
+                adapter_overload(0),
+                adapter_signature([("path", AdapterTypeKind::String)], AdapterTypeKind::String),
+                [],
             )
             .with_function_signature(
-                "custom.read",
-                AdapterFunctionSignature::new(
-                    AdapterTypeKind::String,
-                    [AdapterFunctionParam::required(
-                        "path",
-                        AdapterTypeKind::String,
-                    )],
-                ),
+                adapter_path(["custom", "read"]),
+                adapter_overload(0),
+                adapter_signature([("path", AdapterTypeKind::String)], AdapterTypeKind::String),
                 [AdapterEffectCapability::new("custom.read")],
             )
             .with_effect(AdapterEffectCapability::new("custom.read"))
@@ -1612,10 +1647,19 @@ mod tests {
                 "custom.read",
                 [AdapterEffectCapability::new("custom.read")],
             ))
-            .with_tooling_doc(AdapterToolingDoc::new(
-                "custom.read",
-                "Read custom content.",
-            ));
+            .with_tooling_doc(
+                AdapterToolingDoc::try_new(
+                    AdapterToolingSubject::Free {
+                        kind: AdapterFreeCallableKind::Function,
+                        path: adapter_path(["custom", "read"]),
+                        overload: adapter_overload(0),
+                    },
+                    Some("Read custom content.".to_owned()),
+                    None,
+                    Vec::new(),
+                )
+                .expect("test documentation is typed"),
+            );
         let context = ArcweftLspContext::new(&adapter);
         let completions = adapter_manifest_completions(&context);
 
@@ -1806,5 +1850,50 @@ mod tests {
             ))
         );
         assert!(diagnostics[0].message.contains("custom.read"));
+    }
+
+    fn adapter_name(value: &str) -> AdapterCallableName {
+        AdapterCallableName::try_new(value).expect("valid test callable name")
+    }
+
+    fn adapter_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
+        AdapterCallablePath::try_new(segments.into_iter().map(adapter_name))
+            .expect("test callable path is non-empty")
+    }
+
+    fn adapter_overload(value: usize) -> AdapterCallableOverloadIndex {
+        AdapterCallableOverloadIndex::try_from_usize(value).expect("test overload fits")
+    }
+
+    fn adapter_signature<const N: usize>(
+        parameters: [(&str, AdapterTypeKind); N],
+        result: AdapterTypeKind,
+    ) -> AdapterFunctionSignature {
+        let parameters = parameters
+            .into_iter()
+            .enumerate()
+            .map(|(index, (name, ty))| {
+                AdapterFunctionParam::try_new(
+                    AdapterCallableParameterIndex::try_from_usize(index)
+                        .expect("test parameter index fits"),
+                    Some(adapter_name(name)),
+                    ty,
+                    AdapterParameterPassing::PositionalOrNamed,
+                    AdapterParameterPresence::Required,
+                )
+                .expect("test parameter is valid")
+            })
+            .collect();
+        AdapterFunctionSignature::try_new(
+            vec![
+                AdapterParameterGroup::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(0).expect("initial group fits"),
+                    parameters,
+                )
+                .expect("test parameter group is valid"),
+            ],
+            result,
+        )
+        .expect("test adapter signature is valid")
     }
 }

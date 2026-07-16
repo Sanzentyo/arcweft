@@ -4,7 +4,9 @@ use crate::{
     character_manifest, project,
     rust_metadata::{self, LoadedRustMetadata},
 };
-use arcweft_adapter_context::manifest::{AdapterManifest, AdapterRegistry, AdapterRegistryError};
+use arcweft_adapter_context::manifest::{
+    AdapterCallableModelError, AdapterManifest, AdapterRegistry, AdapterRegistryError,
+};
 use arcweft_lang_sema::registration::CharacterDefinitionLimits;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_launch::{
@@ -502,6 +504,11 @@ pub enum ProfileTopologyLoadError {
         #[source]
         source: Box<rust_metadata::LoadError>,
     },
+    #[error("Rust metadata `{path}` contains an invalid callable: {source}")]
+    RustCallableModel {
+        path: PathBuf,
+        source: AdapterCallableModelError,
+    },
     #[error("invalid dependency or overlay seed: {source}")]
     DependencySeed {
         #[source]
@@ -536,7 +543,9 @@ impl ProfileTopologyLoadError {
             Self::AdapterManifest { .. } => ProfileTopologyErrorCode::AdapterManifest,
             Self::DuplicateAdapterId(_) => ProfileTopologyErrorCode::DuplicateAdapterId,
             Self::AdapterSelection { .. } => ProfileTopologyErrorCode::AdapterSelection,
-            Self::RustMetadata { .. } => ProfileTopologyErrorCode::RustMetadata,
+            Self::RustMetadata { .. } | Self::RustCallableModel { .. } => {
+                ProfileTopologyErrorCode::RustMetadata
+            }
             Self::DependencySeed { .. } => ProfileTopologyErrorCode::DependencySeed,
             Self::Limit { .. } => ProfileTopologyErrorCode::Limit,
             Self::ArithmeticOverflow { .. } => ProfileTopologyErrorCode::ArithmeticOverflow,

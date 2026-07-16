@@ -21,7 +21,10 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::{SourceRange, SourceSpan};
 
-use crate::types::CharacterNominalType;
+use crate::{
+    callable::{PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogBuilder},
+    types::{CharacterNominalType, EntityKind, EntityType, TypeKind},
+};
 
 use super::{
     descriptor::{build_descriptor, descriptor_digest},
@@ -173,9 +176,95 @@ impl CharacterRegistrar {
             ]));
         }
 
+        let mut callable_builder =
+            RegisteredCallableCatalogBuilder::new(PRODUCTION_CALLABLE_LIMITS);
+        if let Err(error) = callable_builder.add_project(request.project, link.table()) {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        if let Err(error) =
+            callable_builder.add_project_bindings(request.project, link.table(), |target| {
+                match target {
+                    ProjectSymbolTargetId::External(declaration) => match owners.get(declaration) {
+                        Some(RegisteredExternalOwner::Character(_)) => {
+                            Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
+                        }
+                        Some(RegisteredExternalOwner::Environment(id)) => {
+                            request.base.environment_binding(id).cloned()
+                        }
+                        None => None,
+                    },
+                    ProjectSymbolTargetId::Module(_) => Some(TypeKind::Named("Module".to_owned())),
+                    ProjectSymbolTargetId::Callable(_) => None,
+                }
+            })
+        {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        let standard_publication = match request
+            .base
+            .standard_callable_publication(&PRODUCTION_CALLABLE_LIMITS)
+        {
+            Ok(publication) => publication,
+            Err(error) => {
+                let error = crate::callable::CallableCatalogBuildError::from(error);
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        };
+        if let Err(error) = callable_builder.add_environment(standard_publication) {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        for publication in request.callable_publications.iter().cloned() {
+            if let Err(error) = callable_builder.add_environment(publication) {
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        }
+        let callables = match callable_builder.finish() {
+            Ok(callables) => Arc::new(callables),
+            Err(error) => {
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        };
+
         let symbols = Arc::new(link.into_table());
         let environment = Arc::new(RegisteredTypeCheckEnv {
             base: request.base,
+            callables,
             characters,
             character_variants,
             external_owners: ExternalOwnerRegistry {

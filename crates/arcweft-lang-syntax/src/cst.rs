@@ -293,6 +293,7 @@ pub(crate) enum CstBlockOpenRule {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct CstBlockEvent<'a> {
     pub(crate) head: Cow<'a, str>,
+    pub(crate) head_range: Option<Range<usize>>,
     pub(crate) body: Cow<'a, str>,
     pub(crate) body_range: Option<Range<usize>>,
     pub(crate) end: usize,

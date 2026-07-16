@@ -24,17 +24,22 @@ use crate::test_support::character_project::{
     one_character_facts_with_documents, project_modules, register, root_project,
     root_project_source, sample_manifest, sample_manifest_for, source_document,
 };
-use crate::{env::TypeCheckEnv, types::TypeKind};
+use crate::{
+    callable::{CallableName, CallablePath, ProjectCallablePath, ProjectNameBinding},
+    env::TypeCheckEnv,
+    types::{EntityKind, TypeKind},
+};
 
 use super::model::{RegistrationDocumentView, registration_document_diagnostics};
 use super::registrar::{charge, merge_manifest_occurrence};
 use super::{
     CharacterInventoryDigest, CharacterInventoryIntegrityError, CharacterInventoryRevision,
-    CharacterRegistrationCode, CharacterRegistrationDiagnostic,
+    CharacterRegistrar, CharacterRegistrationCode, CharacterRegistrationDiagnostic,
     CharacterRegistrationDiagnosticKind, CharacterRegistrationLimitKind,
-    CharacterRegistrationLimits, CharacterRegistrationReport, EnvironmentBindingId,
-    ExternalOwnerLookupError, ExternalRegistrationFact, ProjectRegistrationFacts,
-    RegisteredExternalOwner, RegisteredExternalOwnerKind, RegisteredSemanticWorld,
+    CharacterRegistrationLimits, CharacterRegistrationReport, CharacterRegistrationRequest,
+    EnvironmentBindingId, ExternalOwnerLookupError, ExternalRegistrationFact,
+    ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredExternalOwnerKind,
+    RegisteredSemanticWorld,
 };
 
 fn reordered_manifest(reverse: bool) -> CharacterManifest {
@@ -217,6 +222,133 @@ fn complete_world_commits_once() {
 }
 
 #[test]
+fn accepted_world_publishes_project_callables_and_non_callable_shadow_bindings() {
+    let (root, project, world) = root_project("callable-catalog");
+    let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));
+    let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("complete world registers");
+    let catalog = registered.environment().callable_catalog().project();
+
+    assert_eq!(catalog.modules().len(), 1);
+    assert_eq!(
+        catalog.modules()[0].module(),
+        &CanonicalModulePath::crate_root()
+    );
+    let declaration = registered
+        .symbols()
+        .callable_symbols()
+        .next()
+        .expect("main callable symbol")
+        .declaration()
+        .clone();
+    assert!(catalog.record(&declaration).is_some());
+
+    let path = |leaf: &str| {
+        ProjectCallablePath::new(
+            registered.symbols().world().package().clone(),
+            CanonicalModulePath::crate_root(),
+            CallablePath::try_new([CallableName::try_new(leaf).unwrap()]).unwrap(),
+        )
+    };
+    assert_eq!(
+        catalog.binding(&path("main")),
+        Some(&ProjectNameBinding::Callable(declaration))
+    );
+    assert!(matches!(
+        catalog.binding(&path("akane")),
+        Some(ProjectNameBinding::NonCallable {
+            ty: TypeKind::Ref(entity),
+            ..
+        }) if entity.kind() == &EntityKind::Character
+    ));
+}
+
+#[test]
+fn same_rank_callable_collision_rejects_candidate_world_before_publication() {
+    use crate::{
+        callable::{
+            AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema,
+            CallableGroupIndex, CallableGroupKind, CallableLookupKey, CallableOverloadIndex,
+            CallableParameterGroup, CallableSignatureSchema, CallableValidator,
+            EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
+            EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
+            PRODUCTION_CALLABLE_LIMITS, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        },
+        effect_row::EffectRow,
+    };
+
+    let publication = |owner: &str, result: TypeKind| {
+        let schema = CallableSignatureSchema::try_new(
+            vec![
+                CallableParameterGroup::try_new(
+                    CallableGroupIndex::try_from_usize(0).unwrap(),
+                    CallableGroupKind::Initial,
+                    Vec::new(),
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .unwrap(),
+            ],
+            result,
+            CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::default())),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::Reject,
+            ),
+            CallableValidator::Ordinary,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .unwrap();
+        EnvironmentCallablePublication::try_new(
+            EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).unwrap()),
+            vec![
+                EnvironmentCallablePublicationRecord::try_new(
+                    EnvironmentCallableKind::Function,
+                    CallableLookupKey::Free(
+                        CallablePath::try_new([CallableName::try_new("collision").unwrap()])
+                            .unwrap(),
+                    ),
+                    CallableOverloadIndex::try_from_usize(0).unwrap(),
+                    schema,
+                    CallableDocumentation::missing(),
+                    None,
+                    None,
+                    EnvironmentDeclarationOrdinal::try_from_usize(0).unwrap(),
+                )
+                .unwrap(),
+            ],
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .unwrap()
+    };
+
+    let (root, project, world) = root_project("callable-collision");
+    let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));
+    let previous = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("baseline world registers");
+    let (_, previous_environment, _) = previous.into_parts();
+    let previous_revision = previous_environment.character_revision();
+    let report = CharacterRegistrar::register(
+        CharacterRegistrationRequest::new(
+            Arc::new(TypeCheckEnv::standard()),
+            &project,
+            &facts,
+            Some(&previous_environment),
+        )
+        .with_callable_publication(publication("adapter-a", TypeKind::I32))
+        .with_callable_publication(publication("adapter-b", TypeKind::I64)),
+    )
+    .expect_err("same-rank providers for one key reject the candidate world");
+
+    assert!(report.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic.kind(),
+        CharacterRegistrationDiagnosticKind::CallableCatalog {
+            code: crate::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+        }
+    )));
+    assert_eq!(previous_environment.character_revision(), previous_revision);
+}
+
+#[test]
 fn same_facts_same_inventory() {
     let (root, project, world) = root_project("same-facts-inventory");
     let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));
@@ -233,6 +365,11 @@ fn same_facts_same_inventory() {
     assert_eq!(
         first.environment().character_descriptor,
         second.environment().character_descriptor
+    );
+    assert_eq!(
+        first.environment().callable_catalog(),
+        second.environment().callable_catalog(),
+        "unordered environment storage must publish one deterministic catalog",
     );
 }
 

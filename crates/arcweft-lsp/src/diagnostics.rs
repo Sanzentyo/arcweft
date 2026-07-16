@@ -528,7 +528,10 @@ fn start_range() -> Range {
 mod tests {
     use super::*;
     use arcweft_adapter_context::manifest::{
-        AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest, AdapterTypeKind,
+        AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
+        AdapterCallableParameterIndex, AdapterCallablePath, AdapterFunctionParam,
+        AdapterFunctionSignature, AdapterManifest, AdapterParameterGroup, AdapterParameterPassing,
+        AdapterParameterPresence, AdapterTypeKind,
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
 
@@ -569,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_use_profile_selected_adapter_environment() {
+    fn diagnostics_do_not_bypass_registered_callable_catalog() {
         let source = r#"
 flow @.main main {
     let value = custom_echo("hello")
@@ -585,24 +588,47 @@ flow @.main main {
         }));
 
         let adapter = AdapterManifest::new("custom", "Custom").with_function_signature(
-            "custom_echo",
-            AdapterFunctionSignature::new(
-                AdapterTypeKind::String,
-                [AdapterFunctionParam::required(
-                    "value",
-                    AdapterTypeKind::String,
-                )],
+            AdapterCallablePath::single(
+                AdapterCallableName::try_new("custom_echo").expect("valid callable name"),
             ),
+            AdapterCallableOverloadIndex::try_from_usize(0).expect("zero overload fits"),
+            AdapterFunctionSignature::try_new(
+                vec![
+                    AdapterParameterGroup::try_new(
+                        AdapterCallableGroupIndex::try_from_usize(0).expect("initial group fits"),
+                        vec![
+                            AdapterFunctionParam::try_new(
+                                AdapterCallableParameterIndex::try_from_usize(0)
+                                    .expect("parameter index fits"),
+                                Some(
+                                    AdapterCallableName::try_new("value")
+                                        .expect("valid parameter name"),
+                                ),
+                                AdapterTypeKind::String,
+                                AdapterParameterPassing::PositionalOrNamed,
+                                AdapterParameterPresence::Required,
+                            )
+                            .expect("valid parameter"),
+                        ],
+                    )
+                    .expect("valid initial group"),
+                ],
+                AdapterTypeKind::String,
+            )
+            .expect("valid callable signature"),
             [],
         );
         let profile = LspProfile::new(adapter, RuntimeHostRunnerKind::Native);
         let profile_analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
 
-        assert!(!profile_analysis.diagnostics().iter().any(|diagnostic| {
-            diagnostic
-                .message
-                .contains("unknown function `custom_echo`")
-        }));
+        assert!(
+            profile_analysis.diagnostics().iter().any(|diagnostic| {
+                diagnostic
+                    .message
+                    .contains("unknown function `custom_echo`")
+            }),
+            "an unregistered manifest must not mutate the checker environment"
+        );
     }
 
     #[test]
