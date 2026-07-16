@@ -30,7 +30,7 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
         "enum Mood {}\n",
         "struct Point {}\n",
         "type Count = Int\n",
-        "entity actor: Character {}\n",
+        "res actor: Character {}\n",
         "entry start {}\n",
         "extern capability audio\n",
         "extern mod native\n",
@@ -68,7 +68,7 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
             SyntaxKind::EnumItem,
             SyntaxKind::StructItem,
             SyntaxKind::TypeAliasItem,
-            SyntaxKind::EntityDeclarationItem,
+            SyntaxKind::ResourceDeclarationItem,
             SyntaxKind::EntryDeclarationItem,
             SyntaxKind::ExternCapabilityItem,
             SyntaxKind::ExternModuleItem,
@@ -102,7 +102,7 @@ const fn is_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::EnumItem
             | SyntaxKind::StructItem
             | SyntaxKind::TypeAliasItem
-            | SyntaxKind::EntityDeclarationItem
+            | SyntaxKind::ResourceDeclarationItem
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::ExternModuleItem

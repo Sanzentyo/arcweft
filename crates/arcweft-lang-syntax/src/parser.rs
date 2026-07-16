@@ -61,6 +61,9 @@ mod predicate_proof;
 mod predicate_proof_tests;
 pub mod proof;
 pub mod recovery;
+mod resource_grammar;
+#[cfg(test)]
+mod resource_grammar_tests;
 mod shadow_flow;
 #[cfg(test)]
 mod shadow_flow_tests;

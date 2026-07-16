@@ -75,7 +75,7 @@ pub(super) fn declaration_kind(keywords: &[&str]) -> Option<SyntaxKind> {
         "enum" => SyntaxKind::EnumItem,
         "struct" => SyntaxKind::StructItem,
         "type" => SyntaxKind::TypeAliasItem,
-        "entity" => SyntaxKind::EntityDeclarationItem,
+        "res" => SyntaxKind::ResourceDeclarationItem,
         "entry" => SyntaxKind::EntryDeclarationItem,
         "extern" if keywords.contains(&"capability") => SyntaxKind::ExternCapabilityItem,
         "extern" if keywords.contains(&"mod") => SyntaxKind::ExternModuleItem,
@@ -105,7 +105,7 @@ pub(super) const fn is_declaration_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::EnumItem
             | SyntaxKind::StructItem
             | SyntaxKind::TypeAliasItem
-            | SyntaxKind::EntityDeclarationItem
+            | SyntaxKind::ResourceDeclarationItem
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::ExternModuleItem

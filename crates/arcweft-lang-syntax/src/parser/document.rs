@@ -220,6 +220,7 @@ fn structured_declaration_after_outer_prefixes(
             | SyntaxKind::TypeAliasItem
             | SyntaxKind::TraitItem
             | SyntaxKind::ImplItem
+            | SyntaxKind::ResourceDeclarationItem
     )
     .then_some((declaration, kind))
 }
@@ -483,6 +484,12 @@ fn emit_declaration_item(
                 events,
             );
         }
+        SyntaxKind::ResourceDeclarationItem => super::resource_grammar::emit_declaration(
+            source,
+            tokens,
+            SyntaxRole::Element(ordinal),
+            events,
+        ),
         _ => unreachable!("only structured declaration kinds are grouped"),
     }
     wrap_declaration_logical_lines(source, item_start, events);

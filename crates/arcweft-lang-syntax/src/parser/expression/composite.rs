@@ -385,13 +385,15 @@ fn emit_record_fields(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         if parser.cursor() >= close || parser.at("}") {
             break;
         }
-        let field_end = find_top_level_boundary(parser, parser.cursor(), &[",", "}"]).min(close);
+        let field_end = record_field_boundary(parser, parser.cursor(), close);
         emit_record_field(parser, field_end, ordinal);
         bump_until(parser, field_end);
         ordinal = ordinal.saturating_add(1);
         if parser.at(",") {
             parser.bump();
-        } else {
+        } else if parser.cursor() >= close
+            || parser.current_kind() != Some(SyntaxKind::NewlineToken)
+        {
             break;
         }
     }
@@ -402,6 +404,25 @@ fn emit_record_fields(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         "}",
         "syntax.expression.missing_record_close",
     );
+}
+
+fn record_field_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+    let mut depth = 0_usize;
+    for index in start..end {
+        let Some(token) = parser.token_at(index) else {
+            return index;
+        };
+        let text = parser.text_of(token);
+        if depth == 0 && (text == "," || token.kind() == SyntaxKind::NewlineToken) {
+            return index;
+        }
+        match text {
+            "(" | "[" | "{" | "<" => depth += 1,
+            ")" | "]" | "}" | ">" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    end
 }
 
 fn emit_record_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
