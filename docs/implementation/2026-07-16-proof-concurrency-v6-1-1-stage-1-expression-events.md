@@ -69,3 +69,6 @@ record literals, closures, block descendants, if-let, match arms, and detailed
 recovery still need exact shared-cursor implementations and direct family
 tests. Complete pattern/type/statement/item coverage and all later attachment,
 public syntax, HIR, project, and runtime stages remain open.
+
+Nested type and pattern ownership continues in
+`2026-07-16-proof-concurrency-v6-1-1-stage-1-type-pattern-events.md`.

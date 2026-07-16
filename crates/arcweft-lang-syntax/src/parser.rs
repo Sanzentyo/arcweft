@@ -43,6 +43,7 @@ pub mod hooks;
 pub mod items;
 mod lexer;
 pub mod line_plan;
+mod path;
 mod pattern;
 mod predicate_proof;
 #[cfg(test)]

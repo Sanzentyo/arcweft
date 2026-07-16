@@ -340,7 +340,7 @@ fn emit_where_clause(parser: &mut ShadowDocumentParser<'_, '_>) {
             SyntaxKind::WherePredicate,
             SyntaxRole::WherePredicate(ordinal),
         );
-        bump_until(parser, trimmed_end(parser, parser.cursor(), end));
+        emit_where_predicate_children(parser, trimmed_end(parser, parser.cursor(), end));
         parser.finish();
         bump_until(parser, end);
         ordinal = ordinal.saturating_add(1);
@@ -351,6 +351,34 @@ fn emit_where_clause(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
     bump_until(parser, clause_end);
     parser.finish();
+}
+
+fn emit_where_predicate_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]).min(end);
+    if colon == end {
+        emit_type(parser, end, SyntaxRole::Type);
+        return;
+    }
+
+    emit_type(parser, colon, SyntaxRole::LeftOperand);
+    bump_until(parser, colon);
+    parser.bump();
+    let mut ordinal = 0_u32;
+    loop {
+        parser.bump_trivia();
+        if parser.cursor() >= end {
+            break;
+        }
+        let bound_end = find_top_level_boundary(parser, parser.cursor(), &["+"]).min(end);
+        emit_type(parser, bound_end, SyntaxRole::Element(ordinal));
+        bump_until(parser, bound_end);
+        ordinal = ordinal.saturating_add(1);
+        if parser.at("+") {
+            parser.bump();
+        } else {
+            break;
+        }
+    }
 }
 
 fn emit_contract_clause(

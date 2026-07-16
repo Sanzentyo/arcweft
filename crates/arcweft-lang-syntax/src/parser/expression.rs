@@ -1,6 +1,7 @@
 //! Private Pratt expression grammar over the shared document cursor.
 
 use super::document::ShadowDocumentParser;
+use super::path::emit_path;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_open_delimiter, find_top_level_boundary, range_contains,
     trimmed_end,
@@ -302,46 +303,7 @@ fn emit_path_like(
 ) -> CompletedNode {
     let start_event = parser.event_position();
     parser.start(expression_kind, role);
-    parser.start(SyntaxKind::Path, SyntaxRole::Target);
-    let mut segment = 0_u32;
-    loop {
-        if parser.cursor() >= end
-            || !matches!(
-                parser.current_kind(),
-                Some(
-                    SyntaxKind::IdentifierToken
-                        | SyntaxKind::KeywordToken
-                        | SyntaxKind::LifetimeToken
-                )
-            )
-        {
-            break;
-        }
-        parser.start(SyntaxKind::PathSegment, SyntaxRole::Element(segment));
-        parser.bump();
-        parser.finish();
-        segment = segment.saturating_add(1);
-
-        let Some((separator, _, spelling)) = parser.next_significant() else {
-            break;
-        };
-        if separator >= end || !matches!(spelling, "." | "::") {
-            break;
-        }
-        let Some((next, token, _)) = next_significant_after(parser, separator + 1, end) else {
-            break;
-        };
-        if !matches!(
-            token.kind(),
-            SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
-        ) {
-            break;
-        }
-        bump_until(parser, separator);
-        parser.bump();
-        bump_until(parser, next);
-    }
-    parser.finish();
+    emit_path(parser, end, SyntaxRole::Target);
     parser.finish();
     CompletedNode { start_event }
 }
@@ -494,24 +456,6 @@ fn emit_try(
     CompletedNode {
         start_event: left.start_event,
     }
-}
-
-fn next_significant_after<'a>(
-    parser: &'a ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Option<(usize, super::lexer::LexToken, &'a str)> {
-    (start..end).find_map(|index| {
-        let token = parser.token_at(index)?;
-        (!matches!(
-            token.kind(),
-            SyntaxKind::WhitespaceToken
-                | SyntaxKind::NewlineToken
-                | SyntaxKind::CommentToken
-                | SyntaxKind::DocCommentToken
-        ))
-        .then(|| (index, token, parser.text_of(token)))
-    })
 }
 
 fn is_postfix_operator(operator: &str) -> bool {

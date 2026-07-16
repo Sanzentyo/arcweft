@@ -116,6 +116,55 @@ fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
 }
 
 #[test]
+fn nested_type_and_pattern_families_have_independent_events() {
+    let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::FunctionType,
+        SyntaxKind::ReferenceType,
+        SyntaxKind::GenericApplicationType,
+        SyntaxKind::SumType,
+        SyntaxKind::TupleType,
+        SyntaxKind::ArrayType,
+        SyntaxKind::TypeArgument,
+        SyntaxKind::WherePredicate,
+        SyntaxKind::TuplePattern,
+        SyntaxKind::SequencePattern,
+        SyntaxKind::RecordPattern,
+        SyntaxKind::RecordPatternField,
+        SyntaxKind::MutableBindingPattern,
+        SyntaxKind::WholeBindingPattern,
+        SyntaxKind::VariantPattern,
+        SyntaxKind::RestPattern,
+        SyntaxKind::OrPattern,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::VariantPattern)
+            .count(),
+        3
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::RestPattern)
+            .count(),
+        2
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn entity_style_proof_name_uses_ordinary_error_item_recovery() {
     let source = "proof @legacy.fact() {}\nproof current() = ()\n";
     let built = parse_shadow_document(&document(source)).unwrap();
