@@ -58,7 +58,7 @@ fn paint_item(
     let physical_box = style.physical_box();
     let translate_x = physical_box.translate_x.value();
     let translate_y = physical_box.translate_y.value();
-    let scale = scalar(style, ViewPropertyKind::Scale).unwrap_or(1_000);
+    let scale = physical_box.scale.value();
     let bounds = HitRect::new(
         milli_pixels(x),
         milli_pixels(y),
@@ -147,13 +147,6 @@ fn is_visible(style: &ComputedViewStyle) -> bool {
 fn length(style: &ComputedViewStyle, property: ViewPropertyKind) -> Option<i32> {
     match style.value(property) {
         Some(ViewSpecifiedValue::Length { value }) => Some(value.value()),
-        _ => None,
-    }
-}
-
-fn scalar(style: &ComputedViewStyle, property: ViewPropertyKind) -> Option<u32> {
-    match style.value(property) {
-        Some(ViewSpecifiedValue::Scalar { value }) => Some(value.value()),
         _ => None,
     }
 }

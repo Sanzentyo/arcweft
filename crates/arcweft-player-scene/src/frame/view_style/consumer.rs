@@ -13,8 +13,7 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_view::ViewElementKind;
 use arcweft_view::style::{
-    ComputedViewStyle, ViewOverflow, ViewPropertyKind, ViewSpecifiedValue,
-    ViewStyleContributionSource,
+    ComputedViewStyle, ViewOverflow, ViewPropertyKind, ViewStyleContributionSource,
 };
 
 /// Presentation resources with the current live Style snapshot applied.
@@ -425,16 +424,12 @@ pub(in crate::frame) fn box_style(style: &ViewRuntimeNodeStyle) -> BoxStyle {
     let height = physical
         .height
         .map(|value| u32::try_from(value.value().max(0)).unwrap_or(u32::MAX));
-    let scale_milli = match style.composite().value(ViewPropertyKind::Scale) {
-        Some(ViewSpecifiedValue::Scalar { value }) => value.value(),
-        _ => 1_000,
-    };
     BoxStyle {
         width,
         height,
         translate_x: physical.translate_x.value(),
         translate_y: physical.translate_y.value(),
-        scale_milli,
+        scale_milli: physical.scale.value(),
         overflow_x: physical.overflow_x,
         overflow_y: physical.overflow_y,
     }

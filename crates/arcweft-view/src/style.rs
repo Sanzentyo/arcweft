@@ -25,8 +25,8 @@ pub use axis::{
     ViewAxisSign, ViewAxisUsageSet, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisModeError,
     ViewBoxAxisRevision, ViewBoxAxisSeedGeneration, ViewBoxAxisSeedGenerationError,
     ViewBoxAxisSeedSource, ViewBoxAxisSource, ViewInheritedBoxAxes, ViewPhysicalAxis,
-    ViewPhysicalBoxStyle, ViewPhysicalEdges, ViewPhysicalSide, ViewResolvedAxis,
-    ViewResolvedBoxAxes,
+    ViewPhysicalBoxStyle, ViewPhysicalContainerStyle, ViewPhysicalEdges, ViewPhysicalFlow,
+    ViewPhysicalSide, ViewResolvedAxis, ViewResolvedBoxAxes,
 };
 pub use cascade::{
     ComputedViewStyleBuilder, ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority,
@@ -93,7 +93,10 @@ impl ViewStyleInvalidationSet {
         if self.contains(Self::FRAGMENT) {
             flags.insert(DirtyFlags::FRAGMENT);
         }
-        if self.contains(Self::LAYOUT) || self.contains(Self::TEXT_LAYOUT) {
+        if self.contains(Self::LAYOUT)
+            || self.contains(Self::TEXT_LAYOUT)
+            || self.contains(Self::PHYSICAL_GEOMETRY)
+        {
             flags.insert(DirtyFlags::LAYOUT);
         }
         if self.contains(Self::SEMANTICS) {

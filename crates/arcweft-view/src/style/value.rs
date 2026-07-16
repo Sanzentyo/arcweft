@@ -271,6 +271,17 @@ impl ViewDisplay {
             .copied()
             .find(|display| display.source_name() == value)
     }
+
+    /// Stable ordinal used by deterministic hashes and codecs.
+    pub const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Stack => 1,
+            Self::Block => 2,
+            Self::Inline => 3,
+            Self::Flex => 4,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -299,6 +310,16 @@ impl ViewPosition {
             .iter()
             .copied()
             .find(|position| position.source_name() == value)
+    }
+
+    /// Stable ordinal used by deterministic hashes and codecs.
+    pub const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::Static => 0,
+            Self::Relative => 1,
+            Self::Absolute => 2,
+            Self::Fixed => 3,
+        }
     }
 }
 
@@ -336,6 +357,33 @@ impl ViewOverflow {
             .iter()
             .copied()
             .find(|overflow| overflow.source_name() == value)
+    }
+
+    /// Stable ordinal used by deterministic hashes and codecs.
+    pub const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::Visible => 0,
+            Self::Hidden => 1,
+            Self::Clip => 2,
+            Self::Auto => 3,
+            Self::Scroll => 4,
+        }
+    }
+
+    /// Whether this overflow mode clips descendant geometry to the padding box.
+    pub const fn clips_descendants(self) -> bool {
+        !matches!(self, Self::Visible)
+    }
+
+    /// Physical scrolling capability after the signed range is known.
+    pub const fn scroll_capability(self, has_range: bool) -> crate::geometry::ViewScrollCapability {
+        use crate::geometry::ViewScrollCapability;
+        match self {
+            Self::Hidden => ViewScrollCapability::Programmatic,
+            Self::Auto if has_range => ViewScrollCapability::UserAndProgrammatic,
+            Self::Scroll => ViewScrollCapability::UserAndProgrammatic,
+            _ => ViewScrollCapability::None,
+        }
     }
 }
 

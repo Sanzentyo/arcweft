@@ -6,6 +6,7 @@ pub mod entity;
 pub mod fragment;
 pub mod frame;
 pub mod fx;
+pub mod geometry;
 pub mod handler;
 pub mod image;
 pub mod layout;
@@ -79,20 +80,21 @@ pub use style::{
     ViewEnvironmentPredicate, ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily,
     ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewInheritedBoxAxes,
     ViewInteractionSelector, ViewInteractionStateSet, ViewLengthMilli, ViewMask, ViewOverflow,
-    ViewPartName, ViewPhysicalAxis, ViewPhysicalBoxStyle, ViewPhysicalEdges, ViewPhysicalSide,
-    ViewPosition, ViewPropertyExpansion, ViewPropertyId, ViewPropertyKind, ViewPropertyResolution,
-    ViewPropertyValueTransform, ViewRatioMilli, ViewResolvedAxis, ViewResolvedBoxAxes,
-    ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleCombinator,
-    ViewStyleComparison, ViewStyleContribution, ViewStyleContributionSource, ViewStyleDeclaration,
-    ViewStyleInvalidationSet, ViewStyleModelError, ViewStyleNodeFacts, ViewStyleNodeKey,
-    ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStylePriority, ViewStyleProgram,
-    ViewStyleResolution, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver,
-    ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId,
-    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSourceId, ViewStyleSpecificity, ViewStyleToken, ViewStyleTokenId, ViewStyleTrace,
-    ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection, ViewStyleTransition,
-    ViewStyleValueKind, ViewSystemFontFamily,
+    ViewPartName, ViewPhysicalAxis, ViewPhysicalBoxStyle, ViewPhysicalContainerStyle,
+    ViewPhysicalEdges, ViewPhysicalFlow, ViewPhysicalSide, ViewPosition, ViewPropertyExpansion,
+    ViewPropertyId, ViewPropertyKind, ViewPropertyResolution, ViewPropertyValueTransform,
+    ViewRatioMilli, ViewResolvedAxis, ViewResolvedBoxAxes, ViewScalarMilli, ViewShadow,
+    ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp,
+    ViewStyleBoundaryFacts, ViewStyleCombinator, ViewStyleComparison, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleInvalidationSet,
+    ViewStyleModelError, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId,
+    ViewStylePredicate, ViewStylePriority, ViewStyleProgram, ViewStyleResolution,
+    ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolver, ViewStyleResolverLimits,
+    ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleSpecificity, ViewStyleToken, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry,
+    ViewStyleTraceMode, ViewStyleTraceRejection, ViewStyleTransition, ViewStyleValueKind,
+    ViewSystemFontFamily,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,

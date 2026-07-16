@@ -4,6 +4,8 @@ use super::{ViewAxisSign, ViewBoxAxisMode, ViewPhysicalAxis, ViewPhysicalSide};
 use crate::ViewElementKind;
 use serde::{Deserialize, Serialize};
 
+mod geometry;
+
 /// Closed value family accepted by a source-authored View style property.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -267,6 +269,7 @@ impl ViewStyleInvalidationSet {
     pub const SCROLL: Self = Self { bits: 1 << 9 };
     pub const FOCUS_GEOMETRY: Self = Self { bits: 1 << 10 };
     pub const AVOIDANCE: Self = Self { bits: 1 << 11 };
+    pub const PHYSICAL_GEOMETRY: Self = Self { bits: 1 << 12 };
 
     pub const fn union(self, other: Self) -> Self {
         Self {
@@ -363,14 +366,17 @@ impl ViewPropertyKind {
     pub const fn is_computed_canonical(self) -> bool {
         !self.is_axis_context()
             && !self.is_axis_dependent()
-            && !matches!(self, Self::Padding | Self::Margin | Self::Overflow)
+            && !matches!(
+                self,
+                Self::Padding | Self::Margin | Self::Gap | Self::Overflow
+            )
     }
 
     /// Declares shorthand expansion shape before logical alias resolution.
     pub const fn shorthand_expansion(self) -> ViewPropertyExpansion {
         match self {
             Self::Padding | Self::Margin => ViewPropertyExpansion::FourPhysicalEdges,
-            Self::Overflow => ViewPropertyExpansion::TwoPhysicalAxes,
+            Self::Gap | Self::Overflow => ViewPropertyExpansion::TwoPhysicalAxes,
             _ => ViewPropertyExpansion::One(self),
         }
     }
@@ -391,9 +397,11 @@ impl ViewPropertyKind {
         ];
         const OVERFLOW: &[ViewPropertyKind] =
             &[ViewPropertyKind::OverflowX, ViewPropertyKind::OverflowY];
+        const GAP: &[ViewPropertyKind] = &[ViewPropertyKind::RowGap, ViewPropertyKind::ColumnGap];
         match self {
             Self::Padding => PADDING,
             Self::Margin => MARGIN,
+            Self::Gap => GAP,
             Self::Overflow => OVERFLOW,
             _ => &[],
         }
@@ -1032,13 +1040,9 @@ impl ViewPropertyKind {
             | Self::InsetInlineEnd
             | Self::InsetBlockStart
             | Self::InsetBlockEnd
-            | Self::ZIndex
-            | Self::Overflow
-            | Self::OverflowX
-            | Self::OverflowY
-            | Self::OverflowInline
-            | Self::OverflowBlock
             | Self::FlexDirection
+            | Self::BorderWidth => physical_layout_invalidation(),
+            Self::ZIndex
             | Self::FlexWrap
             | Self::FlexGrow
             | Self::FlexShrink
@@ -1049,42 +1053,81 @@ impl ViewPropertyKind {
             | Self::AlignContent
             | Self::JustifyContent
             | Self::JustifySelf => ViewStyleInvalidationSet::LAYOUT,
-            Self::Opacity
-            | Self::TranslateX
+            Self::TranslateX
             | Self::TranslateY
             | Self::TranslateInline
             | Self::TranslateBlock
-            | Self::Scale
-            | Self::Rotate
+            | Self::Scale => physical_transform_invalidation(),
+            Self::Overflow
+            | Self::OverflowX
+            | Self::OverflowY
+            | Self::OverflowInline
+            | Self::OverflowBlock => physical_clip_invalidation(),
+            Self::OutlineWidth
+            | Self::OutlineOffset
+            | Self::FocusRingWidth
+            | Self::BoxShadow
             | Self::Filter
-            | Self::BackdropFilter
-            | Self::BlendMode => {
+            | Self::BackdropFilter => physical_paint_outset_invalidation(),
+            Self::Opacity | Self::Rotate | Self::BlendMode => {
                 ViewStyleInvalidationSet::COMPOSITE.union(ViewStyleInvalidationSet::PAINT)
             }
             Self::Color
             | Self::BackgroundColor
             | Self::BorderColor
-            | Self::BorderWidth
             | Self::PlaceholderColor
             | Self::SelectionColor
             | Self::CaretColor
             | Self::CompositionUnderlineColor
             | Self::OutlineColor
-            | Self::OutlineWidth
-            | Self::OutlineOffset
             | Self::FocusRingColor
-            | Self::FocusRingWidth
             | Self::CornerFrameColor
             | Self::CornerFrameWidth
             | Self::CornerFrameLength
             | Self::CornerFrameOffset
             | Self::BorderRadius
-            | Self::BoxShadow
             | Self::Visibility
             | Self::Transition => ViewStyleInvalidationSet::PAINT,
             Self::Clip | Self::Mask => {
-                ViewStyleInvalidationSet::PAINT.union(ViewStyleInvalidationSet::RESOURCE)
+                physical_clip_invalidation().union(ViewStyleInvalidationSet::RESOURCE)
             }
         }
     }
+}
+
+const fn physical_layout_invalidation() -> ViewStyleInvalidationSet {
+    ViewStyleInvalidationSet::PHYSICAL_GEOMETRY
+        .union(ViewStyleInvalidationSet::LAYOUT)
+        .union(ViewStyleInvalidationSet::PAINT)
+        .union(ViewStyleInvalidationSet::HIT_TEST)
+        .union(ViewStyleInvalidationSet::FOCUS_GEOMETRY)
+        .union(ViewStyleInvalidationSet::AVOIDANCE)
+        .union(ViewStyleInvalidationSet::SCROLL)
+}
+
+const fn physical_transform_invalidation() -> ViewStyleInvalidationSet {
+    ViewStyleInvalidationSet::PHYSICAL_GEOMETRY
+        .union(ViewStyleInvalidationSet::COMPOSITE)
+        .union(ViewStyleInvalidationSet::PAINT)
+        .union(ViewStyleInvalidationSet::HIT_TEST)
+        .union(ViewStyleInvalidationSet::FOCUS_GEOMETRY)
+        .union(ViewStyleInvalidationSet::AVOIDANCE)
+        .union(ViewStyleInvalidationSet::SCROLL)
+}
+
+const fn physical_clip_invalidation() -> ViewStyleInvalidationSet {
+    ViewStyleInvalidationSet::PHYSICAL_GEOMETRY
+        .union(ViewStyleInvalidationSet::PAINT)
+        .union(ViewStyleInvalidationSet::HIT_TEST)
+        .union(ViewStyleInvalidationSet::FOCUS_GEOMETRY)
+        .union(ViewStyleInvalidationSet::AVOIDANCE)
+        .union(ViewStyleInvalidationSet::SCROLL)
+}
+
+const fn physical_paint_outset_invalidation() -> ViewStyleInvalidationSet {
+    ViewStyleInvalidationSet::PHYSICAL_GEOMETRY
+        .union(ViewStyleInvalidationSet::PAINT)
+        .union(ViewStyleInvalidationSet::FOCUS_GEOMETRY)
+        .union(ViewStyleInvalidationSet::AVOIDANCE)
+        .union(ViewStyleInvalidationSet::SCROLL)
 }

@@ -1,10 +1,11 @@
 use arcweft_id::PublicId;
+use arcweft_view::geometry::{ViewGeometryPropertySupport, ViewRepresentedGeometryFeature};
 use arcweft_view::{
     ViewAlignment, ViewBlendMode, ViewDisplay, ViewElementKind, ViewElementState,
     ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle,
     ViewFontWeight, ViewInteractionSelector, ViewOverflow, ViewPartName, ViewPosition,
-    ViewPropertyKind, ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleCombinator,
+    ViewPropertyExpansion, ViewPropertyKind, ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue,
+    ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleCombinator,
     ViewStyleInvalidationSet, ViewStylePatchId, ViewStylePredicate, ViewStyleScopeId,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheetId, ViewStyleTokenId,
     ViewStyleValueKind, ViewSystemFontFamily,
@@ -293,5 +294,47 @@ fn invalidation_and_specified_values_keep_distinct_units_and_kinds() {
         }
         .kind(),
         ViewStyleValueKind::Scalar
+    );
+}
+
+#[test]
+fn physical_geometry_metadata_is_exhaustive_and_distinguishes_representation() {
+    assert_eq!(
+        ViewPropertyKind::Width.geometry_support(),
+        ViewGeometryPropertySupport::Supported
+    );
+    assert_eq!(
+        ViewPropertyKind::FlexGrow.geometry_support(),
+        ViewGeometryPropertySupport::RepresentedOnly(
+            ViewRepresentedGeometryFeature::FlexDistribution,
+        )
+    );
+    assert_eq!(
+        ViewPropertyKind::Color.geometry_support(),
+        ViewGeometryPropertySupport::NotGeometry
+    );
+
+    let layout = ViewPropertyKind::Width.default_invalidation();
+    assert!(layout.contains(ViewStyleInvalidationSet::PHYSICAL_GEOMETRY));
+    assert!(layout.contains(ViewStyleInvalidationSet::LAYOUT));
+    assert!(layout.contains(ViewStyleInvalidationSet::HIT_TEST));
+    assert!(layout.contains(ViewStyleInvalidationSet::SCROLL));
+
+    let transform = ViewPropertyKind::TranslateX.default_invalidation();
+    assert!(transform.contains(ViewStyleInvalidationSet::PHYSICAL_GEOMETRY));
+    assert!(transform.contains(ViewStyleInvalidationSet::COMPOSITE));
+    assert!(!transform.contains(ViewStyleInvalidationSet::LAYOUT));
+}
+
+#[test]
+fn gap_is_a_noncanonical_two_axis_shorthand() {
+    assert!(!ViewPropertyKind::Gap.is_computed_canonical());
+    assert_eq!(
+        ViewPropertyKind::Gap.shorthand_expansion(),
+        ViewPropertyExpansion::TwoPhysicalAxes
+    );
+    assert_eq!(
+        ViewPropertyKind::Gap.expanded_properties(),
+        &[ViewPropertyKind::RowGap, ViewPropertyKind::ColumnGap]
     );
 }

@@ -3,10 +3,13 @@
 use super::cascade::{ViewStyleContributionSource, ViewStylePriority};
 use super::{
     ViewAxisUsageSet, ViewBoxAxisMode, ViewBoxAxisRevision, ViewBoxAxisSeedSource,
-    ViewBoxAxisSource, ViewComputedPropertyKind, ViewInheritedBoxAxes, ViewLengthMilli,
-    ViewOverflow, ViewPhysicalBoxStyle, ViewPropertyKind, ViewSpecifiedValue,
-    ViewStyleInvalidationSet,
+    ViewBoxAxisSource, ViewComputedPropertyKind, ViewDisplay, ViewFlexDirection,
+    ViewInheritedBoxAxes, ViewLengthMilli, ViewOverflow, ViewPhysicalBoxStyle,
+    ViewPhysicalContainerStyle, ViewPhysicalFlow, ViewPosition, ViewPropertyKind, ViewScalarMilli,
+    ViewSpecifiedValue, ViewStyleInvalidationSet,
 };
+use crate::ViewElementKind;
+use crate::geometry::ViewRepresentedGeometryFeature;
 use std::collections::BTreeMap;
 
 /// Revision carried by one computed result for parent/cache invalidation.
@@ -291,20 +294,26 @@ impl ComputedViewStyle {
             axes: self.axes.mode(),
             ..ViewPhysicalBoxStyle::default()
         };
+        physical.display = self.display(ViewPropertyKind::Display);
+        physical.position = self
+            .position(ViewPropertyKind::Position)
+            .unwrap_or(ViewPosition::Static);
         physical.width = self.length(ViewPropertyKind::Width);
         physical.height = self.length(ViewPropertyKind::Height);
         physical.min_width = self.length(ViewPropertyKind::MinWidth);
         physical.min_height = self.length(ViewPropertyKind::MinHeight);
         physical.max_width = self.length(ViewPropertyKind::MaxWidth);
         physical.max_height = self.length(ViewPropertyKind::MaxHeight);
-        physical.padding.top = self.length(ViewPropertyKind::PaddingTop);
-        physical.padding.right = self.length(ViewPropertyKind::PaddingRight);
-        physical.padding.bottom = self.length(ViewPropertyKind::PaddingBottom);
-        physical.padding.left = self.length(ViewPropertyKind::PaddingLeft);
-        physical.margin.top = self.length(ViewPropertyKind::MarginTop);
-        physical.margin.right = self.length(ViewPropertyKind::MarginRight);
-        physical.margin.bottom = self.length(ViewPropertyKind::MarginBottom);
-        physical.margin.left = self.length(ViewPropertyKind::MarginLeft);
+        physical.padding.top = self.length_or_zero(ViewPropertyKind::PaddingTop);
+        physical.padding.right = self.length_or_zero(ViewPropertyKind::PaddingRight);
+        physical.padding.bottom = self.length_or_zero(ViewPropertyKind::PaddingBottom);
+        physical.padding.left = self.length_or_zero(ViewPropertyKind::PaddingLeft);
+        let border = self.length_or_zero(ViewPropertyKind::BorderWidth);
+        physical.border = super::ViewPhysicalEdges::all(border);
+        physical.margin.top = self.length_or_zero(ViewPropertyKind::MarginTop);
+        physical.margin.right = self.length_or_zero(ViewPropertyKind::MarginRight);
+        physical.margin.bottom = self.length_or_zero(ViewPropertyKind::MarginBottom);
+        physical.margin.left = self.length_or_zero(ViewPropertyKind::MarginLeft);
         physical.inset.top = self.length(ViewPropertyKind::Top);
         physical.inset.right = self.length(ViewPropertyKind::Right);
         physical.inset.bottom = self.length(ViewPropertyKind::Bottom);
@@ -315,6 +324,9 @@ impl ComputedViewStyle {
         physical.translate_y = self
             .length(ViewPropertyKind::TranslateY)
             .unwrap_or_else(|| ViewLengthMilli::new(0));
+        physical.scale = self
+            .scalar(ViewPropertyKind::Scale)
+            .unwrap_or(ViewScalarMilli::ONE);
         physical.overflow_x = self
             .overflow(ViewPropertyKind::OverflowX)
             .unwrap_or(ViewOverflow::Visible);
@@ -322,6 +334,37 @@ impl ComputedViewStyle {
             .overflow(ViewPropertyKind::OverflowY)
             .unwrap_or(ViewOverflow::Visible);
         physical
+    }
+
+    /// Canonical physical container packet. Row/Column and gaps are never remapped by box axes.
+    pub fn physical_container(
+        &self,
+        element: ViewElementKind,
+    ) -> Result<Option<ViewPhysicalContainerStyle>, ViewRepresentedGeometryFeature> {
+        let display = self.display(ViewPropertyKind::Display);
+        if display == Some(ViewDisplay::None) {
+            return Ok(None);
+        }
+        let flex_direction = self.flex_direction(ViewPropertyKind::FlexDirection);
+        let flow = match display {
+            Some(ViewDisplay::Inline) => {
+                return Err(ViewRepresentedGeometryFeature::InlineLayout);
+            }
+            Some(ViewDisplay::Stack) => Some(ViewPhysicalFlow::Overlay),
+            Some(ViewDisplay::Block) => Some(ViewPhysicalFlow::Column),
+            Some(ViewDisplay::Flex) => Some(
+                flex_direction.map_or(ViewPhysicalFlow::Row, ViewPhysicalFlow::from_flex_direction),
+            ),
+            Some(ViewDisplay::None) => None,
+            None => flex_direction
+                .map(ViewPhysicalFlow::from_flex_direction)
+                .or_else(|| ViewPhysicalFlow::for_element(element)),
+        };
+        Ok(flow.map(|flow| ViewPhysicalContainerStyle {
+            flow,
+            row_gap: self.length_or_zero(ViewPropertyKind::RowGap),
+            column_gap: self.length_or_zero(ViewPropertyKind::ColumnGap),
+        }))
     }
 
     /// Exact retained work caused by moving from `previous` to this result.
@@ -339,6 +382,39 @@ impl ComputedViewStyle {
     fn length(&self, property: ViewPropertyKind) -> Option<ViewLengthMilli> {
         match self.value(property) {
             Some(ViewSpecifiedValue::Length { value }) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn length_or_zero(&self, property: ViewPropertyKind) -> ViewLengthMilli {
+        self.length(property)
+            .unwrap_or_else(|| ViewLengthMilli::new(0))
+    }
+
+    fn scalar(&self, property: ViewPropertyKind) -> Option<ViewScalarMilli> {
+        match self.value(property) {
+            Some(ViewSpecifiedValue::Scalar { value }) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn display(&self, property: ViewPropertyKind) -> Option<ViewDisplay> {
+        match self.value(property) {
+            Some(ViewSpecifiedValue::Display { value }) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn position(&self, property: ViewPropertyKind) -> Option<ViewPosition> {
+        match self.value(property) {
+            Some(ViewSpecifiedValue::Position { value }) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn flex_direction(&self, property: ViewPropertyKind) -> Option<ViewFlexDirection> {
+        match self.value(property) {
+            Some(ViewSpecifiedValue::FlexDirection { value }) => Some(*value),
             _ => None,
         }
     }

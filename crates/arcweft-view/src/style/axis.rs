@@ -1,8 +1,11 @@
 //! Closed logical-axis context and canonical physical box projection types.
 
 use super::resolver::ViewStyleNodeKey;
-use super::{ViewLengthMilli, ViewOverflow, ViewStyleContributionSource, ViewStylePriority};
-use crate::ViewMountId;
+use super::{
+    ViewDisplay, ViewFlexDirection, ViewLengthMilli, ViewOverflow, ViewPosition, ViewScalarMilli,
+    ViewStyleContributionSource, ViewStylePriority,
+};
+use crate::{ViewElementKind, ViewMountId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -149,7 +152,7 @@ pub enum ViewBoxAxisSource {
 pub struct ViewAxisUsageSet(u16);
 
 /// Physical edge packet shared by computed Style consumers.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewPhysicalEdges<T> {
     pub top: T,
     pub right: T,
@@ -158,22 +161,125 @@ pub struct ViewPhysicalEdges<T> {
 }
 
 /// Canonical physical box values projected from one computed Style result.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ViewPhysicalBoxStyle {
     pub axes: ViewBoxAxisMode,
+    pub display: Option<ViewDisplay>,
+    pub position: ViewPosition,
     pub width: Option<ViewLengthMilli>,
     pub height: Option<ViewLengthMilli>,
     pub min_width: Option<ViewLengthMilli>,
     pub min_height: Option<ViewLengthMilli>,
     pub max_width: Option<ViewLengthMilli>,
     pub max_height: Option<ViewLengthMilli>,
-    pub padding: ViewPhysicalEdges<Option<ViewLengthMilli>>,
-    pub margin: ViewPhysicalEdges<Option<ViewLengthMilli>>,
+    pub padding: ViewPhysicalEdges<ViewLengthMilli>,
+    pub border: ViewPhysicalEdges<ViewLengthMilli>,
+    pub margin: ViewPhysicalEdges<ViewLengthMilli>,
     pub inset: ViewPhysicalEdges<Option<ViewLengthMilli>>,
     pub translate_x: ViewLengthMilli,
     pub translate_y: ViewLengthMilli,
+    pub scale: ViewScalarMilli,
     pub overflow_x: ViewOverflow,
     pub overflow_y: ViewOverflow,
+}
+
+/// Canonical physical container values projected from one computed Style result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ViewPhysicalContainerStyle {
+    pub flow: ViewPhysicalFlow,
+    pub row_gap: ViewLengthMilli,
+    pub column_gap: ViewLengthMilli,
+}
+
+/// One-dimensional physical flow used by native View geometry.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ViewPhysicalFlow {
+    #[default]
+    Overlay,
+    Row,
+    RowReverse,
+    Column,
+    ColumnReverse,
+}
+
+impl<T> ViewPhysicalEdges<T> {
+    pub const fn new(top: T, right: T, bottom: T, left: T) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+}
+
+impl<T: Copy> ViewPhysicalEdges<T> {
+    pub const fn all(value: T) -> Self {
+        Self::new(value, value, value, value)
+    }
+
+    pub const fn start(self, axis: ViewPhysicalAxis) -> T {
+        match axis {
+            ViewPhysicalAxis::X => self.left,
+            ViewPhysicalAxis::Y => self.top,
+        }
+    }
+
+    pub const fn end(self, axis: ViewPhysicalAxis) -> T {
+        match axis {
+            ViewPhysicalAxis::X => self.right,
+            ViewPhysicalAxis::Y => self.bottom,
+        }
+    }
+}
+
+impl ViewPhysicalFlow {
+    /// Stable ordinal used by deterministic hashes and codecs.
+    pub const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::Overlay => 0,
+            Self::Row => 1,
+            Self::RowReverse => 2,
+            Self::Column => 3,
+            Self::ColumnReverse => 4,
+        }
+    }
+
+    pub const fn from_flex_direction(direction: ViewFlexDirection) -> Self {
+        match direction {
+            ViewFlexDirection::Row => Self::Row,
+            ViewFlexDirection::RowReverse => Self::RowReverse,
+            ViewFlexDirection::Column => Self::Column,
+            ViewFlexDirection::ColumnReverse => Self::ColumnReverse,
+        }
+    }
+
+    pub const fn for_element(element: ViewElementKind) -> Option<Self> {
+        match element {
+            ViewElementKind::Row => Some(Self::Row),
+            ViewElementKind::Column => Some(Self::Column),
+            ViewElementKind::Panel
+            | ViewElementKind::Box
+            | ViewElementKind::Scroll
+            | ViewElementKind::Stack => Some(Self::Overlay),
+            ViewElementKind::Button
+            | ViewElementKind::TextField
+            | ViewElementKind::TextArea
+            | ViewElementKind::SecureField => None,
+        }
+    }
+
+    pub const fn main_axis(self) -> Option<ViewPhysicalAxis> {
+        match self {
+            Self::Overlay => None,
+            Self::Row | Self::RowReverse => Some(ViewPhysicalAxis::X),
+            Self::Column | Self::ColumnReverse => Some(ViewPhysicalAxis::Y),
+        }
+    }
+
+    pub const fn is_reverse(self) -> bool {
+        matches!(self, Self::RowReverse | Self::ColumnReverse)
+    }
 }
 
 impl ViewBoxAxisMode {
@@ -563,19 +669,33 @@ impl Default for ViewPhysicalBoxStyle {
     fn default() -> Self {
         Self {
             axes: ViewBoxAxisMode::default(),
+            display: None,
+            position: ViewPosition::Static,
             width: None,
             height: None,
             min_width: None,
             min_height: None,
             max_width: None,
             max_height: None,
-            padding: ViewPhysicalEdges::default(),
-            margin: ViewPhysicalEdges::default(),
+            padding: ViewPhysicalEdges::all(ViewLengthMilli::new(0)),
+            border: ViewPhysicalEdges::all(ViewLengthMilli::new(0)),
+            margin: ViewPhysicalEdges::all(ViewLengthMilli::new(0)),
             inset: ViewPhysicalEdges::default(),
             translate_x: ViewLengthMilli::new(0),
             translate_y: ViewLengthMilli::new(0),
+            scale: ViewScalarMilli::ONE,
             overflow_x: ViewOverflow::Visible,
             overflow_y: ViewOverflow::Visible,
+        }
+    }
+}
+
+impl Default for ViewPhysicalContainerStyle {
+    fn default() -> Self {
+        Self {
+            flow: ViewPhysicalFlow::Overlay,
+            row_gap: ViewLengthMilli::new(0),
+            column_gap: ViewLengthMilli::new(0),
         }
     }
 }

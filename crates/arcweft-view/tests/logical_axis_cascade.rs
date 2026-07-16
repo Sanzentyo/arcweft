@@ -9,7 +9,9 @@ use arcweft_view::style::{
     ViewStyleRevisionSet, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
     ViewStyleToken, ViewStyleTokenId, ViewStyleTraceMode, ViewStyleTransition, ViewStyleValueKind,
 };
-use arcweft_view::{ViewElementKind, ViewMountId};
+use arcweft_view::{
+    ViewDisplay, ViewElementKind, ViewMountId, ViewPhysicalFlow, ViewPosition, ViewScalarMilli,
+};
 
 fn declaration(
     property: ViewPropertyKind,
@@ -158,15 +160,14 @@ fn vertical_rl_resolves_aliases_shorthands_signs_and_transitions_once() {
     assert_eq!(physical.axes, ViewBoxAxisMode::VerticalRl);
     assert_eq!(physical.width.map(ViewLengthMilli::value), Some(20));
     assert_eq!(physical.height.map(ViewLengthMilli::value), Some(10));
-    assert_eq!(physical.padding.top.map(ViewLengthMilli::value), Some(3));
-    assert_eq!(physical.padding.right.map(ViewLengthMilli::value), Some(9));
-    assert_eq!(physical.padding.bottom.map(ViewLengthMilli::value), Some(3));
-    assert_eq!(physical.padding.left.map(ViewLengthMilli::value), Some(3));
+    assert_eq!(physical.padding.top.value(), 3);
+    assert_eq!(physical.padding.right.value(), 9);
+    assert_eq!(physical.padding.bottom.value(), 3);
+    assert_eq!(physical.padding.left.value(), 3);
     assert_eq!(physical.translate_x.value(), -7);
     assert_eq!(physical.translate_y.value(), 0);
     assert_eq!(physical.overflow_x, ViewOverflow::Visible);
     assert_eq!(physical.overflow_y, ViewOverflow::Hidden);
-
     assert_eq!(computed.transitions().len(), 1);
     assert_eq!(
         computed.transitions()[0].resolved_property().as_property(),
@@ -187,6 +188,57 @@ fn vertical_rl_resolves_aliases_shorthands_signs_and_transitions_once() {
             .axis_usage()
             .contains(ViewAxisUsageSet::TRANSITION_TARGET)
     );
+}
+
+#[test]
+fn physical_geometry_projection_includes_box_and_container_inputs() {
+    let computed = resolve(
+        vec![
+            declaration(
+                ViewPropertyKind::Display,
+                ViewSpecifiedValue::Display {
+                    value: ViewDisplay::Flex,
+                },
+                1,
+            ),
+            declaration(
+                ViewPropertyKind::Position,
+                ViewSpecifiedValue::Position {
+                    value: ViewPosition::Absolute,
+                },
+                2,
+            ),
+            length(ViewPropertyKind::BorderWidth, 2, 3),
+            declaration(
+                ViewPropertyKind::Scale,
+                ViewSpecifiedValue::Scalar {
+                    value: ViewScalarMilli::new(1_250),
+                },
+                4,
+            ),
+            length(ViewPropertyKind::Gap, 4, 5),
+            length(ViewPropertyKind::RowGap, 6, 6),
+        ],
+        None,
+    )
+    .unwrap();
+
+    let physical = computed.physical_box();
+    assert_eq!(physical.display, Some(ViewDisplay::Flex));
+    assert_eq!(physical.position, ViewPosition::Absolute);
+    assert_eq!(physical.border.top.value(), 2);
+    assert_eq!(physical.border.right.value(), 2);
+    assert_eq!(physical.border.bottom.value(), 2);
+    assert_eq!(physical.border.left.value(), 2);
+    assert_eq!(physical.scale.value(), 1_250);
+
+    let container = computed
+        .physical_container(ViewElementKind::Panel)
+        .expect("flex container geometry is executable")
+        .expect("display Flex retains a geometry container");
+    assert_eq!(container.flow, ViewPhysicalFlow::Row);
+    assert_eq!(container.row_gap.value(), 6);
+    assert_eq!(container.column_gap.value(), 4);
 }
 
 #[test]
