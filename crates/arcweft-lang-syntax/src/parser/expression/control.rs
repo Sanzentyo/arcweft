@@ -16,7 +16,9 @@ pub(super) fn emit_block_expression(
     role: SyntaxRole,
 ) -> CompletedNode {
     let start_event = parser.event_position();
-    emit_block(parser, role);
+    parser.start(SyntaxKind::BlockExpression, role);
+    emit_block_contents(parser, SyntaxRole::Body);
+    parser.finish();
     CompletedNode { start_event }
 }
 
@@ -216,12 +218,16 @@ fn find_expression_boundary(
 
 fn emit_block(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) {
     parser.start(SyntaxKind::BlockExpression, role);
+    emit_block_contents(parser, SyntaxRole::Body);
+    parser.finish();
+}
+
+pub(super) fn emit_block_contents(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) {
     emit_braced_block(
         parser,
         SyntaxKind::FunctionItem,
         SyntaxKind::Block,
-        SyntaxRole::Body,
+        role,
         "syntax.expression.missing_block_close",
     );
-    parser.finish();
 }

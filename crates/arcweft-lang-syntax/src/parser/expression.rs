@@ -139,11 +139,23 @@ fn parse_prefix(
             emit_prefix_operand(parser, end, SyntaxKind::UnaryExpression, role, false)
         }
         "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
+        "thread" if composite::has_braced_body(parser, end) => {
+            composite::emit_thread_expression(parser, end, role)
+        }
         "thread" => emit_prefix_operand(parser, end, SyntaxKind::ThreadExpression, role, false),
+        "result" | "task" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
+            composite::emit_computation_block(parser, end, role)
+        }
+        "memo" if composite::has_braced_body(parser, end) => {
+            composite::emit_memo_block(parser, end, role)
+        }
+        "scope" if composite::has_braced_body(parser, end) => {
+            composite::emit_named_block(parser, end, role)
+        }
         "(" => composite::emit_parenthesized(parser, end, role),
         "[" => composite::emit_bracket_sequence(parser, end, role),
         "." => emit_short_variant(parser, end, role),
-        "{" => control::emit_block_expression(parser, end, role),
+        "{" => composite::emit_braced_expression(parser, end, role),
         "if" => control::emit_if_expression(parser, end, role),
         "match" => control::emit_match_expression(parser, end, role),
         "|" | "||" => composite::emit_closure(parser, end, role),
@@ -156,6 +168,13 @@ fn parse_prefix(
             emit_path_like(parser, end, SyntaxKind::LifetimePathExpression, role)
         }
         _ if is_literal(token.kind()) => emit_single(parser, SyntaxKind::LiteralExpression, role),
+        _ if matches!(
+            token.kind(),
+            SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
+        ) && composite::is_nominal_record_head(parser, end) =>
+        {
+            composite::emit_record_expression(parser, end, role)
+        }
         _ if matches!(
             token.kind(),
             SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
@@ -297,7 +316,11 @@ fn emit_call(
     }
 }
 
-fn emit_call_argument(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+pub(super) fn emit_call_argument(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u16,
+) {
     parser.start(SyntaxKind::CallArgument, SyntaxRole::Argument(ordinal));
     let assignment = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
     if assignment < end {

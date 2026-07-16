@@ -591,6 +591,68 @@ fn mixed_integer_suffixes_remain_an_ordinary_bracket_sequence() {
 }
 
 #[test]
+fn record_and_named_block_families_share_typed_fields_and_blocks() {
+    let source = "proof composites(value: Int) = (Point { x = value, y }, { first = value, second: value + 1 }, result { let computed = value; computed }, memo(scope = scene, key = value) { let cached = value; cached }, scope named { let local = value; local }, thread detached worker { let item = value; item })\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::RecordExpression,
+        SyntaxKind::RecordLiteralExpression,
+        SyntaxKind::RecordField,
+        SyntaxKind::ComputationBlockExpression,
+        SyntaxKind::MemoBlockExpression,
+        SyntaxKind::NamedBlockExpression,
+        SyntaxKind::ThreadExpression,
+        SyntaxKind::Block,
+        SyntaxKind::LetStatement,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::RecordField)
+            .count(),
+        4
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::Block)
+            .count(),
+        4
+    );
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn statement_shaped_braces_remain_a_block_expression() {
+    let source = "proof block(value: Int) = { let local = value; local }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert!(kinds.contains(&SyntaxKind::BlockExpression));
+    assert!(kinds.contains(&SyntaxKind::LetStatement));
+    assert!(!kinds.contains(&SyntaxKind::RecordLiteralExpression));
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn nested_type_and_pattern_families_have_independent_events() {
     let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
     let built = parse_shadow_document(&document(source)).unwrap();
