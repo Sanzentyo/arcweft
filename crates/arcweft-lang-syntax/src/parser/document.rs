@@ -520,22 +520,40 @@ fn emit_logical_line(
         SyntaxRole::Element(ordinal),
     ));
     let item = classify_top_level_item(source, tokens);
-    if item == Some(SyntaxKind::FlowItem) {
-        super::shadow_flow::emit_declaration(source, tokens, SyntaxRole::Element(ordinal), events);
-    } else if let Some(kind) = item {
-        events.push(SyntaxEvent::start(kind, SyntaxRole::Element(ordinal)));
-        events.extend(
-            tokens
-                .iter()
-                .map(|token| SyntaxEvent::token(token.kind, token.range)),
-        );
-        events.push(SyntaxEvent::FinishNode);
-    } else {
-        events.extend(
-            tokens
-                .iter()
-                .map(|token| SyntaxEvent::token(token.kind, token.range)),
-        );
+    match item {
+        Some(kind @ (SyntaxKind::ModuleDeclaration | SyntaxKind::UseDeclaration)) => {
+            super::module_use_grammar::emit_declaration(
+                source,
+                tokens,
+                kind,
+                SyntaxRole::Element(ordinal),
+                events,
+            );
+        }
+        Some(SyntaxKind::FlowItem) => {
+            super::shadow_flow::emit_declaration(
+                source,
+                tokens,
+                SyntaxRole::Element(ordinal),
+                events,
+            );
+        }
+        Some(kind) => {
+            events.push(SyntaxEvent::start(kind, SyntaxRole::Element(ordinal)));
+            events.extend(
+                tokens
+                    .iter()
+                    .map(|token| SyntaxEvent::token(token.kind, token.range)),
+            );
+            events.push(SyntaxEvent::FinishNode);
+        }
+        None => {
+            events.extend(
+                tokens
+                    .iter()
+                    .map(|token| SyntaxEvent::token(token.kind, token.range)),
+            );
+        }
     }
     events.push(SyntaxEvent::FinishNode);
 }

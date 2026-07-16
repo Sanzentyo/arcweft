@@ -51,6 +51,9 @@ mod item_tests;
 pub mod items;
 mod lexer;
 pub mod line_plan;
+mod module_use_grammar;
+#[cfg(test)]
+mod module_use_grammar_tests;
 mod path;
 mod pattern;
 mod predicate_proof;
