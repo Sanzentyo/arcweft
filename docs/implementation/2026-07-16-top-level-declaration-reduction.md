@@ -83,6 +83,21 @@ parallel without stopping the scaffold-removal cut:
 - [typed resource declaration surface](../reviews/requests/2026-07-16-lang-01.4-typed-resource-declaration-surface-final-contract.md)
 - [build/profile metadata extraction](../reviews/requests/2026-07-16-lang-01.5-build-profile-metadata-extraction-final-contract.md)
 
+Later production review replaced two returned author/runtime decisions with
+independent correction requests. These corrections are authoritative wherever
+they conflict with the earlier Lang-01.1 and Lang-01.3 requests or packages:
+
+- [direct-style suspension and Stream generator correction](../reviews/requests/2026-07-17-lang-01.1.1-direct-style-suspension-generator-contract-correction.md):
+  ordinary `fn` may suspend through `await` and `control.suspend`; do not add
+  `#[task]` or `#[stream]`;
+- [external Stream origin and Source elimination correction](../reviews/requests/2026-07-17-lang-01.3.1-external-stream-origin-source-elimination-contract-correction.md):
+  remove source-visible `Source<T, E>` and represent host input as a typed
+  external `Stream` origin while preserving policy and lifecycle behavior.
+
+The earlier requests remain historical sequence inputs, not implementation
+authority for the superseded decisions. Neither correction authorizes an
+implementation until its own implementation-ready final contract is returned.
+
 Lang-01.6 is now
 [resolved](../reviews/requests/2026-07-16-lang-01.6-trusted-axiom-surface-final-decision.md):
 the trust boundary remains visible as `#[verify.trusted(...)]` metadata on an
