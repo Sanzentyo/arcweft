@@ -231,12 +231,12 @@ placement = "embedded"
         .content()
         .get("content.chapter_two")
         .expect("content policy");
-    assert_eq!(content.residency(), LaunchContentResidency::OnDemand);
-    assert_eq!(content.placement(), LaunchContentPlacement::External);
-    assert_eq!(content.compression(), LaunchContentCompression::Zstd);
-    assert_eq!(LaunchContentResidency::OnDemand.to_string(), "on-demand");
-    assert_eq!(LaunchContentPlacement::External.to_string(), "external");
-    assert_eq!(LaunchContentCompression::Zstd.to_string(), "zstd");
+    assert_eq!(content.residency(), ContentResidency::OnDemand);
+    assert_eq!(content.placement(), ContentPlacement::External);
+    assert_eq!(content.compression(), ContentCompression::Zstd);
+    assert_eq!(ContentResidency::OnDemand.to_string(), "on-demand");
+    assert_eq!(ContentPlacement::External.to_string(), "external");
+    assert_eq!(ContentCompression::Zstd.to_string(), "zstd");
 
     let desktop = manifest
         .resolve_profile("desktop", Path::new("game"))
@@ -245,18 +245,9 @@ placement = "embedded"
         .content()
         .get("content.chapter_two")
         .expect("desktop content policy");
-    assert_eq!(
-        desktop_content.residency(),
-        LaunchContentResidency::OnDemand
-    );
-    assert_eq!(
-        desktop_content.placement(),
-        LaunchContentPlacement::Embedded
-    );
-    assert_eq!(
-        desktop_content.compression(),
-        LaunchContentCompression::None
-    );
+    assert_eq!(desktop_content.residency(), ContentResidency::OnDemand);
+    assert_eq!(desktop_content.placement(), ContentPlacement::Embedded);
+    assert_eq!(desktop_content.compression(), ContentCompression::None);
 }
 
 #[test]

@@ -287,6 +287,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-adapter-metadata"
+version = "0.1.0"
+dependencies = [
+ "arcweft-manifest-model",
+ "json-spanned-value",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-adt"
 version = "0.1.0"
 
@@ -908,6 +919,7 @@ dependencies = [
 name = "arcweft-launch"
 version = "0.1.0"
 dependencies = [
+ "arcweft-manifest-model",
  "arcweft-source",
  "serde",
  "thiserror 2.0.18",
@@ -955,6 +967,17 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "arcweft-manifest-model"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "semver",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4035,6 +4058,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "json-spanned-value"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb343fa4e3b1b22b344937deedac88da995abf139c2232cbeaa436c38380a210"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "keyboard-types"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6077,6 +6110,10 @@ name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
+dependencies = [
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "seq-macro"

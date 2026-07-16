@@ -31,6 +31,8 @@ members = [
     "crates/arcweft-ref",
     "crates/arcweft",
     "crates/arcweft-project",
+    "crates/arcweft-manifest-model",
+    "crates/arcweft-adapter-metadata",
     "crates/arcweft-lang-hir",
     "crates/arcweft-launch",
     "crates/arcweft-lang-jit-cranelift",
@@ -128,6 +130,8 @@ arcweft-audio-codec = { path = "crates/arcweft-audio-codec" }
 arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
 arcweft-content-policy = { path = "crates/arcweft-content-policy" }
 arcweft-agent-policy = { path = "crates/arcweft-agent-policy" }
+arcweft-manifest-model = { path = "crates/arcweft-manifest-model" }
+arcweft-adapter-metadata = { path = "crates/arcweft-adapter-metadata" }
 anstream = "1.0.0"
 anstyle = "1.0.14"
 annotate-snippets = "0.12.16"
@@ -167,6 +171,8 @@ rowan = "0.16.1"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+semver = { version = "1.0.27", features = ["serde"] }
+json-spanned-value = "0.2.2"
 serde_bytes = "0.11.19"
 serde_repr = "0.1.20"
 proc-macro2 = "1.0.106"

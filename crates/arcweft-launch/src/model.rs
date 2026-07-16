@@ -1,3 +1,6 @@
+use arcweft_manifest_model::{
+    ContentCompression, ContentPlacement, ContentResidency, LaunchKind, ProfileId,
+};
 use serde::Deserialize;
 use std::{
     collections::BTreeMap,
@@ -5,34 +8,6 @@ use std::{
     path::{Path, PathBuf},
 };
 use thiserror::Error;
-
-/// Stable identifier for a launch profile.
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
-pub struct ProfileId(String);
-
-/// The runtime surface selected by a launch profile.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum LaunchKind {
-    Game,
-    Server,
-    Cli,
-    Test,
-    Bench,
-}
-
-impl LaunchKind {
-    /// Stable manifest spelling for diagnostics and logs.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Game => "game",
-            Self::Server => "server",
-            Self::Cli => "cli",
-            Self::Test => "test",
-            Self::Bench => "bench",
-        }
-    }
-}
 
 /// Pure helper execution backend selected by a launch profile.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -102,81 +77,6 @@ impl LaunchDebugPolicy {
 }
 
 impl fmt::Display for LaunchDebugPolicy {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-/// Content residency policy selected by a launch profile.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum LaunchContentResidency {
-    #[default]
-    Startup,
-    OnDemand,
-}
-
-impl LaunchContentResidency {
-    /// Stable manifest spelling for diagnostics and logs.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Startup => "startup",
-            Self::OnDemand => "on-demand",
-        }
-    }
-}
-
-impl fmt::Display for LaunchContentResidency {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-/// Content placement policy selected by a launch profile.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum LaunchContentPlacement {
-    #[default]
-    Embedded,
-    External,
-}
-
-impl LaunchContentPlacement {
-    /// Stable manifest spelling for diagnostics and logs.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Embedded => "embedded",
-            Self::External => "external",
-        }
-    }
-}
-
-impl fmt::Display for LaunchContentPlacement {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-/// Content compression policy selected by a launch profile.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum LaunchContentCompression {
-    #[default]
-    None,
-    Zstd,
-}
-
-impl LaunchContentCompression {
-    /// Stable manifest spelling for diagnostics and logs.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::None => "none",
-            Self::Zstd => "zstd",
-        }
-    }
-}
-
-impl fmt::Display for LaunchContentCompression {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
@@ -335,11 +235,11 @@ pub struct LaunchHotReloadProfileSpec {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct LaunchContentProfileSpec {
     #[serde(default)]
-    residency: LaunchContentResidency,
+    residency: ContentResidency,
     #[serde(default)]
-    placement: LaunchContentPlacement,
+    placement: ContentPlacement,
     #[serde(default)]
-    compression: LaunchContentCompression,
+    compression: ContentCompression,
 }
 
 /// Fully resolved launch profile ready for CLI/runtime use.
@@ -375,6 +275,8 @@ pub enum LaunchProfileError {
     InvalidDefaultProfile { profile: String },
     #[error("launch profile `{0}` must declare a source path")]
     MissingSource(String),
+    #[error("launch profile `{profile}` has an invalid canonical profile ID")]
+    InvalidProfileId { profile: String },
     #[error("launch profile `{profile}` uses unknown adapter `{adapter}`")]
     UnknownAdapter { profile: String, adapter: String },
     #[error("launch profile `{profile}` player viewport {field} must be greater than zero")]
@@ -382,18 +284,6 @@ pub enum LaunchProfileError {
         profile: String,
         field: &'static str,
     },
-}
-
-impl ProfileId {
-    /// Creates a profile ID.
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    /// String form used in manifests and diagnostics.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl LaunchProfileManifest {
@@ -509,7 +399,9 @@ impl LaunchProfileManifest {
             })
             .collect();
         Ok(ResolvedLaunchProfile {
-            id: ProfileId::new(id),
+            id: ProfileId::new(id).map_err(|_| LaunchProfileError::InvalidProfileId {
+                profile: id.to_owned(),
+            })?,
             kind: spec.kind,
             source,
             entry: spec.entry.clone(),
@@ -781,17 +673,17 @@ impl LaunchHotReloadProfileSpec {
 
 impl LaunchContentProfileSpec {
     /// Desired content residency for this logical content unit.
-    pub const fn residency(&self) -> LaunchContentResidency {
+    pub const fn residency(&self) -> ContentResidency {
         self.residency
     }
 
     /// Desired bundle placement for this logical content unit.
-    pub const fn placement(&self) -> LaunchContentPlacement {
+    pub const fn placement(&self) -> ContentPlacement {
         self.placement
     }
 
     /// Desired compression for this logical content unit.
-    pub const fn compression(&self) -> LaunchContentCompression {
+    pub const fn compression(&self) -> ContentCompression {
         self.compression
     }
 }
