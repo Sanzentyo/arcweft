@@ -82,3 +82,6 @@ This is not the complete private grammar gate. Detailed expression control
 families and recovery, all shared statement families, remaining item families,
 depth-zero multiline ownership, syntax limits, and the later attachment/public
 syntax/HIR/project/runtime stages remain open.
+
+Shared statement ownership continues in
+`2026-07-16-proof-concurrency-v6-1-1-stage-1-statement-events.md`.

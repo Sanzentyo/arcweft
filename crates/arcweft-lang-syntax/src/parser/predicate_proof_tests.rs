@@ -165,6 +165,119 @@ fn nested_type_and_pattern_families_have_independent_events() {
 }
 
 #[test]
+fn shared_statement_families_keep_typed_identity_and_children() {
+    let source = "proof statements(x: Int) { let y: Int = x; target = y; 'line <- y; return y; out 'exit y; goto next; defer cleanup(); yield y; signal y; wait(y); on ready => lemma(y); close y; select y; break 'loop y; continue 'loop; lemma(y); y; }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::LetStatement,
+        SyntaxKind::AssignmentStatement,
+        SyntaxKind::LifetimeSetStatement,
+        SyntaxKind::ReturnStatement,
+        SyntaxKind::OutStatement,
+        SyntaxKind::GotoStatement,
+        SyntaxKind::DeferStatement,
+        SyntaxKind::YieldStatement,
+        SyntaxKind::SignalStatement,
+        SyntaxKind::WaitStatement,
+        SyntaxKind::OnStatement,
+        SyntaxKind::CloseStatement,
+        SyntaxKind::SelectStatement,
+        SyntaxKind::BreakStatement,
+        SyntaxKind::ContinueStatement,
+        SyntaxKind::ProofCallStatement,
+        SyntaxKind::ExpressionStatement,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn control_statements_own_conditions_patterns_blocks_and_match_arms() {
+    let source = "proof control(xs: List<Int>, ready: Bool) { if ready { lemma(1); } else { lemma(0); }; while ready { break; }; while let .Some(x) = next when ready { continue; }; for item in xs { lemma(item); }; loop { break 1; }; match next { .Some(x) when ready => lemma(x), .None => { return 0; } }; thread worker { yield 1; }; defer { close resource; }; unsafe lifetime @unsafe.test { lemma(1); }; }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::IfStatement,
+        SyntaxKind::WhileStatement,
+        SyntaxKind::WhileLetStatement,
+        SyntaxKind::ForStatement,
+        SyntaxKind::LoopStatement,
+        SyntaxKind::MatchStatement,
+        SyntaxKind::MatchArm,
+        SyntaxKind::ThreadStatement,
+        SyntaxKind::DeferBlockStatement,
+        SyntaxKind::UnsafeLifetimeStatement,
+        SyntaxKind::VariantPattern,
+        SyntaxKind::Block,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::MatchArm)
+            .count(),
+        2
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn let_statement_variants_share_pattern_and_initializer_authority() {
+    let source = "proof lets(value: Option<Int>) { let .Some(x) = value else { return; }; let picked = choice @choice.test { }; let scoped = scope named { 1 }; let repeated = loop { break 1; }; let waited = try await task(); let action = receive action(@action.ok); }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::LetElseStatement,
+        SyntaxKind::LetChoiceStatement,
+        SyntaxKind::LetScopeStatement,
+        SyntaxKind::LetLoopStatement,
+        SyntaxKind::LetAwaitStatement,
+        SyntaxKind::LetActionReceiveStatement,
+        SyntaxKind::VariantPattern,
+        SyntaxKind::Block,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn malformed_statement_is_typed_without_consuming_following_sibling() {
+    let source = "proof recovered() { ???; lemma(); }\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+    assert!(kinds.contains(&SyntaxKind::ErrorStatement));
+    assert!(kinds.contains(&SyntaxKind::ProofCallStatement));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn entity_style_proof_name_uses_ordinary_error_item_recovery() {
     let source = "proof @legacy.fact() {}\nproof current() = ()\n";
     let built = parse_shadow_document(&document(source)).unwrap();
