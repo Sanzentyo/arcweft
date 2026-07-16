@@ -59,7 +59,23 @@ pub(super) fn expected(kind: SyntaxKind) -> ExpectedToken {
 }
 
 pub(super) fn find_header_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize) -> usize {
-    find_top_level_boundary(parser, start, &["where", "requires", "ensures", "=", "{"])
+    find_top_level_boundary(
+        parser,
+        start,
+        &[
+            "where",
+            "requires",
+            "ensures",
+            "invariant",
+            "assume",
+            "reads",
+            "effects",
+            "modifies",
+            "decreases",
+            "=",
+            "{",
+        ],
+    )
 }
 
 pub(super) fn find_top_level_boundary(

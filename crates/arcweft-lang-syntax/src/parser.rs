@@ -62,6 +62,8 @@ mod predicate_proof_tests;
 pub mod proof;
 pub mod recovery;
 mod shadow_flow;
+#[cfg(test)]
+mod shadow_flow_tests;
 mod shadow_recovery;
 pub mod source;
 mod statement;

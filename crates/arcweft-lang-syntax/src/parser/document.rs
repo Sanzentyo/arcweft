@@ -211,7 +211,8 @@ fn structured_declaration_after_outer_prefixes(
     let kind = classify_top_level_item(source, &tokens[range.start..range.end])?;
     matches!(
         kind,
-        SyntaxKind::FunctionItem
+        SyntaxKind::FlowItem
+            | SyntaxKind::FunctionItem
             | SyntaxKind::PredicateItem
             | SyntaxKind::ProofItem
             | SyntaxKind::EnumItem
@@ -322,7 +323,7 @@ fn declaration_group_end(
     let mut last = first;
     loop {
         let grouped = &tokens[lines[first].start..lines[last].end];
-        if kind != SyntaxKind::TypeAliasItem && declaration_has_body(source, grouped) {
+        if kind != SyntaxKind::TypeAliasItem && declaration_has_body(source, grouped, kind) {
             return last;
         }
         let Some(next) = lines.get(last + 1).copied() else {
@@ -347,19 +348,36 @@ fn line_starts_with(source: &str, tokens: &[LexToken], spelling: &str) -> bool {
         .is_some_and(|token| &source[token.range.as_range()] == spelling)
 }
 
-fn declaration_has_body(source: &str, tokens: &[LexToken]) -> bool {
+fn declaration_has_body(source: &str, tokens: &[LexToken], kind: SyntaxKind) -> bool {
     let mut depth = 0_usize;
+    let mut contract_list = false;
     for token in tokens {
-        if token.kind != SyntaxKind::PunctuationToken {
+        if token.kind == SyntaxKind::NewlineToken && depth == 0 {
+            contract_list = false;
             continue;
         }
         let text = &source[token.range.as_range()];
+        if depth == 0
+            && matches!(kind, SyntaxKind::FlowItem | SyntaxKind::FunctionItem)
+            && matches!(text, "reads" | "effects" | "modifies")
+        {
+            contract_list = true;
+            continue;
+        }
+        if token.kind != SyntaxKind::PunctuationToken {
+            continue;
+        }
         if depth == 0 && matches!(text, "=" | "{") {
+            if text == "{" && contract_list {
+                contract_list = false;
+                depth = 1;
+                continue;
+            }
             return true;
         }
         match text {
-            "(" | "[" | "<" => depth += 1,
-            ")" | "]" | ">" => depth = depth.saturating_sub(1),
+            "(" | "[" | "{" | "<" => depth += 1,
+            ")" | "]" | "}" | ">" => depth = depth.saturating_sub(1),
             _ => {}
         }
     }
@@ -401,7 +419,18 @@ fn declaration_continuation_line(source: &str, tokens: &[LexToken]) -> bool {
         .is_none_or(|token| {
             matches!(
                 &source[token.range.as_range()],
-                "(" | "where" | "requires" | "ensures" | "=" | "{" | "->"
+                "(" | "where"
+                    | "requires"
+                    | "ensures"
+                    | "invariant"
+                    | "assume"
+                    | "reads"
+                    | "effects"
+                    | "modifies"
+                    | "decreases"
+                    | "="
+                    | "{"
+                    | "->"
             )
         })
 }
@@ -415,6 +444,12 @@ fn emit_declaration_item(
 ) {
     let item_start = events.len();
     match kind {
+        SyntaxKind::FlowItem => super::shadow_flow::emit_declaration(
+            source,
+            tokens,
+            SyntaxRole::Element(ordinal),
+            events,
+        ),
         SyntaxKind::FunctionItem => super::function_grammar::emit_declaration(
             source,
             tokens,
