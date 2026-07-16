@@ -428,7 +428,7 @@ fn same_evaluation_non_view_resolution_discards_pending_seed_and_emits_one_diagn
     );
     assert_eq!(frame.diagnostics[0].handle.as_ref(), Some(&handle));
     assert_eq!(runtime.cancel_next_axis_seed(&handle), None);
-    assert!(runtime.snapshot().axis_seeds.pending.is_empty());
+    assert!(runtime.snapshot().unwrap().axis_seeds.pending.is_empty());
 }
 
 #[test]
@@ -490,7 +490,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
         .iter()
         .find(|output| !output.path.segments().is_empty())
         .unwrap();
-    let before = runtime.snapshot();
+    let before = runtime.snapshot().unwrap();
 
     assert_eq!(
         runtime.update_axis_seed(BundleViewAxisSeedUpdate {
@@ -502,7 +502,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
             mount: nested.mount,
         })
     );
-    assert_eq!(runtime.snapshot(), before);
+    assert_eq!(runtime.snapshot().unwrap(), before);
 
     let mut tampered = before.clone();
     let nested_generation = ViewBoxAxisSeedGeneration::INITIAL;
@@ -527,7 +527,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
             BundleViewAxisSeedError::UnknownSnapshotMount { mount }
         )) if mount == nested.mount
     ));
-    assert_eq!(runtime.snapshot(), before);
+    assert_eq!(runtime.snapshot().unwrap(), before);
 }
 
 #[test]

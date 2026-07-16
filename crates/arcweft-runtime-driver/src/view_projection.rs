@@ -93,7 +93,7 @@ fn project_images(
             .map(|mut image| {
                 image.id = scoped_id(mount, &image.id);
                 image.target = image.target.map(|target| scoped_id(mount, &target));
-                image.view = Some(scoped_id(mount, &mount.view));
+                image.view = Some(scoped_id(mount, mount.view.as_str()));
                 image.containing_scroll_region = image
                     .containing_scroll_region
                     .map(|region| scoped_id(mount, &region));
@@ -196,7 +196,7 @@ fn project_layout_resources(
             .map(|mut region| {
                 region.public_id = scoped_id(mount, &region.public_id);
                 region.target = scoped_id(mount, &region.target);
-                region.view = Some(scoped_id(mount, &mount.view));
+                region.view = Some(scoped_id(mount, mount.view.as_str()));
                 region
             }),
     );
@@ -235,7 +235,7 @@ fn project_focus(
             .cloned()
             .map(|mut group| {
                 group.public_id = scoped_id(mount, &group.public_id);
-                group.view = Some(scoped_id(mount, &mount.view));
+                group.view = Some(scoped_id(mount, mount.view.as_str()));
                 group.parent = group.parent.map(|parent| scoped_id(mount, &parent));
                 if let ViewFocusInitialPolicy::Explicit { target } = &mut group.initial {
                     *target = scoped_id(mount, target);
@@ -258,7 +258,7 @@ fn project_focus(
             .cloned()
             .map(|mut navigation| {
                 navigation.public_id = scoped_id(mount, &navigation.public_id);
-                navigation.view = Some(scoped_id(mount, &mount.view));
+                navigation.view = Some(scoped_id(mount, mount.view.as_str()));
                 navigation.group = navigation.group.map(|group| scoped_id(mount, &group));
                 for edge in &mut navigation.edges {
                     if let ViewFocusTargetResolution::Explicit { target } = &mut edge.target {
@@ -284,7 +284,7 @@ fn scope_owner(
     owner: &mut Option<String>,
     scroll_region: &mut Option<String>,
 ) {
-    *owner = Some(scoped_id(mount, &mount.view));
+    *owner = Some(scoped_id(mount, mount.view.as_str()));
     *scroll_region = scroll_region.take().map(|region| scoped_id(mount, &region));
 }
 

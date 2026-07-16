@@ -45,7 +45,7 @@ use arcweft_view::style::{
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
     ViewStyleTraceMode,
 };
-use arcweft_view::{ViewElementKind, ViewMountId, ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewElementKind, ViewId, ViewMountId, ViewPartLocalName, ViewPartName};
 
 #[test]
 fn node_path_encoding_distinguishes_all_segment_families_and_key_presence() {
@@ -226,13 +226,13 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
         ViewBoxAxisSeedGeneration::INITIAL,
         ViewBoxAxisHostSeed::Explicit(ViewBoxAxisMode::VerticalRl),
     ));
-    parent.view = "view.Parent".to_owned();
+    parent.view = ViewId::try_new("view.Parent").unwrap();
     parent.style_nodes = vec![BundleViewStyleNode {
         path: BundleViewInstancePath::default(),
         instruction: 0,
         parent: None,
         kind: BundleViewStyleNodeKind::CallView {
-            view: "view.Child".to_owned(),
+            view: ViewId::try_new("view.Child").unwrap(),
         },
         part: Some(ViewPartLocalName::try_new("part.call").unwrap()),
         exported_part: None,
@@ -241,7 +241,7 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
     let mut child = empty_mount();
     child.mount = ViewMountId::from_raw(2);
     child.host_axis_seed = None;
-    child.view = "view.Child".to_owned();
+    child.view = ViewId::try_new("view.Child").unwrap();
     child.path = child_path.clone();
     child.text = [
         ("text.child", "text.child.target", "child"),
@@ -1384,7 +1384,7 @@ fn empty_mount() -> BundleViewMountOutput {
             ViewBoxAxisSeedGeneration::INITIAL,
             ViewBoxAxisHostSeed::Default,
         )),
-        view: "view.Test".to_owned(),
+        view: ViewId::try_new("view.Test").unwrap(),
         path: BundleViewInstancePath::default(),
         dialogue: None,
         active_targets: Vec::new(),

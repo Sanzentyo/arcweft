@@ -56,7 +56,7 @@ pub fn lower_view_part_exports(
     let selected = catalog
         .owners()
         .iter()
-        .flat_map(|owner| {
+        .filter_map(|owner| {
             let owner_ref = ViewDefinitionRef::from_public_id(owner.id().public_id().clone());
             emitted_owners
                 .contains(&owner_ref)

@@ -82,9 +82,15 @@ impl BundleSession {
             .map_err(|error| BundleHotSwapError::ViewRuntime {
                 message: error.to_string(),
             })?;
+            let view_snapshot =
+                self.view_runtime
+                    .snapshot()
+                    .map_err(|error| BundleHotSwapError::ViewRuntime {
+                        message: error.to_string(),
+                    })?;
             next_runtime
                 .view_runtime
-                .restore(&self.view_runtime.snapshot(), &reconciled_root_handles)
+                .restore(&view_snapshot, &reconciled_root_handles)
                 .map_err(|error| BundleHotSwapError::ViewRuntime {
                     message: error.to_string(),
                 })?;
@@ -108,7 +114,9 @@ impl BundleSession {
 
         match compatibility {
             SwapCompatibility::ContentOnly => {
-                self.source_label = bundle.source_display_name().to_owned();
+                bundle
+                    .source_display_name()
+                    .clone_into(&mut self.source_label);
                 self.display = bundle.display.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);

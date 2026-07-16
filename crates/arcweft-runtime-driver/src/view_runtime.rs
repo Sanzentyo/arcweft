@@ -8,6 +8,9 @@
 mod axis_seed;
 mod catalog;
 mod evaluator;
+mod owner;
+#[cfg(test)]
+mod owner_tests;
 mod part;
 mod style_scope;
 mod value;
@@ -31,8 +34,9 @@ use arcweft_presentation::fx::{
 use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
     ViewId, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot,
-    ViewMountState, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId, ViewStyleProgram,
-    ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
+    ViewMountState, ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId,
+    ViewSchemaId, ViewStyleProgram, ViewValueEvaluationError, ViewValueInventoryError,
+    ViewValueProgramInventory,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -45,6 +49,7 @@ pub use axis_seed::{
     BundleViewPendingAxisSeedSnapshot,
 };
 pub use catalog::{ViewProgramCatalog, ViewProgramCatalogError};
+pub use owner::{AcceptedViewProgramGeneration, SavedViewOwner, ViewOwnerEvidence, ViewSaveError};
 
 pub use style_scope::{BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind};
 pub use value::BundleViewValueConversionError;
@@ -230,7 +235,7 @@ pub enum BundleViewPaintItem {
 pub struct BundleViewMountOutput {
     pub handle: PresentationHandleId,
     pub mount: ViewMountId,
-    pub view: String,
+    pub view: ViewId,
     pub path: BundleViewInstancePath,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_axis_seed: Option<arcweft_view::ViewInheritedBoxAxes>,
@@ -245,11 +250,36 @@ pub struct BundleViewMountOutput {
     pub style_nodes: Vec<BundleViewStyleNode>,
 }
 
+/// Public owner and part identity projected from an accepted exported-part boundary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BundleViewExportedPartEvidence {
+    /// Stable public owner of the exported part.
+    pub owner: ViewOwnerEvidence,
+    /// Public part capability name; the owner-local implementation name is omitted.
+    pub part: ViewPartName,
+}
+
 impl BundleViewMountOutput {
     /// Qualifies one authored resource identity for this concrete mount occurrence.
     #[must_use]
     pub fn scoped_id(&self, authored: &str) -> String {
         format!("view_mount_{}.{}", self.mount.get(), authored)
+    }
+
+    /// Projects exported-part evidence without exposing local or dense identities.
+    pub fn exported_part_evidence(
+        &self,
+    ) -> impl Iterator<Item = BundleViewExportedPartEvidence> + '_ {
+        self.style_nodes.iter().filter_map(|node| {
+            node.exported_part
+                .as_ref()
+                .map(|part| BundleViewExportedPartEvidence {
+                    owner: ViewOwnerEvidence::Public {
+                        view: self.view.clone(),
+                    },
+                    part: part.clone(),
+                })
+        })
     }
 }
 
@@ -301,7 +331,7 @@ pub struct BundleViewRuntimeSnapshot {
 pub struct BundleViewMountRuntimeSnapshot {
     pub handle: PresentationHandleId,
     pub path: BundleViewInstancePath,
-    pub definition: ViewId,
+    pub owner: SavedViewOwner,
     pub activation_logical_time: FxLogicalTime,
     pub deterministic_seed: u64,
     pub state: ViewMountSnapshot,
@@ -323,6 +353,8 @@ pub enum BundleViewRuntimeError {
     ProductValidation(#[from] arcweft_bundle::resource_codec::ViewProductValidationError),
     #[error(transparent)]
     Registry(#[from] ViewRegistryError),
+    #[error(transparent)]
+    Save(#[from] ViewSaveError),
     #[error(transparent)]
     DialogueContract(#[from] DialogueViewContractError),
     #[error(transparent)]
@@ -375,7 +407,7 @@ struct ViewOccurrenceKey {
 
 #[derive(Clone, Debug, PartialEq)]
 struct MountedView {
-    definition: ViewId,
+    owner: owner::ResolvedMountedViewOwner,
     activation_logical_time: FxLogicalTime,
     deterministic_seed: u64,
     state: ViewMountState,
@@ -384,12 +416,21 @@ struct MountedView {
     runtime_parameters: BTreeMap<String, RuntimeValue>,
 }
 
+impl MountedView {
+    fn view(&self) -> &ViewId {
+        self.owner
+            .view()
+            .expect("the bundle evaluator stores only public Arcweft View owners")
+    }
+}
+
 /// Sans I/O evaluator and persistent mount table for one active View program.
 #[derive(Clone, Debug)]
 pub struct BundleViewRuntime {
     product: ValidatedViewProduct,
     catalog: Option<ViewProgramCatalog>,
     registry: ViewRegistry,
+    generation: AcceptedViewProgramGeneration,
     style_program: Option<ViewStyleProgram>,
     text: Option<ViewTextResource>,
     inventory: ViewValueProgramInventory,
@@ -494,6 +535,7 @@ impl BundleViewRuntime {
             product,
             catalog,
             registry,
+            generation: AcceptedViewProgramGeneration::INITIAL,
             style_program: style.map(|style| style.program.clone()),
             text,
             inventory,
@@ -509,6 +551,19 @@ impl BundleViewRuntime {
     #[must_use]
     pub const fn registry(&self) -> &ViewRegistry {
         &self.registry
+    }
+
+    /// Projects a live registry entry into stable public owner evidence.
+    #[must_use]
+    pub fn registry_owner_evidence(&self, id: ViewRegistryId) -> Option<ViewOwnerEvidence> {
+        owner::ResolvedMountedViewOwner::resolve_registry(
+            id,
+            &self.registry,
+            self.catalog.as_ref(),
+            self.generation,
+        )
+        .ok()
+        .map(|owner| owner.evidence())
     }
 
     /// Returns the immutable accepted Arcweft catalog, when the product has one.
@@ -584,11 +639,13 @@ impl BundleViewRuntime {
                     ),
                 }
             })?;
-            if mounted.definition.as_str() != *view {
+            if mounted.view().as_str() != *view {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "dialogue occurrence `{}` retains View `{}`, expected `{}`",
-                        handle, mounted.definition, view
+                        handle,
+                        mounted.view(),
+                        view
                     ),
                 });
             }
@@ -681,7 +738,7 @@ impl BundleViewRuntime {
                     ),
                 }
             })?;
-            if mounted.definition.as_str() != output.view || mounted.state.mount() != output.mount {
+            if mounted.view() != &output.view || mounted.state.mount() != output.mount {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "dialogue occurrence `{}` at path {:?} records view `{}`/mount {:?}, expected `{}`/{:?}",
@@ -689,7 +746,7 @@ impl BundleViewRuntime {
                         output.path,
                         output.view,
                         output.mount,
-                        mounted.definition,
+                        mounted.view(),
                         mounted.state.mount()
                     ),
                 });
@@ -725,30 +782,15 @@ impl BundleViewRuntime {
             .unwrap_or_default()
     }
 
-    #[must_use]
-    pub fn snapshot(&self) -> BundleViewRuntimeSnapshot {
-        BundleViewRuntimeSnapshot {
-            program_id: self
-                .catalog
-                .as_ref()
-                .map(|catalog| catalog.program_id().clone()),
-            logical_time: self.logical_time,
-            next_mount_id: self.allocator.next(),
-            root_bindings: self
-                .root_bindings
-                .iter()
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: value.clone(),
-                })
-                .collect(),
-            mounts: self
-                .mounts
-                .iter()
-                .map(|(key, mount)| BundleViewMountRuntimeSnapshot {
+    pub fn snapshot(&self) -> Result<BundleViewRuntimeSnapshot, ViewSaveError> {
+        let mounts = self
+            .mounts
+            .iter()
+            .map(|(key, mount)| {
+                Ok(BundleViewMountRuntimeSnapshot {
                     handle: key.handle.clone(),
                     path: key.path.clone(),
-                    definition: mount.definition.clone(),
+                    owner: mount.owner.saved(&self.registry)?,
                     activation_logical_time: mount.activation_logical_time,
                     deterministic_seed: mount.deterministic_seed,
                     state: mount.state.snapshot(),
@@ -763,9 +805,26 @@ impl BundleViewRuntime {
                         })
                         .collect(),
                 })
+            })
+            .collect::<Result<Vec<_>, ViewSaveError>>()?;
+        Ok(BundleViewRuntimeSnapshot {
+            program_id: self
+                .catalog
+                .as_ref()
+                .map(|catalog| catalog.program_id().clone()),
+            logical_time: self.logical_time,
+            next_mount_id: self.allocator.next(),
+            root_bindings: self
+                .root_bindings
+                .iter()
+                .map(|(name, value)| RuntimeBinding {
+                    name: name.clone(),
+                    value: value.clone(),
+                })
                 .collect(),
+            mounts,
             axis_seeds: self.axis_seeds.snapshot(),
-        }
+        })
     }
 
     /// Restores an exact mount table atomically after validating every identity and slot.
@@ -810,11 +869,22 @@ impl BundleViewRuntime {
             {
                 return Err(BundleViewRuntimeError::ActivationAfterRuntime);
             }
-            let definition_index = self.definition_index(&saved.definition)?;
+            let owner = owner::ResolvedMountedViewOwner::resolve_saved(
+                &saved.owner,
+                &self.registry,
+                self.catalog.as_ref(),
+                self.generation,
+            )?;
+            let definition_index = owner
+                .definition()
+                .ok_or(ViewSaveError::ImplementationKindMismatch)?;
+            let saved_view = owner
+                .view()
+                .ok_or(ViewSaveError::ImplementationKindMismatch)?;
             let definition = self.definition(definition_index);
             let program_id = self.accepted_program_id().ok_or_else(|| {
                 BundleViewRuntimeError::UnknownDefinition {
-                    definition: saved.definition.clone(),
+                    definition: saved_view.clone(),
                 }
             })?;
             let state = ViewMountState::from_snapshot(
@@ -857,7 +927,7 @@ impl BundleViewRuntime {
                 .insert(
                     key.clone(),
                     MountedView {
-                        definition: saved.definition.clone(),
+                        owner,
                         activation_logical_time: saved.activation_logical_time,
                         deterministic_seed: saved.deterministic_seed,
                         state,
@@ -954,7 +1024,7 @@ impl BundleViewRuntime {
                     ),
                 });
             };
-            if mounted.definition.as_str() != output.view || mounted.state.mount() != output.mount {
+            if mounted.view() != &output.view || mounted.state.mount() != output.mount {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "occurrence `{}` at path {:?} records view `{}`/mount {:?}, expected `{}`/{:?}",
@@ -962,7 +1032,7 @@ impl BundleViewRuntime {
                         output.path,
                         output.view,
                         output.mount,
-                        mounted.definition,
+                        mounted.view(),
                         mounted.state.mount()
                     ),
                 });
@@ -994,18 +1064,6 @@ impl BundleViewRuntime {
             }
         }
         Ok(())
-    }
-
-    fn definition_index(
-        &self,
-        definition: &ViewId,
-    ) -> Result<catalog::ViewDefinitionIndex, BundleViewRuntimeError> {
-        self.catalog
-            .as_ref()
-            .and_then(|catalog| catalog.definition_index(definition))
-            .ok_or_else(|| BundleViewRuntimeError::UnknownDefinition {
-                definition: definition.clone(),
-            })
     }
 
     fn definition(&self, index: catalog::ViewDefinitionIndex) -> &ViewDefinitionResource {

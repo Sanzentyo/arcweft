@@ -75,7 +75,11 @@ impl BundleSession {
             executor,
             presentation: self.presentation.clone(),
             view_virtualization: self.view_virtualization.snapshot(),
-            view_runtime: self.view_runtime.snapshot(),
+            view_runtime: self.view_runtime.snapshot().map_err(|error| {
+                BundleSessionSaveError::ViewRuntime {
+                    message: error.to_string(),
+                }
+            })?,
         })
     }
 

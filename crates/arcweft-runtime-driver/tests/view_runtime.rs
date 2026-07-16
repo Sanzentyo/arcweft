@@ -30,13 +30,14 @@ use arcweft_runtime_driver::presentation_handles::{
 use arcweft_runtime_driver::view_runtime::{
     BundleViewDiagnosticCode, BundleViewInstancePathSegment, BundleViewMountOutput,
     BundleViewPaintItem, BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError,
-    BundleViewStyleNode, BundleViewStyleNodeKind, BundleViewTextValue,
+    BundleViewStyleNode, BundleViewStyleNodeKind, BundleViewTextValue, SavedViewOwner,
+    ViewOwnerEvidence,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{
-    DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex, RustViewId,
-    ViewDescriptor, ViewId, ViewImplementation, ViewPartLocalName, ViewPartName, ViewProgramId,
-    ViewRegistry, ViewRegistryError, ViewSchemaId,
+    AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
+    DialogueStageIndex, RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewPartLocalName,
+    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -103,7 +104,7 @@ fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
         "the corrected unpublished payload remains the initial save schema"
     );
     let runtime = BundleViewRuntime::try_new(None, None, None).unwrap();
-    let snapshot = runtime.snapshot();
+    let snapshot = runtime.snapshot().unwrap();
     let mut missing = serde_json::to_value(&snapshot).unwrap();
     missing.as_object_mut().unwrap().remove("axis_seeds");
     assert!(
@@ -124,11 +125,17 @@ fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
 }
 
 #[test]
-fn accepted_catalog_preserves_host_views_and_registers_arcweft_definitions() {
+fn view_identity_catalog_preserves_host_views_and_registers_arcweft_definitions() {
     let host = ViewId::try_new("view.host.public").unwrap();
     let authored = ViewId::try_new("view.Authored").unwrap();
     let mut registry = ViewRegistry::default();
-    registry
+    let anonymous_slot = registry
+        .register(ViewDescriptor::anonymous_rust(
+            ViewSchemaId(6),
+            RustViewId(2),
+        ))
+        .unwrap();
+    let host_slot = registry
         .register(ViewDescriptor::public_rust(
             host.clone(),
             ViewSchemaId(7),
@@ -144,6 +151,18 @@ fn accepted_catalog_preserves_host_views_and_registers_arcweft_definitions() {
 
     let runtime =
         AcceptedBundleViewRuntime::try_new_with_registry(product, None, None, registry).unwrap();
+    assert_eq!(
+        runtime.registry_owner_evidence(anonymous_slot),
+        Some(ViewOwnerEvidence::AnonymousHost)
+    );
+    assert_eq!(
+        runtime.registry_owner_evidence(host_slot),
+        Some(ViewOwnerEvidence::Public { view: host.clone() })
+    );
+    assert_eq!(
+        serde_json::to_string(&runtime.registry_owner_evidence(host_slot).unwrap()).unwrap(),
+        r#"{"kind":"public","view":"view.host.public"}"#
+    );
     let host_descriptor = runtime
         .registry()
         .get(runtime.registry().resolve(&host).unwrap())
@@ -499,7 +518,7 @@ fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
     let parent = frame
         .mounts
         .iter()
-        .find(|mount| mount.view == "view.Parent")
+        .find(|mount| mount.view.as_str() == "view.Parent")
         .unwrap();
     let call = call_boundary_parent_node(parent);
     assert_eq!(call.applications.len(), 2);
@@ -515,7 +534,7 @@ fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
     let child = frame
         .mounts
         .iter()
-        .find(|mount| mount.view == "view.Child")
+        .find(|mount| mount.view.as_str() == "view.Child")
         .unwrap();
     assert_eq!(
         child
@@ -583,6 +602,16 @@ fn style_scope_enters_call_view_before_recursion_and_protects_private_parts() {
         child.style_nodes[2].part.as_ref(),
         child.style_nodes[2].exported_part.as_ref(),
     ));
+    let evidence = child.exported_part_evidence().collect::<Vec<_>>();
+    assert_eq!(evidence.len(), 1);
+    let public_json = serde_json::to_string(&evidence[0]).unwrap();
+    assert_eq!(
+        public_json,
+        r#"{"owner":{"kind":"public","view":"view.Child"},"part":"part.public-child"}"#
+    );
+    assert!(!public_json.contains("part.child-exported"));
+    assert!(!public_json.contains("registry"));
+    assert!(!public_json.contains("definition"));
 }
 
 #[test]
@@ -654,7 +683,7 @@ fn exported_part_access_does_not_cross_two_nested_view_boundaries() {
     let deep = frame
         .mounts
         .iter()
-        .find(|mount| mount.view == "view.C")
+        .find(|mount| mount.view.as_str() == "view.C")
         .and_then(|mount| mount.style_nodes.first())
         .expect("the deep exported node retains the ancestor application");
     let boundary = deep.applications[0].boundary();
@@ -862,7 +891,7 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
     clippy::too_many_lines,
     reason = "the parent/child IR fixture and exact restore assertions describe one persistence scenario"
 )]
-fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
+fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
     let common_parameters = vec![FxRuntimeType::I32];
     let constant = value_program(
         0,
@@ -998,7 +1027,7 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
     let first = runtime.evaluate(std::slice::from_ref(&first_handle), &[], false);
     assert!(first.diagnostics.is_empty());
     assert_eq!(first.mounts.len(), 2);
-    assert_eq!(first.mounts[1].view, "view.Child");
+    assert_eq!(first.mounts[1].view.as_str(), "view.Child");
     assert_eq!(
         first.mounts[0].paint,
         [
@@ -1022,12 +1051,72 @@ fn nested_mounts_round_trip_exactly_and_allocator_stays_fresh() {
         }
     );
 
-    let snapshot = runtime.snapshot();
-    let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
+    let snapshot = runtime.snapshot().unwrap();
+    assert_eq!(snapshot.mounts.len(), 2);
+    assert!(snapshot.mounts.iter().all(|mount| matches!(
+        &mount.owner,
+        SavedViewOwner::Arcweft { view, program, .. }
+            if (view.as_str() == "view.Parent" || view.as_str() == "view.Child")
+                && program.as_str() == "view.program.nested-runtime"
+    )));
+    let SavedViewOwner::Arcweft {
+        revision: accepted_revision,
+        ..
+    } = &snapshot.mounts[0].owner
+    else {
+        unreachable!("bundle-authored mount has an Arcweft owner")
+    };
+    assert_ne!(accepted_revision.as_bytes(), &[0; 32]);
+    assert!(snapshot.mounts.iter().all(|mount| matches!(
+        &mount.owner,
+        SavedViewOwner::Arcweft { revision, .. } if revision == accepted_revision
+    )));
+    let persisted = serde_json::to_string(&snapshot).unwrap();
+    assert!(!persisted.contains("\"registry\""));
+    assert!(!persisted.contains("\"definition\""));
+    assert!(!persisted.contains("\"rust\""));
+
+    let mut restored =
+        BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None).unwrap();
     restored
         .restore(&snapshot, std::slice::from_ref(&first_handle))
         .unwrap();
-    assert_eq!(restored.snapshot(), snapshot);
+    assert_eq!(restored.snapshot().unwrap(), snapshot);
+
+    let before_tamper = restored.snapshot().unwrap();
+    let mut wrong_program = snapshot.clone();
+    let SavedViewOwner::Arcweft { program, .. } = &mut wrong_program.mounts[0].owner else {
+        unreachable!("bundle-authored mount has an Arcweft owner")
+    };
+    *program = program_id("view.program.forged");
+    assert!(matches!(
+        restored.restore(&wrong_program, std::slice::from_ref(&first_handle)),
+        Err(BundleViewRuntimeError::Save(_))
+    ));
+    assert_eq!(restored.snapshot().unwrap(), before_tamper);
+
+    let mut wrong_revision = snapshot.clone();
+    let SavedViewOwner::Arcweft { revision, .. } = &mut wrong_revision.mounts[0].owner else {
+        unreachable!("bundle-authored mount has an Arcweft owner")
+    };
+    *revision = AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).unwrap();
+    assert!(matches!(
+        restored.restore(&wrong_revision, std::slice::from_ref(&first_handle)),
+        Err(BundleViewRuntimeError::Save(_))
+    ));
+    assert_eq!(restored.snapshot().unwrap(), before_tamper);
+
+    let mut wrong_implementation = snapshot.clone();
+    let saved_view = wrong_implementation.mounts[0].owner.view().clone();
+    wrong_implementation.mounts[0].owner = SavedViewOwner::Rust {
+        view: saved_view,
+        schema: ViewSchemaId(11),
+    };
+    assert!(matches!(
+        restored.restore(&wrong_implementation, std::slice::from_ref(&first_handle)),
+        Err(BundleViewRuntimeError::Save(_))
+    ));
+    assert_eq!(restored.snapshot().unwrap(), before_tamper);
     let after_restore = restored.evaluate(std::slice::from_ref(&first_handle), &[], false);
     assert_eq!(
         after_restore
@@ -1535,7 +1624,7 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     ));
     let first_mount = first.mounts[0].mount;
 
-    let snapshot = runtime.snapshot();
+    let snapshot = runtime.snapshot().unwrap();
     let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
     let restored_handle = handle("dialogue.40", "view.Dialogue");
     restored
@@ -1738,7 +1827,7 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
     assert!(output.diagnostics.is_empty(), "{output:#?}");
     assert_eq!(output.mounts.len(), 1);
     assert_eq!(
-        output.mounts[0].view,
+        output.mounts[0].view.as_str(),
         arcweft_bundle::standard_view::DIALOGUE_VIEW_ID
     );
     assert_eq!(output.mounts[0].text.len(), 2);

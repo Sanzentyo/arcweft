@@ -9,6 +9,7 @@ use arcweft_view::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::owner::ResolvedMountedViewOwner;
 use super::part::ViewPartRuntimeCatalog;
 
 /// One node producer whose effective ordered Style applications were retained.
@@ -57,7 +58,7 @@ pub enum BundleViewStyleNodeKind {
         element: String,
     },
     CallView {
-        view: String,
+        view: ViewId,
     },
 }
 
@@ -100,7 +101,7 @@ pub(crate) struct ViewStyleScopeRuntime {
 /// One node-producer evaluation at the Style scope boundary.
 pub(crate) struct ViewStyleNodeInput<'a> {
     pub(crate) parts: &'a ViewPartRuntimeCatalog,
-    pub(crate) view: &'a ViewId,
+    pub(crate) owner: &'a ResolvedMountedViewOwner,
     pub(crate) path: &'a BundleViewInstancePath,
     pub(crate) instruction: u32,
     pub(crate) kind: BundleViewStyleNodeKind,
@@ -152,7 +153,7 @@ impl ViewStyleScopeRuntime {
     ) -> Result<LocalStyleApplications, ViewStyleScopeError> {
         let exported_part = input
             .part
-            .and_then(|part| input.parts.public_name(input.view, part).cloned());
+            .and_then(|part| input.parts.public_name(input.owner, part).cloned());
         let mut local = self.stack.applications_for_node(
             input.local,
             input.root,

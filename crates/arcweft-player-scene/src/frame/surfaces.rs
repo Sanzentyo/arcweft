@@ -648,7 +648,7 @@ mod tests {
         BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
     };
     use arcweft_view::{
-        ViewElementKind, ViewMountId,
+        ViewElementKind, ViewId, ViewMountId,
         style::{
             ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewBoxAxisHostSeed,
             ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes, ViewLengthMilli,
@@ -847,7 +847,7 @@ mod tests {
                 ViewBoxAxisSeedGeneration::INITIAL,
                 ViewBoxAxisHostSeed::Default,
             )),
-            view: "view.Root".to_owned(),
+            view: ViewId::try_new("view.Root").unwrap(),
             path: BundleViewInstancePath::default(),
             active_targets: Vec::new(),
             active_images: Vec::new(),
@@ -871,7 +871,7 @@ mod tests {
             handle,
             mount: child_mount,
             host_axis_seed: None,
-            view: "view.Child".to_owned(),
+            view: ViewId::try_new("view.Child").unwrap(),
             path: BundleViewInstancePath::default(),
             active_targets: Vec::new(),
             active_images: Vec::new(),

@@ -710,7 +710,7 @@ fn dialogue_surface_bounds(
     mount: &BundleViewMountOutput,
     content: Option<ContentRect>,
 ) -> Option<HitRect> {
-    let owner = mount.scoped_id(&mount.view);
+    let owner = mount.scoped_id(mount.view.as_str());
     presentation
         .surfaces
         .iter()

@@ -18,7 +18,6 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewStyleNode,
     BundleViewStyleNodeKind,
 };
-use arcweft_view::ViewMountId;
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewElementState, ViewElementStateSet,
     ViewInheritedBoxAxes, ViewInteractionSelector, ViewInteractionStateSet, ViewStyleApplication,
@@ -26,6 +25,7 @@ use arcweft_view::style::{
     ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult,
     ViewStyleResolver, ViewStyleRevisionSet, ViewStyleTraceMode,
 };
+use arcweft_view::{ViewId, ViewMountId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ struct CallerKey {
     handle: PresentationHandleId,
     path: Vec<u64>,
     instruction: u32,
-    child_view: String,
+    child_view: ViewId,
 }
 
 #[derive(Clone, Debug)]

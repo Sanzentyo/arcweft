@@ -4,10 +4,10 @@
 - Package: `arcweft-seq-06.11d.2.1.1.1.1-view-exported-part-production-contract-correction-final-contract.zip`
 - Package SHA-256: `b4662f3ecd79c157ee93656a173e9809fff31696aaded1fedb9411cdb1e9732e`
 - Package basis: Git `8984661d5679efccf7a16255f921530cd0b7cacc`
-- Production base for this increment after final validation rebase: Jujutsu
-  change `mytryolq` / Git `8a6d4a62a138`
-- Working change: Jujutsu change `rqmwxyuq`
-- Status: Increments 1 through 3 are implemented; the complete correction remains open
+- Production base for the current increment after final validation rebase:
+  Jujutsu change `vmlrxuvm` / Git `b7be621bab0f`
+- Working change: Jujutsu change `osskwmts`
+- Status: Increments 1 through 5 are implemented; the complete correction remains open
 
 ## Package intake
 
@@ -220,19 +220,79 @@ Increment 4 verification after rebasing onto Git `06e502403861`:
   files, 1,575 Rust files, and 721,479 Rust physical LOC with 0 errors and 128
   repository-wide warnings.
 
+## Increment 5 implementation
+
+Live mounts now retain a private `ResolvedMountedViewOwner` that separates
+anonymous Rust, public Rust, and accepted Arcweft authority. Process-local
+`ViewRegistryId` and crate-private `ViewDefinitionIndex` values remain only in
+that live owner. Public mount output and call-node output use typed `ViewId`;
+the public owner projection is the closed `ViewOwnerEvidence::{Public,
+AnonymousHost}` form.
+
+Save snapshots now serialize `SavedViewOwner`. Public Rust owners persist only
+their stable `ViewId` and `ViewSchemaId`; Arcweft owners persist `ViewId`,
+`ViewProgramId`, and the accepted program revision. Anonymous Rust projection
+fails with `AnonymousRustViewNotPersistable`. Restore resolves the stable owner
+through the candidate registry/catalog and verifies implementation kind,
+schema, program, and revision before allocating or publishing any mount state.
+Forged owner-kind, program, revision, and schema tests prove that failure leaves
+the previously accepted snapshot unchanged. A fresh-registry test proves that
+public Rust restoration does not depend on the original dense slot.
+
+Exported-part lookup now requires the private Arcweft owner proof; a public
+Rust owner with the same stable spelling cannot mint an Arcweft exported-part
+capability. The one accepted part catalog remains immutable and authoritative.
+Compiler-produced checked owner mapping continues by exact public identity;
+the changed compiler call site removes the remaining option-flattening lint
+without introducing a string or path reconstruction.
+
+The unpublished save payload was corrected in place and remains schema 1. No
+dual reader, compatibility alias, migration shim, numeric owner serialization,
+or anonymous persistence path was added.
+
+### Increment 5 verification
+
+All Cargo verification used `CARGO_INCREMENTAL=0` after the final rebase onto
+Git `b7be621bab0f`:
+
+- `cargo fmt --all -- --check` — passed;
+- the exact runtime `view_identity`, `exported_part`, and `view_save` filters —
+  one passed in each filter;
+- private owner tests — two passed, covering anonymous/public evidence,
+  anonymous save rejection, fresh dense-slot restoration, and forged schema;
+- private exported-part capability test — one passed;
+- `cargo check --workspace --all-targets` — passed;
+- `cargo clippy -p arcweft-runtime-driver -p arcweft-compiler
+  -p arcweft-player-scene --all-targets --all-features -- -D warnings` —
+  passed; and
+- focused runtime integration before and after rebase — all 17 tests passed.
+
+The canonical post-change structural audit on Jujutsu change `osskwmts` scanned
+3,150 files, 1,581 Rust files, 723,297 Rust physical LOC, and 92 package
+manifests. It reported 0 errors and 128 repository-wide warnings. No duplicate
+baseline report was written. Relative to `b7be621bab0f`, this increment changes
+21 Rust files by 831 insertions and 183 deletions. The new owner responsibility
+module is 9,700 bytes/278 physical LOC and its sibling tests are 3,922 bytes/135
+physical LOC. Existing warning-level touched hotspots remain the runtime View
+evaluator (65,899 bytes/1,613 LOC) and runtime facade (44,549 bytes/1,161 LOC);
+the evaluator's mount-construction policy was extracted into a named
+`create_occurrence` responsibility so the changed method passes the active
+complexity lint. Other large touched files are test owners or mechanical typed
+`ViewId` call-site adaptations. No crate dependency or new broad facade export
+was added.
+
 ## Remaining correction increments
 
 The following package requirements are explicitly not complete:
 
 1. canonical semantic transcript, per-definition fingerprints, and
    accepted program revision derivation;
-2. semantic occurrence reconciliation, opaque direct-boundary capability, and
-   persistent-owner rejection for anonymous Rust Views;
-3. six-phase candidate-first replacement with exact rollback, generation, and
-   targeted cache/trace invalidation;
-4. final ordinary-parser rejection accounting with no historical recognizer;
+2. semantic occurrence reconciliation and the six-phase candidate-first
+   replacement with exact rollback, generation, and targeted cache/trace
+   invalidation;
+3. final ordinary-parser rejection accounting with no historical recognizer;
    and
-5. contextual Style application edges plus atomic LSP rename, symbols,
+4. contextual Style application edges plus atomic LSP rename, symbols,
    semantic tokens, limits, and the remaining test matrix.
 
 The correction must remain open until those increments and their Tier-0/Tier-1,

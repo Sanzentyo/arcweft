@@ -363,7 +363,7 @@ fn dialogue_content_avoidance_regions(
         .iter()
         .filter(|mount| mount.dialogue.is_some() && mount.path.segments().is_empty())
         .filter_map(|mount| {
-            let owner = mount.scoped_id(&mount.view);
+            let owner = mount.scoped_id(mount.view.as_str());
             surfaces
                 .iter()
                 .filter(|surface| surface.view.as_deref() == Some(owner.as_str()))

@@ -1513,7 +1513,7 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
     assert!(frame.diagnostics.is_empty(), "{frame:#?}");
     assert_eq!(frame.mounts.len(), 1);
     let mount = &frame.mounts[0];
-    assert_eq!(mount.view, "view.StoryPanel");
+    assert_eq!(mount.view.as_str(), "view.StoryPanel");
     assert!(
         mount
             .dialogue

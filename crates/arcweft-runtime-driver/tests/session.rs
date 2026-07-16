@@ -81,7 +81,7 @@ use arcweft_view::ViewProgramId;
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
 use arcweft_view::{
-    ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedSource, ViewValueProgram,
+    ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedSource, ViewId, ViewValueProgram,
     ViewValueProgramId,
 };
 
@@ -1838,7 +1838,7 @@ fn session_executes_mount_scoped_view_branch_and_restores_it() {
 
     let before_tampered_restore = restored.snapshot_session().unwrap();
     let mut tampered = before_tampered_restore.clone();
-    tampered.presentation.view.mounts[0].view = "view.Other".to_owned();
+    tampered.presentation.view.mounts[0].view = ViewId::try_new("view.Other").unwrap();
     assert!(matches!(
         restored.restore_session_snapshot(tampered),
         Err(BundleSessionSaveError::ViewRuntime { .. })

@@ -154,7 +154,7 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         .map(|mut surface| {
             surface.public_id = mount.scoped_id(&surface.public_id);
             surface.target = mount.scoped_id(&surface.target);
-            surface.view = Some(mount.scoped_id(&mount.view));
+            surface.view = Some(mount.scoped_id(mount.view.as_str()));
             surface
         })
         .collect();
@@ -164,7 +164,7 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         .map(|mut button| {
             button.public_id = mount.scoped_id(&button.public_id);
             button.target = mount.scoped_id(&button.target);
-            button.view = Some(mount.scoped_id(&mount.view));
+            button.view = Some(mount.scoped_id(mount.view.as_str()));
             if let ViewRuntimeActionButtonAction::DialoguePrimaryAction { target, .. } =
                 &mut button.action
             {

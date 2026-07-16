@@ -14,6 +14,7 @@ use super::style_scope::{
 };
 
 use super::catalog::{ViewDefinitionIndex, ViewProgramCatalog};
+use super::owner::{AcceptedViewProgramGeneration, ResolvedMountedViewOwner};
 use super::part::ViewPartRuntimeCatalog;
 use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
 use super::{
@@ -37,7 +38,8 @@ use arcweft_presentation::fx::{
     FxEvaluationBudget, FxEvaluationError, FxGraphChildPath, FxRuntimeValue, FxSampleContext,
 };
 use arcweft_view::{
-    ViewId, ViewMountState, ViewValueEvaluationError, ViewValueProgramId, ViewValueProgramInventory,
+    ViewId, ViewMountState, ViewRegistry, ViewValueEvaluationError, ViewValueProgramId,
+    ViewValueProgramInventory,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -140,6 +142,8 @@ impl MountRenderBuilder {
 
 struct ViewEvaluator<'a> {
     catalog: &'a ViewProgramCatalog,
+    registry: &'a ViewRegistry,
+    generation: AcceptedViewProgramGeneration,
     program: &'a ViewProgramResource,
     program_id: &'a arcweft_view::ViewProgramId,
     parts: &'a ViewPartRuntimeCatalog,
@@ -295,6 +299,8 @@ impl BundleViewRuntime {
 
         let mut evaluator = ViewEvaluator {
             catalog,
+            registry: &self.registry,
+            generation: self.generation,
             program,
             program_id: catalog.program_id(),
             parts: catalog.parts(),
@@ -426,87 +432,20 @@ impl ViewEvaluator<'_> {
         let definition = self.definition(definition_index).clone();
         let definition_view = definition.public_id.to_view_id();
         if let Some(existing) = self.mounts.get(key)
-            && existing.definition != definition_view
+            && existing.view() != &definition_view
         {
             return Err(EvaluationFailure::new(
                 BundleViewDiagnosticCode::InvalidControlFlow,
                 None,
                 format!(
                     "retained occurrence changed definition from `{}` to `{}`",
-                    existing.definition, definition.public_id
+                    existing.view(),
+                    definition.public_id
                 ),
             ));
         }
         if !self.mounts.contains_key(key) {
-            let mount = self.allocator.allocate().map_err(|error| {
-                EvaluationFailure::new(
-                    BundleViewDiagnosticCode::EvaluationBudgetExceeded,
-                    None,
-                    error.to_string(),
-                )
-            })?;
-            let root_axis_seed = key
-                .path
-                .segments()
-                .is_empty()
-                .then(|| self.axis_seeds.prepare_root_mount(&key.handle, mount))
-                .transpose()
-                .map_err(|error| {
-                    EvaluationFailure::new(
-                        BundleViewDiagnosticCode::InvalidControlFlow,
-                        None,
-                        error.to_string(),
-                    )
-                })?;
-            let parameters = self
-                .inventory
-                .parameter_types()
-                .iter()
-                .copied()
-                .map(fx_placeholder)
-                .collect();
-            let state = self
-                .inventory
-                .state_types()
-                .iter()
-                .copied()
-                .map(fx_placeholder)
-                .collect();
-            let mount_state = ViewMountState::new(
-                mount,
-                self.program_id.clone(),
-                definition.state_schema_hash,
-                parameters,
-                state,
-                self.inventory,
-            )
-            .map_err(|error| EvaluationFailure::value(None, &error))?;
-            self.mounts.insert(
-                key.clone(),
-                MountedView {
-                    definition: definition_view.clone(),
-                    activation_logical_time: self.logical_time,
-                    deterministic_seed: deterministic_mount_seed(
-                        &key.handle,
-                        &key.path,
-                        &definition_view,
-                    ),
-                    state: mount_state,
-                    initialized_parameters: BTreeSet::new(),
-                    initialized_state: BTreeSet::new(),
-                    runtime_parameters: BTreeMap::new(),
-                },
-            );
-            if let Some(plan) = root_axis_seed
-                && let Err(error) = self.axis_seeds.commit_root_mount(plan)
-            {
-                self.mounts.remove(key);
-                return Err(EvaluationFailure::new(
-                    BundleViewDiagnosticCode::InvalidControlFlow,
-                    None,
-                    error.to_string(),
-                ));
-            }
+            self.create_occurrence(key, definition_index, &definition, &definition_view)?;
         }
 
         let mut mounted = self
@@ -518,6 +457,99 @@ impl ViewEvaluator<'_> {
             .and_then(|()| self.refresh_parameters(key, &definition, &mut mounted, call_arguments));
         self.mounts.insert(key.clone(), mounted);
         result
+    }
+
+    fn create_occurrence(
+        &mut self,
+        key: &ViewOccurrenceKey,
+        definition_index: ViewDefinitionIndex,
+        definition: &ViewDefinitionResource,
+        definition_view: &ViewId,
+    ) -> Result<(), EvaluationFailure> {
+        let registry = self.registry.resolve(definition_view).ok_or_else(|| {
+            EvaluationFailure::new(
+                BundleViewDiagnosticCode::MissingDefinition,
+                None,
+                format!("View `{definition_view}` is absent from the accepted registry"),
+            )
+        })?;
+        let mount = self.allocator.allocate().map_err(|error| {
+            EvaluationFailure::new(
+                BundleViewDiagnosticCode::EvaluationBudgetExceeded,
+                None,
+                error.to_string(),
+            )
+        })?;
+        let root_axis_seed = key
+            .path
+            .segments()
+            .is_empty()
+            .then(|| self.axis_seeds.prepare_root_mount(&key.handle, mount))
+            .transpose()
+            .map_err(|error| {
+                EvaluationFailure::new(
+                    BundleViewDiagnosticCode::InvalidControlFlow,
+                    None,
+                    error.to_string(),
+                )
+            })?;
+        let parameters = self
+            .inventory
+            .parameter_types()
+            .iter()
+            .copied()
+            .map(fx_placeholder)
+            .collect();
+        let state = self
+            .inventory
+            .state_types()
+            .iter()
+            .copied()
+            .map(fx_placeholder)
+            .collect();
+        let mount_state = ViewMountState::new(
+            mount,
+            self.program_id.clone(),
+            definition.state_schema_hash,
+            parameters,
+            state,
+            self.inventory,
+        )
+        .map_err(|error| EvaluationFailure::value(None, &error))?;
+        self.mounts.insert(
+            key.clone(),
+            MountedView {
+                owner: ResolvedMountedViewOwner::Arcweft {
+                    view: definition_view.clone(),
+                    registry,
+                    definition: definition_index,
+                    program: self.program_id.clone(),
+                    revision: self.catalog.revision(),
+                    generation: self.generation,
+                },
+                activation_logical_time: self.logical_time,
+                deterministic_seed: deterministic_mount_seed(
+                    &key.handle,
+                    &key.path,
+                    definition_view,
+                ),
+                state: mount_state,
+                initialized_parameters: BTreeSet::new(),
+                initialized_state: BTreeSet::new(),
+                runtime_parameters: BTreeMap::new(),
+            },
+        );
+        if let Some(plan) = root_axis_seed
+            && let Err(error) = self.axis_seeds.commit_root_mount(plan)
+        {
+            self.mounts.remove(key);
+            return Err(EvaluationFailure::new(
+                BundleViewDiagnosticCode::InvalidControlFlow,
+                None,
+                error.to_string(),
+            ));
+        }
+        Ok(())
     }
 
     fn refresh_projected_state(
@@ -770,7 +802,7 @@ impl ViewEvaluator<'_> {
                 let mut output = vec![BundleViewMountOutput {
                     handle: key.handle,
                     mount: mount_id,
-                    view: definition.public_id.as_str().to_owned(),
+                    view: definition.public_id.to_view_id(),
                     path: key.path,
                     host_axis_seed,
                     dialogue,
@@ -1054,11 +1086,11 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id.to_view_id(),
+                                owner: &mounted.owner,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::CallView {
-                                    view: view.as_str().to_owned(),
+                                    view: view.to_view_id(),
                                 },
                                 part: part.as_ref(),
                                 local: styles,
@@ -1263,7 +1295,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id.to_view_id(),
+                                owner: &mounted.owner,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Element {
@@ -1313,7 +1345,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id.to_view_id(),
+                                owner: &mounted.owner,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Text {
@@ -1352,7 +1384,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id.to_view_id(),
+                                owner: &mounted.owner,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Image {
@@ -1405,7 +1437,7 @@ impl ViewEvaluator<'_> {
                         .retain_node(
                             ViewStyleNodeInput {
                                 parts: self.parts,
-                                view: &definition.public_id.to_view_id(),
+                                owner: &mounted.owner,
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::Custom {

@@ -38,8 +38,8 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewTextOutput,
     BundleViewTextTarget, BundleViewTextValue,
 };
-use arcweft_view::ViewMountId;
 use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
+use arcweft_view::{ViewId, ViewMountId};
 
 fn assert_px(actual: f32, expected: f32) {
     assert!(
@@ -78,7 +78,7 @@ fn push_view_text(
             ViewBoxAxisSeedGeneration::INITIAL,
             ViewBoxAxisHostSeed::Default,
         )),
-        view: view.to_owned(),
+        view: ViewId::try_new(view).unwrap(),
         path: BundleViewInstancePath::default(),
         active_targets: vec![target.to_owned()],
         active_images: Vec::new(),
