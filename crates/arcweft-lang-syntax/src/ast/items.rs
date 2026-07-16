@@ -5,7 +5,7 @@ use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
 use super::dialogue::DialogueDefaultsItem;
 use super::flow::{AuthoredExpr, ContractClause, Flow, FlowItem, Stmt};
 use super::ids::{EntityRef, WikiLink};
-use super::proof::{BenchItem, ProofItem, TestItem, TrustedAxiomItem};
+use super::proof::{BenchItem, ProofItem, TestItem};
 use super::source::SourceItem;
 use super::style::StyleDecl;
 use super::view::ViewBody;
@@ -38,14 +38,10 @@ pub enum Item {
     Entry(EntryDeclItem),
     ExternCapability(ExternCapabilityItem),
     ExternMod(ExternModItem),
-    Hook(HookItem),
     DialogueDefaults(DialogueDefaultsItem),
-    MemoFn(MemoFn),
     Proof(ProofItem),
-    TrustedAxiom(TrustedAxiomItem),
     Test(TestItem),
     Bench(BenchItem),
-    Parser(ParserItem),
     Source(SourceItem),
     Style(StyleDecl),
     FlowItem(Box<FlowItem>),
@@ -161,14 +157,10 @@ impl Item {
             Self::Entry(item) => Some(*item.range()),
             Self::ExternCapability(item) => Some(*item.range()),
             Self::ExternMod(item) => Some(*item.range()),
-            Self::Hook(item) => Some(*item.range()),
             Self::DialogueDefaults(item) => Some(*item.range()),
-            Self::MemoFn(item) => Some(*item.range()),
             Self::Proof(item) => Some(*item.range()),
-            Self::TrustedAxiom(item) => Some(*item.range()),
             Self::Test(item) => Some(*item.range()),
             Self::Bench(item) => Some(*item.range()),
-            Self::Parser(item) => Some(*item.range()),
             Self::Source(item) => Some(*item.range()),
             Self::Style(item) => Some(*item.range()),
             Self::Raw(item) => Some(*item.range()),
@@ -738,75 +730,6 @@ pub struct TypeAliasItem {
     name: String,
     target: TypeRef,
     where_clauses: Vec<Expr>,
-    range: TextRange,
-}
-
-/// Hook item syntax.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HookItem {
-    visibility: Option<Visibility>,
-    id: EntityRef,
-    target: String,
-    phase: String,
-    when: Option<Expr>,
-    priority: Option<i64>,
-    once: bool,
-    effects: Vec<Expr>,
-    body: String,
-    body_statements: Vec<Stmt>,
-    range: TextRange,
-}
-
-/// Internal initializer for hook syntax.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct HookInit {
-    pub(crate) visibility: Option<Visibility>,
-    pub(crate) id: EntityRef,
-    pub(crate) target: String,
-    pub(crate) phase: String,
-    pub(crate) when: Option<Expr>,
-    pub(crate) priority: Option<i64>,
-    pub(crate) once: bool,
-    pub(crate) effects: Vec<Expr>,
-    pub(crate) body: String,
-    pub(crate) body_statements: Vec<Stmt>,
-    pub(crate) range: TextRange,
-}
-
-/// Memoized function item.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MemoFn {
-    visibility: Option<Visibility>,
-    signature: String,
-    options: Vec<MemoOption>,
-    body: String,
-    body_statements: Vec<Stmt>,
-    body_value: Option<Expr>,
-    range: TextRange,
-}
-
-/// A validated option on a memoized function declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MemoOption {
-    /// Lifetime and invalidation scope for the memoized value.
-    Scope(Expr),
-    /// Explicit stable key expression.
-    Key(Expr),
-    /// Explicit dependency expression.
-    Depends(Expr),
-    /// Dependency tracking policy expression.
-    Track(Expr),
-}
-
-/// User-defined parser item.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParserItem {
-    visibility: Option<Visibility>,
-    name: String,
-    signature_tail: String,
-    body: String,
-    body_statements: Vec<Stmt>,
-    body_value: Option<Expr>,
     range: TextRange,
 }
 
@@ -1719,189 +1642,6 @@ impl TypeAliasItem {
 
     pub fn where_clauses(&self) -> &[Expr] {
         &self.where_clauses
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl HookItem {
-    pub(crate) fn new(init: HookInit) -> Self {
-        Self {
-            visibility: init.visibility,
-            id: init.id,
-            target: init.target,
-            phase: init.phase,
-            when: init.when,
-            priority: init.priority,
-            once: init.once,
-            effects: init.effects,
-            body: init.body,
-            body_statements: init.body_statements,
-            range: init.range,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn id(&self) -> &EntityRef {
-        &self.id
-    }
-
-    pub fn target(&self) -> &str {
-        &self.target
-    }
-
-    pub fn phase(&self) -> &str {
-        &self.phase
-    }
-
-    pub const fn when(&self) -> Option<&Expr> {
-        self.when.as_ref()
-    }
-
-    pub const fn priority(&self) -> Option<i64> {
-        self.priority
-    }
-
-    pub const fn once(&self) -> bool {
-        self.once
-    }
-
-    pub fn effects(&self) -> &[Expr] {
-        &self.effects
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub fn body_statements(&self) -> &[Stmt] {
-        &self.body_statements
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl MemoFn {
-    pub(crate) const fn new(
-        visibility: Option<Visibility>,
-        signature: String,
-        options: Vec<MemoOption>,
-        body: String,
-        body_statements: Vec<Stmt>,
-        body_value: Option<Expr>,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            visibility,
-            signature,
-            options,
-            body,
-            body_statements,
-            body_value,
-            range,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn signature(&self) -> &str {
-        &self.signature
-    }
-
-    pub fn options(&self) -> &[MemoOption] {
-        &self.options
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub fn body_statements(&self) -> &[Stmt] {
-        &self.body_statements
-    }
-
-    pub const fn body_value(&self) -> Option<&Expr> {
-        self.body_value.as_ref()
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl MemoOption {
-    /// Returns the current-grammar option name.
-    pub const fn name(&self) -> &'static str {
-        match self {
-            Self::Scope(_) => "scope",
-            Self::Key(_) => "key",
-            Self::Depends(_) => "depends",
-            Self::Track(_) => "track",
-        }
-    }
-
-    /// Returns the validated option value expression.
-    pub const fn value(&self) -> &Expr {
-        match self {
-            Self::Scope(value) | Self::Key(value) | Self::Depends(value) | Self::Track(value) => {
-                value
-            }
-        }
-    }
-}
-
-impl ParserItem {
-    pub(crate) const fn new(
-        visibility: Option<Visibility>,
-        name: String,
-        signature_tail: String,
-        body: String,
-        body_statements: Vec<Stmt>,
-        body_value: Option<Expr>,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            visibility,
-            name,
-            signature_tail,
-            body,
-            body_statements,
-            body_value,
-            range,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn signature_tail(&self) -> &str {
-        &self.signature_tail
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub fn body_statements(&self) -> &[Stmt] {
-        &self.body_statements
-    }
-
-    pub const fn body_value(&self) -> Option<&Expr> {
-        self.body_value.as_ref()
     }
 
     pub const fn range(&self) -> &TextRange {

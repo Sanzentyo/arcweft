@@ -514,9 +514,6 @@ fn lower_runtime_expr_strict_with_helpers(
         | Expr::ComputationBlock {
             statements, value, ..
         }
-        | Expr::MemoBlock {
-            statements, value, ..
-        }
         | Expr::NamedBlock {
             statements, value, ..
         } => lower_strict_block_expr(statements, value.as_deref(), helpers),

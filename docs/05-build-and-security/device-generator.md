@@ -69,7 +69,7 @@ Example input:
 ```arcw
 pub device #device.serial_knob: Serial {
     baud = 115200
-    parser line parse_knob_line: Parser<KnobEvent, ParseError>
+    line_decoder = decode_knob_line
     emits { .Turn { delta } => InputEvent.AxisDelta(.ViewScroll, delta) }
 }
 ```
@@ -83,7 +83,7 @@ pub device #device.serial_knob: Serial {
 2. Ref<Device> / Ref<Control> IDs
 3. DeviceProfile manifest
 4. typed DevicePort<T>
-5. parser wrappers and diagnostics
+5. decoder wrappers and diagnostics
 6. contract checks
 7. virtual backend fixture schema
 8. Agent observation schema

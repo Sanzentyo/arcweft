@@ -12,11 +12,6 @@ impl<'a> FlowValueBlock<'a> {
     }
 
     pub(super) fn from_expr(expr: &'a Expr) -> Option<Self> {
-        // Memo blocks carry cache policy and need dedicated memo lowering
-        // rather than plain lexical scope lowering.
-        if let Expr::MemoBlock { .. } = expr {
-            return None;
-        }
         match expr {
             Expr::Block { statements, value }
             | Expr::ComputationBlock {

@@ -648,7 +648,7 @@ pub character alice {
 }
 ```
 
-Built-in read/unread hook:
+Built-in read/unread policy:
 
 ```arcw
 pub dialogue defaults {
@@ -659,17 +659,8 @@ pub dialogue defaults {
 }
 ```
 
-Custom hook:
-
-```arcw
-pub hook @hook.dialogue.read_color
-on query DialogueLine
-phase BeforeTextStyle
-when line.read_state == .Read
-{
-    line.style.text_color = rgb("#b8b8c0")
-}
-```
+Custom read-state presentation belongs in dialogue defaults, character-local
+style policy, or the selected dialogue View rather than a global callback.
 
 ---
 

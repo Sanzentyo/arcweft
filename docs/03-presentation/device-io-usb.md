@@ -167,10 +167,9 @@ pub enum LightPanelCommand {
     SetBrightness { value: u8 },
 }
 
-pub parser parse_light_panel_event: Parser<LightPanelEvent, ParseError>
-input &[u8]
-ensures result.is_err() => result.err().span.is_some()
-{
+pub fn decode_light_panel_event(input: &[u8])
+    -> Result<LightPanelEvent, ParseError>
+ensures result.is_err() => result.err().span.is_some() {
     ...
 }
 ```
@@ -196,7 +195,7 @@ Receiving:
 ```arcw
 let events: Stream<LightPanelEvent, DeviceError> =
     panel.interrupt_in(0x81)
-        .parse_with(parse_light_panel_event)
+        .decode_with(decode_light_panel_event)
 ```
 
 ## Mapping devices to input actions

@@ -53,7 +53,7 @@ pub struct UsbEndpointSpec {
     pub transfer: UsbTransferKind,
     pub direction: UsbDirection,
     pub packet_type: StableTypeId,
-    pub parser: Option<Ref<Parser>>,
+    pub decoder: Option<Ref<Function>>,
     pub backpressure: BackpressurePolicy,
 }
 

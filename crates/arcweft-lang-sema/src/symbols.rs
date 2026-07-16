@@ -89,8 +89,7 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         | HirTopLevelDecl::ExternCapability(_)
         | HirTopLevelDecl::ExternMod(_)
         | HirTopLevelDecl::Proof(_)
-        | HirTopLevelDecl::Struct(_)
-        | HirTopLevelDecl::TrustedAxiom(_) => {}
+        | HirTopLevelDecl::Struct(_) => {}
         HirTopLevelDecl::Entry(item) => collect_entry_decl(item, uses),
         HirTopLevelDecl::Test(item) => push_id_ref(uses, item.id()),
         HirTopLevelDecl::Bench(item) => push_id_ref(uses, item.id()),
@@ -144,28 +143,6 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         HirTopLevelDecl::TypeAlias(item) => {
             for clause in item.where_clauses() {
                 collect_expr(clause, uses);
-            }
-        }
-        HirTopLevelDecl::Hook(item) => {
-            push_entity(uses, item.id());
-            for stmt in item.body_statements() {
-                collect_stmt(stmt, uses);
-            }
-        }
-        HirTopLevelDecl::MemoFn(item) => {
-            for stmt in item.body_statements() {
-                collect_stmt(stmt, uses);
-            }
-            if let Some(value) = item.body_value() {
-                collect_expr(value, uses);
-            }
-        }
-        HirTopLevelDecl::Parser(item) => {
-            for stmt in item.body_statements() {
-                collect_stmt(stmt, uses);
-            }
-            if let Some(value) = item.body_value() {
-                collect_expr(value, uses);
             }
         }
         HirTopLevelDecl::Source(source) => {
@@ -851,10 +828,6 @@ fn collect_wait_target(target: &WaitTarget, uses: &mut Vec<SymbolUse>) {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "symbol collection mirrors the public Expr enum so new syntax variants stay auditable"
-)]
 fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
     match expr {
         Expr::Literal(_)
@@ -934,16 +907,6 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         | Expr::NamedBlock {
             statements, value, ..
         } => collect_block_expr(statements, value.as_deref(), uses),
-        Expr::MemoBlock {
-            options,
-            statements,
-            value,
-        } => {
-            for (_, option) in options {
-                collect_expr(option, uses);
-            }
-            collect_block_expr(statements, value.as_deref(), uses);
-        }
         Expr::If {
             condition,
             then_branch,

@@ -1,7 +1,8 @@
 {
   "policy": {
     "mode": "test",
-    "backend": "emit"
+    "backend": "emit",
+    "allow_trusted_proofs": true
   },
   "diagnostics": [
     {
@@ -50,6 +51,5 @@
   ],
   "solver_checks": [],
   "proofs": [],
-  "trusted_axioms": [],
   "unsafe_audits": []
 }

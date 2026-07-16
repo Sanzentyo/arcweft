@@ -49,9 +49,9 @@ pub enum ErrorFrame {
         function: Ref<Function>,
         source: SourceAnchor,
     },
-    Hook {
-        hook: Ref<Hook>,
-        phase: HookPhase,
+    HandlerDispatch {
+        owner: EntityId,
+        event: EntityId,
         source: SourceAnchor,
     },
     Await {
@@ -62,11 +62,6 @@ pub enum ErrorFrame {
     Activity {
         activity: Ref<Activity>,
         source: Option<SourceAnchor>,
-    },
-    Parser {
-        parser: Ref<Parser>,
-        input_span: TextRange,
-        source: SourceAnchor,
     },
 }
 ```
@@ -80,7 +75,7 @@ Each frame should carry as much identity information as possible:
 - source file, line, column, byte span
 - flow id
 - dialogue line id
-- hook id
+- owner-local dispatch owner/event IDs
 - task id
 - state hash / tick when runtime
 ```
@@ -157,9 +152,9 @@ The compiler inserts source frames at major boundaries:
 ```text
 flow entry
 function call
-parser call
+codec or cursor decode call
 await boundary
-hook dispatch
+owner-local handler dispatch
 dialogue line start
 activity call
 custom tag call

@@ -114,22 +114,14 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::ExternCapability
     } else if looks_like_extern_mod_item(trimmed) {
         CstTopLevelItemKind::ExternMod
-    } else if looks_like_hook(trimmed) {
-        CstTopLevelItemKind::Hook
     } else if looks_like_dialogue_defaults(trimmed) {
         CstTopLevelItemKind::DialogueDefaults
-    } else if looks_like_memo_fn(trimmed) {
-        CstTopLevelItemKind::MemoFn
     } else if looks_like_proof_item(trimmed) {
         CstTopLevelItemKind::Proof
-    } else if looks_like_trusted_axiom_item(trimmed) {
-        CstTopLevelItemKind::TrustedAxiom
     } else if looks_like_test_item(trimmed) {
         CstTopLevelItemKind::Test
     } else if looks_like_bench_item(trimmed) {
         CstTopLevelItemKind::Bench
-    } else if looks_like_parser_item(trimmed) {
-        CstTopLevelItemKind::Parser
     } else if looks_like_source_item(trimmed) {
         CstTopLevelItemKind::Source
     } else if looks_like_style_item(trimmed) {
@@ -257,24 +249,12 @@ fn looks_like_extern_capability_item(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("extern capability ")
 }
 
-fn looks_like_hook(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("hook ")
-}
-
 fn looks_like_dialogue_defaults(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("dialogue defaults")
 }
 
-fn looks_like_memo_fn(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("memo fn ")
-}
-
 fn looks_like_proof_item(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("proof ")
-}
-
-fn looks_like_trusted_axiom_item(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("trusted axiom ")
 }
 
 fn looks_like_test_item(trimmed: &str) -> bool {
@@ -283,10 +263,6 @@ fn looks_like_test_item(trimmed: &str) -> bool {
 
 fn looks_like_bench_item(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("bench ")
-}
-
-fn looks_like_parser_item(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("parser ")
 }
 
 fn looks_like_source_item(trimmed: &str) -> bool {
@@ -356,8 +332,6 @@ fn classify_let_flow_item(trimmed: &str) -> Option<CstLetFlowItemKind> {
         CstLetFlowItemKind::Scope
     } else if matches!(value.trim(), "result {" | "task {" | "seq {" | "stream {") {
         CstLetFlowItemKind::ComputationBlock
-    } else if value.trim_start().starts_with("memo(") {
-        CstLetFlowItemKind::MemoBlock
     } else if value.trim().starts_with('{') {
         CstLetFlowItemKind::Block
     } else if is_loop_head(value.trim_start()) {

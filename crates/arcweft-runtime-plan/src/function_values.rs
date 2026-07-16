@@ -417,16 +417,6 @@ fn runtime_function_value_expr_supported(
         | Expr::NamedBlock {
             statements, value, ..
         } => runtime_function_value_block_supported(statements, value.as_deref(), context),
-        Expr::MemoBlock {
-            options,
-            statements,
-            value,
-        } => runtime_function_value_memo_block_supported(
-            options,
-            statements,
-            value.as_deref(),
-            context,
-        ),
         Expr::If {
             condition,
             then_branch,
@@ -818,18 +808,6 @@ fn runtime_function_value_block_supported(
         .iter()
         .all(|stmt| runtime_function_value_statement_supported(stmt, context))
         && value.is_some_and(|value| runtime_function_value_expr_supported(value, context))
-}
-
-fn runtime_function_value_memo_block_supported(
-    options: &[(String, Expr)],
-    statements: &[Stmt],
-    value: Option<&Expr>,
-    context: &RuntimeFunctionValueContext<'_, '_>,
-) -> bool {
-    options
-        .iter()
-        .all(|(_, value)| runtime_function_value_expr_supported(value, context))
-        && runtime_function_value_block_supported(statements, value, context)
 }
 
 fn runtime_function_value_if_supported(

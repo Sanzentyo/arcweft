@@ -472,24 +472,12 @@ These calls create timeline cues attached to the line. They are cancelled or com
 
 ---
 
-## Memoized sprite and voice handles
+## Sprite and voice resource handles
 
-Character presentation resources are memoized by character, pose, look, locale, scale policy, and render target.
-
-```arcw
-memo fn Character.sprite(
-    self: Ref<Character>,
-    look: look,
-    pose: Pose = standing,
-) -> Need<Result<SpriteHandle, SpriteError>, TaskError>
-cache character_sprite_cache
-key (self, look, pose, env.locale, env.render_profile)
-{
-    ...
-}
-```
-
-The object API hides the memo function behind concise calls:
+Character presentation resources are reused internally by character, pose,
+look, locale, scale policy, and render target. The resource subsystem owns the
+typed key, handle lifetime, and invalidation policy; source code uses the normal
+object API:
 
 ```arcw
 let smile = try await alice.sprite(smile) with {
@@ -499,7 +487,9 @@ let smile = try await alice.sprite(smile) with {
 alice.stage.show(smile, at=center)
 ```
 
-`alice.stage.show(smile, ...)` may request the same memoized sprite handle internally. If the handle is not ready and the line/flow is visible to the player, `Need<T, E>` pending rules apply.
+`alice.stage.show(smile, ...)` may request the same retained sprite handle
+internally. If the handle is not ready and the line/flow is visible to the
+player, `Need<T, E>` pending rules apply.
 
 ---
 
@@ -533,26 +523,11 @@ Preload is a hint. If the player reaches a line before preload completes, the no
 
 ---
 
-## Stage hooks
+## Stage-owned behavior
 
-Stage objects support hooks. These can be used for read-state visual changes, automatic lip sync, debug overlays, or look defaults.
-
-```arcw
-hook @hook.character.unread_glow
-on query StageObject where entity == @character.alice
-phase before_render
-when ctx.dialogue.read_state == .Unread
-{
-    StagePatch::ShaderParam { name = "glow", value = 0.18 }
-}
-```
-
-Common built-ins:
-
-```text
-@hook.character.auto_lipsync
-@hook.character.look_from_dialogue
-@hook.character.prefetch_next_look
-@hook.character.agent_bbox_debug
-```
+Read-state presentation, lip sync, look selection, prefetch, and debug overlays
+belong to the character/stage and View subsystems. Author-facing interaction is
+configured on the character or local View node; read-only Agent/debug details
+come from the stage trace. These behaviors may share internal deterministic
+dispatch points, but they are not declared as global source callbacks.
 

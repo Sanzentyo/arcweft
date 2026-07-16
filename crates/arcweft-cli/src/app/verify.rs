@@ -52,6 +52,7 @@ pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
         VerificationPolicy {
             mode: options.mode,
             backend: options.backend,
+            allow_trusted_proofs: options.mode != VerificationMode::Release,
         },
     );
 
@@ -208,6 +209,7 @@ fn verify_types_semantics(
             VerificationPolicy {
                 mode,
                 backend: BackendKind::Emit,
+                allow_trusted_proofs: mode != VerificationMode::Release,
             },
         ))
     })
@@ -276,6 +278,7 @@ pub(super) fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
         VerificationPolicy {
             mode: options.mode,
             backend: BackendKind::Emit,
+            allow_trusted_proofs: options.mode != VerificationMode::Release,
         },
     );
     if options.json {

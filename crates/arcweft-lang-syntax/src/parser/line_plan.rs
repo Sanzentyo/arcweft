@@ -465,9 +465,6 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
             body: parse_expr_lossy(normalize_timed_cue_body(body)),
         };
     }
-    if line.starts_with("memo ") {
-        return raw_line_plan_item(line);
-    }
     if is_line_plan_statement(line) {
         return LinePlanItem::Stmt(Box::new(
             base.map_or_else(|| parse_stmt(line), |base| parse_stmt_with_base(line, base)),

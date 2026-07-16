@@ -459,9 +459,10 @@ pub enum FlowFiber {
 
 
 
-## Hooks and memo integration
+## Dispatch and cache integration
 
-Hook は直接 state を変更せず、phase ごとに許可された pure output だけを返す。
+Owner-local handlers do not directly mutate durable state; each dispatch point
+returns only the typed outputs allowed by its owner.
 Phase 2.0 の `RuntimeStepOutput` は diagnostics、flow events、`RuntimeEffectBatch`、
 `HostRequestBatch` に分かれ、render/audio/device の実行は adapter 側に残る。将来の
 presentation runtime は、この境界から render/audio/view desired state を導出する。
@@ -475,11 +476,17 @@ pub struct RuntimeStepOutput {
 }
 ```
 
-Memoization は pure evaluation と task scheduling の両方に統合される。memo hit/miss は性能には影響するが、ゲーム意味論と `state_hash` には影響してはならない。
+Pure-evaluation reuse and task joining are owned separately by the VM/compiler
+and scheduler. Cache hit/miss は性能には影響するが、ゲーム意味論と
+`state_hash` には影響してはならない。
 
-## Hooks and memoization in core
+## Dispatch and caches in core
 
-`arcweft-core` は hook を直接副作用として実行しない。各 phase で `HookOutput` を生成し、phase boundary で `GameEvent` / `Command` / `SignalUpdate` として取り込む。
+`arcweft-core` は OS callback を直接副作用として実行しない。Typed owner-local
+handler output is committed at its phase boundary as semantic action, `Command`,
+or scoped update.
 
-Memoization は `arcweft-core` の意味論を変えない。cache hit/miss は state hash に含めず、pure computation の結果だけを再利用する。詳細は [Hook Runtime / Memo Runtime](hooks-memoization.md) を参照。
+Subsystem caching は `arcweft-core` の意味論を変えない。cache hit/miss は state
+hash に含めず、pure computation の結果だけを再利用する。詳細は
+[Runtime Dispatch and Caches](hooks-memoization.md) を参照。
 

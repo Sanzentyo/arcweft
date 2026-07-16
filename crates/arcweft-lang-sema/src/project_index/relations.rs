@@ -380,19 +380,6 @@ fn index_expr_symbol_dependency_relations(
                 index,
             )?;
         }
-        Expr::MemoBlock {
-            options,
-            statements,
-            value,
-        } => {
-            index = index_memo_expr_symbol_dependency_relations(
-                parent,
-                options,
-                statements,
-                value.as_deref(),
-                index,
-            )?;
-        }
         Expr::If { .. } | Expr::IfLet { .. } | Expr::Match { .. } | Expr::Range { .. } => {
             index = index_control_expr_symbol_dependency_relations(parent, expr, index)?;
         }
@@ -419,19 +406,6 @@ fn index_prefix_operand_dependency(
         _ => unreachable!("prefix reference dependency requires borrow or dereference"),
     };
     index_expr_symbol_dependency_relations(parent, operand, index)
-}
-
-fn index_memo_expr_symbol_dependency_relations(
-    parent: &ProjectGraphSymbolRef,
-    options: &[(String, Expr)],
-    statements: &[Stmt],
-    value: Option<&Expr>,
-    mut index: ProjectSemanticIndex,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    for (_, option) in options {
-        index = index_expr_symbol_dependency_relations(parent, option, index)?;
-    }
-    index_expr_block_symbol_dependency_relations(parent, statements, value, index)
 }
 
 fn index_call_expr_symbol_dependency_relations(
@@ -935,19 +909,6 @@ fn index_compound_expr_dependency_relations(
             index =
                 index_expr_block_dependency_relations(parent, statements, value.as_deref(), index)?;
         }
-        Expr::MemoBlock {
-            options,
-            statements,
-            value,
-        } => {
-            index = index_memo_expr_dependency_relations(
-                parent,
-                options,
-                statements,
-                value.as_deref(),
-                index,
-            )?;
-        }
         Expr::If { .. } | Expr::IfLet { .. } | Expr::Match { .. } | Expr::Range { .. } => {
             index = index_control_expr_dependency_relations(parent, expr, index)?;
         }
@@ -1048,19 +1009,6 @@ fn index_expr_block_dependency_relations(
         index = index_expr_dependency_relations(parent, value, index)?;
     }
     Ok(index)
-}
-
-fn index_memo_expr_dependency_relations(
-    parent: Option<&EntityRef>,
-    options: &[(String, Expr)],
-    statements: &[Stmt],
-    value: Option<&Expr>,
-    mut index: ProjectSemanticIndex,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    for (_, value) in options {
-        index = index_expr_dependency_relations(parent, value, index)?;
-    }
-    index_expr_block_dependency_relations(parent, statements, value, index)
 }
 
 fn index_if_expr_dependency_relations(

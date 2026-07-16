@@ -2730,54 +2730,6 @@ flow @flow.block_value_source_ranges block_value_source_ranges {
 }
 
 #[test]
-fn memo_block_option_expression_judgments_carry_source_ranges() {
-    let source = r"
-flow @flow.memo_option_source_ranges memo_option_source_ranges {
-    let cached = memo(scope=scene, key=score + 1i64) {
-        score
-    }
-}
-";
-    let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("memo option source range fixture lowers");
-    let report = analyze_types(
-        &hir,
-        &TypeCheckEnv::new()
-            .with_symbol("scene", TypeKind::Named("MemoScope".to_owned()))
-            .with_symbol("score", TypeKind::I64),
-    );
-    assert!(
-        report.diagnostics.is_empty(),
-        "unexpected diagnostics: {:?}",
-        report.diagnostics
-    );
-    assert_expr_source_judgment(
-        &report,
-        source,
-        "path",
-        "scene",
-        |ty| matches!(ty, TypeKind::Named(name) if name == "MemoScope"),
-        "memo scope option expression should carry its authored range",
-    );
-    assert_expr_source_judgment(
-        &report,
-        source,
-        "binary",
-        "score + 1i64",
-        |ty| matches!(ty, TypeKind::I64),
-        "memo key option expression should carry its authored range",
-    );
-    assert_expr_source_judgment(
-        &report,
-        source,
-        "literal",
-        "1i64",
-        |ty| matches!(ty, TypeKind::I64),
-        "memo key child literal should carry its own authored range",
-    );
-}
-
-#[test]
 fn effect_and_prefix_expression_judgments_carry_source_ranges() {
     let source = r"
 flow @flow.await_question_source_ranges await_question_source_ranges {

@@ -369,7 +369,7 @@ pub device @device.depth_camera: UsbRaw {
     permission = user_prompt
     usb { vendor_id = 0x1209 product_id = 0xD001 interface = 1 }
     endpoints { input frame: bulk endpoint 0x81 packet = 512 }
-    parser frame: DepthFrame from frame.bytes
+    decoder frame = decode_depth_frame
 }
 
 watch signal @signal.depth_frame from device.latest(@device.depth_camera)

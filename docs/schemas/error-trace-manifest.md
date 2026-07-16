@@ -80,7 +80,7 @@ flow id
 line id
 text key
 speaker id
-hook id
+owner-local dispatch owner/event IDs
 task id
 related IDs
 ```

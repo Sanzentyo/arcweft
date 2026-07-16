@@ -6,8 +6,8 @@ use crate::ast::items::{
     EntryRouteBinding, EntryRouteBindingSource, EnumItem, EnumVariant, ExternCapabilityItem,
     ExternModActivity, ExternModFunction, ExternModItem, ExternModMember, ExternModType,
     ExternModTypeKind, FunctionInit, FunctionItem, ImageDeclBody, ImageDeclField, ImplItem,
-    ImplItemInit, ImplMember, MemoFn, MemoOption, ParserItem, StateField, StateItem, StructField,
-    StructItem, TraitItem, TraitMember, TypeAliasItem, ViewDeclBody,
+    ImplItemInit, ImplMember, StateField, StateItem, StructField, StructItem, TraitItem,
+    TraitMember, TypeAliasItem, ViewDeclBody,
 };
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
@@ -15,7 +15,6 @@ use crate::cst::{
     split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
     split_top_level_punctuation_once,
 };
-use crate::expr::parse_expr;
 use crate::types::{parse_fn_signature, parse_where_clause_list};
 
 use super::headers::{
@@ -25,7 +24,6 @@ use super::headers::{
     parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
     simple_error, split_function_header_lines, split_supertraits,
 };
-use super::helpers::trimmed_nonempty_lines_with_offsets;
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, SourceDialect, collect_logical_block_items, parse_expr_lossy,
@@ -35,154 +33,6 @@ use super::{
 };
 
 impl Parser<'_> {
-    pub(super) fn parse_memo_fn(&mut self) -> Option<MemoFn> {
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing memo fn",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the memo function body"],
-            );
-            return None;
-        }
-        let mut lines = trimmed_nonempty_lines_with_offsets(&head).into_iter();
-        let (first, _) = lines.next()?;
-        let (visibility, after_visibility) = parse_visibility_prefix(first);
-        let signature = after_visibility
-            .trim_start()
-            .strip_prefix("memo fn")?
-            .trim()
-            .to_owned();
-        let mut seen_options = [false; 4];
-        let options = lines
-            .filter_map(|(line, offset)| {
-                let base = start_line.start + offset;
-                self.parse_memo_option(line, base, &mut seen_options)
-            })
-            .collect();
-        let (body_statements, body_value) = parse_scope_expr_body(&body);
-        Some(MemoFn::new(
-            visibility,
-            signature,
-            options,
-            body.into_owned(),
-            body_statements,
-            body_value,
-            TextRange::new(start_line.start, end),
-        ))
-    }
-
-    fn parse_memo_option(
-        &mut self,
-        line: &str,
-        base: usize,
-        seen_options: &mut [bool; 4],
-    ) -> Option<MemoOption> {
-        let Some((name, value)) = split_top_level_binding(line) else {
-            self.push_memo_option_error(base, line, "invalid memo option");
-            return None;
-        };
-        let name = name.trim();
-        let option_index = match name {
-            "scope" => 0,
-            "key" => 1,
-            "depends" => 2,
-            "track" => 3,
-            _ => {
-                self.push_memo_option_error(base, line, "unknown memo option");
-                return None;
-            }
-        };
-        if seen_options[option_index] {
-            self.push_memo_option_error(base, line, "duplicate memo option");
-            return None;
-        }
-        let Ok(value) = parse_expr(value.trim()) else {
-            self.push_memo_option_error(base, line, "invalid memo option value");
-            return None;
-        };
-        seen_options[option_index] = true;
-        Some(match name {
-            "scope" => MemoOption::Scope(value),
-            "key" => MemoOption::Key(value),
-            "depends" => MemoOption::Depends(value),
-            "track" => MemoOption::Track(value),
-            _ => unreachable!("memo option name was validated above"),
-        })
-    }
-
-    fn push_memo_option_error(&mut self, base: usize, line: &str, message: &str) {
-        self.push_error(
-            TextRange::new(base, base + line.len()),
-            message,
-            [
-                "scope = expr",
-                "key = expr",
-                "depends = expr",
-                "track = expr",
-            ],
-            Some(line),
-            ["use one current memo option assignment"],
-        );
-    }
-
-    pub(super) fn parse_parser_item(&mut self) -> Option<ParserItem> {
-        if !self.current().text.contains('{') && !self.next_nonblank_line_is_brace() {
-            return self.parse_parser_item_line();
-        }
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing parser item",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the parser body"],
-            );
-            return None;
-        }
-        let (visibility, after_visibility) = parse_visibility_prefix(head.trim());
-        let after_parser = after_visibility
-            .trim_start()
-            .strip_prefix("parser")?
-            .trim_start();
-        let (name, tail) = parse_name_and_tail(after_parser);
-        let (body_statements, body_value) = parse_scope_expr_body(&body);
-        Some(ParserItem::new(
-            visibility,
-            name.unwrap_or_default(),
-            tail,
-            body.into_owned(),
-            body_statements,
-            body_value,
-            TextRange::new(start_line.start, end),
-        ))
-    }
-
-    fn parse_parser_item_line(&mut self) -> Option<ParserItem> {
-        let line = self.current().clone();
-        self.index += 1;
-        let (visibility, after_visibility) = parse_visibility_prefix(line.text.trim());
-        let after_parser = after_visibility
-            .trim_start()
-            .strip_prefix("parser")?
-            .trim_start();
-        let (name, tail) = parse_name_and_tail(after_parser);
-        Some(ParserItem::new(
-            visibility,
-            name.unwrap_or_default(),
-            tail,
-            String::new(),
-            Vec::new(),
-            None,
-            TextRange::new(line.start, line.end),
-        ))
-    }
-
     pub(super) fn parse_function_item(&mut self) -> Option<FunctionItem> {
         let attrs = self.take_pending_attrs();
         let doc = self.take_pending_doc();

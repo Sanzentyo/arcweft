@@ -1,67 +1,38 @@
-# Example: Object Hooks and Memoization
+# Owner-local events and derived values example
+
+This example replaces the former universal hook and memo declarations. The
+choice owns its condition and selection behavior, the View owns its input
+handler, and derived state is an ordinary pure function.
 
 ```arcw
-mod game.routes.opening
-
-use game.prelude.*
-use game.logic.affection.{has_affection_at_least}
-
-memo fn alice_route_ready(state: GameState) -> bool
-scope = state
-key = [state.affection[@character.alice]]
-{
-    state |> has_affection_at_least(@character.alice, 3)
+fn alice_route_ready(state: GameState) -> bool {
+    state.affection[@character.alice] >= 3
 }
 
-pub hook @hook.opening.listen_enable
-on @choice.opening.listen
-phase InputHitTest
-check on change state.affection[@character.alice]
-when alice_route_ready(state)
-effects { view.enable, log.debug }
-{
-    let condition = memo(scope=state, key=(state.affection[@character.alice])) {
-        alice_route_ready(state)
-    }
-    if condition {
-        event.emit(ViewCommand.EnableTarget, target = @choice.opening.listen)
-        log.debug("listen choice enabled")
-    }
-}
+choice @choice.opening.first {
+    option @.listen {
+        label = "聞いてみる"
+        enabled = alice_route_ready(state)
 
-pub hook @hook.opening.listen_hover
-on @choice.opening.listen
-phase InputTarget
-when input.pointer.hovered
-effects { view.style }
-{
-    event.emit(
-        ViewCommand.SetClass,
-        target = @choice.opening.listen,
-        class = "hover",
-        enabled = true,
-    )
-}
+        select {
+            goto @flow.alice_intro
+        }
 
-pub hook @hook.opening.listen_agent_note
-on @choice.opening.listen
-phase AgentObserved
-check on change state.affection[@character.alice]
-when !alice_route_ready(state)
-effects { agent.annotate }
-{
-    agent.annotate(@choice.opening.listen) {
-        reason = "Alice route requires affection >= 3"
-        current = state.affection[@character.alice]
+        view {
+            Button("聞いてみる")
+                .agent_target(@choice.opening.listen)
+                .on_pointer_enter {
+                    action.invoke(
+                        @action.choice.hover,
+                        @choice.opening.listen,
+                    )
+                }
+        }
     }
 }
 ```
 
-Debug:
-
-```bash
-arcw hook explain hook.opening.listen_enable
-arcw memo inspect --function alice_route_ready
-arcw agent observe --target choice.opening.listen --json
-```
-
+The View evaluator tracks the reads used to construct the retained View. Input
+routing is recorded in the ordinary routed-input trace, and Agent observation
+reads the resulting View/choice state. No author-defined global subscription or
+cache invalidation namespace is involved.

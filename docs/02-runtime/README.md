@@ -9,7 +9,7 @@
 - [Control Flow Runtime Notes](control-flow-runtime.md)
 - [Error Diagnostics, Context, and Script Stack Traces](error-diagnostics-stacktrace.md)
 - [Layered input runtime](layered-input.md)
-- [Runtime Hooks and Memoization](hooks-memoization.md)
+- [Runtime Dispatch and Caches](hooks-memoization.md)
 - [Activity model](activity.md)
 - [Rust / WASM plugin](plugins.md)
 - [shared memory / IPC](memory-ipc.md)

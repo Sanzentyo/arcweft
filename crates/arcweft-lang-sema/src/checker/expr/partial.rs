@@ -372,9 +372,6 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
         }
         | Expr::NamedBlock {
             statements, value, ..
-        }
-        | Expr::MemoBlock {
-            statements, value, ..
         } => {
             statements.iter().any(stmt_contains_partial_placeholder)
                 || value

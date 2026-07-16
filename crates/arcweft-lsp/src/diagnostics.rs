@@ -114,6 +114,7 @@ impl DocumentAnalysis {
                                     VerificationPolicy {
                                         mode: VerificationMode::Dev,
                                         backend: BackendKind::Emit,
+                                        allow_trusted_proofs: true,
                                     },
                                 );
                                 diagnostics.extend(diagnostics_from_report_with_mapper(

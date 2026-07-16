@@ -20,6 +20,7 @@ use arcweft_lang_hir::syntax::{
         ids::{EntityRefSyntax, IdRef},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::Pattern,
+        proof::ProofTrust,
     },
     expr::{CallArg, Expr, LifetimeScopeKind, Literal},
 };
@@ -224,9 +225,19 @@ pub enum SemanticMode {
 }
 
 /// Semantic analysis policy.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SemanticPolicy {
     pub mode: SemanticMode,
+    pub allow_trusted_proofs: bool,
+}
+
+impl Default for SemanticPolicy {
+    fn default() -> Self {
+        Self {
+            mode: SemanticMode::Dev,
+            allow_trusted_proofs: true,
+        }
+    }
 }
 
 /// Tool-facing severity emitted by semantic analysis.
@@ -248,6 +259,7 @@ pub enum SemanticObligationKind {
     UpperLifetimeWrite,
     EffectCapability,
     ProofBody,
+    TrustedProof,
     TrustedAssumption,
     RawSyntax,
     RuntimeConflict,
@@ -257,9 +269,16 @@ pub enum SemanticObligationKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SemanticDischarge {
     Automatic,
-    FormalProof { id: String },
-    AuditedUnsafe { id: String },
-    TrustedAxiom { id: String },
+    FormalProof {
+        id: String,
+    },
+    AuditedUnsafe {
+        id: String,
+    },
+    TrustedProof {
+        id: String,
+        trusted_dependencies: Vec<String>,
+    },
     Missing,
 }
 
@@ -297,13 +316,14 @@ pub struct SemanticDiagnostic {
 pub struct SemanticProofSummary {
     pub id: String,
     pub source: SemanticSourceSpan,
+    pub trust: SemanticProofTrust,
+    pub trusted_dependencies: Vec<String>,
 }
 
-/// Summary of a trusted axiom declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SemanticTrustedAxiomSummary {
-    pub id: String,
-    pub source: SemanticSourceSpan,
+pub enum SemanticProofTrust {
+    Verified,
+    Trusted { reason: String },
 }
 
 /// Summary of an audited unsafe lifetime region.
@@ -323,7 +343,6 @@ pub struct SemanticReport {
     pub diagnostics: Vec<SemanticDiagnostic>,
     pub obligations: Vec<SemanticObligation>,
     pub proofs: Vec<SemanticProofSummary>,
-    pub trusted_axioms: Vec<SemanticTrustedAxiomSummary>,
     pub unsafe_audits: Vec<SemanticUnsafeAuditSummary>,
 }
 
@@ -338,14 +357,19 @@ pub fn analyze_semantics(
     analyzer.finish()
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct KnownProof {
+    facts: ProofFacts,
+    trusted_dependencies: BTreeSet<String>,
+}
+
 struct SemanticAnalyzer<'a> {
     env: &'a TypeCheckEnv,
     policy: SemanticPolicy,
     report: SemanticReport,
     next_obligation: usize,
     unsafe_stack: Vec<String>,
-    known_proofs: BTreeMap<String, ProofFacts>,
-    known_axioms: BTreeSet<String>,
+    known_proofs: BTreeMap<String, KnownProof>,
     effect_stack: Vec<EffectScope>,
     reported_must_drop: HashSet<String>,
 }
@@ -362,7 +386,6 @@ impl<'a> SemanticAnalyzer<'a> {
             next_obligation: 0,
             unsafe_stack: Vec::new(),
             known_proofs: BTreeMap::new(),
-            known_axioms: BTreeSet::new(),
             effect_stack: Vec::new(),
             reported_must_drop: HashSet::new(),
         }
@@ -386,17 +409,51 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn collect_declarations(&mut self, module: &HirModule) {
-        for declaration in module.declarations() {
-            if let HirTopLevelDecl::TrustedAxiom(axiom) = declaration {
-                self.known_axioms.insert(id_ref_label(axiom.id(), "axiom"));
-            }
+        let proofs = module
+            .declarations()
+            .iter()
+            .filter_map(|declaration| match declaration {
+                HirTopLevelDecl::Proof(proof) => Some((id_ref_label(proof.id(), "proof"), proof)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let known_ids = proofs
+            .iter()
+            .map(|(id, _)| id.clone())
+            .collect::<BTreeSet<_>>();
+        for (id, proof) in &proofs {
+            let facts = ProofFacts::from_clauses(proof.clauses(), id, &known_ids);
+            let trusted_dependencies = matches!(proof.trust(), ProofTrust::Trusted { .. })
+                .then(|| BTreeSet::from([id.clone()]))
+                .unwrap_or_default();
+            self.known_proofs.insert(
+                id.clone(),
+                KnownProof {
+                    facts,
+                    trusted_dependencies,
+                },
+            );
         }
+        self.propagate_trusted_proof_dependencies(proofs.len());
         for declaration in module.declarations() {
             match declaration {
                 HirTopLevelDecl::Proof(proof) => {
                     let id = id_ref_label(proof.id(), "proof");
-                    let facts = ProofFacts::from_clauses(proof.clauses(), &self.known_axioms);
-                    for issue in facts.issues() {
+                    let (issues, trusted_dependencies) = {
+                        let known = self
+                            .known_proofs
+                            .get(&id)
+                            .expect("proof inventory was populated before diagnostics");
+                        (
+                            known.facts.issues().to_vec(),
+                            known
+                                .trusted_dependencies
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<_>>(),
+                        )
+                    };
+                    for issue in &issues {
                         self.add_obligation(
                             SemanticObligationKind::ProofBody,
                             format!("proof `{id}`: {}", issue.message()),
@@ -407,33 +464,55 @@ impl<'a> SemanticAnalyzer<'a> {
                             SemanticDischarge::Missing,
                         );
                     }
-                    self.known_proofs.insert(id.clone(), facts);
+                    let trust = match proof.trust() {
+                        ProofTrust::Verified => SemanticProofTrust::Verified,
+                        ProofTrust::Trusted { reason } => SemanticProofTrust::Trusted {
+                            reason: reason.clone(),
+                        },
+                    };
                     self.report.proofs.push(SemanticProofSummary {
-                        id,
+                        id: id.clone(),
                         source: span_from_range(proof.range()),
+                        trust,
+                        trusted_dependencies: trusted_dependencies.clone(),
                     });
+                    if matches!(proof.trust(), ProofTrust::Trusted { .. }) {
+                        self.add_obligation(
+                            SemanticObligationKind::TrustedProof,
+                            format!("proof `{id}` relies on declared trust"),
+                            Some(id.clone()),
+                            SemanticDischarge::TrustedProof {
+                                id,
+                                trusted_dependencies,
+                            },
+                        );
+                    }
                 }
-                HirTopLevelDecl::TrustedAxiom(axiom) => {
-                    let id = id_ref_label(axiom.id(), "axiom");
-                    self.report
-                        .trusted_axioms
-                        .push(SemanticTrustedAxiomSummary {
-                            id,
-                            source: span_from_range(axiom.range()),
-                        });
-                }
-                HirTopLevelDecl::Hook(hook) => {
-                    self.effect_stack
-                        .push(EffectScope::from_effects(hook.effects()));
-                    self.collect_stmt_list(hook.body_statements());
-                    self.effect_stack.pop();
-                }
-                HirTopLevelDecl::MemoFn(item) => self.collect_stmt_list(item.body_statements()),
-                HirTopLevelDecl::Parser(item) => self.collect_stmt_list(item.body_statements()),
                 HirTopLevelDecl::Source(source) => {
                     self.collect_stmt_list(source.item().body_statements());
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn propagate_trusted_proof_dependencies(&mut self, proof_count: usize) {
+        for _ in 0..proof_count {
+            let previous = self.known_proofs.clone();
+            let mut changed = false;
+            for proof in self.known_proofs.values_mut() {
+                for dependency in proof.facts.dependencies() {
+                    if let Some(dependency) = previous.get(dependency) {
+                        let prior_len = proof.trusted_dependencies.len();
+                        proof
+                            .trusted_dependencies
+                            .extend(dependency.trusted_dependencies.iter().cloned());
+                        changed |= proof.trusted_dependencies.len() != prior_len;
+                    }
+                }
+            }
+            if !changed {
+                break;
             }
         }
     }
@@ -1258,21 +1337,6 @@ impl<'a> SemanticAnalyzer<'a> {
                 }
                 state.live_must_drop.extend(block_state.live_must_drop);
             }
-            Expr::MemoBlock {
-                options,
-                statements,
-                value,
-            } => {
-                for (_, value) in options {
-                    self.collect_expr(value, state);
-                }
-                let mut block_state = state.clone();
-                self.collect_stmts(statements, &mut block_state);
-                if let Some(value) = value {
-                    self.collect_expr(value, &mut block_state);
-                }
-                state.live_must_drop.extend(block_state.live_must_drop);
-            }
             Expr::If {
                 condition,
                 then_branch,
@@ -1372,11 +1436,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     SemanticDischarge::AuditedUnsafe { id }
                 })
         } else if let Some(id) = proof {
-            if self.proof_discharges_target(&id, target.as_deref()) {
-                SemanticDischarge::FormalProof { id }
-            } else {
-                SemanticDischarge::Missing
-            }
+            self.proof_discharge(&id, target.as_deref())
         } else {
             SemanticDischarge::Missing
         };
@@ -1392,11 +1452,25 @@ impl<'a> SemanticAnalyzer<'a> {
         );
     }
 
-    fn proof_discharges_target(&self, id: &str, target: Option<&str>) -> bool {
+    fn proof_discharge(&self, id: &str, target: Option<&str>) -> SemanticDischarge {
         let Some(proof) = self.known_proofs.get(id) else {
-            return false;
+            return SemanticDischarge::Missing;
         };
-        target.is_some_and(|target| proof.discharges_target(target))
+        let valid = target.map_or_else(
+            || proof.facts.is_valid(),
+            |target| proof.facts.discharges_target(target),
+        );
+        if !valid {
+            return SemanticDischarge::Missing;
+        }
+        if proof.trusted_dependencies.is_empty() {
+            SemanticDischarge::FormalProof { id: id.to_owned() }
+        } else {
+            SemanticDischarge::TrustedProof {
+                id: id.to_owned(),
+                trusted_dependencies: proof.trusted_dependencies.iter().cloned().collect(),
+            }
+        }
     }
 
     fn add_effect_capability_obligation(&mut self, capability: &Capability) {
@@ -1423,14 +1497,12 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn add_assume_obligation(&mut self, args: &[CallArg]) {
-        let discharge = axiom_arg(args)
-            .filter(|id| self.known_axioms.contains(id))
-            .map_or(SemanticDischarge::Missing, |id| {
-                SemanticDischarge::TrustedAxiom { id }
-            });
+        let discharge = proof_arg(args).map_or(SemanticDischarge::Missing, |id| {
+            self.proof_discharge(&id, None)
+        });
         self.add_obligation(
             SemanticObligationKind::TrustedAssumption,
-            "assume requires a reason or trusted axiom".to_owned(),
+            "assume requires a proof reference".to_owned(),
             None,
             discharge,
         );
@@ -1929,6 +2001,13 @@ impl<'a> SemanticAnalyzer<'a> {
         kind: SemanticObligationKind,
         discharge: &SemanticDischarge,
     ) -> SemanticSeverity {
+        if matches!(discharge, SemanticDischarge::TrustedProof { .. }) {
+            return if self.policy.allow_trusted_proofs {
+                SemanticSeverity::Warning
+            } else {
+                SemanticSeverity::Error
+            };
+        }
         if matches!(
             discharge,
             SemanticDischarge::Automatic | SemanticDischarge::FormalProof { .. }
@@ -1949,7 +2028,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     (
                         SemanticObligationKind::UnsafeLifetimeAudit,
                         SemanticDischarge::AuditedUnsafe { .. }
-                    ) | (_, SemanticDischarge::TrustedAxiom { .. })
+                    )
                 ) =>
             {
                 SemanticSeverity::Warning
@@ -1997,10 +2076,6 @@ fn id_ref_label(id: &IdRef, default_family: &str) -> String {
 
 fn proof_arg(args: &[CallArg]) -> Option<String> {
     named_entity_arg(args, "proof")
-}
-
-fn axiom_arg(args: &[CallArg]) -> Option<String> {
-    named_entity_arg(args, "axiom").or_else(|| named_entity_arg(args, "trusted_axiom"))
 }
 
 fn named_entity_arg(args: &[CallArg], name: &str) -> Option<String> {

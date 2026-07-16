@@ -26,11 +26,11 @@ pub(super) use arcweft_lang_syntax::{
         },
         items::{
             CallableKind, EntityDeclKind, ExternModMember, FunctionKind, ImplMember, Item,
-            MemoOption, TraitMember,
+            TraitMember,
         },
         line_plan::{DeferOutcome, LinePlanItem},
         pattern::{Pattern, VariantPatternPayload},
-        proof::{ProofClause, TestKind},
+        proof::{ProofClause, ProofTrust, TestKind},
         source::{
             SourceBackpressurePolicy, SourceEventPattern, SourceHeader, SourcePrivacyPolicy,
             SourceReplayPolicy,

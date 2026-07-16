@@ -325,8 +325,8 @@ use parent.common.{route_gate}
 }
 
 #[test]
-fn parses_and_typechecks_memo_expression_block_binding() {
-    let tree = parse_ok(
+fn removed_memo_block_does_not_reach_typechecked_hir() {
+    let parsed = parse_source(
         r"
 flow @flow.memo memo_example {
     let value = memo(scope=scene, key=(score)) {
@@ -339,34 +339,15 @@ flow @flow.memo memo_example {
 flow @flow.title title {}
 ",
     );
-
-    let Item::Flow(flow) = &tree.items()[0] else {
-        panic!("expected flow");
-    };
-    let FlowItem::Stmt(Stmt::Let {
-        expr:
-            Expr::MemoBlock {
-                options,
-                statements,
-                value: Some(_),
-            },
-        ..
-    }) = &flow.body()[0]
-    else {
-        panic!("expected memo expression block binding");
-    };
-    assert_eq!(options.len(), 2);
-    assert_eq!(statements.len(), 1);
-
-    let hir = lower_to_hir(&tree).expect("memo expression block fixture lowers");
-    validate_typecheck_ready(&hir).expect("memo expression block is typecheck-ready");
-    typecheck_hir(
-        &hir,
-        &TypeCheckEnv::new()
-            .with_symbol("score", TypeKind::I64)
-            .with_symbol("scene", TypeKind::Named("MemoScope".to_owned())),
-    )
-    .expect("typecheck succeeds");
+    let rejected = !parsed.errors().is_empty()
+        || lower_to_hir(parsed.typed_tree()).map_or(true, |hir| {
+            validate_typecheck_ready(&hir).is_err()
+                || typecheck_hir(&hir, &TypeCheckEnv::new()).is_err()
+        });
+    assert!(
+        rejected,
+        "removed memo block must not reach typed execution"
+    );
 }
 
 #[test]

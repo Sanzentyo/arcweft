@@ -39,6 +39,7 @@ pub(crate) struct ResourceAccess {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProofFacts {
     checked_lifetime_targets: BTreeSet<String>,
+    dependencies: BTreeSet<String>,
     issues: Vec<ProofIssue>,
 }
 
@@ -70,12 +71,6 @@ impl EffectScope {
             .flat_map(|effects| effects.iter().filter_map(capability_from_expr))
             .collect();
         Self { capabilities }
-    }
-
-    pub(crate) fn from_effects(effects: &[Expr]) -> Self {
-        Self {
-            capabilities: effects.iter().filter_map(capability_from_expr).collect(),
-        }
     }
 
     pub(crate) fn contains(&self, capability: &Capability) -> bool {
@@ -117,16 +112,28 @@ impl EffectResource {
 }
 
 impl ProofFacts {
-    pub(crate) fn from_clauses(clauses: &[ProofClause], known_axioms: &BTreeSet<String>) -> Self {
-        collect_proof_facts(clauses, known_axioms)
+    pub(crate) fn from_clauses(
+        clauses: &[ProofClause],
+        proof_id: &str,
+        known_proofs: &BTreeSet<String>,
+    ) -> Self {
+        collect_proof_facts(clauses, proof_id, known_proofs)
     }
 
     pub(crate) fn discharges_target(&self, target: &str) -> bool {
         self.issues.is_empty() && self.checked_lifetime_targets.contains(target)
     }
 
+    pub(crate) fn is_valid(&self) -> bool {
+        self.issues.is_empty()
+    }
+
     pub(crate) fn issues(&self) -> &[ProofIssue] {
         &self.issues
+    }
+
+    pub(crate) fn dependencies(&self) -> &BTreeSet<String> {
+        &self.dependencies
     }
 }
 
@@ -276,8 +283,13 @@ fn expr_label(expr: &Expr) -> String {
     }
 }
 
-fn collect_proof_facts(clauses: &[ProofClause], known_axioms: &BTreeSet<String>) -> ProofFacts {
+fn collect_proof_facts(
+    clauses: &[ProofClause],
+    proof_id: &str,
+    known_proofs: &BTreeSet<String>,
+) -> ProofFacts {
     let checked_lifetime_targets = collect_checked_lifetime_targets(clauses);
+    let mut dependencies = BTreeSet::new();
     let mut issues = Vec::new();
     if checked_lifetime_targets.is_empty() {
         issues.push(ProofIssue::new(
@@ -287,31 +299,33 @@ fn collect_proof_facts(clauses: &[ProofClause], known_axioms: &BTreeSet<String>)
     }
     for clause in clauses {
         match clause {
-            ProofClause::Assume {
-                source,
-                reason,
-                axiom,
-            } => {
-                if reason.is_none() && axiom.is_none() {
+            ProofClause::Assume { source, proof } => {
+                if proof.is_none() {
                     issues.push(ProofIssue::new(
-                        "proof `assume` must cite a reason or trusted axiom",
+                        "proof `assume` must cite another proof",
                         Some(source.to_owned()),
                     ));
                 }
-                if let Some(axiom) = axiom
-                    && !known_axioms.contains(axiom)
-                {
-                    issues.push(ProofIssue::new(
-                        format!("proof references unknown trusted axiom `{axiom}`"),
-                        Some(source.to_owned()),
-                    ));
+                if let Some(dependency) = proof {
+                    validate_proof_dependency(
+                        dependency,
+                        proof_id,
+                        known_proofs,
+                        source,
+                        &mut dependencies,
+                        &mut issues,
+                    );
                 }
             }
-            ProofClause::UseAxiom { id } if !known_axioms.contains(id) => {
-                issues.push(ProofIssue::new(
-                    format!("proof references unknown trusted axiom `{id}`"),
-                    Some(id.to_owned()),
-                ));
+            ProofClause::UseProof { id } => {
+                validate_proof_dependency(
+                    id,
+                    proof_id,
+                    known_proofs,
+                    id,
+                    &mut dependencies,
+                    &mut issues,
+                );
             }
             ProofClause::Raw { source } => issues.push(ProofIssue::new(
                 "unrecognized proof clause",
@@ -322,7 +336,31 @@ fn collect_proof_facts(clauses: &[ProofClause], known_axioms: &BTreeSet<String>)
     }
     ProofFacts {
         checked_lifetime_targets,
+        dependencies,
         issues,
+    }
+}
+
+fn validate_proof_dependency(
+    dependency: &str,
+    proof_id: &str,
+    known_proofs: &BTreeSet<String>,
+    source: &str,
+    dependencies: &mut BTreeSet<String>,
+    issues: &mut Vec<ProofIssue>,
+) {
+    if dependency == proof_id {
+        issues.push(ProofIssue::new(
+            "proof cannot depend on itself",
+            Some(source.to_owned()),
+        ));
+    } else if known_proofs.contains(dependency) {
+        dependencies.insert(dependency.to_owned());
+    } else {
+        issues.push(ProofIssue::new(
+            format!("proof references unknown proof `{dependency}`"),
+            Some(source.to_owned()),
+        ));
     }
 }
 

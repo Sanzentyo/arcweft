@@ -592,7 +592,7 @@ fn mixed_integer_suffixes_remain_an_ordinary_bracket_sequence() {
 
 #[test]
 fn record_and_named_block_families_share_typed_fields_and_blocks() {
-    let source = "proof composites(value: Int) = (Point { x = value, y }, { first = value, second: value + 1 }, result { let computed = value; computed }, memo(scope = scene, key = value) { let cached = value; cached }, scope named { let local = value; local }, thread detached worker { let item = value; item })\n";
+    let source = "proof composites(value: Int) = (Point { x = value, y }, { first = value, second: value + 1 }, result { let computed = value; computed }, scope named { let local = value; local }, thread detached worker { let item = value; item })\n";
     let built = parse_shadow_document(&document(source)).unwrap();
     let kinds = built
         .index()
@@ -606,7 +606,6 @@ fn record_and_named_block_families_share_typed_fields_and_blocks() {
         SyntaxKind::RecordLiteralExpression,
         SyntaxKind::RecordField,
         SyntaxKind::ComputationBlockExpression,
-        SyntaxKind::MemoBlockExpression,
         SyntaxKind::NamedBlockExpression,
         SyntaxKind::ThreadExpression,
         SyntaxKind::Block,
@@ -626,7 +625,7 @@ fn record_and_named_block_families_share_typed_fields_and_blocks() {
             .iter()
             .filter(|kind| **kind == SyntaxKind::Block)
             .count(),
-        4
+        3
     );
     assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());

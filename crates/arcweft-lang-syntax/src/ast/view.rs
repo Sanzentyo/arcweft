@@ -1408,9 +1408,6 @@ fn collect_expr_action_invokes(
         | Expr::ComputationBlock {
             statements, value, ..
         }
-        | Expr::MemoBlock {
-            statements, value, ..
-        }
         | Expr::NamedBlock {
             statements, value, ..
         } => {

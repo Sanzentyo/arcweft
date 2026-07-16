@@ -993,11 +993,7 @@ fn index_top_level_declaration(
         | HirTopLevelDecl::DialogueDefaults(_)
         | HirTopLevelDecl::Struct(_)
         | HirTopLevelDecl::TypeAlias(_)
-        | HirTopLevelDecl::Hook(_)
-        | HirTopLevelDecl::MemoFn(_)
-        | HirTopLevelDecl::Proof(_)
-        | HirTopLevelDecl::TrustedAxiom(_)
-        | HirTopLevelDecl::Parser(_) => {}
+        | HirTopLevelDecl::Proof(_) => {}
     }
     Ok(index)
 }

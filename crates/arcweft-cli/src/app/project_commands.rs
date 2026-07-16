@@ -2019,6 +2019,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
                 VerificationPolicy {
                     mode: VerificationMode::Dev,
                     backend: BackendKind::Emit,
+                    allow_trusted_proofs: true,
                 },
             ))
         },
@@ -2139,6 +2140,7 @@ where
         VerificationPolicy {
             mode: verification_mode,
             backend: BackendKind::Emit,
+            allow_trusted_proofs: verification_mode != VerificationMode::Release,
         },
     );
     append_release_dynamic_goto_diagnostics(

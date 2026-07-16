@@ -112,7 +112,6 @@ pub fn Character.say(
     voice: VoicePolicy = auto,
     look: Option<Expression> = None,
     style: Option<TextStylePatch> = None,
-    hooks: Vec<Ref<Hook>> = [],
 ) -> DialogueContentCall
 ```
 

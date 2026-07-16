@@ -275,12 +275,11 @@ let pose = actor.pose(normal)
 let face = actor.look(smile)
 ```
 
-These handles can be memoized or preloaded:
+These handles can be scoped or preloaded. The stage subsystem owns resource
+reuse rather than exposing a generic memo expression:
 
 ```arcw
-let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.theme.hash)) {
-    alice.stage.acquire(scope=line)
-}
+let actor = alice.stage.acquire(scope=scene)
 ```
 
 A `preload next` block explicitly prepares assets for a future flow.
@@ -568,7 +567,7 @@ record path already disambiguates the field.
 
 ---
 
-## Built-in read/unread style hooks
+## Built-in read/unread style policy
 
 Common visual-novel patterns are built in.
 
@@ -597,19 +596,11 @@ pub character alice {
 }
 ```
 
-A custom hook can override or extend this behavior:
+Custom behavior is expressed through dialogue defaults, character-local style
+policy, or the selected dialogue View. It is not installed as a global
+callback.
 
-```arcw
-pub hook @hook.dialogue.alice_read_color
-on query DialogueLine where line.speaker == @character.alice
-phase BeforeTextStyle
-when line.read_state == .Read
-{
-    line.style.text_color = rgb("#c5b6cc")
-}
-```
-
-Built-in hook patterns:
+Built-in style policies:
 
 | Built-in | Purpose |
 |---|---|
@@ -762,7 +753,7 @@ alice.say()[
 
 ---
 
-## Hooks inside dialogue text
+## Local behavior inside dialogue text
 
 `#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark .name]` with `with: on mark(.name):` or a dialogue-safe `[call ...]`.
 
@@ -772,10 +763,10 @@ alice.say()[
 ]
 ```
 
-Custom hook:
+The mark handler may call an ordinary function:
 
 ```arcw
-pub dialogue hook @hook.dialogue.mark_keyword mark_keyword(
+pub fn mark_keyword(
     word: String,
     color: Color = rgb("#ffcc00"),
 ) -> Result<DialogueCue, TagError>
@@ -795,9 +786,9 @@ with:
 ]
 ```
 
-Hooks may read line context, speaker, dialogue View mount, read state, locale,
-and reveal cursor. They may not mutate global state unless explicitly declared
-with capability.
+The scoped handler may read line context, speaker, dialogue View mount, read
+state, locale, and reveal cursor. Durable state changes use the normal typed
+event/command boundary.
 
 ---
 

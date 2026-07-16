@@ -287,13 +287,6 @@ fn index_expr_agent_actions(
         | Expr::NamedBlock {
             statements, value, ..
         } => index_expr_block_agent_actions(statements, value.as_deref(), index, source_name),
-        Expr::MemoBlock {
-            options,
-            statements,
-            value,
-        } => {
-            index_memo_expr_agent_actions(options, statements, value.as_deref(), index, source_name)
-        }
         Expr::If {
             condition,
             then_branch,
@@ -412,19 +405,6 @@ fn index_expr_block_agent_actions(
         index = index_expr_agent_actions(value, index, source_name)?;
     }
     Ok(index)
-}
-
-fn index_memo_expr_agent_actions(
-    options: &[(String, Expr)],
-    statements: &[Stmt],
-    value: Option<&Expr>,
-    mut index: ProjectSemanticIndex,
-    source_name: &SourceName,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    for (_, value) in options {
-        index = index_expr_agent_actions(value, index, source_name)?;
-    }
-    index_expr_block_agent_actions(statements, value, index, source_name)
 }
 
 fn index_if_expr_agent_actions(

@@ -14,6 +14,7 @@ fn report(source: &str, mode: VerificationMode) -> VerificationReport {
         VerificationPolicy {
             mode,
             backend: BackendKind::Emit,
+            allow_trusted_proofs: mode != VerificationMode::Release,
         },
     )
 }
@@ -391,6 +392,7 @@ flow @flow.effects effects {
         VerificationPolicy {
             mode: VerificationMode::Test,
             backend: BackendKind::Emit,
+            allow_trusted_proofs: true,
         },
     );
     let with_env = verify_module_with_env(
@@ -399,6 +401,7 @@ flow @flow.effects effects {
         VerificationPolicy {
             mode: VerificationMode::Test,
             backend: BackendKind::Emit,
+            allow_trusted_proofs: true,
         },
     );
 
@@ -473,6 +476,65 @@ proof @proof.requires_only {
 }
 
 #[test]
+fn trusted_proof_evidence_is_transitive_auditable_and_policy_controlled() {
+    let source = r#"
+#[verify.trusted(reason = "validated by signed build metadata")]
+proof @proof.external_fact {
+    check no_lifetime_below(LineSummary, 'flow)
+}
+
+proof @proof.dependent {
+    use @proof.external_fact
+    check no_lifetime_below(LineSummary, 'flow)
+}
+
+flow @flow.proven proven {
+    let summary = promote('flow, proof = @proof.dependent)
+}
+"#;
+    let dev = report(source, VerificationMode::Dev);
+
+    assert!(!dev.has_errors());
+    assert!(dev.proofs.iter().any(|proof| {
+        proof.id == "proof.external_fact"
+            && matches!(
+                &proof.trust,
+                ProofTrustSummary::Trusted { reason }
+                    if reason == "validated by signed build metadata"
+            )
+    }));
+    assert!(dev.proofs.iter().any(|proof| {
+        proof.id == "proof.dependent"
+            && proof.trust == ProofTrustSummary::Verified
+            && proof.trusted_dependencies == ["proof.external_fact".to_owned()]
+    }));
+    assert_eq!(dev.trusted_proofs().count(), 2);
+    assert!(dev.obligations.iter().any(|obligation| {
+        obligation.kind == ProofObligationKind::LifetimePromotion
+            && matches!(
+                &obligation.discharge,
+                ProofDischarge::TrustedProof {
+                    id,
+                    trusted_dependencies,
+                } if id == "proof.dependent"
+                    && trusted_dependencies == &["proof.external_fact".to_owned()]
+            )
+    }));
+
+    let release = report(source, VerificationMode::Release);
+    assert!(release.has_errors());
+    assert!(release.diagnostics.iter().any(|diagnostic| {
+        diagnostic.severity == Severity::Error
+            && diagnostic.obligation.as_deref().is_some_and(|id| {
+                release.obligations.iter().any(|obligation| {
+                    obligation.id == id
+                        && matches!(obligation.discharge, ProofDischarge::TrustedProof { .. })
+                })
+            })
+    }));
+}
+
+#[test]
 fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
     let report = report(
         r"
@@ -520,6 +582,7 @@ fn required_solver_checks_are_report_diagnostics() {
         policy: VerificationPolicy {
             mode: VerificationMode::Test,
             backend: BackendKind::Oxiz,
+            allow_trusted_proofs: true,
         },
         obligations: vec![ProofObligation {
             id: "obligation.0001".to_owned(),
@@ -563,6 +626,7 @@ fn non_required_solver_checks_are_recorded_without_errors() {
         policy: VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Oxiz,
+            allow_trusted_proofs: true,
         },
         obligations: vec![ProofObligation {
             id: "obligation.0001".to_owned(),
@@ -595,6 +659,7 @@ fn unsat_solver_check_records_solver_discharge() {
         policy: VerificationPolicy {
             mode: VerificationMode::Test,
             backend: BackendKind::Z3,
+            allow_trusted_proofs: true,
         },
         obligations: vec![ProofObligation {
             id: "obligation.0001".to_owned(),

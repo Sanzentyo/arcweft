@@ -36,7 +36,8 @@ pub struct TraceFrame {
     voice_key: Option<VoiceKey>
     entity: Option<EntityId>
     function: Option<FunctionId>
-    hook: Option<Ref<Hook>>
+    dispatch_owner: Option<EntityId>
+    dispatch_event: Option<EntityId>
     task: Option<TaskId>
     await_target: Option<EntityId>
     message: Option<Content>
@@ -56,7 +57,7 @@ When an error is created in `.arcw` code, Arcweft captures:
 - current dialogue line ID, if any
 - current text key, if any
 - current voice key, if any
-- current hook ID, if any
+- current owner-local dispatch owner/event IDs, if any
 - current task / Need ID, if any
 - entity reference involved, if any
 - current tick and state hash when runtime
@@ -209,9 +210,9 @@ The compiler inserts trace frames at major boundaries:
 ```text
 flow entry
 function call
-parser call
+codec or cursor decode call
 await boundary
-hook dispatch
+owner-local handler dispatch
 dialogue line start
 activity call
 custom tag call

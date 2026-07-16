@@ -1,6 +1,6 @@
 //! Parenthesized and closure-expression events over the shared cursor.
 
-use super::{CompletedNode, control, emit_call_argument, emit_expression};
+use super::{CompletedNode, control, emit_expression};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::parser::document::ShadowDocumentParser;
 use crate::parser::pattern::emit_pattern;
@@ -453,55 +453,6 @@ pub(super) fn emit_named_block(
         parser.finish();
         bump_until(parser, open);
     }
-    if parser.at("{") {
-        control::emit_block_contents(parser, SyntaxRole::Body);
-    }
-    parser.finish();
-    CompletedNode { start_event }
-}
-
-pub(super) fn emit_memo_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    role: SyntaxRole,
-) -> CompletedNode {
-    let start_event = parser.event_position();
-    let open = block_open(parser, end).unwrap_or(end);
-    parser.start(SyntaxKind::MemoBlockExpression, role);
-    parser.bump();
-    parser.bump_trivia();
-    if parser.at("(") {
-        emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
-        let close = find_matching_close(parser, parser.cursor(), "(")
-            .unwrap_or(open)
-            .min(open);
-        parser.start(SyntaxKind::ArgumentList, SyntaxRole::Element(0));
-        let mut ordinal = 0_u16;
-        loop {
-            parser.bump_trivia();
-            if parser.cursor() >= close || parser.at(")") {
-                break;
-            }
-            let argument_end =
-                find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
-            emit_call_argument(parser, argument_end, ordinal);
-            ordinal = ordinal.saturating_add(1);
-            if parser.at(",") {
-                parser.bump();
-            } else {
-                break;
-            }
-        }
-        parser.finish();
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseParenNode,
-            ")",
-            "syntax.expression.missing_memo_options_close",
-        );
-        parser.bump_trivia();
-    }
-    bump_until(parser, open);
     if parser.at("{") {
         control::emit_block_contents(parser, SyntaxRole::Body);
     }

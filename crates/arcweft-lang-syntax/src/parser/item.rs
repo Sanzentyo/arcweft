@@ -79,12 +79,9 @@ pub(super) fn declaration_kind(keywords: &[&str]) -> Option<SyntaxKind> {
         "entry" => SyntaxKind::EntryDeclarationItem,
         "extern" if keywords.contains(&"capability") => SyntaxKind::ExternCapabilityItem,
         "extern" if keywords.contains(&"mod") => SyntaxKind::ExternModuleItem,
-        "hook" => SyntaxKind::HookItem,
         "dialogue" if keywords.contains(&"defaults") => SyntaxKind::DialogueDefaultsItem,
-        "memo" if keywords.contains(&"fn") => SyntaxKind::MemoFunctionItem,
         "test" => SyntaxKind::TestItem,
         "bench" => SyntaxKind::BenchItem,
-        "parser" => SyntaxKind::ParserItem,
         "source" => SyntaxKind::SourceItem,
         "style" => SyntaxKind::StyleItem,
         _ => return None,
@@ -112,12 +109,9 @@ pub(super) const fn is_declaration_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::ExternModuleItem
-            | SyntaxKind::HookItem
             | SyntaxKind::DialogueDefaultsItem
-            | SyntaxKind::MemoFunctionItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
-            | SyntaxKind::ParserItem
             | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
     )

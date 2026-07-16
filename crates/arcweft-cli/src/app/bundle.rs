@@ -71,9 +71,7 @@ use arcweft_runtime_host::{
 };
 use arcweft_runtime_plan::fx::lower_fx_definitions_for_package;
 use arcweft_source::SourceDocument;
-use arcweft_verify::{
-    BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
-};
+use arcweft_verify::{VerificationPolicy, VerificationReport, verify_module_with_env};
 use clap::Args;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
@@ -275,10 +273,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
     let verification = verify_module_with_env(
         &compiled.hir,
         semantic.base(),
-        VerificationPolicy {
-            mode: VerificationMode::Dev,
-            backend: BackendKind::Emit,
-        },
+        VerificationPolicy::default(),
     );
     if verification.has_blocking_runtime_safety_gaps() {
         emit_bundle_verification_diagnostics(&compiled.source_document, &verification);

@@ -372,9 +372,11 @@ test @test.layer_order_opening visual {
 ```
 
 
-## Hook との統合
+## Owner-local input and observation
 
-Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
+Layer input is handled by the target View/Activity node. Layout and routing
+changes are exposed through the read-only render/input trace used by tests,
+Agent observation, and logging.
 
 ```arcw
 layer @layer.choices: Choice {
@@ -383,23 +385,16 @@ layer @layer.choices: Choice {
     hit_test = view_layout
 }
 
-hook @hook.layer.choices.pointer_enter
-on @layer.choices
-phase InputTarget
-check on input PointerEnter
-{
-    signal.set(@signal.hovered_layer, Some(@layer.choices))
-}
-
-hook @hook.layer.choices.layout_changed
-on @layer.choices
-phase AfterLayout
-when layout.changed
-{
-    log.debug("choices layer layout changed")
+view ChoiceButton(choice: ChoiceView) {
+    Button(choice.label)
+        .on_pointer_enter {
+            action.invoke(@action.choice.hover, choice.id)
+        }
 }
 ```
 
-入力 routing では hook の `InputDisposition` が routing 結果に影響する。Modal、pointer capture、debug overlay、Agent overlay はこの仕組みで共通化される。
+入力 routing の `InputDisposition` は owner-local handler の結果として trace
+に保存される。Modal、pointer capture、debug overlay、Agent overlay は同じ
+typed router を共有する。
 
 

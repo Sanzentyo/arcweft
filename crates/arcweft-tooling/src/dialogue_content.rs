@@ -150,9 +150,6 @@ where
                     }
                 }
             }
-            Item::Hook(hook) => self.visit_stmts(hook.body_statements()),
-            Item::MemoFn(memo) => self.visit_stmts(memo.body_statements()),
-            Item::Parser(parser) => self.visit_stmts(parser.body_statements()),
             Item::Source(source) => {
                 self.visit_stmts(source.body_statements());
                 for handler in source.handlers() {
@@ -170,7 +167,6 @@ where
             | Item::Style(_)
             | Item::DialogueDefaults(_)
             | Item::Proof(_)
-            | Item::TrustedAxiom(_)
             | Item::Test(_)
             | Item::Bench(_)
             | Item::Raw(_) => {}
@@ -473,7 +469,6 @@ where
         match expr {
             Expr::Block { statements, .. }
             | Expr::ComputationBlock { statements, .. }
-            | Expr::MemoBlock { statements, .. }
             | Expr::NamedBlock { statements, .. } => self.visit_stmts(statements),
             Expr::Thread { block } => self.visit_flow_items(block.body()),
             Expr::DialogueCall {

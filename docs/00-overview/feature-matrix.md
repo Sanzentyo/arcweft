@@ -8,7 +8,7 @@
 | flow / reducer / view | ✅ |  | always |
 | contracts runtime check | ✅ |  | dev/test/product selective |
 | Z3/OxiZ formal verification |  | ✅ | dev/ci |
-| parser combinators | ✅ |  | always |
+| typed cursor / codec APIs | ✅ |  | always |
 | macro/template |  | ✅ | build |
 | precompile |  | ✅ | build |
 | wgpu headless screenshot | ✅ |  | dev/test/product observe |
@@ -89,7 +89,7 @@
 |---|---:|---:|---:|---|
 | USB raw devices | nusb / rusb | WebUSB via web-sys | virtual fixtures | permissioned, declared profiles only |
 | HID devices | hidapi / optional async-hid | WebHID via web-sys | virtual fixtures | game controllers, pedals, custom panels |
-| Serial / USB serial | serialport | Web Serial via web-sys | fixture streams | parser required |
+| Serial / USB serial | serialport | Web Serial via web-sys | fixture streams | typed decoder function required |
 | Virtual touch controller | Game Native View | Game Native View / DOM bridge optional | semantic action | attached to input layers |
 | Device generator | yes | emits web descriptors | emits fixtures | deterministic precompile output |
 

@@ -142,12 +142,10 @@ ItemDecl     :=
   | StateDecl
   | ReducerDecl
   | ViewDecl
-  | ParserDecl
-  | HookDecl
-  | MemoDecl
   | DialogueDefaultsDecl
   | AssetDecl
   | ImageDecl
+  | ProofDecl
   | TypeDecl
 OuterAttr    := '#[' AttrPath AttrArgs? ']'
 InnerAttr    := '#![' AttrPath AttrArgs? ']'
@@ -166,6 +164,21 @@ themselves silence unrelated diagnostics.
 Inner and outer attributes inside flow bodies are currently diagnostics rather
 than statement syntax; future block-scope attribute surfaces must add explicit
 AST attachment instead of falling through as raw statements.
+
+Proofs use the ordinary outer-attribute surface and a typed proof body:
+
+```text
+ProofDecl   := 'proof' EntityRef '{' ProofClause* '}'
+ProofClause := ('requires' | 'ensures' | 'check') Expr
+             | 'use' ProofRef
+             | 'assume' Expr (','? 'proof' '=' ProofRef)
+ProofRef    := EntityRef
+```
+
+`ProofRef` must resolve to the `proof` family. The optional
+`#[verify.trusted(reason = String)]` attribute marks external evidence; its
+reason must be a nonempty string literal. Trust is attached to `ProofDecl`
+rather than represented by a separate declaration family.
 
 Entity declarations share one closed header grammar. The entity family selects
 the declaration kind, but it does not make otherwise free-form header words
@@ -447,28 +460,10 @@ canonical because field boundaries are ambiguous. Formatters should write
 multiline blocks, or require commas if a compact single-line form is ever
 accepted.
 
-HookDecl   :=
-    Visibility 'hook' EntityRef
-    HookTarget
-    HookPhase
-    HookWhen?
-    HookPriority?
-    HookOnce?
-    HookEffects?
-    BlockExpr
-
-HookTarget := 'on' HookTargetExpr
-HookTargetExpr := EntityRef | 'state' StatePath | 'signal' EntityRef | 'query' Type WhereClause?
-HookPhase  := 'phase' Ident
-HookWhen   := 'when' Expr
-HookPriority := 'priority' i32
-HookOnce   := 'once'
-HookEffects:= 'effects' Expr (',' Expr)*
-```
-
-`check` is not part of the canonical hook header. Use `when` for conditions.
 Dialogue defaults preserve structured assignment expressions for later style,
-View, voice, hook, and localization lowering.
+View, voice, and localization lowering. Events are declared through their
+owning constructs, and input decoding uses ordinary functions; the grammar has
+no universal hook, memo function/block, or parser declaration.
 
 ## Types
 

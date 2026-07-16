@@ -331,7 +331,6 @@ impl<'a> Parser<'a> {
             CstLetFlowItemKind::ComputationBlock => {
                 self.parse_let_computation_block().map(FlowItem::Stmt)
             }
-            CstLetFlowItemKind::MemoBlock => self.parse_let_memo_block().map(FlowItem::Stmt),
             CstLetFlowItemKind::Block => self.parse_let_block().map(FlowItem::Stmt),
             CstLetFlowItemKind::Loop => self.parse_let_loop().map(FlowItem::Stmt),
             CstLetFlowItemKind::AwaitWith => self.parse_let_await_with().map(FlowItem::Stmt),

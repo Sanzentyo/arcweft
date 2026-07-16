@@ -135,32 +135,17 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::DialogueDefaults(item.clone()));
             }
-            Item::Hook(item) => {
-                self.declarations.push(HirTopLevelDecl::Hook(item.clone()));
-            }
             Item::Impl(item) => {
                 self.declarations.push(HirTopLevelDecl::Impl(item.clone()));
             }
-            Item::MemoFn(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::MemoFn(item.clone()));
-            }
             Item::Proof(item) => {
                 self.declarations.push(HirTopLevelDecl::Proof(item.clone()));
-            }
-            Item::TrustedAxiom(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::TrustedAxiom(item.clone()));
             }
             Item::Test(item) => {
                 self.declarations.push(HirTopLevelDecl::Test(item.clone()));
             }
             Item::Bench(item) => {
                 self.declarations.push(HirTopLevelDecl::Bench(item.clone()));
-            }
-            Item::Parser(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::Parser(item.clone()));
             }
             Item::Source(item) => {
                 self.declarations

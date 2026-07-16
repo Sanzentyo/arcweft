@@ -16,13 +16,9 @@ impl HirTopLevelDecl {
             Self::DialogueDefaults(_) => "dialogue_defaults",
             Self::Struct(_) => "struct",
             Self::TypeAlias(_) => "type_alias",
-            Self::Hook(_) => "hook",
-            Self::MemoFn(_) => "memo_fn",
             Self::Proof(_) => "proof",
-            Self::TrustedAxiom(_) => "trusted_axiom",
             Self::Test(_) => "test",
             Self::Bench(_) => "bench",
-            Self::Parser(_) => "parser",
             Self::Source(_) => "source",
             Self::Style(_) => "style",
         }

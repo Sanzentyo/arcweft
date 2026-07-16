@@ -180,60 +180,34 @@ AwaitView(typeset(@typeset.credits)) {
 
 
 
-## Object hooks / memoization
+## Event ownership and derived values
+
+Events are written next to their owner. For example, a choice owns its
+availability and selection behavior:
 
 ```arcw
-hook @hook.opening.choice_visible
-on @choice.opening.listen
-phase AfterLayout
-when object.visible && object.enabled
-effects { signal_write, assert }
-{
-    signal.set(@signal.choice_visible, true)
-    debug_assert object.bbox.area > 0
-}
+option @.listen {
+    label = "聞いてみる"
+    enabled = state.affection[@character.alice] >= 3
 
-memo fn route_title(route: Ref<Flow>) -> String
-scope = session
-{
+    select {
+        goto @flow.alice_intro
+    }
+}
+```
+
+Derived values are ordinary pure functions:
+
+```arcw
+fn route_title(route: Ref<Flow>) -> String {
     registry.flow(route).title
 }
 ```
 
-詳細は [Object Hooks / Memoization](hooks-and-memoization.md)。
-
-## Object hook
-
-```arcw
-hook @hook.choice.listen_visible
-on @choice.opening.listen
-phase VisibilityChanged
-when object.visible
-once
-{
-    signal.set(@signal.choice_visible, true)
-}
-```
-
-## memo
-
-```arcw
-memo fn visible_opening_choices(state: GameState) -> Vec<ChoiceView>
-key = (state.route, state.flags, state.affection)
-scope = frame
-{
-    opening_choices()
-        .filter(choice_available(state))
-        .map(choice_to_view(state))
-        .collect<Vec<ChoiceView>>()
-}
-```
-
-`memo` は pure な式だけに使える。`Need` の暗黙 force、log/signal 更新、Command 発行、wall-clock 参照は memo 対象では禁止。
-
-## Hook / memo
-
-Object hook と memoization の詳細は [Object Hook / 条件チェック / Memoization](hooks-and-memoization.md) を参照。
+There is no universal top-level event declaration or author-controlled memo
+declaration/block. Internal dispatch and caches stay with the subsystems that
+own their event ordering, keys, lifetimes, and invalidation. See
+[Event Ownership and Caching](hooks-and-memoization.md).
 
 
 ## Flow-integrated scenario syntax

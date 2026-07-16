@@ -1,80 +1,39 @@
-# Hook Manifest Schema
+# Internal Dispatch Manifest Schema
 
-Hook Manifest は、DSL / Rust export / macro-generated hook を共通に表す schema である。
+This schema records typed owner-local dispatch after lowering. It is not an
+author-facing declaration format. View, line-plan, source, Activity, and host
+adapter owners produce records whose event kinds and effects have already been
+checked.
 
 ```rust
-pub struct HookManifest {
+pub struct DispatchManifest {
     pub schema_version: u32,
-    pub hook_id: EntityId,
-    pub public_id: PublicId,
-    pub target: HookTarget,
-    pub phase: HookPhase,
-    pub check: CheckPolicy,
-    pub condition: Option<ExprSummary>,
-    pub priority: i32,
-    pub once: bool,
-    pub purity: HookPurity,
+    pub owner_id: EntityId,
+    pub event: DispatchEventKind,
+    pub phase: DispatchPhase,
+    pub stable_order: StableDispatchOrder,
     pub effects: Vec<EffectCapability>,
-    pub memo: Option<HookMemoPolicy>,
     pub contracts: Vec<ContractSummary>,
     pub source: Option<SourceAnchor>,
 }
 ```
 
-```rust
-pub enum HookTarget {
-    Entity(EntityId),
-    Layer(LayerId),
-    ViewNode(EntityId),
-    Signal(EntityId),
-    StatePath(StatePathId),
-    Pattern(TargetPattern),
-}
-
-pub enum CheckPolicy {
-    EveryFrame,
-    EveryFrames(u32),
-    EveryLogical(Duration),
-    OnChange(Vec<DependencyRef>),
-    OnSignal(EntityId),
-    OnEvent(EventPattern),
-    OnTaskReady(TaskId),
-    OnLayerVisible(LayerId),
-    Manual,
-    Any(Vec<CheckPolicy>),
-    All(Vec<CheckPolicy>),
-}
-
-pub struct HookMemoPolicy {
-    pub kind: HookMemoKind,
-    pub scope: MemoScope,
-    pub key: Vec<MemoKeyPart>,
-}
-
-pub enum HookMemoKind {
-    ConditionOnly,
-    ComputedLocals,
-    Disabled,
-}
-```
+The manifest does not carry raw target, condition, phase, or cache-policy
+strings. Owner-specific typed lowering supplies those facts, while subsystem
+cache metadata is reported separately.
 
 ## JSON example
 
 ```json
 {
   "schema_version": 1,
-  "public_id": "hook.opening.choice_enable",
-  "target": { "Entity": "choice.opening.listen" },
-  "phase": "input.hit_test",
-  "check": { "OnChange": ["state.affection[@character.alice]"] },
-  "condition": "state.affection[@character.alice] >= 3",
-  "priority": 10,
-  "purity": "Command",
-  "effects": ["view.enable", "log.debug"],
-  "memo": {
-    "kind": "ConditionOnly",
-    "scope": "StateHash",
-    "key": ["state.affection[@character.alice]"]
-  }
+  "owner_id": "view.choice_button",
+  "event": "pointer_click",
+  "phase": "input_target",
+  "stable_order": {
+    "tree_order": 42,
+    "entity": "choice.opening.listen"
+  },
+  "effects": ["action.invoke"]
 }
 ```

@@ -896,7 +896,6 @@ impl TypeChecker<'_> {
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
             | HirTopLevelDecl::Trait(_)
-            | HirTopLevelDecl::TrustedAxiom(_)
             | HirTopLevelDecl::ExternCapability(_) => {}
             HirTopLevelDecl::Impl(item) => self.check_impl_item(item),
             HirTopLevelDecl::ExternMod(item) => self.check_extern_mod(item),
@@ -953,29 +952,6 @@ impl TypeChecker<'_> {
             }
             HirTopLevelDecl::TypeAlias(item) => {
                 self.check_type_alias_decl(item);
-            }
-            HirTopLevelDecl::Hook(item) => {
-                self.expect_entity_kind(item.id(), &EntityKind::Hook, "hook id");
-                let effect_scope = EffectScope::from_effects(item.effects());
-                let effect_snapshot = self.apply_effect_scope(&effect_scope);
-                self.check_block_expr(item.body_statements(), None);
-                self.effect_capabilities = effect_snapshot;
-            }
-            HirTopLevelDecl::MemoFn(item) => {
-                self.clear_borrow_state();
-                self.locals.clear();
-                self.reset_semantic_root_scope(None);
-                self.loop_stack.clear();
-                self.yield_stack.clear();
-                self.check_block_expr(item.body_statements(), item.body_value());
-            }
-            HirTopLevelDecl::Parser(item) => {
-                self.clear_borrow_state();
-                self.locals.clear();
-                self.reset_semantic_root_scope(None);
-                self.loop_stack.clear();
-                self.yield_stack.clear();
-                self.check_block_expr(item.body_statements(), item.body_value());
             }
             HirTopLevelDecl::Source(source) => {
                 let item = source.item();

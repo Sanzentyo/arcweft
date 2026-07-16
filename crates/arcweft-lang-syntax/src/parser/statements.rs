@@ -6,10 +6,9 @@ use super::{
     RelativeId, RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, UnsafeAuditInsertion,
     WaitTarget, classify_stmt, parse_binding_pattern, parse_braced_while_let_stmt,
     parse_defer_outcome, parse_expr_lossy, parse_expr_lossy_with_stats,
-    parse_expr_with_inline_line_plan_with_stats, parse_memo_block_options, parse_named_block_expr,
-    parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms,
-    parse_thread_block, parse_trigger_pattern, split_top_level_binding,
-    split_top_level_keyword_once,
+    parse_expr_with_inline_line_plan_with_stats, parse_named_block_expr, parse_pattern,
+    parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms, parse_thread_block,
+    parse_trigger_pattern, split_top_level_binding, split_top_level_keyword_once,
 };
 use crate::cst::{
     ArcweftPunctuation, CstBlockEvent, CstPunctuationScan, SyntaxParseStats,
@@ -111,45 +110,6 @@ impl Parser<'_> {
             ty,
             expr: Expr::ComputationBlock {
                 kind,
-                statements,
-                value: value.map(Box::new),
-            },
-            expr_source,
-            expr_range,
-        })
-    }
-
-    pub(super) fn parse_let_memo_block(&mut self) -> Option<Stmt> {
-        let start_line = self.current().clone();
-        let block = self.take_brace_block_event();
-        if !block.ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing memo expression",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the memo expression block"],
-            );
-            return None;
-        }
-        let head = &block.head;
-        let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, block_head) = split_top_level_binding(rest)?;
-        let block_head = block_head.trim();
-        let options = parse_memo_block_options(block_head)?;
-        let (statements, value) = parse_scope_expr_body(&block.body);
-
-        let (pattern, ty) = parse_binding_pattern(pattern);
-        let (expr_source, expr_range) = braced_expr_source(
-            &block,
-            binding_value_start_in_line(&start_line.text, start_line.start, block_head)?,
-            block_head,
-        );
-        Some(Stmt::Let {
-            pattern,
-            ty,
-            expr: Expr::MemoBlock {
-                options,
                 statements,
                 value: value.map(Box::new),
             },

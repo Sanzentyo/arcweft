@@ -26,7 +26,7 @@ pub device @device.motion_sensor: UsbRaw {
 
     endpoint in bulk 0x81 packet = 64
 
-    parser input parse_motion_packet: Parser<MotionSample, DeviceParseError>
+    decoder = decode_motion_packet
 
     signal @signal.motion_sample: Stream<MotionSample>
 
@@ -44,7 +44,7 @@ pub device @device.serial_knob: Serial {
     permission = user_prompt
     baud = 115200
 
-    parser line parse_knob_line: Parser<KnobEvent, ParseError>
+    line_decoder = decode_knob_line
 
     emits {
         .Turn { delta } => InputEvent.AxisDelta(.ViewScroll, delta)

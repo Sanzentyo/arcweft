@@ -345,7 +345,8 @@ Only values exported with `out` from the line plan can escape the line. Borrowed
 
 ## Stage object handles and preload
 
-Characters expose object-like stage APIs. These APIs return handles that can be scoped, memoized, or preloaded.
+Characters expose object-like stage APIs. These APIs return scoped handles and
+support explicit preloading.
 
 ```arcw
 preload next @flow.alice_intro:
@@ -357,17 +358,17 @@ preload next @flow.alice_intro:
 Within a line:
 
 ```arcw
-let actor = alice.stage.acquire(scope=line, memo=true)
+let actor = alice.stage.acquire(scope=line)
 let pose = actor.pose(normal)
 let face = actor.look(smile)
 ```
 
-The `memo=true` flag allows the stage proxy to reuse loaded sprite atlases, expression meshes, and text-layout assets when the same key is requested again.
+The stage subsystem owns reuse of loaded sprite atlases, expression meshes, and
+text-layout assets. Authors select the handle lifetime; they do not construct a
+generic memo cache in source.
 
 ```arcw
-let actor = memo(scope=scene, key=(@character.alice, pose=normal, theme=env.theme.hash)) {
-    alice.stage.acquire(scope=line)
-}
+let actor = alice.stage.acquire(scope=scene)
 ```
 
 Preload declarations are hints, not hidden blocking operations. If an asset is not ready at use time, the normal `Need<T, E>` / pending-display rules still apply.

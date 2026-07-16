@@ -61,15 +61,6 @@ impl Expr {
                 statements.iter().any(stmt_contains_pipe_left)
                     || value.as_deref().is_some_and(Self::contains_pipe_left)
             }
-            Self::MemoBlock {
-                options,
-                statements,
-                value,
-            } => {
-                options.iter().any(|(_, value)| value.contains_pipe_left())
-                    || statements.iter().any(stmt_contains_pipe_left)
-                    || value.as_deref().is_some_and(Self::contains_pipe_left)
-            }
             Self::If {
                 condition,
                 then_branch,

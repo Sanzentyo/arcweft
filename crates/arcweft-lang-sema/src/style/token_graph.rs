@@ -236,7 +236,6 @@ fn collect_token_references(expr: &Expr, references: &mut BTreeSet<String>) {
         | Expr::Thread { .. }
         | Expr::Block { .. }
         | Expr::ComputationBlock { .. }
-        | Expr::MemoBlock { .. }
         | Expr::NamedBlock { .. }
         | Expr::IfLet { .. }
         | Expr::Match { .. }

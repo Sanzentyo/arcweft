@@ -191,7 +191,7 @@ pub device @device.rhythm_pad: UsbHid {
 This declaration generates:
 
 - `Ref<DeviceProfile>` entity,
-- typed parser for input reports,
+- ordinary typed decoder function for input reports,
 - typed writer for output reports,
 - `DevicePort<RhythmPadInput, RhythmPadLights>`,
 - signal bindings,
@@ -298,12 +298,13 @@ pub device @device.led_board: UsbRaw {
         control config: vendor request_type = out
     }
 
-    parser status: LedBoardStatus from status.bytes
-    writer command: LedBoardCommand to command.bytes
+    decoder status = decode_led_board_status
+    encoder command = encode_led_board_command
 }
 ```
 
-Raw endpoint bytes can only enter user code after parsing.
+The named decoders and encoders are ordinary typed functions. Raw endpoint
+bytes can only enter user code after a decoder returns a validated value.
 
 ## Security rules
 

@@ -230,11 +230,6 @@ impl TypeChecker<'_> {
             Expr::NamedBlock {
                 statements, value, ..
             } => self.check_block_expr_with_expected(statements, value.as_deref(), expected),
-            Expr::MemoBlock {
-                options,
-                statements,
-                value,
-            } => self.check_memo_block_expr(options, statements, value.as_deref(), expected),
             Expr::If {
                 condition,
                 then_branch,
@@ -685,19 +680,6 @@ impl TypeChecker<'_> {
             item: Box::new(item_type),
             len: len_label,
         }
-    }
-
-    fn check_memo_block_expr(
-        &mut self,
-        options: &[(String, Expr)],
-        statements: &[Stmt],
-        value: Option<&Expr>,
-        expected: Option<&TypeKind>,
-    ) -> Option<TypeKind> {
-        for (_, option) in options {
-            self.check_expr(option);
-        }
-        self.check_block_expr_with_expected(statements, value, expected)
     }
 
     fn check_record_fields(&mut self, fields: &[(String, Expr)]) {

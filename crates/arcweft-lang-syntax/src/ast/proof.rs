@@ -5,6 +5,7 @@ use super::ids::IdRef;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofItem {
     id: IdRef,
+    trust: ProofTrust,
     body: String,
     clauses: Vec<ProofClause>,
     range: TextRange,
@@ -27,10 +28,9 @@ pub enum ProofClause {
     },
     Assume {
         source: String,
-        reason: Option<String>,
-        axiom: Option<String>,
+        proof: Option<String>,
     },
-    UseAxiom {
+    UseProof {
         id: String,
     },
     Raw {
@@ -38,12 +38,11 @@ pub enum ProofClause {
     },
 }
 
-/// Top-level `trusted axiom @axiom.id { ... }` declaration.
+/// Typed trust status attached to one proof declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TrustedAxiomItem {
-    id: IdRef,
-    body: String,
-    range: TextRange,
+pub enum ProofTrust {
+    Verified,
+    Trusted { reason: String },
 }
 
 /// Top-level `test @test.id kind { ... }` declaration.
@@ -76,12 +75,14 @@ pub struct BenchItem {
 impl ProofItem {
     pub(crate) const fn new(
         id: IdRef,
+        trust: ProofTrust,
         body: String,
         clauses: Vec<ProofClause>,
         range: TextRange,
     ) -> Self {
         Self {
             id,
+            trust,
             body,
             clauses,
             range,
@@ -92,30 +93,16 @@ impl ProofItem {
         &self.id
     }
 
+    pub const fn trust(&self) -> &ProofTrust {
+        &self.trust
+    }
+
     pub fn body(&self) -> &str {
         &self.body
     }
 
     pub fn clauses(&self) -> &[ProofClause] {
         &self.clauses
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl TrustedAxiomItem {
-    pub(crate) const fn new(id: IdRef, body: String, range: TextRange) -> Self {
-        Self { id, body, range }
-    }
-
-    pub const fn id(&self) -> &IdRef {
-        &self.id
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
     }
 
     pub const fn range(&self) -> &TextRange {

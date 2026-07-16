@@ -19,10 +19,9 @@ pub struct LightgunReport {
     confidence: u8,
 }
 
-pub parser parse_lightgun_report: Parser<LightgunReport, UsbParseError>
-input &'frame [u8]
-requires input.len() >= 6
-{
+pub fn decode_lightgun_report(input: &[u8])
+    -> Result<LightgunReport, UsbParseError>
+requires input.len() >= 6 {
     Ok(LightgunReport {
         x = le_u16(input[0..2])?,
         y = le_u16(input[2..4])?,
@@ -43,7 +42,7 @@ pub usb @usb.lightgun: UsbRawDevice {
     endpoint @usb.lightgun.input: InterruptIn {
         address = 0x81
         packet = LightgunReport
-        parser = parse_lightgun_report
+        decoder = decode_lightgun_report
         backpressure = latest
     }
 }

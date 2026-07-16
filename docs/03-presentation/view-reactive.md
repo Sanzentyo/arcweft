@@ -223,18 +223,22 @@ pub struct ViewNode {
 }
 ```
 
-## Memoized view and hooks
+## Retained dependency tracking and local handlers
 
-View は dependency tracking によって必要部分だけ再評価される。高価な派生値には `memo` を使う。
+View は dependency tracking によって必要部分だけ再評価される。派生値は
+ordinary pure function として記述し、再利用と invalidation は View evaluator
+が実際の read dependency から決める。
 
 ```arcw
+fn visible_choices(state: GameState) -> Vec<ChoiceView> {
+    opening_choices()
+        .filter(choice_available(state))
+        .map(choice_to_view(state))
+        .collect<Vec<ChoiceView>>()
+}
+
 view ChoiceList(state: GameState) {
-    let choices = memo(scope=frame, key=(state.route, state.affection)) {
-        opening_choices()
-            .filter(choice_available(state))
-            .map(choice_to_view(state))
-            .collect<Vec<ChoiceView>>()
-    }
+    let choices = visible_choices(state)
 
     Column {
         for choice in choices key = choice.id { ChoiceButton(choice) }
@@ -242,13 +246,6 @@ view ChoiceList(state: GameState) {
 }
 ```
 
-View node には hook を付けられる。
-
-```arcw
-hook @hook.choice_button_has_action
-on query ViewNode where role == .Choice
-phase AfterLayout
-{
-    assert(object.actions.contains("select"))
-}
-```
+入力処理は `.on_click { ... }` など対象 View node の modifier に置く。
+View 全体の invariant は compiler/test が retained tree と action inventory を
+直接検査し、global callback を挟まない。

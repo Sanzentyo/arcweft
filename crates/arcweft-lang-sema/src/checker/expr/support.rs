@@ -261,7 +261,6 @@ pub(super) fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::Block { .. } => "block",
         Expr::ComputationBlock { .. } => "computation_block",
         Expr::NamedBlock { .. } => "named_block",
-        Expr::MemoBlock { .. } => "memo_block",
         Expr::If { .. } => "if",
         Expr::IfLet { .. } => "if_let",
         Expr::Match { .. } => "match",

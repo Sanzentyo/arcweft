@@ -144,38 +144,36 @@ bench @bench.bgm_mix_120s {
 
 
 
-## Hook / memo observation
+## Dispatch and subsystem-cache observation
 
-hook と memo は logging / signal / test / bench の対象である。
+Tooling observes owner-local routed events and subsystem-specific cache metrics.
 
 CLI:
 
 ```bash
-arcw hook list
-arcw hook trace --target choice.opening.listen
-arcw memo stats
-arcw memo invalidate --entity flow.opening
+arcw trace input --target choice.opening.listen
+arcw cache stats --owner view
 ```
 
 Test:
 
 ```arcw
-test @test.choice_hook_fires scenario {
+test @test.choice_action_routes scenario {
     goto @flow.opening
     wait.object(@choice.opening.listen, state=.visible)
-    expect.hook(@hook.opening.choice_visible, state=.fired)
-    expect.signal(@signal.choice_visible, true)
+    act.click(@choice.opening.listen)
+    expect.action(@action.choice.select, target=@choice.opening.listen)
 }
 ```
 
 Bench:
 
 ```arcw
-bench @bench.memo_hit_rate {
+bench @bench.view_cache_hit_rate {
     measure iterations = 10000 {
         opening_choices().map(choice_to_view(state)).collect<Vec<ChoiceView>>()
     }
-    assert(metric.value(@metric.memo_hit_rate) >= 0.95)
+    assert(metric.value(@metric.view_cache_hit_rate) >= 0.95)
 }
 ```
 

@@ -297,17 +297,6 @@ fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
         } => {
             summary.merge(summarize_expr_block_control(statements, value.as_deref()));
         }
-        Expr::MemoBlock {
-            options,
-            statements,
-            value,
-        } => {
-            summary.merge(summarize_expr_memo_block_control(
-                options,
-                statements,
-                value.as_deref(),
-            ));
-        }
         Expr::If { .. } | Expr::IfLet { .. } | Expr::Match { .. } => {
             summary.merge(summarize_expr_branch_control(expr));
         }
@@ -368,22 +357,6 @@ fn summarize_expr_block_control(
     value: Option<&Expr>,
 ) -> ProjectFlowControlSummary {
     let mut summary = summarize_stmt_body_control(statements);
-    if let Some(value) = value {
-        summary.merge(summarize_expr_control(value));
-    }
-    summary
-}
-
-fn summarize_expr_memo_block_control(
-    options: &[(String, Expr)],
-    statements: &[Stmt],
-    value: Option<&Expr>,
-) -> ProjectFlowControlSummary {
-    let mut summary = ProjectFlowControlSummary::default();
-    for (_, value) in options {
-        summary.merge(summarize_expr_control(value));
-    }
-    summary.merge(summarize_stmt_body_control(statements));
     if let Some(value) = value {
         summary.merge(summarize_expr_control(value));
     }

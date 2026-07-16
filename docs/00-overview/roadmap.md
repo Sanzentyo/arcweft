@@ -47,10 +47,10 @@
 - audio mixer graph, BGM/SE/Voice basics
 - spatial audio and TTS API skeleton
 
-## Phase 4: Contracts / Parser / Verification
+## Phase 4: Contracts / Verification
 
 - contract lowering
-- parser combinators
+- typed input cursor and codec libraries
 - Z3 / OxiZ backend
 - Kani/Creusot harness generation for Rust extension
 

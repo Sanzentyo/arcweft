@@ -213,6 +213,7 @@ impl Parser<'_> {
                         | CstTopLevelItemKind::EntityDecl
                         | CstTopLevelItemKind::ExternCapability
                         | CstTopLevelItemKind::DialogueDefaults
+                        | CstTopLevelItemKind::Proof
                         | CstTopLevelItemKind::Source
                         | CstTopLevelItemKind::Style
                 ) {
@@ -243,18 +244,12 @@ impl Parser<'_> {
                 .parse_extern_capability_item()
                 .map(Item::ExternCapability),
             CstTopLevelItemKind::ExternMod => self.parse_extern_mod_item().map(Item::ExternMod),
-            CstTopLevelItemKind::Hook => self.parse_hook().map(Item::Hook),
             CstTopLevelItemKind::DialogueDefaults => {
                 self.parse_dialogue_defaults().map(Item::DialogueDefaults)
             }
-            CstTopLevelItemKind::MemoFn => self.parse_memo_fn().map(Item::MemoFn),
             CstTopLevelItemKind::Proof => self.parse_proof_item().map(Item::Proof),
-            CstTopLevelItemKind::TrustedAxiom => {
-                self.parse_trusted_axiom_item().map(Item::TrustedAxiom)
-            }
             CstTopLevelItemKind::Test => self.parse_test_item().map(Item::Test),
             CstTopLevelItemKind::Bench => self.parse_bench_item().map(Item::Bench),
-            CstTopLevelItemKind::Parser => self.parse_parser_item().map(Item::Parser),
             CstTopLevelItemKind::Source => self.parse_source_item().map(Item::Source),
             CstTopLevelItemKind::Style => self.parse_style().map(Item::Style),
             CstTopLevelItemKind::Flow

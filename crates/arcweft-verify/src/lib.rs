@@ -25,8 +25,8 @@ use arcweft_lang_sema::{
     env::TypeCheckEnv,
     semantic::{
         SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
-        SemanticObligationKind, SemanticPolicy, SemanticReport, SemanticSeverity,
-        analyze_semantics,
+        SemanticObligationKind, SemanticPolicy, SemanticProofTrust, SemanticReport,
+        SemanticSeverity, analyze_semantics,
     },
 };
 use arcweft_source::{
@@ -102,10 +102,21 @@ impl BackendKind {
 }
 
 /// Verifier policy with mode and backend selection.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct VerificationPolicy {
     pub mode: VerificationMode,
     pub backend: BackendKind,
+    pub allow_trusted_proofs: bool,
+}
+
+impl Default for VerificationPolicy {
+    fn default() -> Self {
+        Self {
+            mode: VerificationMode::Dev,
+            backend: BackendKind::Emit,
+            allow_trusted_proofs: true,
+        }
+    }
 }
 
 /// Verification obligation families understood by Phase 1.5 tooling.
@@ -122,6 +133,7 @@ pub enum ProofObligationKind {
     UpperLifetimeWrite,
     EffectCapability,
     ProofBody,
+    TrustedProof,
     TrustedAssumption,
     RawSyntax,
     RuntimeConflict,
@@ -139,6 +151,7 @@ impl ProofObligationKind {
                 | Self::UpperLifetimeWrite
                 | Self::EffectCapability
                 | Self::ProofBody
+                | Self::TrustedProof
                 | Self::TrustedAssumption
                 | Self::RawSyntax
                 | Self::RuntimeConflict
@@ -176,7 +189,10 @@ impl ProofObligationKind {
                 ToolAction::show_obligation(),
             ],
             Self::UnsafeLifetimeAudit => vec![ToolAction::generate_unsafe_audit(obligation)],
-            Self::TrustedAssumption | Self::RawSyntax | Self::RuntimeConflict => Vec::new(),
+            Self::TrustedProof
+            | Self::TrustedAssumption
+            | Self::RawSyntax
+            | Self::RuntimeConflict => Vec::new(),
         }
     }
 }
@@ -186,10 +202,19 @@ impl ProofObligationKind {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProofDischarge {
     Automatic,
-    FormalProof { id: String },
-    AuditedUnsafe { id: String },
-    TrustedAxiom { id: String },
-    Solver { backend: BackendKind },
+    FormalProof {
+        id: String,
+    },
+    AuditedUnsafe {
+        id: String,
+    },
+    TrustedProof {
+        id: String,
+        trusted_dependencies: Vec<String>,
+    },
+    Solver {
+        backend: BackendKind,
+    },
     Missing,
 }
 
@@ -470,13 +495,17 @@ impl VerificationDiagnostic {
 pub struct ProofSummary {
     pub id: String,
     pub source: SourceSpan,
+    pub trust: ProofTrustSummary,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trusted_dependencies: Vec<String>,
 }
 
-/// Trusted axiom summary carried into release review manifests.
+/// Typed proof trust metadata carried into release review manifests.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct TrustedAxiomSummary {
-    pub id: String,
-    pub source: SourceSpan,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProofTrustSummary {
+    Verified,
+    Trusted { reason: String },
 }
 
 /// Unsafe lifetime audit metadata carried into manifests.
@@ -496,7 +525,6 @@ pub struct VerificationReport {
     pub obligations: Vec<ProofObligation>,
     pub solver_checks: Vec<SolverCheck>,
     pub proofs: Vec<ProofSummary>,
-    pub trusted_axioms: Vec<TrustedAxiomSummary>,
     pub unsafe_audits: Vec<UnsafeAuditSummary>,
 }
 
@@ -533,6 +561,7 @@ pub fn verify_module_with_env(
         env,
         SemanticPolicy {
             mode: semantic_mode(policy.mode),
+            allow_trusted_proofs: policy.allow_trusted_proofs,
         },
     );
     let mut report = collector.finish();
@@ -545,6 +574,13 @@ pub fn verify_module_with_env(
 }
 
 impl VerificationReport {
+    /// Returns every proof whose evidence is directly or transitively trusted.
+    pub fn trusted_proofs(&self) -> impl Iterator<Item = &ProofSummary> {
+        self.proofs
+            .iter()
+            .filter(|proof| !proof.trusted_dependencies.is_empty())
+    }
+
     pub fn source_diagnostics(&self, document: &SourceDocument) -> Vec<SourceDiagnostic> {
         self.diagnostics
             .iter()
@@ -674,29 +710,26 @@ fn merge_semantic_report(
     remove_collector_semantic_obligations(report);
 
     for proof in semantic.proofs {
-        if !report.proofs.iter().any(|existing| existing.id == proof.id) {
-            report.proofs.push(ProofSummary {
-                id: proof.id,
-                source: SourceSpan {
-                    start: proof.source.start,
-                    end: proof.source.end,
-                },
-            });
-        }
-    }
-    for axiom in semantic.trusted_axioms {
-        if !report
-            .trusted_axioms
-            .iter()
-            .any(|existing| existing.id == axiom.id)
+        let summary = ProofSummary {
+            id: proof.id,
+            source: SourceSpan {
+                start: proof.source.start,
+                end: proof.source.end,
+            },
+            trust: match proof.trust {
+                SemanticProofTrust::Verified => ProofTrustSummary::Verified,
+                SemanticProofTrust::Trusted { reason } => ProofTrustSummary::Trusted { reason },
+            },
+            trusted_dependencies: proof.trusted_dependencies,
+        };
+        if let Some(existing) = report
+            .proofs
+            .iter_mut()
+            .find(|existing| existing.id == summary.id)
         {
-            report.trusted_axioms.push(TrustedAxiomSummary {
-                id: axiom.id,
-                source: SourceSpan {
-                    start: axiom.source.start,
-                    end: axiom.source.end,
-                },
-            });
+            *existing = summary;
+        } else {
+            report.proofs.push(summary);
         }
     }
     for audit in semantic.unsafe_audits {
@@ -883,6 +916,7 @@ fn proof_kind(kind: SemanticObligationKind) -> ProofObligationKind {
         SemanticObligationKind::UpperLifetimeWrite => ProofObligationKind::UpperLifetimeWrite,
         SemanticObligationKind::EffectCapability => ProofObligationKind::EffectCapability,
         SemanticObligationKind::ProofBody => ProofObligationKind::ProofBody,
+        SemanticObligationKind::TrustedProof => ProofObligationKind::TrustedProof,
         SemanticObligationKind::TrustedAssumption => ProofObligationKind::TrustedAssumption,
         SemanticObligationKind::RawSyntax => ProofObligationKind::RawSyntax,
         SemanticObligationKind::RuntimeConflict => ProofObligationKind::RuntimeConflict,
@@ -894,7 +928,13 @@ fn proof_discharge(discharge: SemanticDischarge) -> ProofDischarge {
         SemanticDischarge::Automatic => ProofDischarge::Automatic,
         SemanticDischarge::FormalProof { id } => ProofDischarge::FormalProof { id },
         SemanticDischarge::AuditedUnsafe { id } => ProofDischarge::AuditedUnsafe { id },
-        SemanticDischarge::TrustedAxiom { id } => ProofDischarge::TrustedAxiom { id },
+        SemanticDischarge::TrustedProof {
+            id,
+            trusted_dependencies,
+        } => ProofDischarge::TrustedProof {
+            id,
+            trusted_dependencies,
+        },
         SemanticDischarge::Missing => ProofDischarge::Missing,
     }
 }
@@ -914,7 +954,6 @@ struct ObligationCollector {
     insertion_inventory: VerifierInsertionInventory,
     unsafe_stack: Vec<String>,
     known_proofs: BTreeSet<String>,
-    known_axioms: BTreeSet<String>,
     lifetime_reads: Vec<LifetimeKey>,
     lifetime_drops: HashSet<LifetimeKey>,
 }
@@ -931,7 +970,6 @@ impl ObligationCollector {
             insertion_inventory,
             unsafe_stack: Vec::new(),
             known_proofs: BTreeSet::new(),
-            known_axioms: BTreeSet::new(),
             lifetime_reads: Vec::new(),
             lifetime_drops: HashSet::new(),
         }
@@ -968,23 +1006,8 @@ impl ObligationCollector {
             match declaration {
                 HirTopLevelDecl::Proof(proof) => {
                     let id = id_ref_label(proof.id(), "proof");
-                    self.known_proofs.insert(id.clone());
-                    self.report.proofs.push(ProofSummary {
-                        id,
-                        source: span_from_range(proof.range()),
-                    });
+                    self.known_proofs.insert(id);
                 }
-                HirTopLevelDecl::TrustedAxiom(axiom) => {
-                    let id = id_ref_label(axiom.id(), "axiom");
-                    self.known_axioms.insert(id.clone());
-                    self.report.trusted_axioms.push(TrustedAxiomSummary {
-                        id,
-                        source: span_from_range(axiom.range()),
-                    });
-                }
-                HirTopLevelDecl::Hook(hook) => self.collect_stmts(hook.body_statements()),
-                HirTopLevelDecl::MemoFn(item) => self.collect_stmts(item.body_statements()),
-                HirTopLevelDecl::Parser(item) => self.collect_stmts(item.body_statements()),
                 HirTopLevelDecl::Source(source) => {
                     self.collect_stmts(source.item().body_statements());
                 }
@@ -1378,19 +1401,6 @@ impl ObligationCollector {
                     self.collect_expr(value);
                 }
             }
-            Expr::MemoBlock {
-                options,
-                statements,
-                value,
-            } => {
-                for (_, value) in options {
-                    self.collect_expr(value);
-                }
-                self.collect_stmts(statements);
-                if let Some(value) = value {
-                    self.collect_expr(value);
-                }
-            }
             Expr::If {
                 condition,
                 then_branch,
@@ -1486,14 +1496,14 @@ impl ObligationCollector {
     }
 
     fn add_assume_obligation(&mut self, args: &[CallArg]) {
-        let discharge = axiom_arg(args)
-            .filter(|id| self.known_axioms.contains(id))
-            .map_or(ProofDischarge::Missing, |id| ProofDischarge::TrustedAxiom {
+        let discharge = proof_arg(args)
+            .filter(|id| self.known_proofs.contains(id))
+            .map_or(ProofDischarge::Missing, |id| ProofDischarge::FormalProof {
                 id,
             });
         self.add_obligation(
             ProofObligationKind::TrustedAssumption,
-            "assume requires a reason or trusted axiom".to_owned(),
+            "assume requires a proof dependency".to_owned(),
             None,
             &discharge,
         );
@@ -1831,11 +1841,20 @@ impl ObligationCollector {
         ) {
             return Severity::Info;
         }
-        if kind == ProofObligationKind::RawSyntax {
+        if matches!(
+            kind,
+            ProofObligationKind::RawSyntax | ProofObligationKind::RuntimeConflict
+        ) {
             return Severity::Error;
         }
-        if kind == ProofObligationKind::RuntimeConflict {
-            return Severity::Error;
+        if matches!(discharge, ProofDischarge::TrustedProof { .. })
+            || kind == ProofObligationKind::TrustedProof
+        {
+            return if self.policy.allow_trusted_proofs {
+                Severity::Warning
+            } else {
+                Severity::Error
+            };
         }
         match self.policy.mode {
             VerificationMode::Dev => Severity::Warning,
@@ -1845,7 +1864,7 @@ impl ObligationCollector {
                     (
                         ProofObligationKind::UnsafeLifetimeAudit,
                         ProofDischarge::AuditedUnsafe { .. }
-                    ) | (_, ProofDischarge::TrustedAxiom { .. })
+                    )
                 ) =>
             {
                 Severity::Warning
@@ -1881,10 +1900,6 @@ fn id_ref_label(id: &IdRef, default_family: &str) -> String {
 
 fn proof_arg(args: &[CallArg]) -> Option<String> {
     named_entity_arg(args, "proof")
-}
-
-fn axiom_arg(args: &[CallArg]) -> Option<String> {
-    named_entity_arg(args, "axiom").or_else(|| named_entity_arg(args, "trusted_axiom"))
 }
 
 fn named_entity_arg(args: &[CallArg], name: &str) -> Option<String> {

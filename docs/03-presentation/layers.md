@@ -491,86 +491,35 @@ ensures result.actions.all(_.layer == @layer.view.game)
 ```
 
 
-## Object hooks on layers
+## Layer trace observation
 
-Layer は hook target でもある。描画・layout・input routing の各 phase で hook を実行できる。
+描画・layout・input routing は stable layer identity を持つ typed trace を生成する。
+test、Agent、debugger は bbox、layout hash、consumed / blocked / passed-through
+result を trace から read-only に検査する。観測のために author-defined global
+callback を登録しない。
+
+
+## Layer-owned policy and metadata
+
+Layer declaration owns modal/input policy and Agent-visible metadata.
 
 ```arcw
-hook @hook.view_layer_bbox
-on @layer.view.game
-phase AfterLayout
-when layer.layout_hash.changed
-{
-    log.debug("view layer bbox={bbox:?}", bbox = object.bbox)
+layer @layer.modal.settings {
+    input = modal
+    priority = 1000
+    block_below = true
+}
+
+layer @layer.choices {
+    description = "現在表示中の選択肢レイヤー"
 }
 ```
 
-`AfterInputRoute` hook では、入力がどの layer に consumed / blocked / passed-through されたかを検査できる。
+Local View/Activity handlers are dispatched in deterministic LayerTree order.
 
-```arcw
-hook @hook.debug_input_route
-on query Layer where input.enabled
-phase AfterInputRoute
-check on event
-{
-    log trace "input route: {layer:?} -> {result:?}" {
-        layer = object.entity,
-        result = route.result,
-    }
-}
-```
+## Input routing phases
 
-
-## Layer hooks
-
-Layer は hook target になれる。描画、hit-test、入力、Agent 観測の各 phase で hook を実行できる。
-
-```arcw
-hook @hook.modal.block_lower_layers
-on @layer.modal.settings
-at input.capture
-priority 1000
-check every event
-{
-    if ctx.layer.visible {
-        block_below
-    } else {
-        continue
-    }
-}
-
-hook @hook.layer.agent_hint
-on @layer.choices
-at agent.observe
-check when state .affection[@character.alice] changes
-{
-    patch_agent_observation {
-        layer @layer.choices {
-            description = "現在表示中の選択肢レイヤー"
-        }
-    }
-}
-```
-
-Layer hook は [Hook Runtime / Memoization Runtime](../02-runtime/hooks-memoization.md) で決定的順序に並べられる。
-
-## Layer hooks
-
-Layer は hook の重要な対象である。描画・入力・Agent 観測が同じ LayerTree を共有するため、layer phase に hook を差し込める。
-
-```arcw
-hook @hook.modal_blocks_input
-on @layer.overlay.modal
-phase InputPreRoute
-check on event
-when layer(@layer.overlay.modal).visible
-effects { signal }
-{
-    signal.set(@signal.input_blocked, true)
-}
-```
-
-Input routing は以下の hook phase を持つ。
+Input routing internally records the following phases:
 
 ```text
 InputPreRoute
@@ -580,34 +529,15 @@ InputHitTest
 InputPostRoute
 ```
 
-詳細は [Object Hooks / Memoization](../01-language/hooks-and-memoization.md) と [Hook Runtime](../02-runtime/hooks-memoization.md) を参照。
+詳細は [Event Ownership and Caching](../01-language/hooks-and-memoization.md) と
+[Runtime Dispatch and Caches](../02-runtime/hooks-memoization.md) を参照。
 
-## Layer hooks
+## Local interaction and read-only diagnostics
 
-Layer は hook target になれる。これにより、描画・入力・Agent 観測のタイミングで条件チェックや追加処理を入れられる。
-
-```arcw
-hook @hook.modal.blocks_lower_layers
-on layer @layer.view.modal
-at before_input
-when layer.visible
-priority 1000
-{
-    block_below
-}
-```
-
-```arcw
-hook @hook.debug.layer_observed
-on layer @layer.debug.agent
-at after_render
-check every 30 frames
-{
-    log.debug("debug layer visible={visible:bool}", visible = layer.visible)
-}
-```
-
-Layer hook は [Object hooks](../01-language/hooks-and-memoization.md) と [Runtime hooks and memoization](../02-runtime/hooks-memoization.md) で定義される。入力 routing に介入する hook は phase ごとの effect firewall により、許可された `InputBlock` / `InputCapture` / `EmitEvent` のみ実行できる。
+描画・入力・Agent 観測の追加処理は、それぞれ target View/Activity handler、
+LayerTree policy、read-only trace consumer に置く。入力 routing に介入できる
+owner-local handler は typed `InputDisposition` / semantic action だけを返し、
+phase ごとの effect firewall を越えて state を直接変更しない。
 
 
 ## Device and virtual controller sources

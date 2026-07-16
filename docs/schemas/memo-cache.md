@@ -1,11 +1,13 @@
-# Memoization Cache schema
+# Subsystem Cache Schema
 
-Memoization Cache は `memo fn`、`memo task`、View layout cache、typeset cache、shader/JIT artifact cache の共通 metadata schema である。
+This tool-facing schema reports compiler/VM, View layout, typeset,
+shader/JIT, and other subsystem-owned caches. It is not generated from an
+author-facing cache declaration.
 
 関連:
 
-- [Object Hooks and Memoization](../01-language/hooks-and-memoization.md)
-- [Hook runtime](../02-runtime/hooks-memoization.md)
+- [Event Ownership and Caching](../01-language/hooks-and-memoization.md)
+- [Runtime Dispatch and Caches](../02-runtime/hooks-memoization.md)
 - [Cranelift JIT](../02-runtime/cranelift-jit.md)
 
 ## MemoCacheRecord

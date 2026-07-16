@@ -180,9 +180,6 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
         }
         | Expr::NamedBlock {
             statements, value, ..
-        }
-        | Expr::MemoBlock {
-            statements, value, ..
         } => {
             stmts_contain_unchecked_promotion(statements)
                 || value

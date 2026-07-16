@@ -34,12 +34,9 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
         "entry start {}\n",
         "extern capability audio\n",
         "extern mod native\n",
-        "hook startup {}\n",
         "dialogue defaults {}\n",
-        "memo fn cached() {}\n",
         "test smoke {}\n",
         "bench speed {}\n",
-        "parser arcw {}\n",
         "source data {}\n",
         "style theme {}\n",
         "let top = true\n",
@@ -75,12 +72,9 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
             SyntaxKind::EntryDeclarationItem,
             SyntaxKind::ExternCapabilityItem,
             SyntaxKind::ExternModuleItem,
-            SyntaxKind::HookItem,
             SyntaxKind::DialogueDefaultsItem,
-            SyntaxKind::MemoFunctionItem,
             SyntaxKind::TestItem,
             SyntaxKind::BenchItem,
-            SyntaxKind::ParserItem,
             SyntaxKind::SourceItem,
             SyntaxKind::StyleItem,
             SyntaxKind::TopLevelFlowItem,
@@ -112,12 +106,9 @@ const fn is_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::ExternModuleItem
-            | SyntaxKind::HookItem
             | SyntaxKind::DialogueDefaultsItem
-            | SyntaxKind::MemoFunctionItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
-            | SyntaxKind::ParserItem
             | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
             | SyntaxKind::TopLevelFlowItem

@@ -354,11 +354,6 @@ pub enum Expr {
         statements: Vec<Stmt>,
         value: Option<Box<Expr>>,
     },
-    MemoBlock {
-        options: Vec<(String, Expr)>,
-        statements: Vec<Stmt>,
-        value: Option<Box<Expr>>,
-    },
     NamedBlock {
         name: String,
         statements: Vec<Stmt>,

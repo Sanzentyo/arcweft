@@ -432,33 +432,13 @@ let visible_choices = seq {
 
 `seq { yield ... }` は pure lazy sequence。device input の `Source` とは別。
 
-## Memoization bounds
+## Subsystem cache bounds
 
-Memoization には stable key が必要。
-
-```arcw
-memo fn route_available(state: GameState, route: Ref<Flow>) -> bool
-scope = scene
-where
-    GameState: StableHash,
-    Ref<Flow>: Hash + Eq
-{
-    ...
-}
-```
-
-結果を cache に保持する場合は `Clone` も要求できる。
-
-```arcw
-memo fn expensive<T>(x: T) -> Computed
-scope = session
-where
-    T: StableHash + Eq,
-    Computed: Clone
-{
-    ...
-}
-```
+Cache policy is not part of a function declaration. A subsystem that retains a
+value may require typed key traits such as `StableHash + Eq`, and may require an
+owned or `Clone` result, at that subsystem API boundary. Ordinary functions do
+not gain cache-specific bounds merely because the compiler or runtime can reuse
+their pure result.
 
 ## Coherence
 

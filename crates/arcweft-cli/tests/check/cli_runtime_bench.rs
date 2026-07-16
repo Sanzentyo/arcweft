@@ -523,12 +523,12 @@ proof @proof.requires_only {
 }
 
 #[test]
-fn verify_json_reports_unknown_proof_axiom() {
+fn verify_json_reports_unknown_proof_dependency() {
     let path = temp_arcw(
-        "verify-proof-axiom",
+        "verify-proof-dependency",
         r"
-proof @proof.missing_axiom {
-    use @axiom.missing
+proof @proof.missing_dependency {
+    use @proof.missing
     check no_lifetime_below(LineSummary, 'flow)
 }
 ",
@@ -545,12 +545,12 @@ proof @proof.missing_axiom {
 
     assert!(
         !output.status.success(),
-        "unknown proof axiom should fail test-mode verification"
+        "unknown proof dependency should fail test-mode verification"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("proof_body") && stdout.contains("axiom.missing"),
-        "JSON report should include the unknown axiom obligation: {stdout}"
+        stdout.contains("proof_body") && stdout.contains("proof.missing"),
+        "JSON report should include the unknown proof dependency obligation: {stdout}"
     );
 }
 

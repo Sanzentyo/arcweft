@@ -95,14 +95,15 @@ Verification must collect:
 - generated proof obligations
 - proof item bodies
 - proof references such as proof = @proof.id
-- trusted axiom declarations
+- `#[verify.trusted(reason = "...")]` proof metadata
+- transitive trusted proof dependencies
 - unsafe lifetime audit blocks
-- assume clauses and their reasons/axioms
+- assume clauses and their proof dependencies
 ```
 
-Release verification should reject undisclosed audited unsafe and unproven
-non-trivial lifetime promotion, thread capture, global mutation, and MustDrop
-override obligations.
+Release verification should reject undisclosed audited unsafe, policy-forbidden
+trusted proof evidence, and unproven non-trivial lifetime promotion, thread
+capture, global mutation, and MustDrop override obligations.
 
 The semantic pass lives in `arcweft-lang-sema::analyze_semantics` and returns a
 structured `SemanticReport`. `arcweft-verify` treats that report as the source
@@ -115,7 +116,7 @@ thread and line child task write conflicts, and MustDrop registry values such
 as `'line.focus` that are not explicitly dropped or transferred.
 
 Effects are checked as semantic facts, not as ordinary value expressions.
-Flow/function contracts and hook headers grant capabilities in the checked body:
+Flow/function contracts grant capabilities in the checked body:
 
 ```arcw
 flow @flow.effects effects
@@ -137,7 +138,7 @@ capabilities discharge them automatically.
 This Phase 1.9 pass is CFG-aware for blocks, branches, line plans,
 cancellation rules, bounded loop fixed points, and scoped `defer` outcomes. It
 checks proof references against typed `ensures` / `check` proof-body targets,
-reports unjustified proof `assume` clauses and unknown trusted axiom references
+reports unjustified proof `assume` clauses and unknown proof dependencies
 as `proof_body` obligations, and validates that unsafe audit blocks contain the
 unchecked operation they justify. Ownership/region validation rejects borrowed
 values escaping through block final values, returns, line-plan `out`, or

@@ -121,6 +121,7 @@ impl RuntimePlanReport {
             VerificationPolicy {
                 mode: VerificationMode::Dev,
                 backend: BackendKind::Emit,
+                allow_trusted_proofs: true,
             },
         );
         Self {

@@ -31,5 +31,5 @@
 - [Proofs and Unsafe Lifetime Audits](proofs-and-unsafe-audits.md)
 - [入力パース](parsing.md)
 - [macro / template / precompile](macros-precompile.md)
-- [Hooks and Memoization](hooks-and-memoization.md)
+- [Event Ownership and Caching](hooks-and-memoization.md)
 - [文法サマリ](grammar.md)

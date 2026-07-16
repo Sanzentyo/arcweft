@@ -316,9 +316,6 @@ fn collect_mounted_view_ids_from_expr(expr: &Expr, ids: &mut BTreeSet<String>) {
         | Expr::ComputationBlock {
             statements, value, ..
         }
-        | Expr::MemoBlock {
-            statements, value, ..
-        }
         | Expr::NamedBlock {
             statements, value, ..
         } => collect_mounted_view_ids_from_block_expr(statements, value.as_deref(), ids),

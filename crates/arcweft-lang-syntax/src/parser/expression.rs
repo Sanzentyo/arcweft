@@ -146,9 +146,6 @@ fn parse_prefix(
         "result" | "task" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
             composite::emit_computation_block(parser, end, role)
         }
-        "memo" if composite::has_braced_body(parser, end) => {
-            composite::emit_memo_block(parser, end, role)
-        }
         "scope" if composite::has_braced_body(parser, end) => {
             composite::emit_named_block(parser, end, role)
         }

@@ -35,24 +35,6 @@ pub(super) enum OptionalLabel {
     Some(String),
 }
 
-pub(super) fn trimmed_nonempty_lines_with_offsets(source: &str) -> Vec<(&str, usize)> {
-    let mut offset = 0;
-    source
-        .split_inclusive('\n')
-        .filter_map(|raw_line| {
-            let line_offset = offset;
-            offset += raw_line.len();
-            let line = raw_line.strip_suffix('\n').unwrap_or(raw_line);
-            let line = line.strip_suffix('\r').unwrap_or(line);
-            let trimmed = line.trim();
-            (!trimmed.is_empty()).then(|| {
-                let leading = line.len() - line.trim_start().len();
-                (trimmed, line_offset + leading)
-            })
-        })
-        .collect()
-}
-
 #[derive(Default)]
 pub(super) struct PendingDocLines {
     start_line: Option<usize>,
@@ -768,23 +750,6 @@ pub(super) fn is_typed_stmt(trimmed: &str) -> bool {
                 | "break"
                 | "continue"
         )
-    )
-}
-
-pub(super) fn parse_memo_block_options(source: &str) -> Option<Vec<(String, Expr)>> {
-    let args = source
-        .trim()
-        .strip_prefix("memo(")?
-        .trim_end()
-        .strip_suffix(')')?;
-    Some(
-        split_comma_args(args)
-            .into_iter()
-            .filter_map(|part| {
-                split_top_level_punctuation_once(part, '=')
-                    .map(|(name, value)| (name.trim().to_owned(), parse_expr_lossy(value.trim())))
-            })
-            .collect(),
     )
 }
 

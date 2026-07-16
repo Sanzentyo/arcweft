@@ -683,97 +683,42 @@ test @test.layer_order_opening visual {
 8. Agent/MCP/test は layer と hit region を共通利用する。
 ```
 
-## Layer hooks
+## Layer-owned routing
 
-Layer は hook の主要対象でもある。入力 routing、modal、focus、Agent 観測、render pass の前後で hook を実行できる。
-
-```arcw
-hook @hook.modal.escape
-on @layer.modal
-phase InputCapture
-check on input KeyDown
-when input.key == .Escape
-{
-    action.invoke(@action.modal.close)
-    consume input
-}
-```
-
-Layer hook の詳細は [Object Hooks](../01-language/hooks-and-memoization.md) を参照。
+Modal、focus、capture は LayerTree/InputRouter が所有し、target-specific input
+は View/Activity の local handler が処理する。Agent 観測と render-pass
+diagnostics は同じ routing/render trace を read-only に参照する。詳細は
+[Event Ownership and Caching](../01-language/hooks-and-memoization.md) を参照。
 
 
-## Hook との統合
+## Local handlers and layer traces
 
-Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
+Layer declaration owns routing policy; target View nodes own interaction.
 
 ```arcw
 layer @layer.choices: Choice {
     z = 550
     input = hit_test
     hit_test = view_layout
-
-    hook @hook.layer.choices.pointer_enter
-    on @layer.choices
-    phase InputTarget
-    check on input PointerEnter
-    {
-        signal.set(@signal.hovered_layer, Some(@layer.choices))
-    }
-
-    hook @hook.layer.choices.layout_changed
-    on @layer.choices
-    phase AfterLayout
-    when layout.changed
-    {
-        log.debug("choices layer layout changed")
-    }
 }
 ```
 
-入力 routing では hook の `InputDisposition` が routing 結果に影響する。Modal、pointer capture、debug overlay、Agent overlay はこの仕組みで共通化される。
+入力 routing の `InputDisposition` と layout change は typed trace に記録され、
+test / Agent / logging が直接検査する。
 
-## Layer hooks and memoized hit-test
+## Retained hit-test inventory
 
-Layer は Hook target でもある。描画順・visibility・input policy・focus などの変化に対して hook を attach できる。
+入力 routing の hit regions は committed LayerTree と View layout inventory から
+InputRouter が導出する。再利用する場合も owner が `LayerTreeHash` と layout
+revision を typed key として管理し、author source に cache key を書かせない。
 
-```arcw
-hook @hook.choice_view_appeared
-on @layer.choice_view
-phase AfterLayout
-when visible(self)
-once per scene
-{
-    log.info("choice layer appeared")
-}
-
-hook @hook.modal_opened
-on @layer.modal.settings
-phase AfterLayout
-when visible(self)
-effects { signal_write }
-{
-    signal.set(@signal.modal_open, Some(self))
-}
-```
-
-入力 routing に関する高コスト判定は memo 化できる。
-
-```arcw
-memo fn choice_hit_regions(tree: LayerTree) -> Vec<HitRegion>
-scope = frame
-depends layer_tree_hash(tree), view_layout_hash(@layer.choice_view)
-{
-    collect_hit_regions(@layer.choice_view, tree)
-}
-```
-
-Layer hook は `LayerTreeHash` と一緒に replay trace に記録できる。これにより、同じ frame に同じ layer change が起きたかを検査できる。
+Layer change と routing result は `LayerTreeHash` と一緒に replay trace に記録
+できる。これにより、同じ frame に同じ変化が起きたかを検査できる。
 
 関連:
 
-- [Object Hooks](../01-language/hooks-and-memoization.md)
-- [Runtime Hook Scheduler](../02-runtime/hooks-memoization.md)
-- [Memoization](../01-language/hooks-and-memoization.md)
+- [Event Ownership and Caching](../01-language/hooks-and-memoization.md)
+- [Runtime Dispatch and Caches](../02-runtime/hooks-memoization.md)
 
 
 ## Device and virtual controller sources

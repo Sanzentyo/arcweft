@@ -416,9 +416,9 @@ ensures no_lower_layer_receives_keyboard_while_active
 ```
 
 
-## Hooks on layered input
+## Layer routing trace
 
-Layer routing の各段階は hook phase を発火する。
+Layer routing の各段階は typed trace phase を記録する。
 
 ```text
 BeforeHitTest
@@ -427,74 +427,48 @@ BeforeInputRoute
 AfterInputRoute
 ```
 
-例:
+これにより、modal が world layer の入力を本当に止めたかを test / Agent /
+log が `AfterInputRoute` record から直接検査できる。
+
+## Owner-local input handlers
+
+Modal や drag capture は InputRouter、hit した object と bubble behavior は
+target View/Activity tree が所有する。
 
 ```arcw
-hook @hook.modal_block_check
-on @layer.view.modal
-phase AfterInputRoute
-when input.kind == .PointerDown
-check on event
-{
-    if route.result == .BlockedBelow {
-        signal.set(@signal.modal_blocked_input, true)
-    }
+view ChoiceButton(choice: ChoiceView) {
+    Button(choice.label)
+        .on_pointer_enter {
+            action.invoke(@action.choice.hover, choice.id)
+        }
 }
 ```
 
-これにより、modal が world layer の入力を本当に止めたかを test / Agent / log で検査できる。
+詳細: [Event Ownership and Caching](../01-language/hooks-and-memoization.md)
 
-## Input hooks
+## Input routing phases
 
-Input routing の各 phase では hook を実行できる。`input.capture` hook は modal や drag capture、`input.target` hook は実際に hit した object、`input.bubble` hook は親 layer への伝播に使う。
-
-```arcw
-hook @hook.choice.hover
-on @choice.opening.listen
-phase InputTarget
-check on input PointerMove
-when input.pointer.hovered
-{
-    event.emit(ViewCommand::SetHover, target = @choice.opening.listen, value = true)
-}
-```
-
-詳細: [Object Hooks](../01-language/hooks-and-memoization.md)
-
-## Input hook phases
-
-Layered input は hook phase を持つ。
+Layered input は次の internal routing phase を持つ。
 
 ```text
 RawInputEvent
-  → before_input hooks
+  → capture policy
   → layer candidate collection
-  → hit_test hooks
+  → hit-test
   → target dispatch
-  → on_input hooks
+  → target-local handler
   → bubble phase
-  → after_input hooks
+  → trace commit
 ```
 
-例:
-
-```arcw
-hook @hook.choice.hit_trace
-on @layer.view.choices
-phase InputHitTest
-check on input PointerMove
-when object.entity == @choice.opening.listen
-{
-    log.debug("hit choice listen")
-}
-```
-
-`hit_test` hook は custom hit-test、mask 判定、Activity 独自判定、Agent 操作用の診断に使う。実際の状態変更は hook 内で直接行わず、`InputDisposition`、`GameEvent`、`Command` として返す。
+Custom hit-test、mask 判定、Activity 独自判定は respective owner API が
+実装する。Agent/debug diagnosis は trace を読む。実際の状態変更は入力処理
+から直接行わず、`InputDisposition`、semantic action、`Command` として返す。
 
 
-## Hook との統合
+## Layer dispatch integration
 
-Layer は hook 対象である。描画・入力・layout・Agent 観測の各 phase に hook を付けられる。
+Layer declaration owns routing policy; interaction remains on the target node.
 
 ```arcw
 layer @layer.choices: Choice {
@@ -503,78 +477,57 @@ layer @layer.choices: Choice {
     hit_test = view_layout
 }
 
-hook @hook.layer.choices.pointer_enter
-on @layer.choices
-phase InputTarget
-check on input PointerEnter
-{
-    signal.set(@signal.hovered_layer, Some(@layer.choices))
-}
-
-hook @hook.layer.choices.layout_changed
-on @layer.choices
-phase AfterLayout
-check on change layout
-{
-    log.debug("choices layer layout changed")
+view ChoiceButton(choice: ChoiceView) {
+    Button(choice.label)
+        .on_pointer_enter {
+            action.invoke(@action.choice.hover, choice.id)
+        }
 }
 ```
 
-入力 routing では hook の `InputDisposition` が routing 結果に影響する。Modal、pointer capture、debug overlay、Agent overlay はこの仕組みで共通化される。
+入力 routing では local handler の `InputDisposition` が routing 結果に影響
+する。Modal、pointer capture、debug overlay、Agent overlay は typed router
+と trace を共有する。
 
 
-## Input hooks
+## Target input handling
 
-Layer routing の各 phase は hook の trigger になる。
+Layer routing は hit target の local handler を呼ぶ。
 
 ```arcw
-hook @hook.choice_click
-on @choice.opening.listen
-phase InputTarget
-check on input PointerClick
-{
-    event.emit(GameEvent::ChoiceSelected, id = @choice.opening.listen)
-    stop_propagation
+view ChoiceButton(choice: ChoiceView) {
+    Button(choice.label)
+        .on_click {
+            action.invoke(@action.choice.select, choice.id)
+        }
 }
 ```
 
-入力 hook の戻り値は `InputDisposition` として routing trace に保存され、replay できる。
+handler の戻り値は `InputDisposition` として routing trace に保存され、replay
+できる。
 
-## Input hooks
+## Semantic event integration
 
-Layered Input は Object Hook Runtime と接続する。`RoutedInputEvent` が生成されたあと、`OnInputTarget` phase の Hook が評価される。
-
-```arcw
-on @choice.opening.listen input click
-when enabled(self)
-{
-    event.emit(GameEvent::ChoiceSelected, id = self)
-}
-```
-
-Hook によって生成された `GameEvent` は、通常の input lowering と同じ semantic event stream に入る。Hook は state を直接書き換えない。
+`RoutedInputEvent` の target-local handler が生成した semantic action は通常の
+input lowering と同じ event stream に入る。handler は durable state を直接
+書き換えない。
 
 ```text
 RawInputEvent
   → InputRouter
   → RoutedInputEvent
-  → OnInputTarget hooks
+  → target-local handler
   → SemanticInputEvent / GameEvent
   → reducer
 ```
 
-Hit-test や target resolution が高コストな場合は、frame scoped memo を使う。
-
-```arcw
-let routed = memo(scope=frame, key=(raw, layer_tree.routing_hash)) {
-    route_input(raw, layer_tree, hit_regions)
-}
-```
+Hit-test や target resolution が高コストな場合は、InputRouter が committed
+LayerTree routing hash と hit-region revision を typed cache key として管理する。
+Author source does not provide a frame-cache key.
 
 関連:
 
-- [Object Hook Runtime](hooks-memoization.md)
-- [Runtime Memoization](hooks-memoization.md)
+- [Runtime Dispatch and Caches](hooks-memoization.md)
 
 
 ## Device and virtual controller sources

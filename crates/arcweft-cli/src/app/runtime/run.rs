@@ -222,6 +222,7 @@ fn require_runtime_verification_safety(checked: &CheckedModule) -> Result<(), Ex
         VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Emit,
+            allow_trusted_proofs: true,
         },
     );
     if verification.has_blocking_runtime_safety_gaps() {
