@@ -36,8 +36,9 @@ use arcweft_runtime_driver::view_runtime::{
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{
     AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
-    DialogueStageIndex, RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewPartLocalName,
-    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId,
+    DialogueStageIndex, EventKind, RustViewId, ViewDescriptor, ViewId, ViewImplementation,
+    ViewInstruction, ViewPartLocalName, ViewPartName, ViewProgramId, ViewRegistry,
+    ViewRegistryError, ViewSchemaId,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use std::collections::BTreeSet;
@@ -211,6 +212,36 @@ fn accepted_catalog_rejects_host_owner_collision_before_publication() {
         Err(BundleViewRuntimeError::Registry(
             ViewRegistryError::DuplicateViewId(id)
         )) if id == collision
+    ));
+}
+
+#[test]
+fn authored_click_handler_enters_the_catalog_as_control_activation() {
+    let mut program = minimal_program("view.program.click", "view.Clickable", 1);
+    program.definitions[0].body = ViewInstructionSpan::new(0, 1);
+    program.instructions = vec![ViewProgramInstruction::BindHandler {
+        event: "click".to_owned(),
+        handler: "handler.click".to_owned(),
+        source: None,
+    }];
+    program.handlers = vec![arcweft_bundle::resource_codec::view::ViewHandlerRef {
+        handler_id: "handler.click".to_owned(),
+        event: "click".to_owned(),
+        awbc_function_index: 0,
+        handler_abi: arcweft_bundle::container::BundleDigest::of(b"handler.click"),
+        function_binding: None,
+    }];
+
+    let product = validated_product(program);
+    let runtime = AcceptedBundleViewRuntime::try_new(product, None, None).unwrap();
+    let definition = runtime
+        .catalog()
+        .unwrap()
+        .definition(&ViewId::try_new("view.Clickable").unwrap())
+        .unwrap();
+    assert!(matches!(
+        definition.instructions(),
+        [ViewInstruction::BindEvent(binding)] if binding.event == EventKind::Activate
     ));
 }
 

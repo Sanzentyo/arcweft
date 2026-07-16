@@ -695,7 +695,11 @@ mod tests {
         ));
         assert_eq!(endpoint.active_awfb_bytes(), target_bytes);
         assert_ne!(endpoint.active_awfb_bytes(), base_bytes);
-        assert_eq!(endpoint.session().source_label(), "renamed-source.arcw");
+        assert_eq!(
+            endpoint.session().source_label(),
+            "native-patch.arcw",
+            "manifest-only metadata cannot replace SourceMap-owned source identity"
+        );
         assert_eq!(
             endpoint.session().active_container_artifact_identity(),
             Some(target_identity)

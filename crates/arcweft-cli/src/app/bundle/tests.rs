@@ -16,6 +16,7 @@ use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::path::Path;
 
 mod scroll_style;
+mod view_part_recovery;
 mod view_sidecars;
 
 fn image_await(id: &str) -> FlowOp {

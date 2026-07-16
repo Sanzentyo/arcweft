@@ -556,7 +556,10 @@ fn map_await_branch(
 
 fn parse_event(event: &str) -> Option<EventKind> {
     match event {
-        "activate" => Some(EventKind::Activate),
+        // `.on_click` is the authoring surface for a control activation. Runtime
+        // dispatch deliberately uses the input-agnostic activation event so the
+        // same handler is reachable from pointer, keyboard, and accessibility input.
+        "activate" | "click" => Some(EventKind::Activate),
         "pointer_down" => Some(EventKind::PointerDown),
         "pointer_up" => Some(EventKind::PointerUp),
         "pointer_move" => Some(EventKind::PointerMove),

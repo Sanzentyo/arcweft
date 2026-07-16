@@ -461,8 +461,8 @@ fn save_decode_rejects_mismatched_bundle_generation() {
 
 #[test]
 fn save_decode_rejects_same_root_from_a_different_bundle_manifest() {
-    let source_bytes = product_awfb_bytes_with_label("entry.main", "source-session.arcw");
-    let target_bytes = product_awfb_bytes_with_label("entry.main", "target-session.arcw");
+    let source_bytes = product_awfb_bytes_with_profile("entry.main", "profile.source");
+    let target_bytes = product_awfb_bytes_with_profile("entry.main", "profile.target");
     let source_view =
         BundleView::parse(&source_bytes, ReadBudget::default()).expect("source AWFB parses");
     let target_view =
@@ -590,6 +590,14 @@ fn product_awfb_bytes(entry: &str) -> Vec<u8> {
 
 fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
     product_bundle_with_label(entry, source_label)
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("awfb encodes")
+}
+
+fn product_awfb_bytes_with_profile(entry: &str, profile_id: &str) -> Vec<u8> {
+    let mut bundle = product_bundle_with_label(entry, "awbc-session.arcw");
+    bundle.manifest.profile_id = Some(profile_id.to_owned());
+    bundle
         .to_format_bytes(BundleFormat::Awfb)
         .expect("awfb encodes")
 }
