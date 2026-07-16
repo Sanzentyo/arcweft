@@ -304,8 +304,8 @@ impl ViewMountState {
         self.mount
     }
 
-    pub const fn program(&self) -> ViewProgramId {
-        self.program
+    pub const fn program(&self) -> &ViewProgramId {
+        &self.program
     }
 
     pub const fn state_schema_hash(&self) -> u64 {
@@ -411,7 +411,7 @@ impl ViewMountState {
     pub fn snapshot(&self) -> ViewMountSnapshot {
         ViewMountSnapshot {
             mount: self.mount,
-            program: self.program,
+            program: self.program.clone(),
             state_schema_hash: self.state_schema_hash,
             parameters: self.parameters.clone(),
             state: self.state.clone(),
@@ -421,14 +421,14 @@ impl ViewMountState {
     /// Restores a mount atomically after schema, type, and identity checks.
     pub fn from_snapshot(
         snapshot: &ViewMountSnapshot,
-        expected_program: ViewProgramId,
+        expected_program: &ViewProgramId,
         expected_state_schema_hash: u64,
         inventory: &ViewValueProgramInventory,
     ) -> Result<Self, ViewValueEvaluationError> {
-        if snapshot.program != expected_program {
+        if &snapshot.program != expected_program {
             return Err(ViewValueEvaluationError::ProgramMismatch {
-                saved: snapshot.program,
-                expected: expected_program,
+                saved: snapshot.program.clone(),
+                expected: expected_program.clone(),
             });
         }
         if snapshot.state_schema_hash != expected_state_schema_hash {
@@ -451,7 +451,7 @@ impl ViewMountState {
         validate_inputs("state", &state, inventory.state_types())?;
         Ok(Self {
             mount: snapshot.mount,
-            program: snapshot.program,
+            program: snapshot.program.clone(),
             state_schema_hash: snapshot.state_schema_hash,
             parameters: snapshot.parameters.clone(),
             state: snapshot.state.clone(),
@@ -580,6 +580,10 @@ mod tests {
     };
     use crate::{ViewMountAllocator, ViewProgramId};
 
+    fn program_id(value: &str) -> ViewProgramId {
+        ViewProgramId::try_new(value).unwrap()
+    }
+
     fn inventory() -> ViewValueProgramInventory {
         let schema = || {
             ValueProgramSchema::new(
@@ -629,7 +633,7 @@ mod tests {
         let id = ViewMountAllocator::default().allocate().unwrap();
         ViewMountState::new(
             id,
-            ViewProgramId(9),
+            program_id("view-program.test"),
             0xCAFE,
             vec![FxRuntimeValue::Bool(false), FxRuntimeValue::I32(2)],
             vec![FxRuntimeValue::I32(5)],
@@ -686,7 +690,7 @@ mod tests {
         let mut allocator = ViewMountAllocator::default();
         let mut left = ViewMountState::new(
             allocator.allocate().unwrap(),
-            ViewProgramId(9),
+            program_id("view-program.test"),
             1,
             vec![FxRuntimeValue::Bool(false), FxRuntimeValue::I32(2)],
             vec![FxRuntimeValue::I32(5)],
@@ -695,7 +699,7 @@ mod tests {
         .unwrap();
         let mut right = ViewMountState::new(
             allocator.allocate().unwrap(),
-            ViewProgramId(9),
+            program_id("view-program.test"),
             1,
             vec![FxRuntimeValue::Bool(false), FxRuntimeValue::I32(8)],
             vec![FxRuntimeValue::I32(5)],
@@ -738,7 +742,7 @@ mod tests {
         let inventory = ViewValueProgramInventory::from_programs([program]).unwrap();
         let mut mount = ViewMountState::new(
             ViewMountAllocator::default().allocate().unwrap(),
-            ViewProgramId(1),
+            program_id("view-program.context"),
             1,
             Vec::new(),
             Vec::new(),
@@ -807,15 +811,25 @@ mod tests {
             .set_state(0, FxRuntimeValue::I32(6), &inventory)
             .unwrap();
         let snapshot = mount.snapshot();
-        let restored =
-            ViewMountState::from_snapshot(&snapshot, ViewProgramId(9), 0xCAFE, &inventory).unwrap();
+        let restored = ViewMountState::from_snapshot(
+            &snapshot,
+            &program_id("view-program.test"),
+            0xCAFE,
+            &inventory,
+        )
+        .unwrap();
 
         assert_eq!(restored.snapshot(), snapshot);
         assert_eq!(
-            ViewMountState::from_snapshot(&snapshot, ViewProgramId(10), 0xCAFE, &inventory),
+            ViewMountState::from_snapshot(
+                &snapshot,
+                &program_id("view-program.other"),
+                0xCAFE,
+                &inventory,
+            ),
             Err(ViewValueEvaluationError::ProgramMismatch {
-                saved: ViewProgramId(9),
-                expected: ViewProgramId(10),
+                saved: program_id("view-program.test"),
+                expected: program_id("view-program.other"),
             })
         );
     }

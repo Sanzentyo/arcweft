@@ -2,12 +2,17 @@ use crate::{
     ContainerKind, CustomElementId, EntityStore, EventBinding, EventKind, FragmentKind, HandlerId,
     ImageId, LayoutBox, LayoutKind, LayoutLength, LayoutPoint, LayoutResults, LayoutSize,
     LayoutTree, NodeId, NodeKey, RichTextSourceId, SemanticSpecId, TextSourceId, ViewError,
-    ViewFragmentBuilder, ViewId, ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId,
+    ViewFragmentBuilder, ViewRegistryId, ViewStyleApplicationTarget, ViewStylePatchId,
+    ViewStyleSheetId,
 };
 
 #[derive(Debug, Eq, PartialEq)]
 struct DialogueSkinState {
     hovered_nameplate: bool,
+}
+
+fn registry_id(index: usize) -> ViewRegistryId {
+    ViewRegistryId::try_from_index(index).unwrap()
 }
 
 #[test]
@@ -18,7 +23,7 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
             DialogueSkinState {
                 hovered_nameplate: false,
             },
-            Some(ViewId(4)),
+            Some(registry_id(4)),
         )
         .unwrap();
 

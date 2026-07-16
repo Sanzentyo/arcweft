@@ -1,8 +1,8 @@
 use crate::{
     ContainerKind, CustomElementId, DisplayItemKind, DisplayList, EntityStore, FragmentKind,
     ImageId, LayoutBox, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey,
-    RichTextSourceId, SemanticSpecId, TextSourceId, ViewError, ViewFragmentBuilder, ViewId,
-    ViewLayerOutput, ViewSemanticFragmentBuilder, ViewSemanticNode,
+    RichTextSourceId, SemanticSpecId, TextSourceId, ViewError, ViewFragmentBuilder,
+    ViewLayerOutput, ViewRegistryId, ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
@@ -19,6 +19,10 @@ fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).unwrap()
 }
 
+fn registry_id(index: usize) -> ViewRegistryId {
+    ViewRegistryId::try_from_index(index).unwrap()
+}
+
 #[test]
 fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
     let mut entities = EntityStore::default();
@@ -27,7 +31,7 @@ fn display_list_emits_laid_out_paint_nodes_in_fragment_order() {
             DialogueSkinState {
                 hovered_nameplate: false,
             },
-            Some(ViewId(1)),
+            Some(registry_id(1)),
         )
         .unwrap();
     let mut builder = ViewFragmentBuilder::default();

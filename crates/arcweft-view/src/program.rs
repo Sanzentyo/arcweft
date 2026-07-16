@@ -479,12 +479,12 @@ impl ViewProgramBuilder {
 }
 
 impl ViewProgram {
-    pub const fn id(&self) -> ViewProgramId {
-        self.id
+    pub const fn id(&self) -> &ViewProgramId {
+        &self.id
     }
 
-    pub const fn view(&self) -> ViewId {
-        self.view
+    pub const fn view(&self) -> &ViewId {
+        &self.view
     }
 
     pub const fn state_schema_hash(&self) -> u64 {
@@ -746,9 +746,21 @@ mod tests {
     };
     use std::collections::BTreeSet;
 
+    fn view_id(value: &str) -> ViewId {
+        ViewId::try_new(value).unwrap()
+    }
+
+    fn program_id(value: &str) -> ViewProgramId {
+        ViewProgramId::try_new(value).unwrap()
+    }
+
     #[test]
     fn view_program_builder_preserves_instruction_order_before_fragment_lowering() {
-        let mut builder = ViewProgramBuilder::new(ViewProgramId(1), ViewId(2), 0xCAFE);
+        let mut builder = ViewProgramBuilder::new(
+            program_id("view-program.test"),
+            view_id("view.test"),
+            0xCAFE,
+        );
         let instruction = builder
             .push(ViewInstruction::OpenElement(ViewElementSpec {
                 kind: ViewElementKind::TextField,
@@ -786,7 +798,8 @@ mod tests {
 
     #[test]
     fn view_program_builder_failure_preserves_exact_state() {
-        let mut builder = ViewProgramBuilder::new(ViewProgramId(1), ViewId(2), 0);
+        let mut builder =
+            ViewProgramBuilder::new(program_id("view-program.test"), view_id("view.test"), 0);
         let first_instruction = builder
             .push(ViewInstruction::EmitText(ViewTextSpec {
                 source: TextSourceId(1),
@@ -833,10 +846,11 @@ mod tests {
 
     #[test]
     fn call_view_can_be_private_but_cannot_be_exported() {
-        let mut builder = ViewProgramBuilder::new(ViewProgramId(1), ViewId(2), 0);
+        let mut builder =
+            ViewProgramBuilder::new(program_id("view-program.test"), view_id("view.test"), 0);
         let instruction = builder
             .push(ViewInstruction::CallView(ViewCall {
-                view: ViewId(4),
+                view: view_id("view.nested"),
                 arguments: Vec::new(),
                 styles: Vec::new(),
                 part: None,
@@ -895,7 +909,7 @@ mod tests {
                 part: None,
             }),
             ViewInstruction::CallView(ViewCall {
-                view: ViewId(4),
+                view: view_id("view.nested"),
                 arguments: Vec::new(),
                 styles: applications.clone(),
                 part: None,

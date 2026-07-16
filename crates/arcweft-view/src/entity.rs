@@ -1,6 +1,6 @@
 //! Safe generational View entity storage for stateful views.
 
-use crate::{ViewError, ViewId};
+use crate::{ViewError, ViewRegistryId};
 use core::{any::Any, marker::PhantomData, num::NonZeroU32};
 
 /// Untyped generational entity handle.
@@ -25,7 +25,7 @@ pub struct DirtyFlags(u8);
 struct EntitySlot {
     generation: NonZeroU32,
     state: Option<Box<dyn Any>>,
-    view: Option<ViewId>,
+    view: Option<ViewRegistryId>,
     dirty: DirtyFlags,
     queued: bool,
 }
@@ -116,7 +116,7 @@ impl DirtyFlags {
 }
 
 impl EntitySlot {
-    fn occupied<T: 'static>(state: T, view: Option<ViewId>) -> Self {
+    fn occupied<T: 'static>(state: T, view: Option<ViewRegistryId>) -> Self {
         Self {
             generation: NonZeroU32::MIN,
             state: Some(Box::new(state)),
@@ -142,7 +142,7 @@ impl EntityStore {
     pub fn insert<T: 'static>(
         &mut self,
         state: T,
-        view: Option<ViewId>,
+        view: Option<ViewRegistryId>,
     ) -> Result<Entity<T>, ViewError> {
         if let Some(index) = self.free.pop() {
             let slot = self
@@ -198,7 +198,7 @@ impl EntityStore {
         Ok(*state)
     }
 
-    pub fn view<T>(&self, entity: Entity<T>) -> Option<ViewId> {
+    pub fn view<T>(&self, entity: Entity<T>) -> Option<ViewRegistryId> {
         self.valid_slot(entity.raw).and_then(|slot| slot.view)
     }
 

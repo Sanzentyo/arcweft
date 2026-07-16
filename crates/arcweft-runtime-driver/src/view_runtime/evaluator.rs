@@ -19,7 +19,7 @@ use super::{
     BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewFrame, BundleViewFxApplication,
     BundleViewFxArgument, BundleViewInstancePath, BundleViewInstancePathSegment,
     BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime, BundleViewTextOutput,
-    MountedView, ViewOccurrenceKey, definition_program_id, deterministic_mount_seed,
+    MountedView, ViewOccurrenceKey, deterministic_mount_seed,
 };
 use crate::dialogue::DialogueViewInput;
 use crate::presentation_handles::{
@@ -139,6 +139,7 @@ impl MountRenderBuilder {
 
 struct ViewEvaluator<'a> {
     program: &'a ViewProgramResource,
+    program_id: &'a arcweft_view::ViewProgramId,
     parts: &'a ViewPartRuntimeCatalog,
     text: Option<&'a ViewTextResource>,
     definitions: &'a BTreeMap<String, usize>,
@@ -288,6 +289,7 @@ impl BundleViewRuntime {
 
         let mut evaluator = ViewEvaluator {
             program,
+            program_id: accepted.program_id(),
             parts: accepted.parts(),
             text: self.text.as_ref(),
             definitions: &self.definitions,
@@ -448,13 +450,7 @@ impl ViewEvaluator<'_> {
                 .collect();
             let mount_state = ViewMountState::new(
                 mount,
-                definition_program_id(definition_index).map_err(|error| {
-                    EvaluationFailure::new(
-                        BundleViewDiagnosticCode::InvalidControlFlow,
-                        None,
-                        error.to_string(),
-                    )
-                })?,
+                self.program_id.clone(),
                 definition.state_schema_hash,
                 parameters,
                 state,

@@ -4,13 +4,14 @@ use arcweft_bundle::resource_codec::{
     SectionCodecError,
     view::{ViewDefinitionRef, ViewProgramResource},
 };
-use arcweft_view::{ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewPartLocalName, ViewPartName, ViewProgramId};
 use std::collections::BTreeMap;
 
 /// One validated immutable View program accepted by the runtime.
 #[derive(Clone, Debug)]
 pub(crate) struct AcceptedViewProgram {
     resource: ViewProgramResource,
+    program_id: ViewProgramId,
     parts: ViewPartRuntimeCatalog,
 }
 
@@ -24,8 +25,14 @@ impl AcceptedViewProgram {
     pub(crate) fn try_new(mut resource: ViewProgramResource) -> Result<Self, SectionCodecError> {
         resource.bind_export_source_refs()?;
         let _ = resource.encode_canonical_section()?;
+        let program_id = ViewProgramId::try_new(resource.program_id.clone())
+            .map_err(|_| SectionCodecError::NonCanonicalTable("view_program_identities"))?;
         let parts = ViewPartRuntimeCatalog::from_resource(&resource);
-        Ok(Self { resource, parts })
+        Ok(Self {
+            resource,
+            program_id,
+            parts,
+        })
     }
 
     pub(crate) const fn resource(&self) -> &ViewProgramResource {
@@ -34,6 +41,10 @@ impl AcceptedViewProgram {
 
     pub(crate) const fn parts(&self) -> &ViewPartRuntimeCatalog {
         &self.parts
+    }
+
+    pub(crate) const fn program_id(&self) -> &ViewProgramId {
+        &self.program_id
     }
 }
 

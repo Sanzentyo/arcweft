@@ -467,7 +467,6 @@ impl BundleViewRuntime {
                     });
                 }
                 validate_definition_span(definition, program.instructions.len())?;
-                let _ = definition_program_id(index)?;
             }
         }
         Ok(Self {
@@ -482,6 +481,10 @@ impl BundleViewRuntime {
             mounts: BTreeMap::new(),
             axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
         })
+    }
+
+    fn accepted_program_id(&self) -> Option<&ViewProgramId> {
+        self.program.as_ref().map(AcceptedViewProgram::program_id)
     }
 
     #[must_use]
@@ -761,7 +764,11 @@ impl BundleViewRuntime {
             }
             let definition_index = self.definition_index(&saved.definition)?;
             let definition = self.definition(definition_index);
-            let program_id = definition_program_id(definition_index)?;
+            let program_id = self.accepted_program_id().ok_or_else(|| {
+                BundleViewRuntimeError::UnknownDefinition {
+                    definition: saved.definition.clone(),
+                }
+            })?;
             let state = ViewMountState::from_snapshot(
                 &saved.state,
                 program_id,
@@ -1000,14 +1007,6 @@ fn validate_definition_span(
         });
     }
     Ok(())
-}
-
-fn definition_program_id(index: usize) -> Result<ViewProgramId, BundleViewRuntimeError> {
-    u32::try_from(index).map(ViewProgramId).map_err(|_| {
-        BundleViewRuntimeError::InvalidDefinitionSpan {
-            definition: format!("definition[{index}]"),
-        }
-    })
 }
 
 fn validated_initialized_slots(

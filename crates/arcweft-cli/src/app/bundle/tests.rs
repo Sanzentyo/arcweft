@@ -1032,7 +1032,7 @@ fn assert_reactive_view_value_programs(
     let mut allocator = ViewMountAllocator::default();
     let mut mount = ViewMountState::new(
         allocator.allocate().unwrap(),
-        ViewProgramId(0),
+        ViewProgramId::try_new("view-program.authored-test").unwrap(),
         0,
         vec![],
         vec![FxRuntimeValue::I32(0)],

@@ -116,8 +116,9 @@ pub use value_program::{
     ViewValueProgramInventory, ViewValueSlotSnapshot,
 };
 pub use view::{
-    RustViewId, ViewDescriptor, ViewId, ViewImplementation, ViewMountAllocationError,
-    ViewMountAllocator, ViewMountId, ViewProgramId, ViewRegistry, ViewSchemaId,
+    AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewId, ViewIdentityError,
+    ViewImplementation, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewProgramId,
+    ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
 };
 
 /// Stable key for one retained View fragment node.
@@ -129,8 +130,6 @@ pub struct NodeKey(pub u64);
 pub enum ViewError {
     #[error("duplicate View node key {0:?}")]
     DuplicateNodeKey(NodeKey),
-    #[error("duplicate view public id {0}")]
-    DuplicateViewPublicId(arcweft_id::PublicId),
     #[error("stale View entity {0:?}")]
     StaleEntity(RawEntity),
     #[error("View entity has a different state type: {0:?}")]

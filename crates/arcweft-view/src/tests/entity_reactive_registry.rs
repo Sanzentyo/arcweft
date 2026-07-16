@@ -1,9 +1,9 @@
 use crate::{
     DirtyFlags, Entity, EntityStore, PropertyBinding, PropertyBindingTableBuilder, ReactiveGraph,
     Revision, RustViewId, ValueSourceId, ViewDescriptor, ViewError, ViewId, ViewImplementation,
-    ViewProgramId, ViewPropertyId, ViewPropertyKind, ViewRegistry, ViewSchemaId,
+    ViewProgramId, ViewPropertyId, ViewPropertyKind, ViewRegistry, ViewRegistryError,
+    ViewRegistryId, ViewSchemaId,
 };
-use arcweft_id::PublicId;
 
 #[derive(Debug, Eq, PartialEq)]
 struct DialogueSkinState {
@@ -15,25 +15,38 @@ struct InventoryState {
     selected_slot: u8,
 }
 
-fn public_id(value: &str) -> PublicId {
-    PublicId::try_new(value).unwrap()
+fn view_id(value: &str) -> ViewId {
+    ViewId::try_new(value).unwrap()
+}
+
+fn program_id(value: &str) -> ViewProgramId {
+    ViewProgramId::try_new(value).unwrap()
+}
+
+fn registry_id(index: usize) -> ViewRegistryId {
+    ViewRegistryId::try_from_index(index).unwrap()
 }
 
 #[test]
-fn view_registry_resolves_dense_view_ids() {
+fn view_registry_resolves_public_ids_to_dense_registry_ids() {
     let mut registry = ViewRegistry::default();
-    let public_id = public_id("view.dialogue.standard");
-    let descriptor = ViewDescriptor::new(
-        Some(public_id.clone()),
+    let public_id = view_id("view.dialogue.standard");
+    let descriptor = ViewDescriptor::arcweft(
+        public_id.clone(),
         ViewSchemaId(7),
-        0x1234,
-        ViewImplementation::Arcweft(ViewProgramId(3)),
+        program_id("view-program.dialogue"),
     );
 
     let id = registry.register(descriptor).unwrap();
-    assert_eq!(id, ViewId(0));
-    assert_eq!(registry.resolve_public_id(&public_id), Some(id));
+    assert_eq!(id, registry_id(0));
+    assert_eq!(registry.resolve(&public_id), Some(id));
     assert_eq!(registry.get(id).unwrap().schema(), ViewSchemaId(7));
+    assert_eq!(
+        registry.get(id).unwrap().implementation(),
+        &ViewImplementation::Arcweft {
+            program: program_id("view-program.dialogue")
+        }
+    );
 }
 
 #[test]
@@ -100,7 +113,7 @@ fn reactive_graph_coalesces_property_bindings_by_source_and_entity() {
             DialogueSkinState {
                 hovered_nameplate: false,
             },
-            Some(ViewId(3)),
+            Some(registry_id(3)),
         )
         .unwrap();
     let mut bindings = PropertyBindingTableBuilder::default();
@@ -162,20 +175,14 @@ fn reactive_graph_returns_empty_invalidation_for_unwatched_sources() {
 #[test]
 fn view_registry_rejects_duplicate_public_ids() {
     let mut registry = ViewRegistry::default();
-    let public_id = public_id("view.dialogue.standard");
-    let descriptor = || {
-        ViewDescriptor::new(
-            Some(public_id.clone()),
-            ViewSchemaId(1),
-            0,
-            ViewImplementation::Rust(RustViewId(1)),
-        )
-    };
+    let public_id = view_id("view.dialogue.standard");
+    let descriptor =
+        || ViewDescriptor::public_rust(public_id.clone(), ViewSchemaId(1), RustViewId(1));
     registry.register(descriptor()).unwrap();
 
     assert_eq!(
         registry.register(descriptor()),
-        Err(ViewError::DuplicateViewPublicId(public_id))
+        Err(ViewRegistryError::DuplicateViewId(public_id))
     );
 }
 
@@ -187,10 +194,10 @@ fn entity_store_rejects_stale_reused_handles() {
             DialogueSkinState {
                 hovered_nameplate: false,
             },
-            Some(ViewId(1)),
+            Some(registry_id(1)),
         )
         .unwrap();
-    assert_eq!(store.view(first), Some(ViewId(1)));
+    assert_eq!(store.view(first), Some(registry_id(1)));
     assert!(store.dirty(first).unwrap().contains(DirtyFlags::FRAGMENT));
 
     let removed = store.remove(first).unwrap();
@@ -202,7 +209,7 @@ fn entity_store_rejects_stale_reused_handles() {
     );
 
     let second = store
-        .insert(InventoryState { selected_slot: 2 }, Some(ViewId(2)))
+        .insert(InventoryState { selected_slot: 2 }, Some(registry_id(2)))
         .unwrap();
     assert_eq!(second.raw().index(), first.raw().index());
     assert_ne!(second.raw().generation(), first.raw().generation());
