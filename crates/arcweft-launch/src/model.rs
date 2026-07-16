@@ -229,6 +229,15 @@ pub struct LaunchProfileManifest {
     profiles: BTreeMap<String, LaunchProfileSpec>,
 }
 
+/// Policy for selecting one profile ID from a launch manifest.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LaunchProfileSelection<'a> {
+    /// Select exactly the requested ID without fallback.
+    Explicit(&'a str),
+    /// Apply manifest-default, previous-profile, then lexical-first precedence.
+    Automatic { previous: Option<&'a str> },
+}
+
 /// One launch profile entry in the manifest.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct LaunchProfileSpec {
@@ -360,6 +369,10 @@ pub enum LaunchProfileError {
     Parse(#[from] toml::de::Error),
     #[error("launch profile `{0}` was not found")]
     MissingProfile(String),
+    #[error("launch manifest does not declare any profile")]
+    NoProfiles,
+    #[error("launch manifest default profile `{profile}` was not found")]
+    InvalidDefaultProfile { profile: String },
     #[error("launch profile `{0}` must declare a source path")]
     MissingSource(String),
     #[error("launch profile `{profile}` uses unknown adapter `{adapter}`")]
@@ -387,6 +400,40 @@ impl LaunchProfileManifest {
     /// Parses an `arcw.toml` manifest body.
     pub fn parse_toml(source: &str) -> Result<Self, LaunchProfileError> {
         Ok(toml::from_str(source)?)
+    }
+
+    /// Selects one declared profile according to an explicit or automatic policy.
+    pub fn select_profile_id<'manifest>(
+        &'manifest self,
+        selection: LaunchProfileSelection<'_>,
+    ) -> Result<&'manifest str, LaunchProfileError> {
+        match selection {
+            LaunchProfileSelection::Explicit(profile) => self
+                .profiles
+                .get_key_value(profile)
+                .map(|(profile, _)| profile.as_str())
+                .ok_or_else(|| LaunchProfileError::MissingProfile(profile.to_owned())),
+            LaunchProfileSelection::Automatic { previous } => {
+                if let Some(profile) = self.default_profile.as_deref() {
+                    return self
+                        .profiles
+                        .get_key_value(profile)
+                        .map(|(profile, _)| profile.as_str())
+                        .ok_or_else(|| LaunchProfileError::InvalidDefaultProfile {
+                            profile: profile.to_owned(),
+                        });
+                }
+                if let Some(profile) = previous
+                    && let Some((profile, _)) = self.profiles.get_key_value(profile)
+                {
+                    return Ok(profile.as_str());
+                }
+                self.profiles
+                    .first_key_value()
+                    .map(|(profile, _)| profile.as_str())
+                    .ok_or(LaunchProfileError::NoProfiles)
+            }
+        }
     }
 
     /// Resolves one profile relative to the manifest directory.

@@ -1,6 +1,98 @@
 use super::*;
 use std::path::{Path, PathBuf};
 
+fn selection_manifest(default: Option<&str>) -> LaunchProfileManifest {
+    let default = default.map_or(String::new(), |profile| {
+        format!("default = \"{profile}\"\n")
+    });
+    LaunchProfileManifest::parse_toml(&format!(
+        r#"{default}
+[profiles.alpha]
+kind = "game"
+source = "alpha.arcw"
+
+[profiles.beta]
+kind = "game"
+source = "beta.arcw"
+"#
+    ))
+    .expect("selection manifest parses")
+}
+
+#[test]
+fn explicit_profile_selection_is_exact() {
+    let manifest = selection_manifest(Some("alpha"));
+    assert_eq!(
+        manifest
+            .select_profile_id(LaunchProfileSelection::Explicit("beta"))
+            .expect("explicit profile exists"),
+        "beta"
+    );
+    assert!(matches!(
+        manifest.select_profile_id(LaunchProfileSelection::Explicit("missing")),
+        Err(LaunchProfileError::MissingProfile(profile)) if profile == "missing"
+    ));
+}
+
+#[test]
+fn automatic_selection_prefers_valid_manifest_default() {
+    let manifest = selection_manifest(Some("alpha"));
+    assert_eq!(
+        manifest
+            .select_profile_id(LaunchProfileSelection::Automatic {
+                previous: Some("beta"),
+            })
+            .expect("default profile exists"),
+        "alpha"
+    );
+}
+
+#[test]
+fn automatic_selection_rejects_missing_manifest_default() {
+    let manifest = selection_manifest(Some("missing"));
+    assert!(matches!(
+        manifest.select_profile_id(LaunchProfileSelection::Automatic {
+            previous: Some("beta"),
+        }),
+        Err(LaunchProfileError::InvalidDefaultProfile { profile }) if profile == "missing"
+    ));
+}
+
+#[test]
+fn automatic_selection_retains_existing_previous_without_default() {
+    let manifest = selection_manifest(None);
+    assert_eq!(
+        manifest
+            .select_profile_id(LaunchProfileSelection::Automatic {
+                previous: Some("beta"),
+            })
+            .expect("previous profile exists"),
+        "beta"
+    );
+}
+
+#[test]
+fn automatic_selection_falls_back_to_lexicographic_first() {
+    let manifest = selection_manifest(None);
+    assert_eq!(
+        manifest
+            .select_profile_id(LaunchProfileSelection::Automatic {
+                previous: Some("removed"),
+            })
+            .expect("lexical fallback exists"),
+        "alpha"
+    );
+}
+
+#[test]
+fn automatic_selection_rejects_empty_profile_map() {
+    let manifest = LaunchProfileManifest::parse_toml("").expect("empty manifest parses");
+    assert!(matches!(
+        manifest.select_profile_id(LaunchProfileSelection::Automatic { previous: None }),
+        Err(LaunchProfileError::NoProfiles)
+    ));
+}
+
 #[test]
 fn parses_and_resolves_profiles_relative_to_manifest_dir() {
     let manifest = LaunchProfileManifest::parse_toml(

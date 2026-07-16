@@ -12,8 +12,8 @@ pub use model::{
     LaunchContentProfileSpec, LaunchContentResidency, LaunchDebugPolicy, LaunchHotReloadFallback,
     LaunchHotReloadMode, LaunchHotReloadProfileSpec, LaunchHotReloadStatePolicy, LaunchKind,
     LaunchMathBackend, LaunchPlayerProfileSpec, LaunchPlayerViewportFit, LaunchPlayerViewportSpec,
-    LaunchProfileError, LaunchProfileManifest, LaunchProfileSpec, LaunchPureBackend,
-    LaunchPureProfileSpec, LaunchSourcePolicy, ProfileId, ResolvedLaunchProfile,
+    LaunchProfileError, LaunchProfileManifest, LaunchProfileSelection, LaunchProfileSpec,
+    LaunchPureBackend, LaunchPureProfileSpec, LaunchSourcePolicy, ProfileId, ResolvedLaunchProfile,
 };
 pub use parse::{LaunchDocumentError, TomlStructuralErrorKind};
 pub use source::{
