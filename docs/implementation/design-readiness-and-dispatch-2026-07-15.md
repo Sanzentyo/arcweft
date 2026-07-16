@@ -1,5 +1,9 @@
 # Design readiness and dispatch order
 
+> Historical readiness snapshot. Do not dispatch from the table below. The
+> current authority is
+> [the 2026-07-16 dispatch order](design-readiness-and-dispatch-2026-07-16.md).
+
 - Date: 2026-07-15
 - Readiness baseline: `11f5acecf1ad`
 - Status: remaining package-driven work classified by decision completeness
@@ -29,9 +33,9 @@ archive to multiple workers.
 | --- | --- | --- |
 | AW-AH-007/008 | [typed RichText attribute validation](../reviews/requests/2026-07-14-aw-ah-007-008-typed-rich-text-attribute-validation.md) | Grammar, schema ownership, values, duplicate/unknown/default/recovery/codec policy are unanswered. |
 | AW-AH-009.1 | [Character registration, alias, provenance, diagnostics](../reviews/requests/2026-07-14-aw-ah-009.1-character-nominal-registration-alias-diagnostics-contract.md) | Registration transaction, scope, aliases, provenance, errors, and budgets are unanswered. |
-| d.2.1.1 | [View exported-part authoring](../reviews/requests/2026-07-14-seq-06.11d.2.1.1-view-exported-part-authoring-final-contract.md) | No source grammar exists; ownership, occurrence, re-export, rename, and provenance are unanswered. |
+| d.2.1.1 | [View exported-part authoring](../reviews/requests/2026-07-15-seq-06.11d.2.1.1.1-view-exported-part-authoring-production-reconciliation.md) | No source grammar exists; ownership, occurrence, re-export, rename, and provenance are unanswered. |
 | d.4.1.1 | [logical-axis host seed/provider invalidation](../reviews/requests/2026-07-14-seq-06.11d.4.1.1-native-logical-axis-host-seed-provider-invalidation-contract.md) | The landed core has no final host seed API, provider lifecycle, propagation, or bounded invalidation contract. |
-| d.4.2 | [environment Style conditions](../reviews/requests/2026-07-14-seq-06.11d.4.2-native-environment-style-condition-contract.md) | Source grammar, text-scale type, enum operators, revision authority, invalidation, and tooling are unanswered. |
+| d.4.2 | [environment Style conditions](../reviews/requests/2026-07-15-seq-06.11d.4.2.1-native-environment-style-condition-production-reconciliation.md) | Source grammar, text-scale type, enum operators, revision authority, invalidation, and tooling are unanswered. |
 
 The failed RichText, exported-part, and environment implementation ZIPs are not
 inputs to these design tasks. Their relevant facts are already repeated in the

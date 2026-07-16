@@ -82,13 +82,21 @@ parallel source-name or project-symbol authority.
 
 ## Next independent handoff
 
-The package's request 01 is a broad topic list, not an exact production API.
-Use the standalone
-[`seq-proof-01.1 production reconciliation request`](../reviews/requests/2026-07-15-seq-proof-01.1-surface-hir-identity-production-reconciliation.md)
-first. Do not throw production cuts 2-11 until the preceding accepted contract
-fixes the identifiers and boundary types they consume. Later follow-up request
-numbers must preserve this sequence (`02.1` through `11.1`) and must not require
-the ZIP to be understandable.
+The package's request 01 was a broad topic list, not an exact production API.
+Its 01.1 reconciliation produced a safe implementation slice that was rebased
+onto Character 009.1.1, fully validated, and pushed as Git `5a36cd0af830` / JJ
+`nowqxzku`. That cut establishes source/syntax/HIR session identity vocabulary,
+reference syntax and borrow kind, incremental reconciliation, and typed
+assertion substrate without restoring the removed ownership block.
+
+Cut 1 is not complete. Use the standalone
+[`seq-proof-01.1.1 typed-AST identity and proof-block reconciliation request`](../reviews/requests/2026-07-16-seq-proof-01.1.1-typed-ast-syntax-identity-proof-block-reconciliation.md)
+next. It owns the remaining lossless-node/typed-node attachment, proof-block,
+HIR arena/transaction, and assertion-fault identity decisions. Do not throw
+production cuts 2-11 until that contract is accepted and the remaining cut-1
+implementation passes its completion matrix. Later follow-up request numbers
+must preserve the sequence (`02.1` through `11.1`) and must not require the ZIP
+to be understandable.
 
 ## Remaining verification boundary
 

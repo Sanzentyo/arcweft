@@ -74,6 +74,9 @@ demonstrate a concrete flaw.
 
 ## 2026-07-15 follow-up implementation-readiness review
 
+> Historical readiness snapshot. AW-AH-009.1.1 has since landed on `main`.
+> Current dispatch order is recorded in the 2026-07-16 production update below.
+
 The three follow-ups were rechecked against the current checkout based on
 decision completeness, not on whether a previous delivery contained a patch.
 None is implementation-ready yet:
@@ -102,6 +105,28 @@ Throw AW-AH-009.1 first. After its final archive is accepted, AW-AH-009.2 and
 AW-AH-009.3 may run in parallel as separate tasks with one worker and one new
 archive per request. Each later task must receive the accepted AW-AH-009.1
 archive as an input and must not redefine its types or policies.
+
+## 2026-07-16 production update
+
+AW-AH-009.1.1 registration production reconciliation is implemented, validated,
+and pushed as Git `3342e9215bdc` / JJ `wytxttxs`. The canonical substrate now
+includes source-backed Character manifests, typed token source maps,
+`CharacterSymbolDescriptor`, `ProjectSymbolTable`, `RegisteredSemanticWorld`,
+accepted-environment generations, and exact document/revision provenance.
+
+The remaining requests consume that landed substrate directly and no longer
+require an older 009.1 ZIP as a parallel authority:
+
+- [AW-AH-009.2.1 definition/source-index contract](../reviews/requests/2026-07-16-aw-ah-009.2.1-character-nominal-definition-source-index-contract.md)
+  may be dispatched now;
+- [AW-AH-009.2.2 rename/atomic-edit contract](../reviews/requests/2026-07-16-aw-ah-009.2.2-character-nominal-rename-atomic-edit-contract.md)
+  follows acceptance of 009.2.1; and
+- [AW-AH-009.3 signature-help contract](../reviews/requests/2026-07-14-aw-ah-009.3-character-nominal-signature-help-contract.md)
+  may be designed in parallel with 009.2.1 and proof 01.1.1.
+
+Definition/source-index and rename are deliberately separate: the latter must
+consume one accepted bounded typed reference inventory and atomic edit model,
+not choose its own resolver while implementing workspace edits.
 
 ## Package deviations
 

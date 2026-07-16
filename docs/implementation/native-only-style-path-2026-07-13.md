@@ -194,9 +194,9 @@ authoring, adaptive, and explain surfaces require decisions that were not fixed
 by the package. They are split into new, self-contained requests so none of
 them silently expands this completed cut or redesigns its substrate:
 
-- [seq-06.11d.2.1.1 exported-part authoring final contract](../reviews/requests/2026-07-14-seq-06.11d.2.1.1-view-exported-part-authoring-final-contract.md);
+- [seq-06.11d.2.1.1.1 exported-part production reconciliation](../reviews/requests/2026-07-15-seq-06.11d.2.1.1.1-view-exported-part-authoring-production-reconciliation.md);
 - [seq-06.11d.4.1 native logical-axis Style](../reviews/requests/2026-07-14-seq-06.11d.4.1-native-logical-axis-style-contract.md);
-- [seq-06.11d.4.2 native environment Style conditions](../reviews/requests/2026-07-14-seq-06.11d.4.2-native-environment-style-condition-contract.md),
+- [seq-06.11d.4.2.1 native environment Style production reconciliation](../reviews/requests/2026-07-15-seq-06.11d.4.2.1-native-environment-style-condition-production-reconciliation.md),
   whose supplied implementation ZIP was re-audited on 2026-07-15 and has no
   checkout, patch, baseline, manifest, changed file, or verified result. Its
   sole substantive input is the earlier request itself, so no production
@@ -204,26 +204,28 @@ them silently expands this completed cut or redesigns its substrate:
   landed d.4.1 boundary and concrete specificity, text-scale, enum-comparison,
   revision, codec, trace, and tooling decisions that a final design must close;
 - [seq-06.11d.4.3 native container conditions and invalidation](../reviews/requests/2026-07-14-seq-06.11d.4.3-native-container-style-condition-invalidation-contract.md);
-- [seq-06.11d.5.1 native Style trace](../reviews/requests/2026-07-14-seq-06.11d.5.1-native-style-trace-contract.md),
-  preserved as the original capability request; its supplied implementation
-  package is design-gated and is not approved for integration;
 - [seq-06.11d.5.1.1 native Style trace reconciliation](../reviews/requests/2026-07-14-seq-06.11d.5.1.1-native-style-trace-contract-reconciliation.md),
-  required only after the d.4.1 core, d.4.1.1 → d.4.1.2 provider/geometry
-  branch, d.4.2, and then d.4.3 have landed and passed validation;
+  which replaces the original d.5.1 capability brief for dispatch and is
+  self-contained, but remains gated until the d.4.1 core, d.4.1.1 → d.4.1.2
+  provider/geometry branch, d.4.2, and then d.4.3 have landed and passed
+  validation;
 - [seq-06.11d.5.2 Agent Style observation](../reviews/requests/2026-07-14-seq-06.11d.5.2-agent-native-style-observation-protocol.md);
 - [seq-06.11d.5.3 Style LSP and formatter](../reviews/requests/2026-07-14-seq-06.11d.5.3-native-style-lsp-formatter-contract.md).
 
-The d.4.1 logical-axis core is landed. Its d.4.1.1 host seed/provider lifecycle
-and d.4.2 environment conditions may now be designed and implemented as two
-independent cuts. d.4.1.2 physical geometry follows d.4.1.1. d.4.3 container
-conditions begins only after all three have landed, because it consumes the
-mounted provider revision, final measured geometry, and the d.4.2
-zero-specificity activation model. The d.5.1.1 trace reconciliation then
-inspects all of those landed contracts before fixing provider/environment/
-container evidence, revision, cursor, or cache bindings. Agent observation and
-the LSP/formatter contract follow the reconciled trace contract; those two may
-then be designed in parallel. Each request repeats its fixed substrate and
-acceptance criteria and can be handed to a designer without this implementation
+The d.4.1 logical-axis core and d.4.1.1 host seed/provider lifecycle are landed.
+The d.4.1.2 physical-geometry and d.4.2.1 environment reconciliation designs
+may now run in parallel. View d.2.1.1.1 design may also run now, but its later
+implementation should land before environment when they overlap source-map,
+resolver, codec, player, formatter, or LSP owners. d.4.3 container conditions
+begins only after d.4.1.2 and d.4.2.1 implementations have landed, because it
+consumes the mounted provider revision, final measured geometry, and the
+zero-specificity environment activation model. The d.5.1.1 trace
+reconciliation then inspects all of those landed contracts before fixing
+provider/environment/container evidence, revision, cursor, or cache bindings.
+Agent observation and the LSP/formatter contract follow the reconciled trace
+contract; those two may then be designed in parallel. Each request repeats its
+fixed substrate and acceptance criteria and can be handed to a designer without
+this implementation
 note.
 
 ## Structural audit disposition and follow-ups

@@ -124,4 +124,8 @@ does not change those risk areas.
   records more coarsely than the design sketch; public ownership, dependency
   direction, hard limits, and transaction boundaries match the contract, and
   the exact current measurements are checked in.
-- AW-AH-009.2 and AW-AH-009.3 remain sequenced after this landed substrate.
+- [AW-AH-009.2.1 definition/source-index](../reviews/requests/2026-07-16-aw-ah-009.2.1-character-nominal-definition-source-index-contract.md)
+  and [AW-AH-009.3 signature help](../reviews/requests/2026-07-14-aw-ah-009.3-character-nominal-signature-help-contract.md)
+  may now be designed in parallel over this landed substrate. The separate
+  [AW-AH-009.2.2 rename/atomic-edit contract](../reviews/requests/2026-07-16-aw-ah-009.2.2-character-nominal-rename-atomic-edit-contract.md)
+  follows acceptance of 009.2.1.

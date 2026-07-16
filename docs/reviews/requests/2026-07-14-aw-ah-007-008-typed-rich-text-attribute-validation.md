@@ -1,7 +1,7 @@
 # Request: AW-AH-007/008 typed RichText attribute validation
 
 Date: 2026-07-14
-Last revised: 2026-07-15
+Last revised: 2026-07-16
 
 ## Request status and independence
 
@@ -128,6 +128,10 @@ The renderer then sees a valid value and cannot recover the cause or range.
 - Existing typed wait/reveal controls and their structured errors are examples
   of missing/malformed distinction; they need not be redesigned unless the
   common attribute design intentionally subsumes them.
+- The CSS/Takumi authoring and rendering path has been deleted from current
+  main. It is not a compatibility target and must not be reintroduced. Any Web
+  validation in this request refers only to a surviving non-CSS Web consumer
+  of the shared checked runtime-plan boundary.
 - Parser recovery remains lossless and source-ranged. Tooling's checked edit
   behavior from AW-AH-001/002/004 remains intact.
 
@@ -211,6 +215,10 @@ out-of-range values must never become a different successful rendering.
   extension contract is required if custom schemas are supported.
 - Do not solve the issue by retaining the current map and adding warnings after
   information has already been lost.
+- Do not restore CSS declarations, Takumi integration, a CSS compatibility
+  reader, or a CSS-specific attribute schema. Native-only Style ownership and
+  any surviving non-CSS Web rendering path must consume the same checked
+  RichText values.
 
 ## Migration order
 
@@ -274,8 +282,8 @@ ordering rather than applying authoring defaults.
   unaffected text.
 - Syntax to HIR to checked runtime-plan round-trip retains meaning and source
   provenance. Formatter output reparses to the same checked values.
-- Native, Web, headless, and Agent-facing compilation observe the same error;
-  no backend renders a default for an invalid value.
+- Native, headless, Agent-facing, and any surviving non-CSS Web compilation
+  observe the same error; no backend renders a default for an invalid value.
 - Every actual codec has round-trip, unknown discriminant/version, oversized
   input, duplicate/tampered field, out-of-range numeric, and dangling-reference
   tests.
@@ -283,6 +291,9 @@ ordering rather than applying authoring defaults.
 Use a small checked-in authoring corpus covering Japanese/Unicode content,
 quotes/escapes, all builtin families, and malformed boundary cases. Corpus
 tests must call parser/checker APIs; do not search source files for spellings.
+Automated source gates are prohibited: no test, script, CI check, or audit rule
+may read checked-in implementation or documentation and pass/fail by searching
+for symbols, spellings, snippets, module paths, or file locations.
 
 ## Expected output
 
@@ -308,6 +319,12 @@ tests must call parser/checker APIs; do not search source files for spellings.
 - `FINAL_STATUS.md`: inspected revision, complete/incomplete result, and any
   genuine external blocker. An incomplete result must not be labeled final or
   implementation-ready.
+- OPEN_QUESTIONS.md: exactly the single lowercase line “none” for an
+  implementation-ready result.
+- REPOSITORY_EVIDENCE.md: exact Git/Jujutsu identities and inspected current
+  owner/consumer inventory.
+- MANIFEST.txt: sorted lowercase SHA-256 integrity entries for every archive
+  member, using the self-entry rule below.
 
 Deliver those files in
 `arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-final-contract.zip`.
@@ -316,6 +333,39 @@ include `.git`, `target`, caches, credentials, generated build output, or a
 speculative Rust patch. This design stage does not require production code or
 test logs; it requires a decision-complete contract whose planned verification
 is exact enough for the following implementation task.
+
+## Integrity and outside status artifacts
+
+MANIFEST.txt must contain one line per archive member, sorted by relative path:
+
+~~~text
+<64-lowercase-sha256>  <relative/path>
+~~~
+
+The MANIFEST.txt self-entry uses 64 ASCII zeroes. Every other digest must match
+the exact archived bytes.
+
+Return these three files next to the ZIP:
+
+- arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-summary.md
+- arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-status.txt
+- arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-final-contract.zip.sha256
+
+The .sha256 file contains lowercase digest, two ASCII spaces, the exact ZIP
+filename, and LF. The status file uses exactly:
+
+~~~text
+STATUS=READY_FOR_IMPLEMENTATION
+OPEN_RESULT_CHANGING_DECISIONS=0
+REPOSITORY_GIT_COMMIT=<40-lowercase-hex>
+REPOSITORY_JJ_CHANGE=<change-id-or-unavailable>
+ARCHIVE=arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-final-contract.zip
+ARCHIVE_SHA256=<64-lowercase-hex>
+~~~
+
+If any required decision, schema row, real-codec inventory, migration deletion
+point, or planned test remains unresolved, use STATUS=NOT_READY, explain the
+blocker, and do not return a ZIP or .sha256 that claims readiness.
 
 ## Design completion gate
 
@@ -337,6 +387,9 @@ Before returning the package, the assignee must verify all of the following:
   values are explicitly identified as having no invented wire format; and
 - migration ends with deletion of all raw reparsers and malformed-to-default
   branches, without aliases, dual readers, or compatibility shims.
+- CSS/Takumi is not restored, Web evidence is limited to surviving non-CSS
+  paths, OPEN_QUESTIONS.md is exactly “none”, and all archive/status hashes
+  agree.
 
 Failure of any item keeps AW-AH-007/008 in design, not implementation.
 
