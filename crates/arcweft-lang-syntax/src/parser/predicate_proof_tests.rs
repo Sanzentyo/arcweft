@@ -480,6 +480,60 @@ fn comparison_operator_does_not_hide_if_expression_branches() {
 }
 
 #[test]
+fn closures_own_typed_parameters_return_types_bodies_and_grouping() {
+    let source =
+        "proof apply(value: Int) -> Int = (|x: Int| -> Int { let next = x + 1; next })(value)\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    for expected in [
+        SyntaxKind::ClosureExpression,
+        SyntaxKind::ClosureParameter,
+        SyntaxKind::BindingPattern,
+        SyntaxKind::PrimitiveType,
+        SyntaxKind::ReturnType,
+        SyntaxKind::BlockExpression,
+        SyntaxKind::LetStatement,
+        SyntaxKind::BinaryExpression,
+        SyntaxKind::CallExpression,
+    ] {
+        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
+    }
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::DelimitedGroup),
+        1
+    );
+    assert!(!kinds.contains(&SyntaxKind::TupleExpression));
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn zero_parameter_closure_is_not_a_binary_or_expression() {
+    let source = "proof ready() = || true\n";
+    let built = parse_shadow_document(&document(source)).unwrap();
+    let kinds = built
+        .index()
+        .entries()
+        .iter()
+        .map(UnattachedGrammarEntry::kind)
+        .collect::<Vec<_>>();
+
+    assert!(kinds.contains(&SyntaxKind::ClosureExpression));
+    assert!(!kinds.contains(&SyntaxKind::ClosureParameter));
+    assert!(!kinds.contains(&SyntaxKind::BinaryExpression));
+    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn nested_type_and_pattern_families_have_independent_events() {
     let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
     let built = parse_shadow_document(&document(source)).unwrap();

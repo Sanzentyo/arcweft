@@ -1,5 +1,6 @@
 //! Private Pratt expression grammar over the shared document cursor.
 
+mod composite;
 mod control;
 
 use super::document::ShadowDocumentParser;
@@ -140,13 +141,13 @@ fn parse_prefix(
         }
         "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
         "thread" => emit_prefix_operand(parser, end, SyntaxKind::ThreadExpression, role, false),
-        "(" => emit_tuple(parser, end, role),
+        "(" => composite::emit_parenthesized(parser, end, role),
         "[" => emit_bracket_sequence(parser, end, role),
         "." => emit_short_variant(parser, end, role),
         "{" => control::emit_block_expression(parser, end, role),
         "if" => control::emit_if_expression(parser, end, role),
         "match" => control::emit_match_expression(parser, end, role),
-        "|" => emit_flat(parser, end, SyntaxKind::ClosureExpression, role),
+        "|" | "||" => composite::emit_closure(parser, end, role),
         "_" => emit_single(parser, SyntaxKind::PlaceholderExpression, role),
         "true" | "false" => emit_single(parser, SyntaxKind::LiteralExpression, role),
         _ if token.kind() == SyntaxKind::EntityReferenceToken => {
@@ -188,42 +189,6 @@ fn emit_prefix_operand(
         parser.start(SyntaxKind::MissingExpression, SyntaxRole::Operand);
         parser.finish();
     }
-    parser.finish();
-    CompletedNode { start_event }
-}
-
-fn emit_tuple(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    role: SyntaxRole,
-) -> CompletedNode {
-    let start_event = parser.event_position();
-    parser.start(SyntaxKind::TupleExpression, role);
-    emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
-    parser.start(SyntaxKind::ExpressionList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u32;
-    loop {
-        parser.bump_trivia();
-        if parser.cursor() >= end || parser.at(")") {
-            break;
-        }
-        let element_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(end);
-        emit_expression(parser, element_end, SyntaxRole::Element(ordinal));
-        bump_until(parser, element_end);
-        ordinal = ordinal.saturating_add(1);
-        if parser.at(",") {
-            parser.bump();
-        } else {
-            break;
-        }
-    }
-    parser.finish();
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseParenNode,
-        ")",
-        "syntax.expression.missing_parenthesis_close",
-    );
     parser.finish();
     CompletedNode { start_event }
 }
@@ -318,19 +283,6 @@ fn emit_single(
     let start_event = parser.event_position();
     parser.start(kind, role);
     parser.bump();
-    parser.finish();
-    CompletedNode { start_event }
-}
-
-fn emit_flat(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    kind: SyntaxKind,
-    role: SyntaxRole,
-) -> CompletedNode {
-    let start_event = parser.event_position();
-    parser.start(kind, role);
-    bump_until(parser, end);
     parser.finish();
     CompletedNode { start_event }
 }
