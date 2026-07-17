@@ -2830,6 +2830,11 @@ fn hot_swap_patch_bytes_applies_manifest_only_target() {
     let old_bundle = fixture_bundle();
     let mut new_bundle = old_bundle.clone();
     new_bundle.manifest.profile_id = Some("manifest-only-target".to_owned());
+    assert_eq!(
+        old_bundle.source_display_name(),
+        new_bundle.source_display_name(),
+        "a manifest-only target keeps the canonical source-map owner"
+    );
     let old_bytes = awfb_bytes(&old_bundle);
     let new_bytes = awfb_bytes(&new_bundle);
     let old_view = BundleView::parse(&old_bytes, ReadBudget::default()).expect("old AWFB parses");
@@ -2858,7 +2863,7 @@ fn hot_swap_patch_bytes_applies_manifest_only_target() {
         arcweft_runtime_driver::swap::GenerationId(1)
     );
     assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
-    assert_eq!(session.source_label(), "manifest-only-target.arcw");
+    assert_eq!(session.source_label(), new_bundle.source_display_name());
     assert_eq!(
         session.active_container_artifact_identity(),
         Some(new_view.artifact_identity())
