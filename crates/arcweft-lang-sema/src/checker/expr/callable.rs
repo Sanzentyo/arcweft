@@ -69,6 +69,11 @@ impl TypeChecker<'_> {
                 callee_ty,
             ));
         }
+        if self.registered_world.is_some() {
+            self.errors
+                .push(TypeCheckError::new(format!("unknown function `{name}`")));
+            return None;
+        }
         self.function_type(name).cloned().or_else(|| {
             self.errors
                 .push(TypeCheckError::new(format!("unknown function `{name}`")));

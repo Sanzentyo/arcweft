@@ -1,9 +1,4 @@
 //! Immutable callable catalog records and read-only indexes.
-#![allow(
-    dead_code,
-    reason = "catalog construction is intentionally connected by the following atomic-publication cut"
-)]
-
 use std::{cmp::Ordering, collections::HashMap, num::NonZeroU32, sync::Arc};
 
 use arcweft_lang_hir::symbol::CallableDeclarationId;

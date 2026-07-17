@@ -56,9 +56,13 @@ pub use identity::{
     StdFloatCallableId, StdFloatOperation, TraitCallableId, TraitCallableSource,
     TraitImplementationIndex, VectorDimensions,
 };
+pub(crate) use limits::ResolverWork;
 pub use limits::{CallableLimits, PRODUCTION_CALLABLE_LIMITS, SignatureWorkReport};
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
+pub(crate) use resolver::{
+    CallCallee, CallResolverRequest, CallSourceContext, LexicalCallableScope, resolve_call_target,
+};
 pub use resolver::{
     CallableInstantiation, CharacterOwnerResolution, CharacterOwnerSource, NonCallableSource,
     NonEmptyResolvedCandidates, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
@@ -73,6 +77,9 @@ pub use schema::{
     DocumentationProvenance, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
     SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
 };
+
+#[cfg(test)]
+mod resolver_tests;
 
 #[cfg(test)]
 mod tests;

@@ -34,6 +34,7 @@ mod partial;
 mod path;
 mod pipe;
 mod range;
+mod registered_call;
 mod signature_call;
 mod support;
 
@@ -728,7 +729,14 @@ impl TypeChecker<'_> {
         {
             return Some(ty);
         }
-        if let Some(name) = expr_path_label(callee)
+        if let Expr::Path(path) = callee {
+            match self.check_registered_catalog_free_call(path, args, expected, expression_id) {
+                registered_call::RegisteredFreeCallOutcome::NotHandled => {}
+                registered_call::RegisteredFreeCallOutcome::Checked(result) => return result,
+            }
+        }
+        if self.registered_world.is_none()
+            && let Some(name) = expr_path_label(callee)
             && let Some(ty) = self
                 .function_type(&name)
                 .cloned()

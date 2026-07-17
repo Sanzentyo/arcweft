@@ -1,18 +1,587 @@
-//! Validated callable resolver products.
+//! Validated callable resolver requests and products.
 
-use std::{num::NonZeroU32, sync::Arc};
+use std::{
+    collections::HashMap,
+    num::NonZeroU32,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use arcweft_character::id::{CharacterId, CharacterPartId};
-use arcweft_lang_hir::symbol::CallableDeclarationId;
+use arcweft_lang_hir::symbol::{CallableDeclarationId, ProjectSymbolTable};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
-use crate::{effect_model::CallableId, types::TypeKind};
+use crate::{
+    checker::TypeExpressionId, effect_model::CallableId, effect_row::EffectRow,
+    registration::RegisteredSemanticWorld, traits::TraitCatalog, types::TypeKind,
+};
 
 use super::{
-    CallableAuthorityRank, CallableCandidateId, CallableGroupIndex, CallableLimits, CallableName,
-    CallableParameterIndex, CallablePath, CallableSignatureSchema, EquivalentCallableSource,
+    CallableAuthorityRank, CallableCandidateId, CallableGroupIndex, CallableLimits,
+    CallableLookupKey, CallableName, CallableParameterIndex, CallablePath, CallableRecord,
+    CallableSignatureSchema, EnvironmentCallableOwner, EquivalentCallableSource,
     FunctionValueSignatureId, LanguageCallableFamily, LocalCallableId, ProjectCallablePath,
-    PromotionCallableId, ResolveCallError, TraitCallableId,
+    ProjectNameBinding, PromotionCallableId, ResolveCallError, ResolverWork, TraitCallableId,
 };
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "selected, dialogue, and function-value inputs belong to the following ordered resolver cuts"
+)]
+pub(crate) enum CallCallee<'a> {
+    Free {
+        path: &'a CallablePath,
+    },
+    Selected {
+        receiver_expression: TypeExpressionId,
+        receiver_type: &'a TypeKind,
+        method: &'a CallableName,
+    },
+    Dialogue {
+        id: super::DialogueCallableId,
+        callee: &'a super::DialogueCalleeIdentity,
+    },
+    FunctionValue {
+        value: &'a ResolvedFunctionValueSeed,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "function-value seeds are consumed by the following ordered resolver cut"
+)]
+pub(crate) struct ResolvedFunctionValueSeed {
+    id: FunctionValueSignatureId,
+    ty: TypeKind,
+    schema: CallableSignatureSchema,
+    effect_callable: Option<CallableId>,
+    source_candidate: Option<CallableCandidateId>,
+    next_group: CallableGroupIndex,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "call-source accessors are consumed when the typed call-surface cut supplies exact spans"
+)]
+pub(crate) struct CallSourceContext<'a> {
+    document: &'a SourceDocumentIdentity,
+    call_span: Option<&'a SourceSpan>,
+    callee_span: Option<&'a SourceSpan>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct LexicalCallableScope {
+    bindings: HashMap<CallableName, LexicalCallBinding>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "callable and function-value lexical bindings belong to the following ordered resolver cuts"
+)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the exact lexical resolver contract keeps the typed function-value seed inline"
+)]
+pub(crate) enum LexicalCallBinding {
+    Callable {
+        id: LocalCallableId,
+        schema: Arc<CallableSignatureSchema>,
+        effects: EffectRow,
+    },
+    FunctionValue(ResolvedFunctionValueSeed),
+    NonCallable {
+        ty: TypeKind,
+    },
+}
+
+#[allow(
+    dead_code,
+    reason = "expected type, traits, call group, and expression are consumed by subsequent family resolver cuts"
+)]
+pub(crate) struct CallResolverRequest<'a> {
+    callee: CallCallee<'a>,
+    lexical: &'a LexicalCallableScope,
+    expected: Option<&'a TypeKind>,
+    current_module: &'a CanonicalModulePath,
+    symbols: &'a ProjectSymbolTable,
+    world: &'a RegisteredSemanticWorld,
+    traits: &'a TraitCatalog,
+    source: CallSourceContext<'a>,
+    call_group: CallableGroupIndex,
+    expression: TypeExpressionId,
+    cancellation: &'a AtomicBool,
+    work: &'a mut ResolverWork,
+    limits: &'a CallableLimits,
+}
+
+#[allow(
+    dead_code,
+    reason = "function-value seeds are consumed by the following ordered resolver cut"
+)]
+impl ResolvedFunctionValueSeed {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        id: FunctionValueSignatureId,
+        ty: TypeKind,
+        schema: CallableSignatureSchema,
+        effect_callable: Option<CallableId>,
+        source_candidate: Option<CallableCandidateId>,
+        next_group: CallableGroupIndex,
+    ) -> Self {
+        Self {
+            id,
+            ty,
+            schema,
+            effect_callable,
+            source_candidate,
+            next_group,
+        }
+    }
+
+    pub(crate) const fn id(&self) -> &FunctionValueSignatureId {
+        &self.id
+    }
+    pub(crate) const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+    pub(crate) const fn schema(&self) -> &CallableSignatureSchema {
+        &self.schema
+    }
+    pub(crate) const fn effect_callable(&self) -> Option<&CallableId> {
+        self.effect_callable.as_ref()
+    }
+    pub(crate) const fn source_candidate(&self) -> Option<&CallableCandidateId> {
+        self.source_candidate.as_ref()
+    }
+    pub(crate) const fn next_group(&self) -> CallableGroupIndex {
+        self.next_group
+    }
+}
+
+#[allow(
+    dead_code,
+    reason = "call-source accessors are consumed when the typed call-surface cut supplies exact spans"
+)]
+impl<'a> CallSourceContext<'a> {
+    pub(crate) const fn new(
+        document: &'a SourceDocumentIdentity,
+        call_span: Option<&'a SourceSpan>,
+        callee_span: Option<&'a SourceSpan>,
+    ) -> Self {
+        Self {
+            document,
+            call_span,
+            callee_span,
+        }
+    }
+
+    pub(crate) const fn document(&self) -> &SourceDocumentIdentity {
+        self.document
+    }
+    pub(crate) const fn call_span(&self) -> Option<&SourceSpan> {
+        self.call_span
+    }
+    pub(crate) const fn callee_span(&self) -> Option<&SourceSpan> {
+        self.callee_span
+    }
+}
+
+impl LexicalCallableScope {
+    pub(crate) fn binding(&self, name: &CallableName) -> Option<&LexicalCallBinding> {
+        self.bindings.get(name)
+    }
+
+    pub(crate) fn from_non_callable_bindings(
+        bindings: impl IntoIterator<Item = (CallableName, TypeKind)>,
+    ) -> Self {
+        Self {
+            bindings: bindings
+                .into_iter()
+                .map(|(name, ty)| (name, LexicalCallBinding::NonCallable { ty }))
+                .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    #[allow(
+        dead_code,
+        reason = "crate-owned corrupt and lexical resolver fixtures use this mutation boundary incrementally"
+    )]
+    pub(crate) fn insert(&mut self, name: CallableName, binding: LexicalCallBinding) {
+        self.bindings.insert(name, binding);
+    }
+}
+
+#[allow(
+    dead_code,
+    reason = "some exact request accessors are consumed by subsequent family resolver cuts"
+)]
+impl<'a> CallResolverRequest<'a> {
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::result_large_err)]
+    pub(crate) fn try_new(
+        callee: CallCallee<'a>,
+        lexical: &'a LexicalCallableScope,
+        expected: Option<&'a TypeKind>,
+        current_module: &'a CanonicalModulePath,
+        symbols: &'a ProjectSymbolTable,
+        world: &'a RegisteredSemanticWorld,
+        traits: &'a TraitCatalog,
+        source: CallSourceContext<'a>,
+        call_group: CallableGroupIndex,
+        expression: TypeExpressionId,
+        cancellation: &'a AtomicBool,
+        work: &'a mut ResolverWork,
+        limits: &'a CallableLimits,
+    ) -> Result<Self, ResolveCallError> {
+        if cancellation.load(Ordering::Relaxed) {
+            return Err(ResolveCallError::Cancelled);
+        }
+        if symbols.world() != world.symbols().world()
+            || symbols.revision() != world.symbols().revision()
+            || symbols.world() != world.environment().world()
+            || symbols.revision() != world.environment().symbol_revision()
+        {
+            return Err(ResolveCallError::WorldMismatch);
+        }
+        if symbols.source_identity(current_module) != Some(source.document) {
+            return Err(ResolveCallError::SourceIdentityMismatch);
+        }
+        if source.document.source_len()
+            > u64::try_from(limits.max_source_bytes()).unwrap_or(u64::MAX)
+        {
+            return Err(ResolveCallError::Work(
+                super::CallableQueryLimitError::SourceBytes {
+                    actual: usize::try_from(source.document.source_len()).unwrap_or(usize::MAX),
+                    limit: limits.max_source_bytes(),
+                },
+            ));
+        }
+        if source
+            .call_span
+            .into_iter()
+            .chain(source.callee_span)
+            .any(|span| !source_span_is_valid(source.document, span))
+        {
+            return Err(ResolveCallError::InvalidSourceSpan);
+        }
+        Ok(Self {
+            callee,
+            lexical,
+            expected,
+            current_module,
+            symbols,
+            world,
+            traits,
+            source,
+            call_group,
+            expression,
+            cancellation,
+            work,
+            limits,
+        })
+    }
+
+    pub(crate) const fn callee(&self) -> &CallCallee<'a> {
+        &self.callee
+    }
+    pub(crate) const fn lexical(&self) -> &LexicalCallableScope {
+        self.lexical
+    }
+    pub(crate) const fn expected(&self) -> Option<&TypeKind> {
+        self.expected
+    }
+    pub(crate) const fn current_module(&self) -> &CanonicalModulePath {
+        self.current_module
+    }
+    pub(crate) const fn symbols(&self) -> &ProjectSymbolTable {
+        self.symbols
+    }
+    pub(crate) const fn world(&self) -> &RegisteredSemanticWorld {
+        self.world
+    }
+    pub(crate) const fn traits(&self) -> &TraitCatalog {
+        self.traits
+    }
+    pub(crate) const fn source(&self) -> &CallSourceContext<'a> {
+        &self.source
+    }
+    pub(crate) const fn call_group(&self) -> CallableGroupIndex {
+        self.call_group
+    }
+    pub(crate) const fn expression(&self) -> TypeExpressionId {
+        self.expression
+    }
+    pub(crate) const fn cancellation(&self) -> &AtomicBool {
+        self.cancellation
+    }
+    pub(crate) const fn limits(&self) -> &CallableLimits {
+        self.limits
+    }
+}
+
+fn source_span_is_valid(document: &SourceDocumentIdentity, span: &SourceSpan) -> bool {
+    let range = span.range();
+    span.source() == document
+        && range.start() <= range.end()
+        && u64::try_from(range.end()).is_ok_and(|end| end <= document.source_len())
+}
+
+#[allow(clippy::result_large_err)]
+pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> ResolveCallOutcome {
+    if let Err(error) = check_query_step(&mut request) {
+        return ResolveCallOutcome::Rejected(error);
+    }
+    let path = match &request.callee {
+        CallCallee::Free { path } => (*path).clone(),
+        _ => {
+            return ResolveCallOutcome::Missing(UnknownCallTarget::new(
+                match &request.callee {
+                    CallCallee::Selected { .. } => UnknownCallKind::Method,
+                    CallCallee::Dialogue { .. } => UnknownCallKind::Dialogue,
+                    CallCallee::FunctionValue { .. } | CallCallee::Free { .. } => {
+                        UnknownCallKind::Free
+                    }
+                },
+                None,
+                None,
+                None,
+            ));
+        }
+    };
+    match resolve_free_call(&mut request, &path) {
+        Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
+        Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+            UnknownCallKind::Free,
+            Some(path),
+            None,
+            None,
+        )),
+        Err(error) => ResolveCallOutcome::Rejected(error),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn resolve_free_call(
+    request: &mut CallResolverRequest<'_>,
+    path: &CallablePath,
+) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    check_query_step(request)?;
+    if let [name] = path.segments()
+        && let Some(binding) = request.lexical.binding(name)
+    {
+        check_query_step(request)?;
+        return resolve_lexical_binding(name, binding, request.limits).map(Some);
+    }
+
+    check_query_step(request)?;
+    let project_path = ProjectCallablePath::new(
+        request.symbols.world().package().clone(),
+        request.current_module.clone(),
+        path.clone(),
+    );
+    if let Some(binding) = request
+        .world
+        .environment()
+        .callable_catalog()
+        .project_binding(&project_path)
+    {
+        check_query_step(request)?;
+        return resolve_project_binding(binding, &project_path, request).map(Some);
+    }
+
+    check_query_step(request)?;
+    let Some(candidates) = request.world.environment().callable_catalog().free(path) else {
+        return Ok(None);
+    };
+    let mut resolved = Vec::with_capacity(candidates.len().get() as usize);
+    for entry in candidates.as_slice() {
+        check_query_step(request)?;
+        resolved.push(resolve_catalog_record(
+            entry.primary(),
+            entry.equivalent_sources(),
+            None,
+            request,
+        )?);
+    }
+    NonEmptyResolvedCandidates::try_new(resolved, request.limits)
+        .map(ResolvedCallTarget::Candidates)
+        .map(Some)
+}
+
+#[allow(clippy::result_large_err)]
+fn resolve_lexical_binding(
+    name: &CallableName,
+    binding: &LexicalCallBinding,
+    limits: &CallableLimits,
+) -> Result<ResolvedCallTarget, ResolveCallError> {
+    match binding {
+        LexicalCallBinding::Callable {
+            id,
+            schema,
+            effects,
+        } => {
+            let _ = effects;
+            let callable = ResolvedCallable::try_new(
+                CallableCandidateId::Local(id.clone()),
+                SignatureOrigin::Lexical { id: id.clone() },
+                Arc::clone(schema),
+                CallableInstantiation::None,
+                Vec::new(),
+                None,
+                limits,
+            )?;
+            NonEmptyResolvedCandidates::try_new(vec![callable], limits)
+                .map(ResolvedCallTarget::Candidates)
+        }
+        LexicalCallBinding::FunctionValue(seed) => {
+            let callable = ResolvedCallable::try_new(
+                CallableCandidateId::FunctionValue(seed.id.clone()),
+                SignatureOrigin::FunctionValue {
+                    id: seed.id.clone(),
+                },
+                Arc::new(seed.schema.clone()),
+                CallableInstantiation::None,
+                Vec::new(),
+                None,
+                limits,
+            )?;
+            ResolvedFunctionValue::try_new(
+                seed.id.clone(),
+                callable,
+                seed.ty.clone(),
+                seed.effect_callable.clone(),
+                seed.source_candidate.clone(),
+                seed.next_group,
+            )
+            .map(ResolvedCallTarget::FunctionValue)
+        }
+        LexicalCallBinding::NonCallable { ty } => Ok(ResolvedCallTarget::NonCallable(
+            ResolvedNonCallableTarget::new(
+                NonCallableSource::Lexical { name: name.clone() },
+                ty.clone(),
+            ),
+        )),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn resolve_project_binding(
+    binding: &ProjectNameBinding,
+    path: &ProjectCallablePath,
+    request: &mut CallResolverRequest<'_>,
+) -> Result<ResolvedCallTarget, ResolveCallError> {
+    match binding {
+        ProjectNameBinding::Callable(declaration) => {
+            let record = request
+                .world
+                .environment()
+                .callable_catalog()
+                .project_record(declaration)
+                .ok_or_else(|| {
+                    corrupt(
+                        record_key(path),
+                        super::CorruptCallableCatalogReason::MissingRecord,
+                    )
+                })?
+                .clone();
+            let callable = resolve_catalog_record(&record, &[], Some(path), request)?;
+            NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+                .map(ResolvedCallTarget::Candidates)
+        }
+        ProjectNameBinding::NonCallable { path, ty } => Ok(ResolvedCallTarget::NonCallable(
+            ResolvedNonCallableTarget::new(
+                NonCallableSource::Project { path: path.clone() },
+                ty.clone(),
+            ),
+        )),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn resolve_catalog_record(
+    record: &CallableRecord,
+    equivalent_sources: &[EquivalentCallableSource],
+    project_path: Option<&ProjectCallablePath>,
+    request: &mut CallResolverRequest<'_>,
+) -> Result<ResolvedCallable, ResolveCallError> {
+    check_query_step(request)?;
+    let origin = match record.id() {
+        CallableCandidateId::Project(declaration) => SignatureOrigin::Project {
+            declaration: declaration.clone(),
+            path: project_path
+                .cloned()
+                .ok_or(ResolveCallError::InvalidResolvedCallable)?,
+        },
+        CallableCandidateId::Environment(id) => match id.owner() {
+            EnvironmentCallableOwner::Standard(owner) => SignatureOrigin::Standard {
+                owner: *owner,
+                id: id.clone(),
+            },
+            EnvironmentCallableOwner::Adapter(package) => SignatureOrigin::Adapter {
+                package: package.clone(),
+                id: id.clone(),
+            },
+        },
+        _ => return Err(ResolveCallError::InvalidResolvedCallable),
+    };
+    let reachable = match record.id() {
+        CallableCandidateId::Project(id) => request
+            .world
+            .environment()
+            .callable_catalog()
+            .project_record(id)
+            .is_some_and(|accepted| accepted.as_ref() == record),
+        CallableCandidateId::Environment(id) => request
+            .world
+            .environment()
+            .callable_catalog()
+            .environment_record(id)
+            .is_some_and(|accepted| accepted.as_ref() == record),
+        _ => false,
+    };
+    if !reachable {
+        return Err(corrupt(
+            record.key().clone(),
+            super::CorruptCallableCatalogReason::MissingRecord,
+        ));
+    }
+    ResolvedCallable::try_new(
+        record.id().clone(),
+        origin,
+        Arc::new(record.schema().clone()),
+        CallableInstantiation::None,
+        equivalent_sources.to_vec(),
+        Some(record.authority()),
+        request.limits,
+    )
+}
+
+fn record_key(path: &ProjectCallablePath) -> CallableLookupKey {
+    CallableLookupKey::Free(path.path().clone())
+}
+
+fn corrupt(
+    key: CallableLookupKey,
+    reason: super::CorruptCallableCatalogReason,
+) -> ResolveCallError {
+    ResolveCallError::CorruptCatalog { key, reason }
+}
+
+#[allow(clippy::result_large_err)]
+fn check_query_step(request: &mut CallResolverRequest<'_>) -> Result<(), ResolveCallError> {
+    if request.cancellation.load(Ordering::Relaxed) {
+        return Err(ResolveCallError::Cancelled);
+    }
+    request.work.charge(1).map_err(ResolveCallError::Work)
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureOrigin {
@@ -383,7 +952,6 @@ pub struct NonEmptyResolvedCandidates {
     candidates: Arc<[ResolvedCallable]>,
 }
 impl NonEmptyResolvedCandidates {
-    #[allow(dead_code, reason = "constructed by the shared resolver migration cut")]
     #[allow(
         clippy::result_large_err,
         reason = "the typed query error preserves the offending candidate identity"

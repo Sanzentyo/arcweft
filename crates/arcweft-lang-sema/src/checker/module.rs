@@ -125,7 +125,7 @@ pub fn analyze_registered_project_types(
         registered.environment().typecheck_env(),
         None,
         Some(registered.symbols()),
-        Some(registered.environment()),
+        Some(registered),
     );
     finish_type_check(
         module,
@@ -151,7 +151,7 @@ pub fn analyze_registered_project_types_for_canonicalization(
         registered.environment().typecheck_env(),
         Some(sources),
         Some(registered.symbols()),
-        Some(registered.environment()),
+        Some(registered),
     );
     Ok(finish_type_check(
         &module,

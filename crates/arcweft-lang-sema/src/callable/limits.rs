@@ -1,9 +1,4 @@
 //! Inclusive callable catalog and query limits.
-#![allow(
-    dead_code,
-    reason = "work counters are consumed by the following catalog and resolver cuts"
-)]
-
 use super::{CallableBuildLimitError, CallableQueryLimitError};
 
 /// Fixed resource limits shared by callable registration and semantic queries.
@@ -126,6 +121,10 @@ pub(crate) struct CatalogBuildWork {
     limit: u64,
 }
 
+#[allow(
+    dead_code,
+    reason = "exact work-report accessors are consumed by the remaining catalog audit cut"
+)]
 impl CatalogBuildWork {
     pub(crate) const fn new(limit: u64) -> Self {
         Self { consumed: 0, limit }
@@ -168,6 +167,10 @@ pub(crate) struct ResolverWork {
     limit: u64,
 }
 
+#[allow(
+    dead_code,
+    reason = "exact work-report accessors are consumed by semantic signature query reporting"
+)]
 impl ResolverWork {
     pub(crate) const fn new(limit: u64) -> Self {
         Self { consumed: 0, limit }

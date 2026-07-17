@@ -478,6 +478,7 @@ struct TypeChecker<'a> {
     canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
     project_symbols: Option<&'a ProjectSymbolTable>,
     registered_environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
+    registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
     project_functions: BTreeMap<CallableDeclarationId, TypeKind>,
     project_function_signatures: BTreeMap<CallableDeclarationId, FunctionSignature>,
     local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
@@ -720,8 +721,10 @@ impl<'a> TypeChecker<'a> {
         env: &'a TypeCheckEnv,
         canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
         project_symbols: Option<&'a ProjectSymbolTable>,
-        registered_environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
+        registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
     ) -> Self {
+        let registered_environment =
+            registered_world.map(crate::registration::RegisteredSemanticWorld::environment);
         TypeChecker {
             env,
             errors: Vec::new(),
@@ -794,6 +797,7 @@ impl<'a> TypeChecker<'a> {
             canonicalization_sources,
             project_symbols,
             registered_environment,
+            registered_world,
             project_functions: BTreeMap::new(),
             project_function_signatures: BTreeMap::new(),
             local_symbol_identities: HashMap::new(),
