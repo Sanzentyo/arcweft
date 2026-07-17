@@ -19,10 +19,9 @@ use crate::view_scene::{
 };
 use arcweft_presentation::hit::HitRect;
 use bytemuck::{Pod, Zeroable};
-use num_traits::ToPrimitive;
 use wgpu::util::DeviceExt;
 
-const ROUNDED_CORNER_SEGMENTS: usize = 8;
+const ROUNDED_CORNER_SEGMENTS: u16 = 8;
 const EPSILON: f32 = 0.0001;
 
 /// Direct primitive renderer used by `SharedRenderer` when a prepared frame has
@@ -169,7 +168,13 @@ impl WgpuViewDirectPrimitiveRenderer {
         apply_context_scissor(&mut pass, frame.scene, frame.context, frame.target)?;
         pass.set_pipeline(&self.color_pipeline);
         pass.set_vertex_buffer(0, buffer.slice(..));
-        pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
+        let vertex_count = u32::try_from(vertices.len()).map_err(|_| {
+            ViewCompositorError::UnsupportedPrimitive {
+                primitive: "direct color vertices",
+                reason: "vertex count exceeds the WGPU u32 draw range".into(),
+            }
+        })?;
+        pass.draw(0..vertex_count, 0..1);
         Ok(())
     }
 }
@@ -267,7 +272,13 @@ impl WgpuViewDirectPrimitiveRenderFrame<'_> {
         pass.set_pipeline(self.image_pipeline());
         pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
+        let vertex_count = u32::try_from(vertices.len()).map_err(|_| {
+            ViewCompositorError::UnsupportedPrimitive {
+                primitive: "direct image vertices",
+                reason: "vertex count exceeds the WGPU u32 draw range".into(),
+            }
+        })?;
+        pass.draw(0..vertex_count, 0..1);
         Ok(())
     }
 }
@@ -344,14 +355,13 @@ impl WgpuPreparedViewMaskTextureProvider {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         resources: &PreparedViewSceneResources,
-    ) -> Self {
-        Self {
-            masks: resources
-                .masks()
-                .iter()
-                .map(|resource| upload_mask_resource(device, queue, resource))
-                .collect(),
-        }
+    ) -> Result<Self, ViewCompositorError> {
+        let masks = resources
+            .masks()
+            .iter()
+            .map(|resource| upload_mask_resource(device, queue, resource))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { masks })
     }
 }
 
@@ -372,16 +382,22 @@ fn upload_mask_resource(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     resource: &PreparedViewMaskResource,
-) -> WgpuPreparedViewMaskTexture {
+) -> Result<WgpuPreparedViewMaskTexture, ViewCompositorError> {
+    if resource.frame.width == 0 || resource.frame.height == 0 {
+        return Err(ViewCompositorError::InvalidMaskImageExtent {
+            width: resource.frame.width,
+            height: resource.frame.height,
+        });
+    }
     let texture = upload_rgba_texture(device, queue, &resource.frame, "arcweft-view-mask-resource");
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    WgpuPreparedViewMaskTexture {
+    Ok(WgpuPreparedViewMaskTexture {
         image: resource.image.clone(),
         channel: resource.channel,
         extent: ViewTextureExtent::new(resource.frame.width, resource.frame.height),
         _texture: texture,
         view,
-    }
+    })
 }
 
 fn primitive_range_bounds(
@@ -605,8 +621,17 @@ fn logical_to_ndc(
     let scale_y = target_axis_scale(target.extent.height, target.logical_extent[1]);
     let x = (transformed.x - target.origin_logical[0]) * scale_x;
     let y = (transformed.y - target.origin_logical[1]) * scale_y;
-    let target_width = u32_to_f32(target.extent.width.max(1));
-    let target_height = u32_to_f32(target.extent.height.max(1));
+    debug_assert!(target.extent.width > 0 && target.extent.height > 0);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "root extents are checked exactly and offscreen extents are bounded by WGPU texture limits"
+    )]
+    let target_width = target.extent.width as f32;
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "root extents are checked exactly and offscreen extents are bounded by WGPU texture limits"
+    )]
+    let target_height = target.extent.height as f32;
     [
         (x / target_width) * 2.0 - 1.0,
         1.0 - (y / target_height) * 2.0,
@@ -614,23 +639,36 @@ fn logical_to_ndc(
 }
 
 fn target_axis_scale(extent: u32, logical_extent: f32) -> f32 {
-    u32_to_f32(extent.max(1)) / logical_extent.max(EPSILON)
+    debug_assert!(extent > 0);
+    debug_assert!(logical_extent.is_finite() && logical_extent > 0.0);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "root extents are checked exactly and offscreen extents are bounded by WGPU texture limits"
+    )]
+    let physical_extent = extent as f32;
+    physical_extent / logical_extent
 }
 
-fn u32_to_f32(value: u32) -> f32 {
-    value.to_f32().unwrap_or(f32::MAX)
+fn nonnegative_floor_to_u32(value: f32) -> Result<u32, ViewCompositorError> {
+    checked_scissor_coordinate(value.max(0.0).floor())
 }
 
-fn usize_to_f32(value: usize) -> f32 {
-    value.to_f32().unwrap_or(f32::MAX)
+fn nonnegative_ceil_to_u32(value: f32) -> Result<u32, ViewCompositorError> {
+    checked_scissor_coordinate(value.max(0.0).ceil())
 }
 
-fn nonnegative_floor_to_u32(value: f32) -> u32 {
-    value.max(0.0).floor().to_u32().unwrap_or(u32::MAX)
-}
-
-fn nonnegative_ceil_to_u32(value: f32) -> u32 {
-    value.max(0.0).ceil().to_u32().unwrap_or(u32::MAX)
+fn checked_scissor_coordinate(value: f32) -> Result<u32, ViewCompositorError> {
+    if !value.is_finite() || value < 0.0 || f64::from(value) > f64::from(u32::MAX) {
+        return Err(ViewCompositorError::UnsupportedClip {
+            reason: format!("scissor coordinate {value:?} is outside the WGPU u32 range").into(),
+        });
+    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the finite nonnegative u32 range is checked before conversion"
+    )]
+    Ok(value as u32)
 }
 
 fn apply_transform(transform: ViewAffine2D, point: LogicalPoint) -> LogicalPoint {
@@ -658,12 +696,20 @@ fn apply_context_scissor(
     };
     let scale_x = target_axis_scale(target.extent.width, target.logical_extent[0]);
     let scale_y = target_axis_scale(target.extent.height, target.logical_extent[1]);
-    let x = nonnegative_floor_to_u32((bounds.x - target.origin_logical[0]) * scale_x);
-    let y = nonnegative_floor_to_u32((bounds.y - target.origin_logical[1]) * scale_y);
-    let max_width = target.extent.width.saturating_sub(x);
-    let max_height = target.extent.height.saturating_sub(y);
-    let width = nonnegative_ceil_to_u32(bounds.width * scale_x).min(max_width);
-    let height = nonnegative_ceil_to_u32(bounds.height * scale_y).min(max_height);
+    let x = nonnegative_floor_to_u32((bounds.x - target.origin_logical[0]) * scale_x)?;
+    let y = nonnegative_floor_to_u32((bounds.y - target.origin_logical[1]) * scale_y)?;
+    let Some(max_width) = target.extent.width.checked_sub(x) else {
+        return Err(ViewCompositorError::UnsupportedClip {
+            reason: "clip starts beyond the target width".into(),
+        });
+    };
+    let Some(max_height) = target.extent.height.checked_sub(y) else {
+        return Err(ViewCompositorError::UnsupportedClip {
+            reason: "clip starts beyond the target height".into(),
+        });
+    };
+    let width = nonnegative_ceil_to_u32(bounds.width * scale_x)?.min(max_width);
+    let height = nonnegative_ceil_to_u32(bounds.height * scale_y)?.min(max_height);
     if width == 0 || height == 0 {
         return Err(ViewCompositorError::UnsupportedClip {
             reason: "clip resolved to an empty target scissor".into(),
@@ -733,7 +779,7 @@ fn rounded_rect_points(bounds: HitRect, radii: ViewCornerRadii) -> Vec<LogicalPo
         .into_iter()
         .flat_map(|(cx, cy, radius, start, end)| {
             (0..=ROUNDED_CORNER_SEGMENTS).map(move |step| {
-                let t = usize_to_f32(step) / usize_to_f32(ROUNDED_CORNER_SEGMENTS);
+                let t = f32::from(step) / f32::from(ROUNDED_CORNER_SEGMENTS);
                 let angle = start + (end - start) * t;
                 LogicalPoint {
                     x: cx + radius.x_px * angle.cos(),
@@ -829,8 +875,8 @@ fn upload_rgba_texture(
         &wgpu::TextureDescriptor {
             label: Some(label),
             size: wgpu::Extent3d {
-                width: frame.width.max(1),
-                height: frame.height.max(1),
+                width: frame.width,
+                height: frame.height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,

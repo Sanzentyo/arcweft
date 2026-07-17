@@ -3,25 +3,34 @@
 use super::{
     ViewRuntimeControlBorderStyle, ViewRuntimeControlCornerFrameStyle, ViewRuntimeControlFilter,
     ViewRuntimeControlFilterList, ViewRuntimeControlFocusRingStyle, ViewRuntimeControlVisualStyle,
-    ViewRuntimeNodeStyle, ViewRuntimeShadow, ViewRuntimeShadowKind,
-    ViewRuntimeStyleProjectionError,
+    ViewRuntimeGeometryOwner, ViewRuntimeNodeStyle, ViewRuntimePhysicalNodeStyle,
+    ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeStyleProjectionError,
+    ViewRuntimeStyleProperties,
 };
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironment, SystemColor, SystemPaletteSet,
 };
+use arcweft_view::ViewStyleNodeKey;
 use arcweft_view::style::{
     ComputedViewStyle, ViewColorValue, ViewFilter, ViewFontFamily, ViewLengthMilli,
     ViewPropertyKind, ViewShadow, ViewSpecifiedValue,
 };
 
 pub(super) fn project_computed_style(
+    node: ViewStyleNodeKey,
+    owner: ViewRuntimeGeometryOwner,
     computed: &ComputedViewStyle,
     environment: &PresentationEnvironment,
     palettes: &SystemPaletteSet,
 ) -> Result<ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError> {
     let mut projected = ViewRuntimeNodeStyle {
-        physical_box: computed.physical_box(),
-        ..ViewRuntimeNodeStyle::default()
+        layout: ViewRuntimeStyleProperties::default(),
+        text: ViewRuntimeStyleProperties::default(),
+        paint: ViewRuntimeStyleProperties::default(),
+        composite: ViewRuntimeStyleProperties::default(),
+        transition: ViewRuntimeStyleProperties::default(),
+        physical: ViewRuntimePhysicalNodeStyle::try_from_computed(node, owner, computed)?,
+        visual: ViewRuntimeControlVisualStyle::default(),
     };
     for (property, entry) in computed.properties() {
         let value = entry.value();

@@ -463,6 +463,16 @@ impl BundleViewInstancePath {
         &self.0
     }
 
+    /// Total platform-independent physical Style path encoding.
+    #[must_use]
+    pub fn style_path_words(&self) -> Vec<u64> {
+        let mut words = Vec::with_capacity(self.0.len() * 4);
+        for segment in &self.0 {
+            segment.append_style_path_words(&mut words);
+        }
+        words
+    }
+
     fn validate(&self) -> Result<(), BundleViewRuntimeError> {
         if self.0.len() > MAX_VIEW_INSTANCE_PATH_DEPTH {
             Err(BundleViewRuntimeError::InstancePathTooDeep {
@@ -482,6 +492,29 @@ impl BundleViewInstancePath {
         let path = Self(segments);
         path.validate()?;
         Ok(path)
+    }
+}
+
+impl BundleViewInstancePathSegment {
+    /// Appends this closed path segment's four-word little-endian Style identity.
+    pub fn append_style_path_words(&self, output: &mut Vec<u64>) {
+        match self {
+            Self::Call {
+                instruction,
+                authored_key,
+            } => output.extend([
+                0,
+                u64::from(*instruction),
+                u64::from(authored_key.is_some()),
+                authored_key.unwrap_or(0),
+            ]),
+            Self::Repeat { instruction, key } => output.extend([
+                1,
+                u64::from(*instruction),
+                u64::from(u32::from_le_bytes(key.to_le_bytes())),
+                0,
+            ]),
+        }
     }
 }
 

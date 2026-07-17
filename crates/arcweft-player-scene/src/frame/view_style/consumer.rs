@@ -1,6 +1,7 @@
 //! Runtime consumer support and lossless computed-Style projection.
 
 use super::super::PlayerFrameError;
+use super::super::ViewCommittedGeometryFrame;
 use super::{NodeBinding, ResolvedViewStyleFrame, StyleTargetKind};
 use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::{
@@ -12,9 +13,8 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeKind,
 };
 use arcweft_view::ViewElementKind;
-use arcweft_view::style::{
-    ComputedViewStyle, ViewOverflow, ViewPropertyKind, ViewStyleContributionSource,
-};
+use arcweft_view::style::{ComputedViewStyle, ViewPropertyKind, ViewStyleContributionSource};
+use std::sync::Arc;
 
 /// Presentation resources with the current live Style snapshot applied.
 pub(in crate::frame) struct StyledViewResources {
@@ -23,14 +23,16 @@ pub(in crate::frame) struct StyledViewResources {
     pub(in crate::frame) scroll_regions: Vec<ViewRuntimeScrollRegion>,
     pub(in crate::frame) surfaces: Vec<ViewRuntimeSurface>,
     pub(in crate::frame) images: Vec<BundleImageObject>,
+    pub(in crate::frame) geometry: Arc<ViewCommittedGeometryFrame>,
 }
 
 impl ResolvedViewStyleFrame {
     pub(in crate::frame) fn apply_to_presentation(
         &self,
         presentation: &BundlePresentationSnapshot,
+        geometry: Arc<ViewCommittedGeometryFrame>,
     ) -> StyledViewResources {
-        let mut resources = StyledViewResources {
+        StyledViewResources {
             text_inputs: presentation
                 .text_inputs
                 .iter()
@@ -38,7 +40,6 @@ impl ResolvedViewStyleFrame {
                 .map(|mut control| {
                     if let Some(style) = self.control(&control.target) {
                         control.style = style.visual().clone();
-                        apply_text_control_box(&mut control, style);
                     }
                     control
                 })
@@ -50,22 +51,11 @@ impl ResolvedViewStyleFrame {
                 .map(|mut button| {
                     if let Some(style) = self.control(&button.target) {
                         button.style = style.visual().clone();
-                        apply_action_button_box(&mut button, style);
                     }
                     button
                 })
                 .collect(),
-            scroll_regions: presentation
-                .scroll_regions
-                .iter()
-                .cloned()
-                .map(|mut region| {
-                    if let Some(style) = self.control(&region.target) {
-                        apply_scroll_region_box(&mut region, style);
-                    }
-                    region
-                })
-                .collect(),
+            scroll_regions: presentation.scroll_regions.clone(),
             surfaces: presentation
                 .surfaces
                 .iter()
@@ -76,7 +66,6 @@ impl ResolvedViewStyleFrame {
                         .or_else(|| self.part(&surface.public_id))
                     {
                         surface.style = style.visual().clone();
-                        apply_surface_box(&mut surface, style);
                     }
                     surface
                 })
@@ -92,55 +81,12 @@ impl ResolvedViewStyleFrame {
                         .and_then(|target| self.image(target))
                         .or_else(|| self.image(&image.id));
                     if let Some(style) = style {
-                        apply_image_box(&mut image, style);
+                        apply_image_visual(&mut image, style);
                     }
                     image
                 })
                 .collect(),
-        };
-        self.apply_layout_offsets(&mut resources);
-        resources
-    }
-
-    fn apply_layout_offsets(&self, resources: &mut StyledViewResources) {
-        for control in &mut resources.text_inputs {
-            let (x, y) = self
-                .layout_offset(StyleTargetKind::Control, &control.target)
-                .unwrap_or_default();
-            control.bounds.x_milli = control.bounds.x_milli.saturating_add(x);
-            control.bounds.y_milli = control.bounds.y_milli.saturating_add(y);
-        }
-        for button in &mut resources.action_buttons {
-            let (x, y) = self
-                .layout_offset(StyleTargetKind::Control, &button.target)
-                .unwrap_or_default();
-            button.bounds.x_milli = button.bounds.x_milli.saturating_add(x);
-            button.bounds.y_milli = button.bounds.y_milli.saturating_add(y);
-        }
-        for region in &mut resources.scroll_regions {
-            let (x, y) = self
-                .layout_offset(StyleTargetKind::Control, &region.target)
-                .unwrap_or_default();
-            region.bounds.x_milli = region.bounds.x_milli.saturating_add(x);
-            region.bounds.y_milli = region.bounds.y_milli.saturating_add(y);
-        }
-        for surface in &mut resources.surfaces {
-            let (x, y) = self
-                .layout_offset(StyleTargetKind::Control, &surface.target)
-                .or_else(|| self.layout_offset(StyleTargetKind::Part, &surface.public_id))
-                .unwrap_or_default();
-            surface.bounds.x_milli = surface.bounds.x_milli.saturating_add(x);
-            surface.bounds.y_milli = surface.bounds.y_milli.saturating_add(y);
-        }
-        for image in &mut resources.images {
-            let (x, y) = image
-                .target
-                .as_deref()
-                .and_then(|target| self.layout_offset(StyleTargetKind::Image, target))
-                .or_else(|| self.layout_offset(StyleTargetKind::Image, &image.id))
-                .unwrap_or_default();
-            image.bounds.x_milli = image.bounds.x_milli.saturating_add(x);
-            image.bounds.y_milli = image.bounds.y_milli.saturating_add(y);
+            geometry,
         }
     }
 }
@@ -408,124 +354,7 @@ const fn image_visual_property(property: ViewPropertyKind) -> bool {
     matches!(property, ViewPropertyKind::Opacity)
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(in crate::frame) struct BoxStyle {
-    pub(in crate::frame) width: Option<u32>,
-    pub(in crate::frame) height: Option<u32>,
-    pub(in crate::frame) translate_x: i32,
-    pub(in crate::frame) translate_y: i32,
-    pub(in crate::frame) scale_milli: u32,
-    pub(in crate::frame) overflow_x: ViewOverflow,
-    pub(in crate::frame) overflow_y: ViewOverflow,
-}
-
-pub(in crate::frame) fn box_style(style: &ViewRuntimeNodeStyle) -> BoxStyle {
-    let physical = style.physical_box();
-    let width = physical
-        .width
-        .map(|value| u32::try_from(value.value().max(0)).unwrap_or(u32::MAX));
-    let height = physical
-        .height
-        .map(|value| u32::try_from(value.value().max(0)).unwrap_or(u32::MAX));
-    BoxStyle {
-        width,
-        height,
-        translate_x: physical.translate_x.value(),
-        translate_y: physical.translate_y.value(),
-        scale_milli: physical.scale.value(),
-        overflow_x: physical.overflow_x,
-        overflow_y: physical.overflow_y,
-    }
-}
-
-pub(super) fn scaled_dimension(value: u32, scale_milli: u32) -> u32 {
-    u32::try_from(u64::from(value).saturating_mul(u64::from(scale_milli)) / 1_000)
-        .unwrap_or(u32::MAX)
-}
-
-fn scaled_i32(value: i32, scale_milli: u32) -> i32 {
-    let value = i64::from(value)
-        .saturating_mul(i64::from(scale_milli))
-        .saturating_div(1_000);
-    i32::try_from(value).unwrap_or(if value.is_negative() {
-        i32::MIN
-    } else {
-        i32::MAX
-    })
-}
-
-fn apply_text_control_box(control: &mut ViewRuntimeTextControl, style: &ViewRuntimeNodeStyle) {
-    let style = box_style(style);
-    control.bounds.x_milli = control.bounds.x_milli.saturating_add(style.translate_x);
-    control.bounds.y_milli = control.bounds.y_milli.saturating_add(style.translate_y);
-    control.bounds.width_milli = scaled_dimension(
-        style.width.unwrap_or(control.bounds.width_milli),
-        style.scale_milli,
-    );
-    control.bounds.height_milli = scaled_dimension(
-        style.height.unwrap_or(control.bounds.height_milli),
-        style.scale_milli,
-    );
-}
-
-fn apply_action_button_box(button: &mut ViewRuntimeActionButton, style: &ViewRuntimeNodeStyle) {
-    let style = box_style(style);
-    button.bounds.x_milli = button.bounds.x_milli.saturating_add(style.translate_x);
-    button.bounds.y_milli = button.bounds.y_milli.saturating_add(style.translate_y);
-    button.bounds.width_milli = scaled_dimension(
-        style.width.unwrap_or(button.bounds.width_milli),
-        style.scale_milli,
-    );
-    button.bounds.height_milli = scaled_dimension(
-        style.height.unwrap_or(button.bounds.height_milli),
-        style.scale_milli,
-    );
-}
-
-fn apply_scroll_region_box(region: &mut ViewRuntimeScrollRegion, style: &ViewRuntimeNodeStyle) {
-    let style = box_style(style);
-    region.bounds.x_milli = region.bounds.x_milli.saturating_add(style.translate_x);
-    region.bounds.y_milli = region.bounds.y_milli.saturating_add(style.translate_y);
-    region.bounds.width_milli = scaled_dimension(
-        style.width.unwrap_or(region.bounds.width_milli),
-        style.scale_milli,
-    );
-    region.bounds.height_milli = scaled_dimension(
-        style.height.unwrap_or(region.bounds.height_milli),
-        style.scale_milli,
-    );
-}
-
-fn apply_surface_box(surface: &mut ViewRuntimeSurface, style: &ViewRuntimeNodeStyle) {
-    let style = box_style(style);
-    surface.bounds.x_milli = surface.bounds.x_milli.saturating_add(style.translate_x);
-    surface.bounds.y_milli = surface.bounds.y_milli.saturating_add(style.translate_y);
-    surface.bounds.width_milli = scaled_dimension(
-        style.width.unwrap_or(surface.bounds.width_milli),
-        style.scale_milli,
-    );
-    surface.bounds.height_milli = scaled_dimension(
-        style.height.unwrap_or(surface.bounds.height_milli),
-        style.scale_milli,
-    );
-}
-
-fn apply_image_box(image: &mut BundleImageObject, style: &ViewRuntimeNodeStyle) {
-    let box_style = box_style(style);
-    image.bounds.width_milli = box_style.width.unwrap_or(image.bounds.width_milli);
-    image.bounds.height_milli = box_style.height.unwrap_or(image.bounds.height_milli);
-    image.transform.m11_milli = scaled_i32(image.transform.m11_milli, box_style.scale_milli);
-    image.transform.m12_milli = scaled_i32(image.transform.m12_milli, box_style.scale_milli);
-    image.transform.m21_milli = scaled_i32(image.transform.m21_milli, box_style.scale_milli);
-    image.transform.m22_milli = scaled_i32(image.transform.m22_milli, box_style.scale_milli);
-    image.transform.tx_milli = image
-        .transform
-        .tx_milli
-        .saturating_add(box_style.translate_x);
-    image.transform.ty_milli = image
-        .transform
-        .ty_milli
-        .saturating_add(box_style.translate_y);
+fn apply_image_visual(image: &mut BundleImageObject, style: &ViewRuntimeNodeStyle) {
     if let Some(depth) = style.visual().depth_milli {
         image.depth_milli = depth;
     }

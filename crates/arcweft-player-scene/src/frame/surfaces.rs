@@ -1,6 +1,10 @@
-use super::view_style::{ResolvedViewStyleFrame, box_style};
+use super::view_style::ResolvedViewStyleFrame;
 use super::view_text::PreparedMountedViewText;
-use super::{milli_i32_to_f32, milli_u32_to_f32, scroll_adjusted_bounds};
+use super::{
+    PlayerFrameError, ViewCommittedGeometryFrame, ViewGeometryConversionError,
+    ViewGeometryConversionField, ViewGeometryPlatform, ViewGeometryProductKind,
+    ViewGeometryRuntimeError, ViewGeometryTargetKey,
+};
 use arcweft_bundle::resource_codec::view::{
     ViewRuntimeControlCornerRadius, ViewRuntimeControlFilter, ViewRuntimeControlFilterList,
     ViewRuntimeControlRadii, ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle,
@@ -9,9 +13,10 @@ use arcweft_bundle::resource_codec::view::{
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::hit::HitRect;
+use arcweft_presentation::image::ImageObjectTransform;
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedViewImageResource, PreparedViewScene, PreparedViewSceneResources,
-    RenderImage, RenderScene,
+    RenderImage,
 };
 use arcweft_render_wgpu::view_scene::{
     ViewAffine2D, ViewBoxShadow, ViewBoxShadowCornerRadius, ViewBoxShadowList, ViewBoxShadowRadii,
@@ -23,7 +28,7 @@ use arcweft_render_wgpu::view_scene::{
 use arcweft_runtime_driver::view_runtime::{
     BundleViewFrame, BundleViewMountOutput, BundleViewPaintItem,
 };
-use arcweft_view::style::ViewOverflow;
+use arcweft_view::geometry::ViewGeometryConsumer;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
@@ -37,13 +42,13 @@ struct PreparedMountedViewImage {
 
 pub(super) fn push_runtime_view_scene(
     frame: &mut PreparedFrame,
-    scene: &RenderScene,
     surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
     text: &[PreparedMountedViewText],
     styles: &ResolvedViewStyleFrame,
+    geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
-) {
+) -> Result<(), PlayerFrameError> {
     let mut consumed_surfaces = BTreeSet::new();
     let mut available_images = core::mem::take(&mut frame.images);
     for mount in view
@@ -63,14 +68,14 @@ pub(super) fn push_runtime_view_scene(
             &mut prepared_images,
             &mut consumed_surfaces,
             &mut active_mounts,
-            scene,
             surfaces,
             view,
             text,
             styles,
+            geometry,
             mount,
             content,
-        );
+        )?;
         if !output.paint_nodes().is_empty() {
             frame.push_view_scene(PreparedViewScene::new(output).with_resources(resources));
         }
@@ -79,15 +84,16 @@ pub(super) fn push_runtime_view_scene(
     if let Some(surface_scene) = runtime_surface_scene(
         frame.viewport.logical_width,
         frame.viewport.logical_height,
-        scene,
         surfaces
             .iter()
             .filter(|surface| !consumed_surfaces.contains(&surface.public_id)),
         styles,
+        geometry,
         content,
-    ) {
+    )? {
         frame.push_view_scene(surface_scene);
     }
+    Ok(())
 }
 
 #[expect(
@@ -101,16 +107,16 @@ fn push_mount_paint(
     prepared_images: &mut BTreeMap<String, PreparedMountedViewImage>,
     consumed_surfaces: &mut BTreeSet<String>,
     active_mounts: &mut BTreeSet<u64>,
-    scene: &RenderScene,
     surfaces: &[ViewRuntimeSurface],
     view: &BundleViewFrame,
     text: &[PreparedMountedViewText],
     styles: &ResolvedViewStyleFrame,
+    geometry: &ViewCommittedGeometryFrame,
     mount: &BundleViewMountOutput,
     content: Option<ContentRect>,
-) {
+) -> Result<(), PlayerFrameError> {
     if !active_mounts.insert(mount.mount.get()) {
-        return;
+        return Ok(());
     }
     for item in &mount.paint {
         match item {
@@ -119,18 +125,18 @@ fn push_mount_paint(
                 if let Some(surface) = surfaces.iter().find(|surface| surface.target == scoped)
                     && push_surface(
                         output,
-                        scene,
                         surface,
                         styles.control(&scoped).or_else(|| styles.part(&scoped)),
+                        geometry,
                         content,
-                    )
+                    )?
                     .is_some()
                 {
                     consumed_surfaces.insert(surface.public_id.clone());
                 }
             }
             BundleViewPaintItem::Text { source_id, target } => {
-                push_mount_text(output, mount, text, styles, source_id, target);
+                push_mount_text(output, mount, text, styles, source_id, target)?;
             }
             BundleViewPaintItem::Image { target } => {
                 let scoped = mount.scoped_id(target);
@@ -139,8 +145,10 @@ fn push_mount_paint(
                     resources,
                     available_images,
                     prepared_images,
-                ) {
-                    push_image(output, image);
+                    geometry,
+                    content,
+                )? {
+                    push_image(output, image)?;
                 }
             }
             BundleViewPaintItem::Mount { mount: child } => {
@@ -156,19 +164,20 @@ fn push_mount_paint(
                         prepared_images,
                         consumed_surfaces,
                         active_mounts,
-                        scene,
                         surfaces,
                         view,
                         text,
                         styles,
+                        geometry,
                         child,
                         content,
-                    );
+                    )?;
                 }
             }
         }
     }
     active_mounts.remove(&mount.mount.get());
+    Ok(())
 }
 
 fn push_mount_text(
@@ -178,13 +187,13 @@ fn push_mount_text(
     styles: &ResolvedViewStyleFrame,
     source_id: &str,
     target: &str,
-) {
+) -> Result<(), PlayerFrameError> {
     let Some(prepared) = text.iter().find(|prepared| {
         prepared.mount == mount.mount.get()
             && prepared.source_id == source_id
             && prepared.target == target
     }) else {
-        return;
+        return Ok(());
     };
     let scoped = mount.scoped_id(target);
     let resolved_visual = styles
@@ -202,11 +211,12 @@ fn push_mount_text(
                 .find(|candidate| candidate.public_id == target)
         })
         .map(|target| &target.style);
-    let effects = resolved_visual.or(authored_visual).map_or_else(
-        ViewCompositingEffects::default,
-        compositing_effects_from_style,
-    );
-    push_text(output, prepared, effects);
+    let effects = match resolved_visual.or(authored_visual) {
+        Some(visual) => compositing_effects_from_style(visual)?,
+        None => ViewCompositingEffects::default(),
+    };
+    push_text(output, prepared, effects)?;
+    Ok(())
 }
 
 fn prepare_mounted_view_image(
@@ -214,15 +224,35 @@ fn prepare_mounted_view_image(
     resources: &mut PreparedViewSceneResources,
     available: &mut Vec<RenderImage>,
     prepared: &mut BTreeMap<String, PreparedMountedViewImage>,
-) -> Option<PreparedMountedViewImage> {
+    geometry: &ViewCommittedGeometryFrame,
+    content: Option<ContentRect>,
+) -> Result<Option<PreparedMountedViewImage>, PlayerFrameError> {
     if let Some(image) = prepared.get(scoped_id) {
-        return Some(*image);
+        return Ok(Some(*image));
     }
-    let image_index = available.iter().position(|image| image.id == scoped_id)?;
-    let image = available.remove(image_index);
-    let quad = image.visible_quad()?;
-    let resource_index = u32::try_from(resources.images().len()).ok()?;
-    let transform = image.transform_matrix();
+    let target = ViewGeometryTargetKey::new(ViewGeometryProductKind::Image, scoped_id.to_owned());
+    let Some(bounds) = geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Layout)?
+    else {
+        return Ok(None);
+    };
+    let Some(visible_bounds) =
+        geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Capture)?
+    else {
+        return Ok(None);
+    };
+    let Some(image_index) = available.iter().position(|image| image.id == scoped_id) else {
+        return Ok(None);
+    };
+    let mut image = available.remove(image_index);
+    image.bounds = map_rect(bounds, content);
+    image.viewport_clip = Some(map_rect(visible_bounds, content));
+    image.containing_scroll_region = None;
+    image.placement = None;
+    image.transform = ImageObjectTransform::identity();
+    let Some(quad) = image.visible_quad() else {
+        return Ok(None);
+    };
+    let resource_index = paint_index(resources.images().len())?;
     let prepared_image = PreparedMountedViewImage {
         resource_index,
         bounds: quad.rect,
@@ -232,14 +262,7 @@ fn prepare_mounted_view_image(
             right: quad.uv_right,
             bottom: quad.uv_bottom,
         },
-        transform: ViewAffine2D {
-            m11: transform.m11,
-            m12: transform.m12,
-            m21: transform.m21,
-            m22: transform.m22,
-            tx: transform.tx,
-            ty: transform.ty,
-        },
+        transform: ViewAffine2D::IDENTITY,
         opacity: f32::from(image.opacity_milli) / 1_000.0,
     };
     resources.push_image(PreparedViewImageResource {
@@ -247,34 +270,38 @@ fn prepare_mounted_view_image(
         frame: image.frame,
     });
     prepared.insert(scoped_id.to_owned(), prepared_image);
-    Some(prepared_image)
+    Ok(Some(prepared_image))
 }
 
-fn push_image(scene: &mut ViewScene, image: PreparedMountedViewImage) {
-    let start = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
+fn push_image(
+    scene: &mut ViewScene,
+    image: PreparedMountedViewImage,
+) -> Result<(), PlayerFrameError> {
+    let start = paint_index(scene.primitives().len())?;
     scene.push_primitive(ViewPrimitive::Image(ViewImagePrimitive {
         resource_index: image.resource_index,
         bounds: image.bounds,
         uv: image.uv,
         opacity: image.opacity,
     }));
-    let end = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
+    let end = paint_index(scene.primitives().len())?;
     scene.push_paint_node(ViewPaintNode::Direct(ViewSceneContext {
         transform: image.transform,
         opacity: 1.0,
         clip: None,
         primitive_range: ViewPrimitiveRange { start, end },
     }));
+    Ok(())
 }
 
 fn runtime_surface_scene<'a>(
     viewport_width: f32,
     viewport_height: f32,
-    render_scene: &RenderScene,
     surfaces: impl Iterator<Item = &'a ViewRuntimeSurface>,
     styles: &ResolvedViewStyleFrame,
+    geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
-) -> Option<PreparedViewScene> {
+) -> Result<Option<PreparedViewScene>, PlayerFrameError> {
     let mut scene = ViewScene::new(viewport_width, viewport_height);
     let mut ordered = surfaces.collect::<Vec<_>>();
     ordered.sort_by(|left, right| {
@@ -288,56 +315,42 @@ fn runtime_surface_scene<'a>(
     for surface in ordered {
         push_surface(
             &mut scene,
-            render_scene,
             surface,
             resolved_surface_style(styles, surface),
+            geometry,
             content,
-        );
+        )?;
     }
-    (!scene.paint_nodes().is_empty()).then(|| PreparedViewScene::new(scene))
+    Ok((!scene.paint_nodes().is_empty()).then(|| PreparedViewScene::new(scene)))
 }
 
 fn push_surface(
     scene: &mut ViewScene,
-    render_scene: &RenderScene,
     surface: &ViewRuntimeSurface,
     style: Option<&ViewRuntimeNodeStyle>,
+    geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
-) -> Option<()> {
-    let box_style = style.map(box_style);
-    let bounds = HitRect::new(
-        milli_i32_to_f32(surface.bounds.x_milli),
-        milli_i32_to_f32(surface.bounds.y_milli),
-        milli_u32_to_f32(surface.bounds.width_milli),
-        milli_u32_to_f32(surface.bounds.height_milli),
-    );
-    let (bounds, clip) = scroll_adjusted_bounds(
-        render_scene,
-        surface.containing_scroll_region.as_deref(),
-        bounds,
-    )?;
-    let bounds = map_rect(bounds, content);
-    let scroll_clip = clip.map(|clip| map_rect(clip, content));
-    if bounds.width <= 0.0 || bounds.height <= 0.0 {
-        return None;
-    }
-    let overflow_clip = box_style.and_then(|style| {
-        overflow_clip(
-            render_scene.viewport.logical_width,
-            render_scene.viewport.logical_height,
-            bounds,
-            style.overflow_x,
-            style.overflow_y,
-        )
-    });
-    let clip = match (scroll_clip, overflow_clip) {
-        (Some(left), Some(right)) => Some(intersection(left, right)?),
-        (Some(clip), None) | (None, Some(clip)) => Some(clip),
-        (None, None) => None,
+) -> Result<Option<()>, PlayerFrameError> {
+    let target =
+        ViewGeometryTargetKey::new(ViewGeometryProductKind::Surface, surface.target.clone());
+    let Some(bounds) = geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Layout)?
+    else {
+        return Ok(None);
     };
+    let Some(visible_bounds) =
+        geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Capture)?
+    else {
+        return Ok(None);
+    };
+    let bounds = map_rect(bounds, content);
+    let visible_bounds = map_rect(visible_bounds, content);
+    if bounds.width <= 0.0 || bounds.height <= 0.0 {
+        return Ok(None);
+    }
+    let clip = (visible_bounds != bounds).then_some(visible_bounds);
     let visual = style.map_or(&surface.style, |style| style.visual());
-    let effects = compositing_effects_from_style(visual);
-    let direct = surface_paint_range(scene, bounds, visual).map(|range| direct(range, clip));
+    let effects = compositing_effects_from_style(visual)?;
+    let direct = surface_paint_range(scene, bounds, visual)?.map(|range| direct(range, clip));
     match (effects.is_identity(), direct) {
         (true, Some(node)) => scene.push_paint_node(node),
         (false, Some(node)) => scene.push_paint_node(ViewPaintNode::Group(
@@ -346,23 +359,23 @@ fn push_surface(
         (false, None) => scene.push_paint_node(ViewPaintNode::Group(ViewCompositingGroup::new(
             bounds, effects,
         ))),
-        (true, None) => return None,
+        (true, None) => return Ok(None),
     }
-    Some(())
+    Ok(Some(()))
 }
 
 fn push_text(
     scene: &mut ViewScene,
     prepared: &PreparedMountedViewText,
     effects: ViewCompositingEffects,
-) {
-    let start = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
+) -> Result<(), PlayerFrameError> {
+    let start = paint_index(scene.primitives().len())?;
     scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive {
         text: prepared.text,
     }));
-    let end = u32::try_from(scene.primitives().len()).unwrap_or(u32::MAX);
+    let end = paint_index(scene.primitives().len())?;
     if start == end {
-        return;
+        return Ok(());
     }
     let direct = direct(ViewPrimitiveRange { start, end }, prepared.clip);
     if effects.is_identity() {
@@ -372,14 +385,15 @@ fn push_text(
             ViewCompositingGroup::new(prepared.bounds, effects).with_children(vec![direct]),
         ));
     }
+    Ok(())
 }
 
 fn surface_paint_range(
     scene: &mut ViewScene,
     bounds: HitRect,
     visual: &ViewRuntimeControlVisualStyle,
-) -> Option<ViewPrimitiveRange> {
-    let radii = surface_fill_radii(visual);
+) -> Result<Option<ViewPrimitiveRange>, PlayerFrameError> {
+    let radii = surface_fill_radii(visual)?;
     let mut paint = ViewSurfacePaint::new();
     if let Some(fill) = visual.fill.filter(|color| color.alpha > 0) {
         paint = paint.with_background(ViewSurfaceBackground::Solid {
@@ -392,58 +406,68 @@ fn surface_paint_range(
         .filter(|border| border.width_milli > 0 && border.color.alpha > 0)
     {
         paint = paint.with_border(ViewSurfaceBorder {
-            width: milli_u32_to_f32(border.width_milli),
+            width: paint_milli(
+                i64::from(border.width_milli),
+                ViewGeometryConversionField::Width,
+            )?,
             radius: radii.top_left.x_px.max(radii.top_left.y_px),
             color: view_rgba(border.color),
         });
     }
-    scene.push_surface_primitives(bounds, &paint)
+    let start = paint_index(scene.primitives().len())?;
+    paint.append_primitives(bounds, |primitive| scene.push_primitive(primitive));
+    let end = paint_index(scene.primitives().len())?;
+    Ok((start != end).then_some(ViewPrimitiveRange { start, end }))
 }
 
 fn compositing_effects_from_style(
     visual: &ViewRuntimeControlVisualStyle,
-) -> ViewCompositingEffects {
-    ViewCompositingEffects {
+) -> Result<ViewCompositingEffects, PlayerFrameError> {
+    let box_shadows = visual
+        .shadows
+        .iter()
+        .copied()
+        .map(|shadow| view_box_shadow_from_runtime(shadow, visual))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ViewCompositingEffects {
         opacity: visual.opacity_milli.map_or(1.0, ratio_milli_u16),
-        filters: view_filter_list(visual.filters.as_ref()),
-        backdrop_filters: view_filter_list(visual.backdrop_filters.as_ref()),
-        box_shadows: ViewBoxShadowList::new(
-            visual
-                .shadows
-                .iter()
-                .copied()
-                .map(|shadow| view_box_shadow_from_runtime(shadow, visual)),
-        ),
+        filters: view_filter_list(visual.filters.as_ref())?,
+        backdrop_filters: view_filter_list(visual.backdrop_filters.as_ref())?,
+        box_shadows: ViewBoxShadowList::new(box_shadows),
         ..ViewCompositingEffects::default()
-    }
+    })
 }
 
-fn view_filter_list(filters: Option<&ViewRuntimeControlFilterList>) -> ViewFilterList {
-    ViewFilterList::new(
-        filters
-            .into_iter()
-            .flat_map(|filters| filters.filters.iter().copied())
-            .map(view_filter_from_runtime),
-    )
+fn view_filter_list(
+    filters: Option<&ViewRuntimeControlFilterList>,
+) -> Result<ViewFilterList, PlayerFrameError> {
+    let filters = filters
+        .into_iter()
+        .flat_map(|filters| filters.filters.iter().copied())
+        .map(view_filter_from_runtime)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ViewFilterList::new(filters))
 }
 
-fn view_filter_from_runtime(filter: ViewRuntimeControlFilter) -> ViewFilter {
-    match filter {
+fn view_filter_from_runtime(
+    filter: ViewRuntimeControlFilter,
+) -> Result<ViewFilter, PlayerFrameError> {
+    Ok(match filter {
         ViewRuntimeControlFilter::Brightness { factor_milli } => {
-            ViewFilter::Brightness(ratio_milli_u32(factor_milli))
+            ViewFilter::Brightness(ratio_milli_u32(factor_milli)?)
         }
         ViewRuntimeControlFilter::Contrast { factor_milli } => {
-            ViewFilter::Contrast(ratio_milli_u32(factor_milli))
+            ViewFilter::Contrast(ratio_milli_u32(factor_milli)?)
         }
         ViewRuntimeControlFilter::Grayscale { amount_milli } => {
             ViewFilter::Grayscale(ratio_milli_u16(amount_milli))
         }
         ViewRuntimeControlFilter::Saturate { factor_milli } => {
-            ViewFilter::Saturate(ratio_milli_u32(factor_milli))
+            ViewFilter::Saturate(ratio_milli_u32(factor_milli)?)
         }
-        ViewRuntimeControlFilter::HueRotate { degrees_milli } => {
-            ViewFilter::HueRotateDegrees(milli_i32_to_f32(degrees_milli))
-        }
+        ViewRuntimeControlFilter::HueRotate { degrees_milli } => ViewFilter::HueRotateDegrees(
+            paint_milli(i64::from(degrees_milli), ViewGeometryConversionField::Scale)?,
+        ),
         ViewRuntimeControlFilter::Invert { amount_milli } => {
             ViewFilter::Invert(ratio_milli_u16(amount_milli))
         }
@@ -454,79 +478,114 @@ fn view_filter_from_runtime(filter: ViewRuntimeControlFilter) -> ViewFilter {
             ViewFilter::Opacity(ratio_milli_u16(amount_milli))
         }
         ViewRuntimeControlFilter::Blur { radius_milli } => ViewFilter::Blur {
-            radius_px: milli_u32_to_f32(radius_milli),
+            radius_px: paint_milli(i64::from(radius_milli), ViewGeometryConversionField::Width)?,
         },
-    }
+    })
 }
 
 fn view_box_shadow_from_runtime(
     shadow: ViewRuntimeShadow,
     visual: &ViewRuntimeControlVisualStyle,
-) -> ViewBoxShadow {
-    let offset_x = milli_i32_to_f32(shadow.offset_x_milli);
-    let offset_y = milli_i32_to_f32(shadow.offset_y_milli);
-    let blur = milli_u32_to_f32(shadow.blur_milli);
-    let spread = milli_i32_to_f32(shadow.spread_milli);
-    let radii = visual.radii_milli.map_or_else(
-        || ViewBoxShadowRadii::uniform(milli_u32_to_f32(shadow.radius_milli)),
-        view_box_shadow_radii_from_runtime,
-    );
+) -> Result<ViewBoxShadow, PlayerFrameError> {
+    let offset_x = paint_milli(
+        i64::from(shadow.offset_x_milli),
+        ViewGeometryConversionField::Left,
+    )?;
+    let offset_y = paint_milli(
+        i64::from(shadow.offset_y_milli),
+        ViewGeometryConversionField::Top,
+    )?;
+    let blur = paint_milli(
+        i64::from(shadow.blur_milli),
+        ViewGeometryConversionField::Width,
+    )?;
+    let spread = paint_milli(
+        i64::from(shadow.spread_milli),
+        ViewGeometryConversionField::Width,
+    )?;
+    let radii = match visual.radii_milli {
+        Some(radii) => view_box_shadow_radii_from_runtime(radii)?,
+        None => ViewBoxShadowRadii::uniform(paint_milli(
+            i64::from(shadow.radius_milli),
+            ViewGeometryConversionField::Width,
+        )?),
+    };
     let color = view_rgba(shadow.color);
-    match shadow.kind {
+    Ok(match shadow.kind {
         ViewRuntimeShadowKind::Outer => {
             ViewBoxShadow::outer_with_radii(offset_x, offset_y, blur, spread, radii, color)
         }
         ViewRuntimeShadowKind::Inset => {
             ViewBoxShadow::inset_with_radii(offset_x, offset_y, blur, spread, radii, color)
         }
-    }
+    })
 }
 
-fn view_box_shadow_radii_from_runtime(radii: ViewRuntimeControlRadii) -> ViewBoxShadowRadii {
-    ViewBoxShadowRadii::from_corners(
-        view_box_shadow_corner_radius(radii.top_left),
-        view_box_shadow_corner_radius(radii.top_right),
-        view_box_shadow_corner_radius(radii.bottom_right),
-        view_box_shadow_corner_radius(radii.bottom_left),
-    )
+fn view_box_shadow_radii_from_runtime(
+    radii: ViewRuntimeControlRadii,
+) -> Result<ViewBoxShadowRadii, PlayerFrameError> {
+    Ok(ViewBoxShadowRadii::from_corners(
+        view_box_shadow_corner_radius(radii.top_left)?,
+        view_box_shadow_corner_radius(radii.top_right)?,
+        view_box_shadow_corner_radius(radii.bottom_right)?,
+        view_box_shadow_corner_radius(radii.bottom_left)?,
+    ))
 }
 
 fn view_box_shadow_corner_radius(
     radius: ViewRuntimeControlCornerRadius,
-) -> ViewBoxShadowCornerRadius {
-    ViewBoxShadowCornerRadius::new(
-        milli_u32_to_f32(radius.x_milli),
-        milli_u32_to_f32(radius.y_milli),
-    )
+) -> Result<ViewBoxShadowCornerRadius, PlayerFrameError> {
+    Ok(ViewBoxShadowCornerRadius::new(
+        paint_milli(
+            i64::from(radius.x_milli),
+            ViewGeometryConversionField::Width,
+        )?,
+        paint_milli(
+            i64::from(radius.y_milli),
+            ViewGeometryConversionField::Height,
+        )?,
+    ))
 }
 
-fn surface_fill_radii(visual: &ViewRuntimeControlVisualStyle) -> ViewCornerRadii {
-    visual.radii_milli.map_or_else(
-        || {
-            visual
-                .radius_milli
-                .map_or(ViewCornerRadii::ZERO, |radius_milli| {
-                    ViewCornerRadii::uniform(milli_u32_to_f32(radius_milli))
-                })
+fn surface_fill_radii(
+    visual: &ViewRuntimeControlVisualStyle,
+) -> Result<ViewCornerRadii, PlayerFrameError> {
+    match visual.radii_milli {
+        Some(radii) => view_corner_radii_from_runtime(radii),
+        None => match visual.radius_milli {
+            Some(radius_milli) => Ok(ViewCornerRadii::uniform(paint_milli(
+                i64::from(radius_milli),
+                ViewGeometryConversionField::Width,
+            )?)),
+            None => Ok(ViewCornerRadii::ZERO),
         },
-        view_corner_radii_from_runtime,
-    )
+    }
 }
 
-fn view_corner_radii_from_runtime(radii: ViewRuntimeControlRadii) -> ViewCornerRadii {
-    ViewCornerRadii::from_corners(
-        view_corner_radius(radii.top_left),
-        view_corner_radius(radii.top_right),
-        view_corner_radius(radii.bottom_right),
-        view_corner_radius(radii.bottom_left),
-    )
+fn view_corner_radii_from_runtime(
+    radii: ViewRuntimeControlRadii,
+) -> Result<ViewCornerRadii, PlayerFrameError> {
+    Ok(ViewCornerRadii::from_corners(
+        view_corner_radius(radii.top_left)?,
+        view_corner_radius(radii.top_right)?,
+        view_corner_radius(radii.bottom_right)?,
+        view_corner_radius(radii.bottom_left)?,
+    ))
 }
 
-fn view_corner_radius(radius: ViewRuntimeControlCornerRadius) -> ViewCornerRadius {
-    ViewCornerRadius::new(
-        milli_u32_to_f32(radius.x_milli),
-        milli_u32_to_f32(radius.y_milli),
-    )
+fn view_corner_radius(
+    radius: ViewRuntimeControlCornerRadius,
+) -> Result<ViewCornerRadius, PlayerFrameError> {
+    Ok(ViewCornerRadius::new(
+        paint_milli(
+            i64::from(radius.x_milli),
+            ViewGeometryConversionField::Width,
+        )?,
+        paint_milli(
+            i64::from(radius.y_milli),
+            ViewGeometryConversionField::Height,
+        )?,
+    ))
 }
 
 fn surface_depth_milli(surface: &ViewRuntimeSurface, style: Option<&ViewRuntimeNodeStyle>) -> i32 {
@@ -544,37 +603,6 @@ fn resolved_surface_style<'a>(
         .control(&surface.target)
         .or_else(|| styles.part(&surface.target))
         .or_else(|| styles.part(&surface.public_id))
-}
-
-fn overflow_clip(
-    viewport_width: f32,
-    viewport_height: f32,
-    bounds: HitRect,
-    overflow_x: ViewOverflow,
-    overflow_y: ViewOverflow,
-) -> Option<HitRect> {
-    let clip_x = overflow_x != ViewOverflow::Visible;
-    let clip_y = overflow_y != ViewOverflow::Visible;
-    (clip_x || clip_y).then(|| {
-        HitRect::new(
-            if clip_x { bounds.x } else { 0.0 },
-            if clip_y { bounds.y } else { 0.0 },
-            if clip_x { bounds.width } else { viewport_width },
-            if clip_y {
-                bounds.height
-            } else {
-                viewport_height
-            },
-        )
-    })
-}
-
-fn intersection(left: HitRect, right: HitRect) -> Option<HitRect> {
-    let x = left.x.max(right.x);
-    let y = left.y.max(right.y);
-    let right_edge = (left.x + left.width).min(right.x + right.width);
-    let bottom_edge = (left.y + left.height).min(right.y + right.height);
-    (right_edge > x && bottom_edge > y).then(|| HitRect::new(x, y, right_edge - x, bottom_edge - y))
 }
 
 fn direct(range: ViewPrimitiveRange, clip: Option<HitRect>) -> ViewPaintNode {
@@ -599,8 +627,50 @@ fn ratio_milli_u16(value: u16) -> f32 {
     f32::from(value) / 1_000.0
 }
 
-fn ratio_milli_u32(value: u32) -> f32 {
-    milli_u32_to_f32(value)
+fn ratio_milli_u32(value: u32) -> Result<f32, PlayerFrameError> {
+    paint_milli(i64::from(value), ViewGeometryConversionField::Scale)
+}
+
+fn paint_milli(
+    value_milli: i64,
+    field: ViewGeometryConversionField,
+) -> Result<f32, PlayerFrameError> {
+    ViewGeometryConversionError::exact_f32(
+        None,
+        ViewGeometryPlatform::Wgpu,
+        ViewGeometryConsumer::Paint,
+        field,
+        value_milli,
+    )
+    .map_err(|source| {
+        ViewGeometryRuntimeError::Conversion {
+            node: None,
+            consumer: ViewGeometryConsumer::Paint,
+            source,
+        }
+        .into()
+    })
+}
+
+fn paint_index(value: usize) -> Result<u32, PlayerFrameError> {
+    let value = u64::try_from(value).expect("all supported Rust pointer widths fit in u64");
+    u32::try_from(value)
+        .map_err(|_| ViewGeometryConversionError::IndexRange {
+            node: None,
+            platform: ViewGeometryPlatform::Wgpu,
+            consumer: ViewGeometryConsumer::Paint,
+            field: ViewGeometryConversionField::IndexRange,
+            value,
+            max: u64::from(u32::MAX),
+        })
+        .map_err(|source| {
+            ViewGeometryRuntimeError::Conversion {
+                node: None,
+                consumer: ViewGeometryConsumer::Paint,
+                source,
+            }
+            .into()
+        })
 }
 
 fn map_rect(rect: HitRect, content: Option<ContentRect>) -> HitRect {
@@ -624,54 +694,25 @@ fn map_rect(rect: HitRect, content: Option<ContentRect>) -> HitRect {
 #[cfg(test)]
 mod tests {
     use super::{
-        PreparedMountedViewText, ResolvedViewStyleFrame, overflow_clip, prepare_mounted_view_image,
-        push_image, push_mount_paint, push_surface, surface_paint_range,
+        PreparedMountedViewText, ResolvedViewStyleFrame, push_mount_paint, surface_paint_range,
     };
+    use crate::frame::ViewCommittedGeometryFrame;
     use arcweft_bundle::resource_codec::view::{
-        ViewRuntimeControlBorderStyle, ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle,
-        ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+        ViewRuntimeControlBorderStyle, ViewRuntimeControlVisualStyle,
     };
-    use arcweft_presentation::appearance::{
-        PresentationColor, PresentationEnvironment, SystemPaletteSet,
-    };
+    use arcweft_presentation::appearance::PresentationColor;
     use arcweft_presentation::hit::HitRect;
-    use arcweft_presentation::image::{ImageObjectAlignment, ImageObjectFit, ImageObjectTransform};
-    use arcweft_render_wgpu::geometry::{
-        ChoiceScroll, InteractionVisualState, PreparedViewSceneResources, RenderImage,
-        RenderImageFrame, RenderPreferences, RenderScene, RenderViewport,
-    };
-    use arcweft_render_wgpu::view_scene::{
-        PreparedTextId, ViewPaintNode, ViewPrimitive, ViewScene,
-    };
+    use arcweft_render_wgpu::geometry::PreparedViewSceneResources;
+    use arcweft_render_wgpu::view_scene::{PreparedTextId, ViewPrimitive, ViewScene};
     use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
     use arcweft_runtime_driver::view_runtime::{
         BundleViewFrame, BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem,
     };
     use arcweft_view::{
-        ViewElementKind, ViewId, ViewMountId,
-        style::{
-            ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewBoxAxisHostSeed,
-            ViewBoxAxisSeedGeneration, ViewColorValue, ViewInheritedBoxAxes, ViewLengthMilli,
-            ViewOverflow, ViewPropertyKind, ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp,
-            ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority,
-        },
+        ViewId, ViewMountId,
+        style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes},
     };
     use std::collections::{BTreeMap, BTreeSet};
-
-    #[test]
-    fn axis_overflow_clip_preserves_the_visible_axis() {
-        let bounds = HitRect::new(24.0, 32.0, 120.0, 48.0);
-        assert_eq!(
-            overflow_clip(
-                320.0,
-                180.0,
-                bounds,
-                ViewOverflow::Hidden,
-                ViewOverflow::Visible,
-            ),
-            Some(HitRect::new(24.0, 0.0, 120.0, 180.0))
-        );
-    }
 
     #[test]
     fn current_surface_border_reaches_view_border_primitive() {
@@ -686,6 +727,7 @@ mod tests {
         };
 
         let range = surface_paint_range(&mut scene, HitRect::new(20.0, 30.0, 100.0, 60.0), &style)
+            .expect("paint conversion succeeds")
             .expect("border creates a surface primitive");
 
         assert_eq!(range.start, 0);
@@ -699,138 +741,6 @@ mod tests {
         assert_eq!(border.color.green, 234);
         assert_eq!(border.color.blue, 212);
         assert_eq!(border.color.alpha, 255);
-    }
-
-    #[test]
-    fn surface_paint_uses_precomputed_resource_bounds_without_reapplying_box_style() {
-        let mut builder = ComputedViewStyleBuilder::default();
-        for (order, (property, value)) in [
-            (
-                ViewPropertyKind::Width,
-                ViewSpecifiedValue::Length {
-                    value: ViewLengthMilli::new(200_000),
-                },
-            ),
-            (
-                ViewPropertyKind::TranslateX,
-                ViewSpecifiedValue::Length {
-                    value: ViewLengthMilli::new(50_000),
-                },
-            ),
-            (
-                ViewPropertyKind::Scale,
-                ViewSpecifiedValue::Scalar {
-                    value: ViewScalarMilli::new(1_500),
-                },
-            ),
-            (
-                ViewPropertyKind::BackgroundColor,
-                ViewSpecifiedValue::Color {
-                    value: ViewColorValue::Literal {
-                        color: PresentationColor::rgb(20, 40, 60),
-                    },
-                },
-            ),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            assert!(builder.apply(ViewStyleContribution::new(
-                property,
-                value,
-                ViewStyleAssignOp::Replace,
-                ViewStylePriority::new(1, 1, 0, 0, 0, u32::try_from(order).unwrap_or(u32::MAX),),
-                ViewStyleContributionSource::Inherited,
-            )));
-        }
-        let style = ViewRuntimeNodeStyle::try_from_computed(
-            &builder.finish(ComputedViewStyleRevision::new(1)),
-            &PresentationEnvironment::ENGINE_DEFAULT,
-            &SystemPaletteSet::ENGINE_DEFAULT,
-        )
-        .unwrap();
-        let surface = ViewRuntimeSurface {
-            public_id: "surface.precomputed".to_owned(),
-            target: "surface.precomputed".to_owned(),
-            view: None,
-            containing_scroll_region: None,
-            element: ViewElementKind::Panel,
-            bounds: ViewRuntimeSurfaceBounds::from_px(70, 30, 300, 60),
-            style: ViewRuntimeControlVisualStyle::default(),
-        };
-        let mut output = ViewScene::new(320.0, 180.0);
-
-        push_surface(
-            &mut output,
-            &empty_render_scene(),
-            &surface,
-            Some(&style),
-            None,
-        )
-        .expect("current fill paints the precomputed resource bounds");
-
-        let ViewPrimitive::SolidRect(fill) = &output.primitives()[0] else {
-            panic!("zero-radius current fill must lower to a solid rectangle");
-        };
-        assert_eq!(fill.bounds, HitRect::new(70.0, 30.0, 300.0, 60.0));
-    }
-
-    #[test]
-    fn mounted_image_moves_into_view_resources_with_exact_crop_and_transform() {
-        let mut available = vec![RenderImage {
-            id: "view_mount_7.image.card".to_owned(),
-            frame: RenderImageFrame {
-                index: Some(3),
-                width: 4,
-                height: 2,
-                rgba: vec![255; 32],
-            },
-            bounds: HitRect::new(10.0, 20.0, 100.0, 50.0),
-            containing_scroll_region: None,
-            viewport_clip: Some(HitRect::new(35.0, 30.0, 50.0, 20.0)),
-            placement: None,
-            fit: ImageObjectFit::Stretch,
-            alignment: ImageObjectAlignment::default(),
-            transform: ImageObjectTransform {
-                tx_milli: 5_000,
-                ty_milli: -3_000,
-                ..ImageObjectTransform::identity()
-            },
-            opacity_milli: 625,
-        }];
-        let mut resources = PreparedViewSceneResources::default();
-        let mut prepared = BTreeMap::new();
-
-        let image = prepare_mounted_view_image(
-            "view_mount_7.image.card",
-            &mut resources,
-            &mut available,
-            &mut prepared,
-        )
-        .expect("mounted image is visible");
-
-        assert!(available.is_empty());
-        assert_eq!(resources.images().len(), 1);
-        assert_eq!(resources.images()[0].frame.index, Some(3));
-        assert_eq!(image.bounds, HitRect::new(35.0, 30.0, 50.0, 20.0));
-        assert!((image.uv.left - 0.25).abs() < f32::EPSILON);
-        assert!((image.uv.top - 0.2).abs() < f32::EPSILON);
-        assert!((image.uv.right - 0.75).abs() < f32::EPSILON);
-        assert!((image.uv.bottom - 0.6).abs() < f32::EPSILON);
-        assert!((image.transform.tx - 5.0).abs() < f32::EPSILON);
-        assert!((image.transform.ty + 3.0).abs() < f32::EPSILON);
-        assert!((image.opacity - 0.625).abs() < f32::EPSILON);
-
-        let mut scene = ViewScene::new(320.0, 180.0);
-        push_image(&mut scene, image);
-        let ViewPrimitive::Image(primitive) = &scene.primitives()[0] else {
-            panic!("mounted image must remain an image primitive");
-        };
-        assert_eq!(primitive.uv, image.uv);
-        let ViewPaintNode::Direct(context) = &scene.paint_nodes()[0] else {
-            panic!("image must retain its direct painter slot");
-        };
-        assert_eq!(context.transform, image.transform);
     }
 
     #[test]
@@ -892,7 +802,6 @@ mod tests {
             prepared_text(child_mount, "child", "child.target", 1),
             prepared_text(root_mount, "after", "after.target", 2),
         ];
-        let render_scene = empty_render_scene();
         let mut output = ViewScene::new(320.0, 180.0);
         let mut resources = PreparedViewSceneResources::default();
         let mut available_images = Vec::new();
@@ -900,6 +809,7 @@ mod tests {
         let mut consumed_surfaces = BTreeSet::new();
         let mut active_mounts = BTreeSet::new();
         let styles = ResolvedViewStyleFrame::default();
+        let geometry = ViewCommittedGeometryFrame::empty_for_test();
 
         push_mount_paint(
             &mut output,
@@ -908,14 +818,15 @@ mod tests {
             &mut prepared_images,
             &mut consumed_surfaces,
             &mut active_mounts,
-            &render_scene,
             &[],
             &view,
             &text,
             &styles,
+            &geometry,
             &root,
             None,
-        );
+        )
+        .expect("nested paint order is valid");
 
         assert_eq!(
             output.prepared_text_ids().collect::<Vec<_>>(),
@@ -941,30 +852,6 @@ mod tests {
             text: PreparedTextId::from_index(index),
             bounds: HitRect::new(0.0, 0.0, 10.0, 10.0),
             clip: None,
-        }
-    }
-
-    fn empty_render_scene() -> RenderScene {
-        RenderScene {
-            content_avoidance_regions: Vec::new(),
-            choices: Vec::new(),
-            text_inputs: Vec::new(),
-            action_buttons: Vec::new(),
-            focus_groups: Vec::new(),
-            focus_navigation: Vec::new(),
-            images: Vec::new(),
-            viewport: RenderViewport {
-                logical_width: 320.0,
-                logical_height: 180.0,
-                physical_width: 320,
-                physical_height: 180,
-                scale_factor: 1.0,
-            },
-            visual_time_millis: 0,
-            preferences: RenderPreferences::default(),
-            interaction: InteractionVisualState::default(),
-            choice_scroll: ChoiceScroll::default(),
-            scroll_regions: Vec::new(),
         }
     }
 }

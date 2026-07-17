@@ -1,9 +1,9 @@
 use super::primitives::{checked_i32, checked_u32, checked_u32_sum};
 use super::revision::measured_revision;
 use super::{
-    ViewGeometryError, ViewGeometryField, ViewGeometryNodeId, ViewGeometryOperation,
-    ViewGeometryPoint, ViewGeometryRect, ViewGeometrySize, ViewGeometrySpan,
-    ViewIntrinsicMeasureRevision, ViewMeasuredGeometryRevision,
+    ViewGeometryError, ViewGeometryField, ViewGeometryOperation, ViewGeometryPoint,
+    ViewGeometryRect, ViewGeometrySize, ViewGeometrySpan, ViewIntrinsicMeasureRevision,
+    ViewMeasuredGeometryRevision, ViewStyleNodeKey,
 };
 use crate::style::{
     ViewLengthMilli, ViewPhysicalAxis, ViewPhysicalBoxStyle, ViewPhysicalContainerStyle,
@@ -74,24 +74,47 @@ pub struct ViewBoxPlacement {
 }
 
 pub fn measure_box(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     style: &ViewPhysicalBoxStyle,
     intrinsic: ViewIntrinsicMeasure,
 ) -> Result<ViewMeasuredBox, ViewGeometryError> {
+    let width = optional_non_negative(node, ViewGeometryField::Width, style.width)?;
+    let height = optional_non_negative(node, ViewGeometryField::Height, style.height)?;
+    let min_width = optional_non_negative(node, ViewGeometryField::MinWidth, style.min_width)?;
+    let min_height = optional_non_negative(node, ViewGeometryField::MinHeight, style.min_height)?;
+    let max_width = optional_non_negative(node, ViewGeometryField::MaxWidth, style.max_width)?;
+    let max_height = optional_non_negative(node, ViewGeometryField::MaxHeight, style.max_height)?;
     let padding = validate_non_negative_edges(node, style.padding, EdgeKind::Padding)?;
     let border = validate_non_negative_edges(node, style.border, EdgeKind::Border)?;
-    let horizontal_edges = checked_u32_sum(
-        node,
-        Some(ViewPhysicalAxis::X),
-        ViewGeometryOperation::Add,
-        [padding.left, padding.right, border.left, border.right],
-    )?;
-    let vertical_edges = checked_u32_sum(
-        node,
-        Some(ViewPhysicalAxis::Y),
-        ViewGeometryOperation::Add,
-        [padding.top, padding.bottom, border.top, border.bottom],
-    )?;
+
+    validate_constraints(node, ViewPhysicalAxis::X, min_width, max_width)?;
+    validate_constraints(node, ViewPhysicalAxis::Y, min_height, max_height)?;
+
+    let horizontal_edges_milli = [padding.left, padding.right, border.left, border.right]
+        .into_iter()
+        .map(u64::from)
+        .sum::<u64>();
+    let horizontal_edges = u32::try_from(horizontal_edges_milli).map_err(|_| {
+        ViewGeometryError::ArithmeticOverflow {
+            node: node.clone(),
+            axis: Some(ViewPhysicalAxis::X),
+            operation: ViewGeometryOperation::Add,
+        }
+    })?;
+    let vertical_edges_milli = [padding.top, padding.bottom, border.top, border.bottom]
+        .into_iter()
+        .map(u64::from)
+        .sum::<u64>();
+    let vertical_edges =
+        u32::try_from(vertical_edges_milli).map_err(|_| ViewGeometryError::ArithmeticOverflow {
+            node: node.clone(),
+            axis: Some(ViewPhysicalAxis::Y),
+            operation: ViewGeometryOperation::Add,
+        })?;
+
+    validate_explicit_zero(node, ViewPhysicalAxis::X, width, horizontal_edges_milli)?;
+    validate_explicit_zero(node, ViewPhysicalAxis::Y, height, vertical_edges_milli)?;
+
     let natural_width = checked_u32_sum(
         node,
         Some(ViewPhysicalAxis::X),
@@ -107,18 +130,18 @@ pub fn measure_box(
     let x = measure_axis(
         node,
         ViewPhysicalAxis::X,
-        style.width,
-        style.min_width,
-        style.max_width,
+        width,
+        min_width,
+        max_width,
         natural_width,
         horizontal_edges,
     )?;
     let y = measure_axis(
         node,
         ViewPhysicalAxis::Y,
-        style.height,
-        style.min_height,
-        style.max_height,
+        height,
+        min_height,
+        max_height,
         natural_height,
         vertical_edges,
     )?;
@@ -145,7 +168,7 @@ pub fn measure_box(
 }
 
 pub fn outer_size(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     measured: ViewMeasuredBox,
 ) -> Result<ViewOuterSize, ViewGeometryError> {
     Ok(ViewOuterSize {
@@ -167,7 +190,7 @@ pub fn outer_size(
 }
 
 pub fn flow_intrinsic_size(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     container: ViewPhysicalContainerStyle,
     children: &[ViewOuterSize],
 ) -> Result<ViewGeometrySize, ViewGeometryError> {
@@ -246,7 +269,7 @@ pub fn flow_intrinsic_size(
 }
 
 pub fn place_box(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     style: &ViewPhysicalBoxStyle,
     measured: ViewMeasuredBox,
     containing_block: ViewGeometryRect,
@@ -309,7 +332,7 @@ pub fn place_box(
     reason = "the physical positioning contract exposes both edge inputs explicitly"
 )]
 pub fn place_axis(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     position: ViewPosition,
     containing: ViewGeometrySpan,
@@ -443,7 +466,7 @@ pub fn place_axis(
 }
 
 pub fn first_flow_border_start(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     content_start_milli: i32,
     margin_start_milli: i32,
@@ -457,7 +480,7 @@ pub fn first_flow_border_start(
 }
 
 pub fn next_flow_border_start(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     previous_border_end_milli: i32,
     previous_margin_end_milli: i32,
@@ -477,7 +500,7 @@ pub fn next_flow_border_start(
 }
 
 pub fn first_reverse_flow_border_start(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     content_end_milli: i32,
     margin_end_milli: i32,
@@ -492,7 +515,7 @@ pub fn first_reverse_flow_border_start(
 }
 
 pub fn next_reverse_flow_border_start(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     previous_border_start_milli: i32,
     previous_margin_start_milli: i32,
@@ -514,27 +537,14 @@ pub fn next_reverse_flow_border_start(
 }
 
 fn measure_axis(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
-    explicit: Option<ViewLengthMilli>,
-    min: Option<ViewLengthMilli>,
-    max: Option<ViewLengthMilli>,
+    explicit: Option<u32>,
+    min: Option<u32>,
+    max: Option<u32>,
     natural_milli: u32,
     edges_milli: u32,
 ) -> Result<ViewMeasuredAxis, ViewGeometryError> {
-    let explicit = optional_non_negative(node, axis_field(axis, AxisField::Size), explicit)?;
-    let min = optional_non_negative(node, axis_field(axis, AxisField::Min), min)?;
-    let max = optional_non_negative(node, axis_field(axis, AxisField::Max), max)?;
-    if let (Some(min_milli), Some(max_milli)) = (min, max)
-        && min_milli > max_milli
-    {
-        return Err(ViewGeometryError::ConflictingConstraints {
-            node: node.clone(),
-            axis,
-            min_milli,
-            max_milli,
-        });
-    }
     let mut used_milli = explicit.unwrap_or(natural_milli);
     if let Some(min_milli) = min {
         used_milli = used_milli.max(min_milli);
@@ -560,8 +570,44 @@ fn measure_axis(
     })
 }
 
+fn validate_constraints(
+    node: &ViewStyleNodeKey,
+    axis: ViewPhysicalAxis,
+    min: Option<u32>,
+    max: Option<u32>,
+) -> Result<(), ViewGeometryError> {
+    if let (Some(min_milli), Some(max_milli)) = (min, max)
+        && min_milli > max_milli
+    {
+        return Err(ViewGeometryError::ConflictingConstraints {
+            node: node.clone(),
+            axis,
+            min_milli,
+            max_milli,
+        });
+    }
+    Ok(())
+}
+
+fn validate_explicit_zero(
+    node: &ViewStyleNodeKey,
+    axis: ViewPhysicalAxis,
+    explicit: Option<u32>,
+    edges_milli: u64,
+) -> Result<(), ViewGeometryError> {
+    if explicit == Some(0) && edges_milli > 0 {
+        return Err(ViewGeometryError::EdgesExceedUsedBorderBox {
+            node: node.clone(),
+            axis,
+            used_milli: 0,
+            edges_milli,
+        });
+    }
+    Ok(())
+}
+
 fn validate_stretched_axis(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     measured: ViewMeasuredAxis,
     candidate_milli: u32,
@@ -580,7 +626,7 @@ fn validate_stretched_axis(
 }
 
 fn stretch_error(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     measured: ViewMeasuredAxis,
     candidate_milli: i64,
@@ -596,7 +642,7 @@ fn stretch_error(
 }
 
 fn validate_non_negative_edges(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     edges: ViewPhysicalEdges<ViewLengthMilli>,
     kind: EdgeKind,
 ) -> Result<ViewPhysicalEdges<u32>, ViewGeometryError> {
@@ -609,7 +655,7 @@ fn validate_non_negative_edges(
 }
 
 fn checked_outer_extent(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     border_extent_milli: u32,
     margin_start_milli: i32,
@@ -631,7 +677,7 @@ fn checked_outer_extent(
 }
 
 fn optional_non_negative(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     field: ViewGeometryField,
     value: Option<ViewLengthMilli>,
 ) -> Result<Option<u32>, ViewGeometryError> {
@@ -641,7 +687,7 @@ fn optional_non_negative(
 }
 
 fn non_negative(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     field: ViewGeometryField,
     value_milli: i32,
 ) -> Result<u32, ViewGeometryError> {
@@ -653,7 +699,7 @@ fn non_negative(
 }
 
 fn validate_axis_gap(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     gap_milli: i32,
 ) -> Result<(), ViewGeometryError> {
@@ -669,7 +715,7 @@ fn validate_axis_gap(
 }
 
 fn checked_product(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     left: u32,
     right: u32,
@@ -719,23 +765,5 @@ const fn edge_field(kind: EdgeKind, side: Side) -> ViewGeometryField {
         (EdgeKind::Border, Side::Right) => ViewGeometryField::BorderRight,
         (EdgeKind::Border, Side::Bottom) => ViewGeometryField::BorderBottom,
         (EdgeKind::Border, Side::Left) => ViewGeometryField::BorderLeft,
-    }
-}
-
-#[derive(Clone, Copy)]
-enum AxisField {
-    Size,
-    Min,
-    Max,
-}
-
-const fn axis_field(axis: ViewPhysicalAxis, field: AxisField) -> ViewGeometryField {
-    match (axis, field) {
-        (ViewPhysicalAxis::X, AxisField::Size) => ViewGeometryField::Width,
-        (ViewPhysicalAxis::Y, AxisField::Size) => ViewGeometryField::Height,
-        (ViewPhysicalAxis::X, AxisField::Min) => ViewGeometryField::MinWidth,
-        (ViewPhysicalAxis::Y, AxisField::Min) => ViewGeometryField::MinHeight,
-        (ViewPhysicalAxis::X, AxisField::Max) => ViewGeometryField::MaxWidth,
-        (ViewPhysicalAxis::Y, AxisField::Max) => ViewGeometryField::MaxHeight,
     }
 }

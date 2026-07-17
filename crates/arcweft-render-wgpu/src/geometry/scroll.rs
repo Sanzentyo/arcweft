@@ -16,9 +16,17 @@ pub struct RenderScrollRegion {
     pub bounds: HitRect,
     pub content_width: f32,
     pub content_height: f32,
-    /// Persisted, clamped content offset along the horizontal axis.
+    /// Smallest valid signed content offset along the horizontal axis.
+    pub min_offset_x: f32,
+    /// Largest valid signed content offset along the horizontal axis.
+    pub max_offset_x: f32,
+    /// Smallest valid signed content offset along the vertical axis.
+    pub min_offset_y: f32,
+    /// Largest valid signed content offset along the vertical axis.
+    pub max_offset_y: f32,
+    /// Persisted content offset along the horizontal axis.
     pub offset_x: f32,
-    /// Persisted, clamped content offset along the vertical axis.
+    /// Persisted content offset along the vertical axis.
     pub offset_y: f32,
     /// Non-persistent elastic displacement applied only while rendering.
     pub overscroll_x: f32,
@@ -85,12 +93,27 @@ pub struct PreparedScrollIndicator {
 
 impl RenderScrollRegion {
     #[must_use]
-    pub fn max_offset_x(&self) -> f32 {
-        if self.axis != RenderScrollAxis::Horizontal || !self.overflow.scroll_enabled() {
-            return 0.0;
+    pub fn min_offset_x(&self) -> f32 {
+        if self.axis == RenderScrollAxis::Horizontal && self.overflow.scroll_enabled() {
+            self.min_offset_x
+        } else {
+            0.0
         }
-        if self.content_width.is_finite() && self.bounds.width.is_finite() {
-            (self.content_width - self.bounds.width).max(0.0)
+    }
+
+    #[must_use]
+    pub fn max_offset_x(&self) -> f32 {
+        if self.axis == RenderScrollAxis::Horizontal && self.overflow.scroll_enabled() {
+            self.max_offset_x
+        } else {
+            0.0
+        }
+    }
+
+    #[must_use]
+    pub fn min_offset_y(&self) -> f32 {
+        if self.axis == RenderScrollAxis::Vertical && self.overflow.scroll_enabled() {
+            self.min_offset_y
         } else {
             0.0
         }
@@ -98,11 +121,8 @@ impl RenderScrollRegion {
 
     #[must_use]
     pub fn max_offset_y(&self) -> f32 {
-        if self.axis != RenderScrollAxis::Vertical || !self.overflow.scroll_enabled() {
-            return 0.0;
-        }
-        if self.content_height.is_finite() && self.bounds.height.is_finite() {
-            (self.content_height - self.bounds.height).max(0.0)
+        if self.axis == RenderScrollAxis::Vertical && self.overflow.scroll_enabled() {
+            self.max_offset_y
         } else {
             0.0
         }
@@ -111,18 +131,18 @@ impl RenderScrollRegion {
     #[must_use]
     pub fn clamped_offset_x(&self, offset_x: f32) -> f32 {
         if offset_x.is_finite() {
-            offset_x.clamp(0.0, self.max_offset_x())
+            offset_x.clamp(self.min_offset_x(), self.max_offset_x())
         } else {
-            0.0
+            self.min_offset_x()
         }
     }
 
     #[must_use]
     pub fn clamped_offset_y(&self, offset_y: f32) -> f32 {
         if offset_y.is_finite() {
-            offset_y.clamp(0.0, self.max_offset_y())
+            offset_y.clamp(self.min_offset_y(), self.max_offset_y())
         } else {
-            0.0
+            self.min_offset_y()
         }
     }
 
@@ -157,7 +177,7 @@ impl RenderScrollRegion {
 
     #[must_use]
     pub fn indicator_opacity(&self, visual_time_millis: u64, reduce_motion: bool) -> f32 {
-        if !self.overflow.scroll_enabled() || self.primary_max_offset() <= f32::EPSILON {
+        if !self.overflow.scroll_enabled() || self.primary_offset_extent() <= f32::EPSILON {
             return 0.0;
         }
         match self.indicators {
@@ -198,10 +218,10 @@ impl RenderScrollRegion {
         displacement.clamp(-limit.min(96.0), limit.min(96.0))
     }
 
-    fn primary_max_offset(&self) -> f32 {
+    fn primary_offset_extent(&self) -> f32 {
         match self.axis {
-            RenderScrollAxis::Vertical => self.max_offset_y(),
-            RenderScrollAxis::Horizontal => self.max_offset_x(),
+            RenderScrollAxis::Vertical => self.max_offset_y() - self.min_offset_y(),
+            RenderScrollAxis::Horizontal => self.max_offset_x() - self.min_offset_x(),
         }
     }
 }
@@ -265,32 +285,37 @@ fn prepare_indicator(region: &RenderScrollRegion, opacity: f32) -> Option<Prepar
             thickness,
         ),
     };
-    let (track_length, viewport_length, content_length, offset, max_offset) = match region.axis {
-        RenderScrollAxis::Vertical => (
-            track_bounds.height,
-            region.bounds.height,
-            region.content_height,
-            region.clamped_offset_y(region.offset_y),
-            region.max_offset_y(),
-        ),
-        RenderScrollAxis::Horizontal => (
-            track_bounds.width,
-            region.bounds.width,
-            region.content_width,
-            region.clamped_offset_x(region.offset_x),
-            region.max_offset_x(),
-        ),
-    };
+    let (track_length, viewport_length, content_length, offset, min_offset, max_offset) =
+        match region.axis {
+            RenderScrollAxis::Vertical => (
+                track_bounds.height,
+                region.bounds.height,
+                region.content_height,
+                region.clamped_offset_y(region.offset_y),
+                region.min_offset_y(),
+                region.max_offset_y(),
+            ),
+            RenderScrollAxis::Horizontal => (
+                track_bounds.width,
+                region.bounds.width,
+                region.content_width,
+                region.clamped_offset_x(region.offset_x),
+                region.min_offset_x(),
+                region.max_offset_x(),
+            ),
+        };
+    let offset_extent = max_offset - min_offset;
     if track_length <= f32::EPSILON
         || viewport_length <= f32::EPSILON
         || content_length <= viewport_length
-        || max_offset <= f32::EPSILON
+        || offset_extent <= f32::EPSILON
     {
         return None;
     }
     let thumb_length = (track_length * viewport_length / content_length)
         .clamp(INDICATOR_MIN_THUMB_PX.min(track_length), track_length);
-    let thumb_position = (track_length - thumb_length) * (offset / max_offset).clamp(0.0, 1.0);
+    let thumb_position =
+        (track_length - thumb_length) * ((offset - min_offset) / offset_extent).clamp(0.0, 1.0);
     let thumb_bounds = match region.axis {
         RenderScrollAxis::Vertical => HitRect::new(
             track_bounds.x,

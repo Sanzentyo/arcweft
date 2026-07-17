@@ -1,5 +1,6 @@
 use arcweft_bundle::resource_codec::{
-    SystemColorOverride, ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError, ViewThemeResource,
+    SystemColorOverride, ViewRuntimeGeometryOwner, ViewRuntimeGeometryParticipation,
+    ViewRuntimeNodeStyle, ViewRuntimeStyleProjectionError, ViewThemeResource,
 };
 use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationColor, PresentationEnvironment,
@@ -23,6 +24,15 @@ use arcweft_view::style::{
     ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleContribution,
     ViewStyleContributionSource, ViewStylePriority, ViewStyleValueKind, ViewSystemFontFamily,
 };
+use arcweft_view::{ViewElementKind, ViewMountId, ViewStyleNodeKey};
+
+fn node() -> ViewStyleNodeKey {
+    ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![2], 3)
+}
+
+const fn owner() -> ViewRuntimeGeometryOwner {
+    ViewRuntimeGeometryOwner::Element(ViewElementKind::Panel)
+}
 
 fn computed(
     entries: impl IntoIterator<Item = (ViewPropertyKind, ViewSpecifiedValue)>,
@@ -110,6 +120,18 @@ fn representative_value(kind: ViewStyleValueKind) -> ViewSpecifiedValue {
     }
 }
 
+fn representative_property_value(property: ViewPropertyKind) -> ViewSpecifiedValue {
+    match property {
+        ViewPropertyKind::Display => ViewSpecifiedValue::Display {
+            value: ViewDisplay::Block,
+        },
+        ViewPropertyKind::RowGap | ViewPropertyKind::ColumnGap => ViewSpecifiedValue::Length {
+            value: ViewLengthMilli::new(0),
+        },
+        _ => representative_value(property.value_kind()),
+    }
+}
+
 #[test]
 fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
     let computed = computed(
@@ -117,9 +139,17 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
             .iter()
             .copied()
             .filter(|property| property.is_computed_canonical())
-            .map(|property| (property, representative_value(property.value_kind()))),
+            .filter(|property| {
+                !matches!(
+                    property.geometry_support(),
+                    arcweft_view::geometry::ViewGeometryPropertySupport::RepresentedOnly(_)
+                )
+            })
+            .map(|property| (property, representative_property_value(property))),
     );
     let projected = ViewRuntimeNodeStyle::try_from_computed(
+        node(),
+        owner(),
         &computed,
         &environment(ColorScheme::Dark),
         &SystemPaletteSet::ENGINE_DEFAULT,
@@ -141,11 +171,23 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
         ViewPropertyKind::ALL
             .iter()
             .filter(|property| property.is_computed_canonical())
+            .filter(|property| {
+                !matches!(
+                    property.geometry_support(),
+                    arcweft_view::geometry::ViewGeometryPropertySupport::RepresentedOnly(_)
+                )
+            })
             .count()
     );
     for property in ViewPropertyKind::ALL
         .iter()
         .filter(|property| property.is_computed_canonical())
+        .filter(|property| {
+            !matches!(
+                property.geometry_support(),
+                arcweft_view::geometry::ViewGeometryPropertySupport::RepresentedOnly(_)
+            )
+        })
     {
         assert_eq!(
             partitions
@@ -169,6 +211,14 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
     assert_eq!(visual.font_size_milli, Some(12_000));
     assert_eq!(visual.letter_spacing_milli, Some(12_000));
     assert_eq!(visual.depth_milli, Some(7));
+    assert_eq!(projected.physical().node(), &node());
+    assert_eq!(projected.physical().owner(), owner());
+    assert_eq!(
+        projected.physical().participation(),
+        ViewRuntimeGeometryParticipation::Container
+    );
+    assert!(projected.physical().box_style().is_some());
+    assert!(projected.physical().container_style().is_some());
 }
 
 #[test]
@@ -186,6 +236,8 @@ fn projection_uses_the_supplied_environment_palette_for_system_colors() {
     )]);
 
     let projected = ViewRuntimeNodeStyle::try_from_computed(
+        node(),
+        owner(),
         &computed,
         &environment(ColorScheme::Dark),
         &palettes,
@@ -208,6 +260,8 @@ fn malformed_computed_property_value_is_a_typed_error() {
 
     assert_eq!(
         ViewRuntimeNodeStyle::try_from_computed(
+            node(),
+            owner(),
             &computed,
             &environment(ColorScheme::Light),
             &SystemPaletteSet::ENGINE_DEFAULT,

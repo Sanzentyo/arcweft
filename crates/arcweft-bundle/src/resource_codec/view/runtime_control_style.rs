@@ -4,27 +4,31 @@ use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironment, SystemPaletteSet,
 };
 use arcweft_view::style::{
-    ComputedViewStyle, ViewPhysicalBoxStyle, ViewPropertyKind, ViewSpecifiedValue,
-    ViewStyleValueKind,
+    ComputedViewStyle, ViewPropertyKind, ViewSpecifiedValue, ViewStyleNodeKey, ViewStyleValueKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+pub mod physical;
 mod projection;
+
+pub use physical::{
+    ViewRuntimeGeometryOwner, ViewRuntimeGeometryParticipation, ViewRuntimePhysicalNodeStyle,
+};
 
 /// One current computed node snapshot partitioned by its downstream owner.
 ///
 /// Every computed property is retained in exactly one typed partition. The
 /// control visual is a derived renderer packet, not a second cascade model.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewRuntimeNodeStyle {
     layout: ViewRuntimeStyleProperties,
     text: ViewRuntimeStyleProperties,
     paint: ViewRuntimeStyleProperties,
     composite: ViewRuntimeStyleProperties,
     transition: ViewRuntimeStyleProperties,
-    physical_box: ViewPhysicalBoxStyle,
+    physical: ViewRuntimePhysicalNodeStyle,
     visual: ViewRuntimeControlVisualStyle,
 }
 
@@ -40,6 +44,18 @@ pub enum ViewRuntimeStyleProjectionError {
         property: ViewPropertyKind,
         expected: ViewStyleValueKind,
         actual: ViewStyleValueKind,
+    },
+    #[error("node {node:?} geometry projection failed: {source}")]
+    Geometry {
+        node: ViewStyleNodeKey,
+        #[source]
+        source: arcweft_view::geometry::ViewGeometryError,
+    },
+    #[error("node {node:?} owner {owner:?} cannot use geometry property {property:?}")]
+    GeometryOnTransparentOwner {
+        node: ViewStyleNodeKey,
+        owner: ViewRuntimeGeometryOwner,
+        property: ViewPropertyKind,
     },
 }
 
@@ -205,11 +221,13 @@ pub enum ViewRuntimeControlFilter {
 
 impl ViewRuntimeNodeStyle {
     pub fn try_from_computed(
+        node: ViewStyleNodeKey,
+        owner: ViewRuntimeGeometryOwner,
         computed: &ComputedViewStyle,
         environment: &PresentationEnvironment,
         palettes: &SystemPaletteSet,
     ) -> Result<Self, ViewRuntimeStyleProjectionError> {
-        projection::project_computed_style(computed, environment, palettes)
+        projection::project_computed_style(node, owner, computed, environment, palettes)
     }
 
     pub const fn layout(&self) -> &ViewRuntimeStyleProperties {
@@ -232,9 +250,9 @@ impl ViewRuntimeNodeStyle {
         &self.transition
     }
 
-    /// Canonical physical packet shared by layout, clip, input, focus, and scroll consumers.
-    pub const fn physical_box(&self) -> &ViewPhysicalBoxStyle {
-        &self.physical_box
+    /// Sole canonical physical packet shared by every geometry consumer.
+    pub const fn physical(&self) -> &ViewRuntimePhysicalNodeStyle {
+        &self.physical
     }
 
     pub const fn visual(&self) -> &ViewRuntimeControlVisualStyle {

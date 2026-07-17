@@ -1,4 +1,8 @@
-use super::{ViewGeometryNodeId, ViewIntrinsicMeasure};
+use super::{
+    ViewBoxPlacement, ViewGeometryClip, ViewGeometryClipAxis, ViewGeometryPoint, ViewGeometryRect,
+    ViewGeometryTransform, ViewIntrinsicMeasure, ViewMeasuredBox, ViewOuterSize, ViewPaintOutsets,
+    ViewStyleNodeKey,
+};
 use crate::style::{
     ViewDisplay, ViewLengthMilli, ViewPhysicalBoxStyle, ViewPhysicalContainerStyle,
 };
@@ -203,90 +207,181 @@ impl ViewScrollStateRevision {
     }
 }
 
-/// Exact measured-cache identity. Hash equality never substitutes for key equality.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewAvailableGeometrySize {
+    pub width_milli: Option<u32>,
+    pub height_milli: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewChildOuterDependency {
+    pub node: ViewStyleNodeKey,
+    pub outer_size: ViewOuterSize,
+    pub revision: ViewOuterMeasureRevision,
+}
+
+/// Exact measured-cache identity. Revision equality never substitutes for this value.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewMeasuredGeometryKey {
-    pub node: ViewGeometryNodeId,
-    pub measure_style_revision: ViewGeometryMeasureStyleRevision,
-    pub intrinsic_revision: ViewIntrinsicMeasureRevision,
-    pub available_width_milli: Option<u32>,
-    pub available_height_milli: Option<u32>,
-    pub ordered_child_outer_revisions: Vec<ViewOuterMeasureRevision>,
+    pub node: ViewStyleNodeKey,
+    pub box_style: ViewPhysicalBoxStyle,
+    pub container_style: Option<ViewPhysicalContainerStyle>,
+    pub intrinsic: ViewIntrinsicMeasure,
+    pub available: ViewAvailableGeometrySize,
+    pub ordered_children: Vec<ViewChildOuterDependency>,
 }
 
 impl ViewMeasuredGeometryKey {
     pub fn revision(&self) -> ViewMeasuredGeometryRevision {
         let mut transcript = RevisionTranscript::new(MEASURE_DOMAIN);
         transcript.node(&self.node);
-        transcript.u64(self.measure_style_revision.value());
-        transcript.u64(self.intrinsic_revision.value());
-        transcript.option_u32(self.available_width_milli);
-        transcript.option_u32(self.available_height_milli);
-        transcript.u64(self.ordered_child_outer_revisions.len() as u64);
-        for revision in &self.ordered_child_outer_revisions {
-            transcript.u64(revision.value());
+        transcript.physical_box(&self.box_style);
+        transcript.physical_container(self.container_style);
+        transcript.intrinsic(self.intrinsic);
+        transcript.option_u32(self.available.width_milli);
+        transcript.option_u32(self.available.height_milli);
+        transcript.u64(self.ordered_children.len() as u64);
+        for child in &self.ordered_children {
+            transcript.node(&child.node);
+            transcript.outer_size(child.outer_size);
+            transcript.u64(child.revision.value());
         }
         ViewMeasuredGeometryRevision(transcript.finish())
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewPlacedDependency {
+    pub node: ViewStyleNodeKey,
+    pub placement: ViewBoxPlacement,
+    pub revision: ViewPlacedGeometryRevision,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewContainingBlockDependency {
+    pub node: Option<ViewStyleNodeKey>,
+    pub rect: ViewGeometryRect,
+    pub revision: ViewPlacedGeometryRevision,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewViewportGeometryInput {
+    pub rect: ViewGeometryRect,
+    pub revision: ViewViewportGeometryRevision,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewScrollStateInput {
+    pub x_milli: i32,
+    pub y_milli: i32,
+    pub revision: ViewScrollStateRevision,
+}
+
 /// Exact placement-cache identity without a parent/child final-revision cycle.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewPlacedGeometryKey {
-    pub node: ViewGeometryNodeId,
-    pub measured_revision: ViewMeasuredGeometryRevision,
-    pub place_style_revision: ViewGeometryPlaceStyleRevision,
-    pub parent_placed_revision: Option<ViewPlacedGeometryRevision>,
-    pub containing_block_revision: ViewPlacedGeometryRevision,
-    pub previous_flow_sibling_revision: Option<ViewPlacedGeometryRevision>,
-    pub viewport_revision: ViewViewportGeometryRevision,
-    pub scroll_state_revision: ViewScrollStateRevision,
+    pub node: ViewStyleNodeKey,
+    pub measured: ViewMeasuredBox,
+    pub box_style: ViewPhysicalBoxStyle,
+    pub containing_block: ViewContainingBlockDependency,
+    pub static_border_origin: ViewGeometryPoint,
+    pub parent: Option<ViewPlacedDependency>,
+    pub previous_flow_sibling: Option<ViewPlacedDependency>,
+    pub viewport: ViewViewportGeometryInput,
+    pub scroll: ViewScrollStateInput,
 }
 
 impl ViewPlacedGeometryKey {
     pub fn revision(&self) -> ViewPlacedGeometryRevision {
         let mut transcript = RevisionTranscript::new(PLACED_DOMAIN);
         transcript.node(&self.node);
-        transcript.u64(self.measured_revision.value());
-        transcript.u64(self.place_style_revision.value());
-        transcript.option_u64(
-            self.parent_placed_revision
-                .map(ViewPlacedGeometryRevision::value),
-        );
-        transcript.u64(self.containing_block_revision.value());
-        transcript.option_u64(
-            self.previous_flow_sibling_revision
-                .map(ViewPlacedGeometryRevision::value),
-        );
-        transcript.u64(self.viewport_revision.value());
-        transcript.u64(self.scroll_state_revision.value());
+        transcript.measured(self.measured);
+        transcript.physical_box(&self.box_style);
+        transcript.option_node(self.containing_block.node.as_ref());
+        transcript.rect(self.containing_block.rect);
+        transcript.u64(self.containing_block.revision.value());
+        transcript.point(self.static_border_origin);
+        transcript.placed_dependency(self.parent.as_ref());
+        transcript.placed_dependency(self.previous_flow_sibling.as_ref());
+        transcript.rect(self.viewport.rect);
+        transcript.u64(self.viewport.revision.value());
+        transcript.i32(self.scroll.x_milli);
+        transcript.i32(self.scroll.y_milli);
+        transcript.u64(self.scroll.revision.value());
         ViewPlacedGeometryRevision(transcript.finish())
     }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewTransformDependency {
+    pub node: ViewStyleNodeKey,
+    pub transform: ViewGeometryTransform,
+    pub placed_revision: ViewPlacedGeometryRevision,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewChildFinalDependency {
+    pub node: ViewStyleNodeKey,
+    pub world_border_box: ViewGeometryRect,
+    pub layout_subtree_bounds: ViewGeometryRect,
+    pub paint_subtree_bounds: Option<ViewGeometryRect>,
+    pub descendant_clip: ViewGeometryClip,
+    pub revision: ViewFinalGeometryRevision,
 }
 
 /// Exact final-cache identity after placement, child aggregation, and paint outsets.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewFinalGeometryKey {
-    pub placed_revision: ViewPlacedGeometryRevision,
-    pub visual_outsets_revision: ViewPaintOutsetsRevision,
-    pub ordered_child_final_revisions: Vec<ViewFinalGeometryRevision>,
+    pub node: ViewStyleNodeKey,
+    pub placement: ViewBoxPlacement,
+    pub box_style: ViewPhysicalBoxStyle,
+    pub transform_chain: Vec<ViewTransformDependency>,
+    pub inherited_clip: ViewGeometryClip,
+    pub paint_outsets: ViewPaintOutsets,
+    pub scroll: ViewScrollStateInput,
+    pub ordered_children: Vec<ViewChildFinalDependency>,
 }
 
 impl ViewFinalGeometryKey {
     pub fn revision(&self) -> ViewFinalGeometryRevision {
         let mut transcript = RevisionTranscript::new(FINAL_DOMAIN);
-        transcript.u64(self.placed_revision.value());
-        transcript.u64(self.visual_outsets_revision.value());
-        transcript.u64(self.ordered_child_final_revisions.len() as u64);
-        for revision in &self.ordered_child_final_revisions {
-            transcript.u64(revision.value());
+        transcript.node(&self.node);
+        transcript.placement(self.placement);
+        transcript.physical_box(&self.box_style);
+        transcript.u64(self.transform_chain.len() as u64);
+        for dependency in &self.transform_chain {
+            transcript.node(&dependency.node);
+            transcript.transform(dependency.transform);
+            transcript.u64(dependency.placed_revision.value());
+        }
+        transcript.clip(self.inherited_clip);
+        for edge in [
+            self.paint_outsets.edges.top,
+            self.paint_outsets.edges.right,
+            self.paint_outsets.edges.bottom,
+            self.paint_outsets.edges.left,
+        ] {
+            transcript.u32(edge);
+        }
+        transcript.u64(self.paint_outsets.revision.value());
+        transcript.i32(self.scroll.x_milli);
+        transcript.i32(self.scroll.y_milli);
+        transcript.u64(self.scroll.revision.value());
+        transcript.u64(self.ordered_children.len() as u64);
+        for child in &self.ordered_children {
+            transcript.node(&child.node);
+            transcript.rect(child.world_border_box);
+            transcript.rect(child.layout_subtree_bounds);
+            transcript.option_rect(child.paint_subtree_bounds);
+            transcript.clip(child.descendant_clip);
+            transcript.u64(child.revision.value());
         }
         ViewFinalGeometryRevision(transcript.finish())
     }
 }
 
 pub(super) fn measured_revision(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     style: &ViewPhysicalBoxStyle,
     intrinsic: ViewIntrinsicMeasure,
     used_width_milli: u32,
@@ -316,13 +411,193 @@ impl RevisionTranscript {
         transcript
     }
 
-    fn node(&mut self, node: &ViewGeometryNodeId) {
+    fn node(&mut self, node: &ViewStyleNodeKey) {
         self.u64(node.mount().get());
         self.u64(node.path().len() as u64);
         for segment in node.path() {
             self.u64(*segment);
         }
         self.u32(node.instruction());
+    }
+
+    fn option_node(&mut self, node: Option<&ViewStyleNodeKey>) {
+        match node {
+            Some(node) => {
+                self.u8(1);
+                self.node(node);
+            }
+            None => self.u8(0),
+        }
+    }
+
+    fn point(&mut self, point: ViewGeometryPoint) {
+        self.i32(point.x_milli);
+        self.i32(point.y_milli);
+    }
+
+    fn rect(&mut self, rect: ViewGeometryRect) {
+        self.i32(rect.left_milli);
+        self.i32(rect.top_milli);
+        self.i32(rect.right_milli);
+        self.i32(rect.bottom_milli);
+    }
+
+    fn option_rect(&mut self, rect: Option<ViewGeometryRect>) {
+        match rect {
+            Some(rect) => {
+                self.u8(1);
+                self.rect(rect);
+            }
+            None => self.u8(0),
+        }
+    }
+
+    fn outer_size(&mut self, outer: ViewOuterSize) {
+        self.u32(outer.width_milli);
+        self.u32(outer.height_milli);
+    }
+
+    fn intrinsic(&mut self, intrinsic: ViewIntrinsicMeasure) {
+        self.u32(intrinsic.content_size.width_milli);
+        self.u32(intrinsic.content_size.height_milli);
+        self.u64(intrinsic.revision.value());
+    }
+
+    fn measured(&mut self, measured: ViewMeasuredBox) {
+        for axis in [measured.x, measured.y] {
+            self.u32(axis.natural_border_extent_milli);
+            self.u32(axis.used_border_extent_milli);
+            self.u32(axis.edge_extent_milli);
+            self.option_u32(axis.min_milli);
+            self.option_u32(axis.max_milli);
+            self.u8(u8::from(axis.auto));
+        }
+        self.u32(measured.content_size.width_milli);
+        self.u32(measured.content_size.height_milli);
+        for edge in [
+            measured.padding.top,
+            measured.padding.right,
+            measured.padding.bottom,
+            measured.padding.left,
+            measured.border.top,
+            measured.border.right,
+            measured.border.bottom,
+            measured.border.left,
+        ] {
+            self.u32(edge);
+        }
+        for edge in [
+            measured.margin.top,
+            measured.margin.right,
+            measured.margin.bottom,
+            measured.margin.left,
+        ] {
+            self.i32(edge);
+        }
+        self.u64(measured.revision.value());
+    }
+
+    fn placement(&mut self, placement: ViewBoxPlacement) {
+        self.rect(placement.content_box);
+        self.rect(placement.padding_box);
+        self.rect(placement.border_box);
+        self.rect(placement.margin_box);
+    }
+
+    fn placed_dependency(&mut self, dependency: Option<&ViewPlacedDependency>) {
+        match dependency {
+            Some(dependency) => {
+                self.u8(1);
+                self.node(&dependency.node);
+                self.placement(dependency.placement);
+                self.u64(dependency.revision.value());
+            }
+            None => self.u8(0),
+        }
+    }
+
+    fn transform(&mut self, transform: ViewGeometryTransform) {
+        self.rect(transform.border_box);
+        self.point(transform.translate);
+        self.u32(transform.scale.value());
+    }
+
+    fn clip(&mut self, clip: ViewGeometryClip) {
+        let Some(axes) = clip.axes() else {
+            self.u8(0);
+            return;
+        };
+        self.u8(1);
+        self.clip_axis(axes.x());
+        self.clip_axis(axes.y());
+    }
+
+    fn clip_axis(&mut self, axis: ViewGeometryClipAxis) {
+        match axis {
+            ViewGeometryClipAxis::Unbounded => self.u8(0),
+            ViewGeometryClipAxis::Bounded(span) => {
+                self.u8(1);
+                self.i32(span.start_milli);
+                self.i32(span.end_milli);
+            }
+        }
+    }
+
+    fn physical_box(&mut self, physical: &ViewPhysicalBoxStyle) {
+        self.u8(physical.axes.canonical_tag());
+        self.option_u8(physical.display.map(ViewDisplay::canonical_tag));
+        self.u8(physical.position.canonical_tag());
+        for value in [
+            physical.width,
+            physical.height,
+            physical.min_width,
+            physical.min_height,
+            physical.max_width,
+            physical.max_height,
+        ] {
+            self.option_i32(value.map(ViewLengthMilli::value));
+        }
+        for value in [
+            physical.padding.top,
+            physical.padding.right,
+            physical.padding.bottom,
+            physical.padding.left,
+            physical.border.top,
+            physical.border.right,
+            physical.border.bottom,
+            physical.border.left,
+            physical.margin.top,
+            physical.margin.right,
+            physical.margin.bottom,
+            physical.margin.left,
+        ] {
+            self.i32(value.value());
+        }
+        for value in [
+            physical.inset.top,
+            physical.inset.right,
+            physical.inset.bottom,
+            physical.inset.left,
+        ] {
+            self.option_i32(value.map(ViewLengthMilli::value));
+        }
+        self.i32(physical.translate_x.value());
+        self.i32(physical.translate_y.value());
+        self.u32(physical.scale.value());
+        self.u8(physical.overflow_x.canonical_tag());
+        self.u8(physical.overflow_y.canonical_tag());
+    }
+
+    fn physical_container(&mut self, container: Option<ViewPhysicalContainerStyle>) {
+        match container {
+            Some(container) => {
+                self.u8(1);
+                self.u8(container.flow.canonical_tag());
+                self.i32(container.row_gap.value());
+                self.i32(container.column_gap.value());
+            }
+            None => self.u8(0),
+        }
     }
 
     fn bytes(&mut self, bytes: &[u8]) {
@@ -378,16 +653,6 @@ impl RevisionTranscript {
             Some(value) => {
                 self.u8(1);
                 self.u32(value);
-            }
-            None => self.u8(0),
-        }
-    }
-
-    fn option_u64(&mut self, value: Option<u64>) {
-        match value {
-            Some(value) => {
-                self.u8(1);
-                self.u64(value);
             }
             None => self.u8(0),
         }

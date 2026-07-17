@@ -1,4 +1,8 @@
 use crate::control_style::lower_control_style;
+use crate::frame::{
+    ViewCommittedGeometryFrame, ViewGeometryProductKind, ViewGeometryRuntimeError,
+    ViewGeometryTargetKey,
+};
 use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewRuntimeActionButton, ViewRuntimeActionButtonAction,
     ViewRuntimeButtonBounds,
@@ -9,6 +13,7 @@ use arcweft_presentation::input::InteractionTarget;
 use arcweft_render_wgpu::geometry::{
     RenderActionButton, RenderActionButtonAction, RenderTextInputControl,
 };
+use arcweft_view::geometry::ViewGeometryConsumer;
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -25,6 +30,8 @@ pub enum RuntimeActionButtonLoweringError {
     MissingTextControlTarget { button: String, target: String },
     #[error("dialogue action button `{button}` has no active primary action target")]
     MissingDialoguePrimaryAction { button: String },
+    #[error(transparent)]
+    ViewGeometry(#[from] ViewGeometryRuntimeError),
 }
 
 impl RuntimeActionButtonLowerer {
@@ -38,16 +45,45 @@ impl RuntimeActionButtonLowerer {
             .collect()
     }
 
+    pub(crate) fn lower_for_geometry(
+        buttons: &[ViewRuntimeActionButton],
+        text_inputs: &[RenderTextInputControl],
+        geometry: &ViewCommittedGeometryFrame,
+    ) -> Result<Vec<RenderActionButton>, RuntimeActionButtonLoweringError> {
+        let mut lowered = Vec::with_capacity(buttons.len());
+        for button in buttons {
+            let target = ViewGeometryTargetKey::new(
+                ViewGeometryProductKind::ActionButton,
+                button.target.clone(),
+            );
+            let Some(bounds) =
+                geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::HitTest)?
+            else {
+                continue;
+            };
+            lowered.push(Self::lower_button_at(button, text_inputs, bounds)?);
+        }
+        Ok(lowered)
+    }
+
     fn lower_button(
         button: &ViewRuntimeActionButton,
         text_inputs: &[RenderTextInputControl],
+    ) -> Result<RenderActionButton, RuntimeActionButtonLoweringError> {
+        Self::lower_button_at(button, text_inputs, lower_bounds(button.bounds))
+    }
+
+    fn lower_button_at(
+        button: &ViewRuntimeActionButton,
+        text_inputs: &[RenderTextInputControl],
+        bounds: HitRect,
     ) -> Result<RenderActionButton, RuntimeActionButtonLoweringError> {
         Ok(RenderActionButton {
             target: lower_target(&button.target)?,
             label: button.label.clone(),
             enabled: button.enabled,
             containing_scroll_region: button.containing_scroll_region.clone(),
-            bounds: lower_bounds(button.bounds),
+            bounds,
             viewport_clip: None,
             style: lower_control_style(&button.style),
             action: lower_action(button, text_inputs)?,

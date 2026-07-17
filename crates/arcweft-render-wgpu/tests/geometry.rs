@@ -104,16 +104,10 @@ fn render_image(id: &str, bounds: HitRect) -> RenderImage {
 }
 
 #[test]
-fn viewport_physical_scale_factor_for_renderer_is_finite_f32() {
+fn viewport_physical_scale_factor_preserves_the_host_validated_value() {
     let mut viewport = scene().viewport;
     viewport.scale_factor = 2.0;
     assert!((viewport.physical_scale_factor_f32() - 2.0).abs() < f32::EPSILON);
-
-    viewport.scale_factor = 0.0;
-    assert!((viewport.physical_scale_factor_f32() - f32::EPSILON).abs() < f32::EPSILON);
-
-    viewport.scale_factor = f64::NAN;
-    assert!((viewport.physical_scale_factor_f32() - 1.0).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -434,6 +428,10 @@ fn scroll_regions_survive_frame_planning_and_viewport_mapping() {
             bounds: HitRect::new(100.0, 50.0, 300.0, 120.0),
             content_width: 300.0,
             content_height: 480.0,
+            min_offset_x: 0.0,
+            max_offset_x: 0.0,
+            min_offset_y: 0.0,
+            max_offset_y: 360.0,
             offset_x: 0.0,
             offset_y: 90.0,
             overscroll_x: 0.0,
@@ -480,6 +478,10 @@ fn hidden_scroll_region_reports_no_scroll_range() {
         bounds: HitRect::new(100.0, 50.0, 300.0, 120.0),
         content_width: 300.0,
         content_height: 480.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 360.0,
         offset_x: 0.0,
         offset_y: 0.0,
         overscroll_x: 0.0,
@@ -497,12 +499,56 @@ fn hidden_scroll_region_reports_no_scroll_range() {
 }
 
 #[test]
+fn signed_scroll_range_preserves_negative_offsets() {
+    let region = RenderScrollRegion {
+        id: "scroll.signed".to_owned(),
+        bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
+        content_width: 100.0,
+        content_height: 400.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: -80.0,
+        max_offset_y: 220.0,
+        offset_x: 0.0,
+        offset_y: -40.0,
+        overscroll_x: 0.0,
+        overscroll_y: 0.0,
+        axis: RenderScrollAxis::Vertical,
+        overflow: RenderScrollOverflow::Auto,
+        indicators: RenderScrollIndicatorsPolicy::Visible,
+        overscroll: RenderScrollOverscrollPolicy::Clamp,
+        auto_scroll_focus: RenderFocusAutoScrollPolicy::Nearest,
+        indicator_activity_millis: None,
+    };
+
+    assert_eq!(region.min_offset_y().to_bits(), (-80.0_f32).to_bits());
+    assert_eq!(region.max_offset_y().to_bits(), 220.0_f32.to_bits());
+    assert_eq!(
+        region.clamped_offset_y(-200.0).to_bits(),
+        (-80.0_f32).to_bits()
+    );
+    assert_eq!(
+        region.clamped_offset_y(-40.0).to_bits(),
+        (-40.0_f32).to_bits()
+    );
+    assert_eq!(
+        region.clamped_offset_y(400.0).to_bits(),
+        220.0_f32.to_bits()
+    );
+    assert_eq!(region.visual_offset_y().to_bits(), (-40.0_f32).to_bits());
+}
+
+#[test]
 fn scroll_indicator_policies_produce_observable_thumb_geometry() {
     let region = RenderScrollRegion {
         id: "scroll.story".to_owned(),
         bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
         content_width: 100.0,
         content_height: 400.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 300.0,
         offset_x: 0.0,
         offset_y: 150.0,
         overscroll_x: 0.0,
@@ -549,6 +595,10 @@ fn auto_scroll_indicator_fades_deterministically_and_reduce_motion_skips_fade() 
         bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
         content_width: 100.0,
         content_height: 400.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 300.0,
         offset_x: 0.0,
         offset_y: 0.0,
         overscroll_x: 0.0,
@@ -589,6 +639,10 @@ fn elastic_displacement_affects_visual_offset_but_not_committed_offset() {
         bounds: HitRect::new(0.0, 0.0, 100.0, 100.0),
         content_width: 100.0,
         content_height: 400.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 300.0,
         offset_x: 0.0,
         offset_y: 300.0,
         overscroll_x: 0.0,
@@ -625,6 +679,10 @@ fn scroll_region_offsets_and_clips_owned_text_controls() {
         bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
         content_width: 320.0,
         content_height: 240.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 160.0,
         offset_x: 0.0,
         offset_y: 60.0,
         overscroll_x: 0.0,
@@ -677,6 +735,10 @@ fn horizontal_scroll_region_offsets_and_clips_owned_text_controls() {
         bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
         content_width: 640.0,
         content_height: 80.0,
+        min_offset_x: 0.0,
+        max_offset_x: 320.0,
+        min_offset_y: 0.0,
+        max_offset_y: 0.0,
         offset_x: 160.0,
         offset_y: 0.0,
         overscroll_x: 0.0,
@@ -721,6 +783,10 @@ fn scroll_region_offsets_and_clips_owned_images() {
         bounds: HitRect::new(100.0, 100.0, 160.0, 80.0),
         content_width: 240.0,
         content_height: 260.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 180.0,
         offset_x: 0.0,
         offset_y: 60.0,
         overscroll_x: 0.0,
@@ -765,6 +831,10 @@ fn scroll_region_drops_images_outside_viewport() {
         bounds: HitRect::new(100.0, 100.0, 160.0, 80.0),
         content_width: 240.0,
         content_height: 360.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 280.0,
         offset_x: 0.0,
         offset_y: 60.0,
         overscroll_x: 0.0,
@@ -801,6 +871,10 @@ fn scroll_region_offsets_and_clips_owned_action_buttons() {
         bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
         content_width: 320.0,
         content_height: 240.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 160.0,
         offset_x: 0.0,
         offset_y: 60.0,
         overscroll_x: 0.0,
@@ -869,6 +943,10 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
         bounds: HitRect::new(100.0, 100.0, 320.0, 80.0),
         content_width: 320.0,
         content_height: 240.0,
+        min_offset_x: 0.0,
+        max_offset_x: 0.0,
+        min_offset_y: 0.0,
+        max_offset_y: 160.0,
         offset_x: 0.0,
         offset_y: 60.0,
         overscroll_x: 0.0,

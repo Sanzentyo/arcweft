@@ -11,7 +11,6 @@ pub mod offscreen;
 pub mod renderer;
 pub mod sample;
 pub mod text_editor_geometry;
-pub mod view;
 pub mod view_blend;
 pub mod view_box_shadow;
 pub mod view_clip_path;

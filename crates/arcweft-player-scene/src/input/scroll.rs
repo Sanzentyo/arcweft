@@ -100,7 +100,7 @@ impl InputController {
         let next = if end {
             ScrollOffset::new(region.max_offset_x(), region.max_offset_y())
         } else {
-            ScrollOffset::new(0.0, 0.0)
+            ScrollOffset::new(region.min_offset_x(), region.min_offset_y())
         };
         InputOutcome::redraw(self.store_scroll_offset(&region.id, next, frame.visual_time_millis))
     }
@@ -212,11 +212,11 @@ impl InputController {
         if !region.overflow.scroll_enabled() || input_delta.abs() <= SCROLL_DELTA_EPSILON {
             return (false, input_delta);
         }
-        let max_offset = match region.axis {
-            RenderScrollAxis::Vertical => region.max_offset_y(),
-            RenderScrollAxis::Horizontal => region.max_offset_x(),
+        let (min_offset, max_offset) = match region.axis {
+            RenderScrollAxis::Vertical => (region.min_offset_y(), region.max_offset_y()),
+            RenderScrollAxis::Horizontal => (region.min_offset_x(), region.max_offset_x()),
         };
-        if max_offset <= f32::EPSILON {
+        if max_offset - min_offset <= f32::EPSILON {
             return (false, input_delta);
         }
 
@@ -233,7 +233,7 @@ impl InputController {
             RenderScrollAxis::Vertical => state.offset.y,
             RenderScrollAxis::Horizontal => state.offset.x,
         };
-        let next = (current + desired_delta).clamp(0.0, max_offset);
+        let next = (current + desired_delta).clamp(min_offset, max_offset);
         let consumed = next - current;
         let excess = desired_delta - consumed;
         let mut changed = consumed.abs() > SCROLL_DELTA_EPSILON;

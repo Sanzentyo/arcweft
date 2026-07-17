@@ -114,6 +114,7 @@ pub struct GlyphonTextEngine {
     font_system: FontSystem,
     swash_cache: SwashCache,
     shape_cache: TextShapeCache,
+    project_fonts: Vec<Vec<u8>>,
     face_ids: BTreeMap<fontdb::ID, FontFaceId>,
     database_ids: BTreeMap<FontFaceId, fontdb::ID>,
     ordered_faces: Vec<FontFaceId>,
@@ -122,7 +123,7 @@ pub struct GlyphonTextEngine {
     font_resource_count: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct TextShapeCache {
     limits: TextShapeCacheLimits,
     entries: BTreeMap<[u8; 32], CachedShape>,
@@ -199,6 +200,7 @@ impl GlyphonTextEngine {
             return Err(GlyphonTextEngineError::EmptyFontInventory);
         }
         let font_resource_count = fonts.len();
+        let project_fonts = fonts.clone();
         let shape_cache = TextShapeCache::new(cache_limits)?;
         let mut database = fontdb::Database::new();
         let mut face_ids = BTreeMap::new();
@@ -229,6 +231,7 @@ impl GlyphonTextEngine {
             font_system,
             swash_cache: SwashCache::new(),
             shape_cache,
+            project_fonts,
             face_ids,
             database_ids,
             ordered_faces,
@@ -241,6 +244,7 @@ impl GlyphonTextEngine {
     /// Adds one canonical project font resource and invalidates shaped/raster caches.
     pub fn register_project_font(&mut self, bytes: Vec<u8>) -> Result<(), GlyphonTextEngineError> {
         let index = self.font_resource_count;
+        let retained_bytes = bytes.clone();
         register_font_bytes(
             self.font_system.db_mut(),
             bytes,
@@ -253,12 +257,25 @@ impl GlyphonTextEngine {
             set_generic_families_to_first_project_face(self.font_system.db_mut())?;
         }
         self.font_resource_count = self.font_resource_count.saturating_add(1);
+        self.project_fonts.push(retained_bytes);
         self.inventory_hash =
             FontInventoryHash::derive(self.ordered_faces.iter().copied(), SHAPING_FEATURE_RECORDS);
         self.shape_cache.invalidate();
         self.swash_cache.image_cache.clear();
         self.swash_cache.outline_command_cache.clear();
         Ok(())
+    }
+
+    /// Rebuilds renderer-local font state while retaining the exact bounded
+    /// shaping cache as candidate-local staged state.
+    pub fn fork_for_candidate(&self) -> Result<Self, GlyphonTextEngineError> {
+        let mut fork = Self::with_cache_limits(
+            self.locale.clone(),
+            self.project_fonts.clone(),
+            self.shape_cache.limits,
+        )?;
+        fork.shape_cache = self.shape_cache.clone();
+        Ok(fork)
     }
 
     /// Exact locale fixed for deterministic fallback and shaping cache identity.

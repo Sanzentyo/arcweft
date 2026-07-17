@@ -6,7 +6,7 @@
 //! environment snapshots, then emit `ViewFragment`, `ViewFrameResources`,
 //! handlers, semantics, and style overlays.
 
-use crate::style::ViewStyleApplicationTarget;
+use crate::style::{ViewPhysicalFlow, ViewStyleApplicationTarget};
 use crate::{
     CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, TextSourceId,
     ViewEvaluationSiteId, ViewId, ViewInstructionIndex, ViewPartExport, ViewPartId,
@@ -204,6 +204,16 @@ impl ViewElementKind {
     /// Whether the element lays out child View nodes.
     pub const fn is_layout_container(self) -> bool {
         self.layout_kind().is_some()
+    }
+
+    /// Default executable physical flow owned by this built-in element.
+    pub const fn default_physical_flow(self) -> Option<ViewPhysicalFlow> {
+        match self {
+            Self::Row => Some(ViewPhysicalFlow::Row),
+            Self::Column => Some(ViewPhysicalFlow::Column),
+            Self::Panel | Self::Box | Self::Scroll | Self::Stack => Some(ViewPhysicalFlow::Overlay),
+            Self::Button | Self::TextField | Self::TextArea | Self::SecureField => None,
+        }
     }
 
     /// Whether this element owns a text-input control.

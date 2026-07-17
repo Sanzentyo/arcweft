@@ -97,7 +97,13 @@ pub enum WindowedEnvironmentUpdateError {
     #[error(transparent)]
     Session(#[from] PresentationEnvironmentUpdateError),
     #[error("windowed environment player update failed: {0}")]
-    PlayerFrame(#[from] PlayerFrameError),
+    PlayerFrame(Box<PlayerFrameError>),
+}
+
+impl From<PlayerFrameError> for WindowedEnvironmentUpdateError {
+    fn from(error: PlayerFrameError) -> Self {
+        Self::PlayerFrame(Box::new(error))
+    }
 }
 
 pub(crate) type WindowedEnvironmentCompletionResult =

@@ -1,5 +1,7 @@
 use arcweft_render_wgpu::geometry::PreparedFrame;
-use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
+use arcweft_render_wgpu::renderer::{
+    PreparedSharedRenderSubmission, SharedRenderer, SharedRendererError,
+};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use winit::dpi::PhysicalSize;
@@ -21,7 +23,15 @@ pub struct WebGpuCanvasHost {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    configured: bool,
     health: Arc<Mutex<WebGpuHealth>>,
+}
+
+/// Acquired browser surface and fully encoded renderer work awaiting guarded
+/// publication.
+pub struct WebGpuCanvasFrameCandidate {
+    surface_frame: wgpu::SurfaceTexture,
+    submission: PreparedSharedRenderSubmission,
 }
 
 #[derive(Debug, Error)]
@@ -34,6 +44,8 @@ pub enum WebGpuCanvasHostError {
     DeviceRequest(String),
     #[error("the WebGPU surface reported no supported texture format")]
     NoSurfaceFormat,
+    #[error("WebGPU canvas surface extent must be nonzero, got {width}x{height}")]
+    InvalidSurfaceExtent { width: u32, height: u32 },
     #[error("WebGPU surface is out of memory")]
     OutOfMemory,
     #[error("WebGPU surface was lost")]
@@ -84,7 +96,8 @@ impl WebGpuCanvasHost {
             .find(wgpu::TextureFormat::is_srgb)
             .or_else(|| capabilities.formats.first().copied())
             .ok_or(WebGpuCanvasHostError::NoSurfaceFormat)?;
-        let size = non_zero_size(window.surface_size());
+        let size = window.surface_size();
+        let configured = size.width != 0 && size.height != 0;
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -104,7 +117,9 @@ impl WebGpuCanvasHost {
                 .unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: Vec::new(),
         };
-        surface.configure(&device, &config);
+        if configured {
+            surface.configure(&device, &config);
+        }
         let health = Arc::new(Mutex::new(WebGpuHealth::default()));
         install_device_callbacks(&device, &health);
 
@@ -115,6 +130,7 @@ impl WebGpuCanvasHost {
             device,
             queue,
             config,
+            configured,
             health,
         })
     }
@@ -146,33 +162,52 @@ impl WebGpuCanvasHost {
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        let size = non_zero_size(size);
         if self.config.width == size.width && self.config.height == size.height {
             return;
         }
         self.config.width = size.width;
         self.config.height = size.height;
-        self.surface.configure(&self.device, &self.config);
+        self.configured = size.width != 0 && size.height != 0;
+        if self.configured {
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 
     pub fn reconfigure(&mut self) {
-        self.surface.configure(&self.device, &self.config);
+        if self.configured {
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 
-    /// Acquires, renders, and presents one canvas frame.
-    pub fn render_and_present(
+    /// Acquires the canvas surface and completes every fallible render step
+    /// without queue submission or presentation.
+    pub fn prepare_frame(
         &mut self,
         renderer: &mut SharedRenderer,
         frame: &PreparedFrame,
-    ) -> Result<(), WebGpuCanvasHostError> {
+    ) -> Result<WebGpuCanvasFrameCandidate, WebGpuCanvasHostError> {
+        if !self.configured {
+            return Err(WebGpuCanvasHostError::InvalidSurfaceExtent {
+                width: self.config.width,
+                height: self.config.height,
+            });
+        }
         let surface_frame =
             WebGpuCanvasHostError::surface_texture(self.surface.get_current_texture())?;
         let view = surface_frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        renderer.render_to_view(&self.device, &self.queue, &view, frame)?;
-        surface_frame.present();
-        Ok(())
+        let submission = renderer.prepare_to_view(&self.device, &self.queue, &view, frame)?;
+        Ok(WebGpuCanvasFrameCandidate {
+            surface_frame,
+            submission,
+        })
+    }
+
+    /// Infallibly submits and presents one previously prepared browser frame.
+    pub fn commit_frame(&self, candidate: WebGpuCanvasFrameCandidate) {
+        candidate.submission.submit(&self.queue);
+        candidate.surface_frame.present();
     }
 
     pub fn request_redraw(&self) {
@@ -198,10 +233,6 @@ fn install_device_callbacks(device: &wgpu::Device, health: &Arc<Mutex<WebGpuHeal
             &format!("Arcweft WebGPU device lost ({reason:?}): {message}").into(),
         );
     });
-}
-
-fn non_zero_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
-    PhysicalSize::new(size.width.max(1), size.height.max(1))
 }
 
 impl WebGpuCanvasHostError {

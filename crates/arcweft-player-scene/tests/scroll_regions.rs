@@ -1,7 +1,6 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
-    ViewElementKind, ViewObserveClassification, ViewRuntimeControlCornerRadius,
-    ViewRuntimeControlRadii, ViewTextSelectionPolicy,
+    ViewElementKind, ViewObserveClassification, ViewTextSelectionPolicy,
 };
 use arcweft_bundle::resource_codec::{
     ViewFocusAutoScrollPolicy, ViewScrollAxis, ViewScrollIndicatorsPolicy,
@@ -9,8 +8,7 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_bundle::resource_codec::{
     ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds,
-    ViewRuntimeShadow, ViewRuntimeShadowKind, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
-    ViewTextBlockBounds,
+    ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
 };
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_player_scene::{
@@ -22,21 +20,18 @@ use arcweft_player_scene::{
         InputPointerModifiers, InputScrollOffsetSnapshot,
     },
 };
-use arcweft_presentation::appearance::PresentationColor;
 use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_text::{
     LineDisplaySpec, RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout,
     RichTextNode, RichTextStyle, RichTextWritingMode, RuntimeLineContext,
 };
-use arcweft_render_wgpu::geometry::{
-    RenderPreferences, RenderScrollIndicatorsPolicy, RenderScrollOverscrollPolicy, RenderViewport,
-};
-use arcweft_render_wgpu::view_scene::{ViewPaintNode, ViewPrimitive};
+use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
+use arcweft_render_wgpu::view_scene::ViewPrimitive;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewTextOutput,
-    BundleViewTextTarget, BundleViewTextValue,
+    BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
+    BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
 use arcweft_view::{ViewId, ViewMountId};
@@ -68,7 +63,9 @@ fn push_view_text(
     style: ViewRuntimeControlVisualStyle,
 ) {
     let source_id = format!("source.{target}");
-    let mount = ViewMountId::from_raw(0);
+    let mount = ViewMountId::from_raw(
+        u64::try_from(presentation.view.mounts.len()).expect("mount count fits u64") + 1,
+    );
     presentation.view.mounts.push(BundleViewMountOutput {
         dialogue: None,
         handle: PresentationHandleId::try_new(format!("handle.{target}")).expect("handle id"),
@@ -102,12 +99,22 @@ fn push_view_text(
             replacement: None,
         }],
         fx: Vec::new(),
-        style_nodes: Vec::new(),
+        style_nodes: vec![BundleViewStyleNode {
+            path: BundleViewInstancePath::default(),
+            instruction: 0,
+            parent: None,
+            kind: BundleViewStyleNodeKind::Text {
+                text_source: format!("source.{target}"),
+            },
+            part: None,
+            exported_part: None,
+            applications: Vec::new(),
+        }],
     });
 }
 
 #[test]
-fn player_frame_lowers_runtime_surfaces_to_view_scene() {
+fn product_only_surface_is_not_treated_as_retained_geometry() {
     let mut presentation = BundlePresentationSnapshot::default();
     presentation.surfaces.push(ViewRuntimeSurface {
         public_id: "surface.feedback.card".to_owned(),
@@ -116,25 +123,7 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
         containing_scroll_region: None,
         element: ViewElementKind::Panel,
         bounds: ViewRuntimeSurfaceBounds::from_px(24, 32, 112, 72),
-        style: ViewRuntimeControlVisualStyle {
-            fill: Some(PresentationColor::rgba(36, 42, 54, 255)),
-            radii_milli: Some(ViewRuntimeControlRadii::new(
-                ViewRuntimeControlCornerRadius::new(18_000, 12_000),
-                ViewRuntimeControlCornerRadius::new(10_000, 6_000),
-                ViewRuntimeControlCornerRadius::new(14_000, 8_000),
-                ViewRuntimeControlCornerRadius::new(6_000, 4_000),
-            )),
-            shadows: vec![ViewRuntimeShadow {
-                offset_x_milli: 0,
-                offset_y_milli: 3_000,
-                blur_milli: 12_000,
-                spread_milli: 2_000,
-                radius_milli: 14_000,
-                color: PresentationColor::rgba(0, 0, 0, 143),
-                kind: ViewRuntimeShadowKind::Inset,
-            }],
-            ..ViewRuntimeControlVisualStyle::default()
-        },
+        style: ViewRuntimeControlVisualStyle::default(),
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -165,39 +154,11 @@ fn player_frame_lowers_runtime_surfaces_to_view_scene() {
     )
     .expect("frame prepares");
 
-    let view_scene = prepared.frame.view_scenes().first().expect("surface scene");
-    assert_eq!(view_scene.scene.primitives().len(), 1);
-    assert_eq!(view_scene.scene.paint_nodes().len(), 1);
-    let ViewPrimitive::RoundedRect(rect) = &view_scene.scene.primitives()[0] else {
-        panic!("surface fill lowers to a rounded rect primitive");
-    };
-    assert_px(rect.radii.top_left.x_px, 18.0);
-    assert_px(rect.radii.top_left.y_px, 12.0);
-    assert_px(rect.radii.top_right.x_px, 10.0);
-    assert_px(rect.radii.bottom_right.y_px, 8.0);
-    let ViewPaintNode::Group(group) = &view_scene.scene.paint_nodes()[0] else {
-        panic!("surface with shadow lowers to a compositing group");
-    };
-    assert_eq!(group.effects.box_shadows.shadows().len(), 1);
-    assert_px(
-        group.effects.box_shadows.shadows()[0]
-            .border_radii
-            .top_left
-            .x_px,
-        18.0,
-    );
-    assert_px(
-        group.effects.box_shadows.shadows()[0]
-            .border_radii
-            .bottom_left
-            .y_px,
-        4.0,
-    );
-    assert_eq!(group.children.len(), 1);
+    assert!(prepared.frame.view_scenes().is_empty());
 }
 
 #[test]
-fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
+fn product_only_scroll_region_is_not_treated_as_retained_geometry() {
     let mut presentation = BundlePresentationSnapshot::default();
     presentation.scroll_regions.push(ViewRuntimeScrollRegion {
         public_id: "scroll.feedback.body".to_owned(),
@@ -214,89 +175,33 @@ fn player_frame_plans_runtime_scroll_regions_and_applies_input_offset() {
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
-    let request = PlayerFrameRequest {
-        presentation: &presentation,
-        fx_definitions: empty_fx_definitions(),
-        images: &images,
-        style_program: None,
-        style_environment:
-            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-        viewport: RenderViewport {
-            logical_width: 1280.0,
-            logical_height: 720.0,
-            physical_width: 1280,
-            physical_height: 720,
-            scale_factor: 1.0,
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            fx_definitions: empty_fx_definitions(),
+            images: &images,
+            style_program: None,
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
+            viewport: RenderViewport {
+                logical_width: 1280.0,
+                logical_height: 720.0,
+                physical_width: 1280,
+                physical_height: 720,
+                scale_factor: 1.0,
+            },
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            dialogue_reveal_complete: false,
+            preferences: RenderPreferences::default(),
         },
-        fit: PlayerFrameFit::raw(),
-        image_time_millis: 0,
-        visual_time_millis: 0,
-        dialogue_reveal_complete: false,
-        preferences: RenderPreferences::default(),
-    };
+    )
+    .expect("frame prepares");
 
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame prepares");
-    let region = prepared
-        .frame
-        .scroll_regions
-        .first()
-        .expect("scroll region");
-    assert_eq!(region.id, "scroll.feedback.body");
-    assert!((region.bounds.x - 48.0).abs() < f32::EPSILON);
-    assert!((region.bounds.y - 64.0).abs() < f32::EPSILON);
-    assert!((region.bounds.width - 420.0).abs() < f32::EPSILON);
-    assert!((region.bounds.height - 120.0).abs() < f32::EPSILON);
-    assert!((region.content_width - 420.0).abs() < f32::EPSILON);
-    assert!((region.content_height - 360.0).abs() < f32::EPSILON);
-    assert!(region.offset_x.abs() < f32::EPSILON);
-    assert!(region.offset_y.abs() < f32::EPSILON);
-    assert_eq!(region.indicators, RenderScrollIndicatorsPolicy::Auto);
-    assert_eq!(region.overscroll, RenderScrollOverscrollPolicy::Clamp);
-    assert!(prepared.frame.scroll_indicators.is_empty());
-
-    input.pointer_move(
-        &prepared.frame,
-        PointerId(0),
-        ViewportPoint::new(64.0, 80.0),
-    );
-    input.wheel(&prepared.frame, -90.0);
-
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame re-prepares");
-    let region = prepared
-        .frame
-        .scroll_regions
-        .first()
-        .expect("scroll region");
-    assert!((region.offset_y - 90.0).abs() < f32::EPSILON);
-    assert_eq!(prepared.frame.scroll_indicators.len(), 1);
-    assert_eq!(
-        prepared.frame.scroll_indicators[0].region_id,
-        "scroll.feedback.body"
-    );
-
-    let snapshot = input.snapshot();
-    assert_eq!(
-        snapshot.scroll_offsets,
-        vec![InputScrollOffsetSnapshot {
-            region_id: "scroll.feedback.body".to_owned(),
-            offset_x: 0.0,
-            offset_y: 90.0,
-        }]
-    );
-
-    let mut restored_input = InputController::default();
-    restored_input
-        .restore_snapshot(snapshot)
-        .expect("input snapshot restores");
-    let prepared =
-        PlayerFramePlanner::prepare(&mut restored_input, request).expect("restored frame prepares");
-    let region = prepared
-        .frame
-        .scroll_regions
-        .first()
-        .expect("scroll region");
-    assert!((region.offset_y - 90.0).abs() < f32::EPSILON);
+    assert!(prepared.frame.scroll_regions.is_empty());
 }
 
 #[test]
@@ -386,7 +291,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
 }
 
 #[test]
-fn hidden_overflow_scroll_region_keeps_offset_at_zero() {
+fn product_only_hidden_scroll_region_is_not_retained_geometry() {
     let mut presentation = BundlePresentationSnapshot::default();
     presentation.scroll_regions.push(ViewRuntimeScrollRegion {
         public_id: "scroll.feedback.body".to_owned(),
@@ -403,48 +308,37 @@ fn hidden_overflow_scroll_region_keeps_offset_at_zero() {
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
-    let request = PlayerFrameRequest {
-        presentation: &presentation,
-        fx_definitions: empty_fx_definitions(),
-        images: &images,
-        style_program: None,
-        style_environment:
-            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-        viewport: RenderViewport {
-            logical_width: 1280.0,
-            logical_height: 720.0,
-            physical_width: 1280,
-            physical_height: 720,
-            scale_factor: 1.0,
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            fx_definitions: empty_fx_definitions(),
+            images: &images,
+            style_program: None,
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
+            viewport: RenderViewport {
+                logical_width: 1280.0,
+                logical_height: 720.0,
+                physical_width: 1280,
+                physical_height: 720,
+                scale_factor: 1.0,
+            },
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            dialogue_reveal_complete: false,
+            preferences: RenderPreferences::default(),
         },
-        fit: PlayerFrameFit::raw(),
-        image_time_millis: 0,
-        visual_time_millis: 0,
-        dialogue_reveal_complete: false,
-        preferences: RenderPreferences::default(),
-    };
+    )
+    .expect("frame prepares");
 
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame prepares");
-    input.pointer_move(
-        &prepared.frame,
-        PointerId(0),
-        ViewportPoint::new(64.0, 80.0),
-    );
-    input.wheel(&prepared.frame, -90.0);
-
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame re-prepares");
-    let region = prepared
-        .frame
-        .scroll_regions
-        .first()
-        .expect("scroll region");
-    assert!(region.offset_y.abs() < f32::EPSILON);
-    assert!(input.snapshot().scroll_offsets.is_empty());
+    assert!(prepared.frame.scroll_regions.is_empty());
 }
 
 #[test]
-fn horizontal_scroll_region_tracks_x_offset_and_snapshot() {
+fn product_only_horizontal_scroll_region_is_not_retained_geometry() {
     let mut presentation = BundlePresentationSnapshot::default();
     presentation.scroll_regions.push(ViewRuntimeScrollRegion {
         public_id: "scroll.gallery".to_owned(),
@@ -461,59 +355,37 @@ fn horizontal_scroll_region_tracks_x_offset_and_snapshot() {
     });
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
-    let request = PlayerFrameRequest {
-        presentation: &presentation,
-        fx_definitions: empty_fx_definitions(),
-        images: &images,
-        style_program: None,
-        style_environment:
-            &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
-        style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-        viewport: RenderViewport {
-            logical_width: 1280.0,
-            logical_height: 720.0,
-            physical_width: 1280,
-            physical_height: 720,
-            scale_factor: 1.0,
+    let prepared = PlayerFramePlanner::prepare(
+        &mut input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            fx_definitions: empty_fx_definitions(),
+            images: &images,
+            style_program: None,
+            style_environment:
+                &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
+            style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
+            viewport: RenderViewport {
+                logical_width: 1280.0,
+                logical_height: 720.0,
+                physical_width: 1280,
+                physical_height: 720,
+                scale_factor: 1.0,
+            },
+            fit: PlayerFrameFit::raw(),
+            image_time_millis: 0,
+            visual_time_millis: 0,
+            dialogue_reveal_complete: false,
+            preferences: RenderPreferences::default(),
         },
-        fit: PlayerFrameFit::raw(),
-        image_time_millis: 0,
-        visual_time_millis: 0,
-        dialogue_reveal_complete: false,
-        preferences: RenderPreferences::default(),
-    };
+    )
+    .expect("frame prepares");
 
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame prepares");
-    input.pointer_move(
-        &prepared.frame,
-        PointerId(0),
-        ViewportPoint::new(64.0, 80.0),
-    );
-    input.wheel(&prepared.frame, -180.0);
-
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame re-prepares");
-    let region = prepared
-        .frame
-        .scroll_regions
-        .first()
-        .expect("scroll region");
-    assert!((region.offset_x - 180.0).abs() < f32::EPSILON);
-    assert!(region.offset_y.abs() < f32::EPSILON);
-    assert!((input.scroll_offset_x("scroll.gallery") - 180.0).abs() < f32::EPSILON);
-    assert!(input.scroll_offset_y("scroll.gallery").abs() < f32::EPSILON);
-
-    assert_eq!(
-        input.snapshot().scroll_offsets,
-        vec![InputScrollOffsetSnapshot {
-            region_id: "scroll.gallery".to_owned(),
-            offset_x: 180.0,
-            offset_y: 0.0,
-        }]
-    );
+    assert!(prepared.frame.scroll_regions.is_empty());
 }
 
 #[test]
-fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
+fn retained_text_ignores_unretained_product_scroll_metadata() {
     let mut presentation = BundlePresentationSnapshot::default();
     presentation.scroll_regions.push(ViewRuntimeScrollRegion {
         public_id: "scroll.notes".to_owned(),
@@ -563,22 +435,11 @@ fn player_frame_offsets_and_clips_scroll_contained_text_blocks() {
     };
 
     let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame prepares");
-    input.pointer_move(
-        &prepared.frame,
-        PointerId(0),
-        ViewportPoint::new(64.0, 80.0),
-    );
-    input.wheel(&prepared.frame, -32.0);
-
-    let prepared = PlayerFramePlanner::prepare(&mut input, request).expect("frame re-prepares");
     let text = prepared.frame.text.items().first().expect("prepared text");
     assert_eq!(text.interaction.text, "Arcweft Concierge");
-    assert!((text.interaction.container_bounds.unwrap().y - 80.0).abs() < f32::EPSILON);
-    let clip = text.clip.expect("scroll clip");
-    assert_px(clip.x, prepared.frame.scroll_regions[0].bounds.x);
-    assert_px(clip.y, prepared.frame.scroll_regions[0].bounds.y);
-    assert_px(clip.width, prepared.frame.scroll_regions[0].bounds.width);
-    assert_px(clip.height, prepared.frame.scroll_regions[0].bounds.height);
+    assert_px(text.interaction.container_bounds.unwrap().y, 0.0);
+    assert!(text.clip.is_none());
+    assert!(prepared.frame.scroll_regions.is_empty());
 }
 
 #[test]
@@ -601,9 +462,9 @@ fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
         .register_with_planner(&mut planner)
         .expect("project font registers");
 
-    let prepared = planner
-        .prepare(
-            &mut input,
+    let candidate = planner
+        .prepare_candidate(
+            &input,
             PlayerFrameRequest {
                 presentation: &presentation,
                 fx_definitions: empty_fx_definitions(),
@@ -627,12 +488,17 @@ fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
             },
         )
         .expect("registered frame prepares");
+    let prepared = planner
+        .publication_guard()
+        .publish_with(candidate, &mut input, |_| ())
+        .expect("registered frame publishes")
+        .0;
 
     assert_eq!(prepared.frame.text.len(), 1);
     let item = &prepared.frame.text.items()[0];
     assert_eq!(item.interaction.text, "Prepared text");
     assert!(item.interaction.selection_enabled);
-    assert_px(item.interaction.container_bounds.unwrap().x, 24.0);
+    assert_px(item.interaction.container_bounds.unwrap().x, 0.0);
     assert!((item.submission().raster_scale() - 2.0).abs() < f32::EPSILON);
 }
 
@@ -823,6 +689,38 @@ fn input_snapshot_rejects_non_finite_scroll_offsets() {
         error,
         InputControllerSnapshotError::NonFiniteScrollOffset { .. }
     ));
+}
+
+#[test]
+fn input_snapshot_preserves_signed_scroll_offsets() {
+    let mut input = InputController::default();
+    input
+        .restore_snapshot(InputControllerSnapshot {
+            choice_scroll_offset_y: 0.0,
+            scroll_offsets: vec![InputScrollOffsetSnapshot {
+                region_id: "scroll.bidirectional".to_owned(),
+                offset_x: -12.5,
+                offset_y: -48.0,
+            }],
+        })
+        .expect("finite signed scroll offsets are valid persisted state");
+
+    assert_eq!(
+        input.scroll_offset_x("scroll.bidirectional").to_bits(),
+        (-12.5_f32).to_bits()
+    );
+    assert_eq!(
+        input.scroll_offset_y("scroll.bidirectional").to_bits(),
+        (-48.0_f32).to_bits()
+    );
+    assert_eq!(
+        input.snapshot().scroll_offsets,
+        vec![InputScrollOffsetSnapshot {
+            region_id: "scroll.bidirectional".to_owned(),
+            offset_x: -12.5,
+            offset_y: -48.0,
+        }]
+    );
 }
 
 #[test]

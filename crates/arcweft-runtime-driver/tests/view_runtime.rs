@@ -1,8 +1,9 @@
 use arcweft_bundle::resource_codec::view::{
     DialogueTextProjection, ViewDefinitionRef, ViewElementKind, ViewExportedPart,
     ViewObserveClassification, ViewOwnedPartRef, ViewPartExportSourceRef, ViewProgramInstruction,
-    ViewSecureRedactionMetadata, ViewSemanticTarget, ViewStyleApplicationTarget, ViewStylePatchId,
-    ViewStyleSheetId, ViewTextSourceKind, ViewTextSourceRecord,
+    ViewRuntimeGeometryOwner, ViewSecureRedactionMetadata, ViewSemanticTarget,
+    ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId, ViewTextSourceKind,
+    ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
     ProductSourceRef, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
@@ -28,16 +29,17 @@ use arcweft_runtime_driver::presentation_handles::{
     PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewDiagnosticCode, BundleViewInstancePathSegment, BundleViewMountOutput,
-    BundleViewPaintItem, BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError,
-    BundleViewStyleNode, BundleViewStyleNodeKind, BundleViewTextValue, SavedViewOwner,
-    ViewOwnerEvidence, ViewProgramReplacementError, ViewProgramReplacementOutcome,
+    BundleViewDiagnosticCode, BundleViewInstancePath, BundleViewInstancePathSegment,
+    BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime as AcceptedBundleViewRuntime,
+    BundleViewRuntimeError, BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind,
+    BundleViewTextValue, SavedViewOwner, ViewOwnerEvidence, ViewProgramReplacementError,
+    ViewProgramReplacementOutcome,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{
     AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
     DialogueStageIndex, EventKind, RustViewId, ViewDescriptor, ViewId, ViewImplementation,
-    ViewInstruction, ViewPartLocalName, ViewPartName, ViewProgramId, ViewRegistry,
+    ViewInstruction, ViewMountId, ViewPartLocalName, ViewPartName, ViewProgramId, ViewRegistry,
     ViewRegistryError, ViewSchemaId,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
@@ -1877,6 +1879,57 @@ fn repeat_style_inventory_retains_one_collision_free_path_per_executed_item() {
             key: 1
         }]
     ));
+}
+
+#[test]
+fn style_path_words_are_little_endian_injective_and_feed_the_single_node_key() {
+    let path: BundleViewInstancePath = serde_json::from_value(serde_json::json!([
+        {
+            "kind": "call",
+            "instruction": 16_909_060,
+            "authored_key": 18_446_744_073_709_551_615_u64
+        },
+        { "kind": "repeat", "instruction": 9, "key": -2 }
+    ]))
+    .unwrap();
+    assert_eq!(
+        path.style_path_words(),
+        vec![
+            0,
+            16_909_060,
+            1,
+            u64::MAX,
+            1,
+            9,
+            u64::from(u32::from_le_bytes((-2_i32).to_le_bytes())),
+            0,
+        ]
+    );
+
+    let id = BundleViewStyleNodeId {
+        path,
+        instruction: 11,
+    };
+    let key = id.style_node_key(ViewMountId::from_raw(7));
+    assert_eq!(key.mount(), ViewMountId::from_raw(7));
+    assert_eq!(key.instruction(), 11);
+    assert_eq!(key.path().len(), 8);
+
+    assert_eq!(
+        BundleViewStyleNodeKind::Element {
+            element: ViewElementKind::Row,
+            target: None,
+        }
+        .runtime_geometry_owner(),
+        ViewRuntimeGeometryOwner::Element(ViewElementKind::Row)
+    );
+    assert_eq!(
+        BundleViewStyleNodeKind::Text {
+            text_source: "text.main".to_owned(),
+        }
+        .runtime_geometry_owner(),
+        ViewRuntimeGeometryOwner::Text
+    );
 }
 
 #[test]

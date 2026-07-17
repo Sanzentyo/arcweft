@@ -1,5 +1,5 @@
 use super::{
-    ViewGeometryError, ViewGeometryNodeId, ViewGeometryOperation, ViewPointerCoordinateErrorKind,
+    ViewGeometryError, ViewGeometryOperation, ViewPointerCoordinateErrorKind, ViewStyleNodeKey,
 };
 use crate::style::{ViewOverflow, ViewPhysicalAxis, ViewPhysicalEdges, ViewScalarMilli};
 
@@ -64,7 +64,7 @@ impl ViewGeometrySpan {
     }
 
     pub fn from_start_extent(
-        node: &ViewGeometryNodeId,
+        node: &ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
         start_milli: i32,
         extent_milli: u32,
@@ -141,7 +141,7 @@ impl ViewGeometryRect {
     }
 
     pub fn from_origin_size(
-        node: &ViewGeometryNodeId,
+        node: &ViewStyleNodeKey,
         origin: ViewGeometryPoint,
         size: ViewGeometrySize,
     ) -> Result<Self, ViewGeometryError> {
@@ -222,7 +222,7 @@ impl ViewGeometryRect {
 
     pub fn translated(
         self,
-        node: &ViewGeometryNodeId,
+        node: &ViewStyleNodeKey,
         delta: ViewGeometryPoint,
     ) -> Result<Self, ViewGeometryError> {
         let left_milli = checked_i32(
@@ -254,7 +254,7 @@ impl ViewGeometryRect {
 
     pub fn outset_signed(
         self,
-        node: &ViewGeometryNodeId,
+        node: &ViewStyleNodeKey,
         edges: ViewPhysicalEdges<i32>,
     ) -> Result<Self, ViewGeometryError> {
         let left_milli = checked_i32(
@@ -292,7 +292,7 @@ impl ViewGeometryRect {
 
     pub fn outset_non_negative(
         self,
-        node: &ViewGeometryNodeId,
+        node: &ViewStyleNodeKey,
         edges: ViewPhysicalEdges<u32>,
     ) -> Result<Self, ViewGeometryError> {
         Self::new(
@@ -325,7 +325,7 @@ impl ViewGeometryRect {
 
     pub fn inset_non_negative(
         self,
-        node: &ViewGeometryNodeId,
+        node: &ViewStyleNodeKey,
         edges: ViewPhysicalEdges<u32>,
     ) -> Result<Self, ViewGeometryError> {
         let horizontal_edges = u64::from(edges.left) + u64::from(edges.right);
@@ -402,100 +402,146 @@ pub struct ViewGeometryTransform {
     pub scale: ViewScalarMilli,
 }
 
-/// Per-axis clip. An empty clip remains distinct from an unbounded axis pair.
+/// One independently bounded or unbounded physical clip axis.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ViewGeometryClipAxis {
+    Unbounded,
+    Bounded(ViewGeometrySpan),
+}
+
+/// A validated non-empty pair of physical clip axes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ViewGeometryClipAxes {
+    x: ViewGeometryClipAxis,
+    y: ViewGeometryClipAxis,
+}
+
+/// Closed physical clip state. Empty is distinct from two unbounded axes.
 #[must_use]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewGeometryClip {
-    x: Option<ViewGeometrySpan>,
-    y: Option<ViewGeometrySpan>,
-    empty: bool,
+pub enum ViewGeometryClip {
+    Empty,
+    NonEmpty(ViewGeometryClipAxes),
+}
+
+impl ViewGeometryClipAxis {
+    pub const fn unbounded() -> Self {
+        Self::Unbounded
+    }
+
+    pub const fn bounded(span: ViewGeometrySpan) -> Self {
+        Self::Bounded(span)
+    }
+
+    fn intersect(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Unbounded, axis) | (axis, Self::Unbounded) => Some(axis),
+            (Self::Bounded(left), Self::Bounded(right)) => {
+                left.intersection(right).map(Self::Bounded)
+            }
+        }
+    }
+}
+
+impl ViewGeometryClipAxes {
+    pub const fn x(self) -> ViewGeometryClipAxis {
+        self.x
+    }
+
+    pub const fn y(self) -> ViewGeometryClipAxis {
+        self.y
+    }
 }
 
 impl ViewGeometryClip {
     pub const fn unbounded() -> Self {
-        Self {
-            x: None,
-            y: None,
-            empty: false,
+        Self::NonEmpty(ViewGeometryClipAxes {
+            x: ViewGeometryClipAxis::Unbounded,
+            y: ViewGeometryClipAxis::Unbounded,
+        })
+    }
+
+    pub fn from_rect(rect: ViewGeometryRect) -> Self {
+        Self::from_axes(
+            ViewGeometryClipAxis::bounded(rect.x()),
+            ViewGeometryClipAxis::bounded(rect.y()),
+        )
+    }
+
+    pub fn from_axes(x: ViewGeometryClipAxis, y: ViewGeometryClipAxis) -> Self {
+        if matches!(x, ViewGeometryClipAxis::Bounded(span) if span.extent_milli() == 0)
+            || matches!(y, ViewGeometryClipAxis::Bounded(span) if span.extent_milli() == 0)
+        {
+            return Self::Empty;
+        }
+        Self::NonEmpty(ViewGeometryClipAxes { x, y })
+    }
+
+    pub const fn axes(self) -> Option<ViewGeometryClipAxes> {
+        match self {
+            Self::Empty => None,
+            Self::NonEmpty(axes) => Some(axes),
         }
     }
 
-    pub const fn empty() -> Self {
-        Self {
-            x: None,
-            y: None,
-            empty: true,
-        }
-    }
-
-    pub const fn viewport(viewport: ViewGeometryRect) -> Self {
-        Self {
-            x: Some(viewport.x()),
-            y: Some(viewport.y()),
-            empty: false,
-        }
-    }
-
-    pub const fn x(self) -> Option<ViewGeometrySpan> {
-        self.x
-    }
-
-    pub const fn y(self) -> Option<ViewGeometrySpan> {
-        self.y
-    }
-
-    pub const fn is_empty(self) -> bool {
-        self.empty
+    pub fn intersect(self, other: Self) -> Self {
+        let (Self::NonEmpty(left), Self::NonEmpty(right)) = (self, other) else {
+            return Self::Empty;
+        };
+        let Some(x) = left.x.intersect(right.x) else {
+            return Self::Empty;
+        };
+        let Some(y) = left.y.intersect(right.y) else {
+            return Self::Empty;
+        };
+        Self::from_axes(x, y)
     }
 
     pub fn with_overflow(
         self,
-        padding_box_world: ViewGeometryRect,
+        padding_box: ViewGeometryRect,
         overflow_x: ViewOverflow,
         overflow_y: ViewOverflow,
     ) -> Self {
-        if self.empty {
-            return self;
-        }
-        let x = match intersect_optional_span(
-            self.x,
-            overflow_x
-                .clips_descendants()
-                .then_some(padding_box_world.x()),
-        ) {
-            SpanIntersection::Empty => return Self::empty(),
-            SpanIntersection::Unbounded => None,
-            SpanIntersection::Bounded(span) => Some(span),
+        let x = if overflow_x.clips_descendants() {
+            ViewGeometryClipAxis::bounded(padding_box.x())
+        } else {
+            ViewGeometryClipAxis::unbounded()
         };
-        let y = match intersect_optional_span(
-            self.y,
-            overflow_y
-                .clips_descendants()
-                .then_some(padding_box_world.y()),
-        ) {
-            SpanIntersection::Empty => return Self::empty(),
-            SpanIntersection::Unbounded => None,
-            SpanIntersection::Bounded(span) => Some(span),
+        let y = if overflow_y.clips_descendants() {
+            ViewGeometryClipAxis::bounded(padding_box.y())
+        } else {
+            ViewGeometryClipAxis::unbounded()
         };
-        Self { x, y, empty: false }
+        self.intersect(Self::from_axes(x, y))
     }
 
     pub fn clip_rect(self, rect: ViewGeometryRect) -> Option<ViewGeometryRect> {
-        if self.empty {
+        if rect.is_empty() {
             return None;
         }
-        let x = self
-            .x
-            .map_or(Some(rect.x()), |clip| rect.x().intersection(clip))?;
-        let y = self
-            .y
-            .map_or(Some(rect.y()), |clip| rect.y().intersection(clip))?;
-        ViewGeometryRect::new(x.start_milli, y.start_milli, x.end_milli, y.end_milli).ok()
+        let Self::NonEmpty(axes) = self else {
+            return None;
+        };
+        let x = match axes.x {
+            ViewGeometryClipAxis::Unbounded => rect.x(),
+            ViewGeometryClipAxis::Bounded(clip) => rect.x().intersection(clip)?,
+        };
+        let y = match axes.y {
+            ViewGeometryClipAxis::Unbounded => rect.y(),
+            ViewGeometryClipAxis::Bounded(clip) => rect.y().intersection(clip)?,
+        };
+        Some(ViewGeometryRect {
+            left_milli: x.start_milli,
+            top_milli: y.start_milli,
+            right_milli: x.end_milli,
+            bottom_milli: y.end_milli,
+        })
     }
 }
 
 pub fn transform_rect(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     rect: ViewGeometryRect,
     transform: ViewGeometryTransform,
 ) -> Result<ViewGeometryRect, ViewGeometryError> {
@@ -568,7 +614,7 @@ pub fn transform_rect(
 }
 
 pub fn transform_chain(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     rect: ViewGeometryRect,
     transforms_inner_to_outer: &[ViewGeometryTransform],
 ) -> Result<ViewGeometryRect, ViewGeometryError> {
@@ -606,7 +652,7 @@ pub fn milli_from_logical_pointer(value: f64) -> Result<i32, ViewGeometryError> 
 }
 
 pub(crate) fn checked_i32(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: Option<ViewPhysicalAxis>,
     operation: ViewGeometryOperation,
     value: i64,
@@ -619,7 +665,7 @@ pub(crate) fn checked_i32(
 }
 
 pub(crate) fn checked_u32(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: Option<ViewPhysicalAxis>,
     operation: ViewGeometryOperation,
     value: i64,
@@ -632,7 +678,7 @@ pub(crate) fn checked_u32(
 }
 
 pub(crate) fn checked_u32_sum(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: Option<ViewPhysicalAxis>,
     operation: ViewGeometryOperation,
     values: impl IntoIterator<Item = u32>,
@@ -653,7 +699,7 @@ pub(crate) fn checked_u32_sum(
 }
 
 fn checked_i32_i128(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: Option<ViewPhysicalAxis>,
     operation: ViewGeometryOperation,
     value: i128,
@@ -666,7 +712,7 @@ fn checked_i32_i128(
 }
 
 fn scale_edge(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     edge_milli: i32,
     center2: i128,
@@ -682,19 +728,6 @@ fn scale_edge(
         RoundDirection::Up => ceil_div(numerator, denominator),
     };
     checked_i32_i128(node, Some(axis), ViewGeometryOperation::Scale, value)
-}
-
-fn intersect_optional_span(
-    left: Option<ViewGeometrySpan>,
-    right: Option<ViewGeometrySpan>,
-) -> SpanIntersection {
-    match (left, right) {
-        (Some(left), Some(right)) => left
-            .intersection(right)
-            .map_or(SpanIntersection::Empty, SpanIntersection::Bounded),
-        (Some(span), None) | (None, Some(span)) => SpanIntersection::Bounded(span),
-        (None, None) => SpanIntersection::Unbounded,
-    }
 }
 
 const fn floor_div(numerator: i128, denominator: i128) -> i128 {
@@ -723,10 +756,4 @@ const fn ceil_div_i32(numerator: i32, denominator: i32) -> i32 {
 enum RoundDirection {
     Down,
     Up,
-}
-
-enum SpanIntersection {
-    Empty,
-    Unbounded,
-    Bounded(ViewGeometrySpan),
 }

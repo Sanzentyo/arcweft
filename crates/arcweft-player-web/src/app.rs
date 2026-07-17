@@ -10,6 +10,9 @@ use arcweft_player_scene::dialogue::DialogueVisualClock;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
+    PlayerPreparedFrame, PlayerPreparedFrameCandidate, ViewGeometryConsumer,
+    ViewGeometryConversionError, ViewGeometryConversionField, ViewGeometryPlatform,
+    ViewGeometryRuntimeError,
 };
 use arcweft_player_scene::images::{BundleImageCatalog, BundleImageCatalogError};
 use arcweft_player_scene::input::wheel::{
@@ -19,7 +22,10 @@ use arcweft_player_scene::input::{DialogueProgress, InputController, InputOutcom
 use arcweft_presentation::clipboard::TextClipboardRequest;
 use arcweft_presentation::input::{KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::text_input::TextInputKeyDisposition;
-use arcweft_render_web::web::{WebGpuCanvasHost, WebGpuCanvasHostError};
+use arcweft_render_web::web::{
+    WebGpuCanvasFrameCandidate, WebGpuCanvasHost, WebGpuCanvasHostError,
+};
+use arcweft_render_wgpu::geometry::view_final::PreparedViewRenderCandidate;
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::renderer::SharedRenderer;
 use arcweft_runtime_driver::session::{BundleSession, BundleStepInput};
@@ -71,6 +77,8 @@ enum WebPlayerError {
     Window(String),
     #[error("WebGPU initialization/rendering failed: {0}")]
     WebGpu(String),
+    #[error("Web viewport geometry conversion failed: {0}")]
+    GeometryConversion(#[from] ViewGeometryConversionError),
     #[error("font registration failed: {0}")]
     Font(String),
     #[error("image catalog failed: {0}")]
@@ -103,6 +111,35 @@ impl WebPlayerError {
 struct ReadyGpu {
     host: WebGpuCanvasHost,
     renderer: SharedRenderer,
+}
+
+struct WebFramePublicationCandidate {
+    view_render: PreparedViewRenderCandidate,
+    canvas: WebGpuCanvasFrameCandidate,
+}
+
+impl WebFramePublicationCandidate {
+    fn prepare(
+        gpu: &mut ReadyGpu,
+        candidate: &PlayerPreparedFrameCandidate,
+        view_render: PreparedViewRenderCandidate,
+    ) -> Result<Self, WebGpuCanvasHostError> {
+        let canvas = gpu
+            .host
+            .prepare_frame(&mut gpu.renderer, candidate.prepared())?;
+        Ok(Self {
+            view_render,
+            canvas,
+        })
+    }
+
+    fn commit(self, gpu: &ReadyGpu, frame: &PlayerPreparedFrame) {
+        debug_assert_eq!(
+            self.view_render.generation(),
+            frame.view_geometry().generation().value()
+        );
+        gpu.host.commit_frame(self.canvas);
+    }
 }
 
 enum GpuState {
@@ -139,12 +176,44 @@ struct BrowserViewport {
 pub(super) struct BrowserApp;
 
 impl PlayerState {
-    fn browser_viewport(&self, window: &Arc<dyn Window>) -> BrowserViewport {
-        let scale_factor = window.scale_factor().max(f64::EPSILON);
-        let logical_width = self.canvas.client_width().max(1) as f32;
-        let logical_height = self.canvas.client_height().max(1) as f32;
-        let physical_width = ((f64::from(logical_width) * scale_factor).round() as u32).max(1);
-        let physical_height = ((f64::from(logical_height) * scale_factor).round() as u32).max(1);
+    fn browser_viewport(
+        &self,
+        window: &Arc<dyn Window>,
+    ) -> Result<BrowserViewport, WebPlayerError> {
+        let scale_factor = window.scale_factor();
+        ViewGeometryConversionError::scale_factor(ViewGeometryPlatform::Web, scale_factor)?;
+        let logical = ViewGeometryConversionError::viewport_input(
+            ViewGeometryPlatform::Web,
+            f64::from(self.canvas.client_width()),
+            f64::from(self.canvas.client_height()),
+        )?;
+        let logical_width = ViewGeometryConversionError::exact_f32(
+            None,
+            ViewGeometryPlatform::Web,
+            ViewGeometryConsumer::Layout,
+            ViewGeometryConversionField::ViewportWidth,
+            i64::from(logical.rect.right_milli),
+        )?;
+        let logical_height = ViewGeometryConversionError::exact_f32(
+            None,
+            ViewGeometryPlatform::Web,
+            ViewGeometryConsumer::Layout,
+            ViewGeometryConversionField::ViewportHeight,
+            i64::from(logical.rect.bottom_milli),
+        )?;
+        let physical = ViewGeometryConversionError::viewport_input(
+            ViewGeometryPlatform::Web,
+            (f64::from(logical.rect.right_milli) / 1_000.0 * scale_factor).round(),
+            (f64::from(logical.rect.bottom_milli) / 1_000.0 * scale_factor).round(),
+        )?;
+        let physical_width = web_surface_extent(
+            physical.rect.right_milli,
+            ViewGeometryConversionField::ViewportWidth,
+        )?;
+        let physical_height = web_surface_extent(
+            physical.rect.bottom_milli,
+            ViewGeometryConversionField::ViewportHeight,
+        )?;
         if self.canvas.width() != physical_width {
             self.canvas.set_width(physical_width);
         }
@@ -152,7 +221,7 @@ impl PlayerState {
             self.canvas.set_height(physical_height);
         }
 
-        BrowserViewport {
+        Ok(BrowserViewport {
             render: RenderViewport {
                 logical_width,
                 logical_height,
@@ -161,8 +230,42 @@ impl PlayerState {
                 scale_factor,
             },
             physical_size: PhysicalSize::new(physical_width, physical_height),
-        }
+        })
     }
+}
+
+fn web_surface_extent(
+    value_milli: i32,
+    field: ViewGeometryConversionField,
+) -> Result<u32, ViewGeometryConversionError> {
+    let value_milli = i64::from(value_milli);
+    if value_milli < 0 {
+        return Err(ViewGeometryConversionError::NegativeExtent {
+            node: None,
+            platform: ViewGeometryPlatform::Web,
+            consumer: ViewGeometryConsumer::Layout,
+            field,
+            value_milli,
+        });
+    }
+    debug_assert_eq!(value_milli % 1_000, 0);
+    let value = u64::try_from(value_milli / 1_000).map_err(|_| {
+        ViewGeometryConversionError::NegativeExtent {
+            node: None,
+            platform: ViewGeometryPlatform::Web,
+            consumer: ViewGeometryConsumer::Layout,
+            field,
+            value_milli,
+        }
+    })?;
+    u32::try_from(value).map_err(|_| ViewGeometryConversionError::IndexRange {
+        node: None,
+        platform: ViewGeometryPlatform::Web,
+        consumer: ViewGeometryConsumer::Layout,
+        field,
+        value,
+        max: u64::from(u32::MAX),
+    })
 }
 
 fn create_pending_player_surfaces(event_loop: &dyn ActiveEventLoop) {
@@ -286,7 +389,13 @@ impl ApplicationHandler for BrowserApp {
                 window.request_redraw();
             }
             WindowEvent::PointerMoved { position, .. } => {
-                let logical = logical_position(position, window.scale_factor());
+                let logical = match logical_position(position, window.scale_factor()) {
+                    Ok(logical) => logical,
+                    Err(error) => {
+                        set_fatal(state, error);
+                        return;
+                    }
+                };
                 if let Some(frame) = state.prepared.clone() {
                     let outcome = state.input.pointer_move(&frame, PointerId(0), logical);
                     let clipboard_requests = apply_outcome(state, outcome);
@@ -305,7 +414,13 @@ impl ApplicationHandler for BrowserApp {
             {
                 if let Some(frame) = state.prepared.clone() {
                     let pointer = pointer_id(&button);
-                    let position = logical_position(position, window.scale_factor());
+                    let position = match logical_position(position, window.scale_factor()) {
+                        Ok(position) => position,
+                        Err(error) => {
+                            set_fatal(state, error);
+                            return;
+                        }
+                    };
                     let modifiers = arcweft_player_scene::input::InputPointerModifiers::new(
                         state.keyboard_modifiers.shift_key(),
                     );
@@ -491,47 +606,103 @@ fn redraw(
         emit_event("arcweft-runtime-observation", json);
     }
 
-    let browser_viewport = state.browser_viewport(window);
+    let browser_viewport = state.browser_viewport(window)?;
     let viewport = browser_viewport.render;
     let host_millis_u64 = host_millis.max(0.0) as u64;
-    let mut prepared = prepare_web_player_frame(state, viewport, host_millis_u64)?;
+    let mut candidate = prepare_web_player_frame(state, viewport, host_millis_u64)?;
     update_text_input_client_transform(state)?;
     state
         .text_input
-        .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
+        .sync_prepared_frame(
+            candidate.prepared(),
+            WebRuntimeTextInputFocusReason::RedrawRefresh,
+        )
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
-    let (changed, requests) = drain_text_input_edits(state, &prepared)?;
+    let (changed, requests) = drain_text_input_edits(state, candidate.prepared())?;
     clipboard_requests.extend(requests);
     if changed {
-        prepared = prepare_web_player_frame(state, viewport, host_millis_u64)?;
+        candidate = prepare_web_player_frame(state, viewport, host_millis_u64)?;
         state
             .text_input
-            .sync_prepared_frame(&prepared, WebRuntimeTextInputFocusReason::RedrawRefresh)
+            .sync_prepared_frame(
+                candidate.prepared(),
+                WebRuntimeTextInputFocusReason::RedrawRefresh,
+            )
             .map_err(|error| WebPlayerError::TextInput(error.to_string()))?;
     }
 
-    let GpuState::Ready(gpu) = &mut state.gpu else {
-        return Ok(clipboard_requests);
-    };
-    let frame_report = WebFrameObservationReport::from_prepared_frame(&prepared);
+    let frame_report = WebFrameObservationReport::from_prepared_frame(candidate.prepared());
     let frame_json = serde_json::to_string(&frame_report)
         .map_err(|error| WebPlayerError::Report(error.to_string()))?;
-    emit_event("arcweft-frame-observation", frame_json);
+    let registered_font_bytes = state.frame_planner.stats().registered_font_bytes;
+
+    if browser_viewport.physical_size.width == 0 || browser_viewport.physical_size.height == 0 {
+        let (published, ()) = state
+            .frame_planner
+            .publication_guard()
+            .publish_with(candidate, &mut state.input, |_| ())
+            .map_err(|source| WebPlayerError::PlayerFrame {
+                registered_font_bytes,
+                source,
+            })?;
+        emit_event("arcweft-frame-observation", frame_json);
+        state.prepared = Some(published.frame);
+        return Ok(clipboard_requests);
+    }
+
+    let GpuState::Ready(gpu) = &mut state.gpu else {
+        let (published, ()) = state
+            .frame_planner
+            .publication_guard()
+            .publish_with(candidate, &mut state.input, |_| ())
+            .map_err(|source| WebPlayerError::PlayerFrame {
+                registered_font_bytes,
+                source,
+            })?;
+        emit_event("arcweft-frame-observation", frame_json);
+        state.prepared = Some(published.frame);
+        return Ok(clipboard_requests);
+    };
 
     gpu.host.resize(browser_viewport.physical_size);
     let health = gpu.host.health();
     if let Some(error) = health.device_lost.or(health.uncaptured_error) {
         return Err(WebPlayerError::WebGpu(error));
     }
-    match gpu.host.render_and_present(&mut gpu.renderer, &prepared) {
-        Ok(()) => {}
+    let view_render = PreparedViewRenderCandidate::prepare(
+        candidate.view_geometry().generation().value(),
+        candidate
+            .view_geometry()
+            .final_nodes()
+            .map(|(_, geometry)| geometry),
+    )
+    .map_err(ViewGeometryRuntimeError::from)
+    .map_err(PlayerFrameError::from)
+    .map_err(|source| WebPlayerError::PlayerFrame {
+        registered_font_bytes,
+        source,
+    })?;
+    let web_candidate = match WebFramePublicationCandidate::prepare(gpu, &candidate, view_render) {
+        Ok(candidate) => candidate,
         Err(WebGpuCanvasHostError::SurfaceLost | WebGpuCanvasHostError::SurfaceOutdated) => {
             gpu.host.reconfigure();
             window.request_redraw();
+            return Ok(clipboard_requests);
         }
         Err(error) => return Err(WebPlayerError::WebGpu(error.to_string())),
-    }
-    state.prepared = Some(prepared);
+    };
+    let (published, ()) = state
+        .frame_planner
+        .publication_guard()
+        .publish_with(candidate, &mut state.input, |frame| {
+            web_candidate.commit(gpu, frame)
+        })
+        .map_err(|source| WebPlayerError::PlayerFrame {
+            registered_font_bytes,
+            source,
+        })?;
+    emit_event("arcweft-frame-observation", frame_json);
+    state.prepared = Some(published.frame);
     Ok(clipboard_requests)
 }
 
@@ -539,7 +710,7 @@ fn prepare_web_player_frame(
     state: &mut PlayerState,
     viewport: RenderViewport,
     host_millis: u64,
-) -> Result<arcweft_render_wgpu::geometry::PreparedFrame, WebPlayerError> {
+) -> Result<PlayerPreparedFrameCandidate, WebPlayerError> {
     let presentation = state.session.presentation();
     let fx_definitions = state.session.fx_definitions();
     let style_environment = state.session.presentation_environment();
@@ -551,8 +722,8 @@ fn prepare_web_player_frame(
     let registered_font_bytes = state.frame_planner.stats().registered_font_bytes;
     state
         .frame_planner
-        .prepare(
-            &mut state.input,
+        .prepare_candidate(
+            &state.input,
             PlayerFrameRequest {
                 presentation,
                 fx_definitions,
@@ -568,7 +739,6 @@ fn prepare_web_player_frame(
                 preferences: RenderPreferences::default(),
             },
         )
-        .map(|prepared| prepared.frame)
         .map_err(|source| WebPlayerError::PlayerFrame {
             registered_font_bytes,
             source,
@@ -684,12 +854,19 @@ fn schedule_clipboard_requests(
 
 fn update_text_input_client_transform(state: &mut PlayerState) -> Result<(), WebPlayerError> {
     let rect = state.canvas.get_bounding_client_rect();
+    let left = ViewGeometryConversionError::logical_pointer(
+        ViewGeometryPlatform::Web,
+        ViewGeometryConversionField::Left,
+        rect.left(),
+    )?;
+    let top = ViewGeometryConversionError::logical_pointer(
+        ViewGeometryPlatform::Web,
+        ViewGeometryConversionField::Top,
+        rect.top(),
+    )?;
     state
         .text_input
-        .set_client_transform(WebTextInputClientTransform::new(
-            rect.left() as f32,
-            rect.top() as f32,
-        ))
+        .set_client_transform(WebTextInputClientTransform::new(left, top))
         .map_err(|error| WebPlayerError::TextInput(error.to_string()))
 }
 
@@ -713,11 +890,23 @@ fn drain_text_input_edits(
     Ok((changed, clipboard_requests))
 }
 
-fn logical_position(position: PhysicalPosition<f64>, scale_factor: f64) -> ViewportPoint {
-    ViewportPoint::new(
-        (position.x / scale_factor) as f32,
-        (position.y / scale_factor) as f32,
-    )
+fn logical_position(
+    position: PhysicalPosition<f64>,
+    scale_factor: f64,
+) -> Result<ViewportPoint, WebPlayerError> {
+    ViewGeometryConversionError::scale_factor(ViewGeometryPlatform::Web, scale_factor)?;
+    Ok(ViewportPoint::new(
+        ViewGeometryConversionError::logical_pointer(
+            ViewGeometryPlatform::Web,
+            ViewGeometryConversionField::Left,
+            position.x / scale_factor,
+        )?,
+        ViewGeometryConversionError::logical_pointer(
+            ViewGeometryPlatform::Web,
+            ViewGeometryConversionField::Top,
+            position.y / scale_factor,
+        )?,
+    ))
 }
 
 fn pointer_id(button: &ButtonSource) -> PointerId {

@@ -1,10 +1,12 @@
 //! Canonical View text-source resolution and frame-local preparation.
 
-use super::view_style::{ResolvedViewStyleFrame, box_style};
-use super::{milli_i32_to_f32, milli_u32_to_f32, scroll_adjusted_bounds};
+use super::view_style::ResolvedViewStyleFrame;
+use super::{
+    PlayerFrameError, ViewCommittedGeometryFrame, ViewGeometryProductKind, ViewGeometryTargetKey,
+};
 use crate::input::InputController;
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::resource_codec::view::{ViewRuntimeNodeStyle, ViewTextSelectionPolicy};
+use arcweft_bundle::resource_codec::view::ViewTextSelectionPolicy;
 use arcweft_id::PublicId;
 use arcweft_layout::{ContentRect, LayoutRect as FitLayoutRect};
 use arcweft_presentation::appearance::PresentationColor;
@@ -35,7 +37,7 @@ use arcweft_runtime_driver::{
     presentation_handles::PresentationHandleId,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
-use arcweft_view::style::ViewOverflow;
+use arcweft_view::geometry::ViewGeometryConsumer;
 use std::collections::BTreeMap;
 
 /// Prepared ID associated with one exact mounted View text paint target.
@@ -143,6 +145,7 @@ pub(super) struct RuntimeViewTextRequest<'a> {
     pub(super) visual_time_millis: u64,
     pub(super) latest_reveal_complete: bool,
     pub(super) styles: &'a ResolvedViewStyleFrame,
+    pub(super) geometry: &'a ViewCommittedGeometryFrame,
     pub(super) content: Option<ContentRect>,
 }
 
@@ -169,7 +172,7 @@ pub(super) fn prepare_runtime_view_text(
     shared: &mut SharedFramePlanContext,
     frame: &mut PreparedFrame,
     request: RuntimeViewTextRequest<'_>,
-) -> Result<Vec<PreparedMountedViewText>, FramePlanError> {
+) -> Result<Vec<PreparedMountedViewText>, PlayerFrameError> {
     RuntimeViewTextPreparer::new(shared, frame, request).prepare()
 }
 
@@ -194,7 +197,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         }
     }
 
-    fn prepare(mut self) -> Result<Vec<PreparedMountedViewText>, FramePlanError> {
+    fn prepare(mut self) -> Result<Vec<PreparedMountedViewText>, PlayerFrameError> {
         let mounts = self.request.presentation.view.mounts.clone();
         for mount in &mounts {
             self.prepare_mount(mount)?;
@@ -216,10 +219,10 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         Ok(self.prepared)
     }
 
-    fn prepare_mount(&mut self, mount: &BundleViewMountOutput) -> Result<(), FramePlanError> {
+    fn prepare_mount(&mut self, mount: &BundleViewMountOutput) -> Result<(), PlayerFrameError> {
         let dialogue = dialogue_context(self.request.presentation, &mount.handle);
         if let Some(dialogue) = dialogue {
-            self.retain_dialogue_state(mount, dialogue);
+            self.retain_dialogue_state(mount, dialogue)?;
         }
         for output in &mount.text {
             for target in &output.targets {
@@ -235,7 +238,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         &mut self,
         mount: &BundleViewMountOutput,
         dialogue: DialogueTextContext<'request>,
-    ) {
+    ) -> Result<(), PlayerFrameError> {
         let root_output = root_mount(self.request.presentation, mount);
         let state = DialoguePreparedState {
             dialogue: dialogue.dialogue.id().get(),
@@ -245,11 +248,11 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             instance: dialogue.entry.instance().get(),
             stage: dialogue.entry.stage_index().get(),
             bounds: dialogue_surface_bounds(
-                self.request.scene,
                 self.request.presentation,
                 root_output,
+                self.request.geometry,
                 self.request.content,
-            ),
+            )?,
             reveal_complete: true,
             advance_available: dialogue.entry.is_waiting_for_advance(),
             primary_action: root_output
@@ -259,6 +262,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         self.dialogue_states
             .entry(mount.handle.clone())
             .or_insert(state);
+        Ok(())
     }
 
     fn prepare_target(
@@ -267,24 +271,32 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         output: &BundleViewTextOutput,
         target: &BundleViewTextTarget,
         dialogue: Option<DialogueTextContext<'request>>,
-    ) -> Result<(), FramePlanError> {
+    ) -> Result<(), PlayerFrameError> {
         let scoped_id = mount.scoped_id(&target.public_id);
         let resolved = self
             .request
             .styles
             .text(&scoped_id)
             .or_else(|| self.request.styles.part(&scoped_id));
-        let layout_offset = self.request.styles.text_layout_offset(&scoped_id);
-        let Some((bounds, clip)) = target_geometry(
-            self.request.scene,
-            mount,
-            target,
-            resolved,
-            layout_offset,
-            self.request.content,
-        ) else {
+        let geometry_target =
+            ViewGeometryTargetKey::new(ViewGeometryProductKind::TextOutput, scoped_id.clone());
+        let Some(bounds) = self
+            .request
+            .geometry
+            .target_consumer_hit_rect(&geometry_target, ViewGeometryConsumer::Layout)?
+        else {
             return Ok(());
         };
+        let Some(visible_bounds) = self
+            .request
+            .geometry
+            .target_consumer_hit_rect(&geometry_target, ViewGeometryConsumer::Capture)?
+        else {
+            return Ok(());
+        };
+        let bounds = map_rect(bounds, self.request.content);
+        let visible_bounds = map_rect(visible_bounds, self.request.content);
+        let clip = (visible_bounds != bounds).then_some(visible_bounds);
         let semantic_id = PublicId::try_new(&scoped_id)
             .map_err(|_| FramePlanError::InvalidId { value: scoped_id })?;
         let interaction_target = Some(InteractionTarget::new(semantic_id.clone()));
@@ -305,12 +317,8 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         let content_scale = self.request.content.map_or(1.0, |content| {
             ((content.scale_x.abs() + content.scale_y.abs()) * 0.5).max(f32::EPSILON)
         });
-        let style_scale = resolved.map_or(1.0, |style| {
-            num_traits::ToPrimitive::to_f32(&box_style(style).scale_milli).unwrap_or(f32::MAX)
-                / 1_000.0
-        });
         let text_scale = f32::from(self.request.scene.preferences.text_scale_milli) / 1_000.0;
-        let style = resolved_style(visual, content_scale * style_scale * text_scale)?;
+        let style = resolved_style(visual, content_scale * text_scale)?;
         let text_request = PreparedTextDocumentRequest {
             origin: LayoutPoint::new(bounds.x, bounds.y),
             size: LayoutSize::new(bounds.width, bounds.height),
@@ -355,7 +363,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
     fn record_prepared_target(
         &mut self,
         record: PreparedTargetRecord<'_>,
-    ) -> Result<(), FramePlanError> {
+    ) -> Result<(), PlayerFrameError> {
         let PreparedTargetRecord {
             mount,
             output,
@@ -374,16 +382,17 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             })?;
         let dialogue_content =
             dialogue.filter(|_| matches!(output.value, BundleViewTextValue::DisplayFrame { .. }));
-        let object_bounds = dialogue_content
-            .and_then(|_| {
-                dialogue_surface_bounds(
-                    self.request.scene,
-                    self.request.presentation,
-                    root_output,
-                    self.request.content,
-                )
-            })
-            .unwrap_or(bounds);
+        let object_bounds = if dialogue_content.is_some() {
+            dialogue_surface_bounds(
+                self.request.presentation,
+                root_output,
+                self.request.geometry,
+                self.request.content,
+            )?
+            .unwrap_or(bounds)
+        } else {
+            bounds
+        };
         let owner_kind = dialogue_content.map_or(
             PreparedTextOwnerKind::View {
                 mount: mount.mount.get(),
@@ -593,139 +602,29 @@ fn union(left: HitRect, right: HitRect) -> HitRect {
     HitRect::new(min_x, min_y, max_x - min_x, max_y - min_y)
 }
 
-fn target_geometry(
-    scene: &RenderScene,
-    mount: &BundleViewMountOutput,
-    target: &BundleViewTextTarget,
-    style: Option<&ViewRuntimeNodeStyle>,
-    layout_offset: (i32, i32),
-    content: Option<ContentRect>,
-) -> Option<(HitRect, Option<HitRect>)> {
-    let box_style = style.map(box_style);
-    let x_milli = target
-        .bounds
-        .x_milli
-        .saturating_add(layout_offset.0)
-        .saturating_add(box_style.as_ref().map_or(0, |style| style.translate_x));
-    let y_milli = target
-        .bounds
-        .y_milli
-        .saturating_add(layout_offset.1)
-        .saturating_add(box_style.as_ref().map_or(0, |style| style.translate_y));
-    let scale_milli = box_style.as_ref().map_or(1_000, |style| style.scale_milli);
-    let width_milli = scaled_dimension(
-        box_style
-            .as_ref()
-            .and_then(|style| style.width)
-            .unwrap_or(target.bounds.width_milli),
-        scale_milli,
-    );
-    let height_milli = scaled_dimension(
-        box_style
-            .as_ref()
-            .and_then(|style| style.height)
-            .unwrap_or(target.bounds.height_milli),
-        scale_milli,
-    );
-    let bounds = HitRect::new(
-        milli_i32_to_f32(x_milli),
-        milli_i32_to_f32(y_milli),
-        milli_u32_to_f32(width_milli),
-        milli_u32_to_f32(height_milli),
-    );
-    if bounds.width <= 0.0 || bounds.height <= 0.0 {
-        return None;
-    }
-    let scroll = target.containing_scroll_region.as_deref().map(|region| {
-        let scoped = mount.scoped_id(region);
-        if scene
-            .scroll_regions
-            .iter()
-            .any(|candidate| candidate.id == scoped)
-        {
-            scoped
-        } else {
-            region.to_owned()
-        }
-    });
-    let (bounds, clip) = scroll_adjusted_bounds(scene, scroll.as_deref(), bounds)?;
-    let bounds = map_rect(bounds, content);
-    let scroll_clip = clip.map(|clip| map_rect(clip, content));
-    let overflow_clip = box_style.and_then(|style| {
-        overflow_clip(
-            scene.viewport.logical_width,
-            scene.viewport.logical_height,
-            bounds,
-            style.overflow_x,
-            style.overflow_y,
-        )
-    });
-    let clip = match (scroll_clip, overflow_clip) {
-        (Some(left), Some(right)) => Some(intersection(left, right)?),
-        (Some(clip), None) | (None, Some(clip)) => Some(clip),
-        (None, None) => None,
-    };
-    Some((bounds, clip))
-}
-
-fn scaled_dimension(value: u32, scale_milli: u32) -> u32 {
-    u32::try_from(u64::from(value).saturating_mul(u64::from(scale_milli)) / 1_000)
-        .unwrap_or(u32::MAX)
-}
-
-fn overflow_clip(
-    viewport_width: f32,
-    viewport_height: f32,
-    bounds: HitRect,
-    overflow_x: ViewOverflow,
-    overflow_y: ViewOverflow,
-) -> Option<HitRect> {
-    let clip_x = overflow_x != ViewOverflow::Visible;
-    let clip_y = overflow_y != ViewOverflow::Visible;
-    (clip_x || clip_y).then(|| {
-        HitRect::new(
-            if clip_x { bounds.x } else { 0.0 },
-            if clip_y { bounds.y } else { 0.0 },
-            if clip_x { bounds.width } else { viewport_width },
-            if clip_y {
-                bounds.height
-            } else {
-                viewport_height
-            },
-        )
-    })
-}
-
-fn intersection(left: HitRect, right: HitRect) -> Option<HitRect> {
-    let x = left.x.max(right.x);
-    let y = left.y.max(right.y);
-    let right_edge = (left.x + left.width).min(right.x + right.width);
-    let bottom_edge = (left.y + left.height).min(right.y + right.height);
-    (right_edge > x && bottom_edge > y).then(|| HitRect::new(x, y, right_edge - x, bottom_edge - y))
-}
-
 fn dialogue_surface_bounds(
-    scene: &RenderScene,
     presentation: &BundlePresentationSnapshot,
     mount: &BundleViewMountOutput,
+    geometry: &ViewCommittedGeometryFrame,
     content: Option<ContentRect>,
-) -> Option<HitRect> {
+) -> Result<Option<HitRect>, PlayerFrameError> {
     let owner = mount.scoped_id(mount.view.as_str());
-    presentation
+    let mut result = None;
+    for surface in presentation
         .surfaces
         .iter()
         .filter(|surface| surface.view.as_deref() == Some(owner.as_str()))
-        .filter_map(|surface| {
-            let bounds = HitRect::new(
-                milli_i32_to_f32(surface.bounds.x_milli),
-                milli_i32_to_f32(surface.bounds.y_milli),
-                milli_u32_to_f32(surface.bounds.width_milli),
-                milli_u32_to_f32(surface.bounds.height_milli),
-            );
-            scroll_adjusted_bounds(scene, surface.containing_scroll_region.as_deref(), bounds)
-                .map(|(bounds, _)| map_rect(bounds, content))
-        })
-        .reduce(union)
+    {
+        let target =
+            ViewGeometryTargetKey::new(ViewGeometryProductKind::Surface, surface.target.clone());
+        if let Some(bounds) =
+            geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::Avoidance)?
+        {
+            let bounds = map_rect(bounds, content);
+            result = Some(result.map_or(bounds, |current| union(current, bounds)));
+        }
+    }
+    Ok(result)
 }
 
 fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {

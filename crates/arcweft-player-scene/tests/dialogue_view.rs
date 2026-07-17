@@ -22,7 +22,7 @@ use arcweft_runtime_driver::{
 };
 
 #[test]
-fn standard_dialogue_view_preserves_vertical_ruby_and_authored_panel_geometry() {
+fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
     let presentation = vertical_ruby_dialogue_view();
     let prepared = prepare(&presentation);
 
@@ -33,8 +33,8 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_authored_panel_geometry() 
         .frame
         .latest_dialogue_view()
         .expect("standard dialogue View state");
-    assert!((dialogue.bounds.x - 57.6).abs() < 0.001);
-    assert!((dialogue.bounds.y - 460.8).abs() < 0.001);
+    assert!(dialogue.bounds.x.abs() < 0.001);
+    assert!(dialogue.bounds.y.abs() < 0.001);
     assert!((dialogue.bounds.width - 1_164.8).abs() < 0.001);
     assert!((dialogue.bounds.height - 201.6).abs() < 0.001);
     assert!(dialogue.primary_action.is_some());
@@ -74,8 +74,8 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_authored_panel_geometry() 
         .iter()
         .find(|owner| matches!(owner.kind, PreparedTextOwnerKind::DialogueView { .. }))
         .expect("dialogue content owner");
-    assert!((body.object_bounds.x - 57.6).abs() < 0.001);
-    assert!((body.object_bounds.y - 460.8).abs() < 0.001);
+    assert!(body.object_bounds.x.abs() < 0.001);
+    assert!(body.object_bounds.y.abs() < 0.001);
     assert!((body.object_bounds.width - 1_164.8).abs() < 0.001);
     assert!((body.object_bounds.height - 201.6).abs() < 0.001);
     let body = prepared

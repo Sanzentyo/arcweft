@@ -1,7 +1,7 @@
 use super::primitives::checked_i32;
 use super::{
-    ViewGeometryClip, ViewGeometryError, ViewGeometryNodeId, ViewGeometryOperation,
-    ViewGeometryRect, ViewGeometrySpan,
+    ViewGeometryClip, ViewGeometryError, ViewGeometryOperation, ViewGeometryRect, ViewGeometrySpan,
+    ViewStyleNodeKey,
 };
 use crate::style::{ViewOverflow, ViewPhysicalAxis};
 
@@ -59,7 +59,7 @@ pub struct ViewScrollGeometry {
 }
 
 pub fn scroll_axis_geometry(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     overflow: ViewOverflow,
     viewport: ViewGeometrySpan,
@@ -105,7 +105,7 @@ pub fn scroll_axis_geometry(
 }
 
 pub fn scroll_into_view_nearest(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     axis: ViewPhysicalAxis,
     geometry: ViewScrollAxisGeometry,
     target_unscrolled: ViewGeometrySpan,

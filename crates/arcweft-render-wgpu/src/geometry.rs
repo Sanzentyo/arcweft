@@ -37,6 +37,7 @@ mod images;
 mod prepared_text;
 mod scroll;
 mod text_controls;
+pub mod view_final;
 pub use action_buttons::{PreparedActionButton, RenderActionButton, RenderActionButtonAction};
 pub use control_style::{
     PreparedControlBackdrop, PreparedControlFilter, PreparedControlPaint, PreparedControlShadow,
@@ -69,18 +70,20 @@ pub struct RenderViewport {
 }
 
 impl RenderViewport {
-    /// Returns the finite physical scale factor used by renderer subsystems
-    /// whose APIs accept `f32` coordinates.
+    /// Returns the host-validated physical scale factor for renderer APIs.
+    ///
+    /// Native, Web, and headless adapters validate this value before frame
+    /// preparation. This conversion deliberately has no renderer fallback.
     #[must_use]
     pub fn physical_scale_factor_f32(self) -> f32 {
-        let Some(scale_factor) = self.scale_factor.to_f32() else {
-            return 1.0;
-        };
-        if scale_factor.is_finite() {
-            scale_factor.max(f32::EPSILON)
-        } else {
-            1.0
-        }
+        debug_assert!(self.scale_factor.is_finite() && self.scale_factor > 0.0);
+        debug_assert!(self.scale_factor <= f64::from(f32::MAX));
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "host adapters validate the finite positive f32 range before preparation"
+        )]
+        let scale_factor = self.scale_factor as f32;
+        scale_factor
     }
 }
 
@@ -971,6 +974,10 @@ impl PreparedFrame {
             region.bounds = mapping.rect(region.bounds);
             region.content_width *= mapping.scale_x;
             region.content_height *= mapping.scale_y;
+            region.min_offset_x *= mapping.scale_x;
+            region.max_offset_x *= mapping.scale_x;
+            region.min_offset_y *= mapping.scale_y;
+            region.max_offset_y *= mapping.scale_y;
             region.offset_x *= mapping.scale_x;
             region.offset_y *= mapping.scale_y;
             region.overscroll_x *= mapping.scale_x;
@@ -1167,6 +1174,21 @@ impl SharedFramePlanContext {
         }
         self.registered_font_bytes = self.registered_font_bytes.saturating_add(byte_len);
         Ok(())
+    }
+
+    /// Creates isolated planner state for a frame publication candidate.
+    ///
+    /// The fork retains exact registered fonts and text-shape cache contents,
+    /// while all subsequent cache mutations remain private until publication.
+    pub fn fork_for_candidate(&self) -> Result<Self, FramePlanError> {
+        Ok(Self {
+            prepared_text_engine: self
+                .prepared_text_engine
+                .as_ref()
+                .map(GlyphonTextEngine::fork_for_candidate)
+                .transpose()?,
+            registered_font_bytes: self.registered_font_bytes,
+        })
     }
 
     #[must_use]

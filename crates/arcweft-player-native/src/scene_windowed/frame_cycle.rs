@@ -4,16 +4,40 @@ use super::{
     Arc, ArcweftBundle, BundleStepInput, FrameBoundary, Instant, ModifiersState,
     NativeAudioRuntime, NativeClipboardAdapter, NativeDesktopBackend, NativePlayerOptions,
     NativeSceneState, NativeSceneWindowError, NativeTextInputBridge, NativeTextInputFocusReason,
-    PhysicalSize, PlayerFontSet, PlayerFramePlannerState, PlayerFrameRequest, RenderPreferences,
-    RenderViewport, RuntimeClockStep, SharedRenderer, Size, ToPrimitive, VecDeque, Window,
-    WindowCloseSignal, WindowedEnvironmentIngressCommand, WindowedEnvironmentIngressCompletion,
+    PhysicalSize, PlayerFontSet, PlayerFrameError, PlayerFramePlannerState, PlayerFrameRequest,
+    PlayerPreparedFrame, PlayerPreparedFrameCandidate, PreparedSharedRenderSubmission,
+    RenderPreferences, RenderViewport, RuntimeClockStep, SharedRenderer, Size, VecDeque,
+    ViewGeometryConsumer, ViewGeometryConversionError, ViewGeometryConversionField,
+    ViewGeometryPlatform, ViewGeometryRuntimeError, Window, WindowCloseSignal,
+    WindowedEnvironmentIngressCommand, WindowedEnvironmentIngressCompletion,
     WindowedEnvironmentUpdateError, WindowedPatchIngressCompletion, WindowedPatchIngressMessage,
-    WindowedRuntimeOutcome, WinitOwnedWindowDriver, non_zero_size,
-    restored_windowed_runtime_and_input, save_native_player_session, scene_aspect_size,
-    surface_texture,
+    WindowedRuntimeOutcome, WinitOwnedWindowDriver, restored_windowed_runtime_and_input,
+    save_native_player_session, scene_aspect_size, surface_texture,
 };
+use arcweft_render_wgpu::geometry::view_final::PreparedViewRenderCandidate;
+
+struct NativeFramePublicationCandidate {
+    view_render: PreparedViewRenderCandidate,
+    surface_frame: wgpu::SurfaceTexture,
+    submission: PreparedSharedRenderSubmission,
+}
+
+impl NativeFramePublicationCandidate {
+    fn commit(self, queue: &wgpu::Queue, frame: &PlayerPreparedFrame) {
+        debug_assert_eq!(
+            self.view_render.generation(),
+            frame.view_geometry().generation().value()
+        );
+        self.submission.submit(queue);
+        self.surface_frame.present();
+    }
+}
 
 impl NativeSceneState {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "native initialization acquires and validates one mutually dependent window, surface, device, renderer, session, and publication state"
+    )]
     pub(super) async fn new(
         window: Arc<dyn Window>,
         title: String,
@@ -51,7 +75,8 @@ impl NativeSceneState {
             .find(wgpu::TextureFormat::is_srgb)
             .or_else(|| capabilities.formats.first().copied())
             .ok_or(NativeSceneWindowError::NoSurfaceFormat)?;
-        let size = scene_aspect_size(window.surface_size(), options.frame_fit);
+        let size = scene_aspect_size(window.surface_size(), options.frame_fit)?;
+        let surface_configured = size.width != 0 && size.height != 0;
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -71,7 +96,9 @@ impl NativeSceneState {
                 .unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: Vec::new(),
         };
-        surface.configure(&device, &config);
+        if surface_configured {
+            surface.configure(&device, &config);
+        }
         let mut renderer = SharedRenderer::new(&device, &queue, format);
         let mut frame_planner = PlayerFramePlannerState::new();
         PlayerFontSet::bundled_default()
@@ -93,6 +120,7 @@ impl NativeSceneState {
             window,
             close_signal,
             surface,
+            surface_configured,
             device,
             queue,
             config,
@@ -142,27 +170,70 @@ impl NativeSceneState {
         Ok(())
     }
 
-    pub(super) fn resize(&mut self, size: PhysicalSize<u32>) {
-        let requested = non_zero_size(size);
-        let size = scene_aspect_size(requested, self.frame_fit);
+    pub(super) fn resize(
+        &mut self,
+        requested: PhysicalSize<u32>,
+    ) -> Result<(), NativeSceneWindowError> {
+        let size = scene_aspect_size(requested, self.frame_fit)?;
         if size != requested {
             let _ = self.window.request_surface_size(Size::Physical(size));
         }
         if self.config.width == size.width && self.config.height == size.height {
-            return;
+            return Ok(());
         }
         self.config.width = size.width;
         self.config.height = size.height;
-        self.surface.configure(&self.device, &self.config);
+        self.surface_configured = size.width != 0 && size.height != 0;
+        if self.surface_configured {
+            self.surface.configure(&self.device, &self.config);
+        }
+        Ok(())
     }
 
     pub(super) fn redraw(&mut self) -> Result<(), NativeSceneWindowError> {
         self.runtime.pump_main_thread()?;
         self.step_runtime()?;
-        let prepared = self.prepare_frame()?;
-        self.sync_text_input_bridge(&prepared.frame, NativeTextInputFocusReason::RedrawRefresh)?;
-        self.sync_window_ime(&prepared.frame);
-        self.render(&prepared.frame)?;
+        let candidate = self.prepare_frame_candidate()?;
+        self.sync_text_input_bridge(
+            candidate.prepared(),
+            NativeTextInputFocusReason::RedrawRefresh,
+        )?;
+        self.sync_window_ime(candidate.prepared());
+        if !self.surface_configured {
+            let (prepared, ()) = self.frame_planner.publication_guard().publish_with(
+                candidate,
+                &mut self.input,
+                |_| (),
+            )?;
+            let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
+            let environment_invalidated = self.drain_environment_boundary();
+            if environment_invalidated
+                || patch_outcomes
+                    .iter()
+                    .any(WindowedRuntimeOutcome::invalidates_prepared_frame)
+            {
+                self.prepared = None;
+            } else {
+                self.prepared = Some(prepared.frame);
+            }
+            return Ok(());
+        }
+        let native_candidate = match self.prepare_native_publication(&candidate) {
+            Ok(candidate) => candidate,
+            Err(NativeSceneWindowError::SurfaceLost | NativeSceneWindowError::SurfaceOutdated) => {
+                if self.surface_configured {
+                    self.surface.configure(&self.device, &self.config);
+                }
+                self.window.request_redraw();
+                return Ok(());
+            }
+            Err(error) => return Err(error),
+        };
+        let (prepared, ()) = self.frame_planner.publication_guard().publish_with(
+            candidate,
+            &mut self.input,
+            |frame| native_candidate.commit(&self.queue, frame),
+        )?;
         let patch_outcomes = self.drain_patch_events_after_render_submitted()?;
         let environment_invalidated = self.drain_environment_boundary();
         if environment_invalidated
@@ -251,10 +322,10 @@ impl NativeSceneState {
         self.window.request_redraw();
     }
 
-    pub(super) fn prepare_frame(
+    fn prepare_frame_candidate(
         &mut self,
-    ) -> Result<arcweft_player_scene::frame::PlayerPreparedFrame, NativeSceneWindowError> {
-        let viewport = self.viewport();
+    ) -> Result<PlayerPreparedFrameCandidate, NativeSceneWindowError> {
+        let viewport = self.viewport()?;
         let elapsed = self.elapsed_millis();
         let session = self.runtime.session();
         let presentation = session.presentation();
@@ -265,8 +336,8 @@ impl NativeSceneState {
             None,
         );
         let style_environment = session.presentation_environment();
-        Ok(self.frame_planner.prepare(
-            &mut self.input,
+        Ok(self.frame_planner.prepare_candidate(
+            &self.input,
             PlayerFrameRequest {
                 presentation,
                 fx_definitions,
@@ -284,26 +355,51 @@ impl NativeSceneState {
         )?)
     }
 
-    fn render(
+    pub(super) fn prepare_frame(
         &mut self,
-        prepared: &arcweft_render_wgpu::geometry::PreparedFrame,
-    ) -> Result<(), NativeSceneWindowError> {
-        let surface_frame = match surface_texture(self.surface.get_current_texture()) {
-            Ok(texture) => texture,
-            Err(NativeSceneWindowError::SurfaceLost | NativeSceneWindowError::SurfaceOutdated) => {
-                self.surface.configure(&self.device, &self.config);
-                self.window.request_redraw();
-                return Ok(());
-            }
-            Err(error) => return Err(error),
-        };
+    ) -> Result<arcweft_player_scene::frame::PlayerPreparedFrame, NativeSceneWindowError> {
+        let candidate = self.prepare_frame_candidate()?;
+        self.frame_planner
+            .publication_guard()
+            .publish_with(candidate, &mut self.input, |_| ())
+            .map(|(frame, ())| frame)
+            .map_err(Into::into)
+    }
+
+    fn prepare_native_publication(
+        &mut self,
+        candidate: &PlayerPreparedFrameCandidate,
+    ) -> Result<NativeFramePublicationCandidate, NativeSceneWindowError> {
+        if !self.surface_configured {
+            return Err(NativeSceneWindowError::InvalidSurfaceExtent {
+                width: self.config.width,
+                height: self.config.height,
+            });
+        }
+        let view_render = PreparedViewRenderCandidate::prepare(
+            candidate.view_geometry().generation().value(),
+            candidate
+                .view_geometry()
+                .final_nodes()
+                .map(|(_, geometry)| geometry),
+        )
+        .map_err(ViewGeometryRuntimeError::from)
+        .map_err(PlayerFrameError::from)?;
+        let surface_frame = surface_texture(self.surface.get_current_texture())?;
         let view = surface_frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        self.renderer
-            .render_to_view(&self.device, &self.queue, &view, prepared)?;
-        surface_frame.present();
-        Ok(())
+        let submission = self.renderer.prepare_to_view(
+            &self.device,
+            &self.queue,
+            &view,
+            candidate.prepared(),
+        )?;
+        Ok(NativeFramePublicationCandidate {
+            view_render,
+            surface_frame,
+            submission,
+        })
     }
 
     fn drain_patch_events_after_render_submitted(
@@ -320,22 +416,48 @@ impl NativeSceneState {
         Ok(outcomes)
     }
 
-    fn viewport(&self) -> RenderViewport {
+    fn viewport(&self) -> Result<RenderViewport, NativeSceneWindowError> {
         let size = PhysicalSize::new(self.config.width, self.config.height);
-        let scale_factor = self.window.scale_factor().max(f64::EPSILON);
-        let logical_width = (f64::from(size.width) / scale_factor)
-            .to_f32()
-            .unwrap_or(f32::MAX);
-        let logical_height = (f64::from(size.height) / scale_factor)
-            .to_f32()
-            .unwrap_or(f32::MAX);
-        RenderViewport {
-            logical_width,
-            logical_height,
+        let scale_factor = self.window.scale_factor();
+        ViewGeometryConversionError::scale_factor(ViewGeometryPlatform::Native, scale_factor)?;
+        ViewGeometryConversionError::exact_f32(
+            None,
+            ViewGeometryPlatform::Native,
+            ViewGeometryConsumer::Layout,
+            ViewGeometryConversionField::ViewportWidth,
+            i64::from(size.width) * 1_000,
+        )?;
+        ViewGeometryConversionError::exact_f32(
+            None,
+            ViewGeometryPlatform::Native,
+            ViewGeometryConsumer::Layout,
+            ViewGeometryConversionField::ViewportHeight,
+            i64::from(size.height) * 1_000,
+        )?;
+        let logical = ViewGeometryConversionError::viewport_input(
+            ViewGeometryPlatform::Native,
+            f64::from(size.width) / scale_factor,
+            f64::from(size.height) / scale_factor,
+        )?;
+        Ok(RenderViewport {
+            logical_width: ViewGeometryConversionError::exact_f32(
+                None,
+                ViewGeometryPlatform::Native,
+                ViewGeometryConsumer::Layout,
+                ViewGeometryConversionField::ViewportWidth,
+                i64::from(logical.rect.right_milli),
+            )?,
+            logical_height: ViewGeometryConversionError::exact_f32(
+                None,
+                ViewGeometryPlatform::Native,
+                ViewGeometryConsumer::Layout,
+                ViewGeometryConversionField::ViewportHeight,
+                i64::from(logical.rect.bottom_milli),
+            )?,
             physical_width: size.width,
             physical_height: size.height,
             scale_factor,
-        }
+        })
     }
 
     pub(super) fn elapsed_millis(&self) -> u64 {

@@ -146,14 +146,6 @@ pub enum InputControllerSnapshotError {
         offset_x: f32,
         offset_y: f32,
     },
-    #[error(
-        "input snapshot has negative scroll offset ({offset_x}, {offset_y}) for region `{region_id}`"
-    )]
-    NegativeScrollOffset {
-        region_id: String,
-        offset_x: f32,
-        offset_y: f32,
-    },
 }
 
 impl DragState {
@@ -474,6 +466,7 @@ impl InputController {
                     region.bounds.height,
                     bounds.y,
                     bounds.height,
+                    region.min_offset_y(),
                     region.max_offset_y(),
                 ),
             ),
@@ -485,6 +478,7 @@ impl InputController {
                     region.bounds.width,
                     bounds.x,
                     bounds.width,
+                    region.min_offset_x(),
                     region.max_offset_x(),
                 ),
                 current.y,
@@ -933,6 +927,10 @@ fn finite_delta(value: f32) -> f32 {
     if value.is_finite() { value } else { 0.0 }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the signed viewport, target, and scroll range are one axis-local reveal calculation"
+)]
 fn focus_auto_scroll_offset(
     policy: RenderFocusAutoScrollPolicy,
     current: f32,
@@ -940,6 +938,7 @@ fn focus_auto_scroll_offset(
     viewport_extent: f32,
     target_start: f32,
     target_extent: f32,
+    min_offset: f32,
     max_offset: f32,
 ) -> f32 {
     match policy {
@@ -949,16 +948,17 @@ fn focus_auto_scroll_offset(
             viewport_extent,
             target_start,
             target_extent,
+            min_offset,
             max_offset,
         ),
         RenderFocusAutoScrollPolicy::Start => {
-            (current + target_start - viewport_start).clamp(0.0, max_offset)
+            (current + target_start - viewport_start).clamp(min_offset, max_offset)
         }
         RenderFocusAutoScrollPolicy::End => {
             (current + target_start + target_extent - viewport_start - viewport_extent)
-                .clamp(0.0, max_offset)
+                .clamp(min_offset, max_offset)
         }
-        RenderFocusAutoScrollPolicy::Disabled => current.clamp(0.0, max_offset),
+        RenderFocusAutoScrollPolicy::Disabled => current.clamp(min_offset, max_offset),
     }
 }
 
@@ -968,6 +968,7 @@ fn nearest_offset_for_axis(
     viewport_extent: f32,
     target_start: f32,
     target_extent: f32,
+    min_offset: f32,
     max_offset: f32,
 ) -> f32 {
     let viewport_end = viewport_start + viewport_extent;
@@ -979,7 +980,7 @@ fn nearest_offset_for_axis(
     } else {
         current
     };
-    desired.clamp(0.0, max_offset)
+    desired.clamp(min_offset, max_offset)
 }
 
 fn choice_action(

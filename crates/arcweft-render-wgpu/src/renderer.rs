@@ -63,6 +63,32 @@ pub enum SharedRendererError {
     TextRender(String),
     #[error("view compositor failed: {0}")]
     ViewCompositor(#[from] ViewCompositorError),
+    #[error("renderer target extent must be non-zero, got {width}x{height}")]
+    InvalidTargetExtent { width: u32, height: u32 },
+    #[error("renderer target extent is not exactly representable as f32, got {width}x{height}")]
+    InexactTargetExtent { width: u32, height: u32 },
+    #[error(
+        "renderer logical viewport must be finite and positive, got bits {width_bits:#010x}x{height_bits:#010x}"
+    )]
+    InvalidLogicalExtent { width_bits: u32, height_bits: u32 },
+    #[error("renderer scale factor must be finite, positive, and fit f32: {value_bits:#018x}")]
+    InvalidScaleFactor { value_bits: u64 },
+    #[error("renderer rectangle vertex count exceeds u32 for {rectangles} rectangles")]
+    RectangleVertexCount { rectangles: usize },
+    #[error("renderer image row byte count overflows u32 for width {width}")]
+    ImageRowBytesRange { width: u32 },
+}
+
+/// Fully encoded renderer work whose only remaining operation is infallible
+/// queue submission.
+pub struct PreparedSharedRenderSubmission {
+    command_buffer: wgpu::CommandBuffer,
+}
+
+impl PreparedSharedRenderSubmission {
+    pub fn submit(self, queue: &wgpu::Queue) {
+        queue.submit([self.command_buffer]);
+    }
 }
 
 #[repr(C)]
@@ -160,9 +186,64 @@ impl SharedRenderer {
         target: &wgpu::TextureView,
         frame: &PreparedFrame,
     ) -> Result<(), SharedRendererError> {
+        let submission = self.prepare_to_view(device, queue, target, frame)?;
+        submission.submit(queue);
+        Ok(())
+    }
+
+    /// Completes every fallible renderer operation without submitting GPU work.
+    pub fn prepare_to_view(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::TextureView,
+        frame: &PreparedFrame,
+    ) -> Result<PreparedSharedRenderSubmission, SharedRendererError> {
+        if frame.viewport.physical_width == 0 || frame.viewport.physical_height == 0 {
+            return Err(SharedRendererError::InvalidTargetExtent {
+                width: frame.viewport.physical_width,
+                height: frame.viewport.physical_height,
+            });
+        }
+        if exact_extent_f32(frame.viewport.physical_width).is_none()
+            || exact_extent_f32(frame.viewport.physical_height).is_none()
+        {
+            return Err(SharedRendererError::InexactTargetExtent {
+                width: frame.viewport.physical_width,
+                height: frame.viewport.physical_height,
+            });
+        }
+        if !frame.viewport.logical_width.is_finite()
+            || frame.viewport.logical_width <= 0.0
+            || !frame.viewport.logical_height.is_finite()
+            || frame.viewport.logical_height <= 0.0
+        {
+            return Err(SharedRendererError::InvalidLogicalExtent {
+                width_bits: frame.viewport.logical_width.to_bits(),
+                height_bits: frame.viewport.logical_height.to_bits(),
+            });
+        }
+        if !frame.viewport.scale_factor.is_finite()
+            || frame.viewport.scale_factor <= 0.0
+            || frame.viewport.scale_factor > f64::from(f32::MAX)
+        {
+            return Err(SharedRendererError::InvalidScaleFactor {
+                value_bits: frame.viewport.scale_factor.to_bits(),
+            });
+        }
+        let rectangle_vertex_count = frame.rectangles.len().checked_mul(6).ok_or(
+            SharedRendererError::RectangleVertexCount {
+                rectangles: frame.rectangles.len(),
+            },
+        )?;
+        u32::try_from(rectangle_vertex_count).map_err(|_| {
+            SharedRendererError::RectangleVertexCount {
+                rectangles: frame.rectangles.len(),
+            }
+        })?;
         let target_extent = ViewTextureExtent::new(
-            frame.viewport.physical_width.max(1),
-            frame.viewport.physical_height.max(1),
+            frame.viewport.physical_width,
+            frame.viewport.physical_height,
         );
         let scene_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("arcweft-shared-runtime-scene-target"),
@@ -195,7 +276,7 @@ impl SharedRenderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("arcweft-shared-render-frame"),
         });
-        self.render_background_and_images(device, queue, &mut encoder, &scene_view, frame);
+        self.render_background_and_images(device, queue, &mut encoder, &scene_view, frame)?;
         for view_scene in frame.view_scenes() {
             self.render_view_scene(device, queue, &mut encoder, &scene_view, frame, view_scene)?;
         }
@@ -210,9 +291,10 @@ impl SharedRenderer {
         )?;
         self.view_compositor
             .composite_texture_to_view(device, &mut encoder, &scene_view, target);
-        queue.submit([encoder.finish()]);
         self.atlas.trim();
-        Ok(())
+        Ok(PreparedSharedRenderSubmission {
+            command_buffer: encoder.finish(),
+        })
     }
 
     fn render_view_scene(
@@ -225,7 +307,7 @@ impl SharedRenderer {
         prepared_view: &PreparedViewScene,
     ) -> Result<(), SharedRendererError> {
         let mut mask_textures =
-            WgpuPreparedViewMaskTextureProvider::prepare(device, queue, &prepared_view.resources);
+            WgpuPreparedViewMaskTextureProvider::prepare(device, queue, &prepared_view.resources)?;
         let mut direct_renderer = self
             .view_direct_renderer
             .for_resources(&prepared_view.resources);
@@ -265,7 +347,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         frame: &PreparedFrame,
-    ) {
+    ) -> Result<(), SharedRendererError> {
         let background_vertex_buffer = rectangle_vertex_buffer(
             device,
             "arcweft-shared-background-rectangle",
@@ -305,8 +387,9 @@ impl SharedRenderer {
                 image,
                 frame.viewport.logical_width,
                 frame.viewport.logical_height,
-            );
+            )?;
         }
+        Ok(())
     }
 
     #[expect(
@@ -763,11 +846,11 @@ impl SharedRenderer {
         image: &RenderImage,
         logical_width: f32,
         logical_height: f32,
-    ) {
+    ) -> Result<(), SharedRendererError> {
         if image.frame.width == 0 || image.frame.height == 0 || image.frame.rgba.is_empty() {
-            return;
+            return Ok(());
         }
-        let texture = upload_image_quad(device, queue, image);
+        let texture = upload_image_quad(device, queue, image)?;
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("arcweft-shared-image-bind-group"),
@@ -784,7 +867,7 @@ impl SharedRenderer {
             ],
         });
         let Some(vertices) = image_vertices(image, logical_width, logical_height) else {
-            return;
+            return Ok(());
         };
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("arcweft-shared-image-vertices"),
@@ -794,7 +877,8 @@ impl SharedRenderer {
         pass.set_pipeline(&self.image_pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.draw(0..u32::try_from(vertices.len()).unwrap_or(u32::MAX), 0..1);
+        pass.draw(0..6, 0..1);
+        Ok(())
     }
 }
 
@@ -809,10 +893,21 @@ fn slice_range<T>(items: &[T], range: Range<usize>) -> &[T] {
 }
 
 fn frame_logical_extent(frame: &PreparedFrame) -> [f32; 2] {
-    [
-        frame.viewport.logical_width.max(0.0001),
-        frame.viewport.logical_height.max(0.0001),
-    ]
+    [frame.viewport.logical_width, frame.viewport.logical_height]
+}
+
+fn exact_extent_f32(value: u32) -> Option<f32> {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "the round-trip check below rejects every inexact target extent"
+    )]
+    let converted = value as f32;
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the finite nonnegative f32 originates from u32 and is used only for round-trip validation"
+    )]
+    (converted as u32 == value).then_some(converted)
 }
 
 #[derive(Clone, Copy)]
@@ -977,7 +1072,8 @@ fn rectangle_vertex_buffer(
 ) -> Option<(wgpu::Buffer, u32)> {
     let vertices = rectangle_vertices(rectangles, width, height);
     (!vertices.is_empty()).then(|| {
-        let count = u32::try_from(vertices.len()).unwrap_or(u32::MAX);
+        let count = u32::try_from(vertices.len())
+            .expect("rectangle vertex count was validated before renderer preparation");
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(label),
             contents: bytemuck::cast_slice(&vertices),
@@ -1259,7 +1355,15 @@ fn upload_image_quad(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     image: &RenderImage,
-) -> wgpu::Texture {
+) -> Result<wgpu::Texture, SharedRendererError> {
+    let bytes_per_row =
+        image
+            .frame
+            .width
+            .checked_mul(4)
+            .ok_or(SharedRendererError::ImageRowBytesRange {
+                width: image.frame.width,
+            })?;
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("arcweft-shared-image-texture"),
         size: wgpu::Extent3d {
@@ -1285,7 +1389,7 @@ fn upload_image_quad(
         rgba.as_ref(),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(image.frame.width.saturating_mul(4)),
+            bytes_per_row: Some(bytes_per_row),
             rows_per_image: Some(image.frame.height),
         },
         wgpu::Extent3d {
@@ -1294,7 +1398,7 @@ fn upload_image_quad(
             depth_or_array_layers: 1,
         },
     );
-    texture
+    Ok(texture)
 }
 
 fn image_upload_rgba(image: &RenderImage) -> Cow<'_, [u8]> {

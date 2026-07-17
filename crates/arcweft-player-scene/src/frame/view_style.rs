@@ -3,7 +3,6 @@
 mod axis_seed;
 mod consumer;
 mod environment;
-mod layout;
 
 use super::PlayerFrameError;
 use crate::input::InputController;
@@ -30,9 +29,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use axis_seed::{inherited_axes, validate_mount_seed_shape};
+pub(super) use consumer::StyledViewResources;
 use consumer::validate_supported_properties;
-pub(super) use consumer::{StyledViewResources, box_style};
-use layout::{ResolvedLayoutNode, resolve_layout_offsets};
 
 #[cfg(test)]
 use consumer::{StyleConsumer, validate_consumer_properties};
@@ -52,16 +50,9 @@ struct StyleTargetKey {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct RuntimeNodeId {
-    mount: ViewMountId,
-    path: Vec<u64>,
-    instruction: u32,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct CallerKey {
     handle: PresentationHandleId,
-    path: Vec<u64>,
+    path: Vec<BundleViewInstancePathSegment>,
     instruction: u32,
     child_view: ViewId,
 }
@@ -85,13 +76,12 @@ struct LiveStyleResolveContext<'a> {
 #[derive(Default)]
 struct LiveStyleFrameState {
     output: ResolvedViewStyleFrame,
-    resolved: BTreeMap<RuntimeNodeId, ResolvedNode>,
-    callers: BTreeMap<CallerKey, RuntimeNodeId>,
-    layout_nodes: Vec<ResolvedLayoutNode>,
+    resolved: BTreeMap<ViewStyleNodeKey, ResolvedNode>,
+    callers: BTreeMap<CallerKey, ViewStyleNodeKey>,
 }
 
 struct PrimaryNodeStyle {
-    parent_id: Option<RuntimeNodeId>,
+    parent_id: Option<ViewStyleNodeKey>,
     parent_computed: Option<Arc<ComputedViewStyle>>,
     ancestors: Vec<ViewStyleNodeFacts>,
     bindings: Vec<NodeBinding>,
@@ -114,12 +104,12 @@ struct NodeBinding {
 /// Current projected snapshot indexed by concrete mount-scoped render target.
 #[derive(Clone, Debug, Default)]
 pub(super) struct ResolvedViewStyleFrame {
+    nodes: BTreeMap<ViewStyleNodeKey, ViewRuntimeNodeStyle>,
     targets: BTreeMap<StyleTargetKey, ViewRuntimeNodeStyle>,
-    layout_offsets: BTreeMap<StyleTargetKey, (i32, i32)>,
 }
 
 /// Long-lived resolver and program identity retained by `PlayerFramePlannerState`.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct PlayerViewStyleState {
     resolver: ViewStyleResolver,
     program: Option<ViewStyleProgram>,
@@ -129,6 +119,16 @@ pub(super) struct PlayerViewStyleState {
 }
 
 impl ResolvedViewStyleFrame {
+    pub(super) fn node(&self, node: &ViewStyleNodeKey) -> Option<&ViewRuntimeNodeStyle> {
+        self.nodes.get(node)
+    }
+
+    pub(super) fn nodes(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&ViewStyleNodeKey, &ViewRuntimeNodeStyle)> {
+        self.nodes.iter()
+    }
+
     pub(super) fn control(&self, id: &str) -> Option<&ViewRuntimeNodeStyle> {
         self.target(StyleTargetKind::Control, id)
     }
@@ -145,26 +145,11 @@ impl ResolvedViewStyleFrame {
         self.target(StyleTargetKind::Part, id)
     }
 
-    pub(super) fn text_layout_offset(&self, id: &str) -> (i32, i32) {
-        self.layout_offset(StyleTargetKind::Text, id)
-            .or_else(|| self.layout_offset(StyleTargetKind::Part, id))
-            .unwrap_or_default()
-    }
-
     fn target(&self, kind: StyleTargetKind, id: &str) -> Option<&ViewRuntimeNodeStyle> {
         self.targets.get(&StyleTargetKey {
             kind,
             id: id.to_owned(),
         })
-    }
-
-    fn layout_offset(&self, kind: StyleTargetKind, id: &str) -> Option<(i32, i32)> {
-        self.layout_offsets
-            .get(&StyleTargetKey {
-                kind,
-                id: id.to_owned(),
-            })
-            .copied()
     }
 
     fn insert(
@@ -174,6 +159,19 @@ impl ResolvedViewStyleFrame {
     ) -> Result<(), PlayerFrameError> {
         if self.targets.insert(key.clone(), style).is_some() {
             return Err(PlayerFrameError::DuplicateStyleTarget { target: key.id });
+        }
+        Ok(())
+    }
+
+    fn insert_node(
+        &mut self,
+        node: ViewStyleNodeKey,
+        style: ViewRuntimeNodeStyle,
+    ) -> Result<(), PlayerFrameError> {
+        let mount = node.mount().get();
+        let instruction = node.instruction();
+        if self.nodes.insert(node, style).is_some() {
+            return Err(PlayerFrameError::DuplicateStyleNode { mount, instruction });
         }
         Ok(())
     }
@@ -198,13 +196,11 @@ impl PlayerViewStyleState {
             .iter()
             .flat_map(|mount| &mount.style_nodes)
             .any(|node| !node.applications.is_empty());
-        let Some(program) = program else {
-            if has_applications {
-                return Err(PlayerFrameError::MissingStyleProgram);
-            }
-            self.environment_usage.clear();
-            return Ok(ResolvedViewStyleFrame::default());
-        };
+        if program.is_none() && has_applications {
+            return Err(PlayerFrameError::MissingStyleProgram);
+        }
+        let default_program = ViewStyleProgram::default();
+        let program = program.unwrap_or(&default_program);
         self.synchronize_program(program);
         let context = LiveStyleResolveContext {
             input,
@@ -219,11 +215,10 @@ impl PlayerViewStyleState {
                 self.resolve_runtime_node(&context, mount, node, &mut frame)?;
             }
         }
-        frame.output.layout_offsets = resolve_layout_offsets(presentation, &frame.layout_nodes);
         self.environment_usage = frame
             .resolved
             .iter()
-            .map(|(node, resolved)| (node.style_key(), resolved.environment_usage))
+            .map(|(node, resolved)| (node.clone(), resolved.environment_usage))
             .collect();
         Ok(frame.output)
     }
@@ -235,7 +230,7 @@ impl PlayerViewStyleState {
         node: &BundleViewStyleNode,
         frame: &mut LiveStyleFrameState,
     ) -> Result<(), PlayerFrameError> {
-        let node_id = runtime_node_id(mount, node);
+        let node_id = node.style_node_key(mount.mount);
         if frame.resolved.contains_key(&node_id) {
             return Err(PlayerFrameError::DuplicateStyleNode {
                 mount: mount.mount.get(),
@@ -253,7 +248,7 @@ impl PlayerViewStyleState {
         context: &LiveStyleResolveContext<'_>,
         mount: &BundleViewMountOutput,
         node: &BundleViewStyleNode,
-        node_id: &RuntimeNodeId,
+        node_id: &ViewStyleNodeKey,
         frame: &LiveStyleFrameState,
     ) -> Result<PrimaryNodeStyle, PlayerFrameError> {
         let parent_id = parent_node_id(mount, node, &frame.callers)?;
@@ -305,6 +300,8 @@ impl PlayerViewStyleState {
         let computed = resolution.into_computed();
         validate_supported_properties(context.presentation, mount, node, &bindings, &computed)?;
         let projected = ViewRuntimeNodeStyle::try_from_computed(
+            node_id.clone(),
+            node.kind.runtime_geometry_owner(),
             &computed,
             context.environment,
             context.palettes,
@@ -327,7 +324,7 @@ impl PlayerViewStyleState {
         context: &LiveStyleResolveContext<'_>,
         mount: &BundleViewMountOutput,
         node: &BundleViewStyleNode,
-        node_id: &RuntimeNodeId,
+        node_id: &ViewStyleNodeKey,
         primary: &PrimaryNodeStyle,
         output: &mut ResolvedViewStyleFrame,
     ) -> Result<ViewStyleEnvironmentUsage, PlayerFrameError> {
@@ -365,6 +362,8 @@ impl PlayerViewStyleState {
                 primary.projected.clone()
             } else {
                 ViewRuntimeNodeStyle::try_from_computed(
+                    node_id.clone(),
+                    node.kind.runtime_geometry_owner(),
                     &computed,
                     context.environment,
                     context.palettes,
@@ -411,25 +410,23 @@ impl PlayerViewStyleState {
         presentation: &BundlePresentationSnapshot,
         environment: &PresentationEnvironment,
         node: &BundleViewStyleNode,
-        node_id: &RuntimeNodeId,
+        node_id: &ViewStyleNodeKey,
         facts: &ViewStyleNodeFacts,
         ancestors: &[ViewStyleNodeFacts],
         parent: Option<&ComputedViewStyle>,
-        parent_id: Option<&RuntimeNodeId>,
+        parent_id: Option<&ViewStyleNodeKey>,
         inherited_axes: ViewInheritedBoxAxes,
         axis_provider_participation: ViewAxisProviderParticipation,
     ) -> Result<ViewStyleResolveResult, ViewStyleResolveError> {
-        let key = node_id.style_key();
-        let parent_key = parent_id.map(RuntimeNodeId::style_key);
         self.resolver.resolve(
             program,
             &ViewStyleResolveContext {
-                node_key: &key,
+                node_key: node_id,
                 node: facts,
                 ancestors,
                 applications: &node.applications,
                 parent,
-                parent_node_key: parent_key.as_ref(),
+                parent_node_key: parent_id,
                 inherited_axes,
                 axis_provider_participation,
                 environment,
@@ -451,40 +448,27 @@ fn retain_resolved_node(
     frame: &mut LiveStyleFrameState,
     mount: &BundleViewMountOutput,
     node: &BundleViewStyleNode,
-    node_id: RuntimeNodeId,
+    node_id: ViewStyleNodeKey,
     primary: PrimaryNodeStyle,
 ) -> Result<(), PlayerFrameError> {
     let PrimaryNodeStyle {
-        parent_id,
+        parent_id: _,
         parent_computed: _,
         ancestors,
-        bindings,
+        bindings: _,
         facts,
         computed,
         environment_usage,
         projected,
         inherited_axes: _,
     } = primary;
-    frame.layout_nodes.push(ResolvedLayoutNode {
-        id: node_id.clone(),
-        parent: parent_id,
-        element: match node.kind {
-            BundleViewStyleNodeKind::Element { element, .. } => Some(element),
-            BundleViewStyleNodeKind::Text { .. }
-            | BundleViewStyleNodeKind::Image { .. }
-            | BundleViewStyleNodeKind::Custom { .. }
-            | BundleViewStyleNodeKind::CallView { .. } => None,
-        },
-        keys: bindings
-            .iter()
-            .flat_map(|binding| binding.keys.iter().cloned())
-            .collect(),
-        style: projected,
-    });
+    frame
+        .output
+        .insert_node(node_id.clone(), projected.clone())?;
     if let BundleViewStyleNodeKind::CallView { view } = &node.kind {
         let key = CallerKey {
             handle: mount.handle.clone(),
-            path: encode_path(node.path.segments()),
+            path: node.path.segments().to_vec(),
             instruction: node.instruction,
             child_view: view.clone(),
         };
@@ -510,14 +494,10 @@ fn retain_resolved_node(
 fn parent_node_id(
     mount: &BundleViewMountOutput,
     node: &BundleViewStyleNode,
-    callers: &BTreeMap<CallerKey, RuntimeNodeId>,
-) -> Result<Option<RuntimeNodeId>, PlayerFrameError> {
+    callers: &BTreeMap<CallerKey, ViewStyleNodeKey>,
+) -> Result<Option<ViewStyleNodeKey>, PlayerFrameError> {
     let parent_id = if let Some(parent) = &node.parent {
-        Some(RuntimeNodeId {
-            mount: mount.mount,
-            path: encode_path(parent.path.segments()),
-            instruction: parent.instruction,
-        })
+        Some(parent.style_node_key(mount.mount))
     } else if mount.path.segments().is_empty() {
         None
     } else {
@@ -534,7 +514,7 @@ fn parent_node_id(
         };
         let key = CallerKey {
             handle: mount.handle.clone(),
-            path: encode_path(caller_path),
+            path: caller_path.to_vec(),
             instruction: *instruction,
             child_view: mount.view.clone(),
         };
@@ -549,43 +529,6 @@ fn parent_node_id(
         )
     };
     Ok(parent_id)
-}
-
-fn runtime_node_id(mount: &BundleViewMountOutput, node: &BundleViewStyleNode) -> RuntimeNodeId {
-    RuntimeNodeId {
-        mount: mount.mount,
-        path: encode_path(node.path.segments()),
-        instruction: node.instruction,
-    }
-}
-
-impl RuntimeNodeId {
-    fn style_key(&self) -> ViewStyleNodeKey {
-        ViewStyleNodeKey::new(self.mount, self.path.clone(), self.instruction)
-    }
-}
-
-fn encode_path(segments: &[BundleViewInstancePathSegment]) -> Vec<u64> {
-    segments
-        .iter()
-        .flat_map(|segment| match segment {
-            BundleViewInstancePathSegment::Call {
-                instruction,
-                authored_key,
-            } => [
-                0,
-                u64::from(*instruction),
-                u64::from(authored_key.is_some()),
-                authored_key.unwrap_or_default(),
-            ],
-            BundleViewInstancePathSegment::Repeat { instruction, key } => [
-                1,
-                u64::from(*instruction),
-                u64::from(u32::from_ne_bytes(key.to_ne_bytes())),
-                0,
-            ],
-        })
-        .collect()
 }
 
 fn node_facts(

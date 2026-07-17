@@ -2,6 +2,9 @@ use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationEnvironment, PresentationEnvironmentValues,
     TextScaleMilli,
 };
+use arcweft_view::geometry::{
+    ViewGeometryConsumer, ViewGeometryError, ViewGeometryField, ViewRepresentedGeometryFeature,
+};
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewAxisUsageSet, ViewBoxAxisHostSeed,
     ViewBoxAxisMode, ViewBoxAxisSeedGeneration, ViewBoxAxisSource, ViewInheritedBoxAxes,
@@ -13,7 +16,8 @@ use arcweft_view::style::{
     ViewStyleToken, ViewStyleTokenId, ViewStyleTraceMode, ViewStyleTransition, ViewStyleValueKind,
 };
 use arcweft_view::{
-    ViewDisplay, ViewElementKind, ViewMountId, ViewPhysicalFlow, ViewPosition, ViewScalarMilli,
+    ViewDisplay, ViewElementKind, ViewFlexDirection, ViewFlexWrap, ViewMountId, ViewPhysicalFlow,
+    ViewPosition, ViewScalarMilli,
 };
 
 fn environment(color_scheme: ColorScheme) -> PresentationEnvironment {
@@ -228,8 +232,7 @@ fn physical_geometry_projection_includes_box_and_container_inputs() {
                 },
                 4,
             ),
-            length(ViewPropertyKind::Gap, 4, 5),
-            length(ViewPropertyKind::RowGap, 6, 6),
+            length(ViewPropertyKind::ColumnGap, 4, 5),
         ],
         None,
     )
@@ -244,13 +247,156 @@ fn physical_geometry_projection_includes_box_and_container_inputs() {
     assert_eq!(physical.border.left.value(), 2);
     assert_eq!(physical.scale.value(), 1_250);
 
+    let geometry_node = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![1], 1);
     let container = computed
-        .physical_container(ViewElementKind::Panel)
+        .physical_container(&geometry_node, ViewElementKind::Panel)
         .expect("flex container geometry is executable")
         .expect("display Flex retains a geometry container");
     assert_eq!(container.flow, ViewPhysicalFlow::Row);
-    assert_eq!(container.row_gap.value(), 6);
+    assert_eq!(container.row_gap.value(), 0);
     assert_eq!(container.column_gap.value(), 4);
+}
+
+#[test]
+fn physical_container_enforces_element_display_and_gap_ownership() {
+    let node = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![2], 2);
+    let defaults = ComputedViewStyle::default();
+    for (element, expected) in [
+        (ViewElementKind::Panel, Some(ViewPhysicalFlow::Overlay)),
+        (ViewElementKind::Box, Some(ViewPhysicalFlow::Overlay)),
+        (ViewElementKind::Scroll, Some(ViewPhysicalFlow::Overlay)),
+        (ViewElementKind::Row, Some(ViewPhysicalFlow::Row)),
+        (ViewElementKind::Column, Some(ViewPhysicalFlow::Column)),
+        (ViewElementKind::Stack, Some(ViewPhysicalFlow::Overlay)),
+        (ViewElementKind::Button, None),
+        (ViewElementKind::TextField, None),
+        (ViewElementKind::TextArea, None),
+        (ViewElementKind::SecureField, None),
+    ] {
+        assert_eq!(element.default_physical_flow(), expected);
+        assert_eq!(
+            defaults
+                .physical_container(&node, element)
+                .unwrap()
+                .map(|container| container.flow),
+            expected
+        );
+    }
+
+    let leaf_container_property = resolve(
+        vec![
+            declaration(
+                ViewPropertyKind::Display,
+                ViewSpecifiedValue::Display {
+                    value: ViewDisplay::None,
+                },
+                1,
+            ),
+            declaration(
+                ViewPropertyKind::FlexDirection,
+                ViewSpecifiedValue::FlexDirection {
+                    value: ViewFlexDirection::Column,
+                },
+                2,
+            ),
+        ],
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        leaf_container_property.physical_container(&node, ViewElementKind::Button),
+        Err(ViewGeometryError::ContainerStyleOnLeaf {
+            node: node.clone(),
+            element: ViewElementKind::Button,
+            property: ViewPropertyKind::FlexDirection,
+        })
+    );
+
+    let stack = resolve(
+        vec![declaration(
+            ViewPropertyKind::Display,
+            ViewSpecifiedValue::Display {
+                value: ViewDisplay::Stack,
+            },
+            1,
+        )],
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        stack.physical_container(&node, ViewElementKind::TextField),
+        Err(ViewGeometryError::DisplayRequiresContainer {
+            node: node.clone(),
+            element: ViewElementKind::TextField,
+            display: ViewDisplay::Stack,
+        })
+    );
+}
+
+#[test]
+fn physical_container_rejects_invalid_gaps_and_features_before_suppression() {
+    let node = ViewStyleNodeKey::new(ViewMountId::from_raw(1), vec![2], 2);
+    let cross_axis_gap = resolve(vec![length(ViewPropertyKind::RowGap, 3, 1)], None).unwrap();
+    assert_eq!(
+        cross_axis_gap.physical_container(&node, ViewElementKind::Row),
+        Err(ViewGeometryError::CrossAxisGapRequiresWrap {
+            node: node.clone(),
+            flow: ViewPhysicalFlow::Row,
+            property: ViewPropertyKind::RowGap,
+            value_milli: 3,
+        })
+    );
+
+    let overlay_gap = resolve(vec![length(ViewPropertyKind::ColumnGap, 4, 1)], None).unwrap();
+    assert_eq!(
+        overlay_gap.physical_container(&node, ViewElementKind::Stack),
+        Err(ViewGeometryError::GapRequiresLinearFlow {
+            node: node.clone(),
+            flow: ViewPhysicalFlow::Overlay,
+            property: ViewPropertyKind::ColumnGap,
+            value_milli: 4,
+        })
+    );
+
+    let negative_gap = resolve(vec![length(ViewPropertyKind::RowGap, -1, 1)], None).unwrap();
+    assert_eq!(
+        negative_gap.physical_container(&node, ViewElementKind::Column),
+        Err(ViewGeometryError::NegativeNonNegativeField {
+            node: node.clone(),
+            field: ViewGeometryField::RowGap,
+            value_milli: -1,
+        })
+    );
+
+    let represented_before_suppression = resolve(
+        vec![
+            declaration(
+                ViewPropertyKind::Display,
+                ViewSpecifiedValue::Display {
+                    value: ViewDisplay::None,
+                },
+                1,
+            ),
+            declaration(
+                ViewPropertyKind::FlexWrap,
+                ViewSpecifiedValue::FlexWrap {
+                    value: ViewFlexWrap::Wrap,
+                },
+                2,
+            ),
+        ],
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        represented_before_suppression.physical_container(&node, ViewElementKind::Panel),
+        Err(ViewGeometryError::UnsupportedConsumer {
+            node,
+            consumer: ViewGeometryConsumer::Layout,
+            property: ViewPropertyKind::FlexWrap,
+            feature: ViewRepresentedGeometryFeature::FlexWrap,
+        })
+    );
 }
 
 #[test]

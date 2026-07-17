@@ -48,8 +48,8 @@ pub(super) fn render_prepared_text_range_with_renderer(
     let engine = engine.ok_or(SharedRendererError::MissingPreparedTextFonts)?;
     let (font_system, swash_cache) = engine.raster_parts_mut();
     let target_extent = ViewTextureExtent::new(
-        request.frame.viewport.physical_width.max(1),
-        request.frame.viewport.physical_height.max(1),
+        request.frame.viewport.physical_width,
+        request.frame.viewport.physical_height,
     );
     let logical_extent = frame_logical_extent(request.frame);
     for item in items {

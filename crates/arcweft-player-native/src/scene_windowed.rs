@@ -28,6 +28,9 @@ use arcweft_player_scene::dialogue::{DialogueVisualClock, DialogueVisualClockSna
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
+    PlayerPreparedFrame, PlayerPreparedFrameCandidate, ViewGeometryConsumer,
+    ViewGeometryConversionError, ViewGeometryConversionField, ViewGeometryPlatform,
+    ViewGeometryRuntimeError,
 };
 use arcweft_player_scene::input::wheel::{
     WheelDelta, WheelNormalizationError, WheelNormalizationPolicy,
@@ -46,11 +49,12 @@ use arcweft_presentation::text_input::{
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedTextInputTarget, RenderPreferences, RenderViewport,
 };
-use arcweft_render_wgpu::renderer::{SharedRenderer, SharedRendererError};
+use arcweft_render_wgpu::renderer::{
+    PreparedSharedRenderSubmission, SharedRenderer, SharedRendererError,
+};
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
-use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
@@ -217,7 +221,11 @@ enum NativeSceneWindowError {
     #[error("runtime clock failed: {0}")]
     Clock(#[from] RuntimeClockError),
     #[error("player frame failed: {0}")]
-    PlayerFrame(#[from] PlayerFrameError),
+    PlayerFrame(Box<PlayerFrameError>),
+    #[error("native viewport geometry conversion failed: {0}")]
+    GeometryConversion(#[from] ViewGeometryConversionError),
+    #[error("native render surface extent must be nonzero, got {width}x{height}")]
+    InvalidSurfaceExtent { width: u32, height: u32 },
     #[error("native text-input bridge failed: {0}")]
     TextInputBridge(#[from] NativeTextInputBridgeError),
     #[error("native audio failed: {0}")]
@@ -248,6 +256,12 @@ enum NativeSceneWindowError {
     SurfaceValidation,
 }
 
+impl From<PlayerFrameError> for NativeSceneWindowError {
+    fn from(error: PlayerFrameError) -> Self {
+        Self::PlayerFrame(Box::new(error))
+    }
+}
+
 struct NativeSceneApp {
     title: String,
     bundle: Option<ArcweftBundle>,
@@ -262,10 +276,15 @@ struct NativeSceneApp {
     error: Arc<Mutex<Option<String>>>,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "window visibility, surface configuration, IME state, and save completion are independent host lifecycle facts"
+)]
 struct NativeSceneState {
     window: Arc<dyn Window>,
     close_signal: WindowCloseSignal,
     surface: wgpu::Surface<'static>,
+    surface_configured: bool,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -517,18 +536,13 @@ impl ApplicationHandler for NativeSceneApp {
                 Err(error) => Err(error),
             },
             WindowEvent::SurfaceResized(size) => {
-                state.resize(size);
-                state.window.request_redraw();
-                Ok(())
+                state.resize(size).map(|()| state.window.request_redraw())
             }
             WindowEvent::Focused(focused) => {
                 state.window.request_redraw();
                 state.focus_changed(focused)
             }
-            WindowEvent::PointerMoved { position, .. } => {
-                state.pointer_move(position);
-                Ok(())
-            }
+            WindowEvent::PointerMoved { position, .. } => state.pointer_move(position),
             WindowEvent::PointerButton {
                 state: element_state,
                 button:
@@ -578,16 +592,12 @@ impl ApplicationHandler for NativeSceneApp {
     }
 }
 
-fn non_zero_size(size: PhysicalSize<u32>) -> PhysicalSize<u32> {
-    PhysicalSize::new(size.width.max(1), size.height.max(1))
-}
-
 fn frame_fit_surface_size(frame_fit: PlayerFrameFit) -> LogicalSize<f64> {
     match frame_fit.scale_policy {
         ScalePolicy::Raw => LogicalSize::new(1280.0, 720.0),
         ScalePolicy::Contain | ScalePolicy::Cover | ScalePolicy::Stretch => LogicalSize::new(
-            f64::from(frame_fit.design_width.max(1)),
-            f64::from(frame_fit.design_height.max(1)),
+            f64::from(frame_fit.design_width),
+            f64::from(frame_fit.design_height),
         ),
     }
 }
@@ -605,41 +615,62 @@ fn frame_fit_resize_increments(frame_fit: PlayerFrameFit) -> Option<LogicalSize<
     Some(LogicalSize::new(f64::from(width), f64::from(height)))
 }
 
-fn scene_aspect_size(size: PhysicalSize<u32>, frame_fit: PlayerFrameFit) -> PhysicalSize<u32> {
-    let size = non_zero_size(size);
+fn scene_aspect_size(
+    size: PhysicalSize<u32>,
+    frame_fit: PlayerFrameFit,
+) -> Result<PhysicalSize<u32>, ViewGeometryConversionError> {
+    if size.width == 0 || size.height == 0 {
+        return Ok(size);
+    }
     let Some((aspect_width, aspect_height)) = frame_fit_aspect(frame_fit) else {
-        return size;
+        return Ok(size);
     };
     if u64::from(size.width) * u64::from(aspect_height)
         == u64::from(size.height) * u64::from(aspect_width)
     {
-        return size;
+        return Ok(size);
     }
-    let max_u32 = u64::from(u32::MAX);
-    let width_for_height = ((u64::from(size.height) * u64::from(aspect_width)
+    let width_for_height = (u64::from(size.height) * u64::from(aspect_width)
         + u64::from(aspect_height / 2))
-        / u64::from(aspect_height))
-    .clamp(1, max_u32);
-    let height_for_width = ((u64::from(size.width) * u64::from(aspect_height)
+        / u64::from(aspect_height);
+    let height_for_width = (u64::from(size.width) * u64::from(aspect_height)
         + u64::from(aspect_width / 2))
-        / u64::from(aspect_width))
-    .clamp(1, max_u32);
-    let width_for_height = u32::try_from(width_for_height).unwrap_or(u32::MAX);
-    let height_for_width = u32::try_from(height_for_width).unwrap_or(u32::MAX);
+        / u64::from(aspect_width);
+    let width_for_height =
+        u32::try_from(width_for_height).map_err(|_| ViewGeometryConversionError::IndexRange {
+            node: None,
+            platform: ViewGeometryPlatform::Native,
+            consumer: ViewGeometryConsumer::Layout,
+            field: ViewGeometryConversionField::ViewportWidth,
+            value: width_for_height,
+            max: u64::from(u32::MAX),
+        })?;
+    let height_for_width =
+        u32::try_from(height_for_width).map_err(|_| ViewGeometryConversionError::IndexRange {
+            node: None,
+            platform: ViewGeometryPlatform::Native,
+            consumer: ViewGeometryConsumer::Layout,
+            field: ViewGeometryConversionField::ViewportHeight,
+            value: height_for_width,
+            max: u64::from(u32::MAX),
+        })?;
 
-    if height_for_width.abs_diff(size.height) <= width_for_height.abs_diff(size.width) {
-        PhysicalSize::new(size.width, height_for_width)
-    } else {
-        PhysicalSize::new(width_for_height, size.height)
-    }
+    Ok(
+        if height_for_width.abs_diff(size.height) <= width_for_height.abs_diff(size.width) {
+            PhysicalSize::new(size.width, height_for_width)
+        } else {
+            PhysicalSize::new(width_for_height, size.height)
+        },
+    )
 }
 
 fn frame_fit_aspect(frame_fit: PlayerFrameFit) -> Option<(u32, u32)> {
     match frame_fit.scale_policy {
         ScalePolicy::Contain | ScalePolicy::Cover => {
-            let width = frame_fit.design_width.max(1);
-            let height = frame_fit.design_height.max(1);
-            let divisor = gcd(width, height).max(1);
+            let width = frame_fit.design_width;
+            let height = frame_fit.design_height;
+            let divisor = gcd(width, height);
+            debug_assert_ne!(divisor, 0, "designed frame fits have non-zero extents");
             Some((width / divisor, height / divisor))
         }
         ScalePolicy::Raw | ScalePolicy::Stretch => None,

@@ -5,7 +5,7 @@ use super::{
     ViewDisplay, ViewFlexDirection, ViewLengthMilli, ViewOverflow, ViewPosition, ViewScalarMilli,
     ViewStyleContributionSource, ViewStylePriority,
 };
-use crate::{ViewElementKind, ViewMountId};
+use crate::ViewMountId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -161,7 +161,7 @@ pub struct ViewPhysicalEdges<T> {
 }
 
 /// Canonical physical box values projected from one computed Style result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewPhysicalBoxStyle {
     pub axes: ViewBoxAxisMode,
     pub display: Option<ViewDisplay>,
@@ -184,7 +184,7 @@ pub struct ViewPhysicalBoxStyle {
 }
 
 /// Canonical physical container values projected from one computed Style result.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewPhysicalContainerStyle {
     pub flow: ViewPhysicalFlow,
     pub row_gap: ViewLengthMilli,
@@ -251,21 +251,6 @@ impl ViewPhysicalFlow {
             ViewFlexDirection::RowReverse => Self::RowReverse,
             ViewFlexDirection::Column => Self::Column,
             ViewFlexDirection::ColumnReverse => Self::ColumnReverse,
-        }
-    }
-
-    pub const fn for_element(element: ViewElementKind) -> Option<Self> {
-        match element {
-            ViewElementKind::Row => Some(Self::Row),
-            ViewElementKind::Column => Some(Self::Column),
-            ViewElementKind::Panel
-            | ViewElementKind::Box
-            | ViewElementKind::Scroll
-            | ViewElementKind::Stack => Some(Self::Overlay),
-            ViewElementKind::Button
-            | ViewElementKind::TextField
-            | ViewElementKind::TextArea
-            | ViewElementKind::SecureField => None,
         }
     }
 

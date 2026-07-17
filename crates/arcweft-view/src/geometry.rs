@@ -25,59 +25,22 @@ pub use error::{
     validate_supported_properties,
 };
 pub use primitives::{
-    ViewGeometryClip, ViewGeometryPoint, ViewGeometryRasterRect, ViewGeometryRect,
-    ViewGeometrySize, ViewGeometrySpan, ViewGeometryTransform, milli_from_logical_pointer,
-    transform_chain, transform_rect, union_rects,
+    ViewGeometryClip, ViewGeometryClipAxes, ViewGeometryClipAxis, ViewGeometryPoint,
+    ViewGeometryRasterRect, ViewGeometryRect, ViewGeometrySize, ViewGeometrySpan,
+    ViewGeometryTransform, milli_from_logical_pointer, transform_chain, transform_rect,
+    union_rects,
 };
 pub use revision::{
-    ViewFinalGeometryKey, ViewFinalGeometryRevision, ViewGeometryMeasureStyleRevision,
-    ViewGeometryPlaceStyleRevision, ViewIntrinsicMeasureRevision, ViewMeasuredGeometryKey,
-    ViewMeasuredGeometryRevision, ViewOuterMeasureRevision, ViewPaintOutsetsRevision,
-    ViewPlacedGeometryKey, ViewPlacedGeometryRevision, ViewScrollStateRevision,
-    ViewViewportGeometryRevision,
+    ViewAvailableGeometrySize, ViewChildFinalDependency, ViewChildOuterDependency,
+    ViewContainingBlockDependency, ViewFinalGeometryKey, ViewFinalGeometryRevision,
+    ViewGeometryMeasureStyleRevision, ViewGeometryPlaceStyleRevision, ViewIntrinsicMeasureRevision,
+    ViewMeasuredGeometryKey, ViewMeasuredGeometryRevision, ViewOuterMeasureRevision,
+    ViewPaintOutsetsRevision, ViewPlacedDependency, ViewPlacedGeometryKey,
+    ViewPlacedGeometryRevision, ViewScrollStateInput, ViewScrollStateRevision,
+    ViewTransformDependency, ViewViewportGeometryInput, ViewViewportGeometryRevision,
 };
 
-use crate::ViewMountId;
 use crate::style::{ViewPhysicalEdges, ViewStyleNodeKey};
-
-/// Stable identity of one concrete retained View node.
-///
-/// Repeat/call path is part of identity because one authored instruction may
-/// have several live runtime occurrences inside the same mount.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewGeometryNodeId {
-    mount: ViewMountId,
-    path: Vec<u64>,
-    instruction: u32,
-}
-
-impl ViewGeometryNodeId {
-    pub const fn new(mount: ViewMountId, path: Vec<u64>, instruction: u32) -> Self {
-        Self {
-            mount,
-            path,
-            instruction,
-        }
-    }
-
-    pub const fn mount(&self) -> ViewMountId {
-        self.mount
-    }
-
-    pub fn path(&self) -> &[u64] {
-        &self.path
-    }
-
-    pub const fn instruction(&self) -> u32 {
-        self.instruction
-    }
-}
-
-impl From<&ViewStyleNodeKey> for ViewGeometryNodeId {
-    fn from(node: &ViewStyleNodeKey) -> Self {
-        Self::new(node.mount(), node.path().to_vec(), node.instruction())
-    }
-}
 
 /// Exact non-negative visual outsets supplied by a paint owner.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -89,7 +52,7 @@ pub struct ViewPaintOutsets {
 /// Geometry consumed by paint, input, focus, avoidance, scrolling, and capture.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewFinalGeometry {
-    pub node: ViewGeometryNodeId,
+    pub node: ViewStyleNodeKey,
     pub content_box: ViewGeometryRect,
     pub padding_box: ViewGeometryRect,
     pub border_box: ViewGeometryRect,

@@ -7,20 +7,25 @@ use super::{
     NativeSceneWindowError, NativeTextInputFocusReason, PhysicalPosition, PointerId, PreparedFrame,
     PreparedTextInputTarget, TextCommit, TextCompositionUpdate, TextDeleteUnit, TextEditCommand,
     TextInput, TextInputKeyDisposition, TextInputOperation, TextInputPrivacy, TextInputSerial,
-    ToPrimitive, ViewportPoint, WheelDelta, WheelNormalizationPolicy, focused_text_input_control,
-    key_label, left_arrow_text_command, pointer_id, right_arrow_text_command,
-    shortcut_command_from_key, shortcut_modifier_active, text_input_commit_from_key_text,
-    window_ime_capabilities_for_request, window_ime_composition_selection, window_ime_request_data,
+    ViewGeometryConversionError, ViewGeometryConversionField, ViewGeometryPlatform, ViewportPoint,
+    WheelDelta, WheelNormalizationPolicy, focused_text_input_control, key_label,
+    left_arrow_text_command, pointer_id, right_arrow_text_command, shortcut_command_from_key,
+    shortcut_modifier_active, text_input_commit_from_key_text, window_ime_capabilities_for_request,
+    window_ime_composition_selection, window_ime_request_data,
 };
 use arcweft_runtime_host::clipboard_host::SyncTextClipboardHostAdapter;
 
 impl NativeSceneState {
-    pub(super) fn pointer_move(&mut self, position: PhysicalPosition<f64>) {
+    pub(super) fn pointer_move(
+        &mut self,
+        position: PhysicalPosition<f64>,
+    ) -> Result<(), NativeSceneWindowError> {
         if let Some(frame) = self.prepared.clone() {
-            self.input
-                .pointer_move(&frame, PointerId(0), self.logical_position(position));
+            let position = self.logical_position(position)?;
+            self.input.pointer_move(&frame, PointerId(0), position);
             self.window.request_redraw();
         }
+        Ok(())
     }
 
     pub(super) fn pointer_button(
@@ -33,7 +38,7 @@ impl NativeSceneState {
             return Ok(());
         };
         let pointer = pointer_id(button);
-        let position = self.logical_position(position);
+        let position = self.logical_position(position)?;
         let modifiers = arcweft_player_scene::input::InputPointerModifiers::new(
             self.keyboard_modifiers.shift_key(),
         );
@@ -443,14 +448,23 @@ impl NativeSceneState {
         }
     }
 
-    fn logical_position(&self, position: PhysicalPosition<f64>) -> ViewportPoint {
-        ViewportPoint::new(
-            (position.x / self.window.scale_factor())
-                .to_f32()
-                .unwrap_or(0.0),
-            (position.y / self.window.scale_factor())
-                .to_f32()
-                .unwrap_or(0.0),
-        )
+    fn logical_position(
+        &self,
+        position: PhysicalPosition<f64>,
+    ) -> Result<ViewportPoint, NativeSceneWindowError> {
+        let scale_factor = self.window.scale_factor();
+        ViewGeometryConversionError::scale_factor(ViewGeometryPlatform::Native, scale_factor)?;
+        Ok(ViewportPoint::new(
+            ViewGeometryConversionError::logical_pointer(
+                ViewGeometryPlatform::Native,
+                ViewGeometryConversionField::Left,
+                position.x / scale_factor,
+            )?,
+            ViewGeometryConversionError::logical_pointer(
+                ViewGeometryPlatform::Native,
+                ViewGeometryConversionField::Top,
+                position.y / scale_factor,
+            )?,
+        ))
     }
 }

@@ -234,6 +234,8 @@ pub enum ViewCompositorError {
     },
     #[error("missing view image resource for resource index {resource_index}")]
     MissingImageResource { resource_index: u32 },
+    #[error("view mask image has invalid zero extent {width}x{height}")]
+    InvalidMaskImageExtent { width: u32, height: u32 },
     #[error("view text references missing prepared text item {text_index}")]
     MissingPreparedText { text_index: u32 },
     #[error("view prepared text physical clip failed: {0}")]

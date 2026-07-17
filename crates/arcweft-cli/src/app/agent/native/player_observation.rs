@@ -375,9 +375,9 @@ fn prepare_player_runtime_frame(
         ExitCode::FAILURE
     })?;
     let style_environment = runtime.session.presentation_environment();
-    let prepared = planner
-        .prepare(
-            &mut runtime.input,
+    let candidate = planner
+        .prepare_candidate(
+            &runtime.input,
             PlayerFrameRequest {
                 presentation,
                 fx_definitions: runtime.session.fx_definitions(),
@@ -395,6 +395,13 @@ fn prepare_player_runtime_frame(
         )
         .map_err(|error| {
             eprintln!("error: player-backed observe frame planning failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    let (prepared, ()) = planner
+        .publication_guard()
+        .publish_with(candidate, &mut runtime.input, |_| ())
+        .map_err(|error| {
+            eprintln!("error: player-backed observe frame publication failed: {error}");
             ExitCode::FAILURE
         })?;
     Ok(PreparedPlayerRuntimeFrame { prepared })

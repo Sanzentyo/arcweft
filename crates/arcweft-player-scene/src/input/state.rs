@@ -78,13 +78,6 @@ impl InputController {
                         offset_y: entry.offset_y,
                     });
                 }
-                if entry.offset_x < 0.0 || entry.offset_y < 0.0 {
-                    return Err(InputControllerSnapshotError::NegativeScrollOffset {
-                        region_id: entry.region_id,
-                        offset_x: entry.offset_x,
-                        offset_y: entry.offset_y,
-                    });
-                }
                 let offset = ScrollOffset::new(entry.offset_x, entry.offset_y);
                 if !offset.is_zero() {
                     offsets.insert(

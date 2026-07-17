@@ -283,14 +283,12 @@ function expectedChoiceGeometry(expected) {
     expected.logicalHeight / referenceHeight,
   );
   const offsetY = (expected.logicalHeight - referenceHeight * scale) / 2;
-  const width = Math.min(Math.max(referenceWidth * 0.52, 360), 760);
   const itemHeight = 60;
   const gap = 12;
-  const total = 2 * (itemHeight + gap) - gap;
-  const margin = Math.max(referenceWidth * 0.045, 24);
-  const panelHeight = Math.min(Math.max(referenceHeight * 0.28, 180), 320);
-  const panelY = referenceHeight - panelHeight - margin;
-  const top = Math.max(panelY - total - 22, 36);
+  // Authored product bounds are intrinsic inputs only. The committed physical
+  // geometry places the root dialogue surface at the viewport origin, so the
+  // shared choice layout uses its canonical top clamp in design space.
+  const top = 36;
   return [
     {
       optionId: "choice.web_demo.continue",

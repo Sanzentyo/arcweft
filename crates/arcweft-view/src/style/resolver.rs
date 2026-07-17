@@ -31,7 +31,7 @@ pub use cache::{ViewInheritedStyleIdentity, ViewStyleResolveResult};
 pub use environment::ViewStyleEnvironmentUsage;
 
 /// Stable runtime identity used by the bounded computed-style cache.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleNodeKey {
     mount: ViewMountId,
     path: Vec<u64>,

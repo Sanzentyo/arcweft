@@ -39,11 +39,17 @@ pub enum PlayerFontRegistrationError {
         source: oxifont_webfont::WebFontError,
     },
     #[error("frame planner font registration failed: {0}")]
-    Planner(#[from] PlayerFrameError),
+    Planner(Box<PlayerFrameError>),
     #[error("renderer font registration failed: {0}")]
     Renderer(#[from] SharedRendererError),
     #[error("offscreen renderer font registration failed: {0}")]
     Offscreen(#[from] SharedOffscreenCaptureError),
+}
+
+impl From<PlayerFrameError> for PlayerFontRegistrationError {
+    fn from(error: PlayerFrameError) -> Self {
+        Self::Planner(Box::new(error))
+    }
 }
 
 impl PlayerFontSet {

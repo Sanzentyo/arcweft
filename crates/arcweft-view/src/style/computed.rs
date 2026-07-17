@@ -8,8 +8,11 @@ use super::{
     ViewPhysicalContainerStyle, ViewPhysicalFlow, ViewPosition, ViewPropertyKind, ViewScalarMilli,
     ViewSpecifiedValue, ViewStyleInvalidationSet,
 };
-use crate::ViewElementKind;
-use crate::geometry::ViewRepresentedGeometryFeature;
+use crate::geometry::{
+    ViewGeometryConsumer, ViewGeometryError, ViewGeometryField, ViewRepresentedGeometryFeature,
+    validate_supported_properties,
+};
+use crate::{ViewElementKind, ViewStyleNodeKey};
 use std::collections::BTreeMap;
 
 /// Revision carried by one computed result for parent/cache invalidation.
@@ -339,31 +342,96 @@ impl ComputedViewStyle {
     /// Canonical physical container packet. Row/Column and gaps are never remapped by box axes.
     pub fn physical_container(
         &self,
+        node: &ViewStyleNodeKey,
         element: ViewElementKind,
-    ) -> Result<Option<ViewPhysicalContainerStyle>, ViewRepresentedGeometryFeature> {
+    ) -> Result<Option<ViewPhysicalContainerStyle>, ViewGeometryError> {
+        let geometry_properties = self
+            .properties()
+            .map(|(property, _)| property)
+            .collect::<Vec<_>>();
+        validate_supported_properties(node, ViewGeometryConsumer::Layout, &geometry_properties)?;
+
         let display = self.display(ViewPropertyKind::Display);
+        let flex_direction = self.flex_direction(ViewPropertyKind::FlexDirection);
+        let row_gap = self.length_or_zero(ViewPropertyKind::RowGap);
+        let column_gap = self.length_or_zero(ViewPropertyKind::ColumnGap);
+        for (property, value) in [
+            (ViewPropertyKind::RowGap, row_gap),
+            (ViewPropertyKind::ColumnGap, column_gap),
+        ] {
+            if value.value() < 0 {
+                return Err(ViewGeometryError::NegativeNonNegativeField {
+                    node: node.clone(),
+                    field: match property {
+                        ViewPropertyKind::RowGap => ViewGeometryField::RowGap,
+                        ViewPropertyKind::ColumnGap => ViewGeometryField::ColumnGap,
+                        _ => unreachable!("closed gap inventory"),
+                    },
+                    value_milli: value.value(),
+                });
+            }
+        }
+
+        let default_flow = element.default_physical_flow();
+        if default_flow.is_none() {
+            let offending_property = flex_direction
+                .map(|_| ViewPropertyKind::FlexDirection)
+                .or_else(|| (row_gap.value() != 0).then_some(ViewPropertyKind::RowGap))
+                .or_else(|| (column_gap.value() != 0).then_some(ViewPropertyKind::ColumnGap));
+            if let Some(property) = offending_property {
+                return Err(ViewGeometryError::ContainerStyleOnLeaf {
+                    node: node.clone(),
+                    element,
+                    property,
+                });
+            }
+        }
+
         if display == Some(ViewDisplay::None) {
             return Ok(None);
         }
-        let flex_direction = self.flex_direction(ViewPropertyKind::FlexDirection);
+
         let flow = match display {
             Some(ViewDisplay::Inline) => {
-                return Err(ViewRepresentedGeometryFeature::InlineLayout);
+                return Err(ViewGeometryError::UnsupportedConsumer {
+                    node: node.clone(),
+                    consumer: ViewGeometryConsumer::Layout,
+                    property: ViewPropertyKind::Display,
+                    feature: ViewRepresentedGeometryFeature::InlineLayout,
+                });
+            }
+            Some(ViewDisplay::Stack) if default_flow.is_none() => {
+                return Err(ViewGeometryError::DisplayRequiresContainer {
+                    node: node.clone(),
+                    element,
+                    display: ViewDisplay::Stack,
+                });
+            }
+            Some(ViewDisplay::Flex) if default_flow.is_none() => {
+                return Err(ViewGeometryError::DisplayRequiresContainer {
+                    node: node.clone(),
+                    element,
+                    display: ViewDisplay::Flex,
+                });
             }
             Some(ViewDisplay::Stack) => Some(ViewPhysicalFlow::Overlay),
-            Some(ViewDisplay::Block) => Some(ViewPhysicalFlow::Column),
-            Some(ViewDisplay::Flex) => Some(
-                flex_direction.map_or(ViewPhysicalFlow::Row, ViewPhysicalFlow::from_flex_direction),
-            ),
+            Some(ViewDisplay::Block) => default_flow.map(|_| ViewPhysicalFlow::Column),
+            Some(ViewDisplay::Flex) => default_flow.map(|_| {
+                flex_direction.map_or(ViewPhysicalFlow::Row, ViewPhysicalFlow::from_flex_direction)
+            }),
             Some(ViewDisplay::None) => None,
-            None => flex_direction
-                .map(ViewPhysicalFlow::from_flex_direction)
-                .or_else(|| ViewPhysicalFlow::for_element(element)),
+            None => default_flow
+                .map(|flow| flex_direction.map_or(flow, ViewPhysicalFlow::from_flex_direction)),
         };
-        Ok(flow.map(|flow| ViewPhysicalContainerStyle {
+
+        let Some(flow) = flow else {
+            return Ok(None);
+        };
+        validate_flow_gaps(node, flow, row_gap, column_gap)?;
+        Ok(Some(ViewPhysicalContainerStyle {
             flow,
-            row_gap: self.length_or_zero(ViewPropertyKind::RowGap),
-            column_gap: self.length_or_zero(ViewPropertyKind::ColumnGap),
+            row_gap,
+            column_gap,
         }))
     }
 
@@ -425,4 +493,48 @@ impl ComputedViewStyle {
             _ => None,
         }
     }
+}
+
+fn validate_flow_gaps(
+    node: &ViewStyleNodeKey,
+    flow: ViewPhysicalFlow,
+    row_gap: ViewLengthMilli,
+    column_gap: ViewLengthMilli,
+) -> Result<(), ViewGeometryError> {
+    let error = match flow {
+        ViewPhysicalFlow::Row | ViewPhysicalFlow::RowReverse if row_gap.value() != 0 => {
+            ViewGeometryError::CrossAxisGapRequiresWrap {
+                node: node.clone(),
+                flow,
+                property: ViewPropertyKind::RowGap,
+                value_milli: row_gap.value(),
+            }
+        }
+        ViewPhysicalFlow::Column | ViewPhysicalFlow::ColumnReverse if column_gap.value() != 0 => {
+            ViewGeometryError::CrossAxisGapRequiresWrap {
+                node: node.clone(),
+                flow,
+                property: ViewPropertyKind::ColumnGap,
+                value_milli: column_gap.value(),
+            }
+        }
+        ViewPhysicalFlow::Overlay if row_gap.value() != 0 => {
+            ViewGeometryError::GapRequiresLinearFlow {
+                node: node.clone(),
+                flow,
+                property: ViewPropertyKind::RowGap,
+                value_milli: row_gap.value(),
+            }
+        }
+        ViewPhysicalFlow::Overlay if column_gap.value() != 0 => {
+            ViewGeometryError::GapRequiresLinearFlow {
+                node: node.clone(),
+                flow,
+                property: ViewPropertyKind::ColumnGap,
+                value_milli: column_gap.value(),
+            }
+        }
+        _ => return Ok(()),
+    };
+    Err(error)
 }

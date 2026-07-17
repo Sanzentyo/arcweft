@@ -1,7 +1,7 @@
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
-    ViewDefinitionResource, ViewElementKind, ViewInstructionSpan, ViewProgramInstruction,
-    ViewProgramResource, ViewRuntimeSurfaceBounds, ViewSurfaceResource,
+    ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
+    ViewProgramInstruction, ViewProgramResource, ViewRuntimeSurfaceBounds, ViewSurfaceResource,
 };
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest};
 use arcweft_player_scene::images::BundleImageCatalog;
@@ -26,7 +26,7 @@ use arcweft_view::style::{
     ViewStyleProgram, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
     ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
 };
-use arcweft_view::{ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName, ViewProgramId};
 use js_sys::{Object, Reflect, Uint8Array};
 use std::fmt::Write as _;
 use wasm_bindgen::prelude::*;
@@ -288,7 +288,7 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
             ViewBoxAxisSeedGeneration::INITIAL,
             ViewBoxAxisHostSeed::Default,
         )),
-        view: "view.InsetShadowExactFixture".to_owned(),
+        view: ViewId::try_new("view.InsetShadowExactFixture").expect("fixture View id is valid"),
         path: BundleViewInstancePath::default(),
         dialogue: None,
         active_targets: PARTS.iter().map(|part| (*part).to_owned()).collect(),
@@ -318,9 +318,11 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
 
 fn exact_view_program() -> ViewProgramResource {
     ViewProgramResource {
-        program_id: "view.seq06_13e1_inset_box_shadow_exact".to_owned(),
+        program_id: ViewProgramId::try_new("view.seq06_13e1_inset_box_shadow_exact")
+            .expect("fixture View program id is valid"),
         definitions: vec![ViewDefinitionResource {
-            public_id: "view.InsetShadowExactFixture".to_owned(),
+            public_id: ViewDefinitionRef::try_new("view.InsetShadowExactFixture")
+                .expect("fixture View definition id is valid"),
             body: ViewInstructionSpan::new(0, 4),
             styles: vec![ViewStyleApplicationTarget::named(exact_style_sheet_id())],
             parameters: Vec::new(),

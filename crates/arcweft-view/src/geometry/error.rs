@@ -1,5 +1,8 @@
-use super::{ViewGeometryNodeId, ViewGeometryRect};
-use crate::style::{ViewPhysicalAxis, ViewPhysicalEdges, ViewPropertyKind};
+use super::{ViewGeometryRect, ViewStyleNodeKey};
+use crate::ViewElementKind;
+use crate::style::{
+    ViewDisplay, ViewPhysicalAxis, ViewPhysicalEdges, ViewPhysicalFlow, ViewPropertyKind,
+};
 use thiserror::Error;
 
 /// Geometry consumer requesting an exact physical result.
@@ -41,7 +44,7 @@ pub enum ViewGeometryPropertySupport {
 
 /// Rejects any Style property whose geometry behavior is represented but not executable.
 pub fn validate_supported_properties(
-    node: &ViewGeometryNodeId,
+    node: &ViewStyleNodeKey,
     consumer: ViewGeometryConsumer,
     properties: &[ViewPropertyKind],
 ) -> Result<(), ViewGeometryError> {
@@ -107,27 +110,27 @@ pub enum ViewPointerCoordinateErrorKind {
 pub enum ViewGeometryError {
     #[error("node {node:?} has negative {field:?}: {value_milli}")]
     NegativeNonNegativeField {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         field: ViewGeometryField,
         value_milli: i32,
     },
     #[error("node {node:?} {axis:?} min {min_milli} exceeds max {max_milli}")]
     ConflictingConstraints {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
         min_milli: u32,
         max_milli: u32,
     },
     #[error("node {node:?} {axis:?} edges {edges_milli} exceed used size {used_milli}")]
     EdgesExceedUsedBorderBox {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
         used_milli: u32,
         edges_milli: u64,
     },
     #[error("node {node:?} arithmetic overflow in {operation:?} on {axis:?}")]
     ArithmeticOverflow {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: Option<ViewPhysicalAxis>,
         operation: ViewGeometryOperation,
     },
@@ -144,7 +147,7 @@ pub enum ViewGeometryError {
     },
     #[error("node {node:?} margins invert the {axis:?} span")]
     InvertedMarginSpan {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
         border_extent_milli: u32,
         margin_start_milli: i32,
@@ -152,28 +155,28 @@ pub enum ViewGeometryError {
     },
     #[error("node {node:?} margins {margin:?} invert border box {border_box:?}")]
     InvertedMarginBox {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         border_box: ViewGeometryRect,
         margin: ViewPhysicalEdges<i32>,
     },
     #[error("node {node:?} supplies an inset on static {axis:?}")]
     InsetOnStatic {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
     },
     #[error("node {node:?} relative {axis:?} has both physical insets")]
     OverConstrainedRelativeAxis {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
     },
     #[error("node {node:?} positioned {axis:?} has definite size and both insets")]
     OverConstrainedPositionedAxis {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
     },
     #[error("node {node:?} stretched {axis:?} size violates edge or min/max constraints")]
     PositionedStretchConstraintViolation {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
         candidate_milli: i64,
         edge_extent_milli: u32,
@@ -184,7 +187,7 @@ pub enum ViewGeometryError {
         "node {node:?} {axis:?} scroll offset {current_milli} is outside {min_milli}..={max_milli}"
     )]
     ScrollOffsetOutOfRange {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         axis: ViewPhysicalAxis,
         current_milli: i32,
         min_milli: i32,
@@ -194,15 +197,41 @@ pub enum ViewGeometryError {
         "node {node:?} property {property:?} is represented-only for {consumer:?}: {feature:?}"
     )]
     UnsupportedConsumer {
-        node: ViewGeometryNodeId,
+        node: ViewStyleNodeKey,
         consumer: ViewGeometryConsumer,
         property: ViewPropertyKind,
         feature: ViewRepresentedGeometryFeature,
     },
+    #[error("node {node:?} leaf element {element:?} cannot use container display {display:?}")]
+    DisplayRequiresContainer {
+        node: ViewStyleNodeKey,
+        element: ViewElementKind,
+        display: ViewDisplay,
+    },
+    #[error("node {node:?} leaf element {element:?} cannot use container property {property:?}")]
+    ContainerStyleOnLeaf {
+        node: ViewStyleNodeKey,
+        element: ViewElementKind,
+        property: ViewPropertyKind,
+    },
+    #[error("node {node:?} {flow:?} cross-axis gap {property:?}={value_milli} requires wrap")]
+    CrossAxisGapRequiresWrap {
+        node: ViewStyleNodeKey,
+        flow: ViewPhysicalFlow,
+        property: ViewPropertyKind,
+        value_milli: i32,
+    },
+    #[error("node {node:?} non-linear flow {flow:?} cannot use gap {property:?}={value_milli}")]
+    GapRequiresLinearFlow {
+        node: ViewStyleNodeKey,
+        flow: ViewPhysicalFlow,
+        property: ViewPropertyKind,
+        value_milli: i32,
+    },
     #[error("node {node:?} has missing or cyclic geometry parentage")]
-    InvalidTree { node: ViewGeometryNodeId },
+    InvalidTree { node: ViewStyleNodeKey },
     #[error("node {node:?} has no intrinsic content measure")]
-    MissingIntrinsicMeasure { node: ViewGeometryNodeId },
+    MissingIntrinsicMeasure { node: ViewStyleNodeKey },
     #[error("logical pointer coordinate bits {value_bits:#018x} are invalid: {kind:?}")]
     InvalidPointerCoordinate {
         value_bits: u64,

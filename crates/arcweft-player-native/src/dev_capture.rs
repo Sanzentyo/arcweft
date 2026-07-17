@@ -6,11 +6,14 @@ use arcweft_player_scene::{
     fonts::{PlayerFontRegistrationError, PlayerFontSet},
     frame::{
         PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
-        PlayerPreparedFrame,
+        PlayerPreparedFrame, PlayerPreparedFrameCandidate, ViewGeometryConsumer,
+        ViewGeometryConversionError, ViewGeometryConversionField, ViewGeometryPlatform,
+        ViewGeometryRuntimeError,
     },
     images::{BundleImageCatalog, BundleImageCatalogError},
     input::InputController,
 };
+use arcweft_render_wgpu::geometry::view_final::PreparedViewRenderCandidate;
 use arcweft_render_wgpu::{
     geometry::{PreparedFrame, RenderPreferences, RenderViewport},
     offscreen::{
@@ -21,7 +24,6 @@ use arcweft_runtime_driver::{
     clock::{RuntimeClockError, RuntimeClockStep},
     session::{BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput},
 };
-use num_traits::ToPrimitive;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -75,7 +77,7 @@ pub enum NativePlayerCaptureError {
     #[error(transparent)]
     Clock(#[from] RuntimeClockError),
     #[error(transparent)]
-    Frame(#[from] PlayerFrameError),
+    Frame(Box<PlayerFrameError>),
     #[error(transparent)]
     Font(#[from] Box<PlayerFontRegistrationError>),
     #[error(transparent)]
@@ -84,6 +86,24 @@ pub enum NativePlayerCaptureError {
     MissingColorAttachment,
     #[error("no renderable player frame was produced within {max_steps} runtime steps")]
     NoRenderableFrame { max_steps: usize },
+    #[error("capture extent must be non-zero, got {width}x{height}")]
+    InvalidCaptureExtent { width: u32, height: u32 },
+    #[error("capture step {step_index} cannot be represented as logical time")]
+    StepIndexOverflow { step_index: usize },
+    #[error("capture logical time overflow for tick {tick}")]
+    CaptureTimeOverflow { tick: u64 },
+    #[error(transparent)]
+    GeometryConversion(#[from] ViewGeometryConversionError),
+    #[error("captured RGBA length is {actual}, expected {expected}")]
+    CapturedColorLength { expected: usize, actual: usize },
+    #[error("captured content bounds overflow for {width}x{height}")]
+    ContentBoundsOverflow { width: u32, height: u32 },
+}
+
+impl From<PlayerFrameError> for NativePlayerCaptureError {
+    fn from(error: PlayerFrameError) -> Self {
+        Self::Frame(Box::new(error))
+    }
 }
 
 impl From<PlayerFontRegistrationError> for NativePlayerCaptureError {
@@ -97,49 +117,32 @@ pub fn capture_bundle_frame(
     bundle: &ArcweftBundle,
     request: NativePlayerCaptureRequest,
 ) -> Result<NativePlayerFrameCapture, NativePlayerCaptureError> {
-    let (prepared, fonts) = prepare_bundle_frame(bundle, request)?;
-    let mut capture = pollster::block_on(SharedOffscreenCapture::new(
-        wgpu::TextureFormat::Rgba8UnormSrgb,
-    ))?;
-    fonts.register_with_offscreen_capture(&mut capture)?;
-    let captured = capture.capture(&prepared.frame, &CaptureRequest::whole_frame_color())?;
-    let rgba = captured
-        .attachment_rgba(CaptureAttachment::Color)
-        .ok_or(NativePlayerCaptureError::MissingColorAttachment)?
-        .to_vec();
-    let stats = capture_content_stats(&rgba, captured.width, captured.height);
-    Ok(NativePlayerFrameCapture {
-        width: captured.width,
-        height: captured.height,
-        rgba,
-        content_bbox: stats.content_bbox,
-        content_pixels: stats.content_pixels,
-    })
-}
-
-fn prepare_bundle_frame(
-    bundle: &ArcweftBundle,
-    request: NativePlayerCaptureRequest,
-) -> Result<(PlayerPreparedFrame, PlayerFontSet), NativePlayerCaptureError> {
     let images = BundleImageCatalog::from_bundle(bundle)?;
     let mut session = BundleSession::new(bundle, BundleSessionOptions::default())?;
     let fonts = PlayerFontSet::bundled_default();
     let mut planner = PlayerFramePlannerState::new();
     fonts.register_with_planner(&mut planner)?;
     let mut input = InputController::default();
-    let viewport = capture_viewport(request);
-    let mut first_visual_frame = None;
+    let viewport = capture_viewport(request)?;
+    let mut capture = pollster::block_on(SharedOffscreenCapture::new(
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ))?;
+    fonts.register_with_offscreen_capture(&mut capture)?;
+    let mut first_visual_capture = None;
 
     for step_index in 0..request.max_steps {
         let tick = u64::try_from(step_index)
-            .unwrap_or(u64::MAX)
-            .saturating_add(1);
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .ok_or(NativePlayerCaptureError::StepIndexOverflow { step_index })?;
         let clock = RuntimeClockStep::from_millis(tick, CAPTURE_STEP_MILLIS)?;
         let step = session.step_with_clock(clock, BundleStepInput::default());
-        let visual_time_millis = tick.saturating_mul(u64::from(CAPTURE_STEP_MILLIS));
+        let visual_time_millis = tick
+            .checked_mul(u64::from(CAPTURE_STEP_MILLIS))
+            .ok_or(NativePlayerCaptureError::CaptureTimeOverflow { tick })?;
         let style_environment = session.presentation_environment();
-        let prepared = planner.prepare(
-            &mut input,
+        let candidate = planner.prepare_candidate(
+            &input,
             PlayerFrameRequest {
                 presentation: &step.presentation,
                 fx_definitions: session.fx_definitions(),
@@ -155,34 +158,119 @@ fn prepare_bundle_frame(
                 preferences: RenderPreferences::default(),
             },
         )?;
-        if step.presentation.dialogue.latest_active().is_some() {
-            return Ok((prepared, fonts));
-        }
-        if first_visual_frame.is_none() && frame_has_visual_content(&prepared.frame) {
-            first_visual_frame = Some(prepared);
+        let dialogue_ready = step.presentation.dialogue.latest_active().is_some();
+        let first_visual =
+            first_visual_capture.is_none() && frame_has_visual_content(candidate.prepared());
+        if dialogue_ready || first_visual {
+            let publication = planner
+                .publication_guard()
+                .preflight_candidate(&candidate)?;
+            let headless_candidate =
+                HeadlessFramePublicationCandidate::prepare(&mut capture, &candidate)?;
+            let (_, captured) = publication.publish_with(candidate, &mut input, |frame| {
+                headless_candidate.commit(frame)
+            })?;
+            if dialogue_ready {
+                return Ok(captured);
+            }
+            first_visual_capture = Some(captured);
+        } else {
+            planner
+                .publication_guard()
+                .publish_with(candidate, &mut input, |_| ())?;
         }
         if step.finished {
             break;
         }
     }
 
-    first_visual_frame.map(|prepared| (prepared, fonts)).ok_or(
-        NativePlayerCaptureError::NoRenderableFrame {
-            max_steps: request.max_steps,
-        },
-    )
+    first_visual_capture.ok_or(NativePlayerCaptureError::NoRenderableFrame {
+        max_steps: request.max_steps,
+    })
 }
 
-fn capture_viewport(request: NativePlayerCaptureRequest) -> RenderViewport {
-    let width = request.width.max(1);
-    let height = request.height.max(1);
-    RenderViewport {
-        logical_width: width.to_f32().unwrap_or(f32::MAX),
-        logical_height: height.to_f32().unwrap_or(f32::MAX),
-        physical_width: width,
-        physical_height: height,
-        scale_factor: 1.0,
+struct HeadlessFramePublicationCandidate {
+    view_render: PreparedViewRenderCandidate,
+    captured: NativePlayerFrameCapture,
+}
+
+impl HeadlessFramePublicationCandidate {
+    fn prepare(
+        capture: &mut SharedOffscreenCapture,
+        candidate: &PlayerPreparedFrameCandidate,
+    ) -> Result<Self, NativePlayerCaptureError> {
+        let view_render = PreparedViewRenderCandidate::prepare(
+            candidate.view_geometry().generation().value(),
+            candidate
+                .view_geometry()
+                .final_nodes()
+                .map(|(_, geometry)| geometry),
+        )
+        .map_err(ViewGeometryRuntimeError::from)
+        .map_err(PlayerFrameError::from)?;
+        let captured =
+            capture.capture(candidate.prepared(), &CaptureRequest::whole_frame_color())?;
+        let rgba = captured
+            .attachment_rgba(CaptureAttachment::Color)
+            .ok_or(NativePlayerCaptureError::MissingColorAttachment)?
+            .to_vec();
+        let stats = capture_content_stats(&rgba, captured.width, captured.height)?;
+        Ok(Self {
+            view_render,
+            captured: NativePlayerFrameCapture {
+                width: captured.width,
+                height: captured.height,
+                rgba,
+                content_bbox: stats.content_bbox,
+                content_pixels: stats.content_pixels,
+            },
+        })
     }
+
+    fn commit(self, frame: &PlayerPreparedFrame) -> NativePlayerFrameCapture {
+        debug_assert_eq!(
+            self.view_render.generation(),
+            frame.view_geometry().generation().value()
+        );
+        self.captured
+    }
+}
+
+fn capture_viewport(
+    request: NativePlayerCaptureRequest,
+) -> Result<RenderViewport, NativePlayerCaptureError> {
+    if request.width == 0 || request.height == 0 {
+        return Err(NativePlayerCaptureError::InvalidCaptureExtent {
+            width: request.width,
+            height: request.height,
+        });
+    }
+    Ok(RenderViewport {
+        logical_width: capture_dimension(
+            request.width,
+            ViewGeometryConversionField::ViewportWidth,
+        )?,
+        logical_height: capture_dimension(
+            request.height,
+            ViewGeometryConversionField::ViewportHeight,
+        )?,
+        physical_width: request.width,
+        physical_height: request.height,
+        scale_factor: 1.0,
+    })
+}
+
+fn capture_dimension(
+    value: u32,
+    field: ViewGeometryConversionField,
+) -> Result<f32, ViewGeometryConversionError> {
+    ViewGeometryConversionError::exact_f32(
+        None,
+        ViewGeometryPlatform::Headless,
+        ViewGeometryConsumer::Capture,
+        field,
+        i64::from(value) * 1_000,
+    )
 }
 
 fn frame_has_visual_content(frame: &PreparedFrame) -> bool {
@@ -201,14 +289,30 @@ struct CaptureContentStats {
     content_pixels: u64,
 }
 
-fn capture_content_stats(rgba: &[u8], width: u32, height: u32) -> CaptureContentStats {
+fn capture_content_stats(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<CaptureContentStats, NativePlayerCaptureError> {
     if width == 0 || height == 0 {
-        return CaptureContentStats {
+        return Ok(CaptureContentStats {
             content_bbox: None,
             content_pixels: 0,
-        };
+        });
     }
-    let width_usize = usize::try_from(width).unwrap_or(0);
+    let expected = u64::from(width)
+        .checked_mul(u64::from(height))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .and_then(|bytes| usize::try_from(bytes).ok())
+        .ok_or(NativePlayerCaptureError::ContentBoundsOverflow { width, height })?;
+    if rgba.len() != expected {
+        return Err(NativePlayerCaptureError::CapturedColorLength {
+            expected,
+            actual: rgba.len(),
+        });
+    }
+    let width_usize = usize::try_from(width)
+        .map_err(|_| NativePlayerCaptureError::ContentBoundsOverflow { width, height })?;
     let mut min_x = width;
     let mut min_y = height;
     let mut max_x = 0;
@@ -218,26 +322,36 @@ fn capture_content_stats(rgba: &[u8], width: u32, height: u32) -> CaptureContent
         if pixel == [0, 0, 0, 255] {
             continue;
         }
-        let x = u32::try_from(index % width_usize).unwrap_or(u32::MAX);
-        let y = u32::try_from(index / width_usize).unwrap_or(u32::MAX);
-        if x >= width || y >= height {
-            continue;
-        }
+        let x = u32::try_from(index % width_usize)
+            .map_err(|_| NativePlayerCaptureError::ContentBoundsOverflow { width, height })?;
+        let y = u32::try_from(index / width_usize)
+            .map_err(|_| NativePlayerCaptureError::ContentBoundsOverflow { width, height })?;
         min_x = min_x.min(x);
         min_y = min_y.min(y);
         max_x = max_x.max(x);
         max_y = max_y.max(y);
-        content_pixels = content_pixels.saturating_add(1);
+        content_pixels += 1;
     }
-    CaptureContentStats {
-        content_bbox: (content_pixels > 0).then_some(NativePlayerCaptureContentBBox {
+    let content_bbox = if content_pixels == 0 {
+        None
+    } else {
+        Some(NativePlayerCaptureContentBBox {
             x: min_x,
             y: min_y,
-            width: max_x.saturating_sub(min_x).saturating_add(1),
-            height: max_y.saturating_sub(min_y).saturating_add(1),
-        }),
+            width: max_x
+                .checked_sub(min_x)
+                .and_then(|extent| extent.checked_add(1))
+                .ok_or(NativePlayerCaptureError::ContentBoundsOverflow { width, height })?,
+            height: max_y
+                .checked_sub(min_y)
+                .and_then(|extent| extent.checked_add(1))
+                .ok_or(NativePlayerCaptureError::ContentBoundsOverflow { width, height })?,
+        })
+    };
+    Ok(CaptureContentStats {
+        content_bbox,
         content_pixels,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -263,7 +377,7 @@ mod tests {
         ];
 
         assert_eq!(
-            capture_content_stats(&rgba, 3, 2),
+            capture_content_stats(&rgba, 3, 2).expect("valid RGBA length"),
             CaptureContentStats {
                 content_bbox: Some(NativePlayerCaptureContentBBox {
                     x: 1,
@@ -279,7 +393,7 @@ mod tests {
     #[test]
     fn empty_capture_has_no_content_bounds() {
         assert_eq!(
-            capture_content_stats(&[0, 0, 0, 255], 1, 1),
+            capture_content_stats(&[0, 0, 0, 255], 1, 1).expect("valid RGBA length"),
             CaptureContentStats {
                 content_bbox: None,
                 content_pixels: 0,
@@ -290,13 +404,53 @@ mod tests {
     #[test]
     fn capture_preparation_uses_the_normal_prepared_text_batch() {
         let bundle = dialogue_bundle();
+        let images = BundleImageCatalog::from_bundle(&bundle).expect("image catalog builds");
+        let mut session =
+            BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+        let mut planner = PlayerFramePlannerState::new();
+        PlayerFontSet::bundled_default()
+            .register_with_planner(&mut planner)
+            .expect("fonts register");
+        let input = InputController::default();
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(1, CAPTURE_STEP_MILLIS).expect("clock is valid"),
+            BundleStepInput::default(),
+        );
+        let style_environment = session.presentation_environment();
+        let candidate = planner
+            .prepare_candidate(
+                &input,
+                PlayerFrameRequest {
+                    presentation: &step.presentation,
+                    fx_definitions: session.fx_definitions(),
+                    images: &images,
+                    style_program: session.view_style_program(),
+                    style_environment: &style_environment,
+                    style_palettes: session.view_style_palettes(),
+                    viewport: capture_viewport(NativePlayerCaptureRequest::new(640, 360, 8))
+                        .expect("viewport converts"),
+                    fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+                    image_time_millis: u64::from(CAPTURE_STEP_MILLIS),
+                    visual_time_millis: u64::from(CAPTURE_STEP_MILLIS),
+                    dialogue_reveal_complete: true,
+                    preferences: RenderPreferences::default(),
+                },
+            )
+            .expect("dialogue frame candidate prepares");
 
-        let (prepared, _) =
-            prepare_bundle_frame(&bundle, NativePlayerCaptureRequest::new(640, 360, 8))
-                .expect("dialogue frame prepares");
+        assert_eq!(candidate.prepared().dialogue_views().len(), 1);
+        assert!(!candidate.prepared().text.is_empty());
+    }
 
-        assert_eq!(prepared.frame.dialogue_views().len(), 1);
-        assert!(!prepared.frame.text.is_empty());
+    #[test]
+    fn zero_capture_extent_is_rejected_without_clamping() {
+        assert!(matches!(
+            capture_viewport(NativePlayerCaptureRequest::new(0, 360, 1)),
+            Err(NativePlayerCaptureError::InvalidCaptureExtent {
+                width: 0,
+                height: 360,
+            })
+        ));
     }
 
     fn dialogue_bundle() -> ArcweftBundle {

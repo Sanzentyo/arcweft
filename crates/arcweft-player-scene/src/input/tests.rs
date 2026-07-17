@@ -101,6 +101,10 @@ fn scroll_frame() -> PreparedFrame {
             bounds: HitRect::new(20.0, 30.0, 220.0, 80.0),
             content_width: 220.0,
             content_height: 260.0,
+            min_offset_x: 0.0,
+            max_offset_x: 0.0,
+            min_offset_y: 0.0,
+            max_offset_y: 180.0,
             offset_x: 0.0,
             offset_y: 0.0,
             overscroll_x: 0.0,
@@ -141,6 +145,10 @@ fn horizontal_scroll_frame() -> PreparedFrame {
             bounds: HitRect::new(20.0, 30.0, 100.0, 80.0),
             content_width: 260.0,
             content_height: 80.0,
+            min_offset_x: 0.0,
+            max_offset_x: 160.0,
+            min_offset_y: 0.0,
+            max_offset_y: 0.0,
             offset_x: 0.0,
             offset_y: 0.0,
             overscroll_x: 0.0,
@@ -189,6 +197,10 @@ fn nested_scroll_frame(
                 bounds: HitRect::new(30.0, 30.0, 180.0, 60.0),
                 content_width: 180.0,
                 content_height: 180.0,
+                min_offset_x: 0.0,
+                max_offset_x: 0.0,
+                min_offset_y: 0.0,
+                max_offset_y: 120.0,
                 offset_x: 0.0,
                 offset_y: 0.0,
                 overscroll_x: 0.0,
@@ -207,6 +219,10 @@ fn nested_scroll_frame(
                 bounds: HitRect::new(10.0, 10.0, 260.0, 180.0),
                 content_width: 260.0,
                 content_height: 500.0,
+                min_offset_x: 0.0,
+                max_offset_x: 0.0,
+                min_offset_y: 0.0,
+                max_offset_y: 320.0,
                 offset_x: 0.0,
                 offset_y: 0.0,
                 overscroll_x: 0.0,
@@ -378,6 +394,7 @@ fn focus_auto_scroll_policy_offsets_are_clamped() {
             100.0,
             80.0,
             80.0,
+            0.0,
             160.0,
         ) - 30.0)
             .abs()
@@ -391,6 +408,7 @@ fn focus_auto_scroll_policy_offsets_are_clamped() {
             100.0,
             80.0,
             80.0,
+            0.0,
             160.0,
         ) - 50.0)
             .abs()
@@ -404,6 +422,7 @@ fn focus_auto_scroll_policy_offsets_are_clamped() {
             100.0,
             80.0,
             80.0,
+            0.0,
             160.0,
         ) - 30.0)
             .abs()
@@ -417,6 +436,7 @@ fn focus_auto_scroll_policy_offsets_are_clamped() {
             100.0,
             80.0,
             80.0,
+            0.0,
             160.0,
         ) - 24.0)
             .abs()

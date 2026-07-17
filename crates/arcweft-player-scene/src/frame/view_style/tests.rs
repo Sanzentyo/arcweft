@@ -1,14 +1,13 @@
 use super::super::PlayerFrameError;
 use super::{
-    NodeBinding, ResolvedLayoutNode, RuntimeNodeId, StyleConsumer, StyleTargetKey, StyleTargetKind,
-    box_style, encode_path, interaction_states, node_bindings, node_facts, resolve_layout_offsets,
+    NodeBinding, StyleConsumer, StyleTargetKind, interaction_states, node_bindings, node_facts,
     validate_consumer_properties, validate_supported_properties,
 };
 use crate::input::InputController;
 use arcweft_bundle::resource_codec::view::{ViewObserveClassification, ViewTextSelectionPolicy};
 use arcweft_bundle::resource_codec::{
-    ViewRuntimeControlVisualStyle, ViewRuntimeNodeStyle, ViewRuntimeSurface,
-    ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
+    ViewRuntimeControlVisualStyle, ViewRuntimeSurface, ViewRuntimeSurfaceBounds,
+    ViewTextBlockBounds,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::appearance::{
@@ -28,9 +27,8 @@ use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::SessionEnvironmentState;
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewInstancePath, BundleViewInstancePathSegment, BundleViewMountOutput,
-    BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextOutput,
-    BundleViewTextTarget, BundleViewTextValue,
+    BundleViewInstancePath, BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeId,
+    BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
@@ -46,111 +44,6 @@ use arcweft_view::style::{
     ViewStyleTraceMode,
 };
 use arcweft_view::{ViewElementKind, ViewId, ViewMountId, ViewPartLocalName, ViewPartName};
-
-#[test]
-fn node_path_encoding_distinguishes_all_segment_families_and_key_presence() {
-    let call_none = [BundleViewInstancePathSegment::Call {
-        instruction: 7,
-        authored_key: None,
-    }];
-    let call_zero = [BundleViewInstancePathSegment::Call {
-        instruction: 7,
-        authored_key: Some(0),
-    }];
-    let repeat = [BundleViewInstancePathSegment::Repeat {
-        instruction: 7,
-        key: 0,
-    }];
-    let repeat_negative = [BundleViewInstancePathSegment::Repeat {
-        instruction: 7,
-        key: -1,
-    }];
-
-    assert_ne!(encode_path(&call_none), encode_path(&call_zero));
-    assert_ne!(encode_path(&call_none), encode_path(&repeat));
-    assert_ne!(encode_path(&repeat), encode_path(&repeat_negative));
-}
-
-#[test]
-fn box_style_consumes_only_canonical_physical_geometry() {
-    let style = projected_style([
-        length(ViewPropertyKind::Width, 120_000),
-        length(ViewPropertyKind::Height, 44_000),
-        length(ViewPropertyKind::TranslateX, 7_000),
-        length(ViewPropertyKind::TranslateY, -3_000),
-        (
-            ViewPropertyKind::Scale,
-            ViewSpecifiedValue::Scalar {
-                value: ViewScalarMilli::new(875),
-            },
-        ),
-        (
-            ViewPropertyKind::OverflowX,
-            ViewSpecifiedValue::Overflow {
-                value: ViewOverflow::Clip,
-            },
-        ),
-        (
-            ViewPropertyKind::OverflowY,
-            ViewSpecifiedValue::Overflow {
-                value: ViewOverflow::Auto,
-            },
-        ),
-    ]);
-
-    let style = box_style(&style);
-    assert_eq!(style.width, Some(120_000));
-    assert_eq!(style.height, Some(44_000));
-    assert_eq!(style.translate_x, 7_000);
-    assert_eq!(style.translate_y, -3_000);
-    assert_eq!(style.scale_milli, 875);
-    assert_eq!(style.overflow_x, ViewOverflow::Clip);
-    assert_eq!(style.overflow_y, ViewOverflow::Auto);
-}
-
-#[test]
-fn column_gap_repositions_each_direct_child_subtree_from_actual_bounds() {
-    let container = runtime_node(0);
-    let first = runtime_node(1);
-    let second = runtime_node(2);
-    let first_key = control_key("control.first");
-    let second_key = control_key("control.second");
-    let nodes = vec![
-        ResolvedLayoutNode {
-            id: container.clone(),
-            parent: None,
-            element: Some(ViewElementKind::Column),
-            keys: Vec::new(),
-            style: projected_style([length(ViewPropertyKind::RowGap, 14_000)]),
-        },
-        ResolvedLayoutNode {
-            id: first,
-            parent: Some(container.clone()),
-            element: Some(ViewElementKind::Panel),
-            keys: vec![first_key.clone()],
-            style: ViewRuntimeNodeStyle::default(),
-        },
-        ResolvedLayoutNode {
-            id: second,
-            parent: Some(container),
-            element: Some(ViewElementKind::Panel),
-            keys: vec![second_key.clone()],
-            style: ViewRuntimeNodeStyle::default(),
-        },
-    ];
-    let presentation = BundlePresentationSnapshot {
-        surfaces: vec![
-            surface("control.first", 0, 20_000),
-            surface("control.second", 36_000, 20_000),
-        ],
-        ..BundlePresentationSnapshot::default()
-    };
-
-    let offsets = resolve_layout_offsets(&presentation, &nodes);
-
-    assert_eq!(offsets.get(&first_key), Some(&(0, 0)));
-    assert_eq!(offsets.get(&second_key), Some(&(0, -2_000)));
-}
 
 #[test]
 fn placeholder_shown_is_retained_as_a_typed_element_state() {
@@ -361,7 +254,13 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
             "view_mount_2.text.child.exported.inherited.target",
         ] {
             assert_eq!(
-                frame.text(target).unwrap().physical_box().axes,
+                frame
+                    .text(target)
+                    .unwrap()
+                    .physical()
+                    .box_style()
+                    .unwrap()
+                    .axes,
                 ViewBoxAxisMode::VerticalRl
             );
         }
@@ -371,7 +270,13 @@ fn inherited_style_resolves_across_a_live_call_view_mount_boundary() {
         ] {
             assert_eq!(frame.text(target).unwrap().visual().text, Some(expected));
             assert_eq!(
-                frame.text(target).unwrap().physical_box().axes,
+                frame
+                    .text(target)
+                    .unwrap()
+                    .physical()
+                    .box_style()
+                    .unwrap()
+                    .axes,
                 ViewBoxAxisMode::HorizontalRtl
             );
         }
@@ -413,7 +318,9 @@ fn top_level_host_seed_is_required_and_explicit_modes_reach_the_shared_player_pa
             frame
                 .control("view_mount_1.control.axis")
                 .unwrap()
-                .physical_box()
+                .physical()
+                .box_style()
+                .unwrap()
                 .axes,
             mode
         );
@@ -481,7 +388,13 @@ fn native_web_and_headless_style_states_match_for_default_and_every_explicit_see
         assert_eq!(frames[0].control(target), frames[1].control(target));
         assert_eq!(frames[0].control(target), frames[2].control(target));
         assert_eq!(
-            frames[0].control(target).unwrap().physical_box().axes,
+            frames[0]
+                .control(target)
+                .unwrap()
+                .physical()
+                .box_style()
+                .unwrap()
+                .axes,
             seed.mode()
         );
         assert_eq!(
@@ -1248,18 +1161,6 @@ fn light_environment_values() -> PresentationEnvironmentValues {
     )
 }
 
-fn projected_style(
-    entries: impl IntoIterator<Item = (ViewPropertyKind, ViewSpecifiedValue)>,
-) -> ViewRuntimeNodeStyle {
-    let computed = computed_style(entries);
-    ViewRuntimeNodeStyle::try_from_computed(
-        &computed,
-        &PresentationEnvironment::ENGINE_DEFAULT,
-        &SystemPaletteSet::ENGINE_DEFAULT,
-    )
-    .unwrap()
-}
-
 fn computed_style(
     entries: impl IntoIterator<Item = (ViewPropertyKind, ViewSpecifiedValue)>,
 ) -> ComputedViewStyle {
@@ -1292,15 +1193,6 @@ fn inherited_computed_style(
         ViewStyleContributionSource::Inherited,
     )));
     builder.finish(ComputedViewStyleRevision::new(1))
-}
-
-fn length(property: ViewPropertyKind, value: i32) -> (ViewPropertyKind, ViewSpecifiedValue) {
-    (
-        property,
-        ViewSpecifiedValue::Length {
-            value: ViewLengthMilli::new(value),
-        },
-    )
 }
 
 fn unsupported_consumer_value(property: ViewPropertyKind) -> ViewSpecifiedValue {
@@ -1339,21 +1231,6 @@ fn unsupported_consumer_value(property: ViewPropertyKind) -> ViewSpecifiedValue 
             value: ViewLengthMilli::new(1_000),
         },
         _ => unreachable!("test table only contains known unsupported consumer properties"),
-    }
-}
-
-fn runtime_node(instruction: u32) -> RuntimeNodeId {
-    RuntimeNodeId {
-        mount: ViewMountId::from_raw(1),
-        path: Vec::new(),
-        instruction,
-    }
-}
-
-fn control_key(id: &str) -> StyleTargetKey {
-    StyleTargetKey {
-        kind: StyleTargetKind::Control,
-        id: id.to_owned(),
     }
 }
 

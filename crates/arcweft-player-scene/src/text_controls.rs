@@ -1,4 +1,8 @@
 use crate::control_style::lower_control_style;
+use crate::frame::{
+    ViewCommittedGeometryFrame, ViewGeometryProductKind, ViewGeometryRuntimeError,
+    ViewGeometryTargetKey,
+};
 use crate::input::InputController;
 use arcweft_bundle::resource_codec::view::{
     EnterKeyHint as ViewEnterKeyHint, TextAssistPolicy as ViewTextAssistPolicy,
@@ -17,6 +21,7 @@ use arcweft_presentation::text_input::{
     TextTabPolicy, TextVerticalNavigationPolicy,
 };
 use arcweft_render_wgpu::geometry::{FramePlanError, RenderTextInputControl};
+use arcweft_view::geometry::ViewGeometryConsumer;
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -29,6 +34,8 @@ pub enum RuntimeTextControlLoweringError {
     InvalidTarget { target: String },
     #[error("failed to activate focused runtime text-control: {source}")]
     FocusActivation { source: FramePlanError },
+    #[error(transparent)]
+    ViewGeometry(#[from] ViewGeometryRuntimeError),
 }
 
 impl RuntimeTextControlLowerer {
@@ -47,6 +54,34 @@ impl RuntimeTextControlLowerer {
             .collect())
     }
 
+    pub(crate) fn lower_for_geometry(
+        input: &mut InputController,
+        controls: &[ViewRuntimeTextControl],
+        geometry: &ViewCommittedGeometryFrame,
+    ) -> Result<Vec<RenderTextInputControl>, RuntimeTextControlLoweringError> {
+        let mut lowered = Vec::with_capacity(controls.len());
+        for control in controls {
+            let kind = match control.kind {
+                ViewInputKind::TextField => ViewGeometryProductKind::TextField,
+                ViewInputKind::TextArea => ViewGeometryProductKind::TextArea,
+                ViewInputKind::SecureField => ViewGeometryProductKind::SecureField,
+            };
+            let target = ViewGeometryTargetKey::new(kind, control.target.clone());
+            let Some(bounds) =
+                geometry.target_consumer_hit_rect(&target, ViewGeometryConsumer::HitTest)?
+            else {
+                continue;
+            };
+            lowered.push(Self::lower_control_at(control, bounds)?);
+        }
+        input.retain_live_text_control_focus(&lowered);
+        Self::activate_focused(input, &lowered)?;
+        Ok(lowered
+            .into_iter()
+            .map(|control| input.apply_live_text_control_state(control))
+            .collect())
+    }
+
     pub fn lower_controls(
         controls: &[ViewRuntimeTextControl],
     ) -> Result<Vec<RenderTextInputControl>, RuntimeTextControlLoweringError> {
@@ -55,6 +90,13 @@ impl RuntimeTextControlLowerer {
 
     pub fn lower_control(
         control: &ViewRuntimeTextControl,
+    ) -> Result<RenderTextInputControl, RuntimeTextControlLoweringError> {
+        Self::lower_control_at(control, lower_bounds(control.bounds))
+    }
+
+    fn lower_control_at(
+        control: &ViewRuntimeTextControl,
+        bounds: HitRect,
     ) -> Result<RenderTextInputControl, RuntimeTextControlLoweringError> {
         let target = lower_target(&control.target)?;
         let selection = lower_selection(control.selection.clamped_to_text(&control.value));
@@ -67,7 +109,7 @@ impl RuntimeTextControlLowerer {
             selection,
             options,
             role,
-            lower_bounds(control.bounds),
+            bounds,
         );
         if let Some(scroll_region) = &control.containing_scroll_region {
             render = render.with_containing_scroll_region(scroll_region.clone());

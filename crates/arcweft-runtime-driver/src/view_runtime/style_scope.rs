@@ -1,10 +1,10 @@
 //! Ordered Style application scopes retained during View evaluation.
 
 use super::BundleViewInstancePath;
-use arcweft_bundle::resource_codec::view::ViewElementKind;
+use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewRuntimeGeometryOwner};
 use arcweft_view::{
-    ViewId, ViewPartLocalName, ViewPartName, ViewStyleApplication, ViewStyleApplicationTarget,
-    ViewStyleBoundaryFacts, ViewStyleScopeId,
+    ViewId, ViewMountId, ViewPartLocalName, ViewPartName, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleNodeKey, ViewStyleScopeId,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -60,6 +60,33 @@ pub enum BundleViewStyleNodeKind {
     CallView {
         view: ViewId,
     },
+}
+
+impl BundleViewStyleNodeId {
+    #[must_use]
+    pub fn style_node_key(&self, mount: ViewMountId) -> ViewStyleNodeKey {
+        ViewStyleNodeKey::new(mount, self.path.style_path_words(), self.instruction)
+    }
+}
+
+impl BundleViewStyleNode {
+    #[must_use]
+    pub fn style_node_key(&self, mount: ViewMountId) -> ViewStyleNodeKey {
+        ViewStyleNodeKey::new(mount, self.path.style_path_words(), self.instruction)
+    }
+}
+
+impl BundleViewStyleNodeKind {
+    #[must_use]
+    pub const fn runtime_geometry_owner(&self) -> ViewRuntimeGeometryOwner {
+        match self {
+            Self::Element { element, .. } => ViewRuntimeGeometryOwner::Element(*element),
+            Self::Text { .. } => ViewRuntimeGeometryOwner::Text,
+            Self::Image { .. } => ViewRuntimeGeometryOwner::Image,
+            Self::Custom { .. } => ViewRuntimeGeometryOwner::Custom,
+            Self::CallView { .. } => ViewRuntimeGeometryOwner::CallView,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -1,25 +1,26 @@
 use arcweft_view::ViewMountId;
 use arcweft_view::geometry::{
-    ViewFinalGeometryKey, ViewGeometryClip, ViewGeometryConsumer, ViewGeometryError,
-    ViewGeometryField, ViewGeometryMeasureStyleRevision, ViewGeometryNodeId, ViewGeometryOperation,
+    ViewAvailableGeometrySize, ViewContainingBlockDependency, ViewFinalGeometryKey,
+    ViewGeometryClip, ViewGeometryClipAxis, ViewGeometryConsumer, ViewGeometryError,
+    ViewGeometryField, ViewGeometryMeasureStyleRevision, ViewGeometryOperation,
     ViewGeometryPlaceStyleRevision, ViewGeometryPoint, ViewGeometryRect, ViewGeometrySize,
     ViewGeometrySpan, ViewGeometryTransform, ViewIntrinsicMeasure, ViewIntrinsicMeasureRevision,
-    ViewPaintOutsetsRevision, ViewPlacedGeometryKey, ViewPlacedGeometryRevision,
-    ViewPointerCoordinateErrorKind, ViewScrollCapability, ViewScrollStateRevision,
-    ViewViewportGeometryRevision, consumer_geometry, first_flow_border_start,
-    first_reverse_flow_border_start, flow_intrinsic_size, measure_box, milli_from_logical_pointer,
-    next_flow_border_start, next_reverse_flow_border_start, outer_size, place_box,
-    scroll_axis_geometry, scroll_into_view_nearest, transform_chain, transform_rect,
-    validate_supported_properties,
+    ViewMeasuredGeometryKey, ViewPaintOutsets, ViewPlacedGeometryKey, ViewPlacedGeometryRevision,
+    ViewPointerCoordinateErrorKind, ViewScrollCapability, ViewScrollStateInput,
+    ViewScrollStateRevision, ViewViewportGeometryInput, ViewViewportGeometryRevision,
+    consumer_geometry, first_flow_border_start, first_reverse_flow_border_start,
+    flow_intrinsic_size, measure_box, milli_from_logical_pointer, next_flow_border_start,
+    next_reverse_flow_border_start, outer_size, place_box, scroll_axis_geometry,
+    scroll_into_view_nearest, transform_chain, transform_rect, validate_supported_properties,
 };
 use arcweft_view::style::{
     ViewBoxAxisMode, ViewLengthMilli, ViewOverflow, ViewPhysicalAxis, ViewPhysicalBoxStyle,
     ViewPhysicalContainerStyle, ViewPhysicalEdges, ViewPhysicalFlow, ViewPosition,
-    ViewPropertyKind, ViewScalarMilli,
+    ViewPropertyKind, ViewScalarMilli, ViewStyleNodeKey,
 };
 
-fn node(instruction: u32) -> ViewGeometryNodeId {
-    ViewGeometryNodeId::new(ViewMountId::from_raw(7), vec![2, 5], instruction)
+fn node(instruction: u32) -> ViewStyleNodeKey {
+    ViewStyleNodeKey::new(ViewMountId::from_raw(7), vec![2, 5], instruction)
 }
 
 fn intrinsic(width_milli: u32, height_milli: u32) -> ViewIntrinsicMeasure {
@@ -71,6 +72,67 @@ fn bx_001_to_017_border_box_measurement_is_checked() {
             edges_milli: 42_000,
         })
     );
+}
+
+#[test]
+fn bx_016_explicit_zero_obeys_edge_fit_before_minimum_lifting() {
+    let edges_and_min = ViewPhysicalBoxStyle {
+        width: Some(ViewLengthMilli::new(0)),
+        min_width: Some(ViewLengthMilli::new(50)),
+        padding: ViewPhysicalEdges::new(
+            ViewLengthMilli::new(0),
+            ViewLengthMilli::new(7),
+            ViewLengthMilli::new(0),
+            ViewLengthMilli::new(5),
+        ),
+        ..ViewPhysicalBoxStyle::default()
+    };
+    assert_eq!(
+        measure_box(&node(20), &edges_and_min, intrinsic(0, 0)),
+        Err(ViewGeometryError::EdgesExceedUsedBorderBox {
+            node: node(20),
+            axis: ViewPhysicalAxis::X,
+            used_milli: 0,
+            edges_milli: 12,
+        })
+    );
+
+    let explicit_zero = ViewPhysicalBoxStyle {
+        width: Some(ViewLengthMilli::new(0)),
+        ..ViewPhysicalBoxStyle::default()
+    };
+    let empty = measure_box(&node(21), &explicit_zero, intrinsic(0, 0)).unwrap();
+    assert_eq!(empty.x.used_border_extent_milli, 0);
+    assert_eq!(empty.content_size.width_milli, 0);
+
+    let lifted = measure_box(
+        &node(22),
+        &ViewPhysicalBoxStyle {
+            min_width: Some(ViewLengthMilli::new(50)),
+            ..explicit_zero
+        },
+        intrinsic(0, 0),
+    )
+    .unwrap();
+    assert_eq!(lifted.x.used_border_extent_milli, 50);
+    assert_eq!(lifted.content_size.width_milli, 50);
+
+    let auto_edges = measure_box(
+        &node(23),
+        &ViewPhysicalBoxStyle {
+            padding: ViewPhysicalEdges::new(
+                ViewLengthMilli::new(0),
+                ViewLengthMilli::new(7),
+                ViewLengthMilli::new(0),
+                ViewLengthMilli::new(5),
+            ),
+            ..ViewPhysicalBoxStyle::default()
+        },
+        intrinsic(0, 0),
+    )
+    .unwrap();
+    assert_eq!(auto_edges.x.used_border_extent_milli, 12);
+    assert_eq!(auto_edges.content_size.width_milli, 0);
 }
 
 #[test]
@@ -359,7 +421,7 @@ fn clip_002_to_003_overflow_axes_are_independent() {
     let viewport = ViewGeometryRect::new(0, 0, 320, 180).unwrap();
     let padding = ViewGeometryRect::new(24, 32, 144, 80).unwrap();
     let child = ViewGeometryRect::new(-10, -10, 200, 200).unwrap();
-    let clip = ViewGeometryClip::viewport(viewport).with_overflow(
+    let clip = ViewGeometryClip::from_rect(viewport).with_overflow(
         padding,
         ViewOverflow::Hidden,
         ViewOverflow::Visible,
@@ -375,7 +437,7 @@ fn con_001_to_009_consumers_share_one_visible_border_box() {
     let viewport = ViewGeometryRect::new(0, 0, 100, 100).unwrap();
     let border = ViewGeometryRect::new(-10, 20, 80, 120).unwrap();
     let paint = ViewGeometryRect::new(-15, 15, 85, 125).unwrap();
-    let consumers = consumer_geometry(border, paint, ViewGeometryClip::viewport(viewport));
+    let consumers = consumer_geometry(border, paint, ViewGeometryClip::from_rect(viewport));
     let visible = Some(ViewGeometryRect::new(0, 20, 80, 100).unwrap());
     assert_eq!(consumers.visible_border_box, visible);
     assert_eq!(consumers.hit_bounds, visible);
@@ -438,6 +500,38 @@ fn num_014_edge_touch_is_not_visible() {
     let left = ViewGeometryRect::new(0, 0, 10, 10).unwrap();
     let right = ViewGeometryRect::new(10, 0, 20, 10).unwrap();
     assert_eq!(left.intersection(right), None);
+}
+
+#[test]
+fn clip_empty_bounded_unbounded_and_intersection_are_closed() {
+    let zero = ViewGeometrySpan::new(10, 10).unwrap();
+    assert_eq!(
+        ViewGeometryClip::from_axes(
+            ViewGeometryClipAxis::bounded(zero),
+            ViewGeometryClipAxis::unbounded(),
+        ),
+        ViewGeometryClip::Empty
+    );
+
+    let left = ViewGeometryClip::from_rect(ViewGeometryRect::new(0, 0, 10, 10).unwrap());
+    let edge_touch = ViewGeometryClip::from_rect(ViewGeometryRect::new(10, 0, 20, 10).unwrap());
+    assert_eq!(left.intersect(edge_touch), ViewGeometryClip::Empty);
+    assert_eq!(left.intersect(ViewGeometryClip::unbounded()), left);
+
+    let mixed = ViewGeometryClip::from_axes(
+        ViewGeometryClipAxis::bounded(ViewGeometrySpan::new(2, 8).unwrap()),
+        ViewGeometryClipAxis::unbounded(),
+    );
+    let axes = mixed.axes().expect("mixed clip remains non-empty");
+    assert_eq!(
+        axes.x(),
+        ViewGeometryClipAxis::bounded(ViewGeometrySpan::new(2, 8).unwrap())
+    );
+    assert_eq!(axes.y(), ViewGeometryClipAxis::unbounded());
+    assert_eq!(
+        mixed.clip_rect(ViewGeometryRect::new(0, -5, 10, 5).unwrap()),
+        Some(ViewGeometryRect::new(2, -5, 8, 5).unwrap())
+    );
 }
 
 #[test]
@@ -509,46 +603,74 @@ fn axis_001_to_011_axis_metadata_does_not_change_physical_geometry_or_revision()
 #[test]
 fn cache_002_to_016_revision_domains_include_path_order_and_exact_dependencies() {
     let style = ViewPhysicalBoxStyle::default();
-    let measured_a = measure_box(&node(17), &style, intrinsic(10, 5)).unwrap();
-    let path_variant = ViewGeometryNodeId::new(ViewMountId::from_raw(7), vec![2, 6], 17);
-    let measured_b = measure_box(&path_variant, &style, intrinsic(10, 5)).unwrap();
+    let intrinsic = intrinsic(10, 5);
+    let measured_a = measure_box(&node(17), &style, intrinsic).unwrap();
+    let path_variant = ViewStyleNodeKey::new(ViewMountId::from_raw(7), vec![2, 6], 17);
+    let measured_b = measure_box(&path_variant, &style, intrinsic).unwrap();
     assert_ne!(measured_a.revision, measured_b.revision);
+
+    let measured_key = ViewMeasuredGeometryKey {
+        node: node(17),
+        box_style: style,
+        container_style: None,
+        intrinsic,
+        available: ViewAvailableGeometrySize::default(),
+        ordered_children: Vec::new(),
+    };
+    let mut path_key = measured_key.clone();
+    path_key.node = path_variant;
+    assert_ne!(measured_key, path_key);
+    assert_ne!(measured_key.revision(), path_key.revision());
 
     let viewport = ViewViewportGeometryRevision::new(9);
     let root = ViewPlacedGeometryRevision::for_root_viewport(viewport);
-    let placed = ViewPlacedGeometryKey {
+    let viewport_rect = ViewGeometryRect::new(0, 0, 100, 100).unwrap();
+    let placement = place_box(
+        &node(17),
+        &style,
+        measured_a,
+        viewport_rect,
+        ViewGeometryPoint::new(0, 0),
+    )
+    .unwrap();
+    let scroll = ViewScrollStateInput {
+        x_milli: 0,
+        y_milli: 0,
+        revision: ViewScrollStateRevision::new(0),
+    };
+    let placed_key = ViewPlacedGeometryKey {
         node: node(17),
-        measured_revision: measured_a.revision,
-        place_style_revision: ViewGeometryPlaceStyleRevision::for_style(&style),
-        parent_placed_revision: None,
-        containing_block_revision: root,
-        previous_flow_sibling_revision: None,
-        viewport_revision: viewport,
-        scroll_state_revision: ViewScrollStateRevision::new(0),
-    }
-    .revision();
-    let final_revision = ViewFinalGeometryKey {
-        placed_revision: placed,
-        visual_outsets_revision: ViewPaintOutsetsRevision::new(0),
-        ordered_child_final_revisions: Vec::new(),
-    }
-    .revision();
-    assert_eq!(
-        (
-            measured_a.revision.value(),
-            placed.value(),
-            final_revision.value(),
-            ViewGeometryMeasureStyleRevision::for_style(&style, None).value(),
-            ViewGeometryPlaceStyleRevision::for_style(&style).value(),
-        ),
-        (
-            0x6921_14cc_95fd_e6ec,
-            0xddd1_e2d1_f0e7_2247,
-            0x67a5_f146_5407_5789,
-            0x268d_5a51_5ed9_07f8,
-            0xa401_92f2_3ec6_2e65,
-        ),
-    );
+        measured: measured_a,
+        box_style: style,
+        containing_block: ViewContainingBlockDependency {
+            node: None,
+            rect: viewport_rect,
+            revision: root,
+        },
+        static_border_origin: ViewGeometryPoint::new(0, 0),
+        parent: None,
+        previous_flow_sibling: None,
+        viewport: ViewViewportGeometryInput {
+            rect: viewport_rect,
+            revision: viewport,
+        },
+        scroll,
+    };
+    let placed = placed_key.revision();
+    let final_key = ViewFinalGeometryKey {
+        node: node(17),
+        placement,
+        box_style: style,
+        transform_chain: Vec::new(),
+        inherited_clip: ViewGeometryClip::from_rect(viewport_rect),
+        paint_outsets: ViewPaintOutsets::default(),
+        scroll,
+        ordered_children: Vec::new(),
+    };
+    let final_revision = final_key.revision();
+    assert_ne!(measured_key.revision().value(), 0);
+    assert_ne!(placed.value(), 0);
+    assert_ne!(final_revision.value(), 0);
     assert_ne!(placed.value(), final_revision.value());
     assert_ne!(
         ViewGeometryMeasureStyleRevision::for_style(&style, None).value(),

@@ -120,13 +120,17 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
                 choice.bounds
             ))
             .collect::<Vec<_>>(),
+        // The authored dialogue surface bounds are intrinsic input, not final
+        // placement. The committed physical geometry places the root surface
+        // at the viewport origin, so choice avoidance uses the canonical
+        // top-clamped flow positions shared by Web and headless consumers.
         vec![
             (
                 "choice.web_demo.continue",
                 "このまま進む",
                 WebFrameBounds {
                     x_milli: 307_200,
-                    y_milli: 306_800,
+                    y_milli: 36_000,
                     width_milli: 665_600,
                     height_milli: 60_000,
                 },
@@ -136,7 +140,7 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
                 "別ルートを見る",
                 WebFrameBounds {
                     x_milli: 307_200,
-                    y_milli: 378_800,
+                    y_milli: 108_000,
                     width_milli: 665_600,
                     height_milli: 60_000,
                 },
@@ -193,9 +197,9 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
         .register_with_planner(&mut planner)
         .expect("project fonts register");
     let mut input = InputController::default();
-    let prepared = planner
-        .prepare(
-            &mut input,
+    let candidate = planner
+        .prepare_candidate(
+            &input,
             PlayerFrameRequest {
                 presentation: &second.presentation,
                 fx_definitions: &bundle.fx_definitions,
@@ -212,7 +216,12 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
                 preferences: RenderPreferences::default(),
             },
         )
-        .expect("shared Fx frame prepares")
+        .expect("shared Fx frame prepares");
+    let prepared = planner
+        .publication_guard()
+        .publish_with(candidate, &mut input, |_| ())
+        .expect("shared Fx frame publishes")
+        .0
         .frame;
 
     assert!(
@@ -377,6 +386,10 @@ fn web_frame_report_uses_visible_bounds_for_scroll_clipped_images() {
             bounds: HitRect::new(100.0, 100.0, 160.0, 80.0),
             content_width: 240.0,
             content_height: 260.0,
+            min_offset_x: 0.0,
+            max_offset_x: 0.0,
+            min_offset_y: 0.0,
+            max_offset_y: 180.0,
             offset_x: 0.0,
             offset_y: 60.0,
             overscroll_x: 0.0,
