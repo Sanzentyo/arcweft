@@ -41,6 +41,9 @@ flow @flow.main main {
     let project: String = project_value(1i32)
     let standard: String = standard_value(2i32)
     let adapter: String = adapter_value(3i32)
+    let dotted: String = custom.read(path = "opening.txt")
+    let item: Vec<i32> = [1i32, 2i32]
+    let item_len: usize = item.len()
 }
 "#;
 
@@ -80,7 +83,11 @@ impl ResolverFixture {
     }
 
     fn resolve(&self, name: &str) -> ResolveCallOutcome {
-        let path = callable_path(name);
+        self.resolve_path(&[name])
+    }
+
+    fn resolve_path(&self, segments: &[&str]) -> ResolveCallOutcome {
+        let path = callable_path(segments);
         let lexical = LexicalCallableScope::default();
         let module = CanonicalModulePath::crate_root();
         let cancellation = AtomicBool::new(false);
@@ -114,7 +121,7 @@ fn free_resolver_returns_project_standard_and_adapter_candidates() {
     assert!(matches!(
         project.origin(),
         SignatureOrigin::Project { path, .. }
-            if path.path() == &callable_path("project_value")
+            if path.path() == &callable_path(&["project_value"])
     ));
     assert!(matches!(project.id(), CallableCandidateId::Project(_)));
 
@@ -134,6 +141,13 @@ fn free_resolver_returns_project_standard_and_adapter_candidates() {
         SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
     ));
     assert!(matches!(adapter.id(), CallableCandidateId::Environment(_)));
+
+    let dotted = resolved_candidate(fixture.resolve_path(&["custom", "read"]));
+    assert!(matches!(
+        dotted.origin(),
+        SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
+    ));
+    assert!(matches!(dotted.id(), CallableCandidateId::Environment(_)));
 }
 
 #[test]
@@ -153,7 +167,7 @@ fn project_non_callable_binding_stops_environment_fallback() {
 #[test]
 fn resolver_request_rejects_wrong_source_and_span() {
     let fixture = ResolverFixture::new();
-    let path = callable_path("project_value");
+    let path = callable_path(&["project_value"]);
     let lexical = LexicalCallableScope::default();
     let module = CanonicalModulePath::crate_root();
     let cancellation = AtomicBool::new(false);
@@ -209,7 +223,7 @@ fn resolver_request_rejects_wrong_source_and_span() {
 #[test]
 fn resolver_cancellation_is_fail_closed() {
     let fixture = ResolverFixture::new();
-    let path = callable_path("adapter_value");
+    let path = callable_path(&["adapter_value"]);
     let lexical = LexicalCallableScope::default();
     let module = CanonicalModulePath::crate_root();
     let cancellation = AtomicBool::new(true);
@@ -239,7 +253,7 @@ fn resolver_cancellation_is_fail_closed() {
 fn resolver_request_rejects_symbols_from_another_accepted_world() {
     let fixture = ResolverFixture::new();
     let other = ResolverFixture::with_profile("callable-resolver-other-world");
-    let path = callable_path("project_value");
+    let path = callable_path(&["project_value"]);
     let lexical = LexicalCallableScope::default();
     let module = CanonicalModulePath::crate_root();
     let cancellation = AtomicBool::new(false);
@@ -267,7 +281,7 @@ fn resolver_request_rejects_symbols_from_another_accepted_world() {
 #[test]
 fn resolver_zero_work_limit_rejects_before_returning_candidates() {
     let fixture = ResolverFixture::new();
-    let path = callable_path("project_value");
+    let path = callable_path(&["project_value"]);
     let lexical = LexicalCallableScope::default();
     let module = CanonicalModulePath::crate_root();
     let cancellation = AtomicBool::new(false);
@@ -302,12 +316,29 @@ fn resolver_zero_work_limit_rejects_before_returning_candidates() {
 }
 
 #[test]
-fn registered_checker_accepts_project_standard_and_adapter_only_calls() {
+fn registered_checker_accepts_project_standard_single_and_dotted_adapter_calls() {
     let fixture = ResolverFixture::new();
     let report = analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world);
     assert!(
         report.diagnostics.is_empty(),
         "unexpected registered-call diagnostics: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn registered_checker_keeps_local_receiver_over_same_spelled_dotted_free_candidate() {
+    let fixture = ResolverFixture::new();
+    let candidate = resolved_candidate(fixture.resolve_path(&["item", "len"]));
+    assert!(matches!(
+        candidate.origin(),
+        SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
+    ));
+
+    let report = analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world);
+    assert!(
+        report.diagnostics.is_empty(),
+        "local Vec receiver must retain selected-call ownership: {:?}",
         report.diagnostics
     );
 }
@@ -320,26 +351,77 @@ fn resolved_candidate(outcome: ResolveCallOutcome) -> super::ResolvedCallable {
     candidates.first().clone()
 }
 
-fn callable_path(name: &str) -> CallablePath {
-    CallablePath::try_new([CallableName::try_new(name).expect("callable name")])
-        .expect("callable path")
+fn callable_path(segments: &[&str]) -> CallablePath {
+    CallablePath::try_new(
+        segments
+            .iter()
+            .map(|name| CallableName::try_new(*name).expect("callable name")),
+    )
+    .expect("callable path")
 }
 
 fn adapter_publication() -> EnvironmentCallablePublication {
     let owner = EnvironmentCallableOwner::Adapter(
         AdapterPackageId::try_new("adapter.resolver").expect("adapter id"),
     );
+    let schema = ordinary_single_parameter_schema("value", TypeKind::I32, TypeKind::String);
+    let single = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(callable_path(&["adapter_value"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        schema.clone(),
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
+    )
+    .expect("adapter record");
+    let dotted = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(callable_path(&["custom", "read"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        ordinary_single_parameter_schema("path", TypeKind::String, TypeKind::String),
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(1).expect("declaration ordinal"),
+    )
+    .expect("dotted adapter record");
+    let receiver_collision = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(callable_path(&["item", "len"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        schema,
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(2).expect("declaration ordinal"),
+    )
+    .expect("receiver collision adapter record");
+    EnvironmentCallablePublication::try_new(
+        owner,
+        vec![single, dotted, receiver_collision],
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("adapter publication")
+}
+
+fn ordinary_single_parameter_schema(
+    name: &str,
+    parameter_type: TypeKind,
+    result: TypeKind,
+) -> CallableSignatureSchema {
     let parameter = CallableParameter::try_new(
         CallableParameterIndex::try_from_usize(0).expect("parameter index"),
-        Some(CallableName::try_new("value").expect("parameter name")),
-        CallableParameterType::Exact(TypeKind::I32),
+        Some(CallableName::try_new(name).expect("parameter name")),
+        CallableParameterType::Exact(parameter_type),
         CallableParameterPassing::PositionalOrNamed,
         CallableParameterPresence::Required,
         None,
         None,
     )
     .expect("parameter");
-    let schema = CallableSignatureSchema::try_new(
+    CallableSignatureSchema::try_new(
         vec![
             CallableParameterGroup::try_new(
                 CallableGroupIndex::ZERO,
@@ -349,7 +431,7 @@ fn adapter_publication() -> EnvironmentCallablePublication {
             )
             .expect("parameter group"),
         ],
-        TypeKind::String,
+        result,
         CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::new())),
         CallableArgumentPolicy::new(
             UnknownNamedArgumentPolicy::Reject,
@@ -358,18 +440,5 @@ fn adapter_publication() -> EnvironmentCallablePublication {
         CallableValidator::Ordinary,
         &PRODUCTION_CALLABLE_LIMITS,
     )
-    .expect("adapter schema");
-    let record = EnvironmentCallablePublicationRecord::try_new(
-        EnvironmentCallableKind::Function,
-        CallableLookupKey::Free(callable_path("adapter_value")),
-        CallableOverloadIndex::try_from_usize(0).expect("overload"),
-        schema,
-        CallableDocumentation::missing(),
-        None,
-        None,
-        EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
-    )
-    .expect("adapter record");
-    EnvironmentCallablePublication::try_new(owner, vec![record], &PRODUCTION_CALLABLE_LIMITS)
-        .expect("adapter publication")
+    .expect("adapter schema")
 }

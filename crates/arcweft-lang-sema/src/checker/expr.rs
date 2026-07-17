@@ -729,11 +729,9 @@ impl TypeChecker<'_> {
         {
             return Some(ty);
         }
-        if let Expr::Path(path) = callee {
-            match self.check_registered_catalog_free_call(path, args, expected, expression_id) {
-                registered_call::RegisteredFreeCallOutcome::NotHandled => {}
-                registered_call::RegisteredFreeCallOutcome::Checked(result) => return result,
-            }
+        match self.check_registered_catalog_free_call(callee, args, expected, expression_id) {
+            registered_call::RegisteredFreeCallOutcome::NotHandled => {}
+            registered_call::RegisteredFreeCallOutcome::Checked(result) => return result,
         }
         if self.registered_world.is_none()
             && let Some(name) = expr_path_label(callee)

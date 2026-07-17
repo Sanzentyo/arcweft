@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath,
-    expr::{CallArg, DottedPath, Expr},
+    expr::{CallArg, Expr},
 };
 
 use super::{TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
@@ -30,27 +30,25 @@ pub(super) enum RegisteredFreeCallOutcome {
 impl TypeChecker<'_> {
     pub(super) fn check_registered_catalog_free_call(
         &mut self,
-        callee: &DottedPath,
+        callee: &Expr,
         args: &[CallArg],
         expected: Option<&TypeKind>,
         expression: TypeExpressionId,
     ) -> RegisteredFreeCallOutcome {
-        let Some(world) = self.registered_world else {
-            return RegisteredFreeCallOutcome::NotHandled;
-        };
-        let Some(symbols) = self.project_symbols else {
+        let (Some(world), Some(symbols)) = (self.registered_world, self.project_symbols) else {
             return RegisteredFreeCallOutcome::NotHandled;
         };
         let Some(path) = callable_path(callee) else {
             return RegisteredFreeCallOutcome::NotHandled;
         };
 
-        if let [name] = callee.segments()
+        if self.registered_free_path_has_value_receiver(callee, &path) {
+            return RegisteredFreeCallOutcome::NotHandled;
+        }
+
+        if let [name] = path.segments()
             && self
-                .locals
-                .get(name.as_str())
-                .or_else(|| self.global_symbols.get(name.as_str()))
-                .or_else(|| self.env.symbol_type(name.as_str()))
+                .symbol_type(name.as_str())
                 .is_some_and(is_deferred_callable_value)
         {
             return RegisteredFreeCallOutcome::NotHandled;
@@ -76,7 +74,8 @@ impl TypeChecker<'_> {
             .unwrap_or_else(CanonicalModulePath::crate_root);
         let Some(document) = symbols.source_identity(&module) else {
             self.errors.push(TypeCheckError::new(format!(
-                "call `{callee}` has no accepted source identity"
+                "call `{}` has no accepted source identity",
+                path.leaf().as_str()
             )));
             for arg in args {
                 self.check_expr(arg.value());
@@ -112,14 +111,15 @@ impl TypeChecker<'_> {
         match crate::callable::resolve_call_target(request) {
             ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
                 RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidates(
-                    callee.as_label(),
+                    path.leaf().as_str(),
                     &candidates,
                     args,
                 )))
             }
             ResolveCallOutcome::Resolved(ResolvedCallTarget::NonCallable(target)) => {
                 self.errors.push(TypeCheckError::new(format!(
-                    "`{callee}` resolves to non-callable type {:?}",
+                    "`{}` resolves to non-callable type {:?}",
+                    path.leaf().as_str(),
                     target.ty()
                 )));
                 for arg in args {
@@ -137,6 +137,15 @@ impl TypeChecker<'_> {
                 RegisteredFreeCallOutcome::Checked(None)
             }
         }
+    }
+
+    fn registered_free_path_has_value_receiver(&self, callee: &Expr, path: &CallablePath) -> bool {
+        matches!(callee, Expr::Select(_))
+            && path.len() > 1
+            && path
+                .segments()
+                .first()
+                .is_some_and(|root| self.symbol_type(root.as_str()).is_some())
     }
 
     fn check_registered_candidates(
@@ -417,15 +426,31 @@ impl TypeChecker<'_> {
     }
 }
 
-fn callable_path(path: &DottedPath) -> Option<CallablePath> {
-    CallablePath::try_new(
-        path.segments()
-            .iter()
-            .map(|segment| CallableName::try_new(segment.as_str()))
-            .collect::<Result<Vec<_>, _>>()
-            .ok()?,
-    )
-    .ok()
+fn callable_path(callee: &Expr) -> Option<CallablePath> {
+    let mut segments = Vec::new();
+    collect_callable_path_segments(callee, &mut segments)?;
+    CallablePath::try_new(segments).ok()
+}
+
+fn collect_callable_path_segments(callee: &Expr, segments: &mut Vec<CallableName>) -> Option<()> {
+    match callee {
+        Expr::Path(path) => {
+            segments.extend(
+                path.segments()
+                    .iter()
+                    .map(|segment| CallableName::try_new(segment.as_str()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .ok()?,
+            );
+            Some(())
+        }
+        Expr::Select(select) => {
+            collect_callable_path_segments(select.target(), segments)?;
+            segments.push(CallableName::try_new(select.member().as_str()).ok()?);
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 fn is_deferred_callable_value(ty: &TypeKind) -> bool {

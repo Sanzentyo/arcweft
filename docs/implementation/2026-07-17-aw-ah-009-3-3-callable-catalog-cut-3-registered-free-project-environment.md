@@ -39,6 +39,15 @@ current positional/named/fixed-literal-spread/typed-rest, required/default,
 result, and effect behavior for this path. Virtual-path validation remains a
 validator attached to the resolved ordinary candidate.
 
+The checker surface accepts a free `CallablePath` only by recursively walking
+structured `Expr::Path` and `Expr::Select` nodes and validating every retained
+segment as `CallableName`. It does not split or reparse a rendered path. This
+connects parser-produced `custom.read(...)` selectors to the exact two-segment
+adapter catalog key. A selector whose root already has lexical/value type
+evidence remains owned by selected-call checking, so a local `item.len()` is
+not captured by a same-spelled environment free candidate `item.len`.
+Non-path receiver expressions never enter the free resolver probe.
+
 In registered mode, the former successful `TypeCheckEnv` function-map lookup
 is no longer a fallback for this migrated path. The direct adapter-only test is
 not present in that map and therefore proves successful catalog consumption.
@@ -49,6 +58,10 @@ later complete legacy-deletion cut.
 Direct resolver tests prove:
 
 - typed project, standard, and adapter candidate IDs and origins;
+- single-segment and two-segment adapter free candidates plus registered
+  checker success for both shapes;
+- selected-call precedence for a local `Vec<i32>` receiver when an environment
+  dotted free candidate has the same `item.len` spelling;
 - terminal project non-callable shadowing;
 - rejection of the wrong accepted document and a span owned by another
   document;
@@ -96,13 +109,13 @@ cargo clippy -p arcweft-lang-sema --all-targets -- -D warnings
   PASS
 
 cargo test -p arcweft-lang-sema callable::resolver_tests --no-fail-fast
-  PASS — 7 tests, 0 failed
+  PASS — 8 tests, 0 failed
 
 cargo test -p arcweft-lang-sema --lib --no-fail-fast
-  PASS — 674 tests, 0 failed
+  PASS — 675 tests, 0 failed
 
 cargo +nightly -Zscript tools/structure-audit.rs --root .
-  PASS — 3,158 files, 1,588 Rust files, 726,536 Rust physical LOC,
+  PASS — 3,158 files, 1,588 Rust files, 726,628 Rust physical LOC,
   0 errors and 128 warnings
 
 jj diff --git --color never |
@@ -123,17 +136,17 @@ module selected by `callable.rs` under `#[cfg(test)]`.
 | `src/callable/catalog.rs` | 16,205 | 467 | production; immutable catalog reads |
 | `src/callable/limits.rs` | 8,088 | 277 | production; exact build/query work accounting |
 | `src/callable/resolver.rs` | 35,226 | 1,104 | production; validated request, free probes, typed resolver products |
-| `src/callable/resolver_tests.rs` | 13,234 | 375 | unit test; resolver/request/catalog/checker behavior |
+| `src/callable/resolver_tests.rs` | 15,797 | 444 | unit test; resolver/request/catalog/checker behavior |
 | `src/callable.rs` | 4,421 | 85 | production facade; intentional crate-private resolver surface |
 | `src/checker/expr/callable.rs` | 16,808 | 440 | production; function-value/path call checking boundary |
-| `src/checker/expr/registered_call.rs` | 18,318 | 501 | production; registered candidate argument/effect validation |
-| `src/checker/expr.rs` | 95,302 | 2,494 | production hotspot; expression dispatch, touched only to delegate registered free calls |
+| `src/checker/expr/registered_call.rs` | 19,208 | 526 | production; structural free-path extraction and registered candidate validation |
+| `src/checker/expr.rs` | 95,235 | 2,492 | production hotspot; expression dispatch, touched only to delegate registered free calls |
 | `src/checker/module.rs` | 88,842 | 2,343 | production hotspot; module analysis orchestration, touched only to pass the accepted world |
 | `src/checker.rs` | 63,331 | 1,763 | production hotspot; checker state/construction, touched only to retain the accepted world |
 
 The canonical audit reports the last three files as existing warning-level
 size hotspots. This cut does not add their resolver implementation inline:
-the new 501-line `registered_call` responsibility module owns that work, and
+the 526-line `registered_call` responsibility module owns that work, and
 the 1,104-line resolver remains below the 1,200-line production warning
 threshold. The largest non-generated workspace Rust file is the existing
 7,970-line CLI integration test
