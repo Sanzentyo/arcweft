@@ -237,38 +237,60 @@ impl LineIndex {
 mod tests {
     use super::normalize_parse_errors;
     use crate::ast::common::TextRange;
-    use crate::parser::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
+    use crate::parser::recovery::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion};
     use arcweft_source::DiagnosticApplicability;
 
     #[test]
     fn parse_errors_are_sorted_and_exact_duplicates_are_removed() {
-        let duplicate = ParseError::coded("syntax.beta", TextRange::new(2, 4), "beta");
+        let duplicate = ParseError::new_with_kind(
+            ParseErrorKind::Generic,
+            TextRange::new(2, 4),
+            Vec::new(),
+            None,
+            "generic".to_owned(),
+            Vec::new(),
+        );
         let mut errors = vec![
-            ParseError::coded("syntax.zeta", TextRange::new(8, 9), "zeta"),
+            ParseError::new_with_kind(
+                ParseErrorKind::ViewPartInvalidLocalName,
+                TextRange::new(2, 4),
+                Vec::new(),
+                None,
+                "view".to_owned(),
+                Vec::new(),
+            ),
             duplicate.clone(),
-            ParseError::coded("syntax.alpha", TextRange::new(2, 4), "alpha"),
+            ParseError::new_with_kind(
+                ParseErrorKind::AssertionInvalidArgument,
+                TextRange::new(2, 4),
+                Vec::new(),
+                None,
+                "assertion".to_owned(),
+                Vec::new(),
+            ),
             duplicate,
         ];
 
         normalize_parse_errors(&mut errors);
 
         assert_eq!(errors.len(), 3);
-        assert_eq!(errors[0].code(), "syntax.alpha");
-        assert_eq!(errors[1].code(), "syntax.beta");
-        assert_eq!(errors[2].code(), "syntax.zeta");
+        assert_eq!(errors[0].kind(), ParseErrorKind::AssertionInvalidArgument);
+        assert_eq!(errors[1].kind(), ParseErrorKind::Generic);
+        assert_eq!(errors[2].kind(), ParseErrorKind::ViewPartInvalidLocalName);
     }
 
     #[test]
     fn parse_errors_with_different_recovery_evidence_are_not_deduplicated() {
-        let plain = ParseError::new(
+        let plain = ParseError::new_with_kind(
+            ParseErrorKind::Generic,
             TextRange::new(2, 4),
             vec!["value".to_owned()],
             Some("token".to_owned()),
             "same message".to_owned(),
             Vec::new(),
-        )
-        .with_code("syntax.same");
-        let recovered = ParseError::new(
+        );
+        let recovered = ParseError::new_with_kind(
+            ParseErrorKind::Generic,
             TextRange::new(2, 4),
             vec!["value".to_owned()],
             Some("token".to_owned()),
@@ -278,8 +300,7 @@ mod tests {
                     .with_edit(RecoveryEdit::new(TextRange::new(2, 4), "value"))
                     .with_applicability(DiagnosticApplicability::MachineApplicable),
             ],
-        )
-        .with_code("syntax.same");
+        );
         let mut errors = vec![recovered.clone(), plain.clone(), recovered];
 
         normalize_parse_errors(&mut errors);

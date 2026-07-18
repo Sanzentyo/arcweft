@@ -6,8 +6,7 @@ use crate::ast::view::{
 };
 use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
-use super::super::headers::simple_error;
-use super::super::recovery::ParseError;
+use super::super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::ViewSourceLine;
 
 struct ParsedExportNames<'a> {
@@ -39,11 +38,14 @@ pub(super) fn parse_export(
     if token(0).is_none_or(|(text, _)| text != "export")
         || token(1).is_none_or(|(text, _)| text != "part")
     {
-        errors.push(export_error(
+        let expected = "part local as public";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewExportPartMissingPart,
             TextRange::new(line.start, line.end),
-            "view::export_part_missing_part",
-            "View part export needs `part` before its private local target",
-            "part local as public",
+            vec![expected.to_owned()],
+            None,
+            "View part export needs `part` before its private local target".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     }
@@ -51,19 +53,23 @@ pub(super) fn parse_export(
     let names = parse_export_names(&tokens, declaration_end, errors)?;
     if let Some((trailing, trailing_range)) = token(5) {
         let duplicate_as = trailing == "as" || tokens.iter().skip(5).any(|(text, _)| *text == "as");
-        errors.push(export_error(
-            TextRange::new(trailing_range.start(), declaration_end),
+        let expected = "end of declaration";
+        errors.push(ParseError::new_with_kind(
             if duplicate_as {
-                "view::export_part_duplicate_as"
+                ParseErrorKind::ViewExportPartDuplicateAs
             } else {
-                "view::export_part_trailing_syntax"
+                ParseErrorKind::ViewExportPartTrailingSyntax
             },
+            TextRange::new(trailing_range.start(), declaration_end),
+            vec![expected.to_owned()],
+            None,
             if duplicate_as {
                 "View part export contains more than one `as`"
             } else {
                 "View part export has trailing syntax"
-            },
-            "end of declaration",
+            }
+            .to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     }
@@ -94,67 +100,86 @@ fn parse_export_names<'a>(
 ) -> Option<ParsedExportNames<'a>> {
     let token = |index: usize| tokens.get(index).copied();
     let Some((local, local_range)) = token(2) else {
-        errors.push(export_error(
+        let expected = "local part name";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewExportPartMissingLocal,
             TextRange::new(line_end, line_end),
-            "view::export_part_missing_local",
-            "View part export needs a private local target name",
-            "local part name",
+            vec![expected.to_owned()],
+            None,
+            "View part export needs a private local target name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     };
     if local == "as" || !valid_name(local) {
         let missing = local == "as";
-        errors.push(export_error(
-            local_range,
+        let expected = "local part name";
+        errors.push(ParseError::new_with_kind(
             if missing {
-                "view::export_part_missing_local"
+                ParseErrorKind::ViewExportPartMissingLocal
             } else {
-                "view::export_part_invalid_local_name"
+                ParseErrorKind::ViewExportPartInvalidLocalName
             },
+            local_range,
+            vec![expected.to_owned()],
+            None,
             if missing {
                 "View part export needs a private local target before `as`"
             } else {
                 "View part export target must be an unqualified dotted name"
-            },
-            "local part name",
+            }
+            .to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     }
 
     let Some((as_keyword, as_range)) = token(3) else {
-        errors.push(export_error(
+        let expected = "as public_name";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewExportPartMissingAs,
             TextRange::new(line_end, line_end),
-            "view::export_part_missing_as",
-            "View part export needs `as` before its public name",
-            "as public_name",
+            vec![expected.to_owned()],
+            None,
+            "View part export needs `as` before its public name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     };
     if as_keyword != "as" {
-        errors.push(export_error(
+        let expected = "as public_name";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewExportPartMissingAs,
             as_range,
-            "view::export_part_missing_as",
-            "View part export needs `as` before its public name",
-            "as public_name",
+            vec![expected.to_owned()],
+            None,
+            "View part export needs `as` before its public name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     }
 
     let Some((public, public_range)) = token(4) else {
-        errors.push(export_error(
+        let expected = "public part name";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewExportPartMissingPublic,
             TextRange::new(line_end, line_end),
-            "view::export_part_missing_public",
-            "View part export needs a public capability name",
-            "public part name",
+            vec![expected.to_owned()],
+            None,
+            "View part export needs a public capability name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     };
     if !valid_name(public) {
-        errors.push(export_error(
+        let expected = "public part name";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewExportPartInvalidPublicName,
             public_range,
-            "view::export_part_invalid_public_name",
-            "View part export public name must be an unqualified dotted name",
-            "public part name",
+            vec![expected.to_owned()],
+            None,
+            "View part export public name must be an unqualified dotted name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
         ));
         return None;
     }
@@ -166,16 +191,6 @@ fn parse_export_names<'a>(
         public,
         public_range,
     })
-}
-
-fn export_error(range: TextRange, code: &str, message: &str, expected: &str) -> ParseError {
-    simple_error(
-        range.start(),
-        range.end().saturating_sub(range.start()),
-        message,
-        expected,
-    )
-    .with_code(code)
 }
 
 pub(super) fn parse_label(
@@ -194,42 +209,45 @@ pub(super) fn parse_label(
             .saturating_add(value_offset + value.len()),
     );
     if value.is_empty() {
-        errors.push(
-            simple_error(
-                value_range.start(),
-                0,
-                "View `.part(...)` needs one private local name",
-                ".part(local_name)",
-            )
-            .with_code("view::part_missing_name"),
-        );
+        let expected = ".part(local_name)";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewPartMissingName,
+            TextRange::new(value_range.start(), value_range.start()),
+            vec![expected.to_owned()],
+            None,
+            "View `.part(...)` needs one private local name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+        ));
         return None;
     }
     if let Some(trailing_offset) = value.find(char::is_whitespace) {
         let trailing_start = value[trailing_offset..]
             .find(|character: char| !character.is_whitespace())
             .map_or(value.len(), |offset| trailing_offset + offset);
-        errors.push(
-            simple_error(
+        let expected = ".part(local_name)";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewPartTrailingSyntax,
+            TextRange::new(
                 value_range.start().saturating_add(trailing_start),
-                value.len().saturating_sub(trailing_start),
-                "View `.part(...)` has trailing syntax",
-                ".part(local_name)",
-            )
-            .with_code("view::part_trailing_syntax"),
-        );
+                value_range.end(),
+            ),
+            vec![expected.to_owned()],
+            None,
+            "View `.part(...)` has trailing syntax".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+        ));
         return None;
     }
     if !valid_name(value) {
-        errors.push(
-            simple_error(
-                value_range.start(),
-                value_range.end().saturating_sub(value_range.start()),
-                "View `.part(...)` needs one unqualified dotted name",
-                ".part(local_name)",
-            )
-            .with_code("view::part_invalid_local_name"),
-        );
+        let expected = ".part(local_name)";
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::ViewPartInvalidLocalName,
+            value_range,
+            vec![expected.to_owned()],
+            None,
+            "View `.part(...)` needs one unqualified dotted name".to_owned(),
+            vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+        ));
         return None;
     }
     Some(ViewPartModifier::new(

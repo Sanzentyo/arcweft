@@ -72,6 +72,18 @@ pub enum DiagnosticApplicability {
     Unspecified,
 }
 
+impl DiagnosticApplicability {
+    /// Stable protocol-facing spelling for this applicability class.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MachineApplicable => "machine_applicable",
+            Self::MaybeIncorrect => "maybe_incorrect",
+            Self::HasPlaceholders => "has_placeholders",
+            Self::Unspecified => "unspecified",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceEdit {
     span: SourceSpan,
@@ -298,6 +310,23 @@ mod tests {
         DiagnosticSeverity, DiagnosticSuggestion, SourceEdit,
     };
     use crate::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+
+    #[test]
+    fn diagnostic_applicability_has_stable_protocol_spellings() {
+        assert_eq!(
+            DiagnosticApplicability::MachineApplicable.as_str(),
+            "machine_applicable"
+        );
+        assert_eq!(
+            DiagnosticApplicability::MaybeIncorrect.as_str(),
+            "maybe_incorrect"
+        );
+        assert_eq!(
+            DiagnosticApplicability::HasPlaceholders.as_str(),
+            "has_placeholders"
+        );
+        assert_eq!(DiagnosticApplicability::Unspecified.as_str(), "unspecified");
+    }
 
     #[test]
     fn diagnostic_preserves_revision_bound_span() {

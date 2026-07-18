@@ -5,16 +5,18 @@ use crate::ast::common::TextRange;
 use crate::cst::{find_matching_punctuation, split_top_level_punctuation};
 use crate::expr::{Expr, parse_expr_at};
 
+use super::recovery::ParseErrorKind;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AssertionParseError {
-    code: &'static str,
+    kind: ParseErrorKind,
     range: TextRange,
     message: &'static str,
 }
 
 impl AssertionParseError {
-    pub(super) const fn code(&self) -> &'static str {
-        self.code
+    pub(super) const fn kind(&self) -> ParseErrorKind {
+        self.kind
     }
 
     pub(super) const fn range(&self) -> TextRange {
@@ -63,7 +65,7 @@ fn parse_assertion_mode(
     let mut cursor = skip_horizontal_trivia(source, cursor, base)?;
     if !source[cursor..].starts_with('.') {
         return Err(error(
-            "syntax.assert.unknown_mode",
+            ParseErrorKind::AssertionUnknownMode,
             base + cursor,
             base + cursor,
             "assertion statement requires `.prove`, `.check`, or `.debug`",
@@ -80,7 +82,7 @@ fn parse_assertion_mode(
     let mode_range = TextRange::new(base + mode_start, base + cursor);
     let Some(mode) = AssertionMode::from_keyword(&source[mode_start..cursor]) else {
         return Err(AssertionParseError {
-            code: "syntax.assert.unknown_mode",
+            kind: ParseErrorKind::AssertionUnknownMode,
             range: mode_range,
             message: "unknown assertion mode",
         });
@@ -96,7 +98,7 @@ fn parse_assertion_conditions(
 ) -> Result<(Vec<Expr>, usize, usize), AssertionParseError> {
     if !source[cursor..].starts_with('(') {
         return Err(error(
-            "syntax.assert.invalid_argument",
+            ParseErrorKind::AssertionInvalidArgument,
             base + cursor,
             base + cursor,
             "assertion mode must be followed by an argument list on the same logical line",
@@ -105,7 +107,7 @@ fn parse_assertion_conditions(
     let open = cursor;
     let Some(close) = find_matching_punctuation(source, open, '(', ')') else {
         return Err(error(
-            "syntax.assert.unclosed_arguments",
+            ParseErrorKind::AssertionUnclosedArguments,
             base + source.len(),
             base + source.len(),
             "assertion argument list is missing `)`",
@@ -116,7 +118,7 @@ fn parse_assertion_conditions(
         .find_map(|(offset, ch)| (!ch.is_whitespace()).then_some(close + 1 + offset))
     {
         return Err(error(
-            "syntax.assert.invalid_argument",
+            ParseErrorKind::AssertionInvalidArgument,
             base + non_trivia,
             base + source.len(),
             "unexpected tokens after assertion statement",
@@ -127,7 +129,7 @@ fn parse_assertion_conditions(
     let parts = split_top_level_punctuation(interior, ',');
     if parts.is_empty() {
         return Err(error(
-            "syntax.assert.empty_conditions",
+            ParseErrorKind::AssertionEmptyConditions,
             base + open + 1,
             base + open + 1,
             "assertion requires at least one condition",
@@ -135,7 +137,7 @@ fn parse_assertion_conditions(
     }
     if parts.len() > 64 {
         return Err(error(
-            "syntax.assert.too_many_conditions",
+            ParseErrorKind::AssertionTooManyConditions,
             base + open + 1,
             base + close,
             "assertion accepts at most 64 conditions",
@@ -147,7 +149,7 @@ fn parse_assertion_conditions(
     for part in parts {
         let Some(relative) = interior[search_start..].find(part) else {
             return Err(error(
-                "syntax.assert.invalid_argument",
+                ParseErrorKind::AssertionInvalidArgument,
                 base + open + 1 + search_start,
                 base + open + 1 + search_start,
                 "assertion argument could not be reconciled with source tokens",
@@ -157,7 +159,7 @@ fn parse_assertion_conditions(
         let end = start + part.len();
         if part.is_empty() {
             return Err(error(
-                "syntax.assert.invalid_argument",
+                ParseErrorKind::AssertionInvalidArgument,
                 base + open + 1 + start,
                 base + open + 1 + start,
                 "assertion conditions must be separated by one comma",
@@ -165,7 +167,7 @@ fn parse_assertion_conditions(
         }
         let condition = parse_expr_at(part, base + open + 1 + start).map_err(|_| {
             error(
-                "syntax.assert.invalid_argument",
+                ParseErrorKind::AssertionInvalidArgument,
                 base + open + 1 + start,
                 base + open + 1 + end,
                 "invalid assertion condition",
@@ -201,7 +203,7 @@ fn skip_horizontal_trivia(
             let start = cursor;
             let Some(close) = source[cursor + 2..].find("*/") else {
                 return Err(error(
-                    "syntax.assert.invalid_argument",
+                    ParseErrorKind::AssertionInvalidArgument,
                     base + start,
                     base + source.len(),
                     "unclosed comment in assertion callee",
@@ -210,7 +212,7 @@ fn skip_horizontal_trivia(
             let end = cursor + 2 + close + 2;
             if source[cursor..end].contains('\n') {
                 return Err(error(
-                    "syntax.assert.invalid_argument",
+                    ParseErrorKind::AssertionInvalidArgument,
                     base + start,
                     base + end,
                     "assertion callee cannot contain a physical newline",
@@ -224,13 +226,13 @@ fn skip_horizontal_trivia(
 }
 
 const fn error(
-    code: &'static str,
+    kind: ParseErrorKind,
     start: usize,
     end: usize,
     message: &'static str,
 ) -> AssertionParseError {
     AssertionParseError {
-        code,
+        kind,
         range: TextRange::new(start, end),
         message,
     }
@@ -242,6 +244,7 @@ mod tests {
     use crate::assertion::AssertionMode;
     use crate::ast::common::TextRange;
     use crate::expr::Expr;
+    use crate::parser::recovery::ParseErrorKind;
     use crate::reference::BorrowKind;
 
     #[test]
@@ -259,13 +262,24 @@ mod tests {
     #[test]
     fn empty_unknown_unclosed_and_over_limit_are_typed() {
         let empty = parse_assertion_statement("assert.prove()", 0).expect_err("empty fails");
-        assert_eq!(empty.code(), "syntax.assert.empty_conditions");
+        assert_eq!(empty.kind(), ParseErrorKind::AssertionEmptyConditions);
+        assert_eq!(empty.kind().code(), "syntax.assert.empty_conditions");
+        assert_eq!(empty.range(), TextRange::new(13, 13));
         let unknown =
             parse_assertion_statement("assert.assume(value)", 0).expect_err("unknown fails");
-        assert_eq!(unknown.code(), "syntax.assert.unknown_mode");
+        assert_eq!(unknown.kind(), ParseErrorKind::AssertionUnknownMode);
+        assert_eq!(unknown.kind().code(), "syntax.assert.unknown_mode");
+        assert_eq!(unknown.range(), TextRange::new(7, 13));
         let unclosed =
             parse_assertion_statement("assert.debug(value", 0).expect_err("unclosed fails");
-        assert_eq!(unclosed.code(), "syntax.assert.unclosed_arguments");
+        assert_eq!(unclosed.kind(), ParseErrorKind::AssertionUnclosedArguments);
+        assert_eq!(unclosed.kind().code(), "syntax.assert.unclosed_arguments");
+        assert_eq!(unclosed.range(), TextRange::new(18, 18));
+        let invalid =
+            parse_assertion_statement("assert.debug", 0).expect_err("missing arguments fail");
+        assert_eq!(invalid.kind(), ParseErrorKind::AssertionInvalidArgument);
+        assert_eq!(invalid.kind().code(), "syntax.assert.invalid_argument");
+        assert_eq!(invalid.range(), TextRange::new(12, 12));
         let at_limit = core::iter::repeat_n("true", 64)
             .collect::<Vec<_>>()
             .join(",");
@@ -278,7 +292,12 @@ mod tests {
         );
         let over = parse_assertion_statement(&format!("assert.check({at_limit},true)"), 0)
             .expect_err("over limit fails");
-        assert_eq!(over.code(), "syntax.assert.too_many_conditions");
+        assert_eq!(over.kind(), ParseErrorKind::AssertionTooManyConditions);
+        assert_eq!(over.kind().code(), "syntax.assert.too_many_conditions");
+        assert_eq!(
+            over.range(),
+            TextRange::new(13, 13 + at_limit.len() + ",true".len())
+        );
     }
 
     #[test]

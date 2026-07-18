@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::{
     ast::items::{EntryItem, EntryKind, Item},
-    parser::parse_source,
+    parser::{parse_source, recovery::ParseErrorKind},
     types::TypeRef,
 };
 
@@ -21,6 +21,30 @@ fn entry(source: &str) -> arcweft_lang_syntax::ast::items::EntryDeclItem {
 fn source_range(source: &str, fragment: &str) -> std::ops::Range<usize> {
     let start = source.find(fragment).expect("fixture fragment exists");
     start..start + fragment.len()
+}
+
+fn assert_parser_kind(source: &str, kind: ParseErrorKind) {
+    let parsed = parse_source(source);
+    assert!(
+        parsed.errors().iter().any(|error| error.kind() == kind),
+        "expected {kind:?} for {source:?}, got {:?}",
+        parsed.errors()
+    );
+}
+
+fn assert_parser_range(source: &str, kind: ParseErrorKind, expected: std::ops::Range<usize>) {
+    let parsed = parse_source(source);
+    let error = parsed
+        .errors()
+        .iter()
+        .find(|error| error.kind() == kind)
+        .unwrap_or_else(|| {
+            panic!(
+                "expected {kind:?} for {source:?}, got {:?}",
+                parsed.errors()
+            )
+        });
+    assert_eq!(error.range().as_range(), expected);
 }
 
 #[test]
@@ -132,7 +156,7 @@ fn duplicate_roles_relate_the_first_and_duplicate_members() {
         let duplicate = parsed
             .errors()
             .iter()
-            .find(|error| error.code() == "syntax.entry.duplicate_role")
+            .find(|error| error.kind() == ParseErrorKind::EntryDuplicateRole)
             .expect("duplicate diagnostic");
         assert_eq!(
             duplicate.range().as_range(),
@@ -175,8 +199,10 @@ controller controller_fn
     }));
     assert!(parsed.errors().iter().any(|error| {
         matches!(
-            error.code(),
-            "syntax.parse" | "syntax.entry.role_path" | "syntax.entry.role_binding"
+            error.kind(),
+            ParseErrorKind::Generic
+                | ParseErrorKind::EntryRolePath
+                | ParseErrorKind::EntryRoleBinding
         )
     }));
 }
@@ -190,13 +216,13 @@ fn entry_kind_rejects_incompatible_typed_roles_and_routes() {
         parsed
             .errors()
             .iter()
-            .any(|error| error.code() == "syntax.entry.incompatible_role")
+            .any(|error| error.kind() == ParseErrorKind::EntryIncompatibleRole)
     );
     assert!(
         parsed
             .errors()
             .iter()
-            .any(|error| error.code() == "syntax.entry.incompatible_route")
+            .any(|error| error.kind() == ParseErrorKind::EntryIncompatibleRoute)
     );
 }
 
@@ -209,7 +235,7 @@ fn stateful_entry_requires_exactly_one_initial_goto() {
         missing
             .errors()
             .iter()
-            .any(|error| error.code() == "syntax.entry.missing_goto")
+            .any(|error| error.kind() == ParseErrorKind::EntryMissingGoto)
     );
 
     let source = "entry game @entry.game.main {\nstate = GameState\ninitializer = init\nevent = GameEvent\nreducer = reduce\ngoto @flow.first\ngoto @flow.second\n}";
@@ -217,7 +243,7 @@ fn stateful_entry_requires_exactly_one_initial_goto() {
     let error = duplicate
         .errors()
         .iter()
-        .find(|error| error.code() == "syntax.entry.duplicate_goto")
+        .find(|error| error.kind() == ParseErrorKind::EntryDuplicateGoto)
         .expect("duplicate goto diagnostic");
     assert_eq!(
         error.range().as_range(),
@@ -228,4 +254,113 @@ fn stateful_entry_requires_exactly_one_initial_goto() {
         error.related()[0].range().as_range(),
         source_range(source, "@flow.first")
     );
+}
+
+#[test]
+fn entry_producers_cover_every_typed_entry_diagnostic_kind() {
+    let fixtures = [
+        (
+            "entry @entry.game.main {\n}\n",
+            ParseErrorKind::EntryMissingKind,
+        ),
+        ("entry game {\n}\n", ParseErrorKind::EntryMissingId),
+        (
+            "entry game @flow.main {\n}\n",
+            ParseErrorKind::EntryIdFamily,
+        ),
+        (
+            "entry game @entry.game.main trailing {\n}\n",
+            ParseErrorKind::EntryTrailingHead,
+        ),
+        (
+            "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n",
+            ParseErrorKind::EntryDuplicateRole,
+        ),
+        (
+            "entry agent @entry.agent.main {\nstate = GameState\n}\n",
+            ParseErrorKind::EntryIncompatibleRole,
+        ),
+        (
+            "entry game @entry.game.main {\ngoto @flow.first\ngoto @flow.second\n}\n",
+            ParseErrorKind::EntryDuplicateGoto,
+        ),
+        (
+            "entry agent @entry.agent.main {\ngoto @flow.first\n}\n",
+            ParseErrorKind::EntryIncompatibleGoto,
+        ),
+        (
+            "entry game @entry.game.main {\nroute GET \"/\" -> @flow.first\n}\n",
+            ParseErrorKind::EntryIncompatibleRoute,
+        ),
+        (
+            "entry agent @entry.agent.main {\n}\n",
+            ParseErrorKind::EntryMissingRole,
+        ),
+        (
+            "entry game @entry.game.main {\nstate = GameState\ninitializer = init\nevent = GameEvent\nreducer = reduce\n}\n",
+            ParseErrorKind::EntryMissingGoto,
+        ),
+        (
+            "entry agent @entry.agent.main {\ncontroller smoke\n}\n",
+            ParseErrorKind::EntryRoleBinding,
+        ),
+        (
+            "entry agent @entry.agent.main {\ncontroller =\n}\n",
+            ParseErrorKind::EntryRoleValue,
+        ),
+        (
+            "entry agent @entry.agent.main {\ncontroller = smoke()\n}\n",
+            ParseErrorKind::EntryRolePath,
+        ),
+    ];
+
+    for (source, kind) in fixtures {
+        assert_parser_kind(source, kind);
+    }
+    assert_parser_kind(
+        "entry agent @entry.agent.main {\ncontroller alias = smoke\n}\n",
+        ParseErrorKind::EntryRoleBinding,
+    );
+}
+
+#[test]
+fn entry_head_diagnostics_use_exact_source_ranges_after_whitespace_normalization() {
+    let missing_kind = "   entry    @entry.game.main {\n}\n";
+    assert_parser_range(
+        missing_kind,
+        ParseErrorKind::EntryMissingKind,
+        source_range(missing_kind, "@entry.game.main"),
+    );
+
+    let missing_id = "   entry    game    {\n}\n";
+    let missing_id_offset = missing_id.find("game").expect("entry kind") + "game".len();
+    assert_parser_range(
+        missing_id,
+        ParseErrorKind::EntryMissingId,
+        missing_id_offset..missing_id_offset,
+    );
+
+    let trailing = "   entry   game   @entry.game.main     trailing   {\n}\n";
+    assert_parser_range(
+        trailing,
+        ParseErrorKind::EntryTrailingHead,
+        source_range(trailing, "trailing"),
+    );
+}
+
+#[test]
+fn malformed_nominal_generic_parameters_have_a_typed_group_range() {
+    for source in [
+        "struct Broken<,> {\nvalue: i32\n}\n",
+        "enum Broken<,> {\nValue\n}\n",
+    ] {
+        let parsed = parse_source(source);
+        let error = parsed
+            .errors()
+            .iter()
+            .find(|error| error.kind() == ParseErrorKind::NominalInvalidGenericParameters)
+            .expect("typed nominal generic diagnostic");
+        assert_eq!(error.code(), "syntax.nominal.invalid_generic_parameters");
+        assert_eq!(error.range().as_range(), source_range(source, "<,>"));
+    }
 }

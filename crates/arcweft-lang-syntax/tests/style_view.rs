@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
         },
     },
     expr::{Expr, Literal, UnitNumberSuffix},
-    parser::parse_source,
+    parser::{parse_source, recovery::ParseErrorKind},
 };
 
 #[test]
@@ -271,12 +271,38 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
     let error = parsed
         .errors()
         .iter()
-        .find(|error| error.message().contains("cannot contain selector rules"))
+        .find(|error| error.kind() == ParseErrorKind::StyleInlineSelectorNotSupported)
         .expect("inline selector diagnostic");
     assert_eq!(error.code(), "style::inline_selector_not_supported");
     assert_eq!(
         error.range().end() - error.range().start(),
         "Button:hover { opacity = 900milli }".len()
+    );
+}
+
+#[test]
+fn named_style_rejects_nested_selector_with_typed_recovery() {
+    let source = r#"pub style broken {
+    Panel {
+        Button:hover { opacity = 900milli }
+    }
+}
+"#;
+    let parsed = parse_source(source);
+    let error = parsed
+        .errors()
+        .iter()
+        .find(|error| error.kind() == ParseErrorKind::StyleMalformedSelector)
+        .expect("nested selector diagnostic");
+
+    assert_eq!(error.code(), "style::malformed_selector");
+    assert_eq!(
+        &source[error.range().as_range()],
+        "Button:hover { opacity = 900milli }"
+    );
+    assert_eq!(
+        error.recovery()[0].message(),
+        "use extract the selector into a named `style` declaration syntax"
     );
 }
 

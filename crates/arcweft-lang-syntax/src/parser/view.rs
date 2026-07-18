@@ -17,7 +17,7 @@ use crate::expr::{CallArg, Expr, Literal};
 use crate::pattern::parse_pattern;
 
 use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error};
-use super::recovery::ParseError;
+use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::style::parse_inline_native_style;
 use super::{parse_expr_lossy, split_top_level_binding};
 use arcweft_source::SourceDocument;
@@ -247,15 +247,15 @@ fn parse_view_exprs(
             let range = source_map
                 .location(lines[index])
                 .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
-            errors.push(
-                simple_error(
-                    range.start(),
-                    range.end().saturating_sub(range.start()),
-                    "View part exports must form the leading declaration block",
-                    "export part local as public before the View expression",
-                )
-                .with_code("view::export_part_misplaced"),
-            );
+            let expected = "export part local as public before the View expression";
+            errors.push(ParseError::new_with_kind(
+                ParseErrorKind::ViewExportPartMisplaced,
+                range,
+                vec![expected.to_owned()],
+                None,
+                "View part exports must form the leading declaration block".to_owned(),
+                vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+            ));
             index += 1;
             continue;
         }
@@ -812,15 +812,15 @@ fn parse_view_modifiers(
                         .any(|existing| matches!(existing, ViewModifier::Part(_))))
             {
                 let range = part.modifier_span().range();
-                errors.push(
-                    simple_error(
-                        range.start(),
-                        range.end().saturating_sub(range.start()),
-                        "View expression has more than one `.part(...)` modifier",
-                        "one .part(local_name) modifier",
-                    )
-                    .with_code("view::duplicate_part_modifier"),
-                );
+                let expected = "one .part(local_name) modifier";
+                errors.push(ParseError::new_with_kind(
+                    ParseErrorKind::ViewDuplicatePartModifier,
+                    TextRange::new(range.start(), range.end()),
+                    vec![expected.to_owned()],
+                    None,
+                    "View expression has more than one `.part(...)` modifier".to_owned(),
+                    vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+                ));
                 modifiers.retain(|existing| !matches!(existing, ViewModifier::Part(_)));
                 part_rejected = true;
             } else {

@@ -6,6 +6,7 @@ use super::{
         DeclEntityId, parse_required_decl_entity_ref_or_marker, parse_visibility_prefix,
         simple_error, slice_offset,
     },
+    recovery::{ParseErrorKind, RecoverySuggestion},
 };
 use crate::{
     ast::{
@@ -125,10 +126,10 @@ impl StyleDeclarationContext {
         }
     }
 
-    const fn nested_rule_code(self) -> &'static str {
+    const fn nested_rule_kind(self) -> ParseErrorKind {
         match self {
-            Self::InlinePatch => "style::inline_selector_not_supported",
-            Self::RuleBody => "style::malformed_selector",
+            Self::InlinePatch => ParseErrorKind::StyleInlineSelectorNotSupported,
+            Self::RuleBody => ParseErrorKind::StyleMalformedSelector,
         }
     }
 }
@@ -155,10 +156,14 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
                     if allow_tokens {
                         tokens.push(token);
                     } else {
-                        self.errors.push(ParseError::coded(
-                            "syntax.parse.style_environment.token_not_allowed",
+                        self.errors.push(ParseError::new_with_kind(
+                            ParseErrorKind::StyleEnvironmentTokenNotAllowed,
                             token.range(),
-                            "style tokens are sheet-owned and cannot appear in an environment wrapper",
+                            Vec::new(),
+                            None,
+                            "style tokens are sheet-owned and cannot appear in an environment wrapper"
+                                .to_owned(),
+                            Vec::new(),
                         ));
                     }
                 }
@@ -197,11 +202,13 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         let block_start = self.cursor;
         let head = self.take_environment_head(block_start)?;
         let Some(body_close) = matching_brace(self.source, head.body_open) else {
-            self.errors.push(environment_parse_error(
-                "expected_open_brace",
-                self.base + head.body_open,
-                self.source.len().saturating_sub(head.body_open),
-                "unclosed environment style body",
+            self.errors.push(ParseError::new_with_kind(
+                ParseErrorKind::StyleEnvironmentExpectedOpenBrace,
+                TextRange::new(self.base + head.body_open, self.base + self.source.len()),
+                Vec::new(),
+                None,
+                "unclosed environment style body".to_owned(),
+                Vec::new(),
             ));
             self.cursor = self.source.len();
             return Some(StyleEnvironmentBlock::new(
@@ -246,11 +253,13 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
             self.source[self.cursor..].len() - self.source[self.cursor..].trim_start().len();
         let environment_start = self.cursor;
         let Some(after_environment) = self.source[self.cursor..].strip_prefix("environment") else {
-            self.errors.push(environment_parse_error(
-                "expected_field",
-                self.base + self.cursor,
-                0,
-                "expected `environment` after `when`",
+            self.errors.push(ParseError::new_with_kind(
+                ParseErrorKind::StyleEnvironmentExpectedField,
+                TextRange::new(self.base + self.cursor, self.base + self.cursor),
+                Vec::new(),
+                None,
+                "expected `environment` after `when`".to_owned(),
+                Vec::new(),
             ));
             self.recover_line(block_start);
             return None;
@@ -263,11 +272,13 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         self.cursor +=
             self.source[self.cursor..].len() - self.source[self.cursor..].trim_start().len();
         if !self.source[self.cursor..].starts_with('(') {
-            self.errors.push(environment_parse_error(
-                "expected_open_paren",
-                self.base + self.cursor,
-                0,
-                "environment guard needs an opening `(`",
+            self.errors.push(ParseError::new_with_kind(
+                ParseErrorKind::StyleEnvironmentExpectedOpenParen,
+                TextRange::new(self.base + self.cursor, self.base + self.cursor),
+                Vec::new(),
+                None,
+                "environment guard needs an opening `(`".to_owned(),
+                Vec::new(),
             ));
             self.recover_line(block_start);
             return None;
@@ -278,11 +289,13 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
             EnvironmentConditionBoundary::CloseParen(close) => {
                 let after_close = skip_style_trivia(self.source, close + ')'.len_utf8());
                 if !self.source[after_close..].starts_with('{') {
-                    self.errors.push(environment_parse_error(
-                        "expected_open_brace",
-                        self.base + after_close,
-                        0,
-                        "environment guard needs an opening `{` after its condition",
+                    self.errors.push(ParseError::new_with_kind(
+                        ParseErrorKind::StyleEnvironmentExpectedOpenBrace,
+                        TextRange::new(self.base + after_close, self.base + after_close),
+                        Vec::new(),
+                        None,
+                        "environment guard needs an opening `{` after its condition".to_owned(),
+                        Vec::new(),
                     ));
                     self.cursor = after_close;
                     self.recover_line(block_start);
@@ -291,20 +304,24 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
                 (close, after_close)
             }
             EnvironmentConditionBoundary::OpenBrace(open) => {
-                self.errors.push(environment_parse_error(
-                    "unterminated_condition",
-                    self.base + condition_open,
-                    open.saturating_sub(condition_open),
-                    "environment condition is missing a closing `)`",
+                self.errors.push(ParseError::new_with_kind(
+                    ParseErrorKind::StyleEnvironmentUnterminatedCondition,
+                    TextRange::new(self.base + condition_open, self.base + open),
+                    Vec::new(),
+                    None,
+                    "environment condition is missing a closing `)`".to_owned(),
+                    Vec::new(),
                 ));
                 (open, open)
             }
             EnvironmentConditionBoundary::End => {
-                self.errors.push(environment_parse_error(
-                    "unterminated_condition",
-                    self.base + condition_open,
-                    self.source.len().saturating_sub(condition_open),
-                    "unterminated environment condition",
+                self.errors.push(ParseError::new_with_kind(
+                    ParseErrorKind::StyleEnvironmentUnterminatedCondition,
+                    TextRange::new(self.base + condition_open, self.base + self.source.len()),
+                    Vec::new(),
+                    None,
+                    "unterminated environment condition".to_owned(),
+                    Vec::new(),
                 ));
                 self.cursor = self.source.len();
                 return None;
@@ -350,17 +367,16 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
                 let open = start + open;
                 let end = matching_brace(self.source, open)
                     .map_or(self.source.len(), |close| close + '}'.len_utf8());
-                self.errors.push(
-                    simple_error(
-                        self.base + start,
-                        (self.base + end)
-                            .min(range_end)
-                            .saturating_sub(self.base + start),
-                        context.nested_rule_message(),
-                        "extract the selector into a named `style` declaration",
-                    )
-                    .with_code(context.nested_rule_code()),
-                );
+                let range = TextRange::new(self.base + start, (self.base + end).min(range_end));
+                let expected = "extract the selector into a named `style` declaration";
+                self.errors.push(ParseError::new_with_kind(
+                    context.nested_rule_kind(),
+                    range,
+                    vec![expected.to_owned()],
+                    None,
+                    context.nested_rule_message().to_owned(),
+                    vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+                ));
                 break;
             }
             let Some(statement) = self.take_statement() else {
@@ -655,11 +671,13 @@ fn parse_environment_clauses(
             {
                 // Empty condition and a canonical trailing comma are handled below.
             } else {
-                errors.push(environment_parse_error(
-                    "expected_field",
-                    base + index,
-                    0,
-                    "environment condition contains an empty clause",
+                errors.push(ParseError::new_with_kind(
+                    ParseErrorKind::StyleEnvironmentExpectedField,
+                    TextRange::new(base + index, base + index),
+                    Vec::new(),
+                    None,
+                    "environment condition contains an empty clause".to_owned(),
+                    Vec::new(),
                 ));
             }
             segment_start = index + ','.len_utf8();
@@ -673,11 +691,13 @@ fn parse_environment_clauses(
         clauses.push(clause);
     }
     if source.trim().is_empty() {
-        errors.push(environment_parse_error(
-            "expected_field",
-            base,
-            0,
-            "environment condition needs at least one field",
+        errors.push(ParseError::new_with_kind(
+            ParseErrorKind::StyleEnvironmentExpectedField,
+            TextRange::new(base, base),
+            Vec::new(),
+            None,
+            "environment condition needs at least one field".to_owned(),
+            Vec::new(),
         ));
     }
     clauses
@@ -705,11 +725,13 @@ fn parse_environment_clause(
         "reduced-motion" => StyleEnvironmentFieldSyntax::ReducedMotion,
         "text-scale" => StyleEnvironmentFieldSyntax::TextScale,
         _ => {
-            errors.push(environment_parse_error(
-                "expected_field",
-                field_range.start(),
-                field_range.end().saturating_sub(field_range.start()),
-                "unknown presentation-environment field",
+            errors.push(ParseError::new_with_kind(
+                ParseErrorKind::StyleEnvironmentExpectedField,
+                field_range,
+                Vec::new(),
+                None,
+                "unknown presentation-environment field".to_owned(),
+                Vec::new(),
             ));
             StyleEnvironmentFieldSyntax::Unknown
         }
@@ -731,13 +753,13 @@ fn parse_environment_clause(
         ">" => StyleEnvironmentComparisonSyntax::Greater,
         ">=" => StyleEnvironmentComparisonSyntax::GreaterOrEqual,
         _ => {
-            errors.push(environment_parse_error(
-                "expected_comparison",
-                comparison_range.start(),
-                comparison_range
-                    .end()
-                    .saturating_sub(comparison_range.start()),
-                "environment clause needs one comparison token",
+            errors.push(ParseError::new_with_kind(
+                ParseErrorKind::StyleEnvironmentExpectedComparison,
+                comparison_range,
+                Vec::new(),
+                None,
+                "environment clause needs one comparison token".to_owned(),
+                Vec::new(),
             ));
             StyleEnvironmentComparisonSyntax::Unsupported
         }
@@ -751,20 +773,22 @@ fn parse_environment_clause(
     );
     let value = parse_environment_value(value_source, value_range);
     if let StyleEnvironmentValueSyntax::Unsupported(unsupported) = &value {
-        errors.push(environment_parse_error(
-            match unsupported.kind() {
-                StyleEnvironmentUnsupportedValueKind::Missing => "expected_value",
-                StyleEnvironmentUnsupportedValueKind::TrailingTokens => {
-                    "expected_comma_or_close_paren"
-                }
-                _ => "unsupported_value",
-            },
-            unsupported.range().start(),
-            unsupported
-                .range()
-                .end()
-                .saturating_sub(unsupported.range().start()),
-            environment_unsupported_value_message(unsupported.kind()),
+        let kind = match unsupported.kind() {
+            StyleEnvironmentUnsupportedValueKind::Missing => {
+                ParseErrorKind::StyleEnvironmentExpectedValue
+            }
+            StyleEnvironmentUnsupportedValueKind::TrailingTokens => {
+                ParseErrorKind::StyleEnvironmentExpectedCommaOrCloseParen
+            }
+            _ => ParseErrorKind::StyleEnvironmentUnsupportedValue,
+        };
+        errors.push(ParseError::new_with_kind(
+            kind,
+            unsupported.range(),
+            Vec::new(),
+            None,
+            environment_unsupported_value_message(unsupported.kind()).to_owned(),
+            Vec::new(),
         ));
     }
     Some(StyleEnvironmentClause::new(
@@ -933,31 +957,6 @@ const fn environment_unsupported_value_message(
             "environment values cannot contain trailing tokens"
         }
     }
-}
-
-fn environment_parse_error(
-    suffix: &'static str,
-    start: usize,
-    len: usize,
-    message: impl Into<String>,
-) -> ParseError {
-    ParseError::coded(
-        match suffix {
-            "expected_open_paren" => "syntax.parse.style_environment.expected_open_paren",
-            "expected_field" => "syntax.parse.style_environment.expected_field",
-            "expected_comparison" => "syntax.parse.style_environment.expected_comparison",
-            "expected_value" => "syntax.parse.style_environment.expected_value",
-            "expected_comma_or_close_paren" => {
-                "syntax.parse.style_environment.expected_comma_or_close_paren"
-            }
-            "expected_open_brace" => "syntax.parse.style_environment.expected_open_brace",
-            "unterminated_condition" => "syntax.parse.style_environment.unterminated_condition",
-            "unsupported_value" => "syntax.parse.style_environment.unsupported_value",
-            _ => "syntax.parse.style_environment",
-        },
-        TextRange::new(start, start + len),
-        message,
-    )
 }
 
 fn parse_selector(
@@ -1386,3 +1385,6 @@ impl StyleDelimiterState {
         self.delimiters.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests;

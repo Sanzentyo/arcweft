@@ -35,6 +35,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath, cst::SyntaxParseStats, lint::SyntaxLintSeverity,
+    parser::recovery::ParseError,
 };
 use arcweft_project::{
     graph::CompileUnitId,
@@ -85,6 +86,7 @@ pub struct ProjectCompileDiagnostic {
     module: Option<CanonicalModulePath>,
     stage: ProjectCompileStage,
     source: Option<ProjectDiagnosticSource>,
+    parse_error: Option<ParseError>,
     diagnostic: Diagnostic,
 }
 
@@ -187,6 +189,13 @@ impl ProjectCompileDiagnostic {
 
     pub const fn source(&self) -> Option<&ProjectDiagnosticSource> {
         self.source.as_ref()
+    }
+
+    /// Original typed parser payload when this diagnostic came from syntax
+    /// parsing. Other compiler stages do not manufacture or reverse-decode
+    /// parser kinds from transport code strings.
+    pub const fn parse_error(&self) -> Option<&ParseError> {
+        self.parse_error.as_ref()
     }
 
     pub const fn diagnostic(&self) -> &Diagnostic {
@@ -647,15 +656,7 @@ fn compile_module(
 ) -> Result<CompiledProjectModule, ProjectCompileError> {
     let parsed = parse::parse_source_text(source.source().to_owned());
     if !parsed.errors().is_empty() {
-        return Err(module_error(
-            source,
-            document,
-            ProjectCompileStage::Parse,
-            parsed
-                .errors()
-                .iter()
-                .map(|error| error.diagnostic(document)),
-        ));
+        return Err(module_parse_error(source, document, parsed.errors()));
     }
     let syntax_stats = parsed.syntax_stats();
     let tree = parsed.into_typed_tree();
@@ -754,7 +755,31 @@ fn module_error(
                 module: Some(module.clone()),
                 stage,
                 source: Some(source.clone()),
+                parse_error: None,
                 diagnostic,
+            })
+            .collect(),
+    }
+}
+
+fn module_parse_error(
+    module_source: &ProjectSourceFile,
+    document: &SourceDocument,
+    errors: &[ParseError],
+) -> ProjectCompileError {
+    let module = module_source.module().clone();
+    let source = ProjectDiagnosticSource::new(document.clone());
+    ProjectCompileError {
+        stage: ProjectCompileStage::Parse.as_str(),
+        diagnostics: errors
+            .iter()
+            .cloned()
+            .map(|parse_error| ProjectCompileDiagnostic {
+                module: Some(module.clone()),
+                stage: ProjectCompileStage::Parse,
+                source: Some(source.clone()),
+                diagnostic: parse_error.diagnostic(document),
+                parse_error: Some(parse_error),
             })
             .collect(),
     }
@@ -842,6 +867,7 @@ fn linked_error(
                 module: None,
                 stage,
                 source: None,
+                parse_error: None,
                 diagnostic,
             })
             .collect(),
@@ -868,6 +894,7 @@ fn linked_error_with_registration_sources(
                     module: None,
                     stage,
                     source,
+                    parse_error: None,
                     diagnostic,
                 }
             })

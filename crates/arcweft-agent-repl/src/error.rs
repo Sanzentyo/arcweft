@@ -1,4 +1,5 @@
 use crate::cell::ReplCellKind;
+use arcweft_lang_syntax::parser::recovery::ParseError;
 use thiserror::Error;
 
 /// Transaction phase used for deterministic diagnostics and rollback audits.
@@ -27,6 +28,8 @@ pub enum ReplTransactionError {
         expected: ReplCellKind,
         actual: ReplCellKind,
     },
+    #[error("REPL cell parsing failed")]
+    Parse { diagnostics: Vec<ParseError> },
     #[error("{phase:?} failed: {message}")]
     Compile {
         phase: ReplTransactionPhase,
@@ -48,12 +51,22 @@ impl ReplTransactionError {
         match self {
             Self::CommandInputDelegated { .. }
             | Self::IncompleteOrInvalid { .. }
-            | Self::UnexpectedCellKind { .. } => ReplTransactionPhase::ClassifyParse,
+            | Self::UnexpectedCellKind { .. }
+            | Self::Parse { .. } => ReplTransactionPhase::ClassifyParse,
             Self::Compile { phase, .. } => *phase,
             Self::EffectPolicy { .. } => ReplTransactionPhase::SemanticEffectChecks,
             Self::Verifier { .. } => ReplTransactionPhase::VerifierGate,
             Self::ProjectBinding { .. } => ReplTransactionPhase::RuntimeSessionPreflight,
             Self::Commit { .. } => ReplTransactionPhase::CommitRecordConstruction,
+        }
+    }
+
+    /// Typed parser diagnostics retained by a failed cell transaction.
+    #[must_use]
+    pub fn parse_diagnostics(&self) -> Option<&[ParseError]> {
+        match self {
+            Self::Parse { diagnostics } => Some(diagnostics),
+            _ => None,
         }
     }
 }

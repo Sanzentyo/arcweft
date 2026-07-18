@@ -10,10 +10,12 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::{
     lint::{SyntaxLint, lint_id_policy},
-    parser::parse_source,
+    parser::{parse_source, recovery::ParseError},
 };
+#[cfg(test)]
+use arcweft_source::DiagnosticApplicability;
 use arcweft_source::{
-    Diagnostic as ArcDiagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticLabelStyle,
+    Diagnostic as ArcDiagnostic, DiagnosticLabel, DiagnosticLabelStyle,
     DiagnosticSeverity as ArcDiagnosticSeverity, DiagnosticSuggestion, SourceDocument,
     SourceDocumentId, SourceEdit, SourceName, SourceRevision, SourceSpan,
 };
@@ -81,9 +83,7 @@ impl DocumentAnalysis {
         let mut diagnostics = parsed
             .errors()
             .iter()
-            .filter_map(|error| {
-                lsp_diagnostic_from_arcweft(&error.diagnostic(document), &line_index, document).ok()
-            })
+            .filter_map(|error| lsp_diagnostic_from_parse_error(error, &line_index, document).ok())
             .collect::<Vec<_>>();
 
         if parsed.errors().is_empty() {
@@ -358,6 +358,33 @@ fn lsp_diagnostic_from_arcweft(
     line_index: &LineIndex,
     document: &SourceDocument,
 ) -> Result<Diagnostic, LspDiagnosticSourceError> {
+    lsp_diagnostic_from_arcweft_with_source(
+        diagnostic,
+        line_index,
+        document,
+        lsp_source_name(diagnostic),
+    )
+}
+
+fn lsp_diagnostic_from_parse_error(
+    error: &ParseError,
+    line_index: &LineIndex,
+    document: &SourceDocument,
+) -> Result<Diagnostic, LspDiagnosticSourceError> {
+    lsp_diagnostic_from_arcweft_with_source(
+        &error.diagnostic(document),
+        line_index,
+        document,
+        "arcweft-syntax",
+    )
+}
+
+fn lsp_diagnostic_from_arcweft_with_source(
+    diagnostic: &ArcDiagnostic,
+    line_index: &LineIndex,
+    document: &SourceDocument,
+    source: &'static str,
+) -> Result<Diagnostic, LspDiagnosticSourceError> {
     validate_diagnostic_sources(diagnostic, document)?;
     let span = primary_span(diagnostic);
     let range = span.map_or_else(start_range, |span| range_for_span(span, line_index));
@@ -367,7 +394,7 @@ fn lsp_diagnostic_from_arcweft(
         code: diagnostic
             .code()
             .map(|code| NumberOrString::String(code.as_str().to_owned())),
-        source: Some(lsp_source_name(diagnostic).to_owned()),
+        source: Some(source.to_owned()),
         message: diagnostic.message().to_owned(),
         related_information: related_information(diagnostic, line_index),
         data: suggestions_data(diagnostic, line_index),
@@ -493,7 +520,7 @@ fn suggestions_data(
         "suggestions": diagnostic.suggestions().iter().map(|suggestion| {
             serde_json::json!({
                 "message": suggestion.message(),
-                "applicability": applicability_name(suggestion.applicability()),
+                "applicability": suggestion.applicability().as_str(),
                 "edits": suggestion.edits().iter().map(|edit| {
                     serde_json::json!({
                         "range": range_for_span(edit.span(), line_index),
@@ -503,15 +530,6 @@ fn suggestions_data(
             })
         }).collect::<Vec<_>>(),
     }))
-}
-
-fn applicability_name(applicability: DiagnosticApplicability) -> &'static str {
-    match applicability {
-        DiagnosticApplicability::MachineApplicable => "machine_applicable",
-        DiagnosticApplicability::MaybeIncorrect => "maybe_incorrect",
-        DiagnosticApplicability::HasPlaceholders => "has_placeholders",
-        DiagnosticApplicability::Unspecified => "unspecified",
-    }
 }
 
 fn memory_uri() -> Uri {
@@ -697,6 +715,45 @@ flow @flow.opening start {
 
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
         assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
+    }
+
+    #[test]
+    fn parser_diagnostic_source_is_explicit_and_payload_is_preserved() {
+        let source = "pub view Card() {\n    export part as heading\n    Panel()\n}\n";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code
+                    == Some(NumberOrString::String(
+                        "view::export_part_missing_local".to_owned(),
+                    ))
+            })
+            .expect("typed parser diagnostic");
+
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
+        assert_eq!(diagnostic.range.start, Position::new(1, 16));
+        assert_eq!(diagnostic.range.end, Position::new(1, 18));
+        assert!(
+            diagnostic
+                .message
+                .contains("private local target before `as`")
+        );
+        assert!(
+            diagnostic
+                .related_information
+                .as_ref()
+                .is_some_and(|related| related
+                    .iter()
+                    .any(|item| item.message == "expected: local part name"))
+        );
+        assert!(
+            diagnostic.data.as_ref().is_some_and(
+                |data| data["suggestions"][0]["message"] == "use local part name syntax"
+            )
+        );
     }
 
     #[test]

@@ -130,6 +130,17 @@ pub(crate) fn compile_repl_cell(
 }
 
 fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionError {
+    let parse_diagnostics = error
+        .diagnostics()
+        .iter()
+        .filter_map(|diagnostic| diagnostic.parse_error().cloned())
+        .collect::<Vec<_>>();
+    if !parse_diagnostics.is_empty() {
+        return ReplTransactionError::Parse {
+            diagnostics: parse_diagnostics,
+        };
+    }
+
     let phase = match error
         .diagnostics()
         .first()
@@ -150,4 +161,53 @@ fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionErro
         .collect::<Vec<_>>()
         .join("; ");
     ReplTransactionError::Compile { phase, message }
+}
+
+#[cfg(test)]
+mod tests {
+    use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+    use arcweft_lang_syntax::parser::recovery::ParseErrorKind;
+
+    use crate::{
+        cell::ReplCellKind, error::ReplTransactionError, session::ReplBaseSnapshot,
+        source::ParsedReplCell,
+    };
+
+    use super::compile_repl_cell;
+
+    #[test]
+    fn project_parser_payload_reaches_the_repl_without_code_reconstruction() {
+        let source = r"pub view Card() {
+    export part as card.heading
+    Panel().part(header)
+}
+";
+        let parsed = ParsedReplCell {
+            kind: ReplCellKind::Item,
+            source: source.to_owned(),
+            source_hash: "source-hash".to_owned(),
+            synthetic_source: source.to_owned(),
+            synthetic_source_hash: "synthetic-source-hash".to_owned(),
+            synthetic_entry_id: "entry.agent.repl.cell_1".to_owned(),
+            synthetic_controller_name: "repl_cell_1".to_owned(),
+            bindings: Vec::new(),
+        };
+        let base = ReplBaseSnapshot::from_project(
+            "test",
+            ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+        );
+
+        let Err(error) = compile_repl_cell(&parsed, &base) else {
+            panic!("malformed View export must fail REPL compilation");
+        };
+        let ReplTransactionError::Parse { diagnostics } = error else {
+            panic!("project parser diagnostics must remain typed at the REPL boundary");
+        };
+        let diagnostic = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::ViewExportPartMissingLocal)
+            .expect("typed missing-local parser diagnostic");
+        assert_eq!(diagnostic.code(), "view::export_part_missing_local");
+        assert_eq!(&source[diagnostic.range().as_range()], "as");
+    }
 }

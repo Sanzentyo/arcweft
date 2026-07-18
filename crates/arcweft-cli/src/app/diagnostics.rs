@@ -221,6 +221,7 @@ fn level_for(severity: DiagnosticSeverity) -> Level<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
     use arcweft_source::{
         DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel, DiagnosticSuggestion,
         SourceDocumentId, SourceEdit, SourceName, SourceRange,
@@ -334,5 +335,28 @@ mod tests {
         assert!(rendered.contains("Generate unsafe lifetime audit metadata"));
         assert!(rendered.contains("reason = _"));
         assert!(rendered.contains("/// SAFETY: TODO"));
+    }
+
+    #[test]
+    fn plain_renderer_preserves_typed_parser_code_without_injecting_kind_label() {
+        let source = "pub view Card() {\n    export part as heading\n    Panel()\n}\n";
+        let document = document(source);
+        let parsed = parse_source(source);
+        let error = parsed
+            .errors()
+            .iter()
+            .find(|error| error.kind() == ParseErrorKind::ViewExportPartMissingLocal)
+            .expect("typed parser error");
+        let diagnostic = error.diagnostic(&document);
+        let source = DiagnosticSource::new(&document);
+        let groups = diagnostic_groups(&diagnostic, &source);
+        let rendered = Renderer::plain().render(&groups);
+
+        assert!(rendered.contains(
+            "error[view::export_part_missing_local]: View part export needs a private local target before `as`"
+        ));
+        assert!(rendered.contains("expected: local part name"));
+        assert!(rendered.contains("use local part name syntax"));
+        assert!(!rendered.contains("Missing local View part name"));
     }
 }

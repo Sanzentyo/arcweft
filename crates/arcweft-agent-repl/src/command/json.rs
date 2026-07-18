@@ -12,7 +12,8 @@ use crate::{
     ReplCellRecord, ReplCodegenStatus, ReplDebugEventCount, ReplExecutionRecord,
     ReplGenerationEvidence, ReplGenerationId, ReplHostEffectEvidence, ReplTierDiagnostic,
     ReplTierDiagnosticSeverity, ReplTierInvalidationReason, ReplTierInvalidationToken,
-    ReplTierStatusProjection, ReplTierStatusRecord, ReplWarmOutcome, ReplWarmUnsupportedReason,
+    ReplTierStatusProjection, ReplTierStatusRecord, ReplTransactionError, ReplWarmOutcome,
+    ReplWarmUnsupportedReason,
 };
 
 use super::types::{
@@ -62,6 +63,50 @@ pub fn repl_command_result_json(
         "status": status_label(result.status),
         "evidence": evidence_json(&result.evidence, options),
         "diagnostics": diagnostics,
+    })
+}
+
+/// Projects a failed REPL transaction without discarding typed parser payloads.
+#[must_use]
+pub fn repl_transaction_error_json(error: &ReplTransactionError) -> Value {
+    error.parse_diagnostics().map_or_else(
+        || json!(error.to_string()),
+        |diagnostics| {
+            json!({
+                "kind": "parse",
+                "diagnostics": diagnostics.iter().map(parse_diagnostic_json).collect::<Vec<_>>(),
+            })
+        },
+    )
+}
+
+fn parse_diagnostic_json(diagnostic: &arcweft_lang_syntax::parser::recovery::ParseError) -> Value {
+    json!({
+        "code": diagnostic.code(),
+        "label": diagnostic.label(),
+        "coordinate_space": "synthetic_source",
+        "range": {
+            "start": diagnostic.range().start(),
+            "end": diagnostic.range().end(),
+        },
+        "expected": diagnostic.expected(),
+        "found": diagnostic.found(),
+        "message": diagnostic.message(),
+        "recovery": diagnostic.recovery().iter().map(|suggestion| {
+            json!({
+                "message": suggestion.message(),
+                "applicability": suggestion.applicability().as_str(),
+                "edits": suggestion.edits().iter().map(|edit| {
+                    json!({
+                        "range": {
+                            "start": edit.range().start(),
+                            "end": edit.range().end(),
+                        },
+                        "replacement": edit.replacement(),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        }).collect::<Vec<_>>(),
     })
 }
 
@@ -601,5 +646,41 @@ fn tier_invalidation_reason_label(value: ReplTierInvalidationReason) -> &'static
         ReplTierInvalidationReason::BaseProjectChanged => "base_project_changed",
         ReplTierInvalidationReason::GenerationChanged => "generation_changed",
         ReplTierInvalidationReason::TierStatusRecorded => "tier_status_recorded",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arcweft_lang_syntax::parser::parse_source;
+    use serde_json::{Value, json};
+
+    use super::{ReplTransactionError, repl_transaction_error_json};
+
+    #[test]
+    fn transaction_parse_json_preserves_typed_diagnostic_payload() {
+        let parsed =
+            parse_source("pub view Card() {\n    export part as heading\n    Panel()\n}\n");
+        let error = ReplTransactionError::Parse {
+            diagnostics: parsed.errors().to_vec(),
+        };
+
+        let json = repl_transaction_error_json(&error);
+        let diagnostic = &json["diagnostics"][0];
+
+        assert_eq!(json["kind"], "parse");
+        assert_eq!(diagnostic["code"], "view::export_part_missing_local");
+        assert_eq!(diagnostic["label"], "Missing local View part name");
+        assert_eq!(diagnostic["coordinate_space"], "synthetic_source");
+        assert_eq!(diagnostic["range"]["start"], 34);
+        assert_eq!(diagnostic["range"]["end"], 36);
+        assert_eq!(diagnostic["expected"][0], "local part name");
+        assert_eq!(diagnostic["found"], Value::Null);
+        assert!(
+            diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("private local target"))
+        );
+        assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
+        assert_eq!(diagnostic["recovery"][0]["edits"], json!([]));
     }
 }

@@ -278,10 +278,13 @@ impl<'a> Parser<'a> {
         let statement = match parse_assertion_statement(source, base) {
             Ok(assertion) => Stmt::Assertion(assertion),
             Err(error) => {
-                self.errors.push(ParseError::coded(
-                    error.code(),
+                self.errors.push(ParseError::new_with_kind(
+                    error.kind(),
                     error.range(),
-                    error.message(),
+                    Vec::new(),
+                    None,
+                    error.message().to_owned(),
+                    Vec::new(),
                 ));
                 Stmt::Raw(RawSyntax::stmt(
                     source,

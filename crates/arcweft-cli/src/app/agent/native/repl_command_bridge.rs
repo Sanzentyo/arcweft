@@ -19,7 +19,7 @@ use arcweft_agent_repl::command::{
     AgentSessionReplCommandHost, LoadCommand, ReloadCommand, ReplCommand, ReplCommandContext,
     ReplCommandDiagnostic, ReplCommandDiagnosticCode, ReplCommandEvidence, ReplCommandHost,
     ReplCommandHostError, ReplCommandId, ReplCommandResult, ReplCommandStatus, ReplInput,
-    ReplProjectLoader, ReplTracePolicy,
+    ReplProjectLoader, ReplTracePolicy, repl_transaction_error_json,
 };
 use arcweft_agent_repl::{
     ReplBaseSnapshot, ReplCellExecutionStatus, ReplCellInput, ReplEvaluateOutcome,
@@ -98,15 +98,44 @@ fn agent_repl_eval_typed_cell(
     };
     match evaluation {
         Ok(outcome) => agent_repl_typed_cell_outcome(index, input, state, outcome),
-        Err(error) => AgentReplCellReport {
-            index,
-            input: input.to_owned(),
-            kind: "cell".to_owned(),
-            status: "error".to_owned(),
-            message: Some(error.to_string()),
-            value: Some(serde_json::json!({ "transaction_error": error.to_string() })),
-            quit: false,
+        Err(error) => agent_repl_transaction_error_report(index, input, &error),
+    }
+}
+
+fn agent_repl_transaction_error_report(
+    index: usize,
+    input: &str,
+    error: &arcweft_agent_repl::ReplTransactionError,
+) -> AgentReplCellReport {
+    let message = error.parse_diagnostics().map_or_else(
+        || error.to_string(),
+        |diagnostics| {
+            diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    format!(
+                        "[{}] {} at {}..{}",
+                        diagnostic.code(),
+                        diagnostic.message(),
+                        diagnostic.range().start(),
+                        diagnostic.range().end(),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
         },
+    );
+    let value = serde_json::json!({
+        "transaction_error": repl_transaction_error_json(error),
+    });
+    AgentReplCellReport {
+        index,
+        input: input.to_owned(),
+        kind: "cell".to_owned(),
+        status: "error".to_owned(),
+        message: Some(message),
+        value: Some(value),
+        quit: false,
     }
 }
 
@@ -529,6 +558,44 @@ fn cli_repl_base_snapshot(path: Option<&str>) -> Result<ReplBaseSnapshot, ReplCo
         |path| format!("cli-agent-repl:{path}"),
     );
     Ok(ReplBaseSnapshot::from_project(label, project))
+}
+
+#[cfg(test)]
+mod parse_diagnostic_tests {
+    use arcweft_agent_repl::ReplTransactionError;
+    use arcweft_lang_syntax::parser::parse_source;
+
+    use super::agent_repl_transaction_error_report;
+
+    #[test]
+    fn agent_repl_parse_failure_json_preserves_typed_diagnostics() {
+        let parsed =
+            parse_source("pub view Card() {\n    export part as heading\n    Panel()\n}\n");
+        let error = ReplTransactionError::Parse {
+            diagnostics: parsed.errors().to_vec(),
+        };
+
+        let report = agent_repl_transaction_error_report(3, "invalid cell", &error);
+        let message = report.message.as_deref().expect("human parse diagnostics");
+        assert!(message.contains(
+            "[view::export_part_missing_local] View part export needs a private local target before `as` at 34..36"
+        ));
+        assert!(!message.contains("Missing local View part name"));
+        let value = report.value.expect("typed parse error JSON");
+        let diagnostic = &value["transaction_error"]["diagnostics"][0];
+        assert_eq!(diagnostic["code"], "view::export_part_missing_local");
+        assert_eq!(diagnostic["label"], "Missing local View part name");
+        assert_eq!(diagnostic["coordinate_space"], "synthetic_source");
+        assert!(diagnostic["range"]["end"].as_u64().is_some());
+        assert_eq!(diagnostic["expected"][0], "local part name");
+        assert_eq!(diagnostic["found"], serde_json::Value::Null);
+        assert!(
+            diagnostic["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("private local target"))
+        );
+        assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
+    }
 }
 
 #[cfg(all(test, feature = "native-capture"))]

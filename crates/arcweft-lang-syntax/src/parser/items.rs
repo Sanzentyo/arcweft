@@ -26,6 +26,7 @@ use super::headers::{
     parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
     simple_error, split_function_header_lines, split_supertraits,
 };
+use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, collect_logical_block_items, collect_logical_block_items_with_base,
@@ -126,9 +127,15 @@ impl Parser<'_> {
             + head.find(declaration).unwrap_or_default()
             + declaration.find(&name).unwrap_or_default();
         let (generic_source, trailing) = parse_optional_angle_head(&tail);
+        let declaration_base = start_line.start + head.find(declaration).unwrap_or_default();
+        let generic_base = generic_source
+            .as_deref()
+            .map_or(declaration_base, |generic| {
+                declaration_base + declaration.find(generic).unwrap_or_default()
+            });
         let generic_params = parse_nominal_generic_params(
             generic_source.as_deref(),
-            start_line.start + head.find(declaration).unwrap_or_default(),
+            generic_base,
             &mut self.errors,
         )?;
         if !trailing.is_empty() {
@@ -251,9 +258,15 @@ impl Parser<'_> {
             + head.find(declaration).unwrap_or_default()
             + declaration.find(&name).unwrap_or_default();
         let (generic_source, trailing) = parse_optional_angle_head(&tail);
+        let declaration_base = start_line.start + head.find(declaration).unwrap_or_default();
+        let generic_base = generic_source
+            .as_deref()
+            .map_or(declaration_base, |generic| {
+                declaration_base + declaration.find(generic).unwrap_or_default()
+            });
         let generic_params = parse_nominal_generic_params(
             generic_source.as_deref(),
-            start_line.start + head.find(declaration).unwrap_or_default(),
+            generic_base,
             &mut self.errors,
         )?;
         if !trailing.is_empty() {
@@ -423,8 +436,19 @@ impl Parser<'_> {
             );
             return None;
         }
-        let (kind, visibility, id) =
-            parse_entry_head(block.head.trim(), start_line.start, &mut self.errors)?;
+        let head = block.head.trim();
+        let head_base = block.head_range.as_ref().map_or_else(
+            || start_line.start + start_line.text.find(head).unwrap_or_default(),
+            |range| {
+                range.start
+                    + self
+                        .source
+                        .get(range.clone())
+                        .and_then(|source| source.find(head))
+                        .unwrap_or_default()
+            },
+        );
+        let (kind, visibility, id) = parse_entry_head(head, head_base, &mut self.errors)?;
         let body_base = block
             .body_range
             .as_ref()
@@ -524,7 +548,7 @@ pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
 pub(super) fn parse_struct_fields(
     body: &str,
     body_base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
+    errors: &mut Vec<ParseError>,
 ) -> Vec<StructField> {
     let mut docs = PendingDocLines::default();
     let mut fields = Vec::new();
@@ -786,29 +810,25 @@ fn parse_entry_head(
     let (visibility, rest) = parse_visibility_prefix(head);
     let rest = rest.trim_start().strip_prefix("entry")?.trim_start();
     let Some((kind_source, id_source)) = split_leading_ident(rest) else {
-        errors.push(
-            simple_error(
-                base + head.len().saturating_sub(rest.len()),
-                rest.len(),
-                "entry declarations require an explicit kind before their ID",
-                "entry game @entry.game.main",
-            )
-            .with_code("syntax.entry.missing_kind"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryMissingKind,
+            base + head.len().saturating_sub(rest.len()),
+            rest.len(),
+            "entry declarations require an explicit kind before their ID",
+            "entry game @entry.game.main",
+        ));
         return None;
     };
     let kind = EntryKind::parse(kind_source);
     let id_source = id_source.trim_start();
     if id_source.is_empty() {
-        errors.push(
-            simple_error(
-                base + head.len(),
-                0,
-                "entry declarations require an explicit canonical `@entry.*` ID",
-                "@entry.game.main",
-            )
-            .with_code("syntax.entry.missing_id"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryMissingId,
+            base + head.len(),
+            0,
+            "entry declarations require an explicit canonical `@entry.*` ID",
+            "@entry.game.main",
+        ));
         return None;
     }
     let id_base = base + head.len().saturating_sub(id_source.len());
@@ -820,38 +840,54 @@ fn parse_entry_head(
         errors,
     )?;
     if id.body().strip_prefix("entry.").is_none_or(str::is_empty) {
-        errors.push(
-            simple_error(
-                id.range().start(),
-                id.range().end().saturating_sub(id.range().start()),
-                "entry declaration IDs must use the `entry` family",
-                "@entry.name",
-            )
-            .with_code("syntax.entry.id_family"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryIdFamily,
+            id.range().start(),
+            id.range().end().saturating_sub(id.range().start()),
+            "entry declaration IDs must use the `entry` family",
+            "@entry.name",
+        ));
         return None;
     }
     if !trailing.trim().is_empty() {
-        let trailing_base = id_base + id_source.len().saturating_sub(trailing.len());
-        errors.push(
-            simple_error(
-                trailing_base,
-                trailing.trim().len(),
-                "unexpected text after the entry ID",
-                "the entry body",
-            )
-            .with_code("syntax.entry.trailing_head"),
-        );
+        let trailing_source = trailing.trim();
+        let trailing_base = id_base
+            + id_source.len().saturating_sub(trailing.len())
+            + trailing.find(trailing_source).unwrap_or_default();
+        errors.push(entry_error(
+            ParseErrorKind::EntryTrailingHead,
+            trailing_base,
+            trailing_source.len(),
+            "unexpected text after the entry ID",
+            "the entry body",
+        ));
         return None;
     }
     Some((kind, visibility, id))
+}
+
+fn entry_error(
+    kind: ParseErrorKind,
+    base: usize,
+    len: usize,
+    message: &str,
+    expected: &str,
+) -> ParseError {
+    ParseError::new_with_kind(
+        kind,
+        TextRange::new(base, base + len),
+        vec![expected.to_owned()],
+        None,
+        message.to_owned(),
+        vec![RecoverySuggestion::new(format!("use {expected} syntax"))],
+    )
 }
 
 fn parse_entry_body(
     kind: &EntryKind,
     body: &str,
     body_base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
+    errors: &mut Vec<ParseError>,
 ) -> Vec<EntryItem> {
     let mut seen_roles = BTreeMap::new();
     let mut first_goto = None;
@@ -863,67 +899,61 @@ fn parse_entry_body(
         {
             if let Some(first) = seen_roles.insert(role, range) {
                 errors.push(
-                    simple_error(
+                    entry_error(
+                        ParseErrorKind::EntryDuplicateRole,
                         range.start(),
                         range.end().saturating_sub(range.start()),
                         &format!("duplicate `{}` entry role", role.as_str()),
                         "each required role exactly once",
                     )
-                    .with_code("syntax.entry.duplicate_role")
                     .with_related(first, Some("the first role binding is here".to_owned())),
                 );
             }
             if !kind.allows_role(role) {
-                errors.push(
-                    simple_error(
-                        range.start(),
-                        range.end().saturating_sub(range.start()),
-                        &format!(
-                            "entry kind `{}` cannot bind the `{}` role",
-                            kind.as_str(),
-                            role.as_str()
-                        ),
-                        "a role allowed by this entry kind",
-                    )
-                    .with_code("syntax.entry.incompatible_role"),
-                );
+                errors.push(entry_error(
+                    ParseErrorKind::EntryIncompatibleRole,
+                    range.start(),
+                    range.end().saturating_sub(range.start()),
+                    &format!(
+                        "entry kind `{}` cannot bind the `{}` role",
+                        kind.as_str(),
+                        role.as_str()
+                    ),
+                    "a role allowed by this entry kind",
+                ));
             }
         }
         match &item {
             EntryItem::Goto(target) if kind.is_stateful() => {
                 if let Some(first) = first_goto {
                     errors.push(
-                        simple_error(
+                        entry_error(
+                            ParseErrorKind::EntryDuplicateGoto,
                             target.range().start(),
                             target.range().end().saturating_sub(target.range().start()),
                             "stateful entries require exactly one `goto` target",
                             "one initial flow target",
                         )
-                        .with_code("syntax.entry.duplicate_goto")
                         .with_related(first, Some("the first initial target is here".to_owned())),
                     );
                 } else {
                     first_goto = Some(*target.range());
                 }
             }
-            EntryItem::Goto(target) if !kind.allows_goto() => errors.push(
-                simple_error(
-                    target.range().start(),
-                    target.range().end().saturating_sub(target.range().start()),
-                    &format!("entry kind `{}` cannot declare `goto`", kind.as_str()),
-                    "controller = path",
-                )
-                .with_code("syntax.entry.incompatible_goto"),
-            ),
-            EntryItem::Route { target, .. } if !kind.allows_routes() => errors.push(
-                simple_error(
-                    target.range().start(),
-                    target.range().end().saturating_sub(target.range().start()),
-                    &format!("entry kind `{}` cannot declare routes", kind.as_str()),
-                    "the entry kind's required members",
-                )
-                .with_code("syntax.entry.incompatible_route"),
-            ),
+            EntryItem::Goto(target) if !kind.allows_goto() => errors.push(entry_error(
+                ParseErrorKind::EntryIncompatibleGoto,
+                target.range().start(),
+                target.range().end().saturating_sub(target.range().start()),
+                &format!("entry kind `{}` cannot declare `goto`", kind.as_str()),
+                "controller = path",
+            )),
+            EntryItem::Route { target, .. } if !kind.allows_routes() => errors.push(entry_error(
+                ParseErrorKind::EntryIncompatibleRoute,
+                target.range().start(),
+                target.range().end().saturating_sub(target.range().start()),
+                &format!("entry kind `{}` cannot declare routes", kind.as_str()),
+                "the entry kind's required members",
+            )),
             _ => {}
         }
         items.push(item);
@@ -934,8 +964,8 @@ fn parse_entry_body(
 
 fn parse_nominal_generic_params(
     source: Option<&str>,
-    declaration_base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
+    generic_base: usize,
+    errors: &mut Vec<ParseError>,
 ) -> Option<Vec<crate::types::GenericParam>> {
     let Some(source) = source else {
         return Some(Vec::new());
@@ -947,15 +977,14 @@ fn parse_nominal_generic_params(
     match parse_generic_params(contents) {
         Ok(params) => Some(params),
         Err(error) => {
-            errors.push(
-                simple_error(
-                    declaration_base,
-                    source.len(),
-                    &format!("invalid nominal generic parameter list: {error}"),
-                    "<T>",
-                )
-                .with_code(error.code()),
-            );
+            errors.push(ParseError::new_with_kind(
+                ParseErrorKind::NominalInvalidGenericParameters,
+                TextRange::new(generic_base, generic_base + source.len()),
+                vec!["<T>".to_owned()],
+                None,
+                format!("invalid nominal generic parameter list: {error}"),
+                vec![RecoverySuggestion::new("use <T> syntax")],
+            ));
             None
         }
     }
@@ -966,43 +995,35 @@ fn validate_required_entry_members(
     body_base: usize,
     seen_roles: &BTreeMap<EntryRoleKind, TextRange>,
     first_goto: Option<TextRange>,
-    errors: &mut Vec<super::recovery::ParseError>,
+    errors: &mut Vec<ParseError>,
 ) {
     for role in kind.required_roles() {
         if !seen_roles.contains_key(role) {
-            errors.push(
-                simple_error(
-                    body_base,
-                    0,
-                    &format!(
-                        "entry kind `{}` requires exactly one `{}` role",
-                        kind.as_str(),
-                        role.as_str()
-                    ),
-                    &format!("{} = value", role.as_str()),
-                )
-                .with_code("syntax.entry.missing_role"),
-            );
+            errors.push(entry_error(
+                ParseErrorKind::EntryMissingRole,
+                body_base,
+                0,
+                &format!(
+                    "entry kind `{}` requires exactly one `{}` role",
+                    kind.as_str(),
+                    role.as_str()
+                ),
+                &format!("{} = value", role.as_str()),
+            ));
         }
     }
     if kind.is_stateful() && first_goto.is_none() {
-        errors.push(
-            simple_error(
-                body_base,
-                0,
-                "stateful entries require exactly one `goto` target",
-                "goto @flow.initial",
-            )
-            .with_code("syntax.entry.missing_goto"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryMissingGoto,
+            body_base,
+            0,
+            "stateful entries require exactly one `goto` target",
+            "goto @flow.initial",
+        ));
     }
 }
 
-fn parse_entry_body_item(
-    item: &str,
-    base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
-) -> EntryItem {
+fn parse_entry_body_item(item: &str, base: usize, errors: &mut Vec<ParseError>) -> EntryItem {
     if let Some(role) = parse_entry_role_member(item, base, errors) {
         return role;
     }
@@ -1025,7 +1046,7 @@ fn parse_entry_body_item(
 fn parse_entry_role_member(
     item: &str,
     base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
+    errors: &mut Vec<ParseError>,
 ) -> Option<EntryItem> {
     let (name, _) = split_leading_ident(item)?;
     let role = match name {
@@ -1038,27 +1059,23 @@ fn parse_entry_role_member(
     };
     let member_range = TextRange::new(base, base + item.len());
     let Some((binding_name, value_source)) = split_top_level_binding(item) else {
-        errors.push(
-            simple_error(
-                base,
-                item.len(),
-                &format!("entry role `{}` requires `=` and a value", role.as_str()),
-                &format!("{} = value", role.as_str()),
-            )
-            .with_code("syntax.entry.role_binding"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryRoleBinding,
+            base,
+            item.len(),
+            &format!("entry role `{}` requires `=` and a value", role.as_str()),
+            &format!("{} = value", role.as_str()),
+        ));
         return Some(EntryItem::Raw(item.to_owned()));
     };
     if binding_name.trim() != role.as_str() {
-        errors.push(
-            simple_error(
-                base,
-                binding_name.len(),
-                &format!("malformed `{}` entry role name", role.as_str()),
-                role.as_str(),
-            )
-            .with_code("syntax.entry.role_binding"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryRoleBinding,
+            base,
+            binding_name.len(),
+            &format!("malformed `{}` entry role name", role.as_str()),
+            role.as_str(),
+        ));
         return Some(EntryItem::Raw(item.to_owned()));
     }
     let value = value_source.trim();
@@ -1066,15 +1083,13 @@ fn parse_entry_role_member(
         subslice_offset(item, value).expect("a trimmed binding value is a source subslice");
     let value_range = TextRange::new(base + value_offset, base + value_offset + value.len());
     if value.is_empty() {
-        errors.push(
-            simple_error(
-                value_range.start(),
-                0,
-                &format!("entry role `{}` requires a value", role.as_str()),
-                entry_role_expected_value(role),
-            )
-            .with_code("syntax.entry.role_value"),
-        );
+        errors.push(entry_error(
+            ParseErrorKind::EntryRoleValue,
+            value_range.start(),
+            0,
+            &format!("entry role `{}` requires a value", role.as_str()),
+            entry_role_expected_value(role),
+        ));
         return Some(EntryItem::Raw(item.to_owned()));
     }
     match role {
@@ -1128,23 +1143,21 @@ fn parse_entry_role_path(
     value: &str,
     value_range: TextRange,
     role: EntryRoleKind,
-    errors: &mut Vec<super::recovery::ParseError>,
+    errors: &mut Vec<ParseError>,
 ) -> Option<DottedPath> {
     if value.split('.').all(is_identifier) {
         return Some(DottedPath::parse_dotted(value));
     }
-    errors.push(
-        simple_error(
-            value_range.start(),
-            value_range.end().saturating_sub(value_range.start()),
-            &format!(
-                "entry role `{}` requires a dotted symbol path",
-                role.as_str()
-            ),
-            "module.function",
-        )
-        .with_code("syntax.entry.role_path"),
-    );
+    errors.push(entry_error(
+        ParseErrorKind::EntryRolePath,
+        value_range.start(),
+        value_range.end().saturating_sub(value_range.start()),
+        &format!(
+            "entry role `{}` requires a dotted symbol path",
+            role.as_str()
+        ),
+        "module.function",
+    ));
     None
 }
 

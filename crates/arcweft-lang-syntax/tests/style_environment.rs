@@ -6,7 +6,7 @@ use arcweft_lang_syntax::{
             StyleEnvironmentUnsupportedValueKind, StyleEnvironmentValueSyntax,
         },
     },
-    parser::parse_source,
+    parser::{parse_source, recovery::ParseErrorKind},
     source::ParsedSource,
 };
 
@@ -185,12 +185,10 @@ fn unsupported_percentage_families_are_typed_without_expression_fallback() {
             "pub style adaptive {{\n when environment(text-scale == {value}) {{ Button {{ opacity = 1 }} }}\n}}\n"
         );
         let parsed = parse_source(source);
-        assert!(
-            parsed
-                .errors()
-                .iter()
-                .any(|error| error.code() == "syntax.parse.style_environment.unsupported_value")
-        );
+        assert!(parsed.errors().iter().any(|error| {
+            error.kind() == ParseErrorKind::StyleEnvironmentUnsupportedValue
+                && error.code() == "syntax.parse.style_environment.unsupported_value"
+        }));
         let value = style(&parsed).sheet().body()[0]
             .as_environment()
             .expect("environment")
@@ -211,12 +209,10 @@ fn arbitrarily_long_fraction_never_overflows_ast() {
         "pub style adaptive {{\n when environment(text-scale == 125.{fractional}%) {{ Button {{ opacity = 1 }} }}\n}}\n"
     );
     let parsed = parse_source(source);
-    assert!(
-        parsed
-            .errors()
-            .iter()
-            .any(|error| { error.code() == "syntax.parse.style_environment.unsupported_value" })
-    );
+    assert!(parsed.errors().iter().any(|error| {
+        error.kind() == ParseErrorKind::StyleEnvironmentUnsupportedValue
+            && error.code() == "syntax.parse.style_environment.unsupported_value"
+    }));
     let value = style(&parsed).sheet().body()[0]
         .as_environment()
         .expect("environment")
@@ -241,10 +237,12 @@ fn missing_clause_comma_has_dedicated_code() {
     let error = parsed
         .errors()
         .iter()
-        .find(|error| {
-            error.code() == "syntax.parse.style_environment.expected_comma_or_close_paren"
-        })
+        .find(|error| error.kind() == ParseErrorKind::StyleEnvironmentExpectedCommaOrCloseParen)
         .expect("comma diagnostic");
+    assert_eq!(
+        error.code(),
+        "syntax.parse.style_environment.expected_comma_or_close_paren"
+    );
     assert_eq!(&source[error.range().as_range()], "dark contrast == more");
 }
 
@@ -261,10 +259,143 @@ fn unterminated_condition_recovers_at_matching_wrapper_brace() {
     let error = parsed
         .errors()
         .iter()
-        .find(|error| error.code() == "syntax.parse.style_environment.unterminated_condition")
+        .find(|error| error.kind() == ParseErrorKind::StyleEnvironmentUnterminatedCondition)
         .expect("unterminated condition diagnostic");
+    assert_eq!(
+        error.code(),
+        "syntax.parse.style_environment.unterminated_condition"
+    );
     assert_eq!(&source[error.range().as_range()], "(text-scale >= 125% ");
     let body = style(&parsed).sheet().body();
     assert!(body[0].as_environment().is_some());
     assert!(body[1].as_rule().is_some(), "next sibling rule survives");
+}
+
+#[test]
+fn environment_diagnostic_families_are_typed_with_exact_ranges() {
+    let cases = [
+        (
+            "pub style adaptive {\n    when environment color-scheme == dark { Button { opacity = 1 } }\n}\n",
+            ParseErrorKind::StyleEnvironmentExpectedOpenParen,
+            "color-scheme",
+            true,
+        ),
+        (
+            "pub style adaptive {\n    when environment(platform == desktop) { Button { opacity = 1 } }\n}\n",
+            ParseErrorKind::StyleEnvironmentExpectedField,
+            "platform",
+            false,
+        ),
+        (
+            "pub style adaptive {\n    when environment(color-scheme dark) { Button { opacity = 1 } }\n}\n",
+            ParseErrorKind::StyleEnvironmentExpectedComparison,
+            "dark",
+            true,
+        ),
+        (
+            "pub style adaptive {\n    when environment(color-scheme ==) { Button { opacity = 1 } }\n}\n",
+            ParseErrorKind::StyleEnvironmentExpectedValue,
+            ")",
+            true,
+        ),
+        (
+            "pub style adaptive {\n    when environment(color-scheme == dark contrast == more) { Button { opacity = 1 } }\n}\n",
+            ParseErrorKind::StyleEnvironmentExpectedCommaOrCloseParen,
+            "dark contrast == more",
+            false,
+        ),
+        (
+            "pub style adaptive {\n    when environment(color-scheme == dark) Button { opacity = 1 }\n}\n",
+            ParseErrorKind::StyleEnvironmentExpectedOpenBrace,
+            "Button",
+            true,
+        ),
+        (
+            "pub style adaptive {\n    when environment(text-scale >= 125% { Button { opacity = 1 } }\n    Panel { opacity = 1 }\n}\n",
+            ParseErrorKind::StyleEnvironmentUnterminatedCondition,
+            "(text-scale >= 125% ",
+            false,
+        ),
+        (
+            "pub style adaptive {\n    when environment(text-scale == +125%) { Button { opacity = 1 } }\n}\n",
+            ParseErrorKind::StyleEnvironmentUnsupportedValue,
+            "+125%",
+            false,
+        ),
+        (
+            "pub style adaptive {\n    when environment(color-scheme == dark) { token accent = 1 }\n}\n",
+            ParseErrorKind::StyleEnvironmentTokenNotAllowed,
+            "token accent = 1",
+            false,
+        ),
+    ];
+
+    for (source, kind, marker, zero_width) in cases {
+        let parsed = parse_source(source);
+        let error = parsed
+            .errors()
+            .iter()
+            .find(|error| error.kind() == kind)
+            .unwrap_or_else(|| panic!("missing {kind:?}: {:?}", parsed.errors()));
+        assert_eq!(error.code(), kind.code());
+        let marker_start = source.find(marker).expect("fixture marker");
+        if zero_width {
+            assert_eq!(
+                error.range(),
+                &arcweft_lang_syntax::ast::common::TextRange::new(marker_start, marker_start,),
+                "{kind:?}",
+            );
+        } else {
+            assert_eq!(&source[error.range().as_range()], marker, "{kind:?}");
+        }
+    }
+}
+
+#[test]
+fn environment_parser_produces_exactly_the_nine_registered_codes() {
+    let sources = [
+        "pub style adaptive {\n    when environment color-scheme == dark { Button { opacity = 1 } }\n}\n",
+        "pub style adaptive {\n    when environment(platform == desktop) { Button { opacity = 1 } }\n}\n",
+        "pub style adaptive {\n    when environment(color-scheme dark) { Button { opacity = 1 } }\n}\n",
+        "pub style adaptive {\n    when environment(color-scheme ==) { Button { opacity = 1 } }\n}\n",
+        "pub style adaptive {\n    when environment(color-scheme == dark contrast == more) { Button { opacity = 1 } }\n}\n",
+        "pub style adaptive {\n    when environment(color-scheme == dark) Button { opacity = 1 }\n}\n",
+        "pub style adaptive {\n    when environment(text-scale >= 125% { Button { opacity = 1 } }\n    Panel { opacity = 1 }\n}\n",
+        "pub style adaptive {\n    when environment(text-scale == +125%) { Button { opacity = 1 } }\n}\n",
+        "pub style adaptive {\n    when environment(color-scheme == dark) { token accent = 1 }\n}\n",
+    ];
+    let produced = sources
+        .into_iter()
+        .flat_map(|source| parse_source(source).errors().to_vec())
+        .filter(|error| {
+            matches!(
+                error.kind(),
+                ParseErrorKind::StyleEnvironmentExpectedOpenParen
+                    | ParseErrorKind::StyleEnvironmentExpectedField
+                    | ParseErrorKind::StyleEnvironmentExpectedComparison
+                    | ParseErrorKind::StyleEnvironmentExpectedValue
+                    | ParseErrorKind::StyleEnvironmentExpectedCommaOrCloseParen
+                    | ParseErrorKind::StyleEnvironmentExpectedOpenBrace
+                    | ParseErrorKind::StyleEnvironmentUnterminatedCondition
+                    | ParseErrorKind::StyleEnvironmentUnsupportedValue
+                    | ParseErrorKind::StyleEnvironmentTokenNotAllowed
+            )
+        })
+        .map(|error| error.code())
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected = [
+        "syntax.parse.style_environment.expected_open_paren",
+        "syntax.parse.style_environment.expected_field",
+        "syntax.parse.style_environment.expected_comparison",
+        "syntax.parse.style_environment.expected_value",
+        "syntax.parse.style_environment.expected_comma_or_close_paren",
+        "syntax.parse.style_environment.expected_open_brace",
+        "syntax.parse.style_environment.unterminated_condition",
+        "syntax.parse.style_environment.unsupported_value",
+        "syntax.parse.style_environment.token_not_allowed",
+    ]
+    .into_iter()
+    .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(produced, expected);
 }

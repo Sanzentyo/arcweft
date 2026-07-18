@@ -23,7 +23,9 @@ pub use self::host::{
     AgentSessionReplCommandHost, ReplCommandHost, ReplCommandHostError, ReplCommandHostResult,
     ReplProjectLoader,
 };
-pub use self::json::{ReplCommandJsonOptions, repl_command_result_json};
+pub use self::json::{
+    ReplCommandJsonOptions, repl_command_result_json, repl_transaction_error_json,
+};
 pub use self::parse::{
     ReplCommandParseError, parse_repl_command, parse_repl_input, repl_command_names,
 };

@@ -6,4 +6,5 @@ fn removed_and_session_identity_public_api_contract() {
     cases.compile_fail("tests/ui/removed_role_items.rs");
     cases.compile_fail("tests/ui/session_identity_raw_constructor.rs");
     cases.compile_fail("tests/ui/session_identity_serde.rs");
+    cases.compile_fail("tests/ui/parse_error_construction.rs");
 }

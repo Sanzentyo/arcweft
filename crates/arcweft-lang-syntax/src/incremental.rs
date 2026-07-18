@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::ast::items::TypedSyntaxTree;
 use crate::cst::SyntaxNode;
-use crate::parser::recovery::ParseError;
+use crate::parser::recovery::{ParseError, ParseErrorKind};
 
 pub mod limits;
 mod reconcile;
@@ -347,7 +347,7 @@ fn parse_checked(
     if parsed
         .errors()
         .iter()
-        .any(|error| error.code() == "syntax.assert.too_many_conditions")
+        .any(|error| error.kind() == ParseErrorKind::AssertionTooManyConditions)
     {
         return Err(ParseFailure::LimitExceeded(
             SyntaxLimit::AssertionConditions,

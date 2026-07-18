@@ -10,6 +10,7 @@ use arcweft_lang_syntax::ast::{
     module_path::{CanonicalModulePath, ModulePathRoot},
     symbol_path::SymbolPath,
 };
+use arcweft_lang_syntax::parser::recovery::ParseErrorKind;
 use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
 use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
 use std::path::PathBuf;
@@ -108,6 +109,7 @@ fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
     );
 
     let diagnostic = error.diagnostics().first().expect("diagnostic");
+    assert!(diagnostic.parse_error().is_none());
     assert_eq!(
         diagnostic.module(),
         Some(&CanonicalModulePath::crate_root())
@@ -124,6 +126,40 @@ fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
     assert_eq!(
         diagnostic.source().expect("source").name().display_name(),
         "src/main.arcw"
+    );
+}
+
+#[test]
+fn project_parse_diagnostics_retain_the_original_typed_parser_payload() {
+    let source = r"pub view Card() {
+    export part as card.heading
+    Panel().part(header)
+}
+";
+    let (project, context) = removed_role_project(source);
+    let error = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+        .expect_err("malformed View export must fail project parsing");
+    assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+
+    let diagnostic = error
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| {
+            diagnostic
+                .parse_error()
+                .is_some_and(|error| error.kind() == ParseErrorKind::ViewExportPartMissingLocal)
+        })
+        .expect("typed missing-local parser diagnostic");
+    let parse_error = diagnostic.parse_error().expect("parser payload");
+    assert_eq!(parse_error.code(), "view::export_part_missing_local");
+    assert_eq!(&source[parse_error.range().as_range()], "as");
+    assert_eq!(
+        diagnostic
+            .diagnostic()
+            .code()
+            .expect("diagnostic code")
+            .as_str(),
+        parse_error.code()
     );
 }
 
