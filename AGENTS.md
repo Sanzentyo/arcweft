@@ -405,6 +405,11 @@ While implementing a package-driven goal:
 
 When adding follow-up request markdown under `docs/reviews/requests/`:
 
+- Do not present a follow-up to the user as a named, throwable request until
+  its independently usable request markdown exists in this directory. Include
+  the repository path when presenting it. Until then, describe it only as an
+  unresolved design topic rather than inventing a request name or sequence
+  number in conversation.
 - Use sequence-preserving branch numbers for items split out of an existing
   request, for example `2026-06-24-seq-01.1-...md`,
   `2026-06-24-seq-01.2-...md`.
