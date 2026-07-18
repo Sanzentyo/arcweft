@@ -10,6 +10,7 @@ pub mod binding;
 pub mod cell;
 pub mod command;
 mod compile;
+pub mod diagnostics;
 pub mod error;
 pub mod evidence;
 mod hash;
@@ -27,7 +28,11 @@ pub use cell::{
     ReplCellKind, ReplCellList, ReplCellRecord, ReplEvaluateOutcome, ReplResetOptions,
     ReplResetOutcome, ReplUndoOptions, ReplUndoOutcome,
 };
-pub use error::{ReplTransactionError, ReplTransactionPhase};
+pub use diagnostics::{
+    AgentDiagnosticProjection, AgentDiagnosticProjector, AgentParserDiagnosticProjection,
+    AgentParserDiagnosticProjectionError,
+};
+pub use error::{ReplParseCoordinateSpace, ReplTransactionError, ReplTransactionPhase};
 pub use evidence::{
     ReplBindingEvidence, ReplDebugEventCount, ReplExecutionRecord, ReplGenerationEvidence,
     ReplGenerationId, ReplHostEffectEvidence,

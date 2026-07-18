@@ -201,7 +201,10 @@ pub(super) fn parse_label(
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewPartModifier> {
     let value = value.trim();
-    let value_offset = line.find(value).unwrap_or_default();
+    let operand_start = line
+        .find('(')
+        .map_or(0, |open_paren| open_paren.saturating_add(1));
+    let value_offset = operand_start + line[operand_start..].find(value).unwrap_or_default();
     let value_range = TextRange::new(
         line_range.start().saturating_add(value_offset),
         line_range

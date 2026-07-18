@@ -6,6 +6,12 @@ use arcweft_lang_syntax::{
     parser::{parse_source, recovery::ParseErrorKind},
     source::ParsedSource,
 };
+use arcweft_source::DiagnosticApplicability;
+
+const MISSING_AS_SOURCE: &str =
+    "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+const CANONICAL_AS_SOURCE: &str =
+    "pub view Card() {\n    export part タイトル as heading\n    Panel()\n}\n";
 
 fn first_view(source: &str) -> (ParsedSource, &str) {
     (parse_source(source), source)
@@ -82,6 +88,91 @@ fn malformed_export_recovers_without_creating_partial_declaration() {
     assert_eq!(error.code(), "view::export_part_missing_local");
     assert_eq!(&source[error.range().as_range()], "as");
     assert!(view_body(&parsed).exports().is_empty());
+}
+
+#[test]
+fn missing_as_producer_preserves_its_exact_editless_payload_and_view_recovery() {
+    assert_eq!(MISSING_AS_SOURCE.len(), 69);
+    let parsed = parse_source(MISSING_AS_SOURCE);
+    let matching = parsed
+        .errors()
+        .iter()
+        .filter(|error| error.kind() == ParseErrorKind::ViewExportPartMissingAs)
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        matching.len(),
+        1,
+        "expected exactly one missing-`as` diagnostic: {:?}",
+        parsed.errors()
+    );
+    assert_eq!(parsed.errors().len(), 1);
+    let error = matching[0];
+    assert_eq!(error.kind(), ParseErrorKind::ViewExportPartMissingAs);
+    assert_eq!(error.code(), "view::export_part_missing_as");
+    assert_eq!(
+        error.label(),
+        ParseErrorKind::ViewExportPartMissingAs.label()
+    );
+    assert_eq!(error.range().start(), 47);
+    assert_eq!(error.range().end(), 54);
+    assert_eq!(&MISSING_AS_SOURCE[error.range().as_range()], "heading");
+    assert_eq!(error.expected(), &["as public_name"]);
+    assert_eq!(error.found(), None);
+    assert_eq!(
+        error.message(),
+        "View part export needs `as` before its public name"
+    );
+    assert_eq!(error.recovery().len(), 1);
+    let suggestion = &error.recovery()[0];
+    assert_eq!(suggestion.message(), "use as public_name syntax");
+    assert_eq!(
+        suggestion.applicability(),
+        DiagnosticApplicability::Unspecified
+    );
+    assert!(suggestion.edits().is_empty());
+
+    let body = view_body(&parsed);
+    assert!(body.exports().is_empty());
+    let ViewExpr::Element(element) = body.value() else {
+        panic!("expected the recovered `Panel()` View element");
+    };
+    assert_eq!(element.callee(), "Panel");
+    let panel_start = MISSING_AS_SOURCE.find("Panel()").expect("retained Panel");
+    let panel_end = panel_start + "Panel()".len();
+    assert_eq!(panel_start, 59);
+    assert_eq!(panel_end, 66);
+    assert_eq!(&MISSING_AS_SOURCE[panel_start..panel_end], "Panel()");
+}
+
+#[test]
+fn missing_as_canonical_correction_parses_as_current_grammar() {
+    let parsed = parse_source(CANONICAL_AS_SOURCE);
+
+    assert!(
+        parsed
+            .errors()
+            .iter()
+            .all(|error| error.kind() != ParseErrorKind::ViewExportPartMissingAs),
+        "canonical current grammar produced missing-`as`: {:?}",
+        parsed.errors()
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let body = view_body(&parsed);
+    assert_eq!(body.exports().len(), 1);
+    assert_eq!(body.exports()[0].local_name().text(), "タイトル");
+    assert_eq!(body.exports()[0].public_name().text(), "heading");
+    let ViewExpr::Element(element) = body.value() else {
+        panic!("expected the canonical `Panel()` View element");
+    };
+    assert_eq!(element.callee(), "Panel");
+    let panel_start = CANONICAL_AS_SOURCE
+        .find("Panel()")
+        .expect("canonical Panel source");
+    assert_eq!(
+        &CANONICAL_AS_SOURCE[panel_start..panel_start + "Panel()".len()],
+        "Panel()"
+    );
 }
 
 #[test]

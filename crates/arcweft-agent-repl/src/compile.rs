@@ -138,6 +138,7 @@ fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionErro
     if !parse_diagnostics.is_empty() {
         return ReplTransactionError::Parse {
             diagnostics: parse_diagnostics,
+            coordinate_space: crate::error::ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
         };
     }
 
@@ -200,9 +201,17 @@ mod tests {
         let Err(error) = compile_repl_cell(&parsed, &base) else {
             panic!("malformed View export must fail REPL compilation");
         };
-        let ReplTransactionError::Parse { diagnostics } = error else {
+        let ReplTransactionError::Parse {
+            diagnostics,
+            coordinate_space,
+        } = error
+        else {
             panic!("project parser diagnostics must remain typed at the REPL boundary");
         };
+        assert_eq!(
+            coordinate_space,
+            crate::error::ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes
+        );
         let diagnostic = diagnostics
             .iter()
             .find(|diagnostic| diagnostic.kind() == ParseErrorKind::ViewExportPartMissingLocal)

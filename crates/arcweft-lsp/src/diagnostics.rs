@@ -12,12 +12,10 @@ use arcweft_lang_syntax::{
     lint::{SyntaxLint, lint_id_policy},
     parser::{parse_source, recovery::ParseError},
 };
-#[cfg(test)]
-use arcweft_source::DiagnosticApplicability;
 use arcweft_source::{
-    Diagnostic as ArcDiagnostic, DiagnosticLabel, DiagnosticLabelStyle,
-    DiagnosticSeverity as ArcDiagnosticSeverity, DiagnosticSuggestion, SourceDocument,
-    SourceDocumentId, SourceEdit, SourceName, SourceRevision, SourceSpan,
+    Diagnostic as ArcDiagnostic, DiagnosticLabelStyle, DiagnosticSeverity as ArcDiagnosticSeverity,
+    SourceDocument, SourceDocumentId, SourceName, SourceRevision, SourceSpan,
+    SourceSpanValidationError,
 };
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
@@ -41,16 +39,33 @@ pub struct DocumentAnalysis {
     source_revision: SourceRevision,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum LspDiagnosticSourceError {
-    WrongDocument {
-        expected: SourceDocumentId,
-        actual: SourceDocumentId,
-    },
-    WrongRevision {
-        expected: SourceRevision,
-        actual: SourceRevision,
-    },
+/// Revision-validating adapter from shared Arcweft diagnostics to LSP values.
+pub struct DiagnosticProjector<'a> {
+    document: &'a SourceDocument,
+    line_index: &'a LineIndex,
+}
+
+impl<'a> DiagnosticProjector<'a> {
+    /// Binds projection to one exact source document and negotiated line index.
+    pub const fn new(document: &'a SourceDocument, line_index: &'a LineIndex) -> Self {
+        Self {
+            document,
+            line_index,
+        }
+    }
+
+    /// Projects one shared diagnostic after exact document/revision validation.
+    pub fn project(
+        &self,
+        diagnostic: &ArcDiagnostic,
+    ) -> Result<Diagnostic, SourceSpanValidationError> {
+        lsp_diagnostic_from_arcweft_with_source(
+            diagnostic,
+            self.line_index,
+            self.document,
+            lsp_source_name(diagnostic),
+        )
+    }
 }
 
 impl DocumentAnalysis {
@@ -297,7 +312,7 @@ fn name_resolution_diagnostic(
     _index: usize,
     line_index: &LineIndex,
     document: &SourceDocument,
-) -> Result<Diagnostic, LspDiagnosticSourceError> {
+) -> Result<Diagnostic, SourceSpanValidationError> {
     lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
 }
 
@@ -306,7 +321,7 @@ fn readiness_diagnostic(
     _index: usize,
     line_index: &LineIndex,
     document: &SourceDocument,
-) -> Result<Diagnostic, LspDiagnosticSourceError> {
+) -> Result<Diagnostic, SourceSpanValidationError> {
     lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
 }
 
@@ -357,26 +372,16 @@ fn lsp_diagnostic_from_arcweft(
     diagnostic: &ArcDiagnostic,
     line_index: &LineIndex,
     document: &SourceDocument,
-) -> Result<Diagnostic, LspDiagnosticSourceError> {
-    lsp_diagnostic_from_arcweft_with_source(
-        diagnostic,
-        line_index,
-        document,
-        lsp_source_name(diagnostic),
-    )
+) -> Result<Diagnostic, SourceSpanValidationError> {
+    DiagnosticProjector::new(document, line_index).project(diagnostic)
 }
 
 fn lsp_diagnostic_from_parse_error(
     error: &ParseError,
     line_index: &LineIndex,
     document: &SourceDocument,
-) -> Result<Diagnostic, LspDiagnosticSourceError> {
-    lsp_diagnostic_from_arcweft_with_source(
-        &error.diagnostic(document),
-        line_index,
-        document,
-        "arcweft-syntax",
-    )
+) -> Result<Diagnostic, SourceSpanValidationError> {
+    lsp_diagnostic_from_arcweft(&error.diagnostic(document), line_index, document)
 }
 
 fn lsp_diagnostic_from_arcweft_with_source(
@@ -384,8 +389,8 @@ fn lsp_diagnostic_from_arcweft_with_source(
     line_index: &LineIndex,
     document: &SourceDocument,
     source: &'static str,
-) -> Result<Diagnostic, LspDiagnosticSourceError> {
-    validate_diagnostic_sources(diagnostic, document)?;
+) -> Result<Diagnostic, SourceSpanValidationError> {
+    diagnostic.validate_source(document)?;
     let span = primary_span(diagnostic);
     let range = span.map_or_else(start_range, |span| range_for_span(span, line_index));
     Ok(Diagnostic {
@@ -400,42 +405,6 @@ fn lsp_diagnostic_from_arcweft_with_source(
         data: suggestions_data(diagnostic, line_index),
         ..Diagnostic::default()
     })
-}
-
-fn validate_diagnostic_sources(
-    diagnostic: &ArcDiagnostic,
-    document: &SourceDocument,
-) -> Result<(), LspDiagnosticSourceError> {
-    primary_span(diagnostic)
-        .into_iter()
-        .chain(diagnostic.labels().iter().map(DiagnosticLabel::span))
-        .chain(
-            diagnostic
-                .suggestions()
-                .iter()
-                .flat_map(DiagnosticSuggestion::edits)
-                .map(SourceEdit::span),
-        )
-        .try_for_each(|span| validate_span_source(span, document))
-}
-
-fn validate_span_source(
-    span: &SourceSpan,
-    document: &SourceDocument,
-) -> Result<(), LspDiagnosticSourceError> {
-    if span.source().id() != document.identity().id() {
-        return Err(LspDiagnosticSourceError::WrongDocument {
-            expected: document.identity().id().clone(),
-            actual: span.source().id().clone(),
-        });
-    }
-    if span.source().revision() != document.identity().revision() {
-        return Err(LspDiagnosticSourceError::WrongRevision {
-            expected: document.identity().revision(),
-            actual: span.source().revision(),
-        });
-    }
-    Ok(())
 }
 
 fn primary_span(diagnostic: &ArcDiagnostic) -> Option<&SourceSpan> {
@@ -552,6 +521,9 @@ mod tests {
         AdapterParameterPresence, AdapterTypeKind,
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
+    use arcweft_source::{
+        DiagnosticApplicability, DiagnosticLabel, DiagnosticSuggestion, SourceEdit, SourceRange,
+    };
 
     #[test]
     fn stale_span_is_not_published() {
@@ -576,7 +548,7 @@ mod tests {
 
         assert!(matches!(
             lsp_diagnostic_from_arcweft(&diagnostic, &line_index, &current),
-            Err(LspDiagnosticSourceError::WrongRevision { expected, actual })
+            Err(SourceSpanValidationError::WrongRevision { expected, actual })
                 if expected == current.identity().revision()
                     && actual == stale.identity().revision()
         ));
@@ -587,6 +559,106 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(published.is_empty());
+    }
+
+    #[test]
+    fn stale_edit_is_not_published_from_a_current_diagnostic() {
+        let id = SourceDocumentId::try_new("file:///workspace/view.arcw").expect("document id");
+        let original = SourceDocument::try_new(
+            id.clone(),
+            SourceName::path("view.arcw"),
+            "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n",
+        )
+        .expect("original document");
+        let current = SourceDocument::try_new(
+            id,
+            SourceName::path("view.arcw"),
+            "pub view Card() {\n    export part タイトル as heading\n    Panel()\n}\n",
+        )
+        .expect("current document");
+        let diagnostic = ArcDiagnostic::new(ArcDiagnosticSeverity::Error, "current diagnostic")
+            .with_label(DiagnosticLabel::primary(
+                current
+                    .span(SourceRange::new(50, 57))
+                    .expect("current heading span"),
+                None,
+            ))
+            .with_suggestion(
+                DiagnosticSuggestion::new(
+                    "stale insertion",
+                    DiagnosticApplicability::MachineApplicable,
+                )
+                .with_edit(SourceEdit::new(
+                    original
+                        .span(SourceRange::new(47, 47))
+                        .expect("stale insertion span"),
+                    "as ",
+                )),
+            );
+        let line_index = LineIndex::new(current.text(), PositionEncoding::Utf16);
+
+        assert!(matches!(
+            DiagnosticProjector::new(&current, &line_index).project(&diagnostic),
+            Err(SourceSpanValidationError::WrongRevision { expected, actual })
+                if expected == current.identity().revision()
+                    && actual == original.identity().revision()
+        ));
+    }
+
+    #[test]
+    fn parser_diagnostic_test_only_edit_maps_in_both_position_encodings() {
+        const SOURCE: &str =
+            "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-generated://lsp-parser-edit/0")
+                .expect("fixture source id"),
+            SourceName::Generated,
+            SOURCE,
+        )
+        .expect("fixture source document");
+        let diagnostic = ArcDiagnostic::new(
+            ArcDiagnosticSeverity::Error,
+            "View part export needs `as` before its public name",
+        )
+        .with_code("view::export_part_missing_as")
+        .with_label(DiagnosticLabel::primary(
+            document
+                .span(SourceRange::new(47, 54))
+                .expect("fixture diagnostic span"),
+            None,
+        ))
+        .with_suggestion(
+            DiagnosticSuggestion::new(
+                "insert missing `as` keyword",
+                DiagnosticApplicability::MachineApplicable,
+            )
+            .with_edit(SourceEdit::new(
+                document
+                    .span(SourceRange::new(47, 47))
+                    .expect("fixture insertion span"),
+                "as ",
+            )),
+        );
+
+        for (encoding, expected_character) in
+            [(PositionEncoding::Utf16, 21), (PositionEncoding::Utf8, 29)]
+        {
+            let line_index = LineIndex::new(SOURCE, encoding);
+            let projected = DiagnosticProjector::new(&document, &line_index)
+                .project(&diagnostic)
+                .expect("exact revision projects");
+            let edit =
+                &projected.data.as_ref().expect("suggestion data")["suggestions"][0]["edits"][0];
+
+            assert_eq!(edit["range"]["start"]["line"], 1);
+            assert_eq!(edit["range"]["start"]["character"], expected_character);
+            assert_eq!(edit["range"]["end"], edit["range"]["start"]);
+            assert_eq!(edit["replacement"], "as ");
+            assert_eq!(
+                projected.data.as_ref().expect("suggestion data")["suggestions"][0]["applicability"],
+                "machine_applicable"
+            );
+        }
     }
 
     #[test]
@@ -718,8 +790,8 @@ flow @flow.opening start {
     }
 
     #[test]
-    fn parser_diagnostic_source_is_explicit_and_payload_is_preserved() {
-        let source = "pub view Card() {\n    export part as heading\n    Panel()\n}\n";
+    fn parser_diagnostic_missing_as_preserves_utf16_payload_without_an_edit() {
+        let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
         let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
@@ -728,18 +800,17 @@ flow @flow.opening start {
             .find(|diagnostic| {
                 diagnostic.code
                     == Some(NumberOrString::String(
-                        "view::export_part_missing_local".to_owned(),
+                        "view::export_part_missing_as".to_owned(),
                     ))
             })
             .expect("typed parser diagnostic");
 
-        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
-        assert_eq!(diagnostic.range.start, Position::new(1, 16));
-        assert_eq!(diagnostic.range.end, Position::new(1, 18));
-        assert!(
-            diagnostic
-                .message
-                .contains("private local target before `as`")
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft"));
+        assert_eq!(diagnostic.range.start, Position::new(1, 21));
+        assert_eq!(diagnostic.range.end, Position::new(1, 28));
+        assert_eq!(
+            diagnostic.message,
+            "View part export needs `as` before its public name"
         );
         assert!(
             diagnostic
@@ -747,12 +818,52 @@ flow @flow.opening start {
                 .as_ref()
                 .is_some_and(|related| related
                     .iter()
-                    .any(|item| item.message == "expected: local part name"))
+                    .any(|item| item.message == "expected: as public_name"))
         );
-        assert!(
-            diagnostic.data.as_ref().is_some_and(
-                |data| data["suggestions"][0]["message"] == "use local part name syntax"
-            )
+        assert_eq!(
+            diagnostic.data,
+            Some(serde_json::json!({
+                "suggestions": [{
+                    "message": "use as public_name syntax",
+                    "applicability": "unspecified",
+                    "edits": [],
+                }],
+            }))
+        );
+    }
+
+    #[test]
+    fn parser_diagnostic_missing_as_maps_the_same_payload_to_utf8() {
+        let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf8, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code
+                    == Some(NumberOrString::String(
+                        "view::export_part_missing_as".to_owned(),
+                    ))
+            })
+            .expect("typed parser diagnostic");
+
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft"));
+        assert_eq!(diagnostic.range.start, Position::new(1, 29));
+        assert_eq!(diagnostic.range.end, Position::new(1, 36));
+        assert_eq!(
+            diagnostic.message,
+            "View part export needs `as` before its public name"
+        );
+        assert_eq!(
+            diagnostic.data,
+            Some(serde_json::json!({
+                "suggestions": [{
+                    "message": "use as public_name syntax",
+                    "applicability": "unspecified",
+                    "edits": [],
+                }],
+            }))
         );
     }
 

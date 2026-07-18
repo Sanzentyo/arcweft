@@ -219,7 +219,7 @@ fn level_for(severity: DiagnosticSeverity) -> Level<'static> {
 }
 
 #[cfg(test)]
-mod tests {
+mod renderer_tests {
     use super::*;
     use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
     use arcweft_source::{
@@ -360,3 +360,6 @@ mod tests {
         assert!(!rendered.contains("Missing local View part name"));
     }
 }
+
+#[cfg(test)]
+mod tests;

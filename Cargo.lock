@@ -553,6 +553,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-launch",
  "arcweft-layout",
+ "arcweft-lsp",
  "arcweft-player-native",
  "arcweft-player-scene",
  "arcweft-presentation",

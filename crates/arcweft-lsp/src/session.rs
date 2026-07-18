@@ -1003,6 +1003,8 @@ fn decode<P: DeserializeOwned>(method: &'static str, value: Value) -> Result<P, 
 #[cfg(test)]
 mod character_definition_tests;
 mod lifecycle;
+#[cfg(test)]
+mod parser_diagnostic_tests;
 mod signature;
 #[cfg(test)]
 mod tests;

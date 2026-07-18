@@ -107,24 +107,42 @@ fn agent_repl_transaction_error_report(
     input: &str,
     error: &arcweft_agent_repl::ReplTransactionError,
 ) -> AgentReplCellReport {
-    let message = error.parse_diagnostics().map_or_else(
-        || error.to_string(),
-        |diagnostics| {
-            diagnostics
-                .iter()
-                .map(|diagnostic| {
-                    format!(
-                        "[{}] {} at {}..{}",
-                        diagnostic.code(),
-                        diagnostic.message(),
-                        diagnostic.range().start(),
-                        diagnostic.range().end(),
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        },
-    );
+    let message = error
+        .parse_diagnostics()
+        .zip(error.parse_coordinate_space())
+        .map_or_else(
+            || error.to_string(),
+            |(diagnostics, coordinate_space)| {
+                diagnostics
+                    .iter()
+                    .map(|diagnostic| {
+                        let mut lines = vec![format!(
+                            "error[{}] {} {}..{}: {}",
+                            diagnostic.code(),
+                            coordinate_space.as_str(),
+                            diagnostic.range().start(),
+                            diagnostic.range().end(),
+                            diagnostic.message(),
+                        )];
+                        if !diagnostic.expected().is_empty() {
+                            lines.push(format!("expected: {}", diagnostic.expected().join(", ")));
+                        }
+                        if let Some(found) = diagnostic.found() {
+                            lines.push(format!("found: {found}"));
+                        }
+                        lines.extend(diagnostic.recovery().iter().map(|suggestion| {
+                            format!(
+                                "help[{}]: {}",
+                                suggestion.applicability().as_str(),
+                                suggestion.message()
+                            )
+                        }));
+                        lines.join("\n")
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            },
+        );
     let value = serde_json::json!({
         "transaction_error": repl_transaction_error_json(error),
     });
@@ -562,39 +580,44 @@ fn cli_repl_base_snapshot(path: Option<&str>) -> Result<ReplBaseSnapshot, ReplCo
 
 #[cfg(test)]
 mod parse_diagnostic_tests {
-    use arcweft_agent_repl::ReplTransactionError;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_agent_repl::{ReplParseCoordinateSpace, ReplTransactionError};
+    use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
 
     use super::agent_repl_transaction_error_report;
 
     #[test]
     fn agent_repl_parse_failure_json_preserves_typed_diagnostics() {
         let parsed =
-            parse_source("pub view Card() {\n    export part as heading\n    Panel()\n}\n");
+            parse_source("pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n");
         let error = ReplTransactionError::Parse {
             diagnostics: parsed.errors().to_vec(),
+            coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
         };
 
         let report = agent_repl_transaction_error_report(3, "invalid cell", &error);
         let message = report.message.as_deref().expect("human parse diagnostics");
         assert!(message.contains(
-            "[view::export_part_missing_local] View part export needs a private local target before `as` at 34..36"
+            "error[view::export_part_missing_as] synthetic_source 47..54: View part export needs `as` before its public name"
         ));
-        assert!(!message.contains("Missing local View part name"));
+        assert!(!message.contains(ParseErrorKind::ViewExportPartMissingAs.label()));
         let value = report.value.expect("typed parse error JSON");
         let diagnostic = &value["transaction_error"]["diagnostics"][0];
-        assert_eq!(diagnostic["code"], "view::export_part_missing_local");
-        assert_eq!(diagnostic["label"], "Missing local View part name");
-        assert_eq!(diagnostic["coordinate_space"], "synthetic_source");
-        assert!(diagnostic["range"]["end"].as_u64().is_some());
-        assert_eq!(diagnostic["expected"][0], "local part name");
+        assert_eq!(diagnostic["code"], "view::export_part_missing_as");
+        assert_eq!(
+            diagnostic["kind"],
+            ParseErrorKind::ViewExportPartMissingAs.label()
+        );
+        assert_eq!(diagnostic["range"]["coordinate_space"], "synthetic_source");
+        assert_eq!(diagnostic["range"]["start"], 47);
+        assert_eq!(diagnostic["range"]["end"], 54);
+        assert_eq!(diagnostic["expected"][0], "as public_name");
         assert_eq!(diagnostic["found"], serde_json::Value::Null);
-        assert!(
-            diagnostic["message"]
-                .as_str()
-                .is_some_and(|message| message.contains("private local target"))
+        assert_eq!(
+            diagnostic["message"],
+            "View part export needs `as` before its public name"
         );
         assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
+        assert_eq!(diagnostic["recovery"][0]["edits"], serde_json::json!([]));
     }
 }
 

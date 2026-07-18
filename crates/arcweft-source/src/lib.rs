@@ -11,7 +11,7 @@ pub use diagnostic::{
 pub use document::{
     MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentError, SourceDocumentId,
     SourceDocumentIdError, SourceDocumentIdentity, SourceRevision, SourceSetRevision,
-    SourceSetRevisionError, SourceSpan, SourceSpanError,
+    SourceSetRevisionError, SourceSpan, SourceSpanError, SourceSpanValidationError,
 };
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SourceRange {

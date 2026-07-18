@@ -223,6 +223,23 @@ impl SourceSpan {
     pub const fn range(&self) -> SourceRange {
         self.range
     }
+
+    /// Verifies that this span belongs to the exact supplied document revision.
+    pub fn validate_for(&self, document: &SourceDocument) -> Result<(), SourceSpanValidationError> {
+        if self.source.id() != document.identity().id() {
+            return Err(SourceSpanValidationError::WrongDocument {
+                expected: document.identity().id().clone(),
+                actual: self.source.id().clone(),
+            });
+        }
+        if self.source.revision() != document.identity().revision() {
+            return Err(SourceSpanValidationError::WrongRevision {
+                expected: document.identity().revision(),
+                actual: self.source.revision(),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
@@ -265,13 +282,30 @@ pub enum SourceSpanError {
     NotUtf8Boundary,
 }
 
+/// Failure to use a span with a different document identity or revision.
+#[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SourceSpanValidationError {
+    /// The span and supplied document have different logical identifiers.
+    #[error("source span belongs to document `{actual}`, not `{expected}`")]
+    WrongDocument {
+        expected: SourceDocumentId,
+        actual: SourceDocumentId,
+    },
+    /// The span and supplied document have different content revisions.
+    #[error("source span belongs to revision {actual:?}, not {expected:?}")]
+    WrongRevision {
+        expected: SourceRevision,
+        actual: SourceRevision,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
 
     use super::{
         SourceDocument, SourceDocumentId, SourceDocumentIdError, SourceRevision, SourceSetRevision,
-        SourceSetRevisionError, SourceSpanError,
+        SourceSetRevisionError, SourceSpanError, SourceSpanValidationError,
     };
     use crate::{SourceName, SourceRange};
 
@@ -346,6 +380,60 @@ mod tests {
             document("manifest", "aéz").span(SourceRange::new(2, 3)),
             Err(SourceSpanError::NotUtf8Boundary)
         );
+    }
+
+    #[test]
+    fn parser_diagnostic_fixture_rejects_invalid_ranges() {
+        let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let document = document("view-export", source);
+
+        assert_eq!(
+            document.span(SourceRange::new(54, 47)),
+            Err(SourceSpanError::Reversed)
+        );
+        assert_eq!(
+            document.span(SourceRange::new(69, 70)),
+            Err(SourceSpanError::OutOfBounds)
+        );
+        assert_eq!(
+            document.span(SourceRange::new(35, 36)),
+            Err(SourceSpanError::NotUtf8Boundary)
+        );
+    }
+
+    #[test]
+    fn parser_diagnostic_fixture_rejects_cross_document_and_stale_spans() {
+        let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let original = document("view-export", source);
+        let diagnostic_span = original
+            .span(SourceRange::new(47, 54))
+            .expect("fixture diagnostic span");
+        let edit_span = original
+            .span(SourceRange::new(47, 47))
+            .expect("fixture insertion span");
+
+        let other = document("other-view-export", source);
+        for span in [&diagnostic_span, &edit_span] {
+            assert!(matches!(
+                span.validate_for(&other),
+                Err(SourceSpanValidationError::WrongDocument { expected, actual })
+                    if &expected == other.identity().id()
+                        && &actual == original.identity().id()
+            ));
+        }
+
+        let current = document(
+            "view-export",
+            "pub view Card() {\n    export part タイトル as heading\n    Panel()\n}\n",
+        );
+        for span in [&diagnostic_span, &edit_span] {
+            assert!(matches!(
+                span.validate_for(&current),
+                Err(SourceSpanValidationError::WrongRevision { expected, actual })
+                    if expected == current.identity().revision()
+                        && actual == original.identity().revision()
+            ));
+        }
     }
 
     #[test]

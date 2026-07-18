@@ -73,6 +73,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 
+[dev-dependencies]
+arcweft-lsp = { path = "../arcweft-lsp" }
+arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
+
 [[bin]]
 name = "arcw"
 path = "src/main.rs"

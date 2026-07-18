@@ -15,6 +15,15 @@ pub enum ReplTransactionPhase {
     RuntimeSessionPreflight,
 }
 
+/// Coordinate space retained with parser diagnostics at the REPL boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReplParseCoordinateSpace {
+    /// UTF-8 byte offsets in the normalized authored cell source.
+    CellSourceUtf8Bytes,
+    /// UTF-8 byte offsets in the generated compilation source.
+    SyntheticSourceUtf8Bytes,
+}
+
 /// Structured cell transaction failure. Pre-commit variants leave committed
 /// session state unchanged.
 #[derive(Debug, Error)]
@@ -29,7 +38,10 @@ pub enum ReplTransactionError {
         actual: ReplCellKind,
     },
     #[error("REPL cell parsing failed")]
-    Parse { diagnostics: Vec<ParseError> },
+    Parse {
+        diagnostics: Vec<ParseError>,
+        coordinate_space: ReplParseCoordinateSpace,
+    },
     #[error("{phase:?} failed: {message}")]
     Compile {
         phase: ReplTransactionPhase,
@@ -65,8 +77,30 @@ impl ReplTransactionError {
     #[must_use]
     pub fn parse_diagnostics(&self) -> Option<&[ParseError]> {
         match self {
-            Self::Parse { diagnostics } => Some(diagnostics),
+            Self::Parse { diagnostics, .. } => Some(diagnostics),
             _ => None,
+        }
+    }
+
+    /// Coordinate space shared by the retained parser diagnostics.
+    #[must_use]
+    pub const fn parse_coordinate_space(&self) -> Option<ReplParseCoordinateSpace> {
+        match self {
+            Self::Parse {
+                coordinate_space, ..
+            } => Some(*coordinate_space),
+            _ => None,
+        }
+    }
+}
+
+impl ReplParseCoordinateSpace {
+    /// Stable protocol spelling for this coordinate space.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CellSourceUtf8Bytes => "source_utf8_bytes",
+            Self::SyntheticSourceUtf8Bytes => "synthetic_source",
         }
     }
 }

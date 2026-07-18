@@ -1,4 +1,4 @@
-use crate::SourceSpan;
+use crate::{SourceDocument, SourceSpan, SourceSpanValidationError};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DiagnosticSeverity {
@@ -104,6 +104,18 @@ impl SourceEdit {
 
     pub fn replacement(&self) -> &str {
         &self.replacement
+    }
+
+    /// Applies this edit to the exact document revision that owns its span.
+    pub fn apply(&self, document: &SourceDocument) -> Result<String, SourceSpanValidationError> {
+        self.span.validate_for(document)?;
+        let range = self.span.range().as_range();
+        let mut edited =
+            String::with_capacity(document.text().len() - range.len() + self.replacement.len());
+        edited.push_str(&document.text()[..range.start]);
+        edited.push_str(&self.replacement);
+        edited.push_str(&document.text()[range.end..]);
+        Ok(edited)
     }
 }
 
@@ -273,6 +285,23 @@ impl Diagnostic {
     pub fn commands(&self) -> &[DiagnosticCommand] {
         &self.commands
     }
+
+    /// Verifies that every span belongs to the exact supplied document revision.
+    pub fn validate_source(
+        &self,
+        document: &SourceDocument,
+    ) -> Result<(), SourceSpanValidationError> {
+        self.span
+            .iter()
+            .chain(self.labels.iter().map(DiagnosticLabel::span))
+            .chain(
+                self.suggestions
+                    .iter()
+                    .flat_map(DiagnosticSuggestion::edits)
+                    .map(SourceEdit::span),
+            )
+            .try_for_each(|span| span.validate_for(document))
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -309,7 +338,9 @@ mod tests {
         Diagnostic, DiagnosticApplicability, DiagnosticBag, DiagnosticCommand, DiagnosticLabel,
         DiagnosticSeverity, DiagnosticSuggestion, SourceEdit,
     };
-    use crate::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+    use crate::{
+        SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpanValidationError,
+    };
 
     #[test]
     fn diagnostic_applicability_has_stable_protocol_spellings() {
@@ -369,5 +400,85 @@ mod tests {
         assert_eq!(diagnostic.notes(), &["style lint".to_owned()]);
         assert_eq!(diagnostic.suggestions().len(), 1);
         assert_eq!(diagnostic.commands().len(), 1);
+    }
+
+    #[test]
+    fn parser_diagnostic_test_only_edit_is_separate_and_exactly_applicable() {
+        const SOURCE: &str =
+            "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        const CORRECTED_SOURCE: &str =
+            "pub view Card() {\n    export part タイトル as heading\n    Panel()\n}\n";
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-generated://parser-diagnostic-edit/0")
+                .expect("fixture source id"),
+            SourceName::Generated,
+            SOURCE,
+        )
+        .expect("fixture source document");
+        let edit = SourceEdit::new(
+            document
+                .span(SourceRange::new(47, 47))
+                .expect("UTF-8 insertion boundary"),
+            "as ",
+        );
+        let suggestion = DiagnosticSuggestion::new(
+            "insert missing `as` keyword",
+            DiagnosticApplicability::MachineApplicable,
+        )
+        .with_edit(edit.clone());
+
+        assert_eq!(
+            suggestion.applicability(),
+            DiagnosticApplicability::MachineApplicable
+        );
+        assert_eq!(suggestion.edits(), std::slice::from_ref(&edit));
+        assert_eq!(edit.span().range(), SourceRange::new(47, 47));
+        assert_eq!(edit.replacement(), "as ");
+        assert_eq!(
+            edit.apply(&document).expect("exact revision edit applies"),
+            CORRECTED_SOURCE
+        );
+
+        let diagnostic = Diagnostic::new(
+            DiagnosticSeverity::Error,
+            "View part export needs `as` before its public name",
+        )
+        .with_label(DiagnosticLabel::primary(
+            document
+                .span(SourceRange::new(47, 54))
+                .expect("fixture diagnostic span"),
+            None,
+        ))
+        .with_suggestion(suggestion);
+        assert_eq!(diagnostic.validate_source(&document), Ok(()));
+    }
+
+    #[test]
+    fn parser_diagnostic_test_edit_rejects_a_stale_revision() {
+        const SOURCE: &str =
+            "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let id = SourceDocumentId::try_new("arcweft-generated://parser-diagnostic-edit/0")
+            .expect("fixture source id");
+        let original = SourceDocument::try_new(id.clone(), SourceName::Generated, SOURCE)
+            .expect("original fixture source");
+        let edit = SourceEdit::new(
+            original
+                .span(SourceRange::new(47, 47))
+                .expect("original insertion span"),
+            "as ",
+        );
+        let current = SourceDocument::try_new(
+            id,
+            SourceName::Generated,
+            "pub view Card() {\n    export part タイトル as heading\n    Panel()\n}\n",
+        )
+        .expect("current fixture source");
+
+        assert!(matches!(
+            edit.apply(&current),
+            Err(SourceSpanValidationError::WrongRevision { expected, actual })
+                if expected == current.identity().revision()
+                    && actual == original.identity().revision()
+        ));
     }
 }

@@ -41,14 +41,17 @@ label, ranges, expected/found payload, message, and recovery suggestions.
 The parser projects its typed kind into that representation in one direction;
 no consumer reconstructs a parser kind from code text.
 
-LSP parser diagnostics set `source = "arcweft-syntax"` from the typed parser
-origin. Other shared diagnostics retain their existing source selection.
+LSP parser diagnostics retain the existing code-family source classifier:
+`syntax.*` / `AWF0*` use `arcweft-syntax`, while View diagnostic codes use
+`arcweft`. Other shared diagnostics retain their existing source selection.
 
 Agent-owned JSON projection now lives beside the typed REPL command
 projection. The CLI consumes that one-way projection instead of maintaining a
-second parser-payload serializer. `DiagnosticApplicability::as_str()` remains
-owned by `arcweft-source`, so protocol spellings are not repeated in adapter
-crates.
+second parser-payload serializer. Revision-bound direct projections use
+source-local UTF-8 byte coordinates; transaction errors that have not yet been
+bound to an authored source mapping remain explicitly marked
+`synthetic_source`. `DiagnosticApplicability::as_str()` remains owned by
+`arcweft-source`, so protocol spellings are not repeated in adapter crates.
 
 ## Changed areas
 
@@ -63,7 +66,7 @@ crates.
 - `arcweft-lsp`: explicit parser origin and payload/suggestion projection;
 - `arcweft-source`: owned applicability spelling used by protocol adapters.
 
-## Contract correction required
+## Contract correction resolution
 
 The package's cross-adapter fixture requires a source-derived non-`Generic`
 diagnostic with nonempty `found` and at least one concrete recovery edit.
@@ -81,9 +84,14 @@ The independent correction request is:
 
 - [seq-06.11d.4.2.2.1 parser recovery payload producer contract correction](../reviews/requests/2026-07-18-seq-06.11d.4.2.2.1-parser-recovery-payload-producer-contract-correction.md)
 
-Until that contract decides which producer changes, or relaxes the fixture to
-existing payload, `SER-006` remains an explicit verification gap rather than an
-ad hoc parser behavior change.
+The completed correction selects the existing
+`ViewExportPartMissingAs` producer, preserves `found=None` and its editless
+recovery suggestion, and covers concrete edits through a separate typed
+test-only fixture:
+
+- [parser recovery payload producer final contract](parser-recovery-payload-producer-final-contract-2026-07-19.md)
+
+No ad hoc parser behavior change is required.
 
 The package's literal-spelling audit also crosses independent typed owners:
 `ExprParseError` owns expression diagnostics including
@@ -208,14 +216,23 @@ or missing final line feed. `git diff --check` is not applicable in this
 Jujutsu-only workspace because it has no colocated Git working-tree metadata;
 the changed-file scan supplies the corresponding whitespace evidence.
 
-The disk embargo was lifted after `cargo clean`; the focused and owner-level
-test gates above have run. The remaining review-cut gates are:
+The disk embargo was lifted after `cargo clean`. Before the correction child
+was integrated, the root checkout passed
+`cargo check --workspace --all-targets --all-features`. The integrated cut
+repeats that check together with the remaining review gates:
 
 ```bash
 cargo check --workspace --all-targets
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
+
+The correction child later ran focused source, syntax, compiler, Agent, LSP,
+and CLI routes plus structured metadata and the canonical audit. Its exact
+results, inherited `.part()` span assertion mismatch, and default-feature
+asset blocker are recorded in the
+[parser recovery payload producer final contract](parser-recovery-payload-producer-final-contract-2026-07-19.md).
+It did not retroactively run every broad predecessor gate above.
 
 The new trybuild fixture's compiler-produced visibility errors were reviewed
 and accepted in `tests/ui/parse_error_construction.stderr`.

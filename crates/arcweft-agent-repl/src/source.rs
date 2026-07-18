@@ -1,4 +1,6 @@
-use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
+use arcweft_lang_syntax::parser::{
+    FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, parse_fragment,
+};
 use arcweft_tooling::agent_repl::{
     agent_repl_classification_from_fragment, agent_repl_parse_fragment,
 };
@@ -33,7 +35,20 @@ pub(crate) fn classify_repl_cell(
             command: format!(":{command}"),
         });
     }
-    let fragment = agent_repl_parse_fragment(&source);
+    let fragment = input.expected_kind().map_or_else(
+        || agent_repl_parse_fragment(&source),
+        |kind| {
+            parse_fragment(
+                &source,
+                match kind {
+                    ReplCellKind::Item => FragmentKind::Items,
+                    ReplCellKind::Statement => FragmentKind::Statements,
+                    ReplCellKind::Expression => FragmentKind::Expression,
+                },
+                ParseOptions::default(),
+            )
+        },
+    );
     ensure_fragment_complete(&fragment)?;
     let kind = repl_cell_kind(&fragment)?;
     if let Some(expected) = input.expected_kind()
@@ -70,8 +85,14 @@ pub(crate) fn classify_repl_cell(
 }
 
 fn ensure_fragment_complete(fragment: &ParsedFragment) -> Result<(), ReplTransactionError> {
+    if !fragment.errors().is_empty() {
+        return Err(ReplTransactionError::Parse {
+            diagnostics: fragment.errors().to_vec(),
+            coordinate_space: crate::error::ReplParseCoordinateSpace::CellSourceUtf8Bytes,
+        });
+    }
     let classification = agent_repl_classification_from_fragment(fragment);
-    if matches!(fragment.completion(), ParseCompletion::Complete) && fragment.errors().is_empty() {
+    if matches!(fragment.completion(), ParseCompletion::Complete) {
         return Ok(());
     }
     let message = if classification.errors.is_empty() {
@@ -136,6 +157,8 @@ fn indent_body(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::cell::{ReplCellId, ReplCellInput};
+    use crate::error::{ReplParseCoordinateSpace, ReplTransactionError};
+    use arcweft_lang_syntax::parser::recovery::ParseErrorKind;
 
     use super::classify_repl_cell;
 
@@ -156,5 +179,31 @@ mod tests {
                 crate::error::ReplTransactionPhase::ClassifyParse
             );
         }
+    }
+
+    #[test]
+    fn typed_item_parse_failure_keeps_cell_source_coordinates() {
+        let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let Err(error) = classify_repl_cell(ReplCellId::new(1), &ReplCellInput::item(source), "")
+        else {
+            panic!("malformed View export must fail classification");
+        };
+        let ReplTransactionError::Parse {
+            diagnostics,
+            coordinate_space,
+        } = error
+        else {
+            panic!("classification must retain the typed parser payload");
+        };
+        assert_eq!(
+            coordinate_space,
+            ReplParseCoordinateSpace::CellSourceUtf8Bytes
+        );
+        let diagnostic = diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::ViewExportPartMissingAs)
+            .expect("missing-as parser diagnostic");
+        assert_eq!(diagnostic.range().as_range(), 47..54);
+        assert_eq!(&source[diagnostic.range().as_range()], "heading");
     }
 }
