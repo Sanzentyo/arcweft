@@ -4,7 +4,13 @@ use super::{
     ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, ProfileTopologyResourceId,
     ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, load_profile_topology,
 };
-use arcweft_adapter_context::standard::standard_registry;
+use arcweft_adapter_context::{manifest::AdapterEffectCapability, standard::standard_registry};
+use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_sema::{
+    check::typecheck_hir, diagnostics::TypeCheckErrorKind,
+    effect_diagnostics::EffectDiagnosticCode, env::TypeCheckEnv,
+};
+use arcweft_lang_syntax::parser::parse_source;
 use arcweft_launch::LaunchProfileSelection;
 use arcweft_rust_abi::{
     ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPurity,
@@ -231,6 +237,104 @@ fn adapter_overlay_decodes_before_adapter_selection() {
         topology.registration_adapter_manifests()[0].id().as_str(),
         "custom-overlay"
     );
+}
+
+#[test]
+fn selected_profile_owns_one_exact_adapter_effect_inventory() {
+    let project = TestProject::new("topology-selected-adapter-effects");
+    project.write(
+        "arcw.toml",
+        r#"[package]
+name = "topology-tests"
+version = "0.1.0"
+
+[profiles.read]
+kind = "game"
+entry = "entry.game.main"
+source = "src/main.arcw"
+adapter = "reader"
+adapter_manifests = ["adapters/reader.toml", "adapters/network.toml"]
+
+[profiles.network]
+kind = "game"
+entry = "entry.game.main"
+source = "src/main.arcw"
+adapter = "network"
+adapter_manifests = ["adapters/reader.toml", "adapters/network.toml"]
+"#,
+    );
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write(
+        "adapters/reader.toml",
+        &adapter_manifest_with_effects("reader", &["fs.read"]),
+    );
+    project.write(
+        "adapters/network.toml",
+        &adapter_manifest_with_effects("network", &["net.read"]),
+    );
+
+    let read = project.load(LaunchProfileSelection::Explicit("read"), &[], &[]);
+    assert_eq!(read.selected_profile().id().as_str(), "read");
+    assert_eq!(read.adapter().id().as_str(), "reader");
+    assert_eq!(
+        read.adapter()
+            .effects()
+            .iter()
+            .map(AdapterEffectCapability::as_str)
+            .collect::<Vec<_>>(),
+        ["fs.read"]
+    );
+    assert_eq!(read.adapter_sources().len(), 2);
+    assert_eq!(read.registration_adapter_manifests().len(), 1);
+    assert_eq!(
+        read.registration_adapter_manifests()[0].id().as_str(),
+        "reader"
+    );
+
+    let network = project.load(LaunchProfileSelection::Explicit("network"), &[], &[]);
+    assert_eq!(network.selected_profile().id().as_str(), "network");
+    assert_eq!(network.adapter().id().as_str(), "network");
+    assert_eq!(
+        network
+            .adapter()
+            .effects()
+            .iter()
+            .map(AdapterEffectCapability::as_str)
+            .collect::<Vec<_>>(),
+        ["net.read"]
+    );
+    assert_eq!(network.registration_adapter_manifests().len(), 1);
+    assert_eq!(
+        network.registration_adapter_manifests()[0].id().as_str(),
+        "network"
+    );
+
+    let parsed = parse_source(
+        r"
+extern capability fs {
+    fn read() -> String effects { fs.read }
+}
+flow @flow.main main effects { fs.read } {
+    let body = fs.read()
+}
+",
+    );
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_to_hir(parsed.typed_tree()).expect("capability fixture lowers");
+
+    let read_env = read.adapter().apply_to_target_env(TypeCheckEnv::new());
+    typecheck_hir(&hir, &read_env).expect("selected reader adapter grants fs.read");
+
+    let network_env = network.adapter().apply_to_target_env(TypeCheckEnv::new());
+    let errors =
+        typecheck_hir(&hir, &network_env).expect_err("selected network adapter lacks fs.read");
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            TypeCheckErrorKind::Effect { diagnostic }
+                if diagnostic.code() == EffectDiagnosticCode::CapabilityUnavailable
+        )
+    }));
 }
 
 #[test]
@@ -667,6 +771,23 @@ fn adapter_manifest(id: &str) -> String {
         r#"schema_version = 1
 id = "{id}"
 display_name = "{id}"
+functions = []
+host_calls = []
+"#
+    )
+}
+
+fn adapter_manifest_with_effects(id: &str, effects: &[&str]) -> String {
+    let effects = effects
+        .iter()
+        .map(|effect| format!("\"{effect}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        r#"schema_version = 1
+id = "{id}"
+display_name = "{id}"
+effects = [{effects}]
 functions = []
 host_calls = []
 "#

@@ -17,3 +17,9 @@ fn descriptor_has_no_persisted_codec() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/character_descriptor_not_serializable.rs");
 }
+
+#[test]
+fn capability_policy_has_no_mutable_semantic_record() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/capability_policy_absent.rs");
+}

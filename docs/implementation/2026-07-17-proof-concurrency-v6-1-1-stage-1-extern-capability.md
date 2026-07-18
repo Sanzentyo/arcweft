@@ -56,17 +56,19 @@ Every direct recovery fixture reconstructs the exact source bytes. No removed
 syntax spelling, compatibility branch, source gate, or historical kind was
 introduced.
 
-## Explicit design non-goal
+## Capability-policy split resolution
 
-The canonical language chapter lists `CapabilityPolicyDecl` without defining
-its production, typed payload, ownership, semantics, diagnostics, or runtime
-presence. This cut does not guess a spelling or preserve a raw string.
+The follow-up
+[proof-concurrency v6.1.1.1 capability policy declaration final contract](../reviews/requests/2026-07-17-proof-concurrency-v6.1.1.1-capability-policy-declaration-final-contract.md)
+resolved the placeholder as `DELETE + DERIVE`. The source-language member
+vocabulary contains only capability `type` and `fn` declarations. No policy
+spelling, syntax kind, AST/HIR node, manifest field, semantic record, runtime
+field, or compatibility recognizer is introduced.
 
-The independently throwable follow-up request is
-[proof-concurrency v6.1.1.1 capability policy declaration final contract](../reviews/requests/2026-07-17-proof-concurrency-v6.1.1.1-capability-policy-declaration-final-contract.md).
-It requires an evidence-based keep/delete/derive/manifest decision plus exact
-AST/HIR/sema/project/runtime participation and tests. The already verified
-type/function/effect substrate must not be redesigned without a concrete flaw.
+Function effect clauses remain the source owner of external effects. The exact
+selected profile and adapter own target availability, while runtime-host
+conformance owns concrete host-call support. The already verified
+type/function/effect substrate is unchanged by that resolution.
 
 ## Ownership exclusions
 
@@ -130,8 +132,8 @@ or crate boundary, so dependency fan-in and fan-out are unchanged.
 
 Stage 1 remains open. Other sufficiently designed retained declaration
 families and their malformed/recovery cross-products still require direct
-typed descendants. The split capability-policy contract remains a design
-non-goal until returned. Only after Stage 1 closes may the package proceed to
-private attachment/reconciliation, the atomic public syntax switch, and final
+typed descendants. The capability-policy split is resolved without adding a
+retained family. Only after Stage 1 closes may the package proceed to private
+attachment/reconciliation, the atomic public syntax switch, and final
 predicate/proof typed wrappers and `ProofBlock`. No partial HIR identity
 migration is permitted before those gates.

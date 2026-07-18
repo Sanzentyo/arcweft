@@ -893,6 +893,37 @@ flow @flow.opening start {
     }
 
     #[test]
+    fn policy_shaped_top_level_text_uses_generic_syntax_diagnostics() {
+        let source = "policy capability host {\n    allow = fs.read\n}\npub character bob {}\n";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let diagnostic = analysis
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.code == Some(NumberOrString::String("syntax.parse".to_owned()))
+            })
+            .expect("generic syntax diagnostic is published");
+
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
+        assert_eq!(diagnostic.message, "unexpected top-level item");
+        assert_eq!(diagnostic.range.start, Position::new(0, 0));
+        assert_eq!(diagnostic.range.end, Position::new(0, 24));
+        let data = diagnostic.data.as_ref().expect("generic recovery data");
+        assert_eq!(
+            data["suggestions"][0]["message"],
+            "use a current Arcweft declaration or flow-item form"
+        );
+        assert!(
+            !diagnostic.message.to_ascii_lowercase().contains("removed")
+                && !diagnostic
+                    .message
+                    .to_ascii_lowercase()
+                    .contains("deprecated")
+        );
+    }
+
+    #[test]
     fn diagnostics_map_explicit_decl_id_to_hint() {
         let source = r"
 flow @flow.opening {

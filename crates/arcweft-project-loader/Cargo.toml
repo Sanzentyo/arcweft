@@ -27,6 +27,7 @@ ureq.workspace = true
 [dev-dependencies]
 arcweft-render-text = { path = "../arcweft-render-text" }
 ed25519-dalek.workspace = true
+trybuild.workspace = true
 
 [lib]
 path = "src/lib.rs"

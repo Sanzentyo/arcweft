@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_sema::CapabilityPolicy`
+ --> tests/ui/capability_policy_absent.rs:1:5
+  |
+1 | use arcweft_lang_sema::CapabilityPolicy;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `CapabilityPolicy` in the root

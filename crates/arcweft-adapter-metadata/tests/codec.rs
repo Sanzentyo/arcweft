@@ -92,6 +92,25 @@ fn unknown_fields_and_explicit_null_are_rejected() {
 }
 
 #[test]
+fn capability_policy_is_rejected_as_an_ordinary_unknown_metadata_field() {
+    let unknown = RUST_METADATA.replacen(
+        "\"schema\": 1,",
+        "\"schema\": 1, \"capability_policy\": {},",
+        1,
+    );
+
+    let error = SourceBackedAdapterMetadata::decode(&unknown)
+        .expect_err("unknown policy field is rejected");
+    let AdapterMetadataCodecError::Typed { message } = error else {
+        panic!("expected typed metadata rejection, got {error:?}");
+    };
+    assert!(
+        message.contains("unknown field `capability_policy`"),
+        "unexpected typed metadata error: {message}"
+    );
+}
+
+#[test]
 fn format_schema_family_and_nominal_ids_are_closed() {
     for tampered in [
         RUST_METADATA.replacen(

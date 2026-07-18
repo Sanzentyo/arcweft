@@ -865,6 +865,74 @@ flow @flow.main main {
 }
 
 #[test]
+fn capability_effects_are_qualified_deduplicated_and_operation_local() {
+    let tree = parse_ok(
+        r"
+extern capability fs {
+    fn read() -> String effects { fs.read, fs.read }
+    fn write(text: String) -> Unit effects { fs.write }
+    fn noop() -> Unit
+}
+
+flow @flow.read read effects { fs.read } {
+    let body = fs.read()
+}
+
+flow @flow.noop noop effects { } {
+    fs.noop()
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("capability effect fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+
+    assert!(
+        report.diagnostics.is_empty(),
+        "capability effect derivation should type-check: {:?}",
+        report.diagnostics
+    );
+    let read = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new("flow.read"))
+        .expect("read flow has an effect summary");
+    assert_eq!(read.inferred().to_labels(), ["fs.read"]);
+    let noop = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new("flow.noop"))
+        .expect("noop flow has an effect summary");
+    assert!(noop.inferred().is_empty());
+}
+
+#[test]
+fn capability_calls_use_only_the_selected_operation_effects() {
+    let tree = parse_ok(
+        r"
+extern capability storage {
+    fn load() -> String effects { storage.read }
+    fn save(text: String) -> Unit effects { storage.write }
+}
+
+flow @flow.load load effects { storage.read } {
+    let body = storage.load()
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("operation-local effect fixture lowers");
+    let report = analyze_types(&hir, &TypeCheckEnv::new());
+
+    assert!(
+        report.diagnostics.is_empty(),
+        "unused capability operations must not add effects: {:?}",
+        report.diagnostics
+    );
+    let summary = report
+        .effects
+        .summary(&crate::effect_model::CallableId::new("flow.load"))
+        .expect("load flow has an effect summary");
+    assert_eq!(summary.inferred().to_labels(), ["storage.read"]);
+}
+
+#[test]
 fn target_effect_availability_is_separate_from_checker_capabilities() {
     let tree = parse_ok(
         r#"

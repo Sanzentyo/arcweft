@@ -1,0 +1,15 @@
+error[E0560]: struct `HostTaskRequestTemplate` has no field named `policy`
+  --> tests/ui/runtime_capability_policy_absent.rs:10:9
+   |
+10 |         policy: (),
+   |         ^^^^^^ `HostTaskRequestTemplate` does not have this field
+   |
+   = note: all struct fields are already assigned
+
+error[E0559]: variant `HostTaskRequest::Custom` has no field named `policy`
+  --> tests/ui/runtime_capability_policy_absent.rs:17:9
+   |
+17 |         policy: (),
+   |         ^^^^^^ `HostTaskRequest::Custom` does not have this field
+   |
+   = note: all struct fields are already assigned

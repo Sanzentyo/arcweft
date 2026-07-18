@@ -155,3 +155,28 @@ fn host_task_request_covers_sans_io_adapter_work() {
     assert_eq!(requests[11].host_call_id(), "system.core_count");
     assert_eq!(requests[12].host_call_id(), "custom.capability.op");
 }
+
+#[test]
+fn host_request_serialization_contains_only_owned_runtime_fields() {
+    let template = HostTaskRequestTemplate::new("custom.capability", "read", []);
+    assert_eq!(
+        serde_json::to_value(&template).expect("host request template serializes"),
+        serde_json::json!({
+            "capability": "custom.capability",
+            "operation": "read",
+            "args": []
+        })
+    );
+
+    let request = HostTaskRequest::custom("custom.capability", "read", []);
+    assert_eq!(
+        serde_json::to_value(&request).expect("host request serializes"),
+        serde_json::json!({
+            "Custom": {
+                "capability": "custom.capability",
+                "operation": "read",
+                "args": []
+            }
+        })
+    );
+}

@@ -223,7 +223,7 @@ impl RuntimeHostConformanceDiagnostic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_adapter_context::manifest::AdapterHostCall;
+    use arcweft_adapter_context::manifest::{AdapterEffectCapability, AdapterHostCall};
 
     #[test]
     fn standard_native_includes_file_system_info_and_scheduler_calls() {
@@ -311,5 +311,29 @@ mod tests {
             .with_adapter_manifest(&manifest);
 
         assert!(capabilities.check_adapter_manifest(&manifest).is_success());
+    }
+
+    #[test]
+    fn effect_availability_does_not_substitute_for_runner_host_call_support() {
+        let manifest = AdapterManifest::new("custom", "Custom")
+            .with_effect(AdapterEffectCapability::new("fs.read"))
+            .with_host_call(AdapterHostCall::new("custom.read", []));
+        let report = RuntimeHostCapabilities::new().check_adapter_manifest(&manifest);
+
+        assert_eq!(
+            manifest
+                .effects()
+                .iter()
+                .map(AdapterEffectCapability::as_str)
+                .collect::<Vec<_>>(),
+            ["fs.read"]
+        );
+        assert_eq!(report.diagnostics().len(), 1);
+        assert_eq!(
+            report.diagnostics()[0].kind(),
+            RuntimeHostConformanceDiagnosticKind::MissingHostCallImplementation
+        );
+        assert_eq!(report.diagnostics()[0].adapter_id(), "custom");
+        assert_eq!(report.diagnostics()[0].host_call().as_str(), "custom.read");
     }
 }

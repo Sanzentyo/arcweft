@@ -532,10 +532,17 @@ entry server @entry.http {
 
 ```text
 ExternCapabilityDecl := Visibility? 'extern' 'capability' CapabilityId CapabilityBlock
-CapabilityItem := CapabilityFnDecl | TypeDecl | CapabilityPolicyDecl
+CapabilityBlock := '{' CapabilityItem* '}'
+CapabilityItem := TypeDecl | CapabilityFnDecl
 CapabilityFnDecl := 'fn' Ident GenericParams? ParamGroup+ ReturnType? EffectClause?
-EffectClause := 'effects' '{' CapabilityEffect* '}'
+EffectClause := 'effects' '{' EffectExprList? '}'
+EffectExprList := Expr (',' Expr)* ','?
 ```
+
+There is no source or manifest capability-policy record. Capability type and
+function members own the abstract interface, each function owns its external
+effect set, and the selected profile, adapter, and runtime host own target
+availability and concrete host-call conformance.
 
 Example:
 

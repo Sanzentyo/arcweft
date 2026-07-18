@@ -1,0 +1,5 @@
+error[E0599]: no method named `capability_policy` found for reference `&ResolvedLaunchProfile` in the current scope
+ --> tests/ui/capability_policy_absent.rs:4:21
+  |
+4 |     let _ = profile.capability_policy();
+  |                     ^^^^^^^^^^^^^^^^^ method not found in `&ResolvedLaunchProfile`

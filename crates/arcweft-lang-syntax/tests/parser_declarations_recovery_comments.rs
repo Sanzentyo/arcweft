@@ -119,6 +119,37 @@ fn arbitrary_unknown_braced_item_recovers_to_the_next_declaration() {
 }
 
 #[test]
+fn policy_shaped_top_level_text_uses_ordinary_context_recovery() {
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        "policy capability host {\n    allow = fs.read\n}\npub character bob {}\n",
+    );
+
+    assert_eq!(parsed.errors().len(), 1);
+    let error = &parsed.errors()[0];
+    assert_eq!(error.code(), "syntax.parse");
+    assert_eq!(error.message(), "unexpected top-level item");
+    assert_eq!(
+        error.expected(),
+        ["a declaration".to_owned(), "a flow item".to_owned()]
+    );
+    assert_eq!(error.found(), Some("policy capability host {"));
+    assert_eq!(
+        error.recovery()[0].message(),
+        "use a current Arcweft declaration or flow-item form"
+    );
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::Raw(_), Item::EntityDecl(item)]
+            if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
+            && item.id().body() == "character.bob"
+    ));
+    assert!(parsed.errors().iter().all(|error| {
+        let message = error.message().to_ascii_lowercase();
+        !message.contains("removed") && !message.contains("deprecated")
+    }));
+}
+
+#[test]
 fn namespace_separator_is_rejected_in_module_paths() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         "mod game::opening\nflow @flow.opening opening { return }\n",

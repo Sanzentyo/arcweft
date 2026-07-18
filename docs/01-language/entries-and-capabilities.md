@@ -138,24 +138,84 @@ Host I/O is declared by capability, not by direct core APIs.
 ```text
 ExternCapabilityDecl := Visibility? 'extern' 'capability' CapabilityId CapabilityBlock
 CapabilityBlock := '{' CapabilityItem* '}'
-CapabilityItem := CapabilityFnDecl | TypeDecl | CapabilityPolicyDecl
+CapabilityItem := TypeDecl | CapabilityFnDecl
 CapabilityFnDecl := 'fn' Ident GenericParams? ParamGroup+ ReturnType? EffectClause?
-EffectClause := 'effects' '{' CapabilityEffect* '}'
+EffectClause := 'effects' '{' EffectExprList? '}'
+EffectExprList := Expr (',' Expr)* ','?
 ```
 
-### File system
+There is no capability policy declaration. The capability's abstract interface
+is the set of its type and function members. Each function's external effects
+are declared by that function's `effects` clause. The selected launch profile
+and adapter determine which effects and host calls the target provides. These
+facts are checked together; they are not copied into a source or manifest
+policy record.
+
+Documentation comments, attributes, and visibility use the ordinary
+declaration rules and attach to the capability, a type member, or a function
+member.
+
+### Canonical capability
 
 ```arcw
-extern capability fs {
-    type FsError
+/// Filesystem operations supplied by the selected host adapter.
+pub extern capability fs {
+    /// Host-owned path identity.
+    pub type Path
 
-    fn read_text(path: VirtualPath) -> Need<String, FsError>
+    /// Host-owned filesystem failure.
+    pub type FsError
+
+    /// Reads UTF-8 text from a host path.
+    pub fn read_text(path: Path) -> Need<String, FsError>
         effects { fs.read }
 
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError>
+    /// Writes UTF-8 text. Curried groups remain part of the function signature.
+    pub fn write_text(path: Path)(text: String) -> Need<Unit, FsError>
         effects { fs.write }
 }
 ```
+
+### Multiple effects
+
+```arcw
+extern capability net {
+    type Request
+    type Response
+
+    fn send(request: Request) -> Need<Response, NetError>
+        effects { net.connect, net.send }
+}
+```
+
+### No external effect
+
+A capability function without an `effects` clause has an empty external effect
+set under the existing function contract.
+
+```arcw
+extern capability clock {
+    type Instant
+    fn zero() -> Instant
+}
+```
+
+### Target availability
+
+Source declares what calling an operation means. It does not select the host.
+The resolved profile selects one adapter; that adapter declares target-provided
+effects and host calls. If a checked callable reaches an effect the selected
+target cannot provide, semantic analysis reports `AWF-EFX-007`. If the selected
+runtime runner does not implement a host call declared by the selected adapter,
+runtime-host conformance reports `MissingHostCallImplementation` before
+execution.
+
+### Invalid members
+
+A capability body accepts only `type` and `fn` declarations. Any other member
+is an ordinary invalid capability member and is retained as lossless recovery
+so following members and declarations remain parseable. There is no
+compatibility or removed-spelling grammar.
 
 ### Path virtualization
 
