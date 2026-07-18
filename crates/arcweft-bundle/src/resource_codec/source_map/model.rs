@@ -221,6 +221,55 @@ impl SourceMapSection {
         })
     }
 
+    pub(crate) fn try_with_document(
+        self,
+        document: &SourceDocument,
+    ) -> Result<Self, SourceMapBuildError> {
+        if let Some(existing) = self
+            .documents
+            .iter()
+            .find(|existing| existing.document_id() == document.identity().id())
+        {
+            if existing.display_name() == document.display_name()
+                && existing.revision() == document.identity().revision()
+                && existing.source_len() == document.identity().source_len()
+                && existing.text() == document.text()
+            {
+                return Ok(self);
+            }
+            return Err(SourceMapBuildError::DuplicateDocument(
+                document.identity().id().clone(),
+            ));
+        }
+
+        let document_count = self
+            .documents
+            .len()
+            .checked_add(1)
+            .ok_or(SourceMapBuildError::ArithmeticOverflow)?;
+        if document_count > MAX_SOURCE_MAP_DOCUMENTS {
+            return Err(SourceMapBuildError::TooManyDocuments {
+                actual: document_count,
+                limit: MAX_SOURCE_MAP_DOCUMENTS,
+            });
+        }
+
+        let mut owned = self
+            .documents
+            .iter()
+            .map(|existing| {
+                SourceDocument::try_new(
+                    existing.document_id().clone(),
+                    existing.display_name().clone(),
+                    existing.text().to_owned(),
+                )
+                .map_err(|_| SourceMapBuildError::ArithmeticOverflow)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        owned.push(document.clone());
+        Self::try_from_documents(&owned.iter().collect::<Vec<_>>())
+    }
+
     pub const fn source_set_revision(&self) -> SourceSetRevision {
         self.source_set_revision
     }

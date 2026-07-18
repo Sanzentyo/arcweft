@@ -4,7 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU64;
 
 use arcweft_bundle::resource_codec::SourceSetRevision;
-use arcweft_bundle::resource_codec::view::ValidatedViewProduct;
+use arcweft_bundle::resource_codec::view::{
+    ValidatedViewProduct, ValidatedViewStyleResource, ViewStyleResource,
+};
 use arcweft_view::{
     AcceptedViewProgramRevision, ViewId, ViewMountId, ViewProgramId, ViewRegistry,
     ViewRegistryError, ViewSchemaId, ViewValueProgramInventory,
@@ -43,6 +45,7 @@ struct ExpectedViewRuntimeState {
     program: ViewProgramId,
     revision: AcceptedViewProgramRevision,
     source_revision: SourceSetRevision,
+    style: Option<ViewStyleResource>,
     generation: AcceptedViewProgramGeneration,
     frame_revision: u64,
     logical_time: arcweft_presentation::fx::FxLogicalTime,
@@ -92,6 +95,8 @@ pub enum ViewProgramReplacementOutcome {
 pub enum ViewProgramReplacementError {
     #[error("replacement program identity does not match the accepted program")]
     ProgramIdentityMismatch,
+    #[error("replacement changes the accepted native Style program")]
+    StyleProgramChanged,
     #[error("prepared replacement is stale")]
     StalePreparedState,
     #[error("accepted View-program generation is exhausted")]
@@ -148,6 +153,9 @@ impl BundleViewRuntime {
         &self,
         candidate: ValidatedViewProduct,
     ) -> Result<PreparedViewProgramReplacement, ViewProgramReplacementError> {
+        if !same_optional_style_semantics(self.product.style(), candidate.style()) {
+            return Err(ViewProgramReplacementError::StyleProgramChanged);
+        }
         let current = self
             .catalog
             .as_ref()
@@ -165,27 +173,12 @@ impl BundleViewRuntime {
             .map_err(ViewMountReconcileError::from)?;
         let expected = self.expected_replacement_state(current);
         if current.revision() == candidate_catalog.revision() {
-            let (publication, outcome) = if current.source_revision()
-                == candidate_catalog.source_revision()
-            {
-                (
-                    PreparedViewPublication::Unchanged,
-                    ViewProgramReplacementOutcome::Unchanged,
-                )
-            } else {
-                (
-                    PreparedViewPublication::SourceOnly(Box::new(PreparedSourceOnlyPublication {
-                        product: candidate,
-                        catalog: candidate_catalog,
-                    })),
-                    ViewProgramReplacementOutcome::SourceOnly,
-                )
-            };
-            return Ok(PreparedViewProgramReplacement {
+            return Ok(self.prepare_same_revision_publication(
+                current,
+                candidate,
+                candidate_catalog,
                 expected,
-                candidate: publication,
-                outcome,
-            });
+            ));
         }
 
         let generation = self.generation.checked_next()?;
@@ -249,6 +242,41 @@ impl BundleViewRuntime {
         })
     }
 
+    fn prepare_same_revision_publication(
+        &self,
+        current: &ViewProgramCatalog,
+        candidate: ValidatedViewProduct,
+        candidate_catalog: ViewProgramCatalog,
+        expected: ExpectedViewRuntimeState,
+    ) -> PreparedViewProgramReplacement {
+        let source_or_provenance_changed = current.source_revision()
+            != candidate_catalog.source_revision()
+            || self
+                .product
+                .style()
+                .map(ValidatedViewStyleResource::resource)
+                != candidate.style().map(ValidatedViewStyleResource::resource);
+        let (candidate, outcome) = if source_or_provenance_changed {
+            (
+                PreparedViewPublication::SourceOnly(Box::new(PreparedSourceOnlyPublication {
+                    product: candidate,
+                    catalog: candidate_catalog,
+                })),
+                ViewProgramReplacementOutcome::SourceOnly,
+            )
+        } else {
+            (
+                PreparedViewPublication::Unchanged,
+                ViewProgramReplacementOutcome::Unchanged,
+            )
+        };
+        PreparedViewProgramReplacement {
+            expected,
+            candidate,
+            outcome,
+        }
+    }
+
     /// Publishes a previously prepared candidate after an exact stale check.
     pub fn commit_view_program_replacement(
         &mut self,
@@ -260,6 +288,10 @@ impl BundleViewRuntime {
         match prepared.candidate {
             PreparedViewPublication::Unchanged => {}
             PreparedViewPublication::SourceOnly(publication) => {
+                self.style_program = publication
+                    .product
+                    .style()
+                    .map(|style| style.program().clone());
                 self.product = publication.product;
                 self.catalog = Some(publication.catalog);
             }
@@ -275,6 +307,7 @@ impl BundleViewRuntime {
                     axis_seeds,
                     invalidation,
                 } = *publication;
+                self.style_program = product.style().map(|style| style.program().clone());
                 self.product = product;
                 self.catalog = Some(catalog);
                 self.registry = registry;
@@ -309,6 +342,7 @@ impl BundleViewRuntime {
             program: catalog.program_id().clone(),
             revision: catalog.revision(),
             source_revision: catalog.source_revision(),
+            style: self.product.style().map(|style| style.resource().clone()),
             generation: self.generation,
             frame_revision: self.frame_revision,
             logical_time: self.logical_time,
@@ -326,6 +360,11 @@ impl BundleViewRuntime {
         catalog.program_id() == &expected.program
             && catalog.revision() == expected.revision
             && catalog.source_revision() == expected.source_revision
+            && self
+                .product
+                .style()
+                .map(ValidatedViewStyleResource::resource)
+                == expected.style.as_ref()
             && self.generation == expected.generation
             && self.frame_revision == expected.frame_revision
             && self.logical_time == expected.logical_time
@@ -333,6 +372,17 @@ impl BundleViewRuntime {
             && self.root_bindings == expected.root_bindings
             && self.mounts == expected.mounts
             && self.axis_seeds == expected.axis_seeds
+    }
+}
+
+fn same_optional_style_semantics(
+    current: Option<&ValidatedViewStyleResource>,
+    candidate: Option<&ValidatedViewStyleResource>,
+) -> bool {
+    match (current, candidate) {
+        (None, None) => true,
+        (Some(current), Some(candidate)) => current.has_same_runtime_semantics(candidate),
+        (None, Some(_)) | (Some(_), None) => false,
     }
 }
 

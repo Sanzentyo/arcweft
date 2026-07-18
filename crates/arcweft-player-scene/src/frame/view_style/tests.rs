@@ -34,14 +34,14 @@ use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,
     ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedGeneration,
     ViewColorValue, ViewElementState, ViewEnvironmentClause, ViewEnvironmentCondition,
-    ViewInheritedBoxAxes, ViewInteractionSelector, ViewLengthMilli, ViewOverflow, ViewPropertyKind,
-    ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleContribution,
-    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey,
-    ViewStylePatchId, ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext,
-    ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    ViewStyleTraceMode,
+    ViewEnvironmentWrapperIndex, ViewEnvironmentWrapperSource, ViewInheritedBoxAxes,
+    ViewInteractionSelector, ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewRatioMilli,
+    ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleContribution, ViewStyleContributionSource,
+    ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatchId,
+    ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext, ViewStyleRevisionSet,
+    ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
+    ViewStyleSheetId, ViewStyleSourceId, ViewStyleTraceMode,
 };
 use arcweft_view::{ViewElementKind, ViewId, ViewMountId, ViewPartLocalName, ViewPartName};
 
@@ -814,9 +814,14 @@ fn planner_receives_exact_session_changed_set() {
     let (program, presentation) = environment_style_fixture(
         Some(
             ViewEnvironmentCondition::try_new(
-                ViewStyleSourceId::new(1),
+                vec![ViewEnvironmentWrapperSource::new(
+                    ViewStyleSourceId::new(1),
+                    ViewStyleSourceId::new(1),
+                    ViewStyleSourceId::new(1),
+                )],
                 vec![ViewEnvironmentClause::color_scheme(
                     ColorScheme::Light,
+                    ViewEnvironmentWrapperIndex::new(0),
                     ViewStyleSourceId::new(2),
                 )],
             )

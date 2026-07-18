@@ -29,9 +29,9 @@ use arcweft_view::{
 
 use super::{
     catalog::{
-        CheckedStyleEnvironmentClause, CheckedStyleEnvironmentPath, CheckedViewStyleCatalog,
-        CheckedViewStyleDeclaration, CheckedViewStylePatch, CheckedViewStyleRule,
-        CheckedViewStyleSheet, CheckedViewStyleToken,
+        CheckedStyleEnvironmentClause, CheckedStyleEnvironmentPath, CheckedStyleEnvironmentWrapper,
+        CheckedStyleEnvironmentWrapperIndex, CheckedViewStyleCatalog, CheckedViewStyleDeclaration,
+        CheckedViewStylePatch, CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleToken,
     },
     diagnostic::{StyleDiagnostic, StyleDiagnosticCode},
     token_graph::token_dependency_order,
@@ -117,7 +117,7 @@ fn check_sheet(
 
 #[derive(Clone, Debug, Default)]
 struct EnvironmentPathState {
-    source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
+    wrappers: Vec<CheckedStyleEnvironmentWrapper>,
     clauses: Vec<CheckedStyleEnvironmentClause>,
     fields: BTreeMap<PresentationEnvironmentField, arcweft_lang_syntax::ast::common::TextRange>,
     invalid: bool,
@@ -169,8 +169,13 @@ fn check_style_body(
                 let Some(selector) = selector else {
                     continue;
                 };
-                let environment = path.source_range.map(|source_range| {
-                    CheckedStyleEnvironmentPath::new(source_range, path.clauses.clone())
+                let environment = (!path.wrappers.is_empty()).then(|| {
+                    let mut clauses = path.clauses.clone();
+                    clauses.sort_by_key(|clause| clause.field());
+                    CheckedStyleEnvironmentPath::new(
+                        path.wrappers.clone().into_boxed_slice(),
+                        clauses.into_boxed_slice(),
+                    )
                 });
                 rules.push(CheckedViewStyleRule::new(
                     selector,
@@ -182,10 +187,27 @@ fn check_style_body(
             }
             HirStyleBodyItem::Environment(environment) => {
                 let mut nested = path.clone();
-                nested
-                    .source_range
-                    .get_or_insert(environment.condition_range());
-                if !check_environment_block(environment, &mut nested, diagnostics) {
+                let Some(wrapper) =
+                    CheckedStyleEnvironmentWrapperIndex::try_from_index(nested.wrappers.len())
+                else {
+                    nested.invalid = true;
+                    check_style_body(
+                        environment.body(),
+                        token_kinds,
+                        owner_sheet,
+                        &nested,
+                        source_order,
+                        rules,
+                        diagnostics,
+                    );
+                    continue;
+                };
+                nested.wrappers.push(CheckedStyleEnvironmentWrapper::new(
+                    environment.predicate_range(),
+                    environment.body_range(),
+                    environment.scope_range(),
+                ));
+                if !check_environment_block(environment, wrapper, &mut nested, diagnostics) {
                     nested.invalid = true;
                 }
                 check_style_body(
@@ -204,6 +226,7 @@ fn check_style_body(
 
 fn check_environment_block(
     environment: &HirStyleEnvironmentBlock,
+    wrapper: CheckedStyleEnvironmentWrapperIndex,
     path: &mut EnvironmentPathState,
     diagnostics: &mut Vec<StyleDiagnostic>,
 ) -> bool {
@@ -212,7 +235,7 @@ fn check_environment_block(
         diagnostics.push(StyleDiagnostic::new(
             StyleDiagnosticCode::EnvironmentEmptyCondition,
             "environment wrapper condition cannot be empty",
-            environment.condition_range(),
+            environment.predicate_range(),
         ));
         valid = false;
     }
@@ -220,7 +243,7 @@ fn check_environment_block(
         diagnostics.push(StyleDiagnostic::new(
             StyleDiagnosticCode::EnvironmentConditionLimit,
             "environment wrapper contains more than four clauses",
-            environment.condition_range(),
+            environment.predicate_range(),
         ));
         valid = false;
     }
@@ -272,7 +295,7 @@ fn check_environment_block(
             continue;
         }
 
-        match check_environment_clause(field, clause, diagnostics) {
+        match check_environment_clause(field, wrapper, clause, diagnostics) {
             Some(checked) => {
                 path.fields.insert(field, clause.ranges().field());
                 path.clauses.push(checked);
@@ -285,6 +308,7 @@ fn check_environment_block(
 
 fn check_environment_clause(
     field: PresentationEnvironmentField,
+    wrapper: CheckedStyleEnvironmentWrapperIndex,
     clause: &HirStyleEnvironmentClause,
     diagnostics: &mut Vec<StyleDiagnostic>,
 ) -> Option<CheckedStyleEnvironmentClause> {
@@ -319,10 +343,12 @@ fn check_environment_clause(
         ) => match spelling.as_ref() {
             "light" => Some(CheckedStyleEnvironmentClause::ColorScheme {
                 value: ColorScheme::Light,
+                wrapper,
                 range: clause.ranges().clause(),
             }),
             "dark" => Some(CheckedStyleEnvironmentClause::ColorScheme {
                 value: ColorScheme::Dark,
+                wrapper,
                 range: clause.ranges().clause(),
             }),
             _ => {
@@ -336,10 +362,12 @@ fn check_environment_clause(
         ) => match spelling.as_ref() {
             "standard" => Some(CheckedStyleEnvironmentClause::Contrast {
                 value: ContrastPreference::Standard,
+                wrapper,
                 range: clause.ranges().clause(),
             }),
             "more" => Some(CheckedStyleEnvironmentClause::Contrast {
                 value: ContrastPreference::More,
+                wrapper,
                 range: clause.ranges().clause(),
             }),
             _ => {
@@ -350,6 +378,7 @@ fn check_environment_clause(
         (PresentationEnvironmentField::ReducedMotion, HirStyleEnvironmentValue::Boolean(value)) => {
             Some(CheckedStyleEnvironmentClause::ReducedMotion {
                 value: *value,
+                wrapper,
                 range: clause.ranges().clause(),
             })
         }
@@ -360,6 +389,7 @@ fn check_environment_clause(
             CheckedStyleEnvironmentClause::TextScale {
                 comparison: checked_text_scale_comparison(clause.comparison()),
                 value,
+                wrapper,
                 range: clause.ranges().clause(),
             }
         }),

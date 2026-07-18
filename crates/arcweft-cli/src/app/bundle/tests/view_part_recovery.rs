@@ -72,10 +72,14 @@ flow test {
     assert!(program.source_refs.is_empty());
     assert!(program.exported_parts.is_empty());
 
-    let product =
-        ValidatedViewProduct::try_new(None, Some(program), ViewProductValidationLimits::default())
-            .expect("source-free recovered product validates");
-    let runtime = BundleViewRuntime::try_new(product, sidecars.text, sidecars.style.as_ref())
+    let product = ValidatedViewProduct::try_new(
+        None,
+        Some(program),
+        sidecars.style,
+        ViewProductValidationLimits::default(),
+    )
+    .expect("source-free recovered product validates");
+    let runtime = BundleViewRuntime::try_new(product, sidecars.text)
         .expect("runtime accepts recovered product without export facts");
     assert!(
         runtime

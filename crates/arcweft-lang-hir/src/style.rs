@@ -74,8 +74,9 @@ pub enum HirStyleBodyItem {
 pub struct HirStyleEnvironmentBlock {
     clauses: Vec<HirStyleEnvironmentClause>,
     body: Vec<HirStyleBodyItem>,
-    condition_range: TextRange,
-    range: TextRange,
+    predicate_range: TextRange,
+    body_range: TextRange,
+    scope_range: TextRange,
 }
 
 /// One retained environment operand triple in Style HIR.
@@ -273,8 +274,9 @@ impl HirStyleEnvironmentBlock {
                 .iter()
                 .map(|item| HirStyleBodyItem::from_syntax(item, source))
                 .collect(),
-            condition_range: value.condition_range(),
-            range: value.range(),
+            predicate_range: value.predicate_range(),
+            body_range: value.body_range(),
+            scope_range: value.scope_range(),
         }
     }
 }
@@ -563,7 +565,7 @@ impl HirStyleBodyItem {
     pub const fn range(&self) -> TextRange {
         match self {
             Self::Rule(rule) => rule.range(),
-            Self::Environment(environment) => environment.range(),
+            Self::Environment(environment) => environment.scope_range(),
         }
     }
 }
@@ -577,12 +579,19 @@ impl HirStyleEnvironmentBlock {
         &self.body
     }
 
-    pub const fn condition_range(&self) -> TextRange {
-        self.condition_range
+    /// Exact parenthesized predicate copied from syntax.
+    pub const fn predicate_range(&self) -> TextRange {
+        self.predicate_range
     }
 
-    pub const fn range(&self) -> TextRange {
-        self.range
+    /// Exact bytes between this wrapper's braces.
+    pub const fn body_range(&self) -> TextRange {
+        self.body_range
+    }
+
+    /// Complete lexical wrapper range copied from syntax.
+    pub const fn scope_range(&self) -> TextRange {
+        self.scope_range
     }
 }
 

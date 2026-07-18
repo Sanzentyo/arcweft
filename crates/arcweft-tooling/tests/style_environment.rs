@@ -19,10 +19,11 @@ use arcweft_tooling::{
         StyleEnvironmentCodeActionInput, StyleEnvironmentCodeActionKind,
         StyleEnvironmentCompletionInput, StyleEnvironmentCompletionSite, StyleEnvironmentEditInput,
         StyleEnvironmentEditInvalidation, StyleEnvironmentFormatInput, StyleEnvironmentHoverInput,
-        StyleEnvironmentIntrinsicTarget, StyleEnvironmentSemanticEdit,
-        StyleEnvironmentSemanticKind, complete_style_environment, format_style_environment,
-        hover_style_environment, navigate_style_environment, style_environment_code_actions,
-        style_environment_edit_invalidation, style_environment_semantic_spans,
+        StyleEnvironmentHoverSubject, StyleEnvironmentIntrinsicTarget,
+        StyleEnvironmentSemanticEdit, StyleEnvironmentSemanticKind, complete_style_environment,
+        format_style_environment, hover_style_environment, navigate_style_environment,
+        style_environment_code_actions, style_environment_edit_invalidation,
+        style_environment_semantic_spans,
     },
 };
 
@@ -206,6 +207,22 @@ fn hover_uses_checked_value_and_source_range() {
     .unwrap();
     assert_eq!(hover.range, checked.clauses()[0].range());
     assert!(hover.markdown.contains("color-scheme == dark"));
+}
+
+#[test]
+fn wrapper_hover_uses_complete_environment_scope() {
+    let source = valid_environment_source("color-scheme == dark");
+    let parsed = parse_source(&source);
+    let environment = first_environment(&parsed);
+    let hover = hover_style_environment(StyleEnvironmentHoverInput {
+        position: environment.when_range().start(),
+        ast: environment,
+        checked: None,
+    })
+    .unwrap();
+
+    assert_eq!(hover.subject, StyleEnvironmentHoverSubject::Wrapper);
+    assert_eq!(hover.range, environment.scope_range());
 }
 
 #[test]

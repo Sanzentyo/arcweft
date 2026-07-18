@@ -9,7 +9,8 @@ use arcweft_view::ViewPartName;
 use arcweft_view::style::{
     ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewAxisProviderParticipation,
     ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewColorValue, ViewElementState,
-    ViewElementStateSet, ViewEnvironmentClause, ViewEnvironmentCondition, ViewInheritedBoxAxes,
+    ViewElementStateSet, ViewEnvironmentClause, ViewEnvironmentCondition,
+    ViewEnvironmentWrapperIndex, ViewEnvironmentWrapperSource, ViewInheritedBoxAxes,
     ViewInteractionSelector, ViewInteractionStateSet, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
     ViewStyleCombinator, ViewStyleContribution, ViewStyleContributionSource, ViewStyleDeclaration,
@@ -362,13 +363,22 @@ fn environment_and_element_states_match_together_and_cache_key_tracks_environmen
                     ViewElementState::FocusVisible,
                 )],
                 ViewEnvironmentCondition::try_new(
-                    ViewStyleSourceId::new(30),
+                    vec![ViewEnvironmentWrapperSource::new(
+                        ViewStyleSourceId::new(30),
+                        ViewStyleSourceId::new(30),
+                        ViewStyleSourceId::new(30),
+                    )],
                     vec![
                         ViewEnvironmentClause::color_scheme(
                             ColorScheme::Dark,
+                            ViewEnvironmentWrapperIndex::new(0),
                             ViewStyleSourceId::new(31),
                         ),
-                        ViewEnvironmentClause::reduced_motion(true, ViewStyleSourceId::new(32)),
+                        ViewEnvironmentClause::reduced_motion(
+                            true,
+                            ViewEnvironmentWrapperIndex::new(0),
+                            ViewStyleSourceId::new(32),
+                        ),
                     ],
                 )
                 .unwrap(),

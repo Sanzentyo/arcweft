@@ -47,8 +47,20 @@ pub struct CheckedViewStyleRule {
 /// One valid flattened environment path guarding a checked Style rule.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedStyleEnvironmentPath {
-    source_range: TextRange,
-    clauses: Vec<CheckedStyleEnvironmentClause>,
+    wrappers: Box<[CheckedStyleEnvironmentWrapper]>,
+    clauses: Box<[CheckedStyleEnvironmentClause]>,
+}
+
+/// Condition-local index of one contributing environment wrapper.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CheckedStyleEnvironmentWrapperIndex(u8);
+
+/// Exact authored provenance for one checked environment wrapper.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CheckedStyleEnvironmentWrapper {
+    predicate: TextRange,
+    body: TextRange,
+    scope: TextRange,
 }
 
 /// One semantically checked environment clause with authored provenance.
@@ -56,19 +68,23 @@ pub struct CheckedStyleEnvironmentPath {
 pub enum CheckedStyleEnvironmentClause {
     ColorScheme {
         value: ColorScheme,
+        wrapper: CheckedStyleEnvironmentWrapperIndex,
         range: TextRange,
     },
     Contrast {
         value: ContrastPreference,
+        wrapper: CheckedStyleEnvironmentWrapperIndex,
         range: TextRange,
     },
     ReducedMotion {
         value: bool,
+        wrapper: CheckedStyleEnvironmentWrapperIndex,
         range: TextRange,
     },
     TextScale {
         comparison: ViewTextScaleComparison,
         value: TextScaleMilli,
+        wrapper: CheckedStyleEnvironmentWrapperIndex,
         range: TextRange,
     },
 }
@@ -218,21 +234,58 @@ impl CheckedViewStyleRule {
 
 impl CheckedStyleEnvironmentPath {
     pub(crate) const fn new(
-        source_range: TextRange,
-        clauses: Vec<CheckedStyleEnvironmentClause>,
+        wrappers: Box<[CheckedStyleEnvironmentWrapper]>,
+        clauses: Box<[CheckedStyleEnvironmentClause]>,
     ) -> Self {
-        Self {
-            source_range,
-            clauses,
-        }
+        Self { wrappers, clauses }
     }
 
-    pub const fn source_range(&self) -> TextRange {
-        self.source_range
+    pub fn wrappers(&self) -> &[CheckedStyleEnvironmentWrapper] {
+        &self.wrappers
     }
 
     pub fn clauses(&self) -> &[CheckedStyleEnvironmentClause] {
         &self.clauses
+    }
+}
+
+impl CheckedStyleEnvironmentWrapperIndex {
+    pub(crate) fn try_from_index(index: usize) -> Option<Self> {
+        u8::try_from(index).ok().map(Self)
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl CheckedStyleEnvironmentWrapper {
+    pub(crate) const fn new(
+        predicate_range: TextRange,
+        body_range: TextRange,
+        scope_range: TextRange,
+    ) -> Self {
+        Self {
+            predicate: predicate_range,
+            body: body_range,
+            scope: scope_range,
+        }
+    }
+
+    pub const fn predicate_range(self) -> TextRange {
+        self.predicate
+    }
+
+    pub const fn body_range(self) -> TextRange {
+        self.body
+    }
+
+    pub const fn scope_range(self) -> TextRange {
+        self.scope
     }
 }
 
@@ -252,6 +305,15 @@ impl CheckedStyleEnvironmentClause {
             | Self::Contrast { range, .. }
             | Self::ReducedMotion { range, .. }
             | Self::TextScale { range, .. } => range,
+        }
+    }
+
+    pub const fn wrapper(self) -> CheckedStyleEnvironmentWrapperIndex {
+        match self {
+            Self::ColorScheme { wrapper, .. }
+            | Self::Contrast { wrapper, .. }
+            | Self::ReducedMotion { wrapper, .. }
+            | Self::TextScale { wrapper, .. } => wrapper,
         }
     }
 }

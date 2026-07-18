@@ -24,9 +24,10 @@ use arcweft_project::sources::ProjectSources;
 use arcweft_source::SourceDocument;
 use arcweft_view::style::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleModelError,
-    ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleToken,
+    ViewEnvironmentWrapperIndex, ViewEnvironmentWrapperSource, ViewStyleApplicationTarget,
+    ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleModelError, ViewStylePatch, ViewStylePatchId,
+    ViewStyleProgram, ViewStyleRule, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleToken,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -468,29 +469,40 @@ fn lower_environment(
     document: &StyleSourceDocument,
     ranges: &mut StyleSourceRangeBuilder,
 ) -> Result<ViewEnvironmentCondition, ViewStyleLowerError> {
-    let source = ranges.add(owner, document, checked.source_range())?;
+    let wrappers = checked
+        .wrappers()
+        .iter()
+        .map(|wrapper| {
+            Ok(ViewEnvironmentWrapperSource::new(
+                ranges.add(owner, document, wrapper.predicate_range())?,
+                ranges.add(owner, document, wrapper.body_range())?,
+                ranges.add(owner, document, wrapper.scope_range())?,
+            ))
+        })
+        .collect::<Result<Vec<_>, ViewStyleLowerError>>()?;
     let clauses = checked
         .clauses()
         .iter()
         .map(|clause| {
             let clause_source = ranges.add(owner, document, clause.range())?;
+            let wrapper = ViewEnvironmentWrapperIndex::new(clause.wrapper().value());
             Ok(match clause {
                 CheckedStyleEnvironmentClause::ColorScheme { value, .. } => {
-                    ViewEnvironmentClause::color_scheme(*value, clause_source)
+                    ViewEnvironmentClause::color_scheme(*value, wrapper, clause_source)
                 }
                 CheckedStyleEnvironmentClause::Contrast { value, .. } => {
-                    ViewEnvironmentClause::contrast(*value, clause_source)
+                    ViewEnvironmentClause::contrast(*value, wrapper, clause_source)
                 }
                 CheckedStyleEnvironmentClause::ReducedMotion { value, .. } => {
-                    ViewEnvironmentClause::reduced_motion(*value, clause_source)
+                    ViewEnvironmentClause::reduced_motion(*value, wrapper, clause_source)
                 }
                 CheckedStyleEnvironmentClause::TextScale {
                     comparison, value, ..
-                } => ViewEnvironmentClause::text_scale(*comparison, *value, clause_source),
+                } => ViewEnvironmentClause::text_scale(*comparison, *value, wrapper, clause_source),
             })
         })
         .collect::<Result<Vec<_>, ViewStyleLowerError>>()?;
-    ViewEnvironmentCondition::try_new(source, clauses).map_err(ViewStyleLowerError::from)
+    ViewEnvironmentCondition::try_new(wrappers, clauses).map_err(ViewStyleLowerError::from)
 }
 
 fn lower_declaration(

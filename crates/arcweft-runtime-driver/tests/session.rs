@@ -254,7 +254,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         .lower()
         .unwrap()
         .program;
-    let mut bundle = ArcweftBundle::new(
+    let mut bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -275,6 +275,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc);
     bundle.view_program = Some(ViewProgramResource {
         program_id: ViewProgramId::try_new("view.program.session").unwrap(),
@@ -582,7 +583,7 @@ fn fixture_bundle_from_parts(
             text: display_text.to_owned(),
         }]),
     }]);
-    let bundle = ArcweftBundle::new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -602,7 +603,8 @@ fn fixture_bundle_from_parts(
         source_map("web-demo.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
         display.clone(),
-    );
+    )
+    .expect("standard dialogue source joins source map");
     if include_product_awbc {
         let product_awbc = AwbcLowerer::new(&plan, &display, "web-demo.arcw")
             .lower()
@@ -651,7 +653,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         .lower()
         .expect("product AWBC lowers")
         .program;
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -672,6 +674,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 
@@ -703,7 +706,7 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let display = LineDisplayCatalog::default();
-    let bundle = ArcweftBundle::new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -723,7 +726,8 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
         source_map("action-receive.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
         display.clone(),
-    );
+    )
+    .expect("standard dialogue source joins source map");
     let product_awbc = AwbcLowerer::new(&plan, &display, "action-receive.arcw")
         .lower()
         .expect("product AWBC lowers")
@@ -780,7 +784,7 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
             text: "Submit the form.".to_owned(),
         }]),
     }]);
-    let bundle = ArcweftBundle::new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -800,7 +804,8 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
         source_map("action-receive-after-dialogue.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
         display.clone(),
-    );
+    )
+    .expect("standard dialogue source joins source map");
     let product_awbc = AwbcLowerer::new(&plan, &display, "action-receive-after-dialogue.arcw")
         .lower()
         .expect("product AWBC lowers")
@@ -882,7 +887,7 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
         .lower()
         .expect("product AWBC lowers")
         .program;
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -903,6 +908,7 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 

@@ -131,6 +131,7 @@ fn style_compiler_lowers_flattened_environment_guard_with_exact_sources() {
     let resource = compiled.style.resource();
     let rule = &resource.program.sheets()[0].rules()[0];
     let environment = rule.environment().expect("lowered environment guard");
+    assert_eq!(environment.wrappers().len(), 2);
     assert_eq!(environment.clauses().len(), 2);
     assert!(matches!(
         environment.clauses()[0].test(),
@@ -144,19 +145,66 @@ fn style_compiler_lowers_flattened_environment_guard_with_exact_sources() {
         } if value.value() == 1_255
     ));
 
-    let condition_source = resource.source_map_refs[environment.source().value() as usize];
+    let authored_range = |id: arcweft_view::ViewStyleSourceId| {
+        let range = resource.source_map_refs[id.value() as usize];
+        &source[range.start_byte() as usize..range.end_byte() as usize]
+    };
+    let outer = environment.wrappers()[0];
+    let inner = environment.wrappers()[1];
     assert_eq!(
-        &source[condition_source.start_byte() as usize..condition_source.end_byte() as usize],
+        authored_range(outer.predicate_source()),
         "(text-scale >= 125.5%)"
     );
+    assert_eq!(
+        authored_range(inner.predicate_source()),
+        "(color-scheme == dark)"
+    );
+    assert_eq!(
+        authored_range(outer.body_source()),
+        "\n        when environment(color-scheme == dark) {\n            Button { opacity = 900milli }\n        }\n    "
+    );
+    assert_eq!(
+        authored_range(outer.scope_source()),
+        "when environment(text-scale >= 125.5%) {\n        when environment(color-scheme == dark) {\n            Button { opacity = 900milli }\n        }\n    }"
+    );
+    assert_eq!(
+        authored_range(inner.scope_source()),
+        "when environment(color-scheme == dark) {\n            Button { opacity = 900milli }\n        }"
+    );
+    assert_eq!(
+        authored_range(inner.body_source()),
+        "\n            Button { opacity = 900milli }\n        "
+    );
+    assert_eq!(
+        authored_range(rule.source()),
+        "Button { opacity = 900milli }"
+    );
+    assert_eq!(
+        authored_range(rule.declarations()[0].source()),
+        "opacity = 900milli"
+    );
+    assert_eq!(
+        environment.clauses()[0].wrapper().value(),
+        1,
+        "canonical color-scheme clause retains inner ownership"
+    );
+    assert_eq!(
+        environment.clauses()[1].wrapper().value(),
+        0,
+        "canonical text-scale clause retains outer ownership"
+    );
     for clause in environment.clauses() {
-        let range = resource.source_map_refs[clause.source().value() as usize];
-        let authored = &source[range.start_byte() as usize..range.end_byte() as usize];
+        let authored = authored_range(clause.source());
         assert!(
             authored == "text-scale >= 125.5%" || authored == "color-scheme == dark",
             "unexpected clause source: {authored}"
         );
     }
+    assert_eq!(
+        resource.source_map_refs.len(),
+        10,
+        "two P/B/S triples, two clauses, one rule, and one declaration are retained separately"
+    );
 }
 
 #[test]

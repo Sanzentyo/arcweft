@@ -5,7 +5,8 @@ use arcweft_presentation::appearance::{
 use arcweft_view::style::{
     ComputedViewStyle, ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode,
     ViewBoxAxisSeedGeneration, ViewContainerAxis, ViewContainerComparison, ViewContainerPredicate,
-    ViewEnvironmentClause, ViewEnvironmentCondition, ViewInheritedBoxAxes, ViewInteractionSelector,
+    ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentWrapperIndex,
+    ViewEnvironmentWrapperSource, ViewInheritedBoxAxes, ViewInteractionSelector,
     ViewInteractionStateSet, ViewLengthMilli, ViewSpecifiedValue, ViewStyleApplication,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration,
     ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId, ViewStylePredicate,
@@ -2046,9 +2047,14 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
                     Vec::new(),
                     Some(
                         ViewEnvironmentCondition::try_new(
-                            ViewStyleSourceId::new(10),
+                            vec![ViewEnvironmentWrapperSource::new(
+                                ViewStyleSourceId::new(10),
+                                ViewStyleSourceId::new(10),
+                                ViewStyleSourceId::new(10),
+                            )],
                             vec![ViewEnvironmentClause::color_scheme(
                                 ColorScheme::Dark,
+                                ViewEnvironmentWrapperIndex::new(0),
                                 ViewStyleSourceId::new(11),
                             )],
                         )

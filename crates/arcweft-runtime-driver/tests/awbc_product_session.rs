@@ -683,7 +683,7 @@ fn product_awfb_bytes_with_profile(entry: &str, profile_id: &str) -> Vec<u8> {
 }
 
 fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -704,6 +704,7 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program(entry))
 }
 

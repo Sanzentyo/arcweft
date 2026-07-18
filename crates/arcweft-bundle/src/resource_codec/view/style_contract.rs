@@ -40,6 +40,13 @@ impl ViewProgramResource {
                 .encode_canonical_section()
                 .map_err(ViewStyleContractError::InvalidResource)?;
         }
+        self.validate_style_references(style)
+    }
+
+    pub(super) fn validate_style_references(
+        &self,
+        style: Option<&ViewStyleResource>,
+    ) -> Result<(), ViewStyleContractError> {
         for definition in &self.definitions {
             if let Some(patch) = definition
                 .styles

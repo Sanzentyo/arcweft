@@ -53,16 +53,25 @@ impl BundleViewRuntime {
         text: Option<ViewTextResource>,
         style: Option<&ViewStyleResource>,
     ) -> Result<AcceptedBundleViewRuntime, BundleViewRuntimeError> {
-        let source_map = program
-            .as_ref()
-            .is_some_and(|program| !program.source_refs.is_empty())
-            .then(view_source_map);
+        let source_map = if style.is_some() {
+            let source = arcweft_bundle::standard_view::dialogue_style_source_document();
+            Some(
+                SourceMapSection::try_from_documents(&[&source])
+                    .expect("standard dialogue Style source map"),
+            )
+        } else {
+            program
+                .as_ref()
+                .is_some_and(|program| !program.source_refs.is_empty())
+                .then(view_source_map)
+        };
         let product = ValidatedViewProduct::try_new(
             source_map,
             program,
+            style.cloned(),
             ViewProductValidationLimits::default(),
         )?;
-        AcceptedBundleViewRuntime::try_new(product, text, style)
+        AcceptedBundleViewRuntime::try_new(product, text)
     }
 }
 
@@ -149,12 +158,13 @@ fn view_identity_catalog_preserves_host_views_and_registers_arcweft_definitions(
     let product = ValidatedViewProduct::try_new(
         None,
         Some(minimal_program("view.program.catalog", "view.Authored", 11)),
+        None,
         ViewProductValidationLimits::default(),
     )
     .unwrap();
 
     let runtime =
-        AcceptedBundleViewRuntime::try_new_with_registry(product, None, None, registry).unwrap();
+        AcceptedBundleViewRuntime::try_new_with_registry(product, None, registry).unwrap();
     assert_eq!(
         runtime.registry_owner_evidence(anonymous_slot),
         Some(ViewOwnerEvidence::AnonymousHost)
@@ -205,12 +215,13 @@ fn accepted_catalog_rejects_host_owner_collision_before_publication() {
             "view.Collision",
             2,
         )),
+        None,
         ViewProductValidationLimits::default(),
     )
     .unwrap();
 
     assert!(matches!(
-        AcceptedBundleViewRuntime::try_new_with_registry(product, None, None, registry),
+        AcceptedBundleViewRuntime::try_new_with_registry(product, None, registry),
         Err(BundleViewRuntimeError::Registry(
             ViewRegistryError::DuplicateViewId(id)
         )) if id == collision
@@ -235,7 +246,7 @@ fn authored_click_handler_enters_the_catalog_as_control_activation() {
     }];
 
     let product = validated_product(program);
-    let runtime = AcceptedBundleViewRuntime::try_new(product, None, None).unwrap();
+    let runtime = AcceptedBundleViewRuntime::try_new(product, None).unwrap();
     let definition = runtime
         .catalog()
         .unwrap()
@@ -259,7 +270,7 @@ fn hot_reload_unchanged_and_source_only_candidates_preserve_runtime_generation()
         first.program().unwrap().source_set_revision(),
         second.program().unwrap().source_set_revision(),
     );
-    let mut runtime = AcceptedBundleViewRuntime::try_new(first.clone(), None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(first.clone(), None).unwrap();
     let initial_generation = runtime.accepted_generation();
     let initial_frame = runtime.frame_revision();
 
@@ -286,9 +297,60 @@ fn hot_reload_unchanged_and_source_only_candidates_preserve_runtime_generation()
 }
 
 #[test]
+fn hot_reload_treats_style_provenance_as_source_only_and_rejects_style_semantic_changes() {
+    let program = minimal_program("view.program.style-reload", "view.Styled", 1);
+    let initial_source = arcweft_bundle::standard_view::dialogue_style_source_document();
+    let initial = styled_product(
+        program.clone(),
+        &initial_source,
+        arcweft_bundle::standard_view::dialogue_style(),
+    );
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
+    let initial_generation = runtime.accepted_generation();
+    let initial_frame = runtime.frame_revision();
+
+    let changed_text = format!(
+        "{}\n// source-only revision\n",
+        arcweft_bundle::standard_view::dialogue_style_source_document().text()
+    );
+    let changed_source = SourceDocument::try_new(
+        SourceDocumentId::try_new(arcweft_bundle::standard_view::DIALOGUE_STYLE_SOURCE_ID).unwrap(),
+        SourceName::Generated,
+        changed_text,
+    )
+    .unwrap();
+    let provenance_only = styled_product(
+        program.clone(),
+        &changed_source,
+        arcweft_bundle::standard_view::dialogue_style(),
+    );
+    let prepared = runtime
+        .prepare_view_program_replacement(provenance_only)
+        .expect("Style provenance-only candidate prepares");
+    assert_eq!(
+        runtime.commit_view_program_replacement(prepared),
+        Ok(ViewProgramReplacementOutcome::SourceOnly),
+    );
+    assert_eq!(runtime.accepted_generation(), initial_generation);
+    assert_eq!(runtime.frame_revision(), initial_frame);
+
+    let before = runtime.snapshot().unwrap();
+    let mut changed_style = arcweft_bundle::standard_view::dialogue_style();
+    changed_style.style_program_id = "std.view.style.program.changed".to_owned();
+    let changed = styled_product(program, &changed_source, changed_style);
+    assert!(matches!(
+        runtime.prepare_view_program_replacement(changed),
+        Err(ViewProgramReplacementError::StyleProgramChanged)
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+    assert_eq!(runtime.accepted_generation(), initial_generation);
+    assert_eq!(runtime.frame_revision(), initial_frame);
+}
+
+#[test]
 fn hot_reload_semantic_replacement_reconciles_multiple_mounts_and_reintroduction_is_fresh() {
     let initial = validated_product(minimal_program("view.program.hot-reload", "view.Hot", 1));
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     let handles = [
         handle("handle.hot.first", "view.Hot"),
         handle("handle.hot.second", "view.Hot"),
@@ -353,7 +415,7 @@ fn hot_reload_semantic_replacement_reconciles_multiple_mounts_and_reintroduction
 #[test]
 fn hot_reload_prepared_candidate_rejects_stale_runtime_without_mutation() {
     let initial = validated_product(minimal_program("view.program.stale", "view.Stale", 1));
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     let candidate = validated_product(minimal_program("view.program.stale", "view.Stale", 2));
     let prepared = runtime
         .prepare_view_program_replacement(candidate)
@@ -373,7 +435,7 @@ fn hot_reload_prepared_candidate_rejects_stale_runtime_without_mutation() {
 #[test]
 fn hot_reload_invalid_catalog_and_program_identity_leave_runtime_unchanged() {
     let initial = validated_product(minimal_program("view.program.atomic", "view.Atomic", 1));
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     runtime.evaluate(&[handle("handle.atomic", "view.Atomic")], &[], false);
     let before = runtime.snapshot().unwrap();
     let mut invalid = minimal_program("view.program.atomic", "view.Atomic", 1);
@@ -413,7 +475,7 @@ fn hot_reload_exported_part_change_invalidates_owner_and_direct_caller_only() {
         "part.public",
         true,
     ));
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     let candidate = validated_product(replacement_graph_program(
         "ChildElement",
         "part.renamed",
@@ -449,7 +511,7 @@ fn hot_reload_unexported_local_edit_does_not_invalidate_direct_caller() {
         "part.public",
         true,
     ));
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     let candidate = validated_product(replacement_graph_program(
         "ChangedChildElement",
         "part.public",
@@ -478,7 +540,7 @@ fn hot_reload_removed_nested_call_retires_only_the_child_mount() {
         "part.public",
         true,
     ));
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     let mounted = handle("handle.nested-reload", "view.Parent");
     let initial_frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert_eq!(initial_frame.mounts.len(), 2);
@@ -518,7 +580,7 @@ fn hot_reload_removed_nested_call_retires_only_the_child_mount() {
 #[test]
 fn hot_reload_definition_removal_retires_repeat_nested_mounts_atomically() {
     let initial = validated_product(replacement_repeat_graph_program());
-    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None, None).unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     let mounted = handle("handle.repeat-reload", "view.RepeatRoot");
     let initial_frame = runtime.evaluate(std::slice::from_ref(&mounted), &[], false);
     assert!(initial_frame.diagnostics.is_empty(), "{initial_frame:#?}");
@@ -625,9 +687,31 @@ fn validated_product(program: ViewProgramResource) -> ValidatedViewProduct {
     ValidatedViewProduct::try_new(
         source_map,
         Some(program),
+        None,
         ViewProductValidationLimits::default(),
     )
     .expect("test View product validates")
+}
+
+fn styled_product(
+    program: ViewProgramResource,
+    source: &SourceDocument,
+    mut style: ViewStyleResource,
+) -> ValidatedViewProduct {
+    let source_map = SourceMapSection::try_from_documents(&[source]).unwrap();
+    style.source_refs = vec![ProductSourceRef::from_document(
+        source_map
+            .documents()
+            .next()
+            .expect("Style source map is non-empty"),
+    )];
+    ValidatedViewProduct::try_new(
+        Some(source_map),
+        Some(program),
+        Some(style),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("styled product validates")
 }
 
 fn sourced_product(label: &str, text: &str) -> ValidatedViewProduct {
@@ -660,6 +744,7 @@ fn sourced_product(label: &str, text: &str) -> ValidatedViewProduct {
     ValidatedViewProduct::try_new(
         Some(source_map),
         Some(program),
+        None,
         ViewProductValidationLimits::default(),
     )
     .expect("sourced product validates")

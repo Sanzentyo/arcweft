@@ -11,7 +11,8 @@ use arcweft_bundle::resource_codec::{
 use arcweft_view::ViewProgramId;
 
 fn validated(program: Option<ViewProgramResource>) -> ValidatedViewProduct {
-    ValidatedViewProduct::try_new(None, program, ViewProductValidationLimits::default()).unwrap()
+    ValidatedViewProduct::try_new(None, program, None, ViewProductValidationLimits::default())
+        .unwrap()
 }
 
 fn handle_id(value: &str) -> PresentationHandleId {
@@ -406,7 +407,7 @@ fn hidden_unmounted_terminal_and_remount_lifecycle_retains_or_replaces_exact_sta
 #[test]
 fn same_evaluation_non_view_resolution_discards_pending_seed_and_emits_one_diagnostic() {
     let handle = handle_id("handle.prospective");
-    let mut runtime = BundleViewRuntime::try_new(validated(None), None, None).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(validated(None), None).unwrap();
     runtime
         .configure_next_axis_seed(
             handle.clone(),
@@ -468,7 +469,7 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
         }],
         ..ViewProgramResource::default()
     };
-    let mut runtime = BundleViewRuntime::try_new(validated(Some(program)), None, None).unwrap();
+    let mut runtime = BundleViewRuntime::try_new(validated(Some(program)), None).unwrap();
     let parent = PresentationHandleRecord::new(
         handle_id("handle.nested.parent"),
         PresentationHandleKind::View,

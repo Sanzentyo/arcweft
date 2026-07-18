@@ -127,7 +127,7 @@ pub fn compile_checked_agent_bundle(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let source_map = SourceMapSection::try_from_documents(&documents)?;
-    let bundle = ArcweftBundle::new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -147,7 +147,7 @@ pub fn compile_checked_agent_bundle(
         source_map,
         bytecode,
         arcweft_render_text::LineDisplayCatalog::default(),
-    )
+    )?
     .with_agent_manifest(manifest.clone());
     Ok(CompiledAgentBundle {
         bundle,

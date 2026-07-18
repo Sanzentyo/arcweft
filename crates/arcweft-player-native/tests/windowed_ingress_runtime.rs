@@ -212,7 +212,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .program;
     let bytecode = BytecodeProgram::from_runtime_plan(plan);
     let stats = bytecode.stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -233,6 +233,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         bytecode,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 

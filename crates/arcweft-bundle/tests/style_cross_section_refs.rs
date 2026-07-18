@@ -275,7 +275,7 @@ fn assert_awfb_error(error: BundleCodecError, encode: bool, label: &str, expecte
 }
 
 fn minimal_bundle() -> ArcweftBundle {
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -296,6 +296,7 @@ fn minimal_bundle() -> ArcweftBundle {
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program())
 }
 

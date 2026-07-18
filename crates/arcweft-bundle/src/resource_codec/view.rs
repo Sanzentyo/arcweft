@@ -19,7 +19,7 @@ mod validated;
 
 pub use codec::{
     ViewExportValidationError, ViewResourceBudget, ViewResourceExport,
-    ViewStyleEnvironmentSourceError,
+    ViewStyleEnvironmentSourceError, ViewStyleEnvironmentSourceRole,
 };
 pub use compat::{ViewResourceCompatibility, migrated_view_section_compatibility};
 pub use dialogue_contract::DialogueViewContractError;
@@ -28,6 +28,6 @@ pub use model::*;
 pub use runtime_control_style::*;
 pub use style_contract::ViewStyleContractError;
 pub use validated::{
-    ValidatedViewProduct, ValidatedViewProgramResource, ViewProductValidationError,
-    ViewProductValidationLimits,
+    ValidatedViewProduct, ValidatedViewProgramResource, ValidatedViewStyleResource,
+    ViewProductValidationError, ViewProductValidationLimits,
 };

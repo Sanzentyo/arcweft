@@ -557,7 +557,7 @@ fn agent_controller_test_bundle(
         declared_effects.clone(),
         StableHash::new(format!("blake3:test-effects-{agent_id}")).expect("valid effect hash"),
     );
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -578,6 +578,7 @@ fn agent_controller_test_bundle(
         program.clone(),
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_agent_manifest(AgentArtifactManifest {
         schema_version: 1,
         bundle_kind: AgentBundleKind::AgentController,

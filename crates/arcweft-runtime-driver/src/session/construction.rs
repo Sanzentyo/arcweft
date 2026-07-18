@@ -326,14 +326,11 @@ fn build_session_runtime_with_executor(
     let view_product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
         Some(bundle.source_map.clone()),
         bundle.view_program.clone(),
+        bundle.view_style.clone(),
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .map_err(BundleViewRuntimeError::from)?;
-    let view_runtime = BundleViewRuntime::try_new(
-        view_product,
-        bundle.view_text.clone(),
-        bundle.view_style.as_ref(),
-    )?;
+    let view_runtime = BundleViewRuntime::try_new(view_product, bundle.view_text.clone())?;
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();

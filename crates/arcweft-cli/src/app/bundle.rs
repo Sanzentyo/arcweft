@@ -343,7 +343,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
     image_objects.extend(view_sidecars.image_objects.iter().cloned());
     validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
     let bundle = attach_bundle_view_sidecars(
-        ArcweftBundle::new(
+        ArcweftBundle::try_new(
             bundle_manifest(
                 selection,
                 &compiled,
@@ -354,6 +354,10 @@ pub(in crate::app) fn compile_bundle_for_selection(
             compiled.bytecode,
             compiled.line_display_catalog,
         )
+        .map_err(|error| {
+            eprintln!("error: failed to reserve the standard dialogue Style source: {error}");
+            ExitCode::FAILURE
+        })?
         .with_product_awbc(compiled.product_awbc)
         .with_fx_definitions(fx_definitions)
         .with_adapter_manifests(adapter_manifests)
@@ -784,11 +788,7 @@ fn bundle_command_report(
 }
 
 fn bundle_source_display_name(bundle: &ArcweftBundle) -> &str {
-    bundle
-        .source_map
-        .documents()
-        .next()
-        .map_or("<no source>", |source| source.display_name().display_name())
+    bundle.source_display_name()
 }
 
 pub(super) fn run_bundle_command(

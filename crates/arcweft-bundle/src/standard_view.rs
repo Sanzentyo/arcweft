@@ -22,6 +22,7 @@ use arcweft_view::{ViewPartLocalName, ViewPartName};
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
 pub const DIALOGUE_STYLE_ID: &str = "style.dialogue.standard";
+pub const DIALOGUE_STYLE_SOURCE_ID: &str = "arcweft:standard/dialogue-style";
 
 const PANEL_PART: &str = "part.dialogue.panel";
 const SPEAKER_PART: &str = "part.dialogue.speaker";
@@ -181,13 +182,7 @@ pub fn dialogue_text() -> ViewTextResource {
 /// typed declarations violate their compile-time invariants.
 #[must_use]
 pub fn dialogue_style() -> ViewStyleResource {
-    let document = SourceDocument::try_new(
-        SourceDocumentId::try_new("arcweft:standard/dialogue-style")
-            .expect("standard dialogue Style source ID is canonical"),
-        SourceName::Generated,
-        DIALOGUE_STYLE_SOURCE,
-    )
-    .expect("standard dialogue Style source is representable");
+    let document = dialogue_style_source_document();
     let section = SourceMapSection::try_from_documents(&[&document])
         .expect("standard dialogue Style source map is canonical");
     let source_ref = ProductSourceRef::from_document(
@@ -265,6 +260,23 @@ pub fn dialogue_style() -> ViewStyleResource {
         .encode_canonical_section()
         .expect("standard dialogue Style resource is canonical");
     resource
+}
+
+/// Exact engine-generated source document owned by [`dialogue_style`].
+///
+/// # Panics
+///
+/// Panics only if the engine-owned source identifier or static UTF-8 source
+/// stops satisfying the `SourceDocument` invariants.
+#[must_use]
+pub fn dialogue_style_source_document() -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new(DIALOGUE_STYLE_SOURCE_ID)
+            .expect("standard dialogue Style source ID is canonical"),
+        SourceName::Generated,
+        DIALOGUE_STYLE_SOURCE,
+    )
+    .expect("standard dialogue Style source is representable")
 }
 
 fn dialogue_style_ref() -> ViewStyleApplicationTarget {

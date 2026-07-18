@@ -1073,7 +1073,7 @@ fn bundle_from_runtime_parts(
         .program;
     let bytecode = BytecodeProgram::from_runtime_plan(plan);
     let stats = bytecode.stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -1094,6 +1094,7 @@ fn bundle_from_runtime_parts(
         bytecode,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 
@@ -1157,7 +1158,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         .program;
     let bytecode = BytecodeProgram::from_runtime_plan(plan);
     let stats = bytecode.stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -1178,6 +1179,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         bytecode,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 
@@ -1198,7 +1200,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         .program;
     let bytecode = BytecodeProgram::from_runtime_plan(plan);
     let stats = bytecode.stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -1219,6 +1221,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         bytecode,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 

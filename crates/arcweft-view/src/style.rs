@@ -38,7 +38,8 @@ pub use computed::{
 };
 pub use environment::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
-    ViewEnvironmentMatch, ViewEnvironmentTest, ViewTextScaleComparison,
+    ViewEnvironmentMatch, ViewEnvironmentTest, ViewEnvironmentWrapperIndex,
+    ViewEnvironmentWrapperSource, ViewTextScaleComparison,
 };
 pub use property::{
     ViewComputedPropertyKind, ViewPropertyExpansion, ViewPropertyKind, ViewPropertyResolution,

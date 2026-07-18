@@ -61,18 +61,63 @@ fn nested_environment_paths_flatten_into_one_checked_rule_guard() {
     let rules = report.style_catalog.sheets()[0].rules();
     assert_eq!(rules.len(), 1);
     let environment = rules[0].environment().expect("checked environment path");
+    assert_eq!(environment.wrappers().len(), 2);
     assert_eq!(environment.clauses().len(), 2);
     assert!(matches!(
         environment.clauses()[0],
-        CheckedStyleEnvironmentClause::ColorScheme { .. }
+        CheckedStyleEnvironmentClause::ColorScheme { wrapper, .. }
+            if wrapper.value() == 0
     ));
     assert!(matches!(
         environment.clauses()[1],
         CheckedStyleEnvironmentClause::TextScale {
             comparison: ViewTextScaleComparison::GreaterOrEqual,
             value,
+            wrapper,
             ..
-        } if value.value() == 1_255
+        } if value.value() == 1_255 && wrapper.value() == 1
+    ));
+}
+
+#[test]
+fn canonical_clause_order_retains_authored_wrapper_indexes() {
+    let source = r"pub style adaptive {
+    when environment(text-scale >= 125.5%) {
+        when environment(color-scheme == dark) {
+            Button { opacity = 900milli }
+        }
+    }
+}
+";
+    let (syntax_codes, report) = analyze(source);
+    assert!(syntax_codes.is_empty());
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    let environment = report.style_catalog.sheets()[0].rules()[0]
+        .environment()
+        .expect("checked environment path");
+    assert_eq!(environment.wrappers().len(), 2);
+    assert_eq!(
+        &source[environment.wrappers()[0].predicate_range().as_range()],
+        "(text-scale >= 125.5%)"
+    );
+    assert_eq!(
+        &source[environment.wrappers()[1].predicate_range().as_range()],
+        "(color-scheme == dark)"
+    );
+    assert!(
+        environment.wrappers()[0].body_range().start()
+            <= environment.wrappers()[1].scope_range().start()
+    );
+    assert!(
+        environment.wrappers()[1].scope_range().end()
+            <= environment.wrappers()[0].body_range().end()
+    );
+    assert!(matches!(
+        environment.clauses(),
+        [
+            CheckedStyleEnvironmentClause::ColorScheme { wrapper: inner, .. },
+            CheckedStyleEnvironmentClause::TextScale { wrapper: outer, .. },
+        ] if inner.value() == 1 && outer.value() == 0
     ));
 }
 
@@ -176,8 +221,7 @@ fn enum_boolean_equality_only_truth_table() {
 
 #[test]
 fn duplicate_fields_in_one_wrapper_and_nested_path_are_rejected() {
-    let (syntax_codes, report) = analyze(
-        r"pub style adaptive {
+    let source = r"pub style adaptive {
     when environment(color-scheme == light, color-scheme == dark) {
         Button { opacity = 1 }
     }
@@ -187,8 +231,8 @@ fn duplicate_fields_in_one_wrapper_and_nested_path_are_rejected() {
         }
     }
 }
-",
-    );
+";
+    let (syntax_codes, report) = analyze(source);
     assert!(syntax_codes.is_empty());
     let codes = style_codes(&report);
     assert!(codes.contains(&StyleDiagnosticCode::EnvironmentDuplicateField));
@@ -218,4 +262,44 @@ fn duplicate_fields_in_one_wrapper_and_nested_path_are_rejected() {
         })
         .collect::<Vec<_>>();
     assert!(related.iter().all(|ranges| ranges.len() == 1));
+
+    let first_color = source.find("color-scheme").expect("first color field");
+    let second_color = source[first_color + 1..]
+        .find("color-scheme")
+        .map(|offset| offset + first_color + 1)
+        .expect("second color field");
+    let first_contrast = source.find("contrast").expect("first contrast field");
+    let second_contrast = source[first_contrast + 1..]
+        .find("contrast")
+        .map(|offset| offset + first_contrast + 1)
+        .expect("second contrast field");
+    for error in &report.diagnostics {
+        let TypeCheckErrorKind::Style { diagnostic } = error.kind() else {
+            continue;
+        };
+        let related = diagnostic.related_ranges();
+        match diagnostic.code() {
+            StyleDiagnosticCode::EnvironmentDuplicateField => {
+                assert_eq!(
+                    diagnostic.range().as_range(),
+                    second_color..second_color + "color-scheme".len()
+                );
+                assert_eq!(
+                    related[0].as_range(),
+                    first_color..first_color + "color-scheme".len()
+                );
+            }
+            StyleDiagnosticCode::EnvironmentDuplicateFieldOnPath => {
+                assert_eq!(
+                    diagnostic.range().as_range(),
+                    second_contrast..second_contrast + "contrast".len()
+                );
+                assert_eq!(
+                    related[0].as_range(),
+                    first_contrast..first_contrast + "contrast".len()
+                );
+            }
+            _ => {}
+        }
+    }
 }

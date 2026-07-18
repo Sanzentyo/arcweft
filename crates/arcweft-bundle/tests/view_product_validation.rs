@@ -17,6 +17,7 @@ fn complete_product_accepts_exact_revision_and_exposes_only_validated_views() {
     let product = ValidatedViewProduct::try_new(
         Some(exact_map.clone()),
         Some(program),
+        None,
         ViewProductValidationLimits::default(),
     )
     .expect("exact source revision validates");
@@ -38,6 +39,7 @@ fn complete_product_rejects_missing_unknown_and_stale_sources() {
         ValidatedViewProduct::try_new(
             None,
             Some(program.clone()),
+            None,
             ViewProductValidationLimits::default(),
         )
         .expect_err("source-bearing program requires SourceMap"),
@@ -49,6 +51,7 @@ fn complete_product_rejects_missing_unknown_and_stale_sources() {
         ValidatedViewProduct::try_new(
             Some(other_map),
             Some(program.clone()),
+            None,
             ViewProductValidationLimits::default(),
         )
         .expect_err("unknown product source rejects"),
@@ -60,6 +63,7 @@ fn complete_product_rejects_missing_unknown_and_stale_sources() {
         ValidatedViewProduct::try_new(
             Some(stale_map),
             Some(program),
+            None,
             ViewProductValidationLimits::default(),
         )
         .expect_err("same logical source with another revision rejects"),
@@ -351,11 +355,16 @@ fn definition(public_id: &str, start: u32, end: u32) -> ViewDefinitionResource {
 fn validate_without_sources(
     program: ViewProgramResource,
 ) -> arcweft_view::AcceptedViewProgramRevision {
-    ValidatedViewProduct::try_new(None, Some(program), ViewProductValidationLimits::default())
-        .expect("source-free program validates")
-        .program()
-        .expect("validated program")
-        .accepted_revision()
+    ValidatedViewProduct::try_new(
+        None,
+        Some(program),
+        None,
+        ViewProductValidationLimits::default(),
+    )
+    .expect("source-free program validates")
+    .program()
+    .expect("validated program")
+    .accepted_revision()
 }
 
 fn source_map(entries: &[(&str, &str)]) -> SourceMapSection {
@@ -394,5 +403,5 @@ fn validate_with_limits(
     program: ViewProgramResource,
     limits: ViewProductValidationLimits,
 ) -> Result<ValidatedViewProduct, ViewProductValidationError> {
-    ValidatedViewProduct::try_new(Some(source_map), Some(program), limits)
+    ValidatedViewProduct::try_new(Some(source_map), Some(program), None, limits)
 }

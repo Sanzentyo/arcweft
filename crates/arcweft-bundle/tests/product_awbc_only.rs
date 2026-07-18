@@ -100,7 +100,7 @@ fn product_awbc_decode_rejects_old_structured_product_bytecode_tag() {
 }
 
 fn minimal_bundle() -> ArcweftBundle {
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -121,6 +121,7 @@ fn minimal_bundle() -> ArcweftBundle {
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
+    .expect("standard dialogue source joins source map")
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {

@@ -1,13 +1,17 @@
-use arcweft_bundle::resource_codec::SectionCodecError;
 use arcweft_bundle::resource_codec::view::{
     ViewActionButtonActionResource, ViewDefinitionResource, ViewInstructionSpan,
     ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds,
     ViewTextBlockBounds, ViewTextSourceKind,
 };
+use arcweft_bundle::resource_codec::{
+    MAX_SOURCE_MAP_DOCUMENTS, SectionCodecError, SourceMapBuildError, SourceMapSection,
+};
 use arcweft_bundle::standard_view::{
-    DIALOGUE_STYLE_ID, DIALOGUE_VIEW_ID, dialogue_program, dialogue_style, dialogue_text,
+    DIALOGUE_STYLE_ID, DIALOGUE_STYLE_SOURCE_ID, DIALOGUE_VIEW_ID, dialogue_program,
+    dialogue_style, dialogue_text,
 };
 use arcweft_presentation::appearance::PresentationColor;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
     ViewColorValue, ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplicationTarget,
 };
@@ -114,6 +118,27 @@ fn authored_program_is_merged_without_replacing_the_reserved_standard_definition
 }
 
 #[test]
+fn bundle_source_map_owns_the_standard_dialogue_style_source() {
+    let bundle = test_bundle();
+
+    assert!(
+        bundle
+            .source_map
+            .documents()
+            .any(|source| { source.document_id().as_str() == DIALOGUE_STYLE_SOURCE_ID })
+    );
+    assert_eq!(bundle.source_display_name(), "test.arcw");
+    assert_eq!(
+        bundle
+            .primary_source_document()
+            .expect("authored primary source")
+            .document_id()
+            .as_str(),
+        "test.arcw"
+    );
+}
+
+#[test]
 fn reserved_standard_dialogue_view_id_cannot_be_overridden() {
     let authored = ViewProgramResource {
         program_id: arcweft_view::ViewProgramId::try_new("view.project").unwrap(),
@@ -150,13 +175,54 @@ fn dialogue_primary_action_requires_a_declared_typed_parameter() {
     assert!(program.encode_canonical_section().is_err());
 }
 
-fn test_bundle() -> arcweft_bundle::ArcweftBundle {
-    use arcweft_bundle::resource_codec::SourceMapSection;
-    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
-    use arcweft_core::bytecode::BytecodeProgram;
-    use arcweft_render_text::LineDisplayCatalog;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+#[test]
+fn reserved_standard_source_collision_is_a_typed_bundle_build_error() {
+    let conflicting = SourceDocument::try_new(
+        SourceDocumentId::try_new(DIALOGUE_STYLE_SOURCE_ID).expect("reserved source ID"),
+        SourceName::path("user-controlled.arcw"),
+        "user-controlled text",
+    )
+    .expect("conflicting source document");
+    let source_map =
+        SourceMapSection::try_from_documents(&[&conflicting]).expect("conflicting source map");
 
+    let error = try_test_bundle(source_map).expect_err("reserved source collision must reject");
+
+    assert!(matches!(
+        error,
+        SourceMapBuildError::DuplicateDocument(id)
+            if id.as_str() == DIALOGUE_STYLE_SOURCE_ID
+    ));
+}
+
+#[test]
+fn full_user_source_map_cannot_panic_when_standard_source_is_reserved() {
+    let documents = (0..MAX_SOURCE_MAP_DOCUMENTS)
+        .map(|index| {
+            let id = format!("user/{index}.arcw");
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(id.clone()).expect("source ID"),
+                SourceName::path(id),
+                "",
+            )
+            .expect("source document")
+        })
+        .collect::<Vec<_>>();
+    let source_map = SourceMapSection::try_from_documents(&documents.iter().collect::<Vec<_>>())
+        .expect("full source map");
+
+    let error = try_test_bundle(source_map).expect_err("standard source needs one reserved slot");
+
+    assert_eq!(
+        error,
+        SourceMapBuildError::TooManyDocuments {
+            actual: MAX_SOURCE_MAP_DOCUMENTS + 1,
+            limit: MAX_SOURCE_MAP_DOCUMENTS,
+        }
+    );
+}
+
+fn test_bundle() -> arcweft_bundle::ArcweftBundle {
     let document = SourceDocument::try_new(
         SourceDocumentId::try_new("test.arcw").expect("source ID"),
         SourceName::path("test.arcw"),
@@ -164,7 +230,18 @@ fn test_bundle() -> arcweft_bundle::ArcweftBundle {
     )
     .expect("source document");
 
-    arcweft_bundle::ArcweftBundle::new(
+    try_test_bundle(SourceMapSection::try_from_documents(&[&document]).expect("source map"))
+        .expect("standard dialogue source joins source map")
+}
+
+fn try_test_bundle(
+    source_map: SourceMapSection,
+) -> Result<arcweft_bundle::ArcweftBundle, SourceMapBuildError> {
+    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
+    use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_render_text::LineDisplayCatalog;
+
+    arcweft_bundle::ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -181,7 +258,7 @@ fn test_bundle() -> arcweft_bundle::ArcweftBundle {
                 source_plans: 0,
             },
         },
-        SourceMapSection::try_from_documents(&[&document]).expect("source map"),
+        source_map,
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )

@@ -4,8 +4,10 @@
 arcweft-bundle = { path = "../crates/arcweft-bundle" }
 arcweft-core = { path = "../crates/arcweft-core" }
 arcweft-render-text = { path = "../crates/arcweft-render-text" }
+arcweft-source = { path = "../crates/arcweft-source" }
 ---
 
+use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization, ViewInputKind,
     ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewLayoutBoundsResource,
@@ -13,9 +15,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextResource, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextSourceKind,
     ViewTextSourceRecord, ViewTextTabPolicy, ViewTextVerticalNavigationPolicy,
 };
-use arcweft_bundle::{
-    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleSource,
-};
+use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
     AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
@@ -24,6 +24,7 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -70,9 +71,16 @@ fn web_ime_player_rendered_bundle() -> ArcweftBundle {
 }
 
 fn minimal_bundle() -> ArcweftBundle {
-    ArcweftBundle::new(
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("web/ime-player-rendered.arcw").expect("source ID"),
+        SourceName::path("web/ime-player-rendered.arcw"),
+        include_str!("../web/ime-player-rendered.arcw"),
+    )
+    .expect("source document");
+    let source_map = SourceMapSection::try_from_documents(&[&source]).expect("source map");
+
+    ArcweftBundle::try_new(
         BundleManifest {
-            source_label: "web/ime-player-rendered.arcw".to_owned(),
             profile_id: Some("sample.web_ime_player_rendered".to_owned()),
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
@@ -88,13 +96,11 @@ fn minimal_bundle() -> ArcweftBundle {
                 source_plans: 0,
             },
         },
-        BundleSource {
-            label: "web/ime-player-rendered.arcw".to_owned(),
-            text: include_str!("../web/ime-player-rendered.arcw").to_owned(),
-        },
+        source_map,
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
+    .expect("standard dialogue source joins source map")
 }
 
 fn view_program() -> ViewProgramResource {

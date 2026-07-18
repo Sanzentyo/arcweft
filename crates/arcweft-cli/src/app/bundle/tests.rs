@@ -1527,10 +1527,11 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
     let product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
         None,
         Some(program),
+        None,
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .expect("custom dialogue View product validates");
-    let mut runtime = BundleViewRuntime::try_new(product, Some(text), None)
+    let mut runtime = BundleViewRuntime::try_new(product, Some(text))
         .expect("custom dialogue View runtime builds");
     let frame = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
 
@@ -1952,7 +1953,7 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
         .program;
     let program = BytecodeProgram::from_runtime_plan(plan);
     let stats = program.stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -1981,6 +1982,7 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
         program,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 

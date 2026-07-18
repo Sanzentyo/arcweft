@@ -312,6 +312,39 @@ fn view_resource_merge_remaps_program_source_indexes() {
 }
 
 #[test]
+fn view_resource_merge_does_not_publish_a_candidate_that_fails_canonical_validation() {
+    let left = sourced_program("view.duplicate");
+    let right = sourced_program("view.duplicate");
+    left.encode_canonical_section()
+        .expect("left program is independently canonical");
+    right
+        .encode_canonical_section()
+        .expect("right program is independently canonical");
+
+    assert!(
+        ViewProgramStyleResources::new(Some(left.clone()), None)
+            .merge(ViewProgramStyleResources::new(Some(right.clone()), None))
+            .is_err(),
+        "duplicate definition ownership must fail before a candidate is returned",
+    );
+    assert_eq!(
+        left.encode_canonical_section()
+            .expect("left remains canonical after failed merge"),
+        sourced_program("view.duplicate")
+            .encode_canonical_section()
+            .expect("left snapshot encodes"),
+    );
+    assert_eq!(
+        right
+            .encode_canonical_section()
+            .expect("right remains canonical after failed merge"),
+        sourced_program("view.duplicate")
+            .encode_canonical_section()
+            .expect("right snapshot encodes"),
+    );
+}
+
+#[test]
 fn dialogue_primary_action_requires_a_dialogue_parameter_role() {
     let mut program = arcweft_bundle::standard_view::dialogue_program();
     program.definitions[0].parameters[0].role =
@@ -551,6 +584,7 @@ fn exported_part_source_provenance_is_validated_as_a_complete_product() {
     ValidatedViewProduct::try_new(
         Some(sources.clone()),
         Some(exported_part_program()),
+        None,
         ViewProductValidationLimits::default(),
     )
     .expect("canonical export ranges fit their exact source revision");
@@ -562,6 +596,7 @@ fn exported_part_source_provenance_is_validated_as_a_complete_product() {
         ValidatedViewProduct::try_new(
             Some(sources.clone()),
             Some(unknown),
+            None,
             ViewProductValidationLimits::default(),
         )
         .expect_err("unknown encoded source identity must fail"),
@@ -577,6 +612,7 @@ fn exported_part_source_provenance_is_validated_as_a_complete_product() {
         ValidatedViewProduct::try_new(
             Some(sources),
             Some(out_of_bounds),
+            None,
             ViewProductValidationLimits::default(),
         )
         .expect_err("range outside encoded normalized extent must fail"),

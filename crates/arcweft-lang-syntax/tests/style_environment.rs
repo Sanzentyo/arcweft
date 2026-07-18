@@ -58,8 +58,15 @@ fn environment_wrapper_parses_all_four_fields() {
         environment.clauses()[3].comparison(),
         StyleEnvironmentComparisonSyntax::GreaterOrEqual
     );
-    let StyleEnvironmentValueSyntax::Percentage(percentage) = environment.clauses()[3].value()
-    else {
+    let text_scale = &environment.clauses()[3];
+    assert_eq!(
+        &source[text_scale.range().as_range()],
+        "text-scale >= 125.5%"
+    );
+    assert_eq!(&source[text_scale.field_range().as_range()], "text-scale");
+    assert_eq!(&source[text_scale.comparison_range().as_range()], ">=");
+    assert_eq!(&source[text_scale.value_range().as_range()], "125.5%");
+    let StyleEnvironmentValueSyntax::Percentage(percentage) = text_scale.value() else {
         panic!("typed percentage")
     };
     assert_eq!(&source[percentage.integer_range().as_range()], "125");
@@ -71,6 +78,18 @@ fn environment_wrapper_parses_all_four_fields() {
         "5"
     );
     assert_eq!(&source[percentage.percent_range().as_range()], "%");
+    assert_eq!(
+        &source[environment.predicate_range().as_range()],
+        "(\n        color-scheme == dark,\n        contrast == more,\n        reduced-motion == true,\n        text-scale >= 125.5%,\n    )"
+    );
+    assert_eq!(
+        &source[environment.body_range().as_range()],
+        "\n        Button:hover { opacity = 900milli }\n    "
+    );
+    assert_eq!(
+        &source[environment.scope_range().as_range()],
+        "when environment(\n        color-scheme == dark,\n        contrast == more,\n        reduced-motion == true,\n        text-scale >= 125.5%,\n    ) {\n        Button:hover { opacity = 900milli }\n    }"
+    );
     assert!(environment.body()[0].as_rule().is_some());
 }
 
@@ -98,6 +117,24 @@ fn environment_wrapper_parses_nested_implicit_conjunction() {
         inner.clauses()[0].field(),
         StyleEnvironmentFieldSyntax::TextScale
     );
+    assert_eq!(
+        &source[outer.predicate_range().as_range()],
+        "(color-scheme == dark)"
+    );
+    assert_eq!(
+        &source[inner.predicate_range().as_range()],
+        "(text-scale < 100%)"
+    );
+    assert!(
+        outer
+            .body_range()
+            .as_range()
+            .contains(&inner.scope_range().start())
+    );
+    assert!(outer.body_range().end() >= inner.scope_range().end());
+    let rule = inner.body()[0].as_rule().expect("guarded rule");
+    assert!(inner.body_range().start() <= rule.range().start());
+    assert!(rule.range().end() <= inner.body_range().end());
     assert!(inner.body()[0].as_rule().is_some());
 }
 

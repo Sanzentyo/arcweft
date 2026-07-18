@@ -260,7 +260,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
     });
     let program = BytecodeProgram::from_runtime_plan(plan);
     let stats = program.stats();
-    let bundle = ArcweftBundle::new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -284,6 +284,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
         program,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_adapter_manifests([BundleAdapterManifest {
         id: "custom-echo".to_owned(),
         display_name: "Custom Echo".to_owned(),

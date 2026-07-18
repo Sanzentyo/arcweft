@@ -1103,7 +1103,7 @@ mod tests {
     }
 
     fn empty_bundle() -> ArcweftBundle {
-        ArcweftBundle::new(
+        ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -1124,6 +1124,7 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+        .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
     }
 

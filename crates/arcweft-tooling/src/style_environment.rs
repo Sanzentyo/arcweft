@@ -330,9 +330,9 @@ pub fn hover_style_environment(
     let Some(clause) = clause else {
         return (range_contains(input.ast.when_range(), input.position)
             || range_contains(input.ast.intrinsic_range(), input.position)
-            || range_contains(input.ast.condition_range(), input.position))
+            || range_contains(input.ast.predicate_range(), input.position))
         .then(|| StyleEnvironmentHover {
-            range: input.ast.range(),
+            range: input.ast.scope_range(),
             subject: StyleEnvironmentHoverSubject::Wrapper,
             markdown: "Native Style guard evaluated against the checked presentation environment."
                 .to_owned(),
@@ -405,7 +405,7 @@ pub fn style_environment_semantic_spans(
             kind: StyleEnvironmentSemanticKind::Intrinsic,
         },
     ];
-    let condition = node.condition_range();
+    let condition = node.predicate_range();
     if condition.end() > condition.start() {
         spans.push(StyleEnvironmentSemanticSpan {
             range: TextRange::new(condition.start(), condition.start() + 1),
@@ -627,7 +627,7 @@ fn collect_body_edits(body: &[StyleBodyItem], source: &str, edits: &mut Vec<Text
 }
 
 fn canonical_condition_edit(environment: &StyleEnvironmentBlock, source: &str) -> Option<TextEdit> {
-    let range = environment.condition_range();
+    let range = environment.predicate_range();
     if range.end() <= range.start() + 1
         || source.get(range.start()..range.start() + 1) != Some("(")
         || source.get(range.end() - 1..range.end()) != Some(")")
@@ -652,7 +652,7 @@ fn canonical_condition_edit(environment: &StyleEnvironmentBlock, source: &str) -
     let replacement = if canonical_clauses.len() == 1 {
         canonical_clauses[0].clone()
     } else {
-        let indentation = line_indentation(source, environment.range().start());
+        let indentation = line_indentation(source, environment.scope_range().start());
         let clause_indentation = format!("{indentation}    ");
         let mut replacement = String::new();
         replacement.push('\n');

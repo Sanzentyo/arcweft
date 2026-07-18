@@ -17,9 +17,10 @@ use crate::resource_codec::view::{
     DialogueViewContractError, ViewStyleContractError, ViewTextSourceKind,
 };
 use crate::resource_codec::{
-    SourceMapSection, ValidatedViewProduct, ViewInputResource, ViewProductValidationError,
-    ViewProductValidationLimits, ViewProgramResource, ViewProgramStyleResources,
-    ViewResourceMergeError, ViewStyleResource, ViewTextResource, ViewThemeResource,
+    SourceMapBuildError, SourceMapSection, ValidatedViewProduct, ViewInputResource,
+    ViewProductValidationError, ViewProductValidationLimits, ViewProgramResource,
+    ViewProgramStyleResources, ViewResourceMergeError, ViewStyleResource, ViewTextResource,
+    ViewThemeResource,
 };
 #[cfg(feature = "format-avro")]
 use apache_avro::types::Value as AvroValue;
@@ -532,13 +533,21 @@ fn bundle_yaml_to_value(yaml: &Yaml) -> Result<Value, String> {
 }
 
 impl ArcweftBundle {
-    pub fn new(
+    /// Constructs a game bundle with the engine-owned standard dialogue resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns a source-map build error when the supplied map conflicts with,
+    /// or has no capacity for, the reserved standard dialogue Style source.
+    pub fn try_new(
         manifest: BundleManifest,
         source_map: SourceMapSection,
         bytecode: BytecodeProgram,
         display: LineDisplayCatalog,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, SourceMapBuildError> {
+        let standard_style_source = standard_view::dialogue_style_source_document();
+        let source_map = source_map.try_with_document(&standard_style_source)?;
+        Ok(Self {
             schema_version: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             bundle_kind: BundleKind::Game,
             manifest,
@@ -562,20 +571,24 @@ impl ArcweftBundle {
             view_text: Some(standard_view::dialogue_text()),
             view_input: None,
             view_theme: None,
-        }
+        })
     }
 
     /// Human-readable label projected from the canonical source map.
     pub fn source_display_name(&self) -> &str {
         self.source_map
             .documents()
-            .next()
+            .find(|source| source.document_id().as_str() != standard_view::DIALOGUE_STYLE_SOURCE_ID)
+            .or_else(|| self.source_map.documents().next())
             .map_or("<no source>", |source| source.display_name().display_name())
     }
 
-    /// First canonical source document used by adapters that need a workspace anchor.
+    /// Primary non-engine source document used by adapters that need a workspace anchor.
     pub fn primary_source_document(&self) -> Option<&crate::resource_codec::SourceMapDocument> {
-        self.source_map.documents().next()
+        self.source_map
+            .documents()
+            .find(|source| source.document_id().as_str() != standard_view::DIALOGUE_STYLE_SOURCE_ID)
+            .or_else(|| self.source_map.documents().next())
     }
 
     #[must_use]
@@ -1091,13 +1104,9 @@ impl ArcweftBundle {
         ValidatedViewProduct::try_new(
             Some(self.source_map.clone()),
             self.view_program.clone(),
+            self.view_style.clone(),
             ViewProductValidationLimits::default(),
         )?;
-        if let Some(style) = &self.view_style {
-            style
-                .validate_environment_sources(&self.source_map)
-                .map_err(ViewStyleContractError::InvalidResource)?;
-        }
         Ok(())
     }
 
@@ -1498,7 +1507,7 @@ mod tests {
 
     #[test]
     fn bundle_json_round_trips_without_paths() {
-        let bundle = ArcweftBundle::new(
+        let bundle = ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -1519,6 +1528,7 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+        .expect("standard dialogue source joins source map")
         .with_adapter_manifests([BundleAdapterManifest {
             id: "native-file".to_owned(),
             display_name: "Native File".to_owned(),
@@ -2044,7 +2054,7 @@ mod tests {
     }
 
     fn empty_test_bundle() -> ArcweftBundle {
-        ArcweftBundle::new(
+        ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -2065,6 +2075,7 @@ mod tests {
             BytecodeProgram::default(),
             LineDisplayCatalog::default(),
         )
+        .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
     }
 

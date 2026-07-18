@@ -24,13 +24,13 @@ use super::model::{
 
 mod part;
 mod style;
-mod style_environment;
+pub(in crate::resource_codec::view) mod style_environment;
 mod text;
 mod theme;
 mod transcript;
 
 pub use part::ViewExportValidationError;
-pub use style_environment::ViewStyleEnvironmentSourceError;
+pub use style_environment::{ViewStyleEnvironmentSourceError, ViewStyleEnvironmentSourceRole};
 
 use self::transcript::{
     decode_view_section, encode_view_section, export_json_bytes, validate_canonical_view_transcript,
@@ -67,6 +67,7 @@ pub struct ViewResourceBudget {
     pub selector_depth: usize,
     pub part_count: usize,
     pub environment_conditions: usize,
+    pub environment_wrappers: usize,
     pub environment_clauses: usize,
     pub source_map_refs: usize,
     pub text_sources: usize,
@@ -126,6 +127,7 @@ impl Default for ViewResourceBudget {
             selector_depth: 32,
             part_count: 65_536,
             environment_conditions: 65_536,
+            environment_wrappers: 262_144,
             environment_clauses: 262_144,
             source_map_refs: 262_144,
             text_sources: 262_144,
@@ -138,16 +140,23 @@ impl Default for ViewResourceBudget {
 
 impl ViewProgramResource {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
+        self.encode_canonical_section_with_budget(&ViewResourceBudget::default())
+    }
+
+    pub(in crate::resource_codec::view) fn encode_canonical_section_with_budget(
+        &self,
+        budget: &ViewResourceBudget,
+    ) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize();
-        section.validate(&ViewResourceBudget::default())?;
+        section.validate(budget)?;
         encode_view_section(
             ProductSectionCodecKind::ViewProgram,
             "view_program",
             &section,
             section.public_ids(),
             section.record_count(),
-            &ViewResourceBudget::default(),
+            budget,
         )
     }
 
@@ -204,7 +213,7 @@ impl ViewProgramResource {
         PublicIdTable::new(self.public_ids())
     }
 
-    fn canonicalize(&mut self) {
+    pub(in crate::resource_codec::view) fn canonicalize(&mut self) {
         self.canonicalize_source_table();
         self.value_programs
             .sort_by_key(arcweft_view::ViewValueProgram::id);
@@ -961,7 +970,7 @@ impl ViewProgramResource {
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_program_source_refs"))
     }
 
-    fn public_ids(&self) -> Vec<String> {
+    pub(in crate::resource_codec::view) fn public_ids(&self) -> Vec<String> {
         unique_strings(
             [self.program_id.as_str().to_owned()]
                 .into_iter()

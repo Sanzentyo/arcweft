@@ -7,9 +7,9 @@ pub mod token_graph;
 pub mod value;
 
 pub use catalog::{
-    CheckedStyleEnvironmentClause, CheckedStyleEnvironmentPath, CheckedViewStyleCatalog,
-    CheckedViewStyleDeclaration, CheckedViewStylePatch, CheckedViewStyleRule,
-    CheckedViewStyleSheet, CheckedViewStyleToken,
+    CheckedStyleEnvironmentClause, CheckedStyleEnvironmentPath, CheckedStyleEnvironmentWrapper,
+    CheckedStyleEnvironmentWrapperIndex, CheckedViewStyleCatalog, CheckedViewStyleDeclaration,
+    CheckedViewStylePatch, CheckedViewStyleRule, CheckedViewStyleSheet, CheckedViewStyleToken,
 };
 pub use check::check_view_styles;
 pub use diagnostic::{StyleDiagnostic, StyleDiagnosticCode};

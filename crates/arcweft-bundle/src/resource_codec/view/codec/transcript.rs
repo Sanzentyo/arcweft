@@ -12,6 +12,7 @@ use crate::resource_codec::kind::ProductSectionCodecKind;
 use crate::resource_codec::table::{EnumRegistry, EnumSymbol, PublicIdTable, StringTable};
 use crate::resource_codec::wire::ProductResourceEnvelope;
 use serde::{Deserialize, Serialize};
+use std::io::{self, Write};
 
 const FIELD_VIEW_TRANSCRIPT: FieldId = FieldId(1);
 
@@ -26,13 +27,9 @@ pub(super) fn encode_view_section<T>(
 where
     T: Serialize,
 {
+    validate_view_transcript_budget(value, budget)?;
     let transcript = serde_json::to_vec(value)
         .map_err(|_| SectionCodecError::NonCanonicalTable(family_label))?;
-    check_budget(
-        transcript.len(),
-        budget.transcript_bytes,
-        "view_transcript_bytes",
-    )?;
     let strings = StringTable::with_budget(
         [
             family_label.to_owned(),
@@ -69,6 +66,42 @@ where
         budget.common,
     )?
     .encode_canonical()
+}
+
+fn validate_view_transcript_budget<T>(
+    value: &T,
+    budget: &ViewResourceBudget,
+) -> Result<(), SectionCodecError>
+where
+    T: Serialize,
+{
+    let mut counter = JsonByteCounter::default();
+    serde_json::to_writer(&mut counter, value)
+        .map_err(|_| SectionCodecError::NonCanonicalTable("view_transcript_canonical"))?;
+    check_budget(
+        counter.bytes,
+        budget.transcript_bytes,
+        "view_transcript_bytes",
+    )
+}
+
+#[derive(Default)]
+struct JsonByteCounter {
+    bytes: usize,
+}
+
+impl Write for JsonByteCounter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.bytes = self
+            .bytes
+            .checked_add(bytes.len())
+            .ok_or_else(|| io::Error::other("canonical View transcript length overflow"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 pub(super) fn decode_view_section<T, P, R>(

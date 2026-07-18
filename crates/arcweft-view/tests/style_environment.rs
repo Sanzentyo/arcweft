@@ -6,13 +6,14 @@ use arcweft_presentation::appearance::{
 use arcweft_view::style::{
     ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewColorValue,
     ViewContainerAxis, ViewContainerComparison, ViewContainerPredicate, ViewEnvironmentClause,
-    ViewEnvironmentCondition, ViewEnvironmentConditionError, ViewInheritedBoxAxes, ViewLengthMilli,
-    ViewPropertyKind, ViewRatioMilli, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration,
-    ViewStyleNodeFacts, ViewStyleNodeKey, ViewStyleProgram, ViewStyleResolveContext,
-    ViewStyleResolveResult, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule,
-    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleTraceMode, ViewTextScaleComparison,
+    ViewEnvironmentCondition, ViewEnvironmentConditionError, ViewEnvironmentWrapperIndex,
+    ViewEnvironmentWrapperSource, ViewInheritedBoxAxes, ViewLengthMilli, ViewPropertyKind,
+    ViewRatioMilli, ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleDeclaration, ViewStyleNodeFacts,
+    ViewStyleNodeKey, ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveResult,
+    ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleTraceMode,
+    ViewTextScaleComparison,
 };
 use arcweft_view::{ViewElementKind, ViewMountId, ViewStyleSourceId};
 use serde_json::{Value, json};
@@ -31,18 +32,40 @@ fn environment(
     ))
 }
 
+fn wrapper_index(value: u8) -> ViewEnvironmentWrapperIndex {
+    ViewEnvironmentWrapperIndex::new(value)
+}
+
+fn wrapper_source(value: u32) -> ViewEnvironmentWrapperSource {
+    let source = ViewStyleSourceId::new(value);
+    ViewEnvironmentWrapperSource::new(source, source, source)
+}
+
 fn complete_condition() -> ViewEnvironmentCondition {
     ViewEnvironmentCondition::try_new(
-        ViewStyleSourceId::new(1),
+        vec![wrapper_source(1)],
         vec![
             ViewEnvironmentClause::text_scale(
                 ViewTextScaleComparison::GreaterOrEqual,
                 TextScaleMilli::try_new(1_250).unwrap(),
+                wrapper_index(0),
                 ViewStyleSourceId::new(5),
             ),
-            ViewEnvironmentClause::reduced_motion(true, ViewStyleSourceId::new(4)),
-            ViewEnvironmentClause::contrast(ContrastPreference::More, ViewStyleSourceId::new(3)),
-            ViewEnvironmentClause::color_scheme(ColorScheme::Dark, ViewStyleSourceId::new(2)),
+            ViewEnvironmentClause::reduced_motion(
+                true,
+                wrapper_index(0),
+                ViewStyleSourceId::new(4),
+            ),
+            ViewEnvironmentClause::contrast(
+                ContrastPreference::More,
+                wrapper_index(0),
+                ViewStyleSourceId::new(3),
+            ),
+            ViewEnvironmentClause::color_scheme(
+                ColorScheme::Dark,
+                wrapper_index(0),
+                ViewStyleSourceId::new(2),
+            ),
         ],
     )
     .unwrap()
@@ -115,15 +138,27 @@ fn condition_try_new_sorts_canonical_field_order() {
 #[test]
 fn condition_try_new_rejects_empty_duplicate_and_over_four() {
     assert_eq!(
-        ViewEnvironmentCondition::try_new(ViewStyleSourceId::new(1), Vec::new()),
-        Err(ViewEnvironmentConditionError::Empty)
+        ViewEnvironmentCondition::try_new(Vec::new(), Vec::new()),
+        Err(ViewEnvironmentConditionError::EmptyWrappers)
+    );
+    assert_eq!(
+        ViewEnvironmentCondition::try_new(vec![wrapper_source(1)], Vec::new()),
+        Err(ViewEnvironmentConditionError::EmptyClauses)
     );
     assert_eq!(
         ViewEnvironmentCondition::try_new(
-            ViewStyleSourceId::new(1),
+            vec![wrapper_source(1)],
             vec![
-                ViewEnvironmentClause::reduced_motion(true, ViewStyleSourceId::new(2)),
-                ViewEnvironmentClause::reduced_motion(false, ViewStyleSourceId::new(3)),
+                ViewEnvironmentClause::reduced_motion(
+                    true,
+                    wrapper_index(0),
+                    ViewStyleSourceId::new(2),
+                ),
+                ViewEnvironmentClause::reduced_motion(
+                    false,
+                    wrapper_index(0),
+                    ViewStyleSourceId::new(3),
+                ),
             ],
         ),
         Err(ViewEnvironmentConditionError::DuplicateField {
@@ -131,11 +166,53 @@ fn condition_try_new_rejects_empty_duplicate_and_over_four() {
         })
     );
     let clauses = (0..5)
-        .map(|source| ViewEnvironmentClause::reduced_motion(true, ViewStyleSourceId::new(source)))
+        .map(|source| {
+            ViewEnvironmentClause::reduced_motion(
+                true,
+                wrapper_index(0),
+                ViewStyleSourceId::new(source),
+            )
+        })
         .collect();
     assert_eq!(
-        ViewEnvironmentCondition::try_new(ViewStyleSourceId::new(1), clauses),
-        Err(ViewEnvironmentConditionError::TooMany { actual: 5, max: 4 })
+        ViewEnvironmentCondition::try_new(vec![wrapper_source(1)], clauses),
+        Err(ViewEnvironmentConditionError::TooManyClauses { actual: 5, max: 4 })
+    );
+    assert_eq!(
+        ViewEnvironmentCondition::try_new(
+            (0..5).map(wrapper_source).collect(),
+            vec![ViewEnvironmentClause::reduced_motion(
+                true,
+                wrapper_index(0),
+                ViewStyleSourceId::new(8),
+            )],
+        ),
+        Err(ViewEnvironmentConditionError::TooManyWrappers { actual: 5, max: 4 })
+    );
+    assert_eq!(
+        ViewEnvironmentCondition::try_new(
+            vec![wrapper_source(1)],
+            vec![ViewEnvironmentClause::reduced_motion(
+                true,
+                wrapper_index(1),
+                ViewStyleSourceId::new(2),
+            )],
+        ),
+        Err(ViewEnvironmentConditionError::WrapperIndexOutOfBounds {
+            index: 1,
+            wrapper_count: 1,
+        })
+    );
+    assert_eq!(
+        ViewEnvironmentCondition::try_new(
+            vec![wrapper_source(1), wrapper_source(4)],
+            vec![ViewEnvironmentClause::reduced_motion(
+                true,
+                wrapper_index(0),
+                ViewStyleSourceId::new(2),
+            )],
+        ),
+        Err(ViewEnvironmentConditionError::UnusedWrapper { index: 1 })
     );
 }
 
@@ -143,8 +220,26 @@ fn condition_try_new_rejects_empty_duplicate_and_over_four() {
 fn condition_direct_serde_rejects_empty() {
     assert!(
         serde_json::from_value::<ViewEnvironmentCondition>(json!({
-            "source": 1,
+            "wrappers": [{"predicate_source":1,"body_source":1,"scope_source":1}],
             "clauses": []
+        }))
+        .is_err()
+    );
+}
+
+#[test]
+fn condition_direct_serde_rejects_removed_source_shape() {
+    assert!(
+        serde_json::from_value::<ViewEnvironmentCondition>(json!({
+            "source": 1,
+            "clauses": [
+                {
+                    "field":"reduced_motion",
+                    "comparison":"equal",
+                    "value":true,
+                    "source":2
+                }
+            ]
         }))
         .is_err()
     );
@@ -154,10 +249,10 @@ fn condition_direct_serde_rejects_empty() {
 fn condition_direct_serde_rejects_duplicate() {
     assert!(
         serde_json::from_value::<ViewEnvironmentCondition>(json!({
-            "source": 1,
+            "wrappers": [{"predicate_source":1,"body_source":1,"scope_source":1}],
             "clauses": [
-                {"field":"reduced_motion","comparison":"equal","value":true,"source":2},
-                {"field":"reduced_motion","comparison":"equal","value":false,"source":3}
+                {"field":"reduced_motion","comparison":"equal","value":true,"wrapper":0,"source":2},
+                {"field":"reduced_motion","comparison":"equal","value":false,"wrapper":0,"source":3}
             ]
         }))
         .is_err()
@@ -172,13 +267,14 @@ fn condition_direct_serde_rejects_over_limit() {
                 "field":"reduced_motion",
                 "comparison":"equal",
                 "value":true,
+                "wrapper":0,
                 "source":source
             })
         })
         .collect::<Vec<_>>();
     assert!(
         serde_json::from_value::<ViewEnvironmentCondition>(json!({
-            "source": 1,
+            "wrappers": [{"predicate_source":1,"body_source":1,"scope_source":1}],
             "clauses": clauses
         }))
         .is_err()
@@ -226,11 +322,12 @@ fn condition_direct_serde_rejects_out_of_range_text_scale() {
     for invalid in [499, 4_001] {
         assert!(
             serde_json::from_value::<ViewEnvironmentCondition>(json!({
-                "source": 1,
+                "wrappers": [{"predicate_source":1,"body_source":1,"scope_source":1}],
                 "clauses": [{
                     "field":"text_scale",
                     "comparison":"equal",
                     "value":invalid,
+                    "wrapper":0,
                     "source":2
                 }]
             }))
@@ -271,9 +368,10 @@ fn unrelated_environment_field_change_keeps_cache_entry() {
     let program = guarded_program(
         Some(
             ViewEnvironmentCondition::try_new(
-                ViewStyleSourceId::new(0),
+                vec![wrapper_source(0)],
                 vec![ViewEnvironmentClause::color_scheme(
                     ColorScheme::Dark,
+                    wrapper_index(0),
                     ViewStyleSourceId::new(1),
                 )],
             )
@@ -319,9 +417,10 @@ fn selection_field_change_evicts_cascade_entry() {
     let program = guarded_program(
         Some(
             ViewEnvironmentCondition::try_new(
-                ViewStyleSourceId::new(0),
+                vec![wrapper_source(0)],
                 vec![ViewEnvironmentClause::color_scheme(
                     ColorScheme::Dark,
+                    wrapper_index(0),
                     ViewStyleSourceId::new(1),
                 )],
             )

@@ -220,7 +220,7 @@ fn fixture_bundle() -> ArcweftBundle {
         bytes: b"wav-bytes".to_vec(),
     };
     let master_bus = AudioBusId::new("bus.master").expect("bus id");
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -241,6 +241,7 @@ fn fixture_bundle() -> ArcweftBundle {
         BytecodeProgram::default(),
         LineDisplayCatalog::default(),
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program())
     .with_virtual_files([image_file, audio_file])
     .with_image_assets([BundleImageAsset {

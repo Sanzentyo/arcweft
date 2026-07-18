@@ -522,7 +522,7 @@ fn generation_from_bundle_rejects_unverified_bytecode() {
 
 fn test_bundle(bytecode: BytecodeProgram, asset_bytes: &[u8]) -> ArcweftBundle {
     let stats = bytecode.stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: Some(BundleLaunchKind::Cli),
@@ -549,6 +549,7 @@ fn test_bundle(bytecode: BytecodeProgram, asset_bytes: &[u8]) -> ArcweftBundle {
         bytecode,
         LineDisplayCatalog::default(),
     )
+    .expect("test bundle source map accepts the generated standard Style source")
     .with_virtual_files([BundleVirtualFile {
         space: BundleVirtualFileSpace::Asset,
         path: "asset.bin".to_owned(),

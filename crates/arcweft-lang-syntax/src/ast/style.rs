@@ -42,11 +42,22 @@ pub enum StyleBodyItem {
 pub struct StyleEnvironmentBlock {
     when_range: TextRange,
     intrinsic_range: TextRange,
-    condition_range: TextRange,
+    predicate_range: TextRange,
     condition_closed: bool,
     clauses: Vec<StyleEnvironmentClause>,
     body: Vec<StyleBodyItem>,
-    range: TextRange,
+    body_range: TextRange,
+    scope_range: TextRange,
+}
+
+/// Exact lexical ranges owned by one native environment wrapper.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StyleEnvironmentSourceRanges {
+    when: TextRange,
+    intrinsic: TextRange,
+    predicate: TextRange,
+    body: TextRange,
+    scope: TextRange,
 }
 
 /// One retained operand triple in an environment guard.
@@ -292,29 +303,27 @@ impl StyleBodyItem {
     pub const fn range(&self) -> TextRange {
         match self {
             Self::Rule(rule) => rule.range(),
-            Self::Environment(environment) => environment.range(),
+            Self::Environment(environment) => environment.scope_range(),
         }
     }
 }
 
 impl StyleEnvironmentBlock {
     pub(crate) const fn new(
-        when_range: TextRange,
-        intrinsic_range: TextRange,
-        condition_range: TextRange,
+        ranges: StyleEnvironmentSourceRanges,
         condition_closed: bool,
         clauses: Vec<StyleEnvironmentClause>,
         body: Vec<StyleBodyItem>,
-        range: TextRange,
     ) -> Self {
         Self {
-            when_range,
-            intrinsic_range,
-            condition_range,
+            when_range: ranges.when,
+            intrinsic_range: ranges.intrinsic,
+            predicate_range: ranges.predicate,
             condition_closed,
             clauses,
             body,
-            range,
+            body_range: ranges.body,
+            scope_range: ranges.scope,
         }
     }
 
@@ -326,8 +335,9 @@ impl StyleEnvironmentBlock {
         self.intrinsic_range
     }
 
-    pub const fn condition_range(&self) -> TextRange {
-        self.condition_range
+    /// Exact parenthesized predicate range, including both parentheses when closed.
+    pub const fn predicate_range(&self) -> TextRange {
+        self.predicate_range
     }
 
     pub const fn condition_closed(&self) -> bool {
@@ -342,13 +352,36 @@ impl StyleEnvironmentBlock {
         &self.body
     }
 
-    pub const fn range(&self) -> TextRange {
-        self.range
+    /// Exact bytes between the wrapper's opening and closing braces.
+    pub const fn body_range(&self) -> TextRange {
+        self.body_range
+    }
+
+    /// Complete lexical range of this `when environment(...) { ... }` wrapper.
+    pub const fn scope_range(&self) -> TextRange {
+        self.scope_range
+    }
+}
+
+impl StyleEnvironmentSourceRanges {
+    pub(crate) const fn new(
+        when_range: TextRange,
+        intrinsic_range: TextRange,
+        predicate_range: TextRange,
+        body_range: TextRange,
+        scope_range: TextRange,
+    ) -> Self {
+        Self {
+            when: when_range,
+            intrinsic: intrinsic_range,
+            predicate: predicate_range,
+            body: body_range,
+            scope: scope_range,
+        }
     }
 }
 
 impl StyleEnvironmentClause {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) const fn new(
         field: StyleEnvironmentFieldSyntax,
         comparison: StyleEnvironmentComparisonSyntax,

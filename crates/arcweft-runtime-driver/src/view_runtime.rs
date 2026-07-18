@@ -24,8 +24,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewProductValidationLimits, ViewTextSelectionPolicy, ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
-    ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewStyleResource, ViewTextBlockBounds,
-    ViewTextResource,
+    ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewTextBlockBounds, ViewTextResource,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_presentation::fx::{
@@ -451,9 +450,9 @@ pub struct BundleViewRuntime {
 impl Default for BundleViewRuntime {
     fn default() -> Self {
         let product =
-            ValidatedViewProduct::try_new(None, None, ViewProductValidationLimits::default())
+            ValidatedViewProduct::try_new(None, None, None, ViewProductValidationLimits::default())
                 .expect("an empty View product is valid");
-        Self::try_new(product, None, None).expect("an empty View runtime is valid")
+        Self::try_new(product, None).expect("an empty View runtime is valid")
     }
 }
 
@@ -523,9 +522,8 @@ impl BundleViewRuntime {
     pub fn try_new(
         product: ValidatedViewProduct,
         text: Option<ViewTextResource>,
-        style: Option<&ViewStyleResource>,
     ) -> Result<Self, BundleViewRuntimeError> {
-        Self::try_new_with_registry(product, text, style, ViewRegistry::default())
+        Self::try_new_with_registry(product, text, ViewRegistry::default())
     }
 
     /// Builds an evaluator while preserving already registered host Views.
@@ -536,7 +534,6 @@ impl BundleViewRuntime {
     pub fn try_new_with_registry(
         product: ValidatedViewProduct,
         text: Option<ViewTextResource>,
-        style: Option<&ViewStyleResource>,
         mut registry: ViewRegistry,
     ) -> Result<Self, BundleViewRuntimeError> {
         match product.program() {
@@ -571,6 +568,7 @@ impl BundleViewRuntime {
                 catalog.resource().value_programs.clone()
             }),
         )?;
+        let style_program = product.style().map(|style| style.program().clone());
         Ok(Self {
             product,
             catalog,
@@ -578,7 +576,7 @@ impl BundleViewRuntime {
             generation: AcceptedViewProgramGeneration::INITIAL,
             frame_revision: 0,
             last_invalidation: None,
-            style_program: style.map(|style| style.program.clone()),
+            style_program,
             text,
             inventory,
             logical_time: FxLogicalTime::zero(),

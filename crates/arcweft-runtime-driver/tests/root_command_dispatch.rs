@@ -309,7 +309,7 @@ fn command_bundle_with_root(
         .expect("AWBC lowers")
         .program;
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -330,6 +330,7 @@ fn command_bundle_with_root(
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
+    .expect("stateful bundle source map accepts the generated standard Style source")
     .with_product_awbc(product_awbc)
 }
 
@@ -358,7 +359,7 @@ fn non_stateful_bundle() -> (ArcweftBundle, EntryRuntimeId) {
         .expect("AWBC lowers")
         .program;
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let bundle = ArcweftBundle::new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -379,6 +380,7 @@ fn non_stateful_bundle() -> (ArcweftBundle, EntryRuntimeId) {
         BytecodeProgram::from_runtime_plan(plan),
         display,
     )
+    .expect("non-stateful bundle source map accepts the generated standard Style source")
     .with_product_awbc(product_awbc);
     (bundle, entry)
 }

@@ -99,6 +99,21 @@ fn style_merge_rebases_patch_and_source_ids_as_one_canonical_program() {
 }
 
 #[test]
+fn style_merge_rejects_public_owner_collision_without_changing_either_input() {
+    let left = style_resource("view.style.left", "style.shared", 0);
+    let right = style_resource("view.style.right", "style.shared", 0);
+    let left_snapshot = left.clone();
+    let right_snapshot = right.clone();
+
+    ViewProgramStyleResources::new(None, Some(left.clone()))
+        .merge(ViewProgramStyleResources::new(None, Some(right.clone())))
+        .expect_err("duplicate sheet ownership rejects atomically");
+
+    assert_eq!(left, left_snapshot);
+    assert_eq!(right, right_snapshot);
+}
+
+#[test]
 fn style_metadata_inventory_order_does_not_change_canonical_bytes() {
     let mut canonical = style_resource("view.style.alpha", "style.alpha", 0);
     canonical.adapter_requirements = vec![adapter_requirement(1), adapter_requirement(2)];

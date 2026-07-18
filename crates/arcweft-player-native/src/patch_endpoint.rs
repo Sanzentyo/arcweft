@@ -1000,7 +1000,7 @@ mod tests {
             .program;
         let bytecode = BytecodeProgram::from_runtime_plan(plan);
         let stats = bytecode.stats();
-        ArcweftBundle::new(
+        ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -1021,6 +1021,7 @@ mod tests {
             bytecode,
             display,
         )
+        .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc)
     }
 

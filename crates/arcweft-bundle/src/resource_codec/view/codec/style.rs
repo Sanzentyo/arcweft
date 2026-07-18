@@ -6,28 +6,26 @@ use super::{
     encode_view_section, export_json_bytes, reject_duplicates, saturating_u32, style_environment,
     unique_strings, valid_resource_identity, validate_canonical_view_transcript,
 };
-use crate::resource_codec::SourceMapSection;
 
 impl ViewStyleResource {
-    /// Validates guarded-rule provenance against the decoded product source map.
-    pub fn validate_environment_sources(
-        &self,
-        sources: &SourceMapSection,
-    ) -> Result<(), SectionCodecError> {
-        style_environment::validate_source_extents(self, sources).map_err(Into::into)
+    pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
+        self.encode_canonical_section_with_budget(&ViewResourceBudget::default())
     }
 
-    pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
+    pub(in crate::resource_codec::view) fn encode_canonical_section_with_budget(
+        &self,
+        budget: &ViewResourceBudget,
+    ) -> Result<Vec<u8>, SectionCodecError> {
         let mut section = self.clone();
         section.canonicalize()?;
-        section.validate(&ViewResourceBudget::default())?;
+        section.validate(budget)?;
         encode_view_section(
             ProductSectionCodecKind::ViewStyle,
             "view_style",
             &section,
             section.public_ids(),
             section.record_count(),
-            &ViewResourceBudget::default(),
+            budget,
         )
     }
 
@@ -316,6 +314,13 @@ impl ViewStyleResource {
                     "view_selector_depth",
                 )
             })?;
+        self.validate_environment_budgets(budget)
+    }
+
+    fn validate_environment_budgets(
+        &self,
+        budget: &ViewResourceBudget,
+    ) -> Result<(), SectionCodecError> {
         let environment_conditions = self
             .program
             .sheets()
@@ -340,6 +345,19 @@ impl ViewStyleResource {
             environment_clauses,
             budget.environment_clauses,
             "view_style_environment_clauses",
+        )?;
+        let environment_wrappers = self
+            .program
+            .sheets()
+            .iter()
+            .flat_map(ViewStyleSheet::rules)
+            .filter_map(arcweft_view::style::ViewStyleRule::environment)
+            .map(|condition| condition.wrappers().len())
+            .sum();
+        check_budget(
+            environment_wrappers,
+            budget.environment_wrappers,
+            "view_style_environment_wrappers",
         )?;
         let part_count = self
             .program
@@ -370,7 +388,7 @@ impl ViewStyleResource {
         )
     }
 
-    fn public_ids(&self) -> Vec<String> {
+    pub(in crate::resource_codec::view) fn public_ids(&self) -> Vec<String> {
         unique_strings(
             std::iter::once(self.style_program_id.clone())
                 .chain(
@@ -414,12 +432,54 @@ impl ViewStyleResource {
     fn validate_source_maps(&self) -> Result<(), SectionCodecError> {
         self.validate_source_table()
             .map_err(|_| SectionCodecError::NonCanonicalTable("view_style_product_source_refs"))?;
+        self.validate_source_ids()?;
         style_environment::validate_structure(self)?;
         for range in &self.source_map_refs {
             if range.start_byte() > range.end_byte() {
                 return Err(SectionCodecError::NonCanonicalTable(
                     "view_style_source_range_order",
                 ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(in crate::resource_codec::view) fn validate_source_ids(
+        &self,
+    ) -> Result<(), SectionCodecError> {
+        let validate = |source: ViewStyleSourceId| {
+            self.source_map_refs
+                .get(source.value() as usize)
+                .map(|_| ())
+                .ok_or(SectionCodecError::NonCanonicalTable(
+                    "view_style_source_ids",
+                ))
+        };
+
+        for sheet in self.program.sheets() {
+            for token in sheet.tokens() {
+                validate(token.source())?;
+            }
+            for rule in sheet.rules() {
+                validate(rule.source())?;
+                if let Some(condition) = rule.environment() {
+                    for wrapper in condition.wrappers() {
+                        validate(wrapper.predicate_source())?;
+                        validate(wrapper.body_source())?;
+                        validate(wrapper.scope_source())?;
+                    }
+                    for clause in condition.clauses() {
+                        validate(clause.source())?;
+                    }
+                }
+                for declaration in rule.declarations() {
+                    validate(declaration.source())?;
+                }
+            }
+        }
+        for patch in self.program.patches() {
+            for declaration in patch.declarations() {
+                validate(declaration.source())?;
             }
         }
         Ok(())

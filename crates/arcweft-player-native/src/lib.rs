@@ -247,7 +247,7 @@ mod tests {
             .lower()
             .expect("product AWBC lowers")
             .program;
-        let bundle = ArcweftBundle::new(
+        let bundle = ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -268,6 +268,7 @@ mod tests {
             BytecodeProgram::from_runtime_plan(plan),
             display,
         )
+        .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc);
 
         let report = run_bundle_headless(&bundle, 8).expect("bundle runs through runtime host");
@@ -317,7 +318,7 @@ mod tests {
             .lower()
             .expect("product AWBC lowers")
             .program;
-        ArcweftBundle::new(
+        ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
                 profile_kind: None,
@@ -338,6 +339,7 @@ mod tests {
             BytecodeProgram::from_runtime_plan(plan),
             display,
         )
+        .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc)
     }
 

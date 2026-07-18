@@ -16,9 +16,10 @@ use crate::{
             StyleAssignOp, StyleBodyItem, StyleCombinator, StyleDecl, StyleDeclarationDecl,
             StyleEnvironmentBlock, StyleEnvironmentClause, StyleEnvironmentComparisonSyntax,
             StyleEnvironmentFieldSyntax, StyleEnvironmentPercentageLiteral,
-            StyleEnvironmentUnsupportedValue, StyleEnvironmentUnsupportedValueKind,
-            StyleEnvironmentValueSyntax, StyleExpr, StyleName, StylePatch, StylePredicate,
-            StyleRuleDecl, StyleSelector, StyleSelectorSequence, StyleSheet, StyleTokenDecl,
+            StyleEnvironmentSourceRanges, StyleEnvironmentUnsupportedValue,
+            StyleEnvironmentUnsupportedValueKind, StyleEnvironmentValueSyntax, StyleExpr,
+            StyleName, StylePatch, StylePredicate, StyleRuleDecl, StyleSelector,
+            StyleSelectorSequence, StyleSheet, StyleTokenDecl,
         },
     },
     expr::parse_expr,
@@ -112,7 +113,7 @@ enum StyleDeclarationContext {
 struct StyleEnvironmentHead {
     when_range: TextRange,
     intrinsic_range: TextRange,
-    condition_range: TextRange,
+    predicate_range: TextRange,
     condition_closed: bool,
     clauses: Vec<StyleEnvironmentClause>,
     body_open: usize,
@@ -212,13 +213,19 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
             ));
             self.cursor = self.source.len();
             return Some(StyleEnvironmentBlock::new(
-                head.when_range,
-                head.intrinsic_range,
-                head.condition_range,
+                StyleEnvironmentSourceRanges::new(
+                    head.when_range,
+                    head.intrinsic_range,
+                    head.predicate_range,
+                    TextRange::new(
+                        self.base + head.body_open + '{'.len_utf8(),
+                        self.base + self.cursor,
+                    ),
+                    TextRange::new(self.base + block_start, self.base + self.cursor),
+                ),
                 head.condition_closed,
                 head.clauses,
                 Vec::new(),
-                TextRange::new(self.base + block_start, self.base + self.cursor),
             ));
         };
         let nested_start = head.body_open + '{'.len_utf8();
@@ -230,13 +237,16 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         let (_, body) = nested.parse_sheet(false);
         self.cursor = body_close + '}'.len_utf8();
         Some(StyleEnvironmentBlock::new(
-            head.when_range,
-            head.intrinsic_range,
-            head.condition_range,
+            StyleEnvironmentSourceRanges::new(
+                head.when_range,
+                head.intrinsic_range,
+                head.predicate_range,
+                TextRange::new(self.base + nested_start, self.base + body_close),
+                TextRange::new(self.base + block_start, self.base + self.cursor),
+            ),
             head.condition_closed,
             head.clauses,
             body,
-            TextRange::new(self.base + block_start, self.base + self.cursor),
         ))
     }
 
@@ -292,7 +302,7 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
             self.base + condition_open + 1,
             self.errors,
         );
-        let condition_range = TextRange::new(
+        let predicate_range = TextRange::new(
             self.base + condition_open,
             self.base
                 + if condition_close == body_open {
@@ -305,7 +315,7 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         Some(StyleEnvironmentHead {
             when_range,
             intrinsic_range,
-            condition_range,
+            predicate_range,
             condition_closed,
             clauses,
             body_open,

@@ -135,14 +135,19 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         .synchronize_waiting_line(Some(&line))
         .expect("waiting entry synchronizes");
 
+    let style_source = arcweft_bundle::standard_view::dialogue_style_source_document();
+    let source_map =
+        arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[&style_source])
+            .expect("standard dialogue Style source map");
     let product = ValidatedViewProduct::try_new(
-        None,
+        Some(source_map),
         Some(program.clone()),
+        Some(style),
         ViewProductValidationLimits::default(),
     )
     .expect("standard View product");
-    let mut runtime = BundleViewRuntime::try_new(product, Some(text.clone()), Some(&style))
-        .expect("standard View runtime");
+    let mut runtime =
+        BundleViewRuntime::try_new(product, Some(text.clone())).expect("standard View runtime");
     presentation.view =
         runtime.evaluate_with_dialogue(&[], &presentation.dialogue.view_inputs(), &[], false);
     assert!(presentation.view.diagnostics.is_empty());

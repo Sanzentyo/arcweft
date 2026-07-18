@@ -883,7 +883,7 @@ fn bundle_from_runtime_plan(
         .lower()
         .expect("authored fixture lowers to product AWBC")
         .program;
-    ArcweftBundle::new(
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -904,6 +904,7 @@ fn bundle_from_runtime_plan(
         bytecode,
         display,
     )
+    .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
 }
 
