@@ -282,12 +282,12 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
 
 #[test]
 fn named_style_rejects_nested_selector_with_typed_recovery() {
-    let source = r#"pub style broken {
+    let source = r"pub style broken {
     Panel {
         Button:hover { opacity = 900milli }
     }
 }
-"#;
+";
     let parsed = parse_source(source);
     let error = parsed
         .errors()

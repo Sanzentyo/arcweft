@@ -162,11 +162,12 @@ actual parser inputs; duplicate-role and duplicate-goto related ranges remain
 intact. The nominal producer now highlights the actual `<...>` group rather
 than the declaration name.
 
-Seq-06.11d.4.2.2.1 and Seq-06.11d.4.2.2.2 remain separate follow-on cuts. They
-were validated against the exact original package parent and must be
-transplanted after this main-integrated base. Seq-06.11d.4.2.3 still overlaps
-the native Style parser and must retain both this typed diagnostic ownership
-and its predicate/body source-range model.
+Seq-06.11d.4.2.2.1 and Seq-06.11d.4.2.2.2 were retained as separate
+follow-on changes and then integrated in order above this base. The combined
+root result preserves the typed parser payload through compiler, CLI, LSP,
+and Agent projection without reconstructing an owner from a code string.
+Seq-06.11d.4.2.3 still overlaps the native Style parser and must retain both
+this typed diagnostic ownership and its predicate/body source-range model.
 
 ## Verification
 
@@ -236,6 +237,28 @@ It did not retroactively run every broad predecessor gate above.
 
 The new trybuild fixture's compiler-produced visibility errors were reviewed
 and accepted in `tests/ui/parse_error_construction.stderr`.
+
+## Root integration closure
+
+The two correction cuts are now present above this base in the root checkout.
+Their integration also resolves the child-only `.part()` range failure by
+deriving the operand range from the authored argument source. The complete
+View part/export integration suite passes with the source-derived ranges.
+
+Lang-01.2 had unified direct-file compilation with project compilation after
+the correction child was created. That unification initially retained only a
+warning count for successful modules and therefore dropped non-blocking typed
+lint payloads such as `AWF0103`. The integrated compiler now retains
+`SyntaxLint` values on each accepted `CompiledProjectModule`, and the unified
+CLI projects those values against the exact accepted source document. It does
+not restore the old direct parser or reparse source in the CLI.
+
+The root integration validation includes full syntax, compiler, LSP, Agent,
+and focused CLI tests, workspace all-target/all-feature check, strict
+workspace Clippy, the normal workspace test route, and the canonical
+structural audit. The audit reports zero errors; its warning-only hotspot
+inventory remains repository-wide rather than an acceptance failure for this
+cut.
 
 ## Non-goals
 

@@ -5,7 +5,7 @@ use crate::ast::common::TextRange;
 use crate::cst::{find_matching_punctuation, split_top_level_punctuation};
 use crate::expr::{Expr, parse_expr_at};
 
-use super::recovery::ParseErrorKind;
+use super::recovery::{ParseError, ParseErrorKind};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AssertionParseError {
@@ -25,6 +25,19 @@ impl AssertionParseError {
 
     pub(super) const fn message(&self) -> &'static str {
         self.message
+    }
+}
+
+impl From<AssertionParseError> for ParseError {
+    fn from(error: AssertionParseError) -> Self {
+        Self::new_with_kind(
+            error.kind(),
+            error.range(),
+            Vec::new(),
+            None,
+            error.message().to_owned(),
+            Vec::new(),
+        )
     }
 }
 
@@ -240,11 +253,11 @@ const fn error(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_assertion_statement;
+    use super::{AssertionParseError, parse_assertion_statement};
     use crate::assertion::AssertionMode;
     use crate::ast::common::TextRange;
     use crate::expr::Expr;
-    use crate::parser::recovery::ParseErrorKind;
+    use crate::parser::recovery::{ParseError, ParseErrorKind};
     use crate::reference::BorrowKind;
 
     #[test]
@@ -265,21 +278,28 @@ mod tests {
         assert_eq!(empty.kind(), ParseErrorKind::AssertionEmptyConditions);
         assert_eq!(empty.kind().code(), "syntax.assert.empty_conditions");
         assert_eq!(empty.range(), TextRange::new(13, 13));
+        assert_eq!(empty.message(), "assertion requires at least one condition");
         let unknown =
-            parse_assertion_statement("assert.assume(value)", 0).expect_err("unknown fails");
+            parse_assertion_statement("assert.assume(true)", 0).expect_err("unknown fails");
         assert_eq!(unknown.kind(), ParseErrorKind::AssertionUnknownMode);
         assert_eq!(unknown.kind().code(), "syntax.assert.unknown_mode");
         assert_eq!(unknown.range(), TextRange::new(7, 13));
+        assert_eq!(unknown.message(), "unknown assertion mode");
         let unclosed =
             parse_assertion_statement("assert.debug(value", 0).expect_err("unclosed fails");
         assert_eq!(unclosed.kind(), ParseErrorKind::AssertionUnclosedArguments);
         assert_eq!(unclosed.kind().code(), "syntax.assert.unclosed_arguments");
         assert_eq!(unclosed.range(), TextRange::new(18, 18));
+        assert_eq!(unclosed.message(), "assertion argument list is missing `)`");
         let invalid =
             parse_assertion_statement("assert.debug", 0).expect_err("missing arguments fail");
         assert_eq!(invalid.kind(), ParseErrorKind::AssertionInvalidArgument);
         assert_eq!(invalid.kind().code(), "syntax.assert.invalid_argument");
         assert_eq!(invalid.range(), TextRange::new(12, 12));
+        assert_eq!(
+            invalid.message(),
+            "assertion mode must be followed by an argument list on the same logical line"
+        );
         let at_limit = core::iter::repeat_n("true", 64)
             .collect::<Vec<_>>()
             .join(",");
@@ -298,6 +318,29 @@ mod tests {
             over.range(),
             TextRange::new(13, 13 + at_limit.len() + ",true".len())
         );
+        assert_eq!(over.message(), "assertion accepts at most 64 conditions");
+    }
+
+    #[test]
+    fn typed_conversion_preserves_kind_range_message_and_empty_recovery() {
+        let source = AssertionParseError {
+            kind: ParseErrorKind::AssertionUnknownMode,
+            range: TextRange::new(7, 13),
+            message: "syntax.assert.empty_conditions is only message text",
+        };
+
+        let converted: ParseError = source.into();
+
+        assert_eq!(converted.kind(), ParseErrorKind::AssertionUnknownMode);
+        assert_eq!(converted.code(), "syntax.assert.unknown_mode");
+        assert_eq!(converted.range(), &TextRange::new(7, 13));
+        assert_eq!(
+            converted.message(),
+            "syntax.assert.empty_conditions is only message text"
+        );
+        assert!(converted.expected().is_empty());
+        assert_eq!(converted.found(), None);
+        assert!(converted.recovery().is_empty());
     }
 
     #[test]

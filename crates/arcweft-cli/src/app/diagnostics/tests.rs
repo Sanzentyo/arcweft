@@ -84,11 +84,7 @@ fn test_only_edit_fixture(document: &SourceDocument) -> TestOnlyEditFixture {
     TestOnlyEditFixture { diagnostic, edit }
 }
 
-#[test]
-fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
-    let fixture = logical_fixture();
-    let error = &fixture.error;
-
+fn assert_parser_payload(error: &ParseError) {
     assert_eq!(error.kind(), ParseErrorKind::ViewExportPartMissingAs);
     assert_eq!(error.code(), "view::export_part_missing_as");
     assert_eq!(
@@ -109,8 +105,9 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
         DiagnosticApplicability::Unspecified
     );
     assert!(error.recovery()[0].edits().is_empty());
+}
 
-    let logical = &fixture.diagnostic;
+fn assert_shared_payload(logical: &Diagnostic) {
     assert_eq!(logical.severity(), DiagnosticSeverity::Error);
     assert_eq!(
         logical.code().map(arcweft_source::DiagnosticCode::as_str),
@@ -130,7 +127,10 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
         DiagnosticApplicability::Unspecified
     );
     assert!(logical.suggestions()[0].edits().is_empty());
+}
 
+fn assert_cli_projection(fixture: &LogicalFixture) {
+    let logical = &fixture.diagnostic;
     let cli_source = DiagnosticSource::new(fixture.parsed.document());
     let cli_groups = diagnostic_groups(logical, &cli_source);
     assert_eq!(cli_groups.len(), 2);
@@ -146,7 +146,10 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
             .lines()
             .any(|line| line.trim_start().starts_with('+'))
     );
+}
 
+fn assert_lsp_projections(fixture: &LogicalFixture) {
+    let logical = &fixture.diagnostic;
     for (encoding, start, end) in [
         (PositionEncoding::Utf16, 21, 28),
         (PositionEncoding::Utf8, 29, 36),
@@ -175,7 +178,10 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
             }))
         );
     }
+}
 
+fn assert_agent_projections(fixture: &LogicalFixture) {
+    let logical = &fixture.diagnostic;
     let agent_shared = AgentDiagnosticProjector::new(fixture.parsed.document())
         .project(logical)
         .expect("same logical diagnostic projects to Agent");
@@ -197,7 +203,7 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
     );
 
     let agent_parser =
-        AgentParserDiagnosticProjection::source_local(error, fixture.parsed.document())
+        AgentParserDiagnosticProjection::source_local(&fixture.error, fixture.parsed.document())
             .expect("typed parser diagnostic projects to Agent");
     assert_eq!(
         agent_parser.json(),
@@ -210,6 +216,7 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
                 "start": 47,
                 "end": 54,
             },
+            "related": [],
             "expected": ["as public_name"],
             "found": Value::Null,
             "recovery": [{
@@ -223,6 +230,17 @@ fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
         agent_parser.human(),
         "error[view::export_part_missing_as] source_utf8_bytes 47..54: View part export needs `as` before its public name\nexpected: as public_name\nhelp[unspecified]: use as public_name syntax"
     );
+}
+
+#[test]
+fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
+    let fixture = logical_fixture();
+
+    assert_parser_payload(&fixture.error);
+    assert_shared_payload(&fixture.diagnostic);
+    assert_cli_projection(&fixture);
+    assert_lsp_projections(&fixture);
+    assert_agent_projections(&fixture);
 }
 
 #[test]

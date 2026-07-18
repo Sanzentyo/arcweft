@@ -99,6 +99,16 @@ fn parse_diagnostic_json(
             "start": diagnostic.range().start(),
             "end": diagnostic.range().end(),
         },
+        "related": diagnostic.related().iter().map(|related| {
+            json!({
+                "range": {
+                    "coordinate_space": coordinate_space.as_str(),
+                    "start": related.range().start(),
+                    "end": related.range().end(),
+                },
+                "message": related.message(),
+            })
+        }).collect::<Vec<_>>(),
         "expected": diagnostic.expected(),
         "found": diagnostic.found(),
         "recovery": diagnostic.recovery().iter().map(|suggestion| {
@@ -688,6 +698,7 @@ mod tests {
         assert_eq!(diagnostic["range"]["coordinate_space"], "synthetic_source");
         assert_eq!(diagnostic["range"]["start"], 47);
         assert_eq!(diagnostic["range"]["end"], 54);
+        assert_eq!(diagnostic["related"], json!([]));
         assert_eq!(diagnostic["expected"][0], "as public_name");
         assert_eq!(diagnostic["found"], Value::Null);
         assert_eq!(
@@ -696,5 +707,30 @@ mod tests {
         );
         assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
         assert_eq!(diagnostic["recovery"][0]["edits"], json!([]));
+    }
+
+    #[test]
+    fn transaction_parse_json_preserves_related_parser_ranges() {
+        let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
+        let parsed = parse_source(source);
+        let diagnostic = parsed
+            .errors()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::EntryDuplicateRole)
+            .expect("duplicate-role diagnostic")
+            .clone();
+        let error = ReplTransactionError::Parse {
+            diagnostics: vec![diagnostic],
+            coordinate_space: ReplParseCoordinateSpace::CellSourceUtf8Bytes,
+        };
+
+        let json = repl_transaction_error_json(&error);
+        let related = &json["diagnostics"][0]["related"][0];
+        let first = source.find("state = GameState").expect("first state role");
+
+        assert_eq!(related["range"]["coordinate_space"], "source_utf8_bytes");
+        assert_eq!(related["range"]["start"], first);
+        assert_eq!(related["range"]["end"], first + "state = GameState".len());
+        assert_eq!(related["message"], "the first role binding is here");
     }
 }

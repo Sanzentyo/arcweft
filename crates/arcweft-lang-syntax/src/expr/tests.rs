@@ -1,6 +1,19 @@
-use super::{BinaryOp, Expr, Placeholder, parse_expr};
+use super::{BinaryOp, Expr, ExprParseError, Placeholder, parse_expr};
 use crate::ast::common::TextRange;
 use crate::reference::BorrowKind;
+
+fn strict_error(source: &str) -> ExprParseError {
+    parse_expr(source).expect_err("fixture must fail strict expression parsing")
+}
+
+#[test]
+fn generic_strict_failure_preserves_type_code_range_and_message() {
+    let error: ExprParseError = strict_error("");
+
+    assert_eq!(error.code(), "syntax.expr.parse");
+    assert_eq!(error.range(), TextRange::new(0, 0));
+    assert_eq!(error.to_string(), "expected expression");
+}
 
 #[test]
 fn parses_field_access_comparison() {
@@ -183,24 +196,30 @@ fn prefix_depth_limit_is_inclusive_and_typed() {
     assert!(parse_expr(&maximum).is_ok());
 
     let over_limit = format!("{}value", "& ".repeat(65));
-    let error = parse_expr(&over_limit).expect_err("65th prefix must fail");
+    let error: ExprParseError = strict_error(&over_limit);
     assert_eq!(error.code(), "syntax.expr.prefix_depth_limit");
     assert_eq!(error.range(), TextRange::new(128, 129));
+    assert_eq!(
+        error.to_string(),
+        "expression prefix nesting exceeds the inclusive limit of 64"
+    );
 }
 
 #[test]
 fn missing_prefix_operand_has_a_zero_width_typed_failure() {
-    let error = parse_expr("&mut").expect_err("borrow requires an operand");
+    let error: ExprParseError = strict_error("&mut");
     assert_eq!(error.code(), "syntax.expr.missing_prefix_operand");
     assert_eq!(error.range(), TextRange::new(4, 4));
+    assert_eq!(error.to_string(), "prefix operator requires an operand");
 }
 
 #[test]
 fn missing_prefix_operands_anchor_at_each_expression_sync_token() {
     for source in ["&,", "&;", "&)", "&]", "&}", "&"] {
-        let error = parse_expr(source).expect_err("prefix requires an operand");
+        let error: ExprParseError = strict_error(source);
         assert_eq!(error.code(), "syntax.expr.missing_prefix_operand");
         assert_eq!(error.range(), TextRange::new(1, 1));
+        assert_eq!(error.to_string(), "prefix operator requires an operand");
     }
 }
 
@@ -246,22 +265,40 @@ fn borrow_closures_multiline_postfix_and_utf8_ranges_remain_exact() {
 
 #[test]
 fn unsupported_cast_reports_the_current_unexpected_token_range() {
-    let error = parse_expr("&value as Type").expect_err("casts are not expression grammar");
+    let error: ExprParseError = strict_error("&value as Type");
     assert_eq!(error.code(), "syntax.expr.unexpected_token");
     assert_eq!(error.range(), TextRange::new(7, 9));
+    assert_eq!(
+        error.to_string(),
+        "unexpected token after expression: Ident(\"as\")"
+    );
 }
 
 #[test]
 fn typed_assertion_family_is_reserved_for_statement_position() {
-    let error = parse_expr("wrap(assert.check(true))")
-        .expect_err("typed assertion cannot be nested in an expression");
+    let error: ExprParseError = strict_error("wrap(assert.check(true))");
     assert_eq!(error.code(), "syntax.assert.statement_only");
     assert_eq!(error.range(), TextRange::new(5, 23));
+    assert_eq!(
+        error.to_string(),
+        "assert.check is a statement and cannot be used as an expression"
+    );
 
-    let unknown = parse_expr("assert.assume(true)")
-        .expect_err("unknown assertion mode is not a generic selected call");
+    for mode in ["prove", "check", "debug"] {
+        let source = format!("assert.{mode}(true)");
+        let error: ExprParseError = strict_error(&source);
+        assert_eq!(error.code(), "syntax.assert.statement_only");
+        assert_eq!(error.range(), TextRange::new(0, source.len()));
+        assert_eq!(
+            error.to_string(),
+            format!("assert.{mode} is a statement and cannot be used as an expression")
+        );
+    }
+
+    let unknown: ExprParseError = strict_error("assert.assume(true)");
     assert_eq!(unknown.code(), "syntax.assert.unknown_mode");
     assert_eq!(unknown.range(), TextRange::new(0, 19));
+    assert_eq!(unknown.to_string(), "unknown assertion mode");
 
     assert!(parse_expr("assert(true)").is_ok());
     assert!(parse_expr("object.assert.check(true)").is_ok());

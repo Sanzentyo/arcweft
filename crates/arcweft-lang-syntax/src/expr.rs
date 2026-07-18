@@ -750,6 +750,17 @@ pub enum ComputationBlockKind {
 }
 
 /// Expression parse error.
+///
+/// Strict expression failures remain independent from document parser
+/// [`crate::parser::recovery::ParseError`] values.
+///
+/// ```compile_fail
+/// use arcweft_lang_syntax::expr::{ExprParseError, parse_expr};
+/// use arcweft_lang_syntax::parser::recovery::ParseError;
+///
+/// let expression_error: ExprParseError = parse_expr("").unwrap_err();
+/// let _: ParseError = expression_error.into();
+/// ```
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{message}")]
 pub struct ExprParseError {

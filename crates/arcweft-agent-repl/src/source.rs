@@ -26,8 +26,9 @@ pub(crate) fn classify_repl_cell(
     input: &ReplCellInput,
     live_binding_prelude: &str,
 ) -> Result<ParsedReplCell, ReplTransactionError> {
-    let source = input.source_text().trim().to_owned();
+    let source = input.source_text().to_owned();
     if let Some(command) = source
+        .trim()
         .strip_prefix(':')
         .and_then(|rest| rest.split_whitespace().next())
     {
@@ -183,7 +184,7 @@ mod tests {
 
     #[test]
     fn typed_item_parse_failure_keeps_cell_source_coordinates() {
-        let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
+        let source = "\n  pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n  ";
         let Err(error) = classify_repl_cell(ReplCellId::new(1), &ReplCellInput::item(source), "")
         else {
             panic!("malformed View export must fail classification");
@@ -203,7 +204,11 @@ mod tests {
             .iter()
             .find(|diagnostic| diagnostic.kind() == ParseErrorKind::ViewExportPartMissingAs)
             .expect("missing-as parser diagnostic");
-        assert_eq!(diagnostic.range().as_range(), 47..54);
+        let heading = source.find("heading").expect("heading source");
+        assert_eq!(
+            diagnostic.range().as_range(),
+            heading..heading + "heading".len()
+        );
         assert_eq!(&source[diagnostic.range().as_range()], "heading");
     }
 }

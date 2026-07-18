@@ -73,6 +73,31 @@ fn export_part_excludes_trailing_comment_from_its_declaration_span() {
 }
 
 #[test]
+fn part_operand_span_starts_after_the_modifier_name() {
+    let source = "pub view Card() {\n    Panel().part(part)\n}\n";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+
+    let ViewExpr::Element(element) = view_body(&parsed).value() else {
+        panic!("expected recovered ordinary element");
+    };
+    let part = element
+        .modifiers()
+        .iter()
+        .find_map(|modifier| match modifier {
+            ViewModifier::Part(part) => Some(part),
+            _ => None,
+        })
+        .expect("part modifier");
+    let range = part.operand_span().range();
+    assert_eq!(&source[range.start()..range.end()], "part");
+    assert_eq!(
+        range.start(),
+        source.find(".part(part)").unwrap() + ".part(".len()
+    );
+}
+
+#[test]
 fn malformed_export_recovers_without_creating_partial_declaration() {
     let source = r"pub view Card() {
     export part as card.heading

@@ -7,10 +7,10 @@ use super::headers::{
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
     CstLineEvents, CstPunctuationDeltas, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit,
-    FlowItem, MappedDialogueSourceBuilder, ParseError, Parser, RawSyntax, ScopeBlock, Stmt,
-    SyntaxParseStats, TextRange, UnsafeAuditInsertion, flat_block_head, indentation,
-    is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
-    parse_await_with, parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
+    FlowItem, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, Stmt, SyntaxParseStats,
+    TextRange, UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
+    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
+    parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
     parse_line_plan_attachment, parse_scope_head, parse_stmt_lines, parse_stmt_with_stats_and_base,
     parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head,
     split_top_level_keyword_once,
@@ -278,14 +278,7 @@ impl<'a> Parser<'a> {
         let statement = match parse_assertion_statement(source, base) {
             Ok(assertion) => Stmt::Assertion(assertion),
             Err(error) => {
-                self.errors.push(ParseError::new_with_kind(
-                    error.kind(),
-                    error.range(),
-                    Vec::new(),
-                    None,
-                    error.message().to_owned(),
-                    Vec::new(),
-                ));
+                self.errors.push(error.into());
                 Stmt::Raw(RawSyntax::stmt(
                     source,
                     Some(TextRange::new(base, base + source.len())),

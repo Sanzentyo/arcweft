@@ -34,7 +34,9 @@ use arcweft_lang_sema::{
     registration::{ProjectRegistrationFacts, RegisteredSemanticWorld, RegisteredTypeCheckEnv},
 };
 use arcweft_lang_syntax::{
-    ast::module_path::CanonicalModulePath, cst::SyntaxParseStats, lint::SyntaxLintSeverity,
+    ast::module_path::CanonicalModulePath,
+    cst::SyntaxParseStats,
+    lint::{SyntaxLint, SyntaxLintSeverity},
     parser::recovery::ParseError,
 };
 use arcweft_project::{
@@ -103,6 +105,7 @@ pub struct CompiledProjectModule {
     compile_unit: CompileUnitId,
     source_hash: ModuleSourceHash,
     source: SourceDocumentIdentity,
+    syntax_lints: Vec<SyntaxLint>,
     syntax_warnings: usize,
     syntax_stats: SyntaxParseStats,
     hir: HirModule,
@@ -269,6 +272,11 @@ impl CompiledProjectModule {
 
     pub const fn source(&self) -> &SourceDocumentIdentity {
         &self.source
+    }
+
+    /// Non-blocking syntax lints produced from this accepted module source.
+    pub fn syntax_lints(&self) -> &[SyntaxLint] {
+        &self.syntax_lints
     }
 
     pub const fn syntax_warnings(&self) -> usize {
@@ -686,6 +694,7 @@ fn compile_module(
         compile_unit,
         source_hash: source.source_hash(),
         source: document.identity().clone(),
+        syntax_lints: lints,
         syntax_warnings,
         syntax_stats,
         hir,

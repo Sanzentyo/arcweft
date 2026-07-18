@@ -130,6 +130,19 @@ fn agent_repl_transaction_error_report(
                         if let Some(found) = diagnostic.found() {
                             lines.push(format!("found: {found}"));
                         }
+                        lines.extend(diagnostic.related().iter().map(|related| {
+                            let start = related.range().start();
+                            let end = related.range().end();
+                            related.message().map_or_else(
+                                || format!("related {} {start}..{end}", coordinate_space.as_str()),
+                                |message| {
+                                    format!(
+                                        "related {} {start}..{end}: {message}",
+                                        coordinate_space.as_str()
+                                    )
+                                },
+                            )
+                        }));
                         lines.extend(diagnostic.recovery().iter().map(|suggestion| {
                             format!(
                                 "help[{}]: {}",
@@ -618,6 +631,36 @@ mod parse_diagnostic_tests {
         );
         assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
         assert_eq!(diagnostic["recovery"][0]["edits"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn agent_repl_parse_failure_human_output_preserves_related_ranges() {
+        let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
+        let parsed = parse_source(source);
+        let diagnostic = parsed
+            .errors()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::EntryDuplicateRole)
+            .expect("duplicate-role diagnostic")
+            .clone();
+        let error = ReplTransactionError::Parse {
+            diagnostics: vec![diagnostic],
+            coordinate_space: ReplParseCoordinateSpace::CellSourceUtf8Bytes,
+        };
+
+        let report = agent_repl_transaction_error_report(4, source, &error);
+        let message = report.message.expect("human parse diagnostic");
+        let first = source.find("state = GameState").expect("first state role");
+
+        assert!(message.contains(&format!(
+            "related source_utf8_bytes {first}..{}: the first role binding is here",
+            first + "state = GameState".len()
+        )));
+        assert_eq!(
+            report.value.expect("typed JSON")["transaction_error"]["diagnostics"][0]["related"][0]
+                ["range"]["start"],
+            first
+        );
     }
 }
 

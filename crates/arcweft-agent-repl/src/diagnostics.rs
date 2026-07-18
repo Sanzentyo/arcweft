@@ -192,6 +192,18 @@ impl<'a> AgentParserDiagnosticProjection<'a> {
                 "start": start,
                 "end": end,
             },
+            "related": diagnostic.related().iter().map(|related| {
+                let (start, end) =
+                    self.local_range(related.range().start(), related.range().end());
+                json!({
+                    "range": {
+                        "coordinate_space": "source_utf8_bytes",
+                        "start": start,
+                        "end": end,
+                    },
+                    "message": related.message(),
+                })
+            }).collect::<Vec<_>>(),
             "expected": diagnostic.expected(),
             "found": diagnostic.found(),
             "recovery": diagnostic.recovery().iter().map(|suggestion| {
@@ -231,6 +243,13 @@ impl<'a> AgentParserDiagnosticProjection<'a> {
         if let Some(found) = diagnostic.found() {
             lines.push(format!("found: {found}"));
         }
+        lines.extend(diagnostic.related().iter().map(|related| {
+            let (start, end) = self.local_range(related.range().start(), related.range().end());
+            related.message().map_or_else(
+                || format!("related source_utf8_bytes {start}..{end}"),
+                |message| format!("related source_utf8_bytes {start}..{end}: {message}"),
+            )
+        }));
         for suggestion in diagnostic.recovery() {
             lines.push(format!(
                 "help[{}]: {}",
@@ -264,6 +283,14 @@ fn validate_parser_ranges(
         document,
         mapped,
     )?;
+    diagnostic.related().iter().try_for_each(|related| {
+        validate_parser_range(
+            related.range().start(),
+            related.range().end(),
+            document,
+            mapped,
+        )
+    })?;
     diagnostic
         .recovery()
         .iter()
@@ -355,6 +382,7 @@ mod tests {
                     "start": 47,
                     "end": 54,
                 },
+                "related": [],
                 "expected": ["as public_name"],
                 "found": Value::Null,
                 "recovery": [{
@@ -397,6 +425,31 @@ mod tests {
                 "end": 54,
             })
         );
+    }
+
+    #[test]
+    fn parser_diagnostic_projection_preserves_and_validates_related_ranges() {
+        let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
+        let parsed = parse_source(source);
+        let diagnostic = parsed
+            .errors()
+            .iter()
+            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::EntryDuplicateRole)
+            .expect("duplicate-role diagnostic");
+        let projection =
+            AgentParserDiagnosticProjection::source_local(diagnostic, parsed.document())
+                .expect("source-local projection");
+        let related = &projection.json()["related"][0];
+        let first = source.find("state = GameState").expect("first state role");
+
+        assert_eq!(related["range"]["coordinate_space"], "source_utf8_bytes");
+        assert_eq!(related["range"]["start"], first);
+        assert_eq!(related["range"]["end"], first + "state = GameState".len());
+        assert_eq!(related["message"], "the first role binding is here");
+        assert!(projection.human().contains(&format!(
+            "related source_utf8_bytes {first}..{}: the first role binding is here",
+            first + "state = GameState".len()
+        )));
     }
 
     #[test]

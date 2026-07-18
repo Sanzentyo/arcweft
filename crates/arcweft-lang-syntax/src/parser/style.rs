@@ -284,49 +284,8 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
             return None;
         }
         let condition_open = self.cursor;
-        let boundary = environment_condition_boundary(self.source, condition_open);
-        let (condition_close, body_open) = match boundary {
-            EnvironmentConditionBoundary::CloseParen(close) => {
-                let after_close = skip_style_trivia(self.source, close + ')'.len_utf8());
-                if !self.source[after_close..].starts_with('{') {
-                    self.errors.push(ParseError::new_with_kind(
-                        ParseErrorKind::StyleEnvironmentExpectedOpenBrace,
-                        TextRange::new(self.base + after_close, self.base + after_close),
-                        Vec::new(),
-                        None,
-                        "environment guard needs an opening `{` after its condition".to_owned(),
-                        Vec::new(),
-                    ));
-                    self.cursor = after_close;
-                    self.recover_line(block_start);
-                    return None;
-                }
-                (close, after_close)
-            }
-            EnvironmentConditionBoundary::OpenBrace(open) => {
-                self.errors.push(ParseError::new_with_kind(
-                    ParseErrorKind::StyleEnvironmentUnterminatedCondition,
-                    TextRange::new(self.base + condition_open, self.base + open),
-                    Vec::new(),
-                    None,
-                    "environment condition is missing a closing `)`".to_owned(),
-                    Vec::new(),
-                ));
-                (open, open)
-            }
-            EnvironmentConditionBoundary::End => {
-                self.errors.push(ParseError::new_with_kind(
-                    ParseErrorKind::StyleEnvironmentUnterminatedCondition,
-                    TextRange::new(self.base + condition_open, self.base + self.source.len()),
-                    Vec::new(),
-                    None,
-                    "unterminated environment condition".to_owned(),
-                    Vec::new(),
-                ));
-                self.cursor = self.source.len();
-                return None;
-            }
-        };
+        let (condition_close, body_open) =
+            self.take_environment_delimiters(block_start, condition_open)?;
         let clauses_end = condition_close;
         let clauses = parse_environment_clauses(
             &self.source[condition_open + 1..clauses_end],
@@ -351,6 +310,57 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
             clauses,
             body_open,
         })
+    }
+
+    /// Resolves the condition/body delimiter pair while keeping malformed
+    /// delimiter recovery at the environment-head grammar boundary.
+    fn take_environment_delimiters(
+        &mut self,
+        block_start: usize,
+        condition_open: usize,
+    ) -> Option<(usize, usize)> {
+        match environment_condition_boundary(self.source, condition_open) {
+            EnvironmentConditionBoundary::CloseParen(close) => {
+                let after_close = skip_style_trivia(self.source, close + ')'.len_utf8());
+                if !self.source[after_close..].starts_with('{') {
+                    self.errors.push(ParseError::new_with_kind(
+                        ParseErrorKind::StyleEnvironmentExpectedOpenBrace,
+                        TextRange::new(self.base + after_close, self.base + after_close),
+                        Vec::new(),
+                        None,
+                        "environment guard needs an opening `{` after its condition".to_owned(),
+                        Vec::new(),
+                    ));
+                    self.cursor = after_close;
+                    self.recover_line(block_start);
+                    return None;
+                }
+                Some((close, after_close))
+            }
+            EnvironmentConditionBoundary::OpenBrace(open) => {
+                self.errors.push(ParseError::new_with_kind(
+                    ParseErrorKind::StyleEnvironmentUnterminatedCondition,
+                    TextRange::new(self.base + condition_open, self.base + open),
+                    Vec::new(),
+                    None,
+                    "environment condition is missing a closing `)`".to_owned(),
+                    Vec::new(),
+                ));
+                Some((open, open))
+            }
+            EnvironmentConditionBoundary::End => {
+                self.errors.push(ParseError::new_with_kind(
+                    ParseErrorKind::StyleEnvironmentUnterminatedCondition,
+                    TextRange::new(self.base + condition_open, self.base + self.source.len()),
+                    Vec::new(),
+                    None,
+                    "unterminated environment condition".to_owned(),
+                    Vec::new(),
+                ));
+                self.cursor = self.source.len();
+                None
+            }
+        }
     }
 
     fn parse_declarations(

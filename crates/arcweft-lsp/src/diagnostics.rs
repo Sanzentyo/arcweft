@@ -868,6 +868,31 @@ flow @flow.opening start {
     }
 
     #[test]
+    fn statement_unknown_mode_projects_as_parser_diagnostic() {
+        let source = "flow demo {\n    assert.assume(true)\n}\n";
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let [diagnostic] = analysis.diagnostics() else {
+            panic!(
+                "expected one parser diagnostic, got {:?}",
+                analysis.diagnostics()
+            );
+        };
+
+        assert_eq!(
+            diagnostic.code,
+            Some(NumberOrString::String(
+                "syntax.assert.unknown_mode".to_owned()
+            ))
+        );
+        assert_eq!(diagnostic.message, "unknown assertion mode");
+        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
+        assert_eq!(diagnostic.range.start, Position::new(1, 11));
+        assert_eq!(diagnostic.range.end, Position::new(1, 17));
+    }
+
+    #[test]
     fn diagnostics_map_explicit_decl_id_to_hint() {
         let source = r"
 flow @flow.opening {

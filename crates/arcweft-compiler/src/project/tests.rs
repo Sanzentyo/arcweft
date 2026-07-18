@@ -10,7 +10,7 @@ use arcweft_lang_syntax::ast::{
     module_path::{CanonicalModulePath, ModulePathRoot},
     symbol_path::SymbolPath,
 };
-use arcweft_lang_syntax::parser::recovery::ParseErrorKind;
+use arcweft_lang_syntax::{lint::SyntaxLintCode, parser::recovery::ParseErrorKind};
 use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
 use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
 use std::path::PathBuf;
@@ -127,6 +127,21 @@ fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
         diagnostic.source().expect("source").name().display_name(),
         "src/main.arcw"
     );
+}
+
+#[test]
+fn compiled_project_modules_retain_typed_non_blocking_lints() {
+    let (project, context) = removed_role_project("flow @flow.opening {\n}\n");
+    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+        .expect("valid project with a non-blocking syntax hint compiles");
+    let lint = compiled.modules()[0]
+        .syntax_lints()
+        .iter()
+        .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
+        .expect("compiled module retains the explicit declaration ID hint");
+
+    assert_eq!(lint.code().stable_code(), "AWF0103");
+    assert_eq!(lint.code().domain_name(), "style::explicit_decl_id");
 }
 
 #[test]

@@ -574,6 +574,16 @@ fn load_and_check_project_sources(
             ExitCode::FAILURE
         })
     })?;
+    let emitter = DiagnosticEmitter::stderr();
+    for compiled_module in compiled.modules() {
+        let source = sources
+            .module(compiled_module.module())
+            .expect("compiled project modules originate from the accepted project sources");
+        let diagnostic_source = DiagnosticSource::new(source.document());
+        for lint in compiled_module.syntax_lints() {
+            emitter.emit(&lint.diagnostic(source.document()), &diagnostic_source);
+        }
+    }
     Ok(CheckedModule {
         hir: compiled.linked_hir().clone(),
         env: env.clone(),

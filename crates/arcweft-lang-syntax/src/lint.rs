@@ -45,6 +45,15 @@ pub struct SyntaxLintSuggestion {
 }
 
 impl SyntaxLintCode {
+    pub(crate) const ALL: [Self; 6] = [
+        Self::DeepDotRunRelativeId,
+        Self::FlowIdModuleMismatch,
+        Self::RedundantDeclIdentity,
+        Self::DeclBindingMismatch,
+        Self::ExplicitDeclId,
+        Self::GeneratedSurfaceForm,
+    ];
+
     pub const fn stable_code(self) -> &'static str {
         match self {
             Self::DeepDotRunRelativeId => "AWF0001",
@@ -78,6 +87,8 @@ impl SyntaxLintCode {
         }
     }
 }
+
+const _: [(); SyntaxLintCode::ALL.len()] = [(); 6];
 
 /// Default severity for a syntax lint before user lint-level overrides.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -597,6 +608,10 @@ impl SyntaxLintSuggestion {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use arcweft_source::{SourceDocumentId, SourceName};
+
     use super::*;
     use crate::parser::parse_source;
 
@@ -606,6 +621,72 @@ mod tests {
             .into_iter()
             .map(|lint| lint.code())
             .collect()
+    }
+
+    #[test]
+    fn lint_code_inventory_is_complete_unique_and_stable() {
+        let expected = [
+            (
+                SyntaxLintCode::DeepDotRunRelativeId,
+                "AWF0001",
+                "id::deep_dot_run",
+                SyntaxLintSeverity::Warning,
+            ),
+            (
+                SyntaxLintCode::FlowIdModuleMismatch,
+                "AWF0002",
+                "id::flow_module_mismatch",
+                SyntaxLintSeverity::Warning,
+            ),
+            (
+                SyntaxLintCode::RedundantDeclIdentity,
+                "AWF0101",
+                "style::redundant_decl_identity",
+                SyntaxLintSeverity::Warning,
+            ),
+            (
+                SyntaxLintCode::DeclBindingMismatch,
+                "AWF0102",
+                "identity::decl_binding_mismatch",
+                SyntaxLintSeverity::Error,
+            ),
+            (
+                SyntaxLintCode::ExplicitDeclId,
+                "AWF0103",
+                "style::explicit_decl_id",
+                SyntaxLintSeverity::Hint,
+            ),
+            (
+                SyntaxLintCode::GeneratedSurfaceForm,
+                "AWF0104",
+                "style::generated_surface_form",
+                SyntaxLintSeverity::Information,
+            ),
+        ];
+
+        assert_eq!(SyntaxLintCode::ALL, expected.map(|entry| entry.0));
+        assert_eq!(SyntaxLintCode::ALL.len(), 6);
+        assert_eq!(
+            SyntaxLintCode::ALL
+                .iter()
+                .map(|code| code.stable_code())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            SyntaxLintCode::ALL.len()
+        );
+        assert_eq!(
+            SyntaxLintCode::ALL
+                .iter()
+                .map(|code| code.domain_name())
+                .collect::<BTreeSet<_>>()
+                .len(),
+            SyntaxLintCode::ALL.len()
+        );
+        for (code, stable_code, domain_name, severity) in expected {
+            assert_eq!(code.stable_code(), stable_code);
+            assert_eq!(code.domain_name(), domain_name);
+            assert_eq!(code.default_severity(), severity);
+        }
     }
 
     #[test]
@@ -773,19 +854,43 @@ flow @flow.generated generated {
 
     #[test]
     fn explicit_decl_id_has_stable_hint_code() {
-        let parsed = parse_source(
-            r"
+        let source = r"
 flow @flow.opening {
 }
-",
-        );
+";
+        let parsed = parse_source(source);
         let lint = lint_id_policy(parsed.typed_tree())
             .into_iter()
             .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
             .expect("explicit id lint");
 
         assert_eq!(lint.code().stable_code(), "AWF0103");
+        assert_eq!(lint.code().domain_name(), "style::explicit_decl_id");
         assert_eq!(lint.severity(), SyntaxLintSeverity::Hint);
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-generated://syntax-lint-projection/0")
+                .expect("valid generated source id"),
+            SourceName::Generated,
+            source,
+        )
+        .expect("valid source document");
+        let diagnostic = lint.diagnostic(&document);
+        assert_eq!(diagnostic.severity(), DiagnosticSeverity::Hint);
+        assert_eq!(
+            diagnostic
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str),
+            Some("AWF0103")
+        );
+        assert_eq!(
+            diagnostic.labels()[0].message(),
+            Some("style::explicit_decl_id")
+        );
+        assert_eq!(diagnostic.suggestions().len(), 1);
+        assert_eq!(
+            diagnostic.suggestions()[0].edits()[0].replacement(),
+            "opening"
+        );
     }
 
     #[test]

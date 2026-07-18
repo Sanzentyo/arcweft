@@ -227,6 +227,28 @@ The repository-wide full test route remains excluded by the test-execution
 policy because this is a focused parser-diagnostic correction and the
 default-feature CLI asset route is blocked as described above.
 
+## Root integration closure
+
+The child evidence above records the state of its isolated checkout. After
+integration into the root checkout, both inherited blockers are closed:
+
+- the independent source-derived `.part()` operand-range correction is
+  retained, and the complete View part/export suite passes;
+- the root checkout contains the required ignored font asset, so the
+  default-feature CLI, workspace check, and strict Clippy routes complete.
+
+The integrated Agent and CLI path was also reconciled with Lang-01.2's unified
+project compiler. Source-local REPL input is parsed without trimming away
+authored byte offsets, synthetic compiler input is explicitly marked as
+synthetic, and related ranges are preserved and revision-validated through
+Agent JSON, human rendering, and CLI projection.
+
+Fresh root validation covers the full syntax, compiler, LSP, Agent, focused
+CLI, all-target/all-feature check, strict workspace Clippy, normal workspace
+test route, and canonical structural audit. The audit reports zero errors.
+The child-only blocked status is therefore historical evidence, not a
+remaining root-integration blocker.
+
 ## Non-goals and deviations
 
 - No production parser payload is fabricated.
