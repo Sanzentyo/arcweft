@@ -11,7 +11,7 @@ use arcweft_lang_syntax::ast::{
     module_path::{
         CanonicalModulePath, ModulePath, ModulePathError, ModulePathRoot, ModuleSegment,
     },
-    symbol_path::{ProjectSymbolPath, SymbolPath},
+    symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
 };
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
@@ -90,7 +90,7 @@ pub enum ResolvedProjectSymbol<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectSymbolBindingCollision {
     module: CanonicalModulePath,
-    spelling: String,
+    path: ProjectSymbolPath,
     expected: ProjectSymbolTargetId,
     conflicting: Vec<ProjectSymbolTargetId>,
     expected_sites: Vec<SourceSpan>,
@@ -102,8 +102,8 @@ impl ProjectSymbolBindingCollision {
         &self.module
     }
 
-    pub fn spelling(&self) -> &str {
-        &self.spelling
+    pub const fn path(&self) -> &ProjectSymbolPath {
+        &self.path
     }
 
     pub const fn expected(&self) -> &ProjectSymbolTargetId {
@@ -135,6 +135,7 @@ pub struct ProjectSymbolTable {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ScopeBinding {
+    pub(super) path: ProjectSymbolPath,
     pub(super) target: ProjectSymbolTargetId,
     pub(super) visibility: Option<Visibility>,
     pub(super) owner: CanonicalModulePath,
@@ -155,6 +156,12 @@ enum ImportResolutionError {
     VisibilityEscalation,
     Ambiguous(Vec<ProjectSymbolTargetId>),
     InvalidPath(ModulePathError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LinkedProjectSymbolPath {
+    reference: SymbolPath,
+    unaliased_binding: ProjectSymbolPath,
 }
 
 impl ProjectSymbolLinkOutput {
@@ -241,8 +248,8 @@ impl ProjectSymbolTable {
                         break;
                     }
                     if let Ok(bindings) = table.import_bindings(project, module, import) {
-                        for (name, binding) in bindings {
-                            changed |= table.insert_scope_binding(module, name, binding);
+                        for binding in bindings {
+                            changed |= table.insert_scope_binding(module, binding);
                         }
                     }
                 }
@@ -311,17 +318,23 @@ impl ProjectSymbolTable {
 
     /// Every typed binding installed in a project module scope.
     ///
-    /// The iterator is deterministic by module, spelling, and target order.
+    /// Order is module, rendered private lookup key, then typed scope-row order.
     /// Multiple source sites for the same target remain coalesced into one row;
     /// callers consume the binding identity rather than its diagnostic sites.
     pub fn scope_bindings(
         &self,
-    ) -> impl Iterator<Item = (&CanonicalModulePath, &str, &ProjectSymbolTargetId)> {
+    ) -> impl Iterator<
+        Item = (
+            &CanonicalModulePath,
+            &ProjectSymbolPath,
+            &ProjectSymbolTargetId,
+        ),
+    > {
         self.scopes.iter().flat_map(|(module, scope)| {
-            scope.iter().flat_map(move |(spelling, bindings)| {
+            scope.values().flat_map(move |bindings| {
                 bindings
                     .iter()
-                    .map(move |binding| (module, spelling.as_str(), &binding.target))
+                    .map(move |binding| (module, &binding.path, &binding.target))
             })
         })
     }
@@ -337,14 +350,17 @@ impl ProjectSymbolTable {
     ) -> Vec<ProjectSymbolBindingCollision> {
         let mut collisions = Vec::new();
         for (module, scope) in &self.scopes {
-            for (spelling, bindings) in scope {
+            for bindings in scope.values() {
+                let Some(expected_binding) =
+                    bindings.iter().find(|binding| &binding.target == expected)
+                else {
+                    continue;
+                };
+                let path = expected_binding.path.clone();
                 let expected_bindings = bindings
                     .iter()
                     .filter(|binding| &binding.target == expected)
                     .collect::<Vec<_>>();
-                if expected_bindings.is_empty() {
-                    continue;
-                }
                 let conflicting_bindings = bindings
                     .iter()
                     .filter(|binding| &binding.target != expected)
@@ -373,7 +389,7 @@ impl ProjectSymbolTable {
                 conflicting_sites.dedup();
                 collisions.push(ProjectSymbolBindingCollision {
                     module: module.clone(),
-                    spelling: spelling.clone(),
+                    path,
                     expected: expected.clone(),
                     conflicting,
                     expected_sites,
@@ -545,10 +561,16 @@ impl ProjectSymbolTable {
                 .parent()
                 .unwrap_or_else(CanonicalModulePath::crate_root);
             let site = source_span(project, &module, TextRange::new(0, 0));
+            let path = ProjectSymbolPath::new(
+                ModulePathRoot::ImplicitCrate,
+                [ProjectSymbolSegment::try_new(name)
+                    .expect("module segments are valid project symbol segments")],
+            )
+            .expect("one module segment is a valid implicit project binding");
             self.insert_scope_binding(
                 &owner,
-                name.to_owned(),
                 ScopeBinding::new(
+                    path,
                     ProjectSymbolTargetId::Module(module),
                     Some(Visibility::Public),
                     owner.clone(),
@@ -600,10 +622,16 @@ impl ProjectSymbolTable {
                     continue;
                 }
                 let target = ProjectSymbolTargetId::Callable(declaration.clone());
+                let path = ProjectSymbolPath::new(
+                    ModulePathRoot::ImplicitCrate,
+                    [ProjectSymbolSegment::try_new(function.name())
+                        .expect("callable declaration names are valid project symbol segments")],
+                )
+                .expect("one callable name is a valid implicit project binding");
                 self.insert_scope_binding(
                     module_path,
-                    name,
                     ScopeBinding::new(
+                        path,
                         target,
                         function.visibility(),
                         module_path.clone(),
@@ -646,8 +674,8 @@ impl ProjectSymbolTable {
                 self.scopes.entry(binding.module().clone()).or_default();
                 self.insert_scope_binding(
                     binding.module(),
-                    binding.name().to_owned(),
                     ScopeBinding::new(
+                        binding.path().clone(),
                         ProjectSymbolTargetId::External(declaration),
                         binding.visibility(),
                         binding.module().clone(),
@@ -708,32 +736,41 @@ impl ProjectSymbolTable {
         project: &HirProject,
         importer: &CanonicalModulePath,
         import: &UseItem,
-    ) -> Result<Vec<(String, ScopeBinding)>, ImportResolutionError> {
+    ) -> Result<Vec<ScopeBinding>, ImportResolutionError> {
         match import.tree().kind() {
             UseTreeKind::Path { path, alias } => {
-                let path = link_path(path.path())?;
-                let targets = self.targets_for_symbol_path(importer, &path)?;
-                let name = alias.as_ref().map_or_else(
-                    || path.leaf().to_owned(),
-                    |alias| alias.name().as_str().to_owned(),
+                let path = LinkedProjectSymbolPath::try_new(path.path())?;
+                let targets = self.targets_for_symbol_path(importer, path.reference())?;
+                let binding_path = alias.as_ref().map_or_else(
+                    || path.unaliased_binding().clone(),
+                    |alias| {
+                        ProjectSymbolPath::new(
+                            ModulePathRoot::ImplicitCrate,
+                            [ProjectSymbolSegment::try_new(alias.name().as_str())
+                                .expect("use aliases are valid project symbol segments")],
+                        )
+                        .expect("one use alias is a valid implicit project binding")
+                    },
                 );
-                Self::bind_named_targets(project, importer, import, &name, targets)
+                Self::bind_named_targets(project, importer, import, &binding_path, targets)
             }
             UseTreeKind::Glob { module } => {
-                let path = link_path(module.path())?;
-                let module_path = self.module_for_symbol_path(importer, &path)?;
+                let path = LinkedProjectSymbolPath::try_new(module.path())?;
+                let module_path = self.module_for_symbol_path(importer, path.reference())?;
                 let site = source_span(project, importer, module.range());
                 let mut bindings = Vec::new();
                 if let Some(scope) = self.scopes.get(&module_path) {
-                    for (name, candidates) in scope {
+                    for candidates in scope.values() {
                         for candidate in candidates
                             .iter()
                             .filter(|binding| Self::binding_visible_from(binding, importer))
                         {
                             if Self::can_reexport(candidate.visibility, import.visibility()) {
-                                bindings.push((
-                                    name.clone(),
-                                    candidate.rebound(importer, import.visibility(), site.clone()),
+                                bindings.push(candidate.rebound(
+                                    candidate.path.clone(),
+                                    importer,
+                                    import.visibility(),
+                                    site.clone(),
                                 ));
                             }
                         }
@@ -744,21 +781,38 @@ impl ProjectSymbolTable {
                     .ok_or(ImportResolutionError::Unknown)
             }
             UseTreeKind::Group { module, names } => {
-                let module = link_path(module.path())?;
+                let module = LinkedProjectSymbolPath::try_new(module.path())?;
                 let mut bindings = Vec::new();
                 for selected in names {
-                    let path = append_leaf_qualifier(&module, selected.name().as_str())?;
+                    let path = append_leaf_qualifier(module.reference(), selected.name())?;
                     let targets = match self.targets_for_symbol_path(importer, &path) {
                         Ok(targets) => targets,
                         Err(ImportResolutionError::Unknown) => continue,
                         Err(error) => return Err(error),
                     };
-                    let name = selected.alias().map_or_else(
-                        || selected.name().as_str().to_owned(),
-                        |alias| alias.name().as_str().to_owned(),
+                    let binding_path = selected.alias().map_or_else(
+                        || {
+                            ProjectSymbolPath::new(
+                                ModulePathRoot::ImplicitCrate,
+                                [selected.name().clone()],
+                            )
+                            .expect("one selected name is a valid implicit project binding")
+                        },
+                        |alias| {
+                            ProjectSymbolPath::new(
+                                ModulePathRoot::ImplicitCrate,
+                                [ProjectSymbolSegment::try_new(alias.name().as_str())
+                                    .expect("use aliases are valid project symbol segments")],
+                            )
+                            .expect("one use alias is a valid implicit project binding")
+                        },
                     );
                     bindings.extend(Self::bind_named_targets(
-                        project, importer, import, &name, targets,
+                        project,
+                        importer,
+                        import,
+                        &binding_path,
+                        targets,
                     )?);
                 }
                 (!bindings.is_empty())
@@ -772,9 +826,9 @@ impl ProjectSymbolTable {
         project: &HirProject,
         importer: &CanonicalModulePath,
         import: &UseItem,
-        name: &str,
+        path: &ProjectSymbolPath,
         targets: Vec<ScopeBinding>,
-    ) -> Result<Vec<(String, ScopeBinding)>, ImportResolutionError> {
+    ) -> Result<Vec<ScopeBinding>, ImportResolutionError> {
         let distinct = targets
             .iter()
             .map(|binding| binding.target.clone())
@@ -793,12 +847,7 @@ impl ProjectSymbolTable {
         let site = source_span(project, importer, *import.range());
         Ok(targets
             .into_iter()
-            .map(|target| {
-                (
-                    name.to_owned(),
-                    target.rebound(importer, import.visibility(), site.clone()),
-                )
-            })
+            .map(|target| target.rebound(path.clone(), importer, import.visibility(), site.clone()))
             .collect())
     }
 
@@ -828,7 +877,14 @@ impl ProjectSymbolTable {
         if let Ok(segment) = ModuleSegment::new(path.leaf()) {
             let child = module.join(segment);
             if self.modules.contains(&child) {
+                let binding_path = ProjectSymbolPath::new(
+                    ModulePathRoot::ImplicitCrate,
+                    [ProjectSymbolSegment::try_new(path.leaf())
+                        .expect("module leaves are valid project symbol segments")],
+                )
+                .expect("one module leaf is a valid implicit project binding");
                 targets.push(ScopeBinding::new(
+                    binding_path,
                     ProjectSymbolTargetId::Module(child),
                     Some(Visibility::Public),
                     module.clone(),
@@ -837,7 +893,7 @@ impl ProjectSymbolTable {
             }
         }
         if !targets.is_empty() {
-            return Ok(dedup_bindings(targets));
+            return Ok(coalesce_bindings(targets));
         }
         let exists = self
             .scopes
@@ -927,17 +983,18 @@ impl ProjectSymbolTable {
     fn insert_scope_binding(
         &mut self,
         module: &CanonicalModulePath,
-        name: String,
         binding: ScopeBinding,
     ) -> bool {
+        let lookup_key = binding.path.to_string();
         let bindings = self
             .scopes
             .entry(module.clone())
             .or_default()
-            .entry(name)
+            .entry(lookup_key)
             .or_default();
-        if let Some(existing) = bindings.iter_mut().find(|existing| {
-            existing.target == binding.target
+        let changed = if let Some(existing) = bindings.iter_mut().find(|existing| {
+            existing.path == binding.path
+                && existing.target == binding.target
                 && existing.visibility == binding.visibility
                 && existing.owner == binding.owner
         }) {
@@ -949,7 +1006,15 @@ impl ProjectSymbolTable {
         } else {
             bindings.push(binding);
             true
-        }
+        };
+        bindings.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.target.cmp(&right.target))
+                .then_with(|| left.visibility.cmp(&right.visibility))
+                .then_with(|| left.owner.cmp(&right.owner))
+        });
+        changed
     }
 
     fn import_error(
@@ -960,9 +1025,11 @@ impl ProjectSymbolTable {
     ) -> ProjectSymbolLinkError {
         let source = source_span(project, module, *import.range());
         let import_path = match import.tree().kind() {
-            UseTreeKind::Path { path, .. } => link_path(path.path()),
+            UseTreeKind::Path { path, .. } => {
+                LinkedProjectSymbolPath::try_new(path.path()).map(|path| path.reference().clone())
+            }
             UseTreeKind::Glob { module } | UseTreeKind::Group { module, .. } => {
-                link_path(module.path())
+                LinkedProjectSymbolPath::try_new(module.path()).map(|path| path.reference().clone())
             }
         };
         match (import_path, error) {
@@ -1008,15 +1075,22 @@ impl ProjectSymbolTable {
 
 impl ScopeBinding {
     fn new(
+        path: ProjectSymbolPath,
         target: ProjectSymbolTargetId,
         visibility: Option<Visibility>,
         owner: CanonicalModulePath,
         sites: impl IntoIterator<Item = SourceSpan>,
     ) -> Self {
+        assert_eq!(
+            path.root(),
+            ModulePathRoot::ImplicitCrate,
+            "scope-local project bindings must use the implicit root"
+        );
         let mut sites = sites.into_iter().collect::<Vec<_>>();
         sort_spans(&mut sites);
         sites.dedup();
         Self {
+            path,
             target,
             visibility,
             owner,
@@ -1026,21 +1100,47 @@ impl ScopeBinding {
 
     fn rebound(
         &self,
+        path: ProjectSymbolPath,
         owner: &CanonicalModulePath,
         visibility: Option<Visibility>,
         site: SourceSpan,
     ) -> Self {
-        Self::new(self.target.clone(), visibility, owner.clone(), [site])
+        Self::new(path, self.target.clone(), visibility, owner.clone(), [site])
     }
 }
 
-fn link_path(path: &ProjectSymbolPath) -> Result<SymbolPath, ImportResolutionError> {
-    SymbolPath::try_from(path).map_err(ImportResolutionError::InvalidPath)
+impl LinkedProjectSymbolPath {
+    fn try_new(path: &ProjectSymbolPath) -> Result<Self, ImportResolutionError> {
+        let reference = SymbolPath::try_from(path).map_err(ImportResolutionError::InvalidPath)?;
+        let non_leaf_segments = &path.segments()[..path.segments().len() - 1];
+        let unaliased_binding = if non_leaf_segments
+            .iter()
+            .all(|segment| segment.try_as_module_segment().is_ok())
+        {
+            ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, [path.last_segment().clone()])
+                .expect("one source path segment is a valid implicit project binding")
+        } else {
+            debug_assert_eq!(path.root(), ModulePathRoot::ImplicitCrate);
+            path.clone()
+        };
+        Ok(Self {
+            reference,
+            unaliased_binding,
+        })
+    }
+
+    const fn reference(&self) -> &SymbolPath {
+        &self.reference
+    }
+
+    const fn unaliased_binding(&self) -> &ProjectSymbolPath {
+        &self.unaliased_binding
+    }
 }
 
 fn append_leaf_qualifier(
     path: &SymbolPath,
-    leaf: &str,
+    leaf: &ProjectSymbolSegment,
 ) -> Result<SymbolPath, ImportResolutionError> {
     let qualifier = ModuleSegment::new(path.leaf()).map_err(ImportResolutionError::InvalidPath)?;
     SymbolPath::try_new(
@@ -1050,7 +1150,7 @@ fn append_leaf_qualifier(
             .cloned()
             .chain([qualifier])
             .collect(),
-        leaf,
+        leaf.as_str(),
     )
     .map_err(|_| ImportResolutionError::Unknown)
 }
@@ -1067,10 +1167,30 @@ fn use_counts(import: &UseItem) -> (u64, u64) {
     }
 }
 
-fn dedup_bindings(mut bindings: Vec<ScopeBinding>) -> Vec<ScopeBinding> {
-    bindings.sort_by(|left, right| left.target.cmp(&right.target));
-    bindings.dedup_by(|left, right| left.target == right.target);
-    bindings
+fn coalesce_bindings(mut bindings: Vec<ScopeBinding>) -> Vec<ScopeBinding> {
+    bindings.sort_by(|left, right| {
+        left.path
+            .cmp(&right.path)
+            .then_with(|| left.target.cmp(&right.target))
+            .then_with(|| left.visibility.cmp(&right.visibility))
+            .then_with(|| left.owner.cmp(&right.owner))
+    });
+    let mut coalesced: Vec<ScopeBinding> = Vec::with_capacity(bindings.len());
+    for binding in bindings {
+        if let Some(existing) = coalesced.last_mut()
+            && existing.path == binding.path
+            && existing.target == binding.target
+            && existing.visibility == binding.visibility
+            && existing.owner == binding.owner
+        {
+            existing.sites.extend(binding.sites);
+            sort_spans(&mut existing.sites);
+            existing.sites.dedup();
+        } else {
+            coalesced.push(binding);
+        }
+    }
+    coalesced
 }
 
 fn source_span(project: &HirProject, module: &CanonicalModulePath, range: TextRange) -> SourceSpan {

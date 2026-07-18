@@ -497,18 +497,29 @@ mod tests {
     use arcweft_lang_hir::{
         lower::lower_document_to_hir,
         project::{HirProject, HirProjectModule},
-        symbol::{CallablePackageId, ProjectSymbolWorldId},
+        symbol::{
+            CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
+        },
     };
     use arcweft_lang_sema::{
         env::TypeCheckEnv,
         registration::{
-            CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
+            CharacterRegistrar, CharacterRegistrationDiagnosticKind, CharacterRegistrationRequest,
+            EnvironmentBindingId, ExternalRegistrationFact, ProjectRegistrationFacts,
+            RegisteredExternalOwner,
         },
         types::TypeKind,
     };
-    use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+    use arcweft_lang_syntax::{
+        ast::{
+            common::Visibility,
+            module_path::{CanonicalModulePath, ModulePathRoot},
+            symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
+        },
+        parser::parse_source,
+    };
     use arcweft_launch::ProfileId;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
     use std::{
         sync::{Barrier, mpsc},
         thread,
@@ -611,6 +622,95 @@ mod tests {
         .expect("complete candidate")
     }
 
+    fn external_registration_fact(
+        document: &SourceDocument,
+        owner: &str,
+        binding: ProjectSymbolPath,
+    ) -> ExternalRegistrationFact {
+        let declaration = document
+            .span(SourceRange::new(0, document.text().len()))
+            .expect("external declaration span");
+        let direct_binding = ProjectDirectBinding::try_new(
+            CanonicalModulePath::crate_root(),
+            binding,
+            Some(Visibility::Public),
+            declaration.clone(),
+            false,
+        )
+        .expect("typed direct binding");
+        let seed = ExternalDeclarationSeed::try_new(
+            SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner)
+                .expect("opaque canonical path"),
+            Some(Visibility::Public),
+            declaration.clone(),
+            vec![direct_binding],
+        )
+        .expect("external declaration seed");
+        ExternalRegistrationFact::new(
+            seed,
+            RegisteredExternalOwner::Environment(
+                EnvironmentBindingId::try_new(owner).expect("environment owner"),
+            ),
+            declaration,
+        )
+    }
+
+    fn colliding_typed_binding_registration()
+    -> arcweft_lang_sema::registration::CharacterRegistrationReport {
+        let (root, project) = project_fixture();
+        let world = ProjectSymbolWorldId::try_new(
+            CallablePackageId::try_new("cache-tests").expect("package"),
+            root.identity().id().clone(),
+            "test",
+        )
+        .expect("world");
+        let first = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-generated://cache-tests/adapter-first")
+                    .expect("document id"),
+                SourceName::Generated,
+                "adapter.first",
+            )
+            .expect("first adapter document"),
+        );
+        let second = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-generated://cache-tests/adapter-second")
+                    .expect("document id"),
+                SourceName::Generated,
+                "adapter.second",
+            )
+            .expect("second adapter document"),
+        );
+        let shared = || {
+            ProjectSymbolPath::new(
+                ModulePathRoot::ImplicitCrate,
+                [ProjectSymbolSegment::try_new("shared").expect("valid shared segment")],
+            )
+            .expect("shared typed binding path")
+        };
+        let first_fact = external_registration_fact(&first, "adapter.first", shared());
+        let second_fact = external_registration_fact(&second, "adapter.second", shared());
+        let facts = ProjectRegistrationFacts::try_new(
+            world,
+            vec![root, first, second],
+            vec![first_fact, second_fact],
+            Vec::new(),
+        )
+        .expect("colliding facts retain typed evidence");
+        let base = TypeCheckEnv::standard()
+            .with_symbol("adapter.first", TypeKind::I32)
+            .with_symbol("adapter.second", TypeKind::I64);
+
+        CharacterRegistrar::register(CharacterRegistrationRequest::new(
+            Arc::new(base),
+            project.as_ref(),
+            &facts,
+            None,
+        ))
+        .expect_err("typed binding collision rejects the semantic candidate")
+    }
+
     fn insert_cache(environment: &AcceptedProfileEnvironment, key: &str, value: &str) {
         environment.insert_cache_for_test(key, value);
     }
@@ -634,6 +734,60 @@ mod tests {
         assert_eq!(second.generation().get(), 2);
         assert_eq!(cache_snapshot(&first).1, 1);
         assert_eq!(cache_snapshot(&second), (Vec::new(), 0));
+    }
+
+    #[test]
+    fn failed_typed_binding_collision_preserves_accepted_pointer_and_caches() {
+        let state = LspProfileState::new();
+        let accepted = state
+            .replace_accepted(accepted_candidate(registered_world()))
+            .expect("baseline accepted environment");
+        insert_cache(&accepted, "analysis", "retained");
+        let accepted_world = Arc::clone(accepted.world());
+
+        let report = colliding_typed_binding_registration();
+        assert!(
+            report.diagnostics().iter().any(|diagnostic| matches!(
+                diagnostic.kind(),
+                CharacterRegistrationDiagnosticKind::CallableCatalog {
+                    code:
+                        arcweft_lang_sema::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+                }
+            )),
+            "{:?}",
+            report.diagnostics()
+        );
+        let retained = state.current().expect("baseline remains accepted");
+        assert!(Arc::ptr_eq(&retained, &accepted));
+        assert!(Arc::ptr_eq(retained.world(), &accepted_world));
+        assert!(std::ptr::eq(
+            retained.world().symbols(),
+            accepted.world().symbols()
+        ));
+        assert!(std::ptr::eq(
+            retained.world().environment(),
+            accepted.world().environment()
+        ));
+        assert!(std::ptr::eq(
+            retained.world().environment().callable_catalog(),
+            accepted.world().environment().callable_catalog()
+        ));
+        assert!(std::ptr::eq(
+            retained.world().character_definition_index(),
+            accepted.world().character_definition_index()
+        ));
+        assert_eq!(retained.generation().get(), 1);
+        assert_eq!(
+            cache_snapshot(&retained),
+            (vec![("analysis".to_owned(), "retained".to_owned())], 1)
+        );
+
+        let replacement = state
+            .replace_accepted(accepted_candidate(registered_world()))
+            .expect("next valid candidate is accepted");
+        assert_eq!(replacement.generation().get(), 2);
+        assert!(!Arc::ptr_eq(&replacement, &accepted));
+        assert_eq!(cache_snapshot(&replacement), (Vec::new(), 0));
     }
 
     #[test]

@@ -1,24 +1,9 @@
 //! Typed adapter manifest model shared by product adapters, CLI, LSP, and semantic checking.
 
 #[cfg(feature = "sema")]
-use arcweft_lang_hir::symbol::{
-    ExternalDeclarationSeed, ExternalDeclarationSeedError, ProjectDirectBinding,
-};
-#[cfg(feature = "sema")]
 use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv};
 #[cfg(feature = "sema")]
-use arcweft_lang_sema::registration::{
-    EnvironmentBindingId, EnvironmentBindingIdError, ExternalRegistrationFact,
-    RegisteredExternalOwner,
-};
-#[cfg(feature = "sema")]
 use arcweft_lang_sema::types::TypeKind;
-#[cfg(feature = "sema")]
-use arcweft_lang_syntax::ast::{
-    common::Visibility,
-    module_path::{CanonicalModulePath, ModulePathRoot},
-    symbol_path::{SymbolPath, SymbolPathError},
-};
 #[cfg(feature = "sema")]
 use arcweft_rust_abi::ArcweftRustTypeKind;
 use arcweft_rust_abi::{
@@ -26,13 +11,8 @@ use arcweft_rust_abi::{
     ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeRef,
 };
 #[cfg(feature = "sema")]
-use arcweft_source::{
-    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
-    SourceRange, SourceSpanError,
-};
-#[cfg(feature = "sema")]
-use std::{fmt::Write as _, sync::Arc};
-use thiserror::Error;
+mod registration;
+mod registry;
 
 pub use crate::callable::{
     AdapterCallableGroupIndex, AdapterCallableModelError, AdapterCallableName,
@@ -41,6 +21,10 @@ pub use crate::callable::{
     AdapterParameterPassing, AdapterParameterPresence, AdapterToolingDoc,
     AdapterToolingParameterDoc, AdapterToolingSubject,
 };
+pub use crate::symbol::{AdapterSymbolPath, AdapterSymbolPathError, AdapterSymbolSegment};
+#[cfg(feature = "sema")]
+pub use registration::{AdapterRegistrationFactsError, SourceBackedAdapterRegistrationFacts};
+pub use registry::{AdapterRegistry, AdapterRegistryError};
 
 /// Stable adapter identifier used by launch profiles and tooling.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -114,7 +98,7 @@ pub enum AdapterTypeKind {
 /// A symbol injected by a host adapter into the checked source environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterSymbol {
-    name: String,
+    path: AdapterSymbolPath,
     ty: AdapterTypeKind,
 }
 
@@ -189,46 +173,6 @@ pub struct AdapterManifest {
     tooling_docs: Vec<AdapterToolingDoc>,
 }
 
-/// One adapter's deterministic generated source and typed external contributions.
-#[cfg(feature = "sema")]
-#[derive(Clone, Debug)]
-pub struct SourceBackedAdapterRegistrationFacts {
-    document: Arc<SourceDocument>,
-    externals: Vec<ExternalRegistrationFact>,
-}
-
-/// Failure while binding adapter facts to one generated source revision.
-#[cfg(feature = "sema")]
-#[derive(Debug, Error)]
-pub enum AdapterRegistrationFactsError {
-    #[error(transparent)]
-    DocumentId(#[from] SourceDocumentIdError),
-    #[error(transparent)]
-    Document(#[from] SourceDocumentError),
-    #[error(transparent)]
-    Span(#[from] SourceSpanError),
-    #[error(transparent)]
-    SymbolPath(#[from] SymbolPathError),
-    #[error(transparent)]
-    ExternalDeclaration(#[from] ExternalDeclarationSeedError),
-    #[error(transparent)]
-    EnvironmentBinding(#[from] EnvironmentBindingIdError),
-}
-
-/// Collection used to resolve launch-profile adapter ids.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct AdapterRegistry {
-    manifests: Vec<AdapterManifest>,
-}
-
-/// Failure to insert an adapter manifest into a checked registry.
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum AdapterRegistryError {
-    /// Two manifests declared the same stable adapter ID.
-    #[error("adapter id `{id}` occurs more than once")]
-    DuplicateId { id: AdapterId },
-}
-
 impl AdapterId {
     /// Creates an adapter id.
     pub fn new(value: impl Into<String>) -> Self {
@@ -276,16 +220,13 @@ impl AdapterTypeKind {
 
 impl AdapterSymbol {
     /// Creates a typed adapter symbol.
-    pub fn new(name: impl Into<String>, ty: AdapterTypeKind) -> Self {
-        Self {
-            name: name.into(),
-            ty,
-        }
+    pub fn new(path: AdapterSymbolPath, ty: AdapterTypeKind) -> Self {
+        Self { path, ty }
     }
 
-    /// Symbol name visible to Arcweft source.
-    pub fn name(&self) -> &str {
-        &self.name
+    /// Source-visible typed symbol path.
+    pub const fn path(&self) -> &AdapterSymbolPath {
+        &self.path
     }
 
     /// Symbol type visible to semantic checking.
@@ -495,70 +436,10 @@ impl AdapterManifest {
         &self.display_name
     }
 
-    /// Binds every registration-visible base fact to one deterministic generated document.
-    #[cfg(feature = "sema")]
-    pub fn source_backed_registration_facts(
-        &self,
-        ordinal: u64,
-    ) -> Result<SourceBackedAdapterRegistrationFacts, AdapterRegistrationFactsError> {
-        let mut source = String::new();
-        writeln!(&mut source, "adapter-manifest-v1 {self:#?}")
-            .expect("writing adapter facts to a String cannot fail");
-        let mut symbols = self.symbols.iter().collect::<Vec<_>>();
-        symbols.sort_by(|left, right| {
-            left.name()
-                .cmp(right.name())
-                .then_with(|| format!("{:?}", left.ty()).cmp(&format!("{:?}", right.ty())))
-        });
-        let mut symbol_ranges = Vec::with_capacity(symbols.len());
-        for symbol in symbols {
-            source.push_str("symbol ");
-            let start = source.len();
-            source.push_str(symbol.name());
-            let end = source.len();
-            source.push('\n');
-            symbol_ranges.push((symbol.name().to_owned(), SourceRange::new(start, end)));
-        }
-
-        let document = Arc::new(SourceDocument::try_new(
-            SourceDocumentId::try_new(format!("arcweft-generated://adapter-context/{ordinal}"))?,
-            SourceName::Generated,
-            source,
-        )?);
-        let mut externals = Vec::with_capacity(symbol_ranges.len());
-        for (name, range) in symbol_ranges {
-            let declaration = document.span(range)?;
-            let canonical_path =
-                SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), name.clone())?;
-            let direct_binding = ProjectDirectBinding::try_new(
-                CanonicalModulePath::crate_root(),
-                name.clone(),
-                Some(Visibility::Public),
-                declaration.clone(),
-                false,
-            )?;
-            let seed = ExternalDeclarationSeed::try_new(
-                canonical_path,
-                Some(Visibility::Public),
-                declaration.clone(),
-                vec![direct_binding],
-            )?;
-            externals.push(ExternalRegistrationFact::new(
-                seed,
-                RegisteredExternalOwner::Environment(EnvironmentBindingId::try_new(name)?),
-                declaration,
-            ));
-        }
-        Ok(SourceBackedAdapterRegistrationFacts {
-            document,
-            externals,
-        })
-    }
-
     /// Adds one injected symbol.
     #[must_use]
-    pub fn with_symbol(mut self, name: impl Into<String>, ty: AdapterTypeKind) -> Self {
-        self.symbols.push(AdapterSymbol::new(name, ty));
+    pub fn with_symbol(mut self, symbol: AdapterSymbol) -> Self {
+        self.symbols.push(symbol);
         self
     }
 
@@ -643,7 +524,7 @@ impl AdapterManifest {
     #[cfg(feature = "sema")]
     pub fn apply_to_env(&self, env: TypeCheckEnv) -> TypeCheckEnv {
         let env = self.symbols.iter().fold(env, |env, symbol| {
-            env.with_symbol(symbol.name(), symbol.ty().to_sema_type_kind())
+            env.with_symbol(symbol.path().to_string(), symbol.ty().to_sema_type_kind())
         });
         let env = self.effects.iter().fold(env, |env, effect| {
             env.with_capability(effect.to_sema_effect_capability())
@@ -713,76 +594,6 @@ impl AdapterManifest {
     /// Tooling documentation entries.
     pub fn tooling_docs(&self) -> &[AdapterToolingDoc] {
         &self.tooling_docs
-    }
-}
-
-#[cfg(feature = "sema")]
-impl SourceBackedAdapterRegistrationFacts {
-    pub fn document(&self) -> &Arc<SourceDocument> {
-        &self.document
-    }
-
-    pub fn externals(&self) -> &[ExternalRegistrationFact] {
-        &self.externals
-    }
-
-    pub fn into_parts(self) -> (Arc<SourceDocument>, Vec<ExternalRegistrationFact>) {
-        (self.document, self.externals)
-    }
-}
-
-impl AdapterRegistry {
-    /// Creates an empty registry.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Creates a registry from typed manifests.
-    pub fn from_manifests(manifests: impl IntoIterator<Item = AdapterManifest>) -> Self {
-        Self {
-            manifests: manifests.into_iter().collect(),
-        }
-    }
-
-    /// Adds one manifest.
-    #[must_use]
-    pub fn with_manifest(mut self, manifest: AdapterManifest) -> Self {
-        self.manifests.push(manifest);
-        self
-    }
-
-    /// Adds one manifest while rejecting a duplicate stable adapter ID.
-    pub fn try_with_manifest(
-        mut self,
-        manifest: AdapterManifest,
-    ) -> Result<Self, AdapterRegistryError> {
-        if self.get(manifest.id().as_str()).is_some() {
-            return Err(AdapterRegistryError::DuplicateId {
-                id: manifest.id().clone(),
-            });
-        }
-        self.manifests.push(manifest);
-        Ok(self)
-    }
-
-    /// Looks up one manifest by id.
-    pub fn get(&self, id: &str) -> Option<&AdapterManifest> {
-        self.manifests
-            .iter()
-            .find(|manifest| manifest.id().as_str() == id)
-    }
-
-    /// Known adapter ids.
-    pub fn adapter_ids(&self) -> Vec<&str> {
-        self.manifests
-            .iter()
-            .map(|manifest| manifest.id().as_str())
-            .collect()
-    }
-
-    /// All registered manifests.
-    pub fn manifests(&self) -> &[AdapterManifest] {
-        &self.manifests
     }
 }
 
@@ -960,6 +771,8 @@ impl AdapterEffectCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "sema")]
+    use arcweft_lang_sema::registration::RegisteredExternalOwner;
     use arcweft_rust_abi::{
         ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
         ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
@@ -1232,10 +1045,16 @@ mod tests {
     #[cfg(feature = "sema")]
     #[test]
     fn source_backed_adapter_facts_bind_exact_environment_keys_and_base_revision() {
-        let first_manifest = AdapterManifest::new("fixture", "Fixture")
-            .with_symbol("adapter.viewport", AdapterTypeKind::I32);
-        let changed_manifest = AdapterManifest::new("fixture", "Fixture")
-            .with_symbol("adapter.viewport", AdapterTypeKind::I64);
+        let first_manifest =
+            AdapterManifest::new("fixture", "Fixture").with_symbol(AdapterSymbol::new(
+                adapter_symbol_path(["adapter", "viewport"]),
+                AdapterTypeKind::I32,
+            ));
+        let changed_manifest =
+            AdapterManifest::new("fixture", "Fixture").with_symbol(AdapterSymbol::new(
+                adapter_symbol_path(["adapter", "viewport"]),
+                AdapterTypeKind::I64,
+            ));
         let first = first_manifest
             .source_backed_registration_facts(7)
             .expect("first source-backed facts");
@@ -1258,11 +1077,58 @@ mod tests {
             RegisteredExternalOwner::Environment(id)
                 if id.as_str() == "adapter.viewport"
         ));
+        assert_eq!(
+            first.externals()[0].declaration().direct_bindings()[0]
+                .path()
+                .segments()
+                .iter()
+                .map(arcweft_lang_syntax::ast::symbol_path::ProjectSymbolSegment::as_str)
+                .collect::<Vec<_>>(),
+            ["adapter", "viewport"]
+        );
         let base = first_manifest.apply_to_env(TypeCheckEnv::new());
         let RegisteredExternalOwner::Environment(id) = first.externals()[0].target() else {
             panic!("adapter symbol must register an environment owner");
         };
         assert_eq!(base.environment_binding(id), Some(&TypeKind::I32));
+    }
+
+    #[cfg(feature = "sema")]
+    #[test]
+    fn source_backed_adapter_facts_are_independent_of_symbol_insertion_order() {
+        let viewport = AdapterSymbol::new(
+            adapter_symbol_path(["adapter", "viewport"]),
+            AdapterTypeKind::I32,
+        );
+        let mode = AdapterSymbol::new(
+            adapter_symbol_path(["adapter", "mode"]),
+            AdapterTypeKind::String,
+        );
+        let forward = AdapterManifest::new("fixture", "Fixture")
+            .with_symbol(viewport.clone())
+            .with_symbol(mode.clone())
+            .source_backed_registration_facts(11)
+            .expect("forward facts");
+        let reverse = AdapterManifest::new("fixture", "Fixture")
+            .with_symbol(mode)
+            .with_symbol(viewport)
+            .source_backed_registration_facts(11)
+            .expect("reverse facts");
+
+        assert_eq!(forward.document().text(), reverse.document().text());
+        assert_eq!(
+            forward.document().identity().revision(),
+            reverse.document().identity().revision()
+        );
+        assert_eq!(forward.externals(), reverse.externals());
+        assert_eq!(
+            forward
+                .externals()
+                .iter()
+                .map(|fact| fact.declaration().direct_bindings()[0].path().to_string())
+                .collect::<Vec<_>>(),
+            ["adapter.mode", "adapter.viewport"]
+        );
     }
 
     #[test]
@@ -1394,6 +1260,14 @@ mod tests {
                 .map(|segment| AdapterCallableName::try_new(segment).expect("valid test segment")),
         )
         .expect("test path is non-empty")
+    }
+
+    #[cfg(feature = "sema")]
+    fn adapter_symbol_path<const N: usize>(segments: [&str; N]) -> AdapterSymbolPath {
+        AdapterSymbolPath::try_new(segments.map(|segment| {
+            AdapterSymbolSegment::try_new(segment).expect("valid test adapter symbol segment")
+        }))
+        .expect("test adapter symbol path is non-empty")
     }
 
     fn adapter_signature<const N: usize>(

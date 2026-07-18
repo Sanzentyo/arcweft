@@ -4,7 +4,8 @@ use crate::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
     AdapterCallableParameterIndex, AdapterEffectCapability, AdapterFunctionParam,
     AdapterFunctionSignature, AdapterHostCall, AdapterManifest, AdapterParameterGroup,
-    AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry, AdapterTypeKind,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry, AdapterSymbol,
+    AdapterSymbolPath, AdapterSymbolSegment, AdapterTypeKind,
 };
 
 /// Adapter id for the default Sans I/O environment.
@@ -94,10 +95,10 @@ pub fn sans_io_manifest() -> AdapterManifest {
 /// Native HTTP server manifest.
 pub fn native_http_manifest() -> AdapterManifest {
     AdapterManifest::new(NATIVE_HTTP_ADAPTER_ID, "Native HTTP")
-        .with_symbol(
-            "request",
+        .with_symbol(adapter_symbol(
+            ["request"],
             AdapterTypeKind::Named("HttpRequestContext".to_owned()),
-        )
+        ))
         .with_effect(AdapterEffectCapability::new("http.respond"))
         .with_host_call(AdapterHostCall::new(
             "http.respond",
@@ -109,8 +110,14 @@ pub fn native_http_manifest() -> AdapterManifest {
 pub fn inference_tensor_manifest() -> AdapterManifest {
     let tensor = AdapterTypeKind::Named("TensorF32".to_owned());
     let manifest = AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor")
-        .with_symbol("conv2d", AdapterTypeKind::Named("Conv2dApi".to_owned()))
-        .with_symbol("infer", AdapterTypeKind::Named("InferApi".to_owned()));
+        .with_symbol(adapter_symbol(
+            ["conv2d"],
+            AdapterTypeKind::Named("Conv2dApi".to_owned()),
+        ))
+        .with_symbol(adapter_symbol(
+            ["infer"],
+            AdapterTypeKind::Named("InferApi".to_owned()),
+        ));
     let manifest = with_conv2d_callable(manifest, &tensor);
     let manifest = with_inference_callables(manifest, &tensor);
     with_inference_host_calls(manifest)
@@ -288,6 +295,17 @@ fn callable_name(value: &str) -> AdapterCallableName {
     AdapterCallableName::try_new(value).expect("standard callable names are valid typed segments")
 }
 
+fn adapter_symbol<const N: usize>(segments: [&str; N], ty: AdapterTypeKind) -> AdapterSymbol {
+    AdapterSymbol::new(
+        AdapterSymbolPath::try_new(segments.map(|segment| {
+            AdapterSymbolSegment::try_new(segment)
+                .expect("standard adapter symbol segments are valid")
+        }))
+        .expect("standard adapter symbol paths are non-empty"),
+        ty,
+    )
+}
+
 fn overload_zero() -> AdapterCallableOverloadIndex {
     AdapterCallableOverloadIndex::try_from_usize(0)
         .expect("zero is a valid adapter callable overload")
@@ -329,7 +347,6 @@ fn signature<const N: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::AdapterSymbol;
 
     #[test]
     fn inference_tensor_manifest_injects_namespaced_methods_without_core_prelude() {
@@ -339,8 +356,8 @@ mod tests {
         assert_eq!(
             manifest.symbols(),
             &[
-                AdapterSymbol::new("conv2d", AdapterTypeKind::Named("Conv2dApi".to_owned())),
-                AdapterSymbol::new("infer", AdapterTypeKind::Named("InferApi".to_owned()))
+                adapter_symbol(["conv2d"], AdapterTypeKind::Named("Conv2dApi".to_owned())),
+                adapter_symbol(["infer"], AdapterTypeKind::Named("InferApi".to_owned()))
             ]
         );
         assert!(manifest.methods().iter().any(|method| {

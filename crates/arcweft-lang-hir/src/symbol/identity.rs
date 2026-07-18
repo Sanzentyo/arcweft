@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::ast::{
     common::Visibility,
-    module_path::{CanonicalModulePath, ModulePathError, ModuleSegment},
-    symbol_path::{SymbolPath, SymbolPathError},
+    module_path::{CanonicalModulePath, ModulePathError, ModulePathRoot, ModuleSegment},
+    symbol_path::{ProjectSymbolPath, SymbolPath},
 };
 use arcweft_source::{
     SourceDocumentId, SourceDocumentIdentity, SourceSetRevision, SourceSetRevisionError, SourceSpan,
@@ -100,7 +100,7 @@ pub struct ProjectSymbolRevision(SourceSetRevision);
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProjectDirectBinding {
     module: CanonicalModulePath,
-    name: String,
+    path: ProjectSymbolPath,
     visibility: Option<Visibility>,
     source: SourceSpan,
     authored_alias: bool,
@@ -183,6 +183,13 @@ pub enum ExternalDeclarationSeedError {
 pub enum ProjectExternalDeclarationsError {
     #[error("external declaration count does not fit u32")]
     SeedCountOverflow { count: usize },
+}
+
+/// Invalid source-visible binding supplied directly by an external producer.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum ProjectDirectBindingError {
+    #[error("direct project binding path must use the implicit project root, found {root:?}")]
+    ExplicitRoot { root: ModulePathRoot },
 }
 
 impl CallablePackageId {
@@ -371,20 +378,17 @@ impl ProjectSymbolRevision {
 impl ProjectDirectBinding {
     pub fn try_new(
         module: CanonicalModulePath,
-        name: impl Into<String>,
+        path: ProjectSymbolPath,
         visibility: Option<Visibility>,
         source: SourceSpan,
         authored_alias: bool,
-    ) -> Result<Self, SymbolPathError> {
-        let name = name.into();
-        SymbolPath::try_new(
-            arcweft_lang_syntax::ast::module_path::ModulePathRoot::ImplicitCrate,
-            Vec::new(),
-            name.clone(),
-        )?;
+    ) -> Result<Self, ProjectDirectBindingError> {
+        if path.root() != ModulePathRoot::ImplicitCrate {
+            return Err(ProjectDirectBindingError::ExplicitRoot { root: path.root() });
+        }
         Ok(Self {
             module,
-            name,
+            path,
             visibility,
             source,
             authored_alias,
@@ -395,8 +399,8 @@ impl ProjectDirectBinding {
         &self.module
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn path(&self) -> &ProjectSymbolPath {
+        &self.path
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {

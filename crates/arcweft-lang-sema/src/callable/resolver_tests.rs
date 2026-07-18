@@ -11,9 +11,13 @@ use crate::{
     checker::{TypeExpressionId, analyze_registered_project_types, analyze_types},
     effect_row::EffectRow,
     env::{FunctionParam, FunctionSignature, TypeCheckEnv},
-    registration::{CharacterRegistrar, CharacterRegistrationRequest, RegisteredSemanticWorld},
+    registration::{
+        CharacterRegistrar, CharacterRegistrationRequest, EnvironmentBindingId,
+        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredSemanticWorld,
+    },
     test_support::character_project::{
-        one_character_facts, root_project_source, sample_manifest, source_document,
+        external_fact, one_character_facts, project_path, root_project_source, sample_manifest,
+        source_document,
     },
     traits::TraitCatalog,
     types::TypeKind,
@@ -35,6 +39,8 @@ use super::{
 };
 
 const SOURCE: &str = r#"
+use character.akane as hero
+
 fn project_value(value: i32) -> String {
     "project"
 }
@@ -73,7 +79,12 @@ impl ResolverFixture {
                     [FunctionParam::required("value", TypeKind::I32)],
                 ),
             )
-            .with_function_signature("akane", FunctionSignature::new(TypeKind::Unit, []));
+            .with_function_signature("akane", FunctionSignature::new(TypeKind::Unit, []))
+            .with_function_signature(
+                "character.akane",
+                FunctionSignature::new(TypeKind::Unit, []),
+            )
+            .with_function_signature("hero", FunctionSignature::new(TypeKind::Unit, []));
         let world = CharacterRegistrar::register(
             CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
                 .with_callable_publication(adapter_publication()),
@@ -364,15 +375,85 @@ fn selected_resolver_returns_adapter_method_candidate() {
 #[test]
 fn project_non_callable_binding_stops_environment_fallback() {
     let fixture = ResolverFixture::new();
-    let ResolveCallOutcome::Resolved(ResolvedCallTarget::NonCallable(target)) =
-        fixture.resolve("akane")
-    else {
-        panic!("project character alias must terminate as non-callable")
-    };
-    assert_eq!(
-        target.ty(),
-        &TypeKind::entity_ref(crate::types::EntityKind::Character)
+    for path in [&["akane"][..], &["character", "akane"][..], &["hero"][..]] {
+        let ResolveCallOutcome::Resolved(ResolvedCallTarget::NonCallable(target)) =
+            fixture.resolve_path(path)
+        else {
+            panic!("project character binding {path:?} must terminate as non-callable")
+        };
+        assert_eq!(
+            target.ty(),
+            &TypeKind::entity_ref(crate::types::EntityKind::Character)
+        );
+    }
+}
+
+#[test]
+fn compact_project_binding_does_not_shadow_a_qualified_environment_callable() {
+    let (document, project, symbol_world) =
+        root_project_source("segmented-binding-shadowing", "fn main() -> Unit { () }\n");
+    let generated = source_document(
+        "arcweft-generated://registration-tests/compact-akane",
+        "adapter.akane",
     );
+    let declaration = generated
+        .span(SourceRange::new(0, "adapter.akane".len()))
+        .expect("environment declaration span");
+    let environment = EnvironmentBindingId::try_new("adapter.akane").expect("environment id");
+    let fact = external_fact(
+        environment.as_str(),
+        &[project_path(["akane"])],
+        RegisteredExternalOwner::Environment(environment.clone()),
+        declaration,
+    );
+    let facts = ProjectRegistrationFacts::try_new(
+        symbol_world,
+        vec![Arc::clone(&document), generated],
+        vec![fact],
+        Vec::new(),
+    )
+    .expect("compact typed project binding");
+    let record = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(callable_path(&["character", "akane"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        ordinary_single_parameter_schema("value", TypeKind::I32, TypeKind::String),
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
+    )
+    .expect("qualified environment callable");
+    let publication = EnvironmentCallablePublication::try_new(
+        EnvironmentCallableOwner::Adapter(
+            AdapterPackageId::try_new("adapter.segmented-shadowing").expect("adapter id"),
+        ),
+        vec![record],
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("qualified environment publication");
+    let base = TypeCheckEnv::standard().with_symbol(environment.as_str(), TypeKind::I32);
+    let world = CharacterRegistrar::register(
+        CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
+            .with_callable_publication(publication),
+    )
+    .expect("segmented resolver fixture");
+    let fixture = ResolverFixture {
+        document,
+        project,
+        world,
+    };
+
+    assert!(matches!(
+        fixture.resolve("akane"),
+        ResolveCallOutcome::Resolved(ResolvedCallTarget::NonCallable(_))
+    ));
+    let qualified = resolved_candidate(fixture.resolve_path(&["character", "akane"]));
+    assert!(matches!(
+        qualified.origin(),
+        SignatureOrigin::Adapter { package, .. }
+            if package.as_str() == "adapter.segmented-shadowing"
+    ));
 }
 
 #[test]

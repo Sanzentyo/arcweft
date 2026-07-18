@@ -357,8 +357,68 @@ impl fmt::Display for ProjectSymbolPath {
 #[cfg(test)]
 mod tests {
     use super::{
-        ProjectSymbolPath, ProjectSymbolPathError, SpannedProjectSymbolPath, SymbolPath, TextRange,
+        ProjectSymbolPath, ProjectSymbolPathError, ProjectSymbolSegment, SpannedProjectSymbolPath,
+        SymbolPath, TextRange,
     };
+
+    #[test]
+    fn project_symbol_segment_accepts_external_hyphen_without_becoming_a_module_segment() {
+        let external = ProjectSymbolSegment::try_new("hero-pack").expect("external segment");
+        let path = ProjectSymbolPath::new(
+            super::ModulePathRoot::ImplicitCrate,
+            [
+                ProjectSymbolSegment::try_new("character").expect("namespace segment"),
+                external.clone(),
+            ],
+        )
+        .expect("qualified external path");
+
+        assert_eq!(
+            path.segments()
+                .iter()
+                .map(ProjectSymbolSegment::as_str)
+                .collect::<Vec<_>>(),
+            ["character", "hero-pack"]
+        );
+        assert!(external.try_as_module_segment().is_err());
+    }
+
+    #[test]
+    fn project_symbol_segment_rejects_empty_control_and_separators() {
+        assert_eq!(
+            ProjectSymbolSegment::try_new(""),
+            Err(ProjectSymbolPathError::EmptySegment)
+        );
+        for value in ["a.b", "a:b", "a/b", "a\\b", "\u{7}"] {
+            assert!(matches!(
+                ProjectSymbolSegment::try_new(value),
+                Err(ProjectSymbolPathError::InvalidSegment { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn project_symbol_path_rejects_empty_and_invalid_implicit_root() {
+        assert_eq!(
+            ProjectSymbolPath::new(super::ModulePathRoot::ImplicitCrate, []),
+            Err(ProjectSymbolPathError::Empty)
+        );
+        let numeric = ProjectSymbolSegment::try_new("2d").expect("numeric segment");
+        assert!(matches!(
+            ProjectSymbolPath::new(super::ModulePathRoot::ImplicitCrate, [numeric.clone()]),
+            Err(ProjectSymbolPathError::InvalidImplicitRoot { segment }) if segment == "2d"
+        ));
+        assert!(
+            ProjectSymbolPath::new(
+                super::ModulePathRoot::ImplicitCrate,
+                [
+                    ProjectSymbolSegment::try_new("character").expect("namespace segment"),
+                    numeric,
+                ],
+            )
+            .is_ok()
+        );
+    }
 
     #[test]
     fn accepts_external_segments_and_records_exact_ranges() {

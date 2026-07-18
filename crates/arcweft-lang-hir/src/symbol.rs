@@ -14,8 +14,9 @@ pub use identity::{
     CallableDeclarationId, CallableDeclarationIdError, CallableDeclarationOwner, CallablePackageId,
     CallablePackageIdError, CallableSymbol, ExternalDeclarationId, ExternalDeclarationSeed,
     ExternalDeclarationSeedError, ExternalDeclarationSeedId, ExternalSymbol, ProjectDeclarationId,
-    ProjectDirectBinding, ProjectExternalDeclarations, ProjectExternalDeclarationsError,
-    ProjectSymbol, ProjectSymbolRevision, ProjectSymbolWorldId, ProjectSymbolWorldIdError,
+    ProjectDirectBinding, ProjectDirectBindingError, ProjectExternalDeclarations,
+    ProjectExternalDeclarationsError, ProjectSymbol, ProjectSymbolRevision, ProjectSymbolWorldId,
+    ProjectSymbolWorldIdError,
 };
 pub use table::{
     ProjectSymbolBindingCollision, ProjectSymbolLimitKind, ProjectSymbolLimits,

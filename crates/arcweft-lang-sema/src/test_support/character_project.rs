@@ -22,7 +22,7 @@ use arcweft_lang_syntax::{
     ast::{
         common::Visibility,
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
-        symbol_path::SymbolPath,
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
     parser::parse_source,
 };
@@ -193,16 +193,16 @@ pub(crate) fn declaration_span(
 
 pub(crate) fn external_fact(
     canonical: &str,
-    bindings: &[&str],
+    bindings: &[ProjectSymbolPath],
     target: RegisteredExternalOwner,
     declaration: arcweft_source::SourceSpan,
 ) -> ExternalRegistrationFact {
     let direct_bindings = bindings
         .iter()
-        .map(|name| {
+        .map(|path| {
             ProjectDirectBinding::try_new(
                 CanonicalModulePath::crate_root(),
-                *name,
+                path.clone(),
                 Some(Visibility::Public),
                 declaration.clone(),
                 false,
@@ -219,6 +219,39 @@ pub(crate) fn external_fact(
     )
     .expect("external seed");
     ExternalRegistrationFact::new(seed, target, declaration)
+}
+
+pub(crate) fn project_path<const N: usize>(segments: [&str; N]) -> ProjectSymbolPath {
+    ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        segments.map(|segment| {
+            ProjectSymbolSegment::try_new(segment).expect("valid test project symbol segment")
+        }),
+    )
+    .expect("test project symbol path is non-empty")
+}
+
+pub(crate) fn character_binding_paths(owner: &CharacterId) -> Vec<ProjectSymbolPath> {
+    let compact_segments = owner
+        .compact_segments()
+        .map(|segment| {
+            ProjectSymbolSegment::try_new(segment)
+                .expect("character compact segments are valid project symbol segments")
+        })
+        .collect::<Vec<_>>();
+    vec![
+        ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            std::iter::once(
+                ProjectSymbolSegment::try_new("character")
+                    .expect("character namespace is a valid project symbol segment"),
+            )
+            .chain(compact_segments.iter().cloned()),
+        )
+        .expect("qualified character path has a valid implicit root"),
+        ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, compact_segments)
+            .expect("compact character path has a valid implicit root"),
+    ]
 }
 
 pub(crate) fn one_character_facts(
@@ -241,9 +274,10 @@ pub(crate) fn one_character_facts_with_documents(
     );
     let owner = manifest.manifest().character().clone();
     let declaration = declaration_span(&manifest);
+    let binding_paths = character_binding_paths(&owner);
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &binding_paths,
         RegisteredExternalOwner::Character(owner.clone()),
         declaration,
     );

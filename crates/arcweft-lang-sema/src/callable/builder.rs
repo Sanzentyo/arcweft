@@ -34,19 +34,20 @@ use crate::{
 
 use super::limits::CatalogBuildWork;
 use super::{
-    CallableArgumentPolicy, CallableAuthorityRank, CallableCandidateId, CallableCatalogBuildError,
-    CallableDocumentation, CallableEffectSchema, CallableGroupIndex, CallableGroupKind,
-    CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
-    CallableParameterDocumentation, CallableParameterGroup, CallableParameterIndex,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
-    CallableParameterType, CallablePath, CallableProviderId, CallableRecord,
-    CallableSignatureSchema, CallableSource, CallableValidator, CatalogCallableEntry,
-    DocumentationProvenance, EnvironmentCallableCatalog, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
-    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, EquivalentCallableSource,
-    NonEmptyCallableSet, ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding,
-    RegisteredCallableCatalog, RegisteredProjectModuleCallables, SignatureOrigin,
-    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
+    CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError, CallableCandidateId,
+    CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema, CallableGroupIndex,
+    CallableGroupKind, CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex,
+    CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
+    CallableParameterIndex, CallableParameterPassing, CallableParameterPresence,
+    CallableParameterSource, CallableParameterType, CallablePath, CallablePathError,
+    CallableProviderId, CallableRecord, CallableSignatureSchema, CallableSource, CallableValidator,
+    CatalogCallableEntry, DocumentationProvenance, EnvironmentCallableCatalog,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
+    EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
+    ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding, RegisteredCallableCatalog,
+    RegisteredProjectModuleCallables, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
+    UnknownNamedArgumentPolicy,
 };
 
 pub(crate) struct RegisteredCallableCatalogBuilder {
@@ -219,22 +220,28 @@ impl RegisteredCallableCatalogBuilder {
         symbols: &ProjectSymbolTable,
         mut non_callable_type: impl FnMut(&ProjectSymbolTargetId) -> Option<TypeKind>,
     ) -> Result<(), CallableCatalogBuildError> {
-        for (module, spelling, target) in symbols.scope_bindings() {
+        for (module, binding_path, target) in symbols.scope_bindings() {
+            let segment_count = binding_path.segments().len();
             self.work.charge(1)?;
-            let Ok(name) = CallableName::try_new(spelling) else {
-                // External-domain leaves such as `character.akane` are opaque
-                // HIR symbol leaves rather than callable path segments. Their
-                // typed compact aliases are indexed here; qualified lookup
-                // continues to use ProjectSymbolTable until that producer owns
-                // a segmented external path instead of a display leaf.
-                continue;
+            self.work.charge(
+                u64::try_from(segment_count)
+                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?,
+            )?;
+            let segments = binding_path.segments().iter().map(|segment| {
+                CallableName::try_new(segment.as_str())
+                    .expect("ProjectSymbolSegment grammar is a strict subset of CallableName")
+            });
+            let callable_path = match CallablePath::try_new_with_limits(segments, &self.limits) {
+                Ok(path) => path,
+                Err(CallablePathError::TooManySegments { actual, limit }) => {
+                    return Err(CallableBuildLimitError::PathSegments { actual, limit }.into());
+                }
+                Err(CallablePathError::Empty) => {
+                    unreachable!("ProjectSymbolPath is non-empty by construction")
+                }
             };
-            let path = ProjectCallablePath::new(
-                project.package().clone(),
-                module.clone(),
-                CallablePath::try_new([name])
-                    .expect("one validated callable name is a non-empty path"),
-            );
+            let path =
+                ProjectCallablePath::new(project.package().clone(), module.clone(), callable_path);
             let binding = match target {
                 ProjectSymbolTargetId::Callable(declaration) => {
                     ProjectNameBinding::Callable(declaration.clone())

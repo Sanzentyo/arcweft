@@ -16,8 +16,8 @@ use arcweft_character::{
 };
 use arcweft_lang_hir::symbol::{
     CallablePackageId, CallablePackageIdError, ExternalDeclarationSeed,
-    ExternalDeclarationSeedError, ProjectDirectBinding, ProjectSymbolWorldId,
-    ProjectSymbolWorldIdError,
+    ExternalDeclarationSeedError, ProjectDirectBinding, ProjectDirectBindingError,
+    ProjectSymbolWorldId, ProjectSymbolWorldIdError,
 };
 use arcweft_lang_sema::registration::{
     CharacterRegistrationReport, ExternalRegistrationFact, ProjectRegistrationFacts,
@@ -26,7 +26,10 @@ use arcweft_lang_sema::registration::{
 use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModulePathRoot},
-    symbol_path::{SymbolPath, SymbolPathError},
+    symbol_path::{
+        ProjectSymbolPath, ProjectSymbolPathError, ProjectSymbolSegment, SymbolPath,
+        SymbolPathError,
+    },
 };
 use arcweft_launch::ResolvedLaunchProfile;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceDocumentIdentity};
@@ -87,6 +90,10 @@ pub enum ProjectRegistrationLoadError {
     World(#[from] ProjectSymbolWorldIdError),
     #[error(transparent)]
     SymbolPath(#[from] SymbolPathError),
+    #[error(transparent)]
+    ProjectSymbolPath(#[from] ProjectSymbolPathError),
+    #[error(transparent)]
+    ProjectDirectBinding(#[from] ProjectDirectBindingError),
     #[error(transparent)]
     ExternalDeclaration(#[from] ExternalDeclarationSeedError),
     #[error(transparent)]
@@ -540,18 +547,27 @@ fn character_registration_source(
         .clone();
     let canonical_path =
         SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner.as_str())?;
-    let direct_bindings = [owner.as_str(), owner.compact_str()]
-        .into_iter()
-        .map(|name| {
-            ProjectDirectBinding::try_new(
-                CanonicalModulePath::crate_root(),
-                name,
-                Some(Visibility::Public),
-                declaration.clone(),
-                false,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let compact_segments = owner
+        .compact_segments()
+        .map(|segment| ProjectSymbolSegment::try_new(segment.to_owned()))
+        .collect::<Result<Vec<_>, ProjectSymbolPathError>>()?;
+    let (qualified_path, compact_path) = character_publication_paths(compact_segments)?;
+    let direct_bindings = vec![
+        ProjectDirectBinding::try_new(
+            CanonicalModulePath::crate_root(),
+            qualified_path,
+            Some(Visibility::Public),
+            declaration.clone(),
+            false,
+        )?,
+        ProjectDirectBinding::try_new(
+            CanonicalModulePath::crate_root(),
+            compact_path,
+            Some(Visibility::Public),
+            declaration.clone(),
+            false,
+        )?,
+    ];
     let seed = ExternalDeclarationSeed::try_new(
         canonical_path,
         Some(Visibility::Public),
@@ -572,6 +588,19 @@ fn character_registration_source(
         external_fact,
         manifest,
     })
+}
+
+fn character_publication_paths(
+    compact_segments: impl IntoIterator<Item = ProjectSymbolSegment>,
+) -> Result<(ProjectSymbolPath, ProjectSymbolPath), ProjectSymbolPathError> {
+    let compact_segments = compact_segments.into_iter().collect::<Vec<_>>();
+    let qualified_path = ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        std::iter::once(ProjectSymbolSegment::try_new("character")?)
+            .chain(compact_segments.iter().cloned()),
+    )?;
+    ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, compact_segments)
+        .map(|compact_path| (qualified_path, compact_path))
 }
 
 fn overlay_document(
@@ -606,14 +635,15 @@ fn loaded_file_document(
 #[cfg(test)]
 mod tests {
     use super::{
-        ProfileRegistrationLoadRequest, ProjectLoadRequest, load_profile_registration,
-        load_project_registration,
+        ProfileRegistrationLoadRequest, ProjectLoadRequest, character_publication_paths,
+        load_profile_registration, load_project_registration,
     };
     use crate::{
         project,
         topology::{ProfileTopologyLoadRequest, ProfileTopologyOwnerId, load_profile_topology},
     };
     use arcweft_adapter_context::standard::standard_registry;
+    use arcweft_lang_syntax::ast::symbol_path::{ProjectSymbolPathError, ProjectSymbolSegment};
     use arcweft_launch::LaunchProfileSelection;
     use std::{fs, path::PathBuf};
 
@@ -672,6 +702,26 @@ character_manifests = ["characters/zundamon.awchar"]
             "arcweft-project://registration-loader-source-backed/characters/zundamon.awchar/character.awchar.json"
         );
         assert_eq!(facts.external_declarations().declarations().len(), 1);
+        let (_, seed) = facts
+            .external_declarations()
+            .declarations()
+            .next()
+            .expect("character declaration");
+        assert_eq!(seed.canonical_path().leaf(), "character.zundamon");
+        assert_eq!(
+            seed.direct_bindings()
+                .iter()
+                .map(|binding| {
+                    binding
+                        .path()
+                        .segments()
+                        .iter()
+                        .map(ProjectSymbolSegment::as_str)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>(),
+            [vec!["character", "zundamon"], vec!["zundamon"]]
+        );
         let manifest_file = registration
             .file_documents()
             .find(|file| file.document().identity() == manifest.source_map().document())
@@ -679,6 +729,21 @@ character_manifests = ["characters/zundamon.awchar"]
         assert_eq!(
             manifest_file.path(),
             fixture.path("characters/zundamon.awchar/character.awchar.json")
+        );
+    }
+
+    #[test]
+    fn malformed_compact_character_path_fails_before_direct_binding_construction() {
+        let error = character_publication_paths([
+            ProjectSymbolSegment::try_new("2d").expect("valid external segment")
+        ])
+        .expect_err("numeric compact root must fail typed character publication");
+
+        assert_eq!(
+            error,
+            ProjectSymbolPathError::InvalidImplicitRoot {
+                segment: "2d".to_owned(),
+            }
         );
     }
 

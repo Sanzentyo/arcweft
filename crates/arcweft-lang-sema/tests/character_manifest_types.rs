@@ -30,11 +30,11 @@ use arcweft_lang_syntax::{
     ast::{
         common::Visibility,
         module_path::{CanonicalModulePath, ModulePathRoot},
-        symbol_path::SymbolPath,
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
     parser::parse_source,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSpan};
 
 fn manifest(character: &str) -> CharacterManifest {
     let body = CharacterPartId::try_new("body").expect("part");
@@ -72,6 +72,43 @@ fn manifest(character: &str) -> CharacterManifest {
         None,
     )
     .expect("manifest")
+}
+
+fn character_direct_bindings(
+    owner: &CharacterId,
+    declaration: &SourceSpan,
+) -> Vec<ProjectDirectBinding> {
+    let compact_segments = owner
+        .compact_segments()
+        .map(|segment| {
+            ProjectSymbolSegment::try_new(segment).expect("character compact segment is valid")
+        })
+        .collect::<Vec<_>>();
+    [
+        ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            std::iter::once(
+                ProjectSymbolSegment::try_new("character")
+                    .expect("character namespace segment is valid"),
+            )
+            .chain(compact_segments.iter().cloned()),
+        )
+        .expect("qualified character binding path"),
+        ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, compact_segments)
+            .expect("compact character binding path"),
+    ]
+    .into_iter()
+    .map(|path| {
+        ProjectDirectBinding::try_new(
+            CanonicalModulePath::crate_root(),
+            path,
+            Some(Visibility::Public),
+            declaration.clone(),
+            false,
+        )
+        .expect("direct binding")
+    })
+    .collect()
 }
 
 fn register(manifests: &[CharacterManifest]) -> RegisteredSemanticWorld {
@@ -123,25 +160,12 @@ fn register(manifests: &[CharacterManifest]) -> RegisteredSemanticWorld {
             .expect("character token")
             .value()
             .clone();
-        let bindings = [owner.as_str(), owner.compact_str()]
-            .into_iter()
-            .map(|name| {
-                ProjectDirectBinding::try_new(
-                    CanonicalModulePath::crate_root(),
-                    name,
-                    Some(Visibility::Public),
-                    declaration.clone(),
-                    false,
-                )
-                .expect("direct binding")
-            })
-            .collect();
         let seed = ExternalDeclarationSeed::try_new(
             SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner.as_str())
                 .expect("character symbol path"),
             Some(Visibility::Public),
             declaration.clone(),
-            bindings,
+            character_direct_bindings(&owner, &declaration),
         )
         .expect("external declaration");
         externals.push(ExternalRegistrationFact::new(

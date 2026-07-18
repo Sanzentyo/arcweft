@@ -12,7 +12,7 @@ use arcweft_character::{
     registration_catalog::SourceBackedCharacterCatalog,
     symbol::CharacterSymbolDescriptor,
 };
-use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolTargetId, ProjectSymbolWorldId};
 use arcweft_lang_syntax::ast::{
     module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
     symbol_path::SymbolPath,
@@ -20,9 +20,10 @@ use arcweft_lang_syntax::ast::{
 use arcweft_source::{SourceDocument, SourceRange};
 
 use crate::test_support::character_project::{
-    PACKAGE, backed_manifest, declaration_span, external_fact, one_character_facts,
-    one_character_facts_with_documents, project_modules, register, root_project,
-    root_project_source, sample_manifest, sample_manifest_for, source_document,
+    PACKAGE, backed_manifest, character_binding_paths, declaration_span, external_fact,
+    one_character_facts, one_character_facts_with_documents, project_modules, project_path,
+    register, root_project, root_project_source, sample_manifest, sample_manifest_for,
+    source_document,
 };
 use crate::{
     callable::{CallableName, CallablePath, ProjectCallablePath, ProjectNameBinding},
@@ -118,7 +119,7 @@ fn registered_character_and_environment(
     let character = manifest.character().clone();
     let character_fact = external_fact(
         character.as_str(),
-        &[character.as_str(), character.compact_str()],
+        &character_binding_paths(&character),
         RegisteredExternalOwner::Character(character.clone()),
         declaration_span(&backed),
     );
@@ -129,7 +130,7 @@ fn registered_character_and_environment(
     let environment = EnvironmentBindingId::try_new("adapter.viewport").expect("environment id");
     let environment_fact = external_fact(
         environment.as_str(),
-        &[environment.as_str()],
+        &[project_path(["adapter", "viewport"])],
         RegisteredExternalOwner::Environment(environment.clone()),
         generated
             .span(SourceRange::new(0, "adapter.viewport".len()))
@@ -243,24 +244,191 @@ fn accepted_world_publishes_project_callables_and_non_callable_shadow_bindings()
         .clone();
     assert!(catalog.record(&declaration).is_some());
 
-    let path = |leaf: &str| {
+    let path = |segments: &[&str]| {
         ProjectCallablePath::new(
             registered.symbols().world().package().clone(),
             CanonicalModulePath::crate_root(),
-            CallablePath::try_new([CallableName::try_new(leaf).unwrap()]).unwrap(),
+            CallablePath::try_new(
+                segments
+                    .iter()
+                    .map(|segment| CallableName::try_new(*segment).unwrap()),
+            )
+            .unwrap(),
         )
     };
     assert_eq!(
-        catalog.binding(&path("main")),
+        catalog.binding(&path(&["main"])),
         Some(&ProjectNameBinding::Callable(declaration))
     );
     assert!(matches!(
-        catalog.binding(&path("akane")),
+        catalog.binding(&path(&["akane"])),
         Some(ProjectNameBinding::NonCallable {
             ty: TypeKind::Ref(entity),
             ..
         }) if entity.kind() == &EntityKind::Character
     ));
+    assert!(matches!(
+        catalog.binding(&path(&["character", "akane"])),
+        Some(ProjectNameBinding::NonCallable {
+            ty: TypeKind::Ref(entity),
+            ..
+        }) if entity.kind() == &EntityKind::Character
+    ));
+}
+
+#[test]
+fn accepted_world_publishes_qualified_compact_and_authored_character_paths() {
+    let (root, project, world) = root_project("typed-character-binding-paths");
+    let manifest = sample_manifest("layers/body.png");
+    let (manifest_document, backed) = backed_manifest(
+        "arcweft-project://registration-tests/characters/typed-paths.awchar.json",
+        &manifest,
+    );
+    let owner = manifest.character().clone();
+    let declaration = declaration_span(&backed);
+    let mut binding_paths = character_binding_paths(&owner);
+    binding_paths.push(project_path(["hero"]));
+    let fact = external_fact(
+        owner.as_str(),
+        &binding_paths,
+        RegisteredExternalOwner::Character(owner.clone()),
+        declaration,
+    );
+    let catalog = SourceBackedCharacterCatalog::try_new(root.identity().clone(), vec![backed])
+        .expect("source-backed character catalog");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![root, manifest_document],
+        vec![fact],
+        vec![catalog],
+    )
+    .expect("typed character binding facts");
+    let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("typed character binding paths register");
+
+    let expected_paths = [
+        project_path(["akane"]),
+        project_path(["character", "akane"]),
+        project_path(["hero"]),
+    ];
+    let targets = registered
+        .symbols()
+        .scope_bindings()
+        .filter(|(module, path, _)| {
+            *module == &CanonicalModulePath::crate_root() && expected_paths.contains(path)
+        })
+        .map(|(_, _, target)| target.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(targets.len(), 3);
+    assert!(matches!(
+        targets.first(),
+        Some(ProjectSymbolTargetId::External(_))
+    ));
+    assert!(targets.windows(2).all(|pair| pair[0] == pair[1]));
+
+    let callable_path = |path: &arcweft_lang_syntax::ast::symbol_path::ProjectSymbolPath| {
+        ProjectCallablePath::new(
+            registered.symbols().world().package().clone(),
+            CanonicalModulePath::crate_root(),
+            CallablePath::try_new(
+                path.segments()
+                    .iter()
+                    .map(|segment| CallableName::try_new(segment.as_str()).unwrap()),
+            )
+            .unwrap(),
+        )
+    };
+    for path in &expected_paths {
+        assert!(matches!(
+            registered
+                .environment()
+                .callable_catalog()
+                .project()
+                .binding(&callable_path(path)),
+            Some(ProjectNameBinding::NonCallable {
+                ty: TypeKind::Ref(entity),
+                ..
+            }) if entity.kind() == &EntityKind::Character
+        ));
+    }
+}
+
+#[test]
+fn character_external_segments_do_not_require_module_identifier_grammar() {
+    let (root, project, world) = root_project("external-character-segments");
+    let manifest = sample_manifest_for("character.hero-pack.2d", "layers/hero-pack.png");
+    let facts = one_character_facts(&root, world, &manifest);
+    let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("external character segments register");
+    let paths = registered
+        .symbols()
+        .scope_bindings()
+        .filter(|(_, _, target)| matches!(target, ProjectSymbolTargetId::External(_)))
+        .map(|(_, path, _)| {
+            path.segments()
+                .iter()
+                .map(|segment| segment.as_str().to_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        paths,
+        [
+            vec![
+                "character".to_owned(),
+                "hero-pack".to_owned(),
+                "2d".to_owned()
+            ],
+            vec!["hero-pack".to_owned(), "2d".to_owned()],
+        ]
+    );
+}
+
+#[test]
+fn accepted_world_catalogues_qualified_adapter_non_callable_path() {
+    let (registered, environment) =
+        registered_character_and_environment("typed-adapter-binding-path");
+    let path = ProjectCallablePath::new(
+        registered.symbols().world().package().clone(),
+        CanonicalModulePath::crate_root(),
+        CallablePath::try_new([
+            CallableName::try_new("adapter").unwrap(),
+            CallableName::try_new("viewport").unwrap(),
+        ])
+        .unwrap(),
+    );
+    assert!(matches!(
+        registered
+            .environment()
+            .callable_catalog()
+            .project()
+            .binding(&path),
+        Some(ProjectNameBinding::NonCallable {
+            ty: TypeKind::I32,
+            ..
+        })
+    ));
+    let declaration = registered
+        .symbols()
+        .scope_bindings()
+        .find_map(|(_, binding, target)| {
+            (binding == &project_path(["adapter", "viewport"]))
+                .then_some(target)
+                .and_then(|target| match target {
+                    ProjectSymbolTargetId::External(declaration) => Some(*declaration),
+                    ProjectSymbolTargetId::Callable(_) | ProjectSymbolTargetId::Module(_) => None,
+                })
+        })
+        .expect("qualified adapter external target");
+    assert_eq!(
+        registered.environment().external_owner(
+            registered.symbols(),
+            declaration,
+            RegisteredExternalOwnerKind::Environment,
+        ),
+        Ok(&RegisteredExternalOwner::Environment(environment))
+    );
 }
 
 #[test]
@@ -756,7 +924,10 @@ fn inventory_descriptor_excludes_aliases_base_and_world() {
     let owner = manifest.character().clone();
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str(), "hero"],
+        &character_binding_paths(&owner)
+            .into_iter()
+            .chain([project_path(["hero"])])
+            .collect::<Vec<_>>(),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration_span(&backed),
     );
@@ -797,7 +968,7 @@ fn inventory_descriptor_observes_character_owner_path() {
     let owner = manifest.character().clone();
     let changed_fact = external_fact(
         "cast.akane",
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration_span(&backed),
     );
@@ -1096,7 +1267,7 @@ fn environment_external_owner_lookup() {
     let id = EnvironmentBindingId::try_new("adapter.viewport").expect("environment id");
     let fact = external_fact(
         id.as_str(),
-        &[id.as_str()],
+        &[project_path(["adapter", "viewport"])],
         RegisteredExternalOwner::Environment(id.clone()),
         declaration,
     );
@@ -1160,7 +1331,7 @@ fn environment_owner_uses_exact_base_symbol_key() {
     let id = EnvironmentBindingId::try_new("adapter.viewport").expect("environment id");
     let fact = external_fact(
         id.as_str(),
-        &[id.as_str()],
+        &[project_path(["adapter", "viewport"])],
         RegisteredExternalOwner::Environment(id.clone()),
         declaration,
     );
@@ -1196,7 +1367,7 @@ fn unknown_owner_is_atomic() {
     let owner = CharacterId::try_new("character.missing").expect("owner");
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration,
     );
@@ -1386,7 +1557,7 @@ fn external_exact_duplicate_is_atomic() {
     let owner = manifest.character().clone();
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration,
     );
@@ -1430,7 +1601,7 @@ fn equal_cross_catalog_occurrences_coalesce() {
     let owner = manifest.character().clone();
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration_span(&first),
     );
@@ -1479,7 +1650,7 @@ fn reordered_equal_manifest_coalesces() {
     let owner = first_manifest.character().clone();
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration_span(&first),
     );
@@ -1569,7 +1740,7 @@ fn equal_cross_catalog_occurrences_retain_all_conflict_provenance() {
     let owner = equal_manifest.character().clone();
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration_span(&first),
     );
@@ -1763,7 +1934,7 @@ fn unequal_cross_catalog_occurrences_conflict_atomically() {
     let owner = first_manifest.character().clone();
     let fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration_span(&first),
     );
@@ -1802,7 +1973,7 @@ fn external_conflict_is_atomic() {
     let owner = manifest.character().clone();
     let character_fact = external_fact(
         owner.as_str(),
-        &[owner.as_str(), owner.compact_str()],
+        &character_binding_paths(&owner),
         RegisteredExternalOwner::Character(owner.clone()),
         declaration.clone(),
     );
@@ -2051,7 +2222,7 @@ fn character_alias_two_owners_fails() {
         let owner = manifest.character().clone();
         external_fact(
             owner.as_str(),
-            &[owner.as_str(), owner.compact_str()],
+            &character_binding_paths(&owner),
             RegisteredExternalOwner::Character(owner.clone()),
             declaration_span(backed),
         )
@@ -2118,14 +2289,14 @@ fn canonical_spelling_collision_fails() {
     let character = manifest.character().clone();
     let character_fact = external_fact(
         character.as_str(),
-        &[character.as_str(), character.compact_str()],
+        &character_binding_paths(&character),
         RegisteredExternalOwner::Character(character.clone()),
         declaration_span(&backed),
     );
     let environment = EnvironmentBindingId::try_new("adapter.viewport").expect("environment id");
     let environment_fact = external_fact(
         environment.as_str(),
-        &["character.akane"],
+        &[project_path(["character", "akane"])],
         RegisteredExternalOwner::Environment(environment.clone()),
         declaration_span(&backed),
     );

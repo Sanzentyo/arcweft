@@ -376,7 +376,7 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
 pub fn adapter_manifest_completions(context: &ArcweftLspContext<'_>) -> Vec<CompletionItem> {
     let adapter = context.adapter();
     let symbols = adapter.symbols().iter().map(|symbol| CompletionItem {
-        label: symbol.name().to_owned(),
+        label: symbol.path().to_string(),
         kind: Some(CompletionItemKind::VARIABLE),
         detail: Some(type_kind_label(symbol.ty())),
         documentation: None,
@@ -480,11 +480,11 @@ pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Op
     if let Some(symbol) = adapter
         .symbols()
         .iter()
-        .find(|symbol| symbol.name() == name)
+        .find(|symbol| symbol.path().to_string() == name)
     {
         return Some(string_hover(format!(
             "{}: {}",
-            symbol.name(),
+            symbol.path(),
             type_kind_label(symbol.ty())
         )));
     }
@@ -1115,8 +1115,8 @@ mod tests {
     use arcweft_adapter_context::manifest::{
         AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
         AdapterCallableParameterIndex, AdapterFunctionParam, AdapterHostCall, AdapterManifest,
-        AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence,
-        AdapterToolingDoc,
+        AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol,
+        AdapterSymbolPath, AdapterSymbolSegment, AdapterToolingDoc,
     };
     use arcweft_rust_abi::{
         ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
@@ -1628,7 +1628,10 @@ mod tests {
     #[test]
     fn exposes_adapter_manifest_completions_and_hover() {
         let adapter = AdapterManifest::new("custom", "Custom")
-            .with_symbol("custom", AdapterTypeKind::Named("CustomApi".to_owned()))
+            .with_symbol(AdapterSymbol::new(
+                adapter_symbol_path(["custom"]),
+                AdapterTypeKind::Named("CustomApi".to_owned()),
+            ))
             .with_method_signature(
                 AdapterTypeKind::Named("CustomApi".to_owned()),
                 adapter_name("read"),
@@ -1859,6 +1862,13 @@ mod tests {
     fn adapter_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
         AdapterCallablePath::try_new(segments.into_iter().map(adapter_name))
             .expect("test callable path is non-empty")
+    }
+
+    fn adapter_symbol_path<const N: usize>(segments: [&str; N]) -> AdapterSymbolPath {
+        AdapterSymbolPath::try_new(segments.map(|segment| {
+            AdapterSymbolSegment::try_new(segment).expect("valid test adapter symbol segment")
+        }))
+        .expect("test adapter symbol path is non-empty")
     }
 
     fn adapter_overload(value: usize) -> AdapterCallableOverloadIndex {

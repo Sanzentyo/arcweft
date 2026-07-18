@@ -8,7 +8,7 @@ use arcweft_lang_sema::registration::{
 use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModulePathRoot},
-    symbol_path::SymbolPath,
+    symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
 };
 use arcweft_lang_syntax::{lint::SyntaxLintCode, parser::recovery::ParseErrorKind};
 use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
@@ -328,19 +328,22 @@ fn pending_stores_discard_on_registration_error() {
     .expect("project");
     let declaration = document.span(SourceRange::new(0, 2)).expect("span");
     let owner = EnvironmentBindingId::try_new("environment.missing").expect("environment id");
-    let direct_bindings = [owner.as_str()]
-        .into_iter()
-        .map(|name| {
-            ProjectDirectBinding::try_new(
-                CanonicalModulePath::crate_root(),
-                name,
-                Some(Visibility::Public),
-                declaration.clone(),
-                false,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .expect("direct bindings");
+    let path = ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        ["environment", "missing"]
+            .map(|segment| ProjectSymbolSegment::try_new(segment).expect("valid fixture segment")),
+    )
+    .expect("qualified fixture binding path");
+    let direct_bindings = vec![
+        ProjectDirectBinding::try_new(
+            CanonicalModulePath::crate_root(),
+            path,
+            Some(Visibility::Public),
+            declaration.clone(),
+            false,
+        )
+        .expect("direct binding"),
+    ];
     let seed = ExternalDeclarationSeed::try_new(
         SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), owner.as_str())
             .expect("symbol path"),

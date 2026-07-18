@@ -10,3 +10,4 @@ pub mod manifest;
 #[cfg(feature = "sema")]
 pub mod publication;
 pub mod standard;
+pub mod symbol;

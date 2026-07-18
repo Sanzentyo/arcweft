@@ -17,7 +17,7 @@ use arcweft_lang_hir::symbol::{
 };
 use arcweft_lang_syntax::ast::{
     module_path::{CanonicalModulePath, ModulePathRoot},
-    symbol_path::SymbolPath,
+    symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
 };
 use arcweft_source::{SourceRange, SourceSpan};
 
@@ -590,9 +590,9 @@ fn audit_character_spellings(
             let spelling = SymbolPath::try_new(
                 ModulePathRoot::Crate,
                 collision.module().segments().to_vec(),
-                collision.spelling(),
+                collision.path().to_string(),
             )
-            .expect("linked scope spellings are validated symbol leaves");
+            .expect("formatting a typed binding path produces a valid diagnostic leaf");
             let primary = collision
                 .expected_sites()
                 .first()
@@ -615,13 +615,27 @@ fn audit_character_spellings(
                 secondary,
             ));
         }
-        let compact = character
-            .as_str()
-            .strip_prefix("character.")
-            .unwrap_or_else(|| character.as_str());
-        for spelling in [character.as_str(), compact] {
-            let path = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), spelling)
-                .expect("validated character spellings are valid symbol leaves");
+        let compact_segments = character
+            .compact_segments()
+            .map(|segment| {
+                ProjectSymbolSegment::try_new(segment)
+                    .expect("character compact segments are valid project symbol segments")
+            })
+            .collect::<Vec<_>>();
+        let qualified = ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            std::iter::once(
+                ProjectSymbolSegment::try_new("character")
+                    .expect("character namespace is a valid project symbol segment"),
+            )
+            .chain(compact_segments.iter().cloned()),
+        )
+        .expect("character qualified paths have a valid implicit root");
+        let compact = ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, compact_segments)
+            .expect("character compact paths have a valid implicit root");
+        for binding_path in [&qualified, &compact] {
+            let path = SymbolPath::try_from(binding_path)
+                .expect("typed character binding paths are valid resolution references");
             match symbols.resolve(&root, &path, record.primary_source()) {
                 Ok(ResolvedProjectSymbol::External(symbol))
                     if symbol.declaration() == *declaration => {}

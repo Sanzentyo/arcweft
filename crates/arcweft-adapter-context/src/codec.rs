@@ -5,7 +5,8 @@ use crate::manifest::{
     AdapterCallableOverloadIndex, AdapterCallableParameterIndex, AdapterCallablePath,
     AdapterEffectCapability, AdapterFreeCallableKind, AdapterFunctionParam,
     AdapterFunctionSignature, AdapterHostCall, AdapterManifest, AdapterParameterGroup,
-    AdapterParameterPassing, AdapterParameterPresence, AdapterToolingDoc, AdapterToolingSubject,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol, AdapterSymbolPath,
+    AdapterSymbolPathError, AdapterSymbolSegment, AdapterToolingDoc, AdapterToolingSubject,
     AdapterTypeKind,
 };
 use serde::{Deserialize, Serialize};
@@ -98,6 +99,8 @@ pub enum AdapterManifestCodecError {
     UnsupportedSchema { found: u32, expected: u32 },
     #[error(transparent)]
     Model(#[from] AdapterCallableModelError),
+    #[error(transparent)]
+    SymbolPath(#[from] AdapterSymbolPathError),
 }
 
 impl AdapterManifestFile {
@@ -124,7 +127,10 @@ impl AdapterManifestFile {
     pub fn into_manifest(self) -> Result<AdapterManifest, AdapterManifestCodecError> {
         let mut manifest = AdapterManifest::new(self.id, self.display_name);
         for symbol in self.symbols {
-            manifest = manifest.with_symbol(symbol.name, parse_adapter_type_kind_label(&symbol.ty));
+            manifest = manifest.with_symbol(AdapterSymbol::new(
+                symbol_path_from_file(&symbol.name)?,
+                parse_adapter_type_kind_label(&symbol.ty),
+            ));
         }
         for method in self.methods {
             let signature = signature_from_file(&method.return_type, method.params)?;
@@ -215,6 +221,17 @@ fn callable_path_from_file(path: &str) -> Result<AdapterCallablePath, AdapterCal
     )
 }
 
+fn symbol_path_from_file(path: &str) -> Result<AdapterSymbolPath, AdapterSymbolPathError> {
+    if path.is_empty() {
+        return AdapterSymbolPath::try_new([]);
+    }
+    AdapterSymbolPath::try_new(
+        path.split('.')
+            .map(|segment| AdapterSymbolSegment::try_new(segment.to_owned()))
+            .collect::<Result<Vec<_>, _>>()?,
+    )
+}
+
 fn effect_capabilities(
     effects: impl IntoIterator<Item = String>,
 ) -> impl Iterator<Item = AdapterEffectCapability> {
@@ -265,7 +282,7 @@ display_name = "Custom File"
 effects = ["custom.read"]
 
 [[symbols]]
-name = "custom"
+name = "adapter.viewport"
 ty = "CustomApi"
 
 [[methods]]
@@ -296,6 +313,15 @@ docs = "Read custom content."
 
         assert_eq!(manifest.id().as_str(), "custom-file");
         assert_eq!(manifest.symbols().len(), 1);
+        assert_eq!(
+            manifest.symbols()[0]
+                .path()
+                .segments()
+                .iter()
+                .map(AdapterSymbolSegment::as_str)
+                .collect::<Vec<_>>(),
+            ["adapter", "viewport"]
+        );
         assert_eq!(manifest.methods().len(), 1);
         assert_eq!(manifest.functions().len(), 1);
         assert_eq!(manifest.effects()[0].as_str(), "custom.read");
@@ -373,6 +399,63 @@ display_name = "Custom File"
                 found: 2,
                 expected: ADAPTER_MANIFEST_SCHEMA_VERSION
             }
+        ));
+    }
+
+    #[test]
+    fn rejects_malformed_adapter_symbol_source_paths_with_typed_errors() {
+        let invalid = [
+            ("", AdapterSymbolPathError::Empty),
+            ("adapter..viewport", AdapterSymbolPathError::EmptySegment),
+            (
+                "adapter/view",
+                AdapterSymbolPathError::InvalidSegment {
+                    segment: "adapter/view".to_owned(),
+                },
+            ),
+            (
+                "adapter:viewport",
+                AdapterSymbolPathError::InvalidSegment {
+                    segment: "adapter:viewport".to_owned(),
+                },
+            ),
+            (
+                "2d.viewport",
+                AdapterSymbolPathError::InvalidImplicitRoot {
+                    segment: "2d".to_owned(),
+                },
+            ),
+        ];
+
+        for (name, expected) in invalid {
+            let source = format!(
+                "schema_version = 1\nid = \"fixture\"\ndisplay_name = \"Fixture\"\n\
+                 [[symbols]]\nname = {name:?}\nty = \"i32\"\n"
+            );
+            let error = AdapterManifestFile::from_toml(&source)
+                .expect("file shape parses")
+                .into_manifest()
+                .expect_err("malformed symbol path is rejected");
+            assert!(matches!(
+                error,
+                AdapterManifestCodecError::SymbolPath(reason) if reason == expected
+            ));
+        }
+
+        let control = AdapterManifestFile::from_json(
+            r#"{
+  "schema_version": 1,
+  "id": "fixture",
+  "display_name": "Fixture",
+  "symbols": [{ "name": "adapter.\u0007", "ty": "i32" }]
+}"#,
+        )
+        .expect("JSON file shape parses")
+        .into_manifest()
+        .expect_err("control segment is rejected");
+        assert!(matches!(
+            control,
+            AdapterManifestCodecError::SymbolPath(AdapterSymbolPathError::InvalidSegment { .. })
         ));
     }
 

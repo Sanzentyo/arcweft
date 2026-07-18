@@ -136,6 +136,76 @@ adapter = "sans-io"
 }
 
 #[test]
+fn malformed_adapter_symbol_path_preserves_the_real_accepted_profile_state() {
+    let project = TestProject::new("lsp-profile-malformed-adapter-path");
+    project.write(
+        "arcw.toml",
+        r#"
+[package]
+name = "lsp-profile-malformed-adapter-path"
+
+[profiles.dev]
+kind = "server"
+entry = "entry.server.main"
+source = "src/main.arcw"
+adapter = "custom-symbols"
+adapter_manifests = ["adapters/custom-symbols.toml"]
+"#,
+    );
+    project.write("src/main.arcw", "fn main() -> Unit { () }\n");
+    project.write(
+        "adapters/custom-symbols.toml",
+        r#"
+schema_version = 1
+id = "custom-symbols"
+display_name = "Custom Symbols"
+
+[[symbols]]
+name = "adapter.viewport"
+ty = "I32"
+"#,
+    );
+    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let state = Arc::new(LspProfileState::new());
+    let first = resolver
+        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+    assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
+    let accepted = state.current().expect("first accepted environment");
+    accepted.insert_cache_for_test("analysis", "accepted");
+    let generation = accepted.generation();
+    let cache = accepted.cache_snapshot_for_test();
+
+    project.write(
+        "adapters/custom-symbols.toml",
+        r#"
+schema_version = 1
+id = "custom-symbols"
+display_name = "Custom Symbols"
+
+[[symbols]]
+name = "adapter..viewport"
+ty = "I32"
+"#,
+    );
+    let failed = resolver
+        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+
+    assert!(
+        failed
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::AdapterManifestParse),
+        "{:?}",
+        failed.diagnostics()
+    );
+    let retained = state.current().expect("accepted environment is retained");
+    assert!(Arc::ptr_eq(&retained, &accepted));
+    assert!(Arc::ptr_eq(retained.world(), accepted.world()));
+    assert_eq!(retained.generation(), generation);
+    assert_eq!(retained.cache_snapshot_for_test(), cache);
+}
+
+#[test]
 fn missing_manifest_is_reported_without_absolute_path() {
     let project = TestProject::new("lsp-profile-missing");
     project.write("src/main.arcw", "flow @.main main {}\n");

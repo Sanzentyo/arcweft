@@ -1,5 +1,11 @@
-use arcweft_lang_hir::symbol::{ExternalDeclarationSeed, ExternalDeclarationSeedError};
-use arcweft_lang_syntax::ast::{module_path::ModulePathRoot, symbol_path::SymbolPath};
+use arcweft_lang_hir::symbol::{
+    ExternalDeclarationSeed, ExternalDeclarationSeedError, ProjectDirectBinding,
+};
+use arcweft_lang_syntax::ast::{
+    common::Visibility,
+    module_path::{CanonicalModulePath, ModulePathRoot},
+    symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 fn declaration_span() -> arcweft_source::SourceSpan {
@@ -33,6 +39,29 @@ fn external_declarations_reject_missing_direct_binding() {
             declaration,
         })
     );
+}
+
+#[test]
+fn public_direct_binding_api_owns_the_exact_typed_path() {
+    let path = ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        [
+            ProjectSymbolSegment::try_new("character").expect("qualified segment"),
+            ProjectSymbolSegment::try_new("hero-pack").expect("external segment"),
+        ],
+    )
+    .expect("typed project path");
+    let binding = ProjectDirectBinding::try_new(
+        CanonicalModulePath::crate_root(),
+        path.clone(),
+        Some(Visibility::Public),
+        declaration_span(),
+        true,
+    )
+    .expect("public typed direct binding");
+
+    assert_eq!(binding.path(), &path);
+    assert!(binding.authored_alias());
 }
 
 #[test]

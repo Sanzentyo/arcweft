@@ -1,10 +1,23 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arcweft_character::id::CharacterId;
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+use arcweft_lang_hir::{
+    lower::lower_document_to_hir,
+    project::{HirProject, HirProjectModule},
+    symbol::{
+        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+        ExternalDeclarationSeed, ProjectDirectBinding, ProjectExternalDeclarations,
+        ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+    },
 };
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::{
+    ast::{
+        common::Visibility,
+        module_path::{CanonicalModulePath, ModulePathRoot},
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
+    },
+    parser::parse_source,
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use crate::{
@@ -16,11 +29,11 @@ use super::limits::{CatalogBuildWork, ResolverWork};
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallPoison,
     CallableArgumentIndex, CallableArgumentPolicy, CallableArgumentSlotIndex,
-    CallableAuthorityRank, CallableBuildLimitError, CallableCandidateId, CallableCatalogError,
-    CallableDiagnosticCode, CallableDocumentation, CallableEffectSchema, CallableGroupIndex,
-    CallableGroupKind, CallableIdentityError, CallableIndexKind, CallableInstantiation,
-    CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
-    CallableParameterCoordinate, CallableParameterGroup, CallableParameterIndex,
+    CallableAuthorityRank, CallableBuildLimitError, CallableCandidateId, CallableCatalogBuildError,
+    CallableCatalogError, CallableDiagnosticCode, CallableDocumentation, CallableEffectSchema,
+    CallableGroupIndex, CallableGroupKind, CallableIdentityError, CallableIndexKind,
+    CallableInstantiation, CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex,
+    CallableParameter, CallableParameterCoordinate, CallableParameterGroup, CallableParameterIndex,
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
     CallableParameterType, CallablePath, CallablePathError, CallableQueryLimitError,
     CallableScalarError, CallableScalarKind, CallableSchemaError, CallableSignatureSchema,
@@ -29,12 +42,13 @@ use super::{
     EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, FloatWidth, FunctionValueOrdinal,
     FunctionValueSignatureId, FxCallableSignatureId, FxResolution, LanguageCallableFamily,
     LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates,
-    PresentationCallableId, ProjectCallablePath, ReceiverMethodKey, ReductionConstructorKind,
-    ResolveCallError, ResolvedCallable, ResolvedCharacterOwner, ResolvedFunctionValue,
-    RustItemPath, SemanticParameter, SemanticParameterGroup, SemanticSignature,
-    SemanticSignatureError, SemanticSignatureHelp, SemanticSignatureIndex, SignatureOrigin,
-    SignatureWorkReport, SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId,
-    StdFloatOperation, TraitImplementationIndex, UnknownNamedArgumentPolicy,
+    PresentationCallableId, ProjectCallablePath, ProjectNameBinding, ReceiverMethodKey,
+    ReductionConstructorKind, RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable,
+    ResolvedCharacterOwner, ResolvedFunctionValue, RustItemPath, SemanticParameter,
+    SemanticParameterGroup, SemanticSignature, SemanticSignatureError, SemanticSignatureHelp,
+    SemanticSignatureIndex, SignatureOrigin, SignatureWorkReport, SpreadArgumentPolicy,
+    StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitImplementationIndex,
+    UnknownNamedArgumentPolicy,
 };
 
 fn name(value: &str) -> CallableName {
@@ -56,6 +70,87 @@ fn group(value: usize) -> CallableGroupIndex {
 
 fn limits(groups: usize, parameters: usize, work: u64) -> CallableLimits {
     CallableLimits::for_test(32, groups, parameters, 32, 256, 256, 128, work, work)
+}
+
+fn project_binding_limits(max_path_segments: usize, work: u64) -> CallableLimits {
+    CallableLimits::for_test(max_path_segments, 16, 128, 32, 256, 256, 128, work, work)
+}
+
+fn project_binding_path(segments: impl IntoIterator<Item = String>) -> ProjectSymbolPath {
+    ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        segments
+            .into_iter()
+            .map(|segment| ProjectSymbolSegment::try_new(segment).expect("valid project segment")),
+    )
+    .expect("test project binding path is non-empty")
+}
+
+fn external_binding_project(
+    bindings: impl IntoIterator<Item = (String, ProjectSymbolPath)>,
+) -> (HirProject, ProjectSymbolTable) {
+    let source = " ";
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://callable-catalog-tests/src/main.arcw")
+                .expect("document id"),
+            SourceName::path("src/main.arcw"),
+            source,
+        )
+        .expect("source document"),
+    );
+    let parsed = parse_source(source);
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered empty HIR");
+    let project = HirProject::new(
+        "callable-catalog-tests",
+        [HirProjectModule::try_new(
+            CanonicalModulePath::crate_root(),
+            document.identity().clone(),
+            hir,
+        )
+        .expect("root module")],
+    )
+    .expect("HIR project");
+    let declaration = document
+        .span(SourceRange::new(0, source.len()))
+        .expect("declaration span");
+    let seeds = bindings
+        .into_iter()
+        .map(|(canonical, path)| {
+            let binding = ProjectDirectBinding::try_new(
+                CanonicalModulePath::crate_root(),
+                path,
+                Some(Visibility::Public),
+                declaration.clone(),
+                false,
+            )
+            .expect("typed direct binding");
+            ExternalDeclarationSeed::try_new(
+                SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), canonical)
+                    .expect("opaque canonical path"),
+                Some(Visibility::Public),
+                declaration.clone(),
+                vec![binding],
+            )
+            .expect("external declaration seed")
+        })
+        .collect::<Vec<_>>();
+    let package = CallablePackageId::try_new("callable-catalog-tests").expect("package");
+    let world = ProjectSymbolWorldId::try_new(
+        package,
+        document.identity().id().clone(),
+        "typed-project-bindings",
+    )
+    .expect("world");
+    let revision =
+        ProjectSymbolRevision::try_for_documents([document.identity()]).expect("project revision");
+    let externals = ProjectExternalDeclarations::try_new(world, revision, seeds)
+        .expect("external declarations");
+    let symbols = ProjectSymbolTable::link(&project, &externals)
+        .expect("typed project bindings link")
+        .into_table();
+    (project, symbols)
 }
 
 struct ResolvedFixture {
@@ -442,6 +537,171 @@ fn callable_path_exact_limit_and_one_over() {
             limit: 3,
         })
     );
+}
+
+#[test]
+fn typed_project_binding_path_limit_is_fail_closed() {
+    let binding = project_binding_path((0..3).map(|index| format!("segment-{index}")));
+    let (project, symbols) = external_binding_project([("adapter.long".to_owned(), binding)]);
+    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(2, 100));
+
+    assert_eq!(
+        builder.add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32)),
+        Err(CallableCatalogBuildError::Limit(
+            CallableBuildLimitError::PathSegments {
+                actual: 3,
+                limit: 2,
+            }
+        ))
+    );
+}
+
+#[test]
+fn typed_project_binding_work_charges_one_row_plus_each_segment() {
+    let fixture = || {
+        external_binding_project([(
+            "adapter.viewport".to_owned(),
+            project_binding_path(["adapter".to_owned(), "viewport".to_owned()]),
+        )])
+    };
+    let (project, symbols) = fixture();
+    let mut exact = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 3));
+    exact
+        .add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32))
+        .expect("one row plus two segments consumes exactly three units");
+
+    let (project, symbols) = fixture();
+    let mut one_under = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 2));
+    assert_eq!(
+        one_under.add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32)),
+        Err(CallableCatalogBuildError::Limit(
+            CallableBuildLimitError::Work {
+                requested: 2,
+                consumed: 1,
+                limit: 2,
+            }
+        ))
+    );
+}
+
+#[test]
+fn typed_project_binding_without_registered_type_is_fail_closed() {
+    let (project, symbols) = external_binding_project([(
+        "adapter.viewport".to_owned(),
+        project_binding_path(["adapter".to_owned(), "viewport".to_owned()]),
+    )]);
+    let expected = symbols
+        .scope_bindings()
+        .next()
+        .expect("external scope binding")
+        .2
+        .clone();
+    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
+
+    assert_eq!(
+        builder.add_project_bindings(&project, &symbols, |_| None),
+        Err(CallableCatalogBuildError::MissingProjectBindingType { target: expected })
+    );
+}
+
+#[test]
+fn typed_project_binding_collision_rejects_the_complete_catalog() {
+    let shared = project_binding_path(["shared".to_owned()]);
+    let (project, symbols) = external_binding_project([
+        ("adapter.first".to_owned(), shared.clone()),
+        ("adapter.second".to_owned(), shared),
+    ]);
+    let mut types = [TypeKind::I32, TypeKind::I64].into_iter();
+    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
+    builder
+        .add_project_bindings(&project, &symbols, |_| types.next())
+        .expect("typed rows stage before collision validation");
+
+    let error = builder
+        .finish()
+        .expect_err("different targets at one typed path reject the catalog");
+    let CallableCatalogBuildError::ProjectBindingCollision {
+        path,
+        first: ProjectNameBinding::NonCallable { ty: first_type, .. },
+        second: ProjectNameBinding::NonCallable {
+            ty: second_type, ..
+        },
+    } = error
+    else {
+        panic!("unexpected catalog error: {error:?}");
+    };
+    assert_eq!(
+        path.path()
+            .segments()
+            .iter()
+            .map(CallableName::as_str)
+            .collect::<Vec<_>>(),
+        ["shared"]
+    );
+    assert_ne!(first_type, second_type);
+}
+
+#[test]
+fn identical_typed_project_bindings_at_the_same_path_are_accepted() {
+    let shared = project_binding_path(["shared".to_owned()]);
+    let (project, symbols) = external_binding_project([
+        ("adapter.first".to_owned(), shared.clone()),
+        ("adapter.second".to_owned(), shared),
+    ]);
+    let key = ProjectCallablePath::new(
+        project.package().clone(),
+        CanonicalModulePath::crate_root(),
+        path(&["shared"]),
+    );
+    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
+    builder
+        .add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32))
+        .expect("identical typed rows stage successfully");
+
+    let catalog = builder
+        .finish()
+        .expect("identical bindings at one typed path are idempotent");
+    assert!(matches!(
+        catalog.project().binding(&key),
+        Some(ProjectNameBinding::NonCallable {
+            ty: TypeKind::I32,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn reversed_typed_external_facts_produce_identical_project_catalogs() {
+    let viewport = (
+        "adapter.viewport".to_owned(),
+        project_binding_path(["adapter".to_owned(), "viewport".to_owned()]),
+    );
+    let mode = (
+        "adapter.mode".to_owned(),
+        project_binding_path(["adapter".to_owned(), "mode".to_owned()]),
+    );
+    let build = |bindings| {
+        let (project, symbols) = external_binding_project(bindings);
+        let rows = symbols
+            .scope_bindings()
+            .map(|(module, path, target)| (module.clone(), path.clone(), target.clone()))
+            .collect::<Vec<_>>();
+        let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
+        builder
+            .add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32))
+            .expect("typed project bindings");
+        (
+            rows,
+            builder
+                .finish()
+                .expect("complete deterministic callable catalog"),
+        )
+    };
+    let forward = build([viewport.clone(), mode.clone()]);
+    let reverse = build([mode, viewport]);
+
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.0.len(), 2);
 }
 
 #[test]
