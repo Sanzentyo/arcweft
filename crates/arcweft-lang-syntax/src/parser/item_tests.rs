@@ -28,7 +28,7 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
         "struct Point {}\n",
         "type Count = Int\n",
         "res actor: Character {}\n",
-        "entry start {}\n",
+        "entry cli @entry.cli.main { goto @flow.main }\n",
         "extern capability audio {}\n",
         "extern mod native\n",
         "dialogue defaults {}\n",

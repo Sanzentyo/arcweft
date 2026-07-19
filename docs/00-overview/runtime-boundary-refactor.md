@@ -501,10 +501,20 @@ crates/arcweft-cli/src/main.rs
 ### Entry declarations
 
 ```text
-EntryDecl := Visibility? 'entry' EntryKind EntryId? EntryBlock
-EntryKind := 'game' | 'cli' | 'server' | 'activity' | 'test' | 'bench' | Ident
-EntryItem := 'start' EntityRef | 'run' EntityRef | RouteDecl | EntryOption
-RouteDecl := 'route' HttpMethod String '->' EntityRef
+EntryDecl := Visibility? 'entry' EntryKind EntryId EntryBlock
+EntryKind := 'game' | 'editor' | 'cli' | 'server' | 'activity'
+           | 'test' | 'bench' | 'agent' | Ident
+EntryItem := StatefulRole | AgentRole | 'goto' EntityRef
+           | RouteDecl | EntryOption
+StatefulRole := 'state' '=' Type
+              | 'initializer' '=' ProjectSymbolPath
+              | 'event' '=' Type
+              | 'reducer' '=' ProjectSymbolPath
+AgentRole := 'controller' '=' ProjectSymbolPath
+RouteDecl := 'route' HttpMethod String '->' EntityRef RouteArgList?
+RouteArgList := '(' RouteArg (',' RouteArg)* ')'
+RouteArg := Ident '=' ':' Ident
+EntryOption := Ident '=' Expr
 ```
 
 Example:

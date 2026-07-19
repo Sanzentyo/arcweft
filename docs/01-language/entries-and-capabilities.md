@@ -13,8 +13,8 @@ EntryKind := 'game' | 'editor' | 'cli' | 'server' | 'activity'
            | 'test' | 'bench' | 'agent' | Ident
 EntryId   := EntityRef
 EntryBlock := '{' EntryItem* '}'
-EntryItem := StatefulRole | AgentRole | 'start' EntityRef | 'run' EntityRef
-           | 'goto' EntityRef | RouteDecl | EntryOption
+EntryItem := StatefulRole | AgentRole | 'goto' EntityRef
+           | RouteDecl | EntryOption
 StatefulRole := 'state' '=' Type
               | 'initializer' '=' ProjectSymbolPath
               | 'event' '=' Type
@@ -23,6 +23,7 @@ AgentRole := 'controller' '=' ProjectSymbolPath
 RouteDecl := 'route' HttpMethod String '->' EntityRef RouteArgList?
 RouteArgList := '(' RouteArg (',' RouteArg)* ')'
 RouteArg := Ident '=' ':' Ident
+EntryOption := Ident '=' Expr
 HttpMethod := 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
 ```
 

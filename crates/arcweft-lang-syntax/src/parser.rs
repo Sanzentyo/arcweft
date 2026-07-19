@@ -37,6 +37,9 @@ pub mod dialogue;
 #[cfg(test)]
 mod dialogue_expression_tests;
 mod document;
+mod entry_grammar;
+#[cfg(test)]
+mod entry_grammar_tests;
 mod expression;
 mod extern_capability_grammar;
 #[cfg(test)]
