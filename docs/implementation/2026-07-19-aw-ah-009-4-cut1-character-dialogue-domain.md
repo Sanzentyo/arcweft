@@ -189,6 +189,28 @@ boundaries rather than inferred from an effective Cut 1 value:
 These are sequenced implementation boundaries from the package, not
 compatibility promises.
 
+## Follow-up reconciliation contracts
+
+The Cut 1 implementation audit found two result-changing contradictions in the
+package's later source/HIR boundary. They are explicit non-goals of this
+completed domain cut and must be resolved before the source/HIR direct
+replacement begins:
+
+1. [AW-AH-009.4.2 dialogue-content application syntax/HIR ownership production reconciliation](../reviews/requests/2026-07-20-aw-ah-009.4.2-dialogue-content-application-syntax-hir-ownership-production-reconciliation.md)
+   selects the exact colon indentation carrier, generic postfix-bracket
+   CST/AST, proof-HIR expression ownership, ordinary call integration,
+   relative-ID retention, recovery, and direct migration boundary.
+2. [AW-AH-009.4.3 source-site line identity and project diagnostics production reconciliation](../reviews/requests/2026-07-20-aw-ah-009.4.3-source-site-line-identity-project-diagnostics-production-reconciliation.md)
+   consumes the first result and selects typed flow/callable ownership,
+   package-aware line candidate construction, transactional project collision
+   acceptance, text-key derivation, multi-source diagnostics, and accepted
+   project publication.
+
+The requests are intentionally sequential: AW-AH-009.4.3 consumes the exact
+typed application/source owner returned by AW-AH-009.4.2. Neither request may
+redesign the implemented Cut 1 runtime/domain substrate without current
+production evidence of a concrete flaw.
+
 ## Direct tests
 
 The Cut 1 tests cover:
