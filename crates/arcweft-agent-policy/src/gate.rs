@@ -125,7 +125,7 @@ where
                 "svg_requires_trusted_rasterization",
             ));
         }
-        let artifact = TextArtifact::new(ContentId::new(resource.uri.clone()), text);
+        let artifact = TextArtifact::new(ContentId::new(resource.uri.as_str()), text);
         let outcome = self.engine.process_text(&artifact)?;
         let summary = AgentPolicySummary::from_receipt(&outcome.receipt);
         resource.body = match outcome.publication {
@@ -149,7 +149,7 @@ where
         } else {
             "txt"
         };
-        resource.uri = summary.moderated_uri(extension);
+        resource.uri = publication_uri(&resource, &summary, extension);
         Ok(PublishedAgentResource::new(resource, summary))
     }
 
@@ -164,7 +164,7 @@ where
         let mut key_decision = PolicyDecision::allow();
         moderate_json_value(
             &self.engine,
-            &resource.uri,
+            resource.uri.as_str(),
             "$",
             &mut value,
             &mut receipts,
@@ -189,7 +189,7 @@ where
         );
         resource.body = AgentResourceBody::Json(value);
         output_digest.as_str().clone_into(&mut resource.hash);
-        resource.uri = summary.moderated_uri("json");
+        resource.uri = publication_uri(&resource, &summary, "json");
         Ok(PublishedAgentResource::new(resource, summary))
     }
 
@@ -255,7 +255,7 @@ where
                 resource_body_digest(&resource.body)
                     .as_str()
                     .clone_into(&mut resource.hash);
-                resource.uri = summary.moderated_uri(decoded.input_encoding.extension());
+                resource.uri = moderated_resource_uri(&summary, decoded.input_encoding.extension());
             }
             PolicyPublication::Sanitized { value } => {
                 let (output_encoding, bytes) = decoded.input_encoding.encode_sanitized(&value)?;
@@ -267,7 +267,7 @@ where
                     .mime_type()
                     .clone_into(&mut resource.mime_type);
                 resource.hash = blake3::hash(&bytes).to_hex().to_string();
-                resource.uri = summary.moderated_uri(output_encoding.extension());
+                resource.uri = moderated_resource_uri(&summary, output_encoding.extension());
                 if let Some(metadata) = resource.image.as_mut() {
                     metadata.width = value.width();
                     metadata.height = value.height();
@@ -289,7 +289,7 @@ where
                 resource_body_digest(&resource.body)
                     .as_str()
                     .clone_into(&mut resource.hash);
-                resource.uri = summary.moderated_uri("json");
+                resource.uri = moderated_resource_uri(&summary, "json");
             }
         }
         if let Some(metadata) = resource.image.as_mut() {
@@ -319,7 +319,7 @@ where
             false,
         );
         output_digest.as_str().clone_into(&mut resource.hash);
-        resource.uri = summary.moderated_uri("json");
+        resource.uri = moderated_resource_uri(&summary, "json");
         PublishedAgentResource::new(resource, summary)
     }
 
@@ -346,9 +346,32 @@ where
             metadata.scrub_for_external_publication(&summary.opaque_token());
         }
         output_digest.as_str().clone_into(&mut resource.hash);
-        resource.uri = summary.moderated_uri("json");
+        resource.uri = moderated_resource_uri(&summary, "json");
         PublishedAgentResource::new(resource, summary)
     }
+}
+
+fn publication_uri(
+    resource: &AgentResource,
+    summary: &AgentPolicySummary,
+    moderated_extension: &str,
+) -> arcweft_agent_protocol::ids::AgentResourceUri {
+    if resource.has_canonical_public_uri()
+        && summary.disposition.can_publish_original()
+        && !summary.sanitized
+    {
+        resource.uri.clone()
+    } else {
+        moderated_resource_uri(summary, moderated_extension)
+    }
+}
+
+fn moderated_resource_uri(
+    summary: &AgentPolicySummary,
+    extension: &str,
+) -> arcweft_agent_protocol::ids::AgentResourceUri {
+    arcweft_agent_protocol::ids::AgentResourceUri::new(summary.moderated_uri(extension))
+        .expect("generated moderated URI is nonempty")
 }
 
 fn moderate_json_value<C>(

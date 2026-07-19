@@ -9,13 +9,13 @@ use super::{
     agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
     agent_action_targets_for_semantics, agent_capture_time_millis,
     agent_dialogue_prepared_text_objects, agent_mcp_project_context_from_hir,
-    agent_object_capture_refs_for_page, agent_object_id_color, agent_observe_capture_time_seconds,
+    agent_object_capture_refs, agent_object_id_color, agent_observe_capture_time_seconds,
     agent_observe_effective_steps, agent_observe_layout_scene_graph,
     agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_scroll_regions,
     agent_observed_views, agent_observed_virtual_lists, agent_overlay_svg,
-    agent_view_prepared_text_objects, dedupe_agent_action_targets, hash_hex,
-    load_and_check_selection, native_host_policy_for_selection, report_path,
-    resolve_source_selection,
+    agent_view_prepared_text_objects, agent_view_prepared_text_root_id,
+    dedupe_agent_action_targets, hash_hex, load_and_check_selection,
+    native_host_policy_for_selection, report_path, resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
@@ -809,7 +809,6 @@ fn player_observed_image_object(
             step,
             &object_id,
             &bbox,
-            0,
             AgentCaptureSourceIdentity::Object {
                 id: object_id.clone(),
                 parent_id: None,
@@ -957,7 +956,7 @@ fn player_semantic_object(
         visible: node.visible(),
         enabled: node.enabled(),
         polygon: bbox.polygon(),
-        capture_refs: agent_object_capture_refs_for_page("cli", step, &id, &bbox, 0),
+        capture_refs: agent_object_capture_refs("cli", step, &id, &bbox),
         bbox,
         object_layer: None,
         object_depth: None,

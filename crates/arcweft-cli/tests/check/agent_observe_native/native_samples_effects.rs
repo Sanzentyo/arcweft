@@ -9,7 +9,10 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
         "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
     );
     assert_eq!(run["entity"], "sen.say");
-    assert_eq!(observed_object_rich_text_frame(run)["line"], "say.windows_fonts.001");
+    assert_eq!(
+        observed_object_rich_text_frame(run)["line"],
+        "say.windows_fonts.001"
+    );
     assert_eq!(run["rich_text_ref"]["range"]["start"], 0);
     assert_eq!(run["rich_text_ref"]["range"]["end"], 105);
     assert!(
@@ -20,16 +23,14 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
         run["bbox"]["width"].as_u64().unwrap() <= 400,
         "sample vertical_rl run should be column-shaped rather than one long horizontal line: {run}"
     );
-    assert!(
-        run["capture_refs"]["captures"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|capture| capture["kind"] == "mask"
-                && capture["uri"]
-                    .as_str()
-                    .is_some_and(|uri| uri.ends_with(".mask.rgba")))
-    );
+    assert!(run["capture_refs"]["captures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|capture| capture["kind"] == "mask"
+            && capture["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with(".mask.rgba"))));
     assert_windows_fonts_sample_vertical_cluster_readback(&source_path, &json);
 }
 
@@ -44,10 +45,12 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         .unwrap()
         .iter()
         .find(|object| {
-            object["role"] == "dialogue_view" && observed_object_rich_text_frame(object)["line"] == "say.full.005"
+            object["role"] == "dialogue_view"
+                && observed_object_rich_text_frame(object)["line"] == "say.full.005"
         })
         .expect("target dialogue_view object is observed");
-    let vertical_rl_display_run = observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
+    let vertical_rl_display_run = observed_object_rich_text_frame(dialogue_view)["display_map"]
+        ["text_runs"]
         .as_array()
         .unwrap()
         .iter()
@@ -61,7 +64,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
     let vertical_rl = find_rich_text_run_object(&json, "吾輩は猫である。ABC 123 2026");
     assert_eq!(vertical_rl["entity"], "bob.say");
-    assert_eq!(observed_object_rich_text_frame(vertical_rl)["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(vertical_rl)["line"],
+        "say.full.005"
+    );
     assert_eq!(vertical_rl["rich_text_ref"]["range"]["start"], 27);
     assert_eq!(vertical_rl["rich_text_ref"]["range"]["end"], 63);
     assert!(
@@ -78,19 +84,20 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
         "glyph_cluster"
     );
     assert_eq!(first_vertical_cluster["rich_text_ref"]["source"], "text");
-    assert_eq!(observed_object_rich_text_frame(first_vertical_cluster)["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(first_vertical_cluster)["line"],
+        "say.full.005"
+    );
     assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
     assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
-    assert!(
-        first_vertical_cluster["capture_refs"]["captures"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|capture| capture["kind"] == "mask"
-                && capture["uri"]
-                    .as_str()
-                    .is_some_and(|uri| uri.ends_with(".mask.rgba")))
-    );
+    assert!(first_vertical_cluster["capture_refs"]["captures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|capture| capture["kind"] == "mask"
+            && capture["uri"]
+                .as_str()
+                .is_some_and(|uri| uri.ends_with(".mask.rgba"))));
     let first_vertical_cluster_mask_uri =
         rich_text_object_capture_uri(first_vertical_cluster, "mask", "application/octet-stream");
     assert_agent_read_uri_object_image_has_content(
@@ -114,7 +121,10 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
 
     let vertical_lr = find_rich_text_run_object(&json, "縦LR");
-    assert_eq!(observed_object_rich_text_frame(vertical_lr)["line"], "say.full.005");
+    assert_eq!(
+        observed_object_rich_text_frame(vertical_lr)["line"],
+        "say.full.005"
+    );
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["start"], 66);
     assert_eq!(vertical_lr["rich_text_ref"]["range"]["end"], 71);
     assert!(
@@ -250,8 +260,40 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
         find_dialogue_view_object_by_rich_text_line(&json, line);
     }
 
-    let combo_run = find_rich_text_run_object(&json, "重ね掛けtypewriter");
-    assert_eq!(observed_object_rich_text_frame(combo_run)["line"], "say.effects.reveal");
+    let dir = temp_dir("agent-observe-rich-text-effects-animation-combo");
+    assert_effects_animation_combined_typewriter_capture(&source_path, &json, &dir);
+    assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_source_local_effect_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_source_local_effect_post_process_run_is_tinted(
+        &source_path,
+        &json,
+        &dir,
+    );
+    assert_effects_animation_source_local_shader_run_is_tinted(&source_path, &json, &dir);
+    assert_effects_animation_source_local_shader_post_process_run_is_tinted(
+        &source_path,
+        &json,
+        &dir,
+    );
+    assert_effects_animation_warm_glow_shader_run_is_tinted(&source_path, &json, &dir);
+    assert_effects_animation_color_sparkle_run_is_tinted(&source_path, &json, &dir);
+    assert_effects_animation_post_process_effect_runs_execute(&source_path, &json, &dir);
+    assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
+    assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
+
+    fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
+}
+
+fn assert_effects_animation_combined_typewriter_capture(
+    source_path: &Path,
+    json: &serde_json::Value,
+    dir: &Path,
+) {
+    let combo_run = find_rich_text_run_object(json, "重ね掛けtypewriter");
+    assert_eq!(
+        observed_object_rich_text_frame(combo_run)["line"],
+        "say.effects.reveal"
+    );
     for effect in ["typewriter", "wave", "shake", "sparkle"] {
         assert_rich_text_run_object_has_effect(combo_run, effect);
     }
@@ -259,14 +301,13 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     let object_id = combo_run["id"]
         .as_str()
         .expect("combined typewriter run object id is reported");
-    let dir = temp_dir("agent-observe-rich-text-effects-animation-combo");
     let hidden_mask_path = dir.join("combo-hidden-mask.rgba");
     let visible_mask_path = dir.join("combo-visible-mask.rgba");
     let early_color_path = dir.join("combo-visible-color-4000.rgba");
     let late_color_path = dir.join("combo-visible-color-4500.rgba");
 
     let (hidden_mask, hidden_mask_bytes) = observe_full_grammar_typewriter_run_mask_at(
-        &source_path,
+        source_path,
         &hidden_mask_path,
         object_id,
         &["--capture-step", "3", "--capture-time", "0"],
@@ -278,7 +319,7 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     assert_eq!(opaque_pixel_count(&hidden_mask_bytes), 0);
 
     let (visible_mask, visible_mask_bytes) = observe_full_grammar_typewriter_run_mask_at(
-        &source_path,
+        source_path,
         &visible_mask_path,
         object_id,
         &["--capture-step", "3", "--capture-time", "4"],
@@ -300,13 +341,13 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     );
 
     let (early_color, early_color_bytes) = observe_full_grammar_run_color_at(
-        &source_path,
+        source_path,
         &early_color_path,
         object_id,
         &["--capture-step", "3", "--capture-time", "4"],
     );
     let (late_color, late_color_bytes) = observe_full_grammar_run_color_at(
-        &source_path,
+        source_path,
         &late_color_path,
         object_id,
         &["--capture-step", "3", "--capture-time", "4.5"],
@@ -320,27 +361,6 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
         &late_color,
         &late_color_bytes,
     );
-
-    assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
-    assert_effects_animation_source_local_effect_run_changes_over_time(&source_path, &json, &dir);
-    assert_effects_animation_source_local_effect_post_process_run_is_tinted(
-        &source_path,
-        &json,
-        &dir,
-    );
-    assert_effects_animation_source_local_shader_run_is_tinted(&source_path, &json, &dir);
-    assert_effects_animation_source_local_shader_post_process_run_is_tinted(
-        &source_path,
-        &json,
-        &dir,
-    );
-    assert_effects_animation_warm_glow_shader_run_is_tinted(&source_path, &json, &dir);
-    assert_effects_animation_color_sparkle_run_is_tinted(&source_path, &json, &dir);
-    assert_effects_animation_post_process_effect_runs_execute(&source_path, &json, &dir);
-    assert_effects_animation_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
-    assert_effects_animation_vertical_spin_pulse_run_changes_over_time(&source_path, &json, &dir);
-
-    fs::remove_dir_all(&dir).expect("remove rich-text effects animation combo temp dir");
 }
 
 #[test]
@@ -1299,6 +1319,7 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
         (
             "windows-fonts",
             workspace_root().join("samples/rich-text-windows-fonts.arcw"),
+            "entry.windows_font_showcase",
             "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
             120,
             500,
@@ -1306,15 +1327,18 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
         (
             "full-grammar",
             workspace_root().join("samples/rich-text-full-grammar.arcw"),
+            "entry.rich_text_full_grammar",
             "吾輩は猫である。ABC 123 2026",
             120,
             260,
         ),
     ];
     let dir = temp_dir("agent-observe-native-sample-full-frame-png");
-    for (label, source_path, run_text, min_height, max_width) in cases {
+    for (label, source_path, entry_source_body, run_text, min_height, max_width) in cases {
         let png_path = dir.join(format!("{label}-full-frame.png"));
-        let json = capture_native_png_report(&source_path, &png_path);
+        let entry = EntryRuntimeId::from_source_entity_body(entry_source_body)
+            .expect("sample full-frame entry ID is valid");
+        let json = capture_native_png_report(&source_path, &entry, &png_path);
         assert_native_capture_has_content(&json, &format!("{label}-full-frame.png"));
         let run = find_rich_text_run_object(&json, run_text);
         assert!(
@@ -1340,6 +1364,8 @@ fn agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop()
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",
         r"
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
@@ -1354,6 +1380,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -1383,10 +1411,7 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["renderer"], "native");
     assert_eq!(json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue");
-    assert_eq!(
-        json["images"][0]["composition"],
-        "masked_framebuffer_crop"
-    );
+    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
     assert_eq!(json["images"][0]["width"], 1166);
     assert_eq!(json["images"][0]["height"], 203);
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
@@ -1967,7 +1992,7 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_png_crop() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer",
         r#"
 character @character.alice Alice as alice {}
@@ -1985,6 +2010,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -2016,19 +2043,11 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
     assert_eq!(json["images"][0]["mime_type"], "image/png");
-    assert!(
-        json["images"][0]["width"].as_u64().unwrap() < 1088,
-        "rich-text layer crop should be narrower than the dialogue_view"
-    );
-    assert!(
-        json["images"][0]["height"].as_u64().unwrap() < 124,
-        "rich-text layer crop should be shorter than the dialogue_view"
-    );
+    assert_eq!(json["images"][0]["width"], 1166);
+    assert_eq!(json["images"][0]["height"], 203);
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
-    assert!(
-        json["images"][0]["crop_origin"]["x"].as_u64().unwrap() >= 96,
-        "rich-text layer crop origin should map to viewport coordinates"
-    );
+    assert_eq!(json["images"][0]["crop_origin"]["x"], 57);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], 460);
     assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(json["images"][0]["written"], "native-rich-text-layer.png");
 
@@ -2038,7 +2057,7 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_handles_clear_in_rich_text_layer_capture() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-clear-layer",
         r"
 character @character.alice Alice as alice {}
@@ -2055,6 +2074,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -2085,14 +2106,12 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
-    assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(
-        json["images"][0]["content_viewport_bbox"]["x"]
-            .as_u64()
-            .unwrap(),
-        json["images"][0]["crop_origin"]["x"].as_u64().unwrap()
-            + json["images"][0]["content_bbox"]["x"].as_u64().unwrap()
+        json["images"][0]["content_pixels"], 0,
+        "the drained current page after a terminal page break has no rendered text pixels"
     );
+    assert!(json["images"][0]["content_bbox"].is_null());
+    assert!(json["images"][0]["content_viewport_bbox"].is_null());
     let dialogue_view = json["objects"]
         .as_array()
         .unwrap()
@@ -2114,7 +2133,7 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_captures_clear_after_page_layer() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-page-layer",
         r"
 character @character.alice Alice as alice {}
@@ -2131,13 +2150,13 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("png")
         .arg("--layer")
         .arg("dialogue.rich_text")
-        .arg("--page")
-        .arg("1")
         .arg("--out")
         .arg(&png_path)
         .arg("--mode")
@@ -2158,48 +2177,49 @@ flow @flow.main main {
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .expect("native page-selected rich-text layer report is JSON");
-    assert_page_selected_native_rich_text_layer_report(&json);
+    assert_current_page_native_rich_text_layer_report(&json);
 
     fs::remove_file(&path).expect("remove temp native rich-text page layer source");
     fs::remove_dir_all(&dir).expect("remove temp native rich-text page layer dir");
 }
 
-fn assert_page_selected_native_rich_text_layer_report(json: &serde_json::Value) {
-    assert_eq!(json["images"][0]["kind"], "color");
-    assert_eq!(json["images"][0]["renderer"], "native");
-    assert_eq!(json["images"][0]["page"], 1);
-    assert_eq!(json["images"][0]["scope"]["kind"], "layer");
-    assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
-    assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
-    let run_object = json["objects"]
-        .as_array()
-        .unwrap()
+fn assert_current_page_native_rich_text_layer_report(json: &serde_json::Value) {
+    let image = &json["images"][0];
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["renderer"], "native");
+    assert!(image["page"].is_null());
+    assert_eq!(image["scope"]["kind"], "layer");
+    assert_eq!(image["scope"]["id"], "dialogue.rich_text");
+    assert_eq!(image["composition"], "masked_framebuffer_crop");
+    assert_eq!(image["content_pixels"], 0);
+    assert_eq!(image["crop_origin"]["x"], 57);
+    assert_eq!(image["crop_origin"]["y"], 460);
+    assert_eq!(image["width"], 1166);
+    assert_eq!(image["height"], 203);
+
+    let objects = json["objects"].as_array().expect("objects are observed");
+    let dialogue_view = objects
         .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.run.1")
-        .expect("page-selected run object is observed");
-    assert_eq!(run_object["rich_text_ref"]["page"], 1);
-    assert_eq!(
-        json["images"][0]["crop_origin"]["x"], run_object["bbox"]["x"],
-        "page-selected layer bbox should use the visible page child x bound"
-    );
-    assert_eq!(
-        json["images"][0]["crop_origin"]["y"], run_object["bbox"]["y"],
-        "page-selected layer bbox should use the visible page child y bound"
-    );
-    assert_eq!(
-        json["images"][0]["width"], run_object["bbox"]["width"],
-        "page-selected layer crop width should match the visible page child"
-    );
-    assert_eq!(
-        json["images"][0]["height"], run_object["bbox"]["height"],
-        "page-selected layer crop height should match the visible page child"
-    );
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    let page_object = objects
+        .iter()
+        .find(|object| object["id"] == "object.dialogue.0.0.page.1")
+        .expect("current rich-text page object is observed");
+    assert_eq!(page_object["role"], "rich_text_page");
+    assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
+    assert_eq!(page_object["rich_text_ref"]["page"], 1);
+    assert_eq!(page_object["text"], "After");
+    assert_eq!(page_object["bbox"], dialogue_view["bbox"]);
+    assert_rich_text_hit_region_matches_bbox(page_object, "text_page", 6, 11);
+    assert!(image["selected_capture"]["mask"]["object_ids"]
+        .as_array()
+        .is_some_and(|ids| ids.iter().any(|id| id == "object.dialogue.0.0.page.1")));
 }
 
 #[test]
 fn agent_observe_native_renderer_captures_clear_after_page_object() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-page-object",
         r"
 character @character.alice Alice as alice {}
@@ -2216,13 +2236,13 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("png")
         .arg("--object")
-        .arg("object.dialogue.0.0.run.1")
-        .arg("--page")
-        .arg("1")
+        .arg("object.dialogue.0.0.page.1")
         .arg("--out")
         .arg(&png_path)
         .arg("--mode")
@@ -2243,148 +2263,77 @@ flow @flow.main main {
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .expect("native page-selected rich-text object report is JSON");
-    let page_capture_uris = assert_page_selected_native_rich_text_object_report(&json);
+    let current_page_capture_uri = assert_current_page_native_rich_text_object_report(&json);
 
-    for (object_id, page_capture_uri) in page_capture_uris {
-        assert_agent_read_uri_page_capture_ref(&path, &page_capture_uri, &object_id);
-    }
+    assert_agent_read_uri_current_page_capture_ref(
+        &path,
+        &current_page_capture_uri,
+        "object.dialogue.0.0.page.1",
+    );
 
     fs::remove_file(&path).expect("remove temp native rich-text page object source");
     fs::remove_dir_all(&dir).expect("remove temp native rich-text page object dir");
 }
 
-fn assert_page_selected_native_rich_text_object_report(
-    json: &serde_json::Value,
-) -> Vec<(String, String)> {
-    assert_eq!(json["images"][0]["kind"], "color");
-    assert_eq!(json["images"][0]["renderer"], "native");
-    assert_eq!(json["images"][0]["page"], 1);
-    assert_eq!(json["images"][0]["scope"]["kind"], "object");
-    assert_eq!(
-        json["images"][0]["scope"]["id"],
-        "object.dialogue.0.0.run.1"
-    );
-    assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop");
-    assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
-    assert!(
-        json["images"][0]["width"].as_u64().unwrap() < 1088,
-        "page-selected run crop should be narrower than the dialogue_view"
-    );
-    assert!(
-        json["objects"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|object| object["id"] == "object.dialogue.0.0.run.1")
-    );
-    let run_object = json["objects"]
-        .as_array()
-        .unwrap()
+fn assert_current_page_native_rich_text_object_report(json: &serde_json::Value) -> String {
+    let image = &json["images"][0];
+    assert_eq!(image["kind"], "color");
+    assert_eq!(image["renderer"], "native");
+    assert!(image["page"].is_null());
+    assert_eq!(image["scope"]["kind"], "object");
+    assert_eq!(image["scope"]["id"], "object.dialogue.0.0.page.1");
+    assert_eq!(image["composition"], "masked_framebuffer_crop");
+    assert_eq!(image["content_pixels"], 0);
+
+    let objects = json["objects"].as_array().expect("objects are observed");
+    let dialogue_view = objects
         .iter()
-        .find(|object| object["id"] == "object.dialogue.0.0.run.1")
-        .expect("page-selected run object is observed");
-    assert_eq!(run_object["rich_text_ref"]["page"], 1);
-    assert_eq!(
-        json["images"][0]["crop_origin"]["x"], run_object["bbox"]["x"],
-        "page-selected child bbox should use the same native x bound as the capture"
-    );
-    assert_eq!(
-        json["images"][0]["crop_origin"]["y"], run_object["bbox"]["y"],
-        "page-selected child bbox should use the same native y bound as the capture"
-    );
-    assert_eq!(
-        json["images"][0]["width"], run_object["bbox"]["width"],
-        "page-selected child bbox width should match the native crop width"
-    );
-    assert_eq!(
-        json["images"][0]["height"], run_object["bbox"]["height"],
-        "page-selected child bbox height should match the native crop height"
-    );
-    let page_capture_uri = run_object["capture_refs"]["captures"]
-        .as_array()
-        .unwrap()
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
+    let page_object = objects
         .iter()
-        .find(|capture| capture["kind"] == "color" && capture["mime_type"] == "image/png")
-        .expect("page-selected run object has a color PNG capture ref");
-    assert_eq!(page_capture_uri["page"], 1);
-    let page_capture_uri = page_capture_uri["uri"]
-        .as_str()
-        .expect("page-selected run object color PNG capture ref has a URI")
-        .to_owned();
-    assert!(
-        page_capture_uri.ends_with("/object.object.dialogue.0.0.run.1.png?page=1"),
-        "page-selected rich-text child capture ref should encode page query: {page_capture_uri}"
-    );
-    let page_object = page_selected_rich_text_object(json, "object.dialogue.0.0.page.1");
+        .find(|object| object["id"] == "object.dialogue.0.0.page.1")
+        .expect("current rich-text page object is observed");
     assert_eq!(page_object["role"], "rich_text_page");
     assert_eq!(page_object["rich_text_ref"]["kind"], "text_page");
     assert_eq!(page_object["rich_text_ref"]["page"], 1);
     assert_eq!(page_object["text"], "After");
+    assert_eq!(page_object["bbox"], dialogue_view["bbox"]);
+    assert_eq!(image["crop_origin"]["x"], page_object["bbox"]["x"]);
+    assert_eq!(image["crop_origin"]["y"], page_object["bbox"]["y"]);
+    assert_eq!(image["width"], page_object["bbox"]["width"]);
+    assert_eq!(image["height"], page_object["bbox"]["height"]);
     assert_rich_text_hit_region_matches_bbox(page_object, "text_page", 6, 11);
-    let page_object_capture_uri =
-        assert_page_selected_object_color_capture_ref(page_object, "object.dialogue.0.0.page.1");
 
-    let line_object = page_selected_rich_text_object(json, "object.dialogue.0.0.line.1");
-    assert_eq!(line_object["role"], "rich_text_line");
-    assert_eq!(line_object["rich_text_ref"]["kind"], "text_line");
-    assert_eq!(line_object["rich_text_ref"]["page"], 1);
-    assert_eq!(line_object["text"], "After");
-    assert_rich_text_hit_region_matches_bbox(line_object, "text_line", 6, 11);
-    let line_object_capture_uri =
-        assert_page_selected_object_color_capture_ref(line_object, "object.dialogue.0.0.line.1");
-
-    vec![
-        ("object.dialogue.0.0.run.1".to_owned(), page_capture_uri),
-        (
-            "object.dialogue.0.0.page.1".to_owned(),
-            page_object_capture_uri,
-        ),
-        (
-            "object.dialogue.0.0.line.1".to_owned(),
-            line_object_capture_uri,
-        ),
-    ]
-}
-
-fn page_selected_rich_text_object<'a>(
-    json: &'a serde_json::Value,
-    object_id: &str,
-) -> &'a serde_json::Value {
-    json["objects"]
+    let capture = page_object["capture_refs"]["captures"]
         .as_array()
-        .unwrap()
-        .iter()
-        .find(|object| object["id"] == object_id)
-        .unwrap_or_else(|| panic!("page-selected object should be observed: {object_id}"))
-}
-
-fn assert_page_selected_object_color_capture_ref(
-    object: &serde_json::Value,
-    object_id: &str,
-) -> String {
-    let capture = object["capture_refs"]["captures"]
-        .as_array()
-        .unwrap()
+        .expect("current page object exposes capture refs")
         .iter()
         .find(|capture| capture["kind"] == "color" && capture["mime_type"] == "image/png")
-        .unwrap_or_else(|| panic!("page-selected object has a color PNG capture ref: {object}"));
-    assert_eq!(capture["page"], 1);
+        .expect("current page object has a color PNG capture ref");
+    assert!(capture["page"].is_null());
     let uri = capture["uri"]
         .as_str()
-        .expect("page-selected object color PNG capture ref has a URI")
+        .expect("current page object color PNG capture ref has a URI")
         .to_owned();
     assert!(
-        uri.ends_with(&format!("/object.{object_id}.png?page=1")),
-        "page-selected object capture ref should encode page query: {uri}"
+        uri.ends_with("/object.object.dialogue.0.0.page.1.png"),
+        "current rich-text page capture ref should use its runtime frame URI: {uri}"
     );
     uri
 }
 
-fn assert_agent_read_uri_page_capture_ref(path: &Path, page_capture_uri: &str, object_id: &str) {
+fn assert_agent_read_uri_current_page_capture_ref(
+    path: &Path,
+    page_capture_uri: &str,
+    object_id: &str,
+) {
     let read_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
         .arg(path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--read-uri")
         .arg(page_capture_uri)
@@ -2395,21 +2344,21 @@ fn assert_agent_read_uri_page_capture_ref(path: &Path, page_capture_uri: &str, o
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe reads page-selected rich-text capture ref");
+        .expect("arcw agent observe reads current rich-text page capture ref");
     assert!(
         read_output.status.success(),
-        "page-selected rich-text capture ref read should succeed, stderr: {}",
+        "current rich-text page capture ref read should succeed, stderr: {}",
         String::from_utf8_lossy(&read_output.stderr)
     );
     let resource: serde_json::Value = serde_json::from_slice(&read_output.stdout)
-        .expect("page-selected rich-text capture ref read is JSON");
+        .expect("current rich-text page capture ref read is JSON");
     assert_eq!(resource["kind"], "image");
     assert_eq!(resource["uri"], page_capture_uri);
     assert_eq!(resource["image"]["renderer"], "native");
-    assert_eq!(resource["image"]["page"], 1);
+    assert!(resource["image"]["page"].is_null());
     assert_eq!(resource["image"]["scope"]["kind"], "object");
     assert_eq!(resource["image"]["scope"]["id"], object_id);
-    assert!(resource["image"]["content_pixels"].as_u64().unwrap() > 0);
+    assert_eq!(resource["image"]["content_pixels"], 0);
 }
 
 fn assert_agent_read_uri_object_image_has_content(
@@ -2523,11 +2472,51 @@ fn raw_bytes_from_agent_image_resource(resource: &serde_json::Value, context: &s
         .unwrap_or_else(|error| panic!("{context} should decode as base64: {error}"))
 }
 
+fn assert_masked_animated_sprite_pixels(bytes: &[u8]) {
+    const WIDTH: usize = 360;
+    const HEIGHT: usize = 180;
+    const VISIBLE_PIXELS: usize = WIDTH * HEIGHT;
+
+    assert_eq!(bytes.len(), WIDTH * HEIGHT * 4);
+    assert_eq!(
+        opaque_pixel_count(bytes),
+        VISIBLE_PIXELS,
+        "the authored image quad covers its complete selected object bounds"
+    );
+    assert_eq!(
+        rgba_pixel_at(bytes, WIDTH, 0, 0),
+        [22, 64, 210, 255],
+        "the masked framebuffer crop starts with the exact background-composited blue pixel"
+    );
+    assert_eq!(
+        rgba_pixel_at(bytes, WIDTH, (WIDTH / 2) - 1, HEIGHT - 1),
+        [22, 64, 210, 255],
+        "the composited blue pixel fills the visible left half"
+    );
+    assert_eq!(
+        rgba_pixel_at(bytes, WIDTH, WIDTH / 2, 0),
+        [35, 169, 166, 255],
+        "the masked framebuffer crop starts its right half with the exact background-composited green pixel"
+    );
+    assert_eq!(
+        rgba_pixel_at(bytes, WIDTH, WIDTH - 1, HEIGHT - 1),
+        [35, 169, 166, 255],
+        "the composited green pixel fills the visible right half"
+    );
+}
+
+fn rgba_pixel_at(bytes: &[u8], width: usize, x: usize, y: usize) -> [u8; 4] {
+    let offset = (y * width + x) * 4;
+    bytes[offset..offset + 4]
+        .try_into()
+        .expect("RGBA pixel is four bytes")
+}
+
 #[test]
 fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let observe =
-        observe_image_animation_sample_flow_at(&source_path, "image_sprite_overlay", "0.15");
+        observe_image_animation_sample_entry_at(&source_path, "entry.image_sprite_overlay", "0.15");
     let image_object = observe["objects"]
         .as_array()
         .expect("image animation sample reports objects")
@@ -2552,13 +2541,13 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
 
     let resource = read_image_animation_sample_resource_at(
         &source_path,
-        "image_sprite_overlay",
+        "entry.image_sprite_overlay",
         "0.15",
         raw_uri,
     );
 
     assert_agent_read_uri_object_image_metadata(&resource, raw_uri, object_id, 360, 180);
-    assert_eq!(resource["image"]["composition"], "framebuffer_crop");
+    assert_eq!(resource["image"]["composition"], "masked_framebuffer_crop");
     assert_eq!(resource["image"]["crop_origin"]["x"], 120);
     assert_eq!(resource["image"]["crop_origin"]["y"], 84);
     assert_eq!(resource["image"]["content_pixels"], 64_800);
@@ -2586,16 +2575,7 @@ fn agent_observe_read_uri_preserves_animated_image_object_frame_metadata() {
 
     let bytes =
         raw_bytes_from_agent_image_resource(&resource, "animated image object read-uri resource");
-    assert_eq!(bytes.len(), 360 * 180 * 4);
-    assert_eq!(
-        &bytes[..4],
-        &[5, 26, 161, 127],
-        "object-local pinned playback should return the active textured-quad pixel"
-    );
-    assert!(
-        bytes.chunks_exact(4).any(|pixel| pixel[3] == 127),
-        "half-opacity animated image resource should preserve frame alpha"
-    );
+    assert_masked_animated_sprite_pixels(&bytes);
 }
 
 #[test]
@@ -2607,7 +2587,7 @@ fn agent_observe_reports_missing_scope_for_released_image_handle_object() {
         .arg("observe")
         .arg(&source_path)
         .arg("--entry")
-        .arg("image_sprite_released")
+        .arg("entry.image_sprite_released")
         .arg("--steps")
         .arg("4")
         .arg("--max-ops")
@@ -2673,8 +2653,8 @@ fn agent_observe_reports_authored_scroll_view_capture_and_release_filtering() {
     let clipped = agent_observe_json_for_path(
         &path,
         &[
-            "--flow",
-            "scroll_agent_live",
+            "--entry",
+            "entry.scroll_agent_parity",
             "--steps",
             "3",
             "--max-ops",
@@ -2698,6 +2678,18 @@ pub action feedback.submit(value: String)
 
 entry cli @entry.scroll_agent_parity {
   goto @flow.scroll_agent_live
+}
+
+entry cli @entry.scroll_agent_released {
+  goto @flow.scroll_agent_released
+}
+
+entry cli @entry.scroll_agent_unmounted {
+  goto @flow.scroll_agent_unmounted
+}
+
+entry cli @entry.scroll_agent_destroyed {
+  goto @flow.scroll_agent_destroyed
 }
 
 pub view ScrollPanel() {
@@ -2754,8 +2746,8 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
     let released_view = agent_observe_json_for_path(
         path,
         &[
-            "--flow",
-            "scroll_agent_released",
+            "--entry",
+            "entry.scroll_agent_released",
             "--steps",
             "4",
             "--max-ops",
@@ -2768,15 +2760,17 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
         ],
         "released authored Scroll view observe",
     );
-    assert!(released_view["objects"].as_array().is_some_and(Vec::is_empty));
+    assert!(released_view["objects"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
     assert!(released_view["views"].as_array().is_some_and(Vec::is_empty));
     assert_agent_missing_scope_diagnostic(&released_view, "view.ScrollPanel", "view");
 
     let released_object = agent_observe_json_for_path(
         path,
         &[
-            "--flow",
-            "scroll_agent_released",
+            "--entry",
+            "entry.scroll_agent_released",
             "--steps",
             "4",
             "--max-ops",
@@ -2794,8 +2788,8 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
     let unmounted_view = agent_observe_json_for_path(
         path,
         &[
-            "--flow",
-            "scroll_agent_unmounted",
+            "--entry",
+            "entry.scroll_agent_unmounted",
             "--steps",
             "4",
             "--max-ops",
@@ -2808,15 +2802,19 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
         ],
         "unmounted authored Scroll view observe",
     );
-    assert!(unmounted_view["objects"].as_array().is_some_and(Vec::is_empty));
-    assert!(unmounted_view["views"].as_array().is_some_and(Vec::is_empty));
+    assert!(unmounted_view["objects"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    assert!(unmounted_view["views"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
     assert_agent_missing_scope_diagnostic(&unmounted_view, "view.ScrollPanel", "view");
 
     let destroyed_view = agent_observe_json_for_path(
         path,
         &[
-            "--flow",
-            "scroll_agent_destroyed",
+            "--entry",
+            "entry.scroll_agent_destroyed",
             "--steps",
             "4",
             "--max-ops",
@@ -2829,8 +2827,12 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
         ],
         "destroyed authored Scroll view observe",
     );
-    assert!(destroyed_view["objects"].as_array().is_some_and(Vec::is_empty));
-    assert!(destroyed_view["views"].as_array().is_some_and(Vec::is_empty));
+    assert!(destroyed_view["objects"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
+    assert!(destroyed_view["views"]
+        .as_array()
+        .is_some_and(Vec::is_empty));
     assert_agent_missing_scope_diagnostic(&destroyed_view, "view.ScrollPanel", "view");
 }
 
@@ -2872,7 +2874,9 @@ fn assert_authored_scroll_live_observation(live: &serde_json::Value) {
             && object["bbox"]["y"] == 172
     }));
     assert!(
-        objects.iter().all(|object| object["id"] != "button.below_scroll"),
+        objects
+            .iter()
+            .all(|object| object["id"] != "button.below_scroll"),
         "button fully outside the authored Scroll viewport must be absent: {live}"
     );
 }
@@ -2912,8 +2916,8 @@ fn authored_scroll_view(live: &serde_json::Value) -> &serde_json::Value {
 
 fn authored_scroll_live_observe_args() -> [&'static str; 9] {
     [
-        "--flow",
-        "scroll_agent_live",
+        "--entry",
+        "entry.scroll_agent_parity",
         "--steps",
         "3",
         "--max-ops",
@@ -2926,8 +2930,8 @@ fn authored_scroll_live_observe_args() -> [&'static str; 9] {
 
 fn authored_scroll_live_read_uri_args() -> [&'static str; 8] {
     [
-        "--flow",
-        "scroll_agent_live",
+        "--entry",
+        "entry.scroll_agent_parity",
         "--steps",
         "3",
         "--max-ops",
@@ -3006,7 +3010,7 @@ fn assert_agent_missing_scope_diagnostic(
 fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let observe =
-        observe_image_animation_sample_flow_at(&source_path, "image_sprite_overlay", "0.15");
+        observe_image_animation_sample_entry_at(&source_path, "entry.image_sprite_overlay", "0.15");
     let foreground_layer = observe["layers"]
         .as_array()
         .expect("image animation sample reports layers")
@@ -3025,7 +3029,7 @@ fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
 
     let resource = read_image_animation_sample_resource_at(
         &source_path,
-        "image_sprite_overlay",
+        "entry.image_sprite_overlay",
         "0.15",
         raw_uri,
     );
@@ -3035,7 +3039,7 @@ fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
     assert_eq!(resource["image"]["renderer"], "native");
     assert_eq!(resource["image"]["scope"]["kind"], "layer");
     assert_eq!(resource["image"]["scope"]["id"], "layer.foreground");
-    assert_eq!(resource["image"]["composition"], "framebuffer_crop");
+    assert_eq!(resource["image"]["composition"], "masked_framebuffer_crop");
     assert_eq!(resource["image"]["width"], 360);
     assert_eq!(resource["image"]["height"], 180);
     assert_eq!(resource["image"]["crop_origin"]["x"], 120);
@@ -3045,11 +3049,39 @@ fn agent_observe_read_uri_preserves_animated_image_layer_frame_pixels() {
 
     let bytes =
         raw_bytes_from_agent_image_resource(&resource, "animated image layer read-uri resource");
-    assert_eq!(bytes.len(), 360 * 180 * 4);
+    assert_masked_animated_sprite_pixels(&bytes);
+
+    let image_object = observe["objects"]
+        .as_array()
+        .expect("image animation sample reports objects")
+        .iter()
+        .find(|object| {
+            object["content"]["kind"] == "image"
+                && object["content"]["object"] == "image.sample.pulse_sprite"
+        })
+        .expect("bounded animated image object is observed");
+    let object_raw_uri = image_object["capture_refs"]["captures"]
+        .as_array()
+        .expect("bounded image object reports capture refs")
+        .iter()
+        .find(|capture| {
+            capture["kind"] == "color" && capture["mime_type"] == "application/octet-stream"
+        })
+        .and_then(|capture| capture["uri"].as_str())
+        .expect("bounded image object has raw color capture ref");
+    let object_resource = read_image_animation_sample_resource_at(
+        &source_path,
+        "entry.image_sprite_overlay",
+        "0.15",
+        object_raw_uri,
+    );
+    let object_bytes = raw_bytes_from_agent_image_resource(
+        &object_resource,
+        "animated image object read-uri resource",
+    );
     assert_eq!(
-        &bytes[..4],
-        &[5, 26, 161, 127],
-        "layer read-uri should use the same object-local pinned animated frame as object capture"
+        bytes, object_bytes,
+        "layer and object resources/read must publish identical pixels for the same masked sprite"
     );
 }
 
@@ -3060,8 +3092,8 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
         .arg("agent")
         .arg("observe")
         .arg(&source_path)
-        .arg("--flow")
-        .arg("image_sprite_overlay")
+        .arg("--entry")
+        .arg("entry.image_sprite_overlay")
         .arg("--steps")
         .arg("2")
         .arg("--capture-time")
@@ -3138,8 +3170,13 @@ fn agent_observe_mcp_tool_result_preserves_animated_image_object_metadata_and_ra
 #[test]
 fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
-    let hit =
-        hit_test_image_animation_sample_at(&source_path, "image_sprite_overlay", "0.15", 300, 174);
+    let hit = hit_test_image_animation_sample_at(
+        &source_path,
+        "entry.image_sprite_overlay",
+        "0.15",
+        300,
+        174,
+    );
 
     assert_eq!(hit["status"], "ok");
     assert_eq!(hit["top_object_id"], "object.image.layer.foreground.0.1");
@@ -3169,20 +3206,46 @@ fn agent_hit_test_reports_animated_image_object_proxy_metadata() {
 #[test]
 fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
-    let early = hit_test_image_animation_sample_at(&source_path, "image_animated_gif", "0", 10, 10);
-    let late =
-        hit_test_image_animation_sample_at(&source_path, "image_animated_gif", "0.15", 10, 10);
+    let early =
+        hit_test_image_animation_sample_at(&source_path, "entry.image_animated_gif", "0", 10, 10);
+    let late = hit_test_image_animation_sample_at(
+        &source_path,
+        "entry.image_animated_gif",
+        "0.15",
+        10,
+        10,
+    );
 
     assert_eq!(early["status"], "ok");
     assert_eq!(late["status"], "ok");
-    assert_eq!(early["top_object_id"], "object.image.layer.background.0.0");
-    assert_eq!(late["top_object_id"], "object.image.layer.background.0.0");
-    let early_hit = &early["hits"][0];
-    let late_hit = &late["hits"][0];
+    assert_eq!(
+        early["top_object_id"],
+        "object.image.image.background.default"
+    );
+    assert_eq!(
+        late["top_object_id"],
+        "object.image.image.background.default"
+    );
+    let early_hit = early["hits"]
+        .as_array()
+        .expect("early hit stack")
+        .iter()
+        .find(|hit| {
+            hit["object"]["entity"] == "image.background.default"
+                && hit["object"]["image_ref"]["asset"] == "asset.bg.pulse"
+        })
+        .expect("early background image hit");
+    let late_hit = late["hits"]
+        .as_array()
+        .expect("late hit stack")
+        .iter()
+        .find(|hit| {
+            hit["object"]["entity"] == "image.background.default"
+                && hit["object"]["image_ref"]["asset"] == "asset.bg.pulse"
+        })
+        .expect("late background image hit");
     assert_eq!(early_hit["region"]["kind"], "object");
     assert_eq!(late_hit["region"]["kind"], "object");
-    assert_eq!(early_hit["object"]["entity"], "image.background.default");
-    assert_eq!(late_hit["object"]["entity"], "image.background.default");
 
     let early_ref = &early_hit["object"]["image_ref"];
     let late_ref = &late_hit["object"]["image_ref"];
@@ -3202,7 +3265,7 @@ fn agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata() 
 fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let observe =
-        observe_image_animation_sample_flow_at(&source_path, "image_alignment_object", "0");
+        observe_image_animation_sample_entry_at(&source_path, "entry.image_alignment_object", "0");
     let image_object = observe["objects"]
         .as_array()
         .expect("image alignment sample reports objects")
@@ -3230,7 +3293,7 @@ fn agent_observe_image_alignment_sample_uses_authored_alignment_geometry() {
 fn agent_observe_native_captures_clipped_animated_image_object() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
     let observe =
-        observe_image_animation_sample_flow_at(&source_path, "image_clipped_object", "0.15");
+        observe_image_animation_sample_entry_at(&source_path, "entry.image_clipped_object", "0.15");
     let image_object = observe["objects"]
         .as_array()
         .expect("image clipped sample reports objects")
@@ -3243,7 +3306,7 @@ fn agent_observe_native_captures_clipped_animated_image_object() {
     let object_id = image_object["id"]
         .as_str()
         .expect("clipped animated image object id");
-    assert_eq!(object_id, "object.image.layer.clipped.0.1");
+    assert_eq!(object_id, "object.image.image.sample.clipped_pulse");
     assert_eq!(image_object["bbox"]["x"], 1184);
     assert_eq!(image_object["bbox"]["y"], 48);
     assert_eq!(image_object["bbox"]["width"], 96);
@@ -3256,28 +3319,33 @@ fn agent_observe_native_captures_clipped_animated_image_object() {
     let color_path = dir.join("clipped-image-color.rgba");
     let (color, color_bytes) = capture_image_animation_sample_object_raw_at(
         &source_path,
-        "image_clipped_object",
+        "entry.image_clipped_object",
         "0.15",
         object_id,
         "color",
         &color_path,
     );
-    assert_clipped_animated_image_capture_metadata(&color, object_id, "color", "framebuffer_crop");
+    assert_clipped_animated_image_capture_metadata(
+        &color,
+        object_id,
+        "color",
+        "masked_framebuffer_crop",
+    );
     assert_eq!(color_bytes.len(), 96 * 96 * 4);
     assert_eq!(
         &color_bytes[..4],
-        &[176, 131, 11, 127],
-        "clipped object color capture should start with the pinned animated frame pixel"
+        &[230, 137, 32, 255],
+        "clipped object color capture should preserve the exact background-composited frame pixel"
     );
     assert!(
-        color_bytes.chunks_exact(4).all(|pixel| pixel[3] == 127),
-        "clipped half-opacity image color capture should preserve object alpha"
+        color_bytes.chunks_exact(4).all(|pixel| pixel[3] == 255),
+        "the opaque background should make every selected framebuffer pixel opaque"
     );
 
     let object_id_path = dir.join("clipped-image-object-id.rgba");
     let (object_id_capture, object_id_bytes) = capture_image_animation_sample_object_raw_at(
         &source_path,
-        "image_clipped_object",
+        "entry.image_clipped_object",
         "0.15",
         object_id,
         "object-id",
@@ -3292,28 +3360,28 @@ fn agent_observe_native_captures_clipped_animated_image_object() {
     assert_eq!(object_id_bytes.len(), 96 * 96 * 4);
     assert_eq!(
         &object_id_bytes[..4],
-        &[113, 59, 100, 127],
-        "clipped object-id capture should use the deterministic image debug tint"
+        &[129, 170, 155, 255],
+        "clipped object-id capture should use the stable typed object identity tint"
     );
     assert!(
-        object_id_bytes.chunks_exact(4).all(|pixel| pixel[3] == 127),
-        "clipped object-id capture should preserve the half-opacity image alpha"
+        object_id_bytes.chunks_exact(4).all(|pixel| pixel[3] == 255),
+        "selected object-id attachment pixels should remain fully opaque"
     );
 
     fs::remove_dir_all(&dir).expect("remove clipped animated image capture dir");
 }
 
-fn observe_image_animation_sample_flow_at(
+fn observe_image_animation_sample_entry_at(
     path: &Path,
-    flow: &str,
+    entry: &str,
     capture_time: &str,
 ) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
         .arg(path)
-        .arg("--flow")
-        .arg(flow)
+        .arg("--entry")
+        .arg(entry)
         .arg("--steps")
         .arg("2")
         .arg("--capture-time")
@@ -3331,7 +3399,7 @@ fn observe_image_animation_sample_flow_at(
 
 fn read_image_animation_sample_resource_at(
     path: &Path,
-    flow: &str,
+    entry: &str,
     capture_time: &str,
     uri: &str,
 ) -> serde_json::Value {
@@ -3339,8 +3407,8 @@ fn read_image_animation_sample_resource_at(
         .arg("agent")
         .arg("observe")
         .arg(path)
-        .arg("--flow")
-        .arg(flow)
+        .arg("--entry")
+        .arg(entry)
         .arg("--steps")
         .arg("2")
         .arg("--capture-time")
@@ -3360,7 +3428,7 @@ fn read_image_animation_sample_resource_at(
 
 fn hit_test_image_animation_sample_at(
     path: &Path,
-    flow: &str,
+    entry: &str,
     capture_time: &str,
     x: u32,
     y: u32,
@@ -3369,8 +3437,8 @@ fn hit_test_image_animation_sample_at(
         .arg("agent")
         .arg("hit-test")
         .arg(path)
-        .arg("--flow")
-        .arg(flow)
+        .arg("--entry")
+        .arg(entry)
         .arg("--steps")
         .arg("2")
         .arg("--capture-time")
@@ -3392,7 +3460,7 @@ fn hit_test_image_animation_sample_at(
 
 fn capture_image_animation_sample_object_raw_at(
     path: &Path,
-    flow: &str,
+    entry: &str,
     capture_time: &str,
     object_id: &str,
     capture_kind: &str,
@@ -3402,8 +3470,8 @@ fn capture_image_animation_sample_object_raw_at(
         .arg("agent")
         .arg("observe")
         .arg(path)
-        .arg("--flow")
-        .arg(flow)
+        .arg("--entry")
+        .arg(entry)
         .arg("--steps")
         .arg("2")
         .arg("--capture-time")
@@ -3465,7 +3533,7 @@ fn assert_clipped_animated_image_capture_metadata(
 
 #[test]
 fn agent_observe_read_uri_returns_latest_native_layer_image() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-layer-read-uri",
         r#"
 character @character.alice Alice as alice {}
@@ -3481,12 +3549,14 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--image")
         .arg("png")
         .arg("--layer")
         .arg("dialogue.rich_text")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/layer.dialogue.rich_text.png")
+        .arg("arcweft://session/cli/frame/3/layer.dialogue.rich_text.png")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -3506,28 +3576,28 @@ flow @flow.main main {
         serde_json::from_slice(&output.stdout).expect("native layer read-uri resource is JSON");
     assert_eq!(
         json["uri"],
-        "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png"
+        "arcweft://session/cli/frame/3/layer.dialogue.rich_text.png"
     );
     assert_eq!(json["image"]["kind"], "color");
     assert_eq!(json["image"]["renderer"], "native");
     assert_eq!(json["image"]["scope"]["kind"], "layer");
     assert_eq!(json["image"]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["image"]["composition"], "masked_framebuffer_crop");
-    assert!(json["image"]["width"].as_u64().unwrap() < 1088);
-    assert!(json["image"]["height"].as_u64().unwrap() < 124);
+    assert_eq!(json["image"]["width"], 1166);
+    assert_eq!(json["image"]["height"], 203);
     assert_eq!(json["image"]["crop_origin"]["space"], "viewport");
+    assert_eq!(json["image"]["crop_origin"]["x"], 57);
+    assert_eq!(json["image"]["crop_origin"]["y"], 460);
     assert_eq!(json["body"]["body_kind"], "bytes_base64");
     assert_eq!(json["body"]["body"]["encoding"], "base64");
-    assert!(
-        json["body"]["body"]["data"]
-            .as_str()
-            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
-    );
+    assert!(json["body"]["body"]["data"]
+        .as_str()
+        .is_some_and(|blob| blob.starts_with("iVBORw0KGgo")));
 }
 
 #[test]
 fn agent_observe_read_uri_uses_native_renderer_without_selected_image() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-read-uri-renderer",
         r#"
 character @character.alice Alice as alice {}
@@ -3543,8 +3613,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/layer.dialogue.rich_text.png")
+        .arg("arcweft://session/cli/frame/3/layer.dialogue.rich_text.png")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -3564,23 +3636,21 @@ flow @flow.main main {
         serde_json::from_slice(&output.stdout).expect("native read-uri renderer resource is JSON");
     assert_eq!(
         json["uri"],
-        "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png"
+        "arcweft://session/cli/frame/3/layer.dialogue.rich_text.png"
     );
     assert_eq!(json["image"]["renderer"], "native");
     assert_eq!(json["image"]["scope"]["kind"], "layer");
     assert_eq!(json["image"]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["image"]["composition"], "masked_framebuffer_crop");
     assert!(json["image"]["content_pixels"].as_u64().unwrap() > 0);
-    assert!(
-        json["body"]["body"]["data"]
-            .as_str()
-            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
-    );
+    assert!(json["body"]["body"]["data"]
+        .as_str()
+        .is_some_and(|blob| blob.starts_with("iVBORw0KGgo")));
 }
 
 #[test]
 fn agent_observe_native_renderer_writes_ruby_mask_raw_crop() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-ruby-mask",
         r#"
 character @character.alice Alice as alice {}
@@ -3598,6 +3668,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -3623,13 +3695,22 @@ flow @flow.main main {
     );
     let json: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("native ruby mask report is JSON");
+    assert_native_ruby_mask_report(&json, &raw_path);
+
+    fs::remove_file(&path).expect("remove temp native ruby mask source");
+    fs::remove_dir_all(&dir).expect("remove temp native ruby mask dir");
+}
+
+fn assert_native_ruby_mask_report(json: &serde_json::Value, raw_path: &Path) {
     assert_eq!(json["images"][0]["kind"], "mask");
     assert_eq!(json["images"][0]["mime_type"], "application/octet-stream");
     assert_eq!(json["images"][0]["composition"], "mask_attachment");
-    assert!(json["images"][0]["width"].as_u64().unwrap() < 180);
-    assert!(json["images"][0]["height"].as_u64().unwrap() < 120);
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
     let objects = json["objects"].as_array().expect("objects are listed");
+    let dialogue_view = objects
+        .iter()
+        .find(|object| object["role"] == "dialogue_view")
+        .expect("dialogue_view object is observed");
     let ruby_object = objects
         .iter()
         .find(|object| object["id"] == "object.dialogue.0.0.ruby.0")
@@ -3645,8 +3726,25 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["width"], ruby_object["bbox"]["width"]);
     assert_eq!(json["images"][0]["height"], ruby_object["bbox"]["height"]);
     assert!(
-        json["images"][0]["crop_origin"]["x"].as_u64().unwrap() >= 96,
-        "native ruby crop origin should be in dialogue_view viewport bounds"
+        ruby_object["bbox"]["x"].as_u64().unwrap() >= dialogue_view["bbox"]["x"].as_u64().unwrap(),
+        "native ruby crop should start within its dialogue_view"
+    );
+    assert!(
+        ruby_object["bbox"]["y"].as_u64().unwrap() >= dialogue_view["bbox"]["y"].as_u64().unwrap(),
+        "native ruby crop should start within its dialogue_view"
+    );
+    assert!(
+        ruby_object["bbox"]["x"].as_u64().unwrap() + ruby_object["bbox"]["width"].as_u64().unwrap()
+            <= dialogue_view["bbox"]["x"].as_u64().unwrap()
+                + dialogue_view["bbox"]["width"].as_u64().unwrap(),
+        "native ruby crop should end within its dialogue_view"
+    );
+    assert!(
+        ruby_object["bbox"]["y"].as_u64().unwrap()
+            + ruby_object["bbox"]["height"].as_u64().unwrap()
+            <= dialogue_view["bbox"]["y"].as_u64().unwrap()
+                + dialogue_view["bbox"]["height"].as_u64().unwrap(),
+        "native ruby crop should end within its dialogue_view"
     );
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -3671,14 +3769,11 @@ flow @flow.main main {
     );
     assert!(content_pixels > 0);
     assert!(content_pixels < width * height);
-    let bytes = fs::read(&raw_path).expect("read native ruby mask raw crop");
+    let bytes = fs::read(raw_path).expect("read native ruby mask raw crop");
     let opaque = bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count();
     let transparent = bytes.chunks_exact(4).filter(|pixel| pixel[3] == 0).count();
     assert!(opaque > 0);
     assert!(transparent > 0);
-
-    fs::remove_file(&path).expect("remove temp native ruby mask source");
-    fs::remove_dir_all(&dir).expect("remove temp native ruby mask dir");
 }
 
 #[test]
@@ -4221,9 +4316,16 @@ fn assert_raw_object_id_tint_bytes(
     );
 }
 
+fn temp_runnable_agent_observe_arcw(name: &str, source: &str) -> PathBuf {
+    temp_arcw(
+        name,
+        &format!("entry cli @entry.main {{ goto @flow.main }}\n{source}"),
+    )
+}
+
 #[test]
 fn agent_observe_native_renderer_writes_text_combine_mask_raw_crop() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-text-combine-mask",
         r"
 character @character.alice Alice as alice {}
@@ -4240,6 +4342,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4316,7 +4420,7 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_vertical_lr_text_combine_mask_raw_crop() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-vertical-lr-text-combine-mask",
         r"
 character @character.alice Alice as alice {}
@@ -4333,6 +4437,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4421,7 +4527,7 @@ fn agent_observe_native_renderer_writes_vertical_lr_text_combine_object_id_raw_c
 }
 
 fn assert_native_text_combine_object_id_raw_crop(writing_mode: &str, label: &str) {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}"),
         &format!(
             r"
@@ -4440,6 +4546,8 @@ flow @flow.main main {{
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -4958,6 +5066,8 @@ fn observe_native_typewriter_cluster_raw_at(
         .arg("agent")
         .arg("observe")
         .arg(source_path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5003,6 +5113,32 @@ fn observe_native_typewriter_cluster_raw_at(
 
 fn opaque_pixel_count(bytes: &[u8]) -> usize {
     bytes.chunks_exact(4).filter(|pixel| pixel[3] > 0).count()
+}
+
+fn assert_typed_typewriter_fx_application(presentation: &serde_json::Value) {
+    let applications = presentation["fx"]
+        .as_array()
+        .expect("rich-text presentation exposes typed Fx applications");
+    let [application] = applications.as_slice() else {
+        panic!("expected one typewriter Fx application: {presentation}");
+    };
+    assert_eq!(
+        application["definition"]["package"], "arcweft.builtin",
+        "{application}"
+    );
+    assert!(
+        application["definition"]["function"]
+            .as_str()
+            .is_some_and(|function| function.starts_with("rich_text.typewriter.")),
+        "{application}"
+    );
+    assert!(
+        application["parameters"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "{application}"
+    );
+    assert_eq!(application["authored_ordinal"], 0, "{application}");
 }
 
 #[test]
@@ -5204,10 +5340,7 @@ fn observe_native_goal_clear_object_raw_at(
         serde_json::from_slice(&output.stdout).expect("vertical goal-clear raw report is JSON");
     assert_eq!(json["images"][0]["kind"], capture_kind.replace('-', "_"));
     match capture_kind {
-        "color" => assert_eq!(
-            json["images"][0]["composition"],
-            "masked_framebuffer_crop"
-        ),
+        "color" => assert_eq!(json["images"][0]["composition"], "masked_framebuffer_crop"),
         "mask" => assert_eq!(json["images"][0]["composition"], "mask_attachment"),
         "object-id" => assert_eq!(json["images"][0]["composition"], "object_id_attachment"),
         other => panic!("unsupported vertical goal-clear capture kind: {other}"),
@@ -5219,7 +5352,7 @@ fn observe_native_goal_clear_object_raw_at(
 
 #[test]
 fn agent_observe_native_typewriter_capture_time_changes_visibility_without_relayout() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-typewriter-capture-time",
         r"
 character @character.alice Alice as alice {}
@@ -5247,14 +5380,7 @@ flow @flow.main main {
     );
     let hidden_cluster = find_rich_text_cluster_object(&hidden, "吾", 0, 3);
     let visible_cluster = find_rich_text_cluster_object(&visible, "吾", 0, 3);
-    assert_eq!(
-        hidden_cluster["rich_text_ref"]["presentation"]["effects"][0]["id"],
-        "typewriter"
-    );
-    assert_eq!(
-        hidden_cluster["rich_text_ref"]["presentation"]["effects"][0]["phase"],
-        "glyph_mask"
-    );
+    assert_typed_typewriter_fx_application(&hidden_cluster["rich_text_ref"]["presentation"]);
     assert_eq!(hidden_cluster["bbox"], visible_cluster["bbox"]);
     assert_eq!(
         hidden["images"][0]["crop_origin"],
@@ -5282,7 +5408,7 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_typewriter_capture_time_controls_object_id() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-typewriter-object-id-capture-time",
         r"
 character @character.alice Alice as alice {}
@@ -5358,7 +5484,7 @@ fn assert_native_typewriter_text_combine_capture_time_controls_all_glyphs(
     writing_mode: &str,
     label: &str,
 ) {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-capture-time"),
         &format!(
             r"
@@ -5441,7 +5567,7 @@ fn assert_native_typewriter_text_combine_capture_time_controls_object_id(
     writing_mode: &str,
     label: &str,
 ) {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-object-id-capture-time"),
         &format!(
             r"
@@ -5532,7 +5658,7 @@ fn assert_native_typewriter_ruby_capture_time_controls_base_and_annotation(
     label: &str,
     ruby_annotation_on_right: bool,
 ) {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-capture-time"),
         &format!(
             r"
@@ -5601,7 +5727,7 @@ fn assert_native_typewriter_ruby_capture_time_controls_object_id(
     label: &str,
     ruby_annotation_on_right: bool,
 ) {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-object-id-capture-time"),
         &format!(
             r"
@@ -5661,14 +5787,7 @@ fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
 ) -> &'a serde_json::Value {
     let hidden_ruby = find_rich_text_ruby_object(hidden, 0);
     let visible_ruby = find_rich_text_ruby_object(visible, 0);
-    assert_eq!(
-        visible_ruby["rich_text_ref"]["presentation"]["effects"][0]["id"],
-        "typewriter"
-    );
-    assert_eq!(
-        visible_ruby["rich_text_ref"]["presentation"]["effects"][0]["phase"],
-        "glyph_mask"
-    );
+    assert_typed_typewriter_fx_application(&visible_ruby["rich_text_ref"]["presentation"]);
     assert_eq!(hidden_ruby["bbox"], visible_ruby["bbox"]);
     assert_eq!(
         hidden_ruby["rich_text_ref"]["ruby_base_bbox"],
@@ -5705,7 +5824,7 @@ fn assert_native_typewriter_ruby_capture_time_geometry<'a>(
 
 #[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_mask_attachment() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer-mask",
         r#"
 character @character.alice Alice as alice {}
@@ -5723,6 +5842,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5754,8 +5875,10 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["images"][0]["composition"], "mask_attachment");
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
-    assert!(json["images"][0]["width"].as_u64().unwrap() < 1088);
-    assert!(json["images"][0]["height"].as_u64().unwrap() < 124);
+    assert_eq!(json["images"][0]["width"], 1166);
+    assert_eq!(json["images"][0]["height"], 203);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], 57);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], 460);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();
@@ -5783,7 +5906,7 @@ flow @flow.main main {
 
 #[test]
 fn agent_observe_native_renderer_writes_rich_text_layer_object_id_attachment() {
-    let path = temp_arcw(
+    let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer-object-id",
         r#"
 character @character.alice Alice as alice {}
@@ -5801,6 +5924,8 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -5832,8 +5957,10 @@ flow @flow.main main {
     assert_eq!(json["images"][0]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["images"][0]["composition"], "object_id_attachment");
     assert_eq!(json["images"][0]["crop_origin"]["space"], "viewport");
-    assert!(json["images"][0]["width"].as_u64().unwrap() < 1088);
-    assert!(json["images"][0]["height"].as_u64().unwrap() < 124);
+    assert_eq!(json["images"][0]["width"], 1166);
+    assert_eq!(json["images"][0]["height"], 203);
+    assert_eq!(json["images"][0]["crop_origin"]["x"], 57);
+    assert_eq!(json["images"][0]["crop_origin"]["y"], 460);
     let content_pixels = json["images"][0]["content_pixels"].as_u64().unwrap();
     let width = json["images"][0]["width"].as_u64().unwrap();
     let height = json["images"][0]["height"].as_u64().unwrap();

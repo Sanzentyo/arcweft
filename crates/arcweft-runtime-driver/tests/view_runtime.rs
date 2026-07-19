@@ -18,11 +18,13 @@ use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
-use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RichTextNode, RuntimeLineContext};
+use arcweft_render_text::{
+    LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode, RuntimeLineContext,
+};
 use arcweft_runtime_driver::dialogue::{
-    DialoguePageIndex, DialoguePresentationOperation, DialoguePresentationStore, DialogueViewInput,
-    DialogueViewOccurrence, DialogueViewPrimaryAction, DialogueViewReveal, DialogueViewStage,
-    DialogueViewState,
+    DialoguePageIndex, DialoguePresentationOperation, DialoguePresentationStore,
+    DialogueViewDefinition, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
+    DialogueViewReveal, DialogueViewStage, DialogueViewState,
 };
 use arcweft_runtime_driver::presentation_handles::{
     PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
@@ -73,10 +75,41 @@ impl BundleViewRuntime {
         )?;
         AcceptedBundleViewRuntime::try_new(product, text)
     }
+
+    fn try_new_with_dialogue_display(
+        program: Option<ViewProgramResource>,
+        text: Option<ViewTextResource>,
+        style: Option<&ViewStyleResource>,
+        display: &LineDisplayCatalog,
+    ) -> Result<AcceptedBundleViewRuntime, BundleViewRuntimeError> {
+        let source_map = if style.is_some() {
+            let source = arcweft_bundle::standard_view::dialogue_style_source_document();
+            Some(
+                SourceMapSection::try_from_documents(&[&source])
+                    .expect("standard dialogue Style source map"),
+            )
+        } else {
+            program
+                .as_ref()
+                .is_some_and(|program| !program.source_refs.is_empty())
+                .then(view_source_map)
+        };
+        let product = ValidatedViewProduct::try_new(
+            source_map,
+            program,
+            style.cloned(),
+            ViewProductValidationLimits::default(),
+        )?;
+        AcceptedBundleViewRuntime::try_new_with_dialogue_display(product, text, display)
+    }
 }
 
 fn program_id(value: &str) -> ViewProgramId {
     ViewProgramId::try_new(value).unwrap()
+}
+
+fn view_id(value: &str) -> ViewId {
+    ViewId::try_new_engine_owned(value).unwrap()
 }
 
 fn definition_ref(value: &str) -> ViewDefinitionRef {
@@ -2201,7 +2234,7 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        view: None,
+        view: view_id("view.TypedText"),
         voice: None,
         look: None,
         style: None,
@@ -2295,16 +2328,27 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
 #[test]
 fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence() {
     let (program, text) = typed_dialogue_view_resources();
-    let display_frame = typed_dialogue_display_frame();
+    let display_spec = typed_dialogue_display_spec();
+    let display_frame = display_spec
+        .clone()
+        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+        .unwrap();
+    let display = LineDisplayCatalog::new(vec![display_spec]);
+    let dialogue_view = view_id("view.Dialogue");
     let first_handle = PresentationHandleId::try_new("dialogue.40").unwrap();
     let first_inputs = [DialogueViewInput {
         handle: first_handle.clone(),
-        view: "view.Dialogue",
+        view: &dialogue_view,
         frame: &display_frame,
         state: dialogue_view_state(40),
     }];
-    let mut runtime = BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None)
-        .expect("dialogue View runtime builds");
+    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
+        Some(program.clone()),
+        Some(text.clone()),
+        None,
+        &display,
+    )
+    .expect("dialogue View runtime builds");
     let first = runtime.evaluate_with_dialogue(&[], &first_inputs, &[], false);
     assert!(first.diagnostics.is_empty(), "{first:#?}");
     assert_eq!(first.mounts.len(), 1);
@@ -2323,7 +2367,9 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     let first_mount = first.mounts[0].mount;
 
     let snapshot = runtime.snapshot().unwrap();
-    let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
+    let mut restored =
+        BundleViewRuntime::try_new_with_dialogue_display(Some(program), Some(text), None, &display)
+            .unwrap();
     let restored_handle = handle("dialogue.40", "view.Dialogue");
     restored
         .restore(&snapshot, std::slice::from_ref(&restored_handle))
@@ -2332,13 +2378,13 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     let two_inputs = [
         DialogueViewInput {
             handle: first_inputs[0].handle.clone(),
-            view: "view.Dialogue",
+            view: &dialogue_view,
             frame: &display_frame,
             state: dialogue_view_state(40),
         },
         DialogueViewInput {
             handle: second_handle,
-            view: "view.Dialogue",
+            view: &dialogue_view,
             frame: &display_frame,
             state: dialogue_view_state(41),
         },
@@ -2356,6 +2402,53 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
         first_mount
     );
     assert_ne!(after_restore.mounts[0].mount, after_restore.mounts[1].mount);
+}
+
+#[test]
+fn replacement_cannot_remove_or_retype_a_live_dialogue_view_owner() {
+    let (program, text) = typed_dialogue_view_resources();
+    let display_spec = typed_dialogue_display_spec();
+    let display_frame = display_spec
+        .clone()
+        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+        .unwrap();
+    let mut runtime = AcceptedBundleViewRuntime::try_new_with_dialogue_display(
+        validated_product(program.clone()),
+        Some(text),
+        &LineDisplayCatalog::new(vec![display_spec]),
+    )
+    .expect("dialogue View runtime builds");
+    let dialogue_view = view_id("view.Dialogue");
+    let inputs = [DialogueViewInput {
+        handle: PresentationHandleId::try_new("dialogue.replacement").unwrap(),
+        view: &dialogue_view,
+        frame: &display_frame,
+        state: dialogue_view_state(70),
+    }];
+    let frame = runtime.evaluate_with_dialogue(&[], &inputs, &[], false);
+    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
+    let before = runtime.snapshot().expect("live runtime snapshots");
+
+    let removed = validated_product(ViewProgramResource {
+        program_id: program.program_id.clone(),
+        ..ViewProgramResource::default()
+    });
+    assert!(matches!(
+        runtime.prepare_view_program_replacement(removed),
+        Err(ViewProgramReplacementError::MissingRequiredDialogueView { definition })
+            if definition == dialogue_view
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
+
+    let mut wrong_role = program;
+    wrong_role.definitions[0].parameters[0].role =
+        arcweft_bundle::resource_codec::view::ViewParameterRole::Value;
+    assert!(matches!(
+        runtime.prepare_view_program_replacement(validated_product(wrong_role)),
+        Err(ViewProgramReplacementError::RequiredDialogueViewMissingRole { definition })
+            if definition == dialogue_view
+    ));
+    assert_eq!(runtime.snapshot().unwrap(), before);
 }
 
 #[test]
@@ -2440,13 +2533,13 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
     (program, text)
 }
 
-fn typed_dialogue_display_frame() -> arcweft_render_text::LineDisplayFrame {
+fn typed_dialogue_display_spec() -> LineDisplaySpec {
     LineDisplaySpec {
         line: RuntimeLineId::from_runtime_line_value("say.dialogue.typed").unwrap(),
         callee: "character.hero".to_owned(),
         speaker_label: Some("Hero".to_owned()),
         text_key: None,
-        view: Some("view.Dialogue".to_owned()),
+        view: view_id("view.Dialogue"),
         voice: None,
         look: None,
         style: None,
@@ -2459,8 +2552,6 @@ fn typed_dialogue_display_frame() -> arcweft_render_text::LineDisplayFrame {
             ruby: "ゆめ".to_owned(),
         }]),
     }
-    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-    .unwrap()
 }
 
 fn dialogue_view_state(identity: u64) -> DialogueViewState {
@@ -2483,12 +2574,12 @@ fn dialogue_view_state(identity: u64) -> DialogueViewState {
 
 #[test]
 fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
-    let frame = LineDisplaySpec {
+    let display_spec = LineDisplaySpec {
         line: RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
         callee: "narrator".to_owned(),
         speaker_label: Some("Narrator".to_owned()),
         text_key: None,
-        view: None,
+        view: view_id(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID),
         voice: None,
         look: None,
         style: None,
@@ -2499,13 +2590,15 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
         content: RichTextDocument::new(vec![RichTextNode::Text {
             text: "Standard authored View".to_owned(),
         }]),
-    }
-    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-    .unwrap();
+    };
+    let frame = display_spec
+        .clone()
+        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+        .unwrap();
     let mut dialogue = DialoguePresentationStore::default();
     dialogue
         .apply_operations(&[DialoguePresentationOperation::append(
-            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+            DialogueViewDefinition::new(view_id(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID)),
             frame,
         )])
         .unwrap();
@@ -2514,10 +2607,11 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
             &RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
         ))
         .unwrap();
-    let mut runtime = BundleViewRuntime::try_new(
+    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
         Some(arcweft_bundle::standard_view::dialogue_program()),
         Some(arcweft_bundle::standard_view::dialogue_text()),
         Some(&arcweft_bundle::standard_view::dialogue_style()),
+        &LineDisplayCatalog::new(vec![display_spec]),
     )
     .unwrap();
     let output = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);

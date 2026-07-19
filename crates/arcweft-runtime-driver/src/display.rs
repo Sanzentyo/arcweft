@@ -25,11 +25,14 @@ use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::FlowEvent;
 use arcweft_layout::ScalePolicy;
-use arcweft_layout::stage_placement::{StagePlacement, StageRect};
-use arcweft_presentation::fx::FxDiagnostic;
+use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
+use arcweft_presentation::{
+    BackgroundSlotAddress, PresentationSlot, PresentationTarget, fx::FxDiagnostic,
+};
 use arcweft_render_text::{LineDisplayCatalog, RuntimeLineContext};
 use core::fmt;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Choice metadata shared by native and Web presentation hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -51,6 +54,47 @@ pub struct BundleViewportFit {
 pub struct DisplayResolution {
     pub dialogue_operations: Vec<DialoguePresentationOperation>,
     pub diagnostics: Vec<String>,
+}
+
+/// Failure to atomically apply one presentation update.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum BundlePresentationUpdateError {
+    #[error(transparent)]
+    Dialogue(#[from] DialoguePresentationStoreError),
+    #[error("presentation command `{callee}` requires argument `{argument}`")]
+    MissingCommandArgument {
+        callee: &'static str,
+        argument: &'static str,
+    },
+    #[error(
+        "presentation command `{callee}` argument `{argument}` has invalid value `{value}`; expected {expected}"
+    )]
+    InvalidCommandArgument {
+        callee: &'static str,
+        argument: &'static str,
+        value: String,
+        expected: &'static str,
+    },
+}
+
+impl BundlePresentationUpdateError {
+    fn missing_argument(callee: &'static str, argument: &'static str) -> Self {
+        Self::MissingCommandArgument { callee, argument }
+    }
+
+    fn invalid_argument(
+        callee: &'static str,
+        argument: &'static str,
+        value: impl Into<String>,
+        expected: &'static str,
+    ) -> Self {
+        Self::InvalidCommandArgument {
+            callee,
+            argument,
+            value: value.into(),
+            expected,
+        }
+    }
 }
 
 /// Current portable presentation state consumed by renderer adapters.
@@ -118,10 +162,7 @@ pub fn resolve_display_frames(
                         resolution
                             .dialogue_operations
                             .push(DialoguePresentationOperation::append(
-                                spec.view.as_deref().map_or_else(
-                                    DialogueViewDefinition::default,
-                                    DialogueViewDefinition::from,
-                                ),
+                                DialogueViewDefinition::new(spec.view.clone()),
                                 frame,
                             ));
                     }
@@ -157,7 +198,7 @@ impl BundlePresentationSnapshot {
         status: &FlowFiberStatus,
         effects: &[LineEffectRequest],
         resources: BundlePresentationResources<'_>,
-    ) -> Result<Vec<PresentationHandleDiagnostic>, DialoguePresentationStoreError> {
+    ) -> Result<Vec<PresentationHandleDiagnostic>, BundlePresentationUpdateError> {
         let mut next_dialogue = self.dialogue.clone();
         next_dialogue.apply_operations(&resolution.dialogue_operations)?;
         next_dialogue.synchronize_waiting_line(waiting_dialogue_line(status))?;
@@ -171,7 +212,7 @@ impl BundlePresentationSnapshot {
             &mut next_presentation_handle_epoch,
             &handle_operations,
         ));
-        let mut next_images = images_from_effects(&self.images, effects, resources.image_objects);
+        let mut next_images = images_from_effects(&self.images, effects, resources.image_objects)?;
         apply_presentation_image_handles(
             &mut next_images,
             &next_presentation_handles,
@@ -418,13 +459,14 @@ fn viewport_effect_from_call(call: &RuntimeCall) -> Option<PresentationViewportE
 enum PresentationImageEffect {
     Object(String),
     InlineObject(Box<BundleImageObject>),
-    BackgroundAsset(String),
+    Background(Box<BundleImageObject>),
+    ClearBackground(String),
 }
 
 impl PresentationImageEffect {
-    fn from_call(call: &RuntimeCall) -> Option<Self> {
+    fn from_call(call: &RuntimeCall) -> Result<Option<Self>, BundlePresentationUpdateError> {
         match call.callee.as_str() {
-            "image" => inline_image_object(call)
+            "image" => Ok(inline_image_object(call)
                 .map(|object| Self::InlineObject(Box::new(object)))
                 .or_else(|| {
                     call.args
@@ -434,16 +476,16 @@ impl PresentationImageEffect {
                         .and_then(public_id_arg)
                         .filter(|id| id.starts_with("image."))
                         .map(Self::Object)
-                }),
-            "bg" => call
-                .args
-                .first()
-                .map(String::as_str)
-                .or_else(|| named_arg(&call.args, "asset"))
-                .and_then(public_id_arg)
-                .filter(|id| id.starts_with("asset."))
-                .map(Self::BackgroundAsset),
-            _ => None,
+                })),
+            "bg" => background_image_object(call)
+                .map(Box::new)
+                .map(Self::Background)
+                .map(Some),
+            "bg.clear" => background_slot_address(call, "bg.clear")
+                .map(|address| address.image_id().as_str().to_owned())
+                .map(Self::ClearBackground)
+                .map(Some),
+            _ => Ok(None),
         }
     }
 }
@@ -452,43 +494,41 @@ fn images_from_effects(
     previous: &[BundleImageObject],
     effects: &[LineEffectRequest],
     image_objects: &[BundleImageObject],
-) -> Vec<BundleImageObject> {
-    effects
-        .iter()
-        .filter_map(|effect| {
-            let LineEffectRequest::Call(call) = effect else {
-                return None;
-            };
-            PresentationImageEffect::from_call(call)
-        })
-        .fold(previous.to_vec(), |mut active, effect| {
-            match effect {
-                PresentationImageEffect::Object(id) => {
-                    if let Some(object) = image_objects
-                        .iter()
-                        .find(|object| object.id == id && object.visible)
-                    {
-                        upsert_image_object(&mut active, object.clone());
-                    }
-                }
-                PresentationImageEffect::InlineObject(object) => {
-                    if object.visible {
-                        upsert_image_object(&mut active, *object);
-                    }
-                }
-                PresentationImageEffect::BackgroundAsset(asset) => {
-                    image_objects
-                        .iter()
-                        .filter(|object| object.asset == asset && object.visible)
-                        .cloned()
-                        .for_each(|object| upsert_image_object(&mut active, object));
+) -> Result<Vec<BundleImageObject>, BundlePresentationUpdateError> {
+    let mut active = previous.to_vec();
+    for effect in effects {
+        let LineEffectRequest::Call(call) = effect else {
+            continue;
+        };
+        let Some(effect) = PresentationImageEffect::from_call(call)? else {
+            continue;
+        };
+        match effect {
+            PresentationImageEffect::Object(id) => {
+                if let Some(object) = image_objects
+                    .iter()
+                    .find(|object| object.id == id && object.visible)
+                {
+                    upsert_image_object(&mut active, object.clone());
                 }
             }
-            active.sort_by(|left, right| {
-                (left.depth_milli, &left.id).cmp(&(right.depth_milli, &right.id))
-            });
-            active
-        })
+            PresentationImageEffect::InlineObject(object) => {
+                if object.visible {
+                    upsert_image_object(&mut active, *object);
+                }
+            }
+            PresentationImageEffect::Background(object) => {
+                upsert_image_object(&mut active, *object);
+            }
+            PresentationImageEffect::ClearBackground(id) => {
+                active.retain(|object| object.id != id);
+            }
+        }
+        active.sort_by(|left, right| {
+            (left.depth_milli, &left.id).cmp(&(right.depth_milli, &right.id))
+        });
+    }
+    Ok(active)
 }
 
 fn upsert_image_object(active: &mut Vec<BundleImageObject>, object: BundleImageObject) {
@@ -578,6 +618,204 @@ fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
     })
 }
 
+fn background_image_object(
+    call: &RuntimeCall,
+) -> Result<BundleImageObject, BundlePresentationUpdateError> {
+    let asset_arg = call
+        .args
+        .first()
+        .filter(|arg| !arg.contains(" = "))
+        .map(String::as_str)
+        .or_else(|| named_arg(&call.args, "asset"))
+        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("bg", "asset"))?;
+    let asset = public_id_arg(asset_arg)
+        .filter(|id| id.starts_with("asset."))
+        .ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "bg",
+                "asset",
+                asset_arg,
+                "an `asset.*` public ID",
+            )
+        })?;
+    let address = background_slot_address(call, "bg")?;
+    let id = address.image_id().as_str().to_owned();
+    let target = address.target().id().as_str().to_owned();
+    let bounds = BundleImageObjectBounds::from_px(0, 0, 1280, 720);
+    Ok(BundleImageObject {
+        id,
+        asset,
+        target: Some(target),
+        layer: Some("layer.background".to_owned()),
+        view: None,
+        containing_scroll_region: None,
+        bounds,
+        placement: Some(StagePlacement::anchor(
+            StageAnchor::TopLeft,
+            StageAnchor::TopLeft,
+            StageSize::new(bounds.width_milli, bounds.height_milli),
+        )),
+        fit: background_image_fit_arg(call)?,
+        alignment: background_image_alignment_arg(call)?,
+        playback: background_image_playback_arg(call)?,
+        transform: BundleImageObjectTransform::default(),
+        depth_milli: 0,
+        opacity_milli: background_opacity_arg(call)?,
+        actions: Vec::new(),
+        params: std::collections::BTreeMap::default(),
+        proxies: Vec::new(),
+        visible: true,
+    })
+}
+
+fn background_slot_address(
+    call: &RuntimeCall,
+    callee: &'static str,
+) -> Result<BackgroundSlotAddress, BundlePresentationUpdateError> {
+    let target = match named_arg(&call.args, "target") {
+        Some(value) => {
+            let target = public_id_arg(value)
+                .filter(|target| target.starts_with("target."))
+                .ok_or_else(|| {
+                    BundlePresentationUpdateError::invalid_argument(
+                        callee,
+                        "target",
+                        value,
+                        "a `target.*` public ID",
+                    )
+                })?;
+            PresentationTarget::try_new(target).map_err(|_| {
+                BundlePresentationUpdateError::invalid_argument(
+                    callee,
+                    "target",
+                    value,
+                    "a `target.*` public ID",
+                )
+            })?
+        }
+        None => PresentationTarget::scene(),
+    };
+    let slot = match named_arg(&call.args, "slot") {
+        Some(value) => {
+            let slot = public_id_arg(value)
+                .filter(|slot| slot.starts_with("slot.background."))
+                .ok_or_else(|| {
+                    BundlePresentationUpdateError::invalid_argument(
+                        callee,
+                        "slot",
+                        value,
+                        "a `slot.background.*` public ID",
+                    )
+                })?;
+            PresentationSlot::try_new(slot).map_err(|_| {
+                BundlePresentationUpdateError::invalid_argument(
+                    callee,
+                    "slot",
+                    value,
+                    "a `slot.background.*` public ID",
+                )
+            })?
+        }
+        None => PresentationSlot::default_background(),
+    };
+    BackgroundSlotAddress::try_new(target, slot).map_err(|_| {
+        BundlePresentationUpdateError::invalid_argument(
+            callee,
+            "target/slot",
+            "invalid background address",
+            "a valid background target/slot pair",
+        )
+    })
+}
+
+fn background_image_fit_arg(
+    call: &RuntimeCall,
+) -> Result<BundleImageObjectFit, BundlePresentationUpdateError> {
+    match named_arg(&call.args, "fit").map(unquote_arg) {
+        None | Some("cover") => Ok(BundleImageObjectFit::Cover),
+        Some("contain") => Ok(BundleImageObjectFit::Contain),
+        Some("stretch") => Ok(BundleImageObjectFit::Stretch),
+        Some("intrinsic") => Ok(BundleImageObjectFit::Intrinsic),
+        Some(value) => Err(BundlePresentationUpdateError::invalid_argument(
+            "bg",
+            "fit",
+            value,
+            "`cover`, `contain`, `stretch`, or `intrinsic`",
+        )),
+    }
+}
+
+fn background_image_alignment_arg(
+    call: &RuntimeCall,
+) -> Result<BundleImageObjectAlignment, BundlePresentationUpdateError> {
+    let axis = |argument: &'static str, axis: &'static str| {
+        let Some(value) = named_arg(&call.args, argument) else {
+            return Ok(500);
+        };
+        parse_alignment_view_milli(value, axis).ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "bg",
+                argument,
+                value,
+                "an alignment keyword, a ratio in [0, 1], or integer milli-units in [0, 1000]",
+            )
+        })
+    };
+    Ok(BundleImageObjectAlignment {
+        x_milli: axis("alignment.x", "x")?,
+        y_milli: axis("alignment.y", "y")?,
+    })
+}
+
+fn background_opacity_arg(call: &RuntimeCall) -> Result<u16, BundlePresentationUpdateError> {
+    let Some(value) = named_arg(&call.args, "opacity") else {
+        return Ok(1_000);
+    };
+    parse_opacity_milli(value).ok_or_else(|| {
+        BundlePresentationUpdateError::invalid_argument(
+            "bg",
+            "opacity",
+            value,
+            "a ratio in [0, 1], percentage in [0%, 100%], or integer milli-units in [0, 1000]",
+        )
+    })
+}
+
+fn background_image_playback_arg(
+    call: &RuntimeCall,
+) -> Result<BundleImageObjectPlayback, BundlePresentationUpdateError> {
+    let duration = |argument: &'static str| {
+        let Some(value) = named_arg(&call.args, argument) else {
+            return Ok(None);
+        };
+        parse_duration_millis(value).map(Some).ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "bg",
+                argument,
+                value,
+                "a finite non-negative duration",
+            )
+        })
+    };
+    let rate_milli = match named_arg(&call.args, "playback.rate") {
+        None => 1_000,
+        Some(value) => parse_rate_milli(value).ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "bg",
+                "playback.rate",
+                value,
+                "a non-negative ratio or integer milli-unit rate",
+            )
+        })?,
+    };
+    Ok(BundleImageObjectPlayback {
+        start_time_millis: duration("playback.start")?.unwrap_or_default(),
+        rate_milli,
+        paused_at_millis: duration("playback.paused_at")?,
+        pinned_local_time_millis: duration("playback.local_time")?,
+    })
+}
+
 fn image_fit_arg(call: &RuntimeCall) -> BundleImageObjectFit {
     match named_arg(&call.args, "fit").map(unquote_arg) {
         Some("cover") => BundleImageObjectFit::Cover,
@@ -599,18 +837,25 @@ fn image_alignment_arg(call: &RuntimeCall) -> BundleImageObjectAlignment {
 }
 
 fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
-    match (axis, unquote_arg(value)) {
+    let value = unquote_arg(value);
+    match (axis, value) {
         ("x", "left" | "start") | ("y", "top" | "start") => return Some(0),
         ("x" | "y", "center" | "middle") => return Some(500),
         ("x", "right" | "end") | ("y", "bottom" | "end") => return Some(1_000),
         _ => {}
     }
-    let integer = unquote_arg(value).parse::<i32>().ok()?;
-    Some(if (0..=1).contains(&integer) {
-        integer.saturating_mul(1_000)
+    let numeric = value.parse::<f64>().ok()?;
+    if !numeric.is_finite() || !(0.0..=1_000.0).contains(&numeric) {
+        return None;
+    }
+    if numeric <= 1.0 {
+        return rounded_i32(numeric * 1_000.0);
+    }
+    if numeric.fract().abs() <= f64::EPSILON {
+        rounded_i32(numeric)
     } else {
-        integer.clamp(0, 1_000)
-    })
+        None
+    }
 }
 
 fn image_playback_arg(call: &RuntimeCall) -> BundleImageObjectPlayback {
@@ -660,13 +905,43 @@ fn parse_bool_arg(value: &str) -> Option<bool> {
 }
 
 fn parse_opacity_milli(value: &str) -> Option<u16> {
-    let milli = parse_milli_arg(value)?.clamp(0, 1_000);
+    let value = unquote_arg(value);
+    let milli = if let Some(percent) = value.strip_suffix('%') {
+        let percent = percent.trim().parse::<f64>().ok()?;
+        if !percent.is_finite() || !(0.0..=100.0).contains(&percent) {
+            return None;
+        }
+        rounded_i32(percent * 10.0)?
+    } else {
+        let numeric = value.parse::<f64>().ok()?;
+        if !numeric.is_finite() || !(0.0..=1_000.0).contains(&numeric) {
+            return None;
+        }
+        if numeric <= 1.0 {
+            rounded_i32(numeric * 1_000.0)?
+        } else if numeric.fract().abs() <= f64::EPSILON {
+            rounded_i32(numeric)?
+        } else {
+            return None;
+        }
+    };
     u16::try_from(milli).ok()
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn parse_rate_milli(value: &str) -> Option<u32> {
-    let milli = parse_milli_arg(value)?;
-    u32::try_from(milli.max(0)).ok()
+    let numeric = unquote_arg(value).parse::<f64>().ok()?;
+    if !numeric.is_finite() || numeric < 0.0 {
+        return None;
+    }
+    let milli = if numeric <= 1.0 {
+        numeric * 1_000.0
+    } else if numeric.fract().abs() <= f64::EPSILON {
+        numeric
+    } else {
+        return None;
+    };
+    (milli <= f64::from(u32::MAX)).then_some(milli as u32)
 }
 
 fn parse_depth_arg(value: &str) -> Option<i32> {
@@ -696,9 +971,7 @@ fn parse_duration_millis(value: &str) -> Option<u64> {
         value.parse::<f64>().ok()?
     };
     let millis = millis.round();
-    millis
-        .is_finite()
-        .then_some(millis.clamp(0.0, u64::MAX as f64) as u64)
+    (millis.is_finite() && millis >= 0.0 && millis <= u64::MAX as f64).then_some(millis as u64)
 }
 
 fn parse_px_milli(value: &str) -> Option<i32> {
@@ -739,848 +1012,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::presentation_handles::{
-        PresentationHandleDiagnosticCode, PresentationResourceState,
-    };
-    use arcweft_bundle::resource_codec::view::{
-        CompositionOnBlurPolicy, EnterKeyHint, TextAssistPolicy, TextCapitalization,
-        ViewFocusDirection, ViewFocusGroupPolicy, ViewFocusInitialPolicy, ViewFocusSkipPolicy,
-        ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewInputKind, ViewInputPurpose,
-        ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeFocusNavigationEdge,
-        ViewSecureInputPolicy, ViewTextSelectionPolicy, ViewTextShortcutPolicy, ViewTextTabPolicy,
-        ViewTextVerticalNavigationPolicy,
-    };
-    use arcweft_bundle::resource_codec::{
-        ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle,
-        ViewRuntimeScrollRegionBounds, ViewRuntimeTextControlBounds,
-        ViewRuntimeTextControlHandlers, ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
-    };
-
-    #[test]
-    fn inline_image_call_accepts_runtime_length_labels() {
-        let call = RuntimeCall {
-            callee: "image".to_owned(),
-            args: vec![
-                "asset = @asset:.zundamon.normal".to_owned(),
-                "id = \"image.zundamon.stand\"".to_owned(),
-                "target = @target.zundamon.stand".to_owned(),
-                "layer = @layer.character".to_owned(),
-                "x = 760".to_owned(),
-                "y = 24".to_owned(),
-                "width = 360".to_owned(),
-                "height = 600".to_owned(),
-                "fit = \"contain\"".to_owned(),
-                "alignment.x = \"right\"".to_owned(),
-                "alignment.y = \"bottom\"".to_owned(),
-                "playback.start = 250ms".to_owned(),
-                "playback.paused_at = 500ms".to_owned(),
-                "playback.local_time = 750ms".to_owned(),
-            ],
-        };
-
-        assert_eq!(
-            named_arg(&call.args, "asset").and_then(public_id_arg),
-            Some("asset.zundamon.normal".to_owned())
-        );
-        assert_eq!(
-            named_arg(&call.args, "id").and_then(public_id_arg),
-            Some("image.zundamon.stand".to_owned())
-        );
-        assert_eq!(
-            named_arg(&call.args, "x").and_then(parse_px_milli),
-            Some(760_000)
-        );
-        let object = inline_image_object(&call).expect("inline image object");
-
-        assert_eq!(object.id, "image.zundamon.stand");
-        assert_eq!(object.asset, "asset.zundamon.normal");
-        assert_eq!(object.target.as_deref(), Some("target.zundamon.stand"));
-        assert_eq!(object.layer.as_deref(), Some("layer.character"));
-        assert_eq!(object.bounds.x_milli, 760_000);
-        assert_eq!(object.bounds.height_milli, 600_000);
-        assert_eq!(object.alignment.x_milli, 1_000);
-        assert_eq!(object.alignment.y_milli, 1_000);
-        assert_eq!(object.playback.start_time_millis, 250);
-        assert_eq!(object.playback.paused_at_millis, Some(500));
-        assert_eq!(object.playback.pinned_local_time_millis, Some(750));
-    }
-
-    #[test]
-    fn viewport_effect_sets_and_clears_runtime_fit() {
-        let contain = RuntimeCall {
-            callee: "player_viewport".to_owned(),
-            args: vec![
-                "width = 1920".to_owned(),
-                "height = 1080px".to_owned(),
-                "fit = \"cover\"".to_owned(),
-            ],
-        };
-        let reset = RuntimeCall {
-            callee: "player_viewport".to_owned(),
-            args: vec!["fit = \"default\"".to_owned()],
-        };
-
-        let fit = viewport_fit_from_effects(None, &[LineEffectRequest::Call(contain.clone())])
-            .expect("viewport fit is set");
-        assert_eq!(fit.design_width, 1920);
-        assert_eq!(fit.design_height, 1080);
-        assert_eq!(fit.scale_policy, ScalePolicy::Cover);
-
-        assert_eq!(
-            viewport_fit_from_effects(Some(fit), &[LineEffectRequest::Call(reset)]),
-            None
-        );
-    }
-
-    #[test]
-    fn canonical_presentation_commands_mutate_direct_runtime_state() {
-        let image = presentation_image_object("image.glass_bg");
-        let resources = image_runtime_resources(&image);
-
-        for call in [
-            RuntimeCall {
-                callee: "image".to_owned(),
-                args: vec!["@image.glass_bg".to_owned()],
-            },
-            RuntimeCall {
-                callee: "bg".to_owned(),
-                args: vec!["@asset.glass_bg".to_owned()],
-            },
-        ] {
-            let mut snapshot = BundlePresentationSnapshot::default();
-            let diagnostics = update_snapshot_with_effects(
-                &mut snapshot,
-                &[LineEffectRequest::Call(call)],
-                resources,
-            );
-
-            assert!(diagnostics.is_empty());
-            assert_eq!(snapshot.images, vec![image.clone()]);
-            assert_eq!(snapshot.revision, 1);
-        }
-
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let diagnostics = update_snapshot_with_effects(
-            &mut snapshot,
-            &[LineEffectRequest::Call(RuntimeCall {
-                callee: "player_viewport".to_owned(),
-                args: vec![
-                    "width = 1920".to_owned(),
-                    "height = 1080".to_owned(),
-                    "fit = \"stretch\"".to_owned(),
-                ],
-            })],
-            resources,
-        );
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(
-            snapshot.viewport_fit,
-            Some(BundleViewportFit::design(1920, 1080, ScalePolicy::Stretch))
-        );
-        assert_eq!(snapshot.revision, 1);
-    }
-
-    #[test]
-    fn unknown_presentation_commands_do_not_mutate_direct_runtime_state() {
-        let image = presentation_image_object("image.glass_bg");
-        let resources = image_runtime_resources(&image);
-        let call = RuntimeCall {
-            callee: "mystery.presentation".to_owned(),
-            args: vec!["@image.glass_bg".to_owned()],
-        };
-        let mut snapshot = BundlePresentationSnapshot {
-            revision: 41,
-            ..BundlePresentationSnapshot::default()
-        };
-        let before = snapshot.clone();
-        let diagnostics = update_snapshot_with_effects(
-            &mut snapshot,
-            &[LineEffectRequest::Call(call)],
-            resources,
-        );
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot, before);
-    }
-
-    #[test]
-    fn unknown_viewport_argument_does_not_mutate_direct_runtime_state() {
-        let mut snapshot = BundlePresentationSnapshot {
-            revision: 43,
-            viewport_fit: Some(BundleViewportFit::raw()),
-            ..BundlePresentationSnapshot::default()
-        };
-        let before = snapshot.clone();
-        let diagnostics = update_snapshot_with_effects(
-            &mut snapshot,
-            &[LineEffectRequest::Call(RuntimeCall {
-                callee: "player_viewport".to_owned(),
-                args: vec!["mystery = true".to_owned()],
-            })],
-            empty_presentation_resources(),
-        );
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot, before);
-    }
-
-    #[test]
-    fn unknown_image_argument_does_not_mutate_direct_runtime_state() {
-        let canonical_call = inline_image_runtime_call();
-        let image = inline_image_object(&canonical_call).expect("canonical inline image");
-        let resources = image_runtime_resources(&image);
-        let mut call = canonical_call.clone();
-        call.args.push("mystery = true".to_owned());
-        let mut snapshot = BundlePresentationSnapshot {
-            revision: 47,
-            images: vec![image.clone()],
-            ..BundlePresentationSnapshot::default()
-        };
-        let before = snapshot.clone();
-        let diagnostics = update_snapshot_with_effects(
-            &mut snapshot,
-            &[LineEffectRequest::Call(call)],
-            resources,
-        );
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot, before);
-    }
-
-    #[test]
-    fn presentation_snapshot_serializes_handle_epoch_and_tombstones() {
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let resources = BundlePresentationResources {
-            image_objects: &[],
-            text_inputs: &[],
-            action_buttons: &[],
-            scroll_regions: &[],
-            surfaces: &[],
-            focus_groups: &[],
-            focus_navigation: &[],
-        };
-        let create = LineEffectRequest::Call(RuntimeCall {
-            callee: "presentation.handle.create".to_owned(),
-            args: vec![
-                "handle = @handle.flow.save.panel".to_owned(),
-                "kind = \"view\"".to_owned(),
-                "resource = @view.SavePanel".to_owned(),
-                "owner = @flow.save".to_owned(),
-            ],
-        });
-        let dispose = LineEffectRequest::Call(RuntimeCall {
-            callee: "presentation.handle.dispose".to_owned(),
-            args: vec!["handle = @handle.flow.save.panel".to_owned()],
-        });
-        let diagnostics = snapshot
-            .update(
-                &DisplayResolution::default(),
-                &FlowFiberStatus::Running,
-                &[create, dispose],
-                resources,
-            )
-            .expect("dialogue presentation store updates");
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot.presentation_handle_epoch, 2);
-        assert_eq!(snapshot.presentation_handles.len(), 1);
-        assert_eq!(
-            snapshot.presentation_handles[0].state,
-            PresentationResourceState::Released
-        );
-        assert_eq!(snapshot.presentation_handles[0].created_epoch, 1);
-        assert_eq!(snapshot.presentation_handles[0].updated_epoch, 2);
-
-        let encoded = serde_json::to_string(&snapshot).expect("snapshot serializes");
-        let mut restored: BundlePresentationSnapshot =
-            serde_json::from_str(&encoded).expect("snapshot deserializes");
-        assert_eq!(restored, snapshot);
-
-        let stale_show = LineEffectRequest::Call(RuntimeCall {
-            callee: "presentation.handle.show".to_owned(),
-            args: vec!["handle = @handle.flow.save.panel".to_owned()],
-        });
-        let diagnostics = restored
-            .update(
-                &DisplayResolution::default(),
-                &FlowFiberStatus::Running,
-                &[stale_show],
-                resources,
-            )
-            .expect("dialogue presentation store updates");
-
-        assert_eq!(
-            diagnostics[0].code,
-            PresentationHandleDiagnosticCode::TerminalHandle
-        );
-        assert_eq!(restored.presentation_handle_epoch, 3);
-        assert_eq!(
-            restored.presentation_handles[0].state,
-            PresentationResourceState::Released
-        );
-        assert_eq!(restored.presentation_handles[0].updated_epoch, 2);
-    }
-
-    #[test]
-    fn view_handle_lifecycle_filters_runtime_controls() {
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let text_input = view_text_input();
-        let action_button = view_action_button();
-        let resources = view_runtime_resources(&text_input, &action_button);
-        let create_visible = view_handle_create("@handle.flow.feedback.panel");
-
-        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
-
-        assert!(diagnostics.is_empty());
-        assert_view_controls_visible(&snapshot, &text_input, &action_button);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.hide",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.text_inputs.is_empty());
-        assert!(snapshot.action_buttons.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert_view_controls_visible(&snapshot, &text_input, &action_button);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.unmount",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.text_inputs.is_empty());
-        assert!(snapshot.action_buttons.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert_view_controls_visible(&snapshot, &text_input, &action_button);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.release",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.text_inputs.is_empty());
-        assert!(snapshot.action_buttons.is_empty());
-
-        let mut destroy_snapshot = BundlePresentationSnapshot::default();
-        update_snapshot_with_effects(
-            &mut destroy_snapshot,
-            &[
-                view_handle_create("@handle.flow.feedback.panel.destroy"),
-                presentation_handle_call(
-                    "presentation.handle.destroy",
-                    "@handle.flow.feedback.panel.destroy",
-                ),
-            ],
-            resources,
-        );
-        assert!(destroy_snapshot.text_inputs.is_empty());
-        assert!(destroy_snapshot.action_buttons.is_empty());
-    }
-
-    #[test]
-    fn view_handle_lifecycle_filters_scroll_regions() {
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let scroll_region = view_scroll_region();
-        let resources = BundlePresentationResources {
-            image_objects: &[],
-            text_inputs: &[],
-            action_buttons: &[],
-            scroll_regions: std::slice::from_ref(&scroll_region),
-            surfaces: &[],
-            focus_groups: &[],
-            focus_navigation: &[],
-        };
-        let create_visible = view_handle_create("@handle.flow.feedback.panel");
-
-        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot.scroll_regions, vec![scroll_region.clone()]);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.hide",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.scroll_regions.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert_eq!(snapshot.scroll_regions, vec![scroll_region]);
-    }
-
-    #[test]
-    fn view_handle_lifecycle_filters_surfaces() {
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let surface = view_surface();
-        let resources = BundlePresentationResources {
-            image_objects: &[],
-            text_inputs: &[],
-            action_buttons: &[],
-            scroll_regions: &[],
-            surfaces: std::slice::from_ref(&surface),
-            focus_groups: &[],
-            focus_navigation: &[],
-        };
-        let create_visible = view_handle_create("@handle.flow.feedback.panel");
-
-        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot.surfaces, vec![surface.clone()]);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.hide",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.surfaces.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert_eq!(snapshot.surfaces, vec![surface]);
-    }
-
-    #[test]
-    fn view_handle_lifecycle_filters_focus_resources() {
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let focus_group = view_focus_group();
-        let focus_navigation = view_focus_navigation();
-        let resources = BundlePresentationResources {
-            image_objects: &[],
-            text_inputs: &[],
-            action_buttons: &[],
-            scroll_regions: &[],
-            surfaces: &[],
-            focus_groups: std::slice::from_ref(&focus_group),
-            focus_navigation: std::slice::from_ref(&focus_navigation),
-        };
-        let create_visible = view_handle_create("@handle.flow.feedback.panel");
-
-        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot.focus_groups, vec![focus_group.clone()]);
-        assert_eq!(snapshot.focus_navigation, vec![focus_navigation.clone()]);
-
-        let diagnostics = update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.hide",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.focus_groups.is_empty());
-        assert!(snapshot.focus_navigation.is_empty());
-        assert_eq!(
-            diagnostics[0].code,
-            PresentationHandleDiagnosticCode::HiddenButFocusable
-        );
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert_eq!(snapshot.focus_groups, vec![focus_group.clone()]);
-        assert_eq!(snapshot.focus_navigation, vec![focus_navigation.clone()]);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.unmount",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.focus_groups.is_empty());
-        assert!(snapshot.focus_navigation.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.release",
-                "@handle.flow.feedback.panel",
-            )],
-            resources,
-        );
-        assert!(snapshot.focus_groups.is_empty());
-        assert!(snapshot.focus_navigation.is_empty());
-
-        let mut destroy_snapshot = BundlePresentationSnapshot::default();
-        update_snapshot_with_effects(
-            &mut destroy_snapshot,
-            &[
-                view_handle_create("@handle.flow.feedback.panel.destroy"),
-                presentation_handle_call(
-                    "presentation.handle.destroy",
-                    "@handle.flow.feedback.panel.destroy",
-                ),
-            ],
-            resources,
-        );
-        assert!(destroy_snapshot.focus_groups.is_empty());
-        assert!(destroy_snapshot.focus_navigation.is_empty());
-    }
-
-    #[test]
-    fn image_handle_lifecycle_filters_presentation_images() {
-        let mut snapshot = BundlePresentationSnapshot::default();
-        let image = presentation_image_object("image.glass_bg");
-        let resources = image_runtime_resources(&image);
-        let create_visible = image_handle_create("@handle.flow.feedback.bg", "image.glass_bg");
-
-        let diagnostics = update_snapshot_with_effects(&mut snapshot, &[create_visible], resources);
-
-        assert!(diagnostics.is_empty());
-        assert_eq!(snapshot.images, vec![image.clone()]);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.hide",
-                "@handle.flow.feedback.bg",
-            )],
-            resources,
-        );
-        assert!(snapshot.images.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.bg",
-            )],
-            resources,
-        );
-        assert_eq!(snapshot.images, vec![image.clone()]);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.unmount",
-                "@handle.flow.feedback.bg",
-            )],
-            resources,
-        );
-        assert!(snapshot.images.is_empty());
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.show",
-                "@handle.flow.feedback.bg",
-            )],
-            resources,
-        );
-        assert_eq!(snapshot.images, vec![image.clone()]);
-
-        update_snapshot_with_effects(
-            &mut snapshot,
-            &[presentation_handle_call(
-                "presentation.handle.release",
-                "@handle.flow.feedback.bg",
-            )],
-            resources,
-        );
-        assert!(snapshot.images.is_empty());
-
-        let mut destroy_snapshot = BundlePresentationSnapshot::default();
-        update_snapshot_with_effects(
-            &mut destroy_snapshot,
-            &[
-                image_handle_create("@handle.flow.feedback.bg.destroy", "image.glass_bg"),
-                presentation_handle_call(
-                    "presentation.handle.destroy",
-                    "@handle.flow.feedback.bg.destroy",
-                ),
-            ],
-            resources,
-        );
-        assert!(destroy_snapshot.images.is_empty());
-    }
-
-    fn view_text_input() -> ViewRuntimeTextControl {
-        ViewRuntimeTextControl {
-            public_id: "input.visitor_name".to_owned(),
-            target: "input.visitor_name".to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            containing_scroll_region: None,
-            session: 1,
-            value: String::new(),
-            selection: ViewRuntimeTextSelection::new(0, 0),
-            options: ViewRuntimeTextControlOptions {
-                purpose: ViewInputPurpose::Text,
-                autocorrect: TextAssistPolicy::PlatformDefault,
-                spellcheck: TextAssistPolicy::PlatformDefault,
-                capitalization: TextCapitalization::None,
-                enter_key: EnterKeyHint::Default,
-                multiline: false,
-                selection_policy: ViewTextSelectionPolicy::Enabled,
-                shortcut_policy: ViewTextShortcutPolicy::Enabled,
-                tab_policy: ViewTextTabPolicy::FocusNavigation,
-                vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
-                secure_policy: ViewSecureInputPolicy::Plain,
-                composition_on_blur: CompositionOnBlurPolicy::Commit,
-            },
-            kind: ViewInputKind::TextField,
-            bounds: ViewRuntimeTextControlBounds::from_px(48, 48, 420, 48),
-            label: None,
-            handlers: ViewRuntimeTextControlHandlers::default(),
-            style: ViewRuntimeControlVisualStyle::default(),
-        }
-    }
-
-    fn view_action_button() -> ViewRuntimeActionButton {
-        ViewRuntimeActionButton {
-            public_id: "button.continue".to_owned(),
-            target: "button.continue".to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            containing_scroll_region: None,
-            label: "Continue".to_owned(),
-            enabled: true,
-            bounds: ViewRuntimeButtonBounds::new(484_000, 48_000, 180_000, 48_000),
-            action: ViewRuntimeActionButtonAction::Noop,
-            style: ViewRuntimeControlVisualStyle::default(),
-        }
-    }
-
-    fn view_scroll_region() -> ViewRuntimeScrollRegion {
-        ViewRuntimeScrollRegion {
-            public_id: "scroll.ModernFeedbackPanel.0".to_owned(),
-            target: "scroll.ModernFeedbackPanel.0".to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            bounds: ViewRuntimeScrollRegionBounds::new(48_000, 48_000, 420_000, 180_000),
-            content_width_milli: 420_000,
-            content_height_milli: 360_000,
-            axis: arcweft_bundle::resource_codec::ViewScrollAxis::Vertical,
-            overflow: arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Auto,
-            indicators: arcweft_bundle::resource_codec::ViewScrollIndicatorsPolicy::Auto,
-            overscroll: arcweft_bundle::resource_codec::ViewScrollOverscrollPolicy::Clamp,
-            auto_scroll_focus: arcweft_bundle::resource_codec::ViewFocusAutoScrollPolicy::Nearest,
-        }
-    }
-
-    fn view_surface() -> ViewRuntimeSurface {
-        ViewRuntimeSurface {
-            public_id: "surface.ModernFeedbackPanel.card".to_owned(),
-            target: "surface.ModernFeedbackPanel.card".to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            containing_scroll_region: None,
-            element: arcweft_bundle::resource_codec::view::ViewElementKind::Panel,
-            bounds: arcweft_bundle::resource_codec::ViewRuntimeSurfaceBounds::from_px(
-                8, 12, 96, 48,
-            ),
-            style: ViewRuntimeControlVisualStyle::default(),
-        }
-    }
-
-    fn view_focus_group() -> ViewRuntimeFocusGroup {
-        ViewRuntimeFocusGroup {
-            public_id: "group.ModernFeedbackPanel.0".to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            parent: None,
-            policy: ViewFocusGroupPolicy::Normal,
-            initial: ViewFocusInitialPolicy::Explicit {
-                target: "button.continue".to_owned(),
-            },
-            wrap: ViewFocusWrapPolicy::Wrap,
-            disabled_skip: ViewFocusSkipPolicy::Skip,
-            hidden_skip: ViewFocusSkipPolicy::Skip,
-        }
-    }
-
-    fn view_focus_navigation() -> ViewRuntimeFocusNavigation {
-        ViewRuntimeFocusNavigation {
-            public_id: "button.continue".to_owned(),
-            view: Some("view.ModernFeedbackPanel".to_owned()),
-            group: Some("group.ModernFeedbackPanel.0".to_owned()),
-            edges: vec![ViewRuntimeFocusNavigationEdge {
-                direction: ViewFocusDirection::Left,
-                target: ViewFocusTargetResolution::Explicit {
-                    target: "input.visitor_name".to_owned(),
-                },
-            }],
-        }
-    }
-
-    fn view_runtime_resources<'a>(
-        text_input: &'a ViewRuntimeTextControl,
-        action_button: &'a ViewRuntimeActionButton,
-    ) -> BundlePresentationResources<'a> {
-        BundlePresentationResources {
-            image_objects: &[],
-            text_inputs: std::slice::from_ref(text_input),
-            action_buttons: std::slice::from_ref(action_button),
-            scroll_regions: &[],
-            surfaces: &[],
-            focus_groups: &[],
-            focus_navigation: &[],
-        }
-    }
-
-    fn view_handle_create(handle: &str) -> LineEffectRequest {
-        LineEffectRequest::Call(RuntimeCall {
-            callee: "presentation.handle.create".to_owned(),
-            args: vec![
-                format!("handle = {handle}"),
-                "kind = \"view\"".to_owned(),
-                "resource = @view:.ModernFeedbackPanel".to_owned(),
-            ],
-        })
-    }
-
-    fn presentation_handle_call(callee: &str, handle: &str) -> LineEffectRequest {
-        LineEffectRequest::Call(RuntimeCall {
-            callee: callee.to_owned(),
-            args: vec![format!("handle = {handle}")],
-        })
-    }
-
-    fn inline_image_runtime_call() -> RuntimeCall {
-        RuntimeCall {
-            callee: "image".to_owned(),
-            args: vec![
-                "asset = @asset:.glass_bg".to_owned(),
-                "id = \"image.glass_bg.inline\"".to_owned(),
-                "x = 0".to_owned(),
-                "y = 0".to_owned(),
-                "width = 1280".to_owned(),
-                "height = 720".to_owned(),
-            ],
-        }
-    }
-
-    fn presentation_image_object(id: &str) -> BundleImageObject {
-        BundleImageObject {
-            id: id.to_owned(),
-            asset: "asset.glass_bg".to_owned(),
-            target: Some("target.glass_bg".to_owned()),
-            layer: Some("layer.background".to_owned()),
-            view: None,
-            containing_scroll_region: None,
-            bounds: BundleImageObjectBounds::from_px(0, 0, 1280, 720),
-            placement: None,
-            fit: BundleImageObjectFit::Cover,
-            alignment: BundleImageObjectAlignment::default(),
-            playback: BundleImageObjectPlayback::default(),
-            transform: BundleImageObjectTransform::default(),
-            depth_milli: -10_000,
-            opacity_milli: 1_000,
-            actions: Vec::new(),
-            params: std::collections::BTreeMap::default(),
-            proxies: Vec::new(),
-            visible: true,
-        }
-    }
-
-    fn image_runtime_resources(image: &BundleImageObject) -> BundlePresentationResources<'_> {
-        BundlePresentationResources {
-            image_objects: std::slice::from_ref(image),
-            text_inputs: &[],
-            action_buttons: &[],
-            scroll_regions: &[],
-            surfaces: &[],
-            focus_groups: &[],
-            focus_navigation: &[],
-        }
-    }
-
-    fn empty_presentation_resources() -> BundlePresentationResources<'static> {
-        BundlePresentationResources {
-            image_objects: &[],
-            text_inputs: &[],
-            action_buttons: &[],
-            scroll_regions: &[],
-            surfaces: &[],
-            focus_groups: &[],
-            focus_navigation: &[],
-        }
-    }
-
-    fn image_handle_create(handle: &str, resource: &str) -> LineEffectRequest {
-        LineEffectRequest::Call(RuntimeCall {
-            callee: "presentation.handle.create".to_owned(),
-            args: vec![
-                format!("handle = {handle}"),
-                "kind = \"image\"".to_owned(),
-                format!("resource = @{resource}"),
-            ],
-        })
-    }
-
-    fn update_snapshot_with_effects(
-        snapshot: &mut BundlePresentationSnapshot,
-        effects: &[LineEffectRequest],
-        resources: BundlePresentationResources<'_>,
-    ) -> Vec<PresentationHandleDiagnostic> {
-        snapshot
-            .update(
-                &DisplayResolution::default(),
-                &FlowFiberStatus::Running,
-                effects,
-                resources,
-            )
-            .expect("dialogue presentation store updates")
-    }
-
-    fn assert_view_controls_visible(
-        snapshot: &BundlePresentationSnapshot,
-        text_input: &ViewRuntimeTextControl,
-        action_button: &ViewRuntimeActionButton,
-    ) {
-        assert_eq!(snapshot.text_inputs, vec![text_input.clone()]);
-        assert_eq!(snapshot.action_buttons, vec![action_button.clone()]);
-    }
-}
+mod tests;

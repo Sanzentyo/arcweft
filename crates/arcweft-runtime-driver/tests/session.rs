@@ -71,7 +71,7 @@ use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
     BundleVirtualListMountError,
 };
-use arcweft_runtime_driver::session_save::BundleSessionSaveError;
+use arcweft_runtime_driver::session_save::{BundleSessionPendingBlocker, BundleSessionSaveError};
 use arcweft_runtime_driver::swap::SwapCompatibility;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewAxisSeedError, BundleViewAxisSeedUpdate, BundleViewAxisSeedUpdateOutcome,
@@ -146,7 +146,10 @@ fn paged_fixture_bundle() -> ArcweftBundle {
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
-        view: None,
+        view: arcweft_view::ViewId::try_new_engine_owned(
+            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+        )
+        .unwrap(),
         voice: None,
         look: None,
         style: None,
@@ -515,6 +518,54 @@ fn fixture_bundle_with(
     fixture_bundle_from_parts(display_text, extra_flow, changed_main_code, true)
 }
 
+fn fixture_bundle_with_dialogue_owner(owner: &ViewId, display_text: &str) -> ArcweftBundle {
+    let mut bundle = fixture_bundle_with(display_text, false, false);
+    bundle.display = LineDisplayCatalog::new(vec![LineDisplaySpec {
+        line: line_id("line.opening"),
+        callee: "alice".to_owned(),
+        speaker_label: None,
+        text_key: None,
+        view: owner.clone(),
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Text {
+            text: display_text.to_owned(),
+        }]),
+    }]);
+    bundle
+        .with_view_resources(
+            Some(ViewProgramResource {
+                program_id: ViewProgramId::try_new("view.program.dialogue-owner-swap")
+                    .expect("program ID"),
+                definitions: ["view.DialogueOld", "view.DialogueNew"]
+                    .into_iter()
+                    .map(|view| ViewDefinitionResource {
+                        public_id: ViewDefinitionRef::try_new(view).expect("definition ID"),
+                        body: ViewInstructionSpan::new(0, 0),
+                        styles: Vec::new(),
+                        parameters: vec![ViewParameterResource {
+                            ordinal: 0,
+                            name: "dialogue".to_owned(),
+                            role: arcweft_bundle::resource_codec::view::ViewParameterRole::Dialogue,
+                            value_type: None,
+                            value_slot: None,
+                            default_program: None,
+                        }],
+                        state_schema_hash: 1,
+                    })
+                    .collect(),
+                ..ViewProgramResource::default()
+            }),
+            None,
+        )
+        .expect("dialogue owner View resources merge")
+}
+
 fn fixture_bundle_from_parts(
     display_text: &str,
     extra_flow: bool,
@@ -571,7 +622,10 @@ fn fixture_bundle_from_parts(
         callee: "alice".to_owned(),
         speaker_label: None,
         text_key: None,
-        view: None,
+        view: arcweft_view::ViewId::try_new_engine_owned(
+            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+        )
+        .unwrap(),
         voice: None,
         look: None,
         style: None,
@@ -772,7 +826,10 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
         callee: "concierge".to_owned(),
         speaker_label: None,
         text_key: None,
-        view: None,
+        view: arcweft_view::ViewId::try_new_engine_owned(
+            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+        )
+        .unwrap(),
         voice: None,
         look: None,
         style: None,
@@ -2289,6 +2346,42 @@ fn hot_swap_content_only_updates_future_presentation_without_rebuilding_code() {
         BundleStepInput::default(),
     );
     assert_eq!(dialogue_text(&step.presentation), Some("New text"));
+}
+
+#[test]
+fn save_blocks_while_a_transient_dialogue_view_owner_is_active() {
+    let old_owner = ViewId::try_new("view.DialogueOld").expect("old View ID");
+    let new_owner = ViewId::try_new("view.DialogueNew").expect("new View ID");
+    let old_bundle = fixture_bundle_with_dialogue_owner(&old_owner, "Old text");
+    let new_bundle = fixture_bundle_with_dialogue_owner(&new_owner, "New text");
+    let mut session =
+        BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
+    let initial = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(dialogue_text(&initial.presentation), Some("Old text"));
+
+    let report = session
+        .hot_swap_bundle(&new_bundle)
+        .expect("content-only swap keeps the active old dialogue occurrence");
+    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(
+        session.snapshot_session(),
+        Err(BundleSessionSaveError::NonQuiescent {
+            blockers: vec![BundleSessionPendingBlocker::TransientDialogueViewOwners {
+                views: vec![old_owner.clone()],
+            },],
+        })
+    );
+    assert_eq!(
+        session.export_session_save_bytes(),
+        Err(BundleSessionSaveError::NonQuiescent {
+            blockers: vec![BundleSessionPendingBlocker::TransientDialogueViewOwners {
+                views: vec![old_owner],
+            },],
+        })
+    );
 }
 
 #[test]

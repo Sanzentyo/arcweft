@@ -191,6 +191,26 @@ impl SharedRenderer {
         Ok(())
     }
 
+    /// Renders a prepared coverage frame over transparent black through the
+    /// same compositor, glyph atlas, transforms, and clips as normal output.
+    pub(crate) fn render_coverage_to_view(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::TextureView,
+        frame: &PreparedFrame,
+    ) -> Result<(), SharedRendererError> {
+        let submission = self.prepare_to_view_with_clear(
+            device,
+            queue,
+            target,
+            frame,
+            wgpu::Color::TRANSPARENT,
+        )?;
+        submission.submit(queue);
+        Ok(())
+    }
+
     /// Completes every fallible renderer operation without submitting GPU work.
     pub fn prepare_to_view(
         &mut self,
@@ -198,6 +218,17 @@ impl SharedRenderer {
         queue: &wgpu::Queue,
         target: &wgpu::TextureView,
         frame: &PreparedFrame,
+    ) -> Result<PreparedSharedRenderSubmission, SharedRendererError> {
+        self.prepare_to_view_with_clear(device, queue, target, frame, wgpu::Color::BLACK)
+    }
+
+    fn prepare_to_view_with_clear(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::TextureView,
+        frame: &PreparedFrame,
+        clear: wgpu::Color,
     ) -> Result<PreparedSharedRenderSubmission, SharedRendererError> {
         if frame.viewport.physical_width == 0 || frame.viewport.physical_height == 0 {
             return Err(SharedRendererError::InvalidTargetExtent {
@@ -276,7 +307,7 @@ impl SharedRenderer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("arcweft-shared-render-frame"),
         });
-        self.render_background_and_images(device, queue, &mut encoder, &scene_view, frame)?;
+        self.render_background_and_images(device, queue, &mut encoder, &scene_view, frame, clear)?;
         for view_scene in frame.view_scenes() {
             self.render_view_scene(device, queue, &mut encoder, &scene_view, frame, view_scene)?;
         }
@@ -289,8 +320,13 @@ impl SharedRenderer {
             target_extent,
             frame,
         )?;
-        self.view_compositor
-            .composite_texture_to_view(device, &mut encoder, &scene_view, target);
+        self.view_compositor.composite_texture_to_view(
+            device,
+            &mut encoder,
+            &scene_view,
+            target,
+            clear,
+        );
         self.atlas.trim();
         Ok(PreparedSharedRenderSubmission {
             command_buffer: encoder.finish(),
@@ -347,6 +383,7 @@ impl SharedRenderer {
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
         frame: &PreparedFrame,
+        clear: wgpu::Color,
     ) -> Result<(), SharedRendererError> {
         let background_vertex_buffer = rectangle_vertex_buffer(
             device,
@@ -362,7 +399,7 @@ impl SharedRenderer {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Clear(clear),
                     store: wgpu::StoreOp::Store,
                 },
             })],

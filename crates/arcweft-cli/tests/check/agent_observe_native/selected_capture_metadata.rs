@@ -11,6 +11,7 @@ fn agent_mcp_stdio_lists_selected_capture_metadata() {
                 "name": "arcweft.observe",
                 "arguments": {
                     "source": rich_text_showcase_path().display().to_string(),
+                    "entry": "entry.main",
                     "steps": 4,
                     "max_ops": 128,
                     "resource": "all",
@@ -49,7 +50,12 @@ fn agent_mcp_stdio_lists_selected_capture_metadata() {
     assert_eq!(selected["scope"]["kind"], "object");
     assert_eq!(selected["coordinate_basis"], "output");
     assert_eq!(selected["crop"]["basis"], "output");
-    assert!(selected["crop"]["clipped"]["size"]["width"].as_f64().unwrap_or(0.0) > 0.0);
+    assert!(
+        selected["crop"]["clipped"]["size"]["width"]
+            .as_f64()
+            .unwrap_or(0.0)
+            > 0.0
+    );
     assert!(selected["mask"]["has_alpha_mask"].as_bool().is_some());
     assert_eq!(selected["source"]["kind"], "object");
 }

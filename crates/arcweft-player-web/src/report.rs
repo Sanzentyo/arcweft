@@ -73,7 +73,7 @@ impl WebObservationReport {
                     dialogue: dialogue.id().get(),
                     entry: entry.id().get(),
                     revision: dialogue.revision().get(),
-                    view: dialogue.view().as_str().to_owned(),
+                    view: dialogue.view().view_id().as_str().to_owned(),
                     view_mount: step
                         .presentation
                         .view

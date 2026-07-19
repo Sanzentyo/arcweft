@@ -50,7 +50,7 @@ flow @flow.main main {
     let defaults = DialogueDisplayDefaults::from_module(&hir);
     let spec = lower_dialogue_display(line_id("say.opening.001"), dialogue, &defaults);
 
-    assert_eq!(spec.view.as_deref(), Some("std.view.dialogue"));
+    assert_eq!(spec.view.as_str(), "std.view.dialogue");
     assert_eq!(
         spec.base_styles,
         vec![

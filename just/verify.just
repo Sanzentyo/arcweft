@@ -93,7 +93,7 @@ test-slow-mcp:
     @cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --ignored --nocapture
 
 test-visual-golden: test-visual-smoke
-    @cargo test -p arcweft-cli --features native-capture --test check native_checked_in_visual_golden_fixtures_are_well_formed --quiet
+    @cargo test -p arcweft-cli --features native-capture --test check native_checked_in_visual_golden_artifacts_are_well_formed --quiet
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixture -- --ignored --nocapture
 
 check-vendor-glyphon:
@@ -110,7 +110,19 @@ verify-vendor-glyphon: check-vendor-glyphon clippy-vendor-glyphon test-vendor-gl
 test-slow-agent-observe:
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
 
-test-tier2: test-slow-mcp test-slow-agent-observe test-visual-golden
+test-native-aux-capture:
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_object_frame_metadata
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_layer_frame_pixels
+    @cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata
+    @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_captures_clipped_animated_image_object
+    @cargo test -p arcweft-cli --features native-capture --test check text_combine_mask_raw_crop
+    @cargo test -p arcweft-cli --features native-capture --test check text_combine_object_id_raw_crop
+    @cargo test -p arcweft-cli --features native-capture --test check typewriter_text_combine_capture_time_controls_all_glyphs
+    @cargo test -p arcweft-cli --features native-capture --test check typewriter_text_combine_capture_time_controls_object_id
+    @cargo test -p arcweft-cli --features native-capture --test check typewriter_ruby_capture_time_controls_base_and_annotation
+    @cargo test -p arcweft-cli --features native-capture --test check typewriter_ruby_capture_time_controls_object_id
+
+test-tier2: test-slow-mcp test-slow-agent-observe test-native-aux-capture test-visual-golden
 
 check-jlreq-punctuation:
     @rustc tools\generate_jlreq_punctuation_data.rs -o target\generate_jlreq_punctuation_data.exe

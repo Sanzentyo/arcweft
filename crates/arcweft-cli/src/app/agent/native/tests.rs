@@ -33,6 +33,10 @@ use arcweft_debug_model::{
 };
 use serde::Serialize;
 
+fn test_agent_resource_uri(value: impl Into<String>) -> AgentResourceUri {
+    AgentResourceUri::new(value).expect("test resource URI is nonempty")
+}
+
 #[test]
 fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
     let options = agent_mcp_script_run_options(&serde_json::json!({
@@ -484,7 +488,7 @@ fn agent_mcp_resource_read_enforces_capture_privacy() {
     let mut state = AgentMcpState {
         report: Some(test_agent_observation_report(None)),
         capture_resources: vec![AgentResource {
-            uri: "arcweft://session/cli/frame/0/color.png".to_owned(),
+            uri: test_agent_resource_uri("arcweft://session/cli/frame/0/color.png"),
             kind: AgentResourceKind::Image,
             mime_type: "image/png".to_owned(),
             hash: "blake3:test".to_owned(),
@@ -700,7 +704,7 @@ fn agent_mcp_session_context_resource_redacts_source_and_enforces_privacy() {
         report: Some(report),
         project_context: Some(test_agent_mcp_project_context()),
         trace_resources: vec![AgentResource {
-            uri: "arcweft://run/run.test/trace.arcwx".to_owned(),
+            uri: test_agent_resource_uri("arcweft://run/run.test/trace.arcwx"),
             kind: AgentResourceKind::Trace,
             mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
             hash: "trace:test".to_owned(),
@@ -814,7 +818,7 @@ fn test_agent_mcp_project_context() -> AgentMcpProjectContext {
 fn agent_mcp_session_context_resource_is_available_for_trace_only_session() {
     let mut state = AgentMcpState {
         trace_resources: vec![AgentResource {
-            uri: "arcweft://run/run.trace/trace.arcwx".to_owned(),
+            uri: test_agent_resource_uri("arcweft://run/run.trace/trace.arcwx"),
             kind: AgentResourceKind::Trace,
             mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
             hash: "trace:run.trace".to_owned(),
@@ -841,6 +845,154 @@ fn agent_mcp_session_context_resource_is_available_for_trace_only_session() {
             .expect("text resource")
             .contains("\"observed\":false")
     );
+}
+
+#[test]
+fn agent_mcp_allowed_trace_keeps_canonical_uri_across_list_and_read() {
+    let canonical_uri = "arcweft://run/run.trace/trace.arcwx";
+    let trace = trace_resource(&[AgentTraceRecord {
+        schema_version: 1,
+        run_id: AgentRunId::new("run.trace").expect("test run ID is canonical"),
+        session_id: None,
+        sequence: 0,
+        tick: None,
+        kind: arcweft_agent_protocol::trace::AgentTraceKind::RunFinished,
+        payload_hash: StableHash::new("blake3:trace-run-finished")
+            .expect("test payload hash is nonempty"),
+        payload: serde_json::json!({
+            "status": "ok"
+        }),
+        blob_refs: Vec::new(),
+    }])
+    .expect("same-run typed trace resource serializes");
+    assert_eq!(trace.uri, canonical_uri);
+    let mut state = AgentMcpState {
+        trace_resources: vec![trace],
+        ..AgentMcpState::default()
+    };
+
+    let listed = agent_mcp_resource_list(&mut state).expect("resource list serializes");
+    let trace_descriptor = listed["resources"]
+        .as_array()
+        .expect("resources array")
+        .iter()
+        .find(|descriptor| descriptor["uri"] == canonical_uri)
+        .expect("canonical trace URI is listed");
+    assert_eq!(
+        trace_descriptor["mimeType"],
+        serde_json::json!("application/vnd.arcweft.agent-trace+json")
+    );
+    let published = state
+        .published_resources
+        .get(canonical_uri)
+        .expect("canonical trace publication is cached");
+    assert_eq!(
+        published.policy().disposition,
+        arcweft_content_policy::PolicyDisposition::Allow
+    );
+    assert!(published.policy().reason_codes.is_empty());
+
+    let read = agent_mcp_resource_read(
+        &serde_json::json!({
+            "uri": canonical_uri,
+            "max_privacy": "project"
+        }),
+        &mut state,
+    )
+    .expect("canonical trace URI reads");
+    assert_eq!(read["contents"][0]["uri"], serde_json::json!(canonical_uri));
+    assert_eq!(
+        read["contents"][0]["mimeType"],
+        serde_json::json!("application/vnd.arcweft.agent-trace+json")
+    );
+    assert_eq!(
+        mcp_read_text_json(&read)[0]["payload"]["status"],
+        serde_json::json!("ok")
+    );
+}
+
+#[test]
+fn agent_mcp_trace_resource_read_audits_allowed_and_sensitive_denied() {
+    let db_path = std::env::temp_dir().join(format!(
+        "arcweft-agent-mcp-trace-read-audit-{}.sqlite3",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&db_path);
+    let allowed_uri = "arcweft://run/run.trace_audit/trace.arcwx";
+    let sensitive_uri = "arcweft://run/run.trace_sensitive/trace.arcwx";
+    let mut state = AgentMcpState {
+        trace_resources: vec![AgentResource {
+            uri: test_agent_resource_uri(allowed_uri),
+            kind: AgentResourceKind::Trace,
+            mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+            hash: "trace:audit:allowed".to_owned(),
+            image: None,
+            body: AgentResourceBody::Json(serde_json::json!([{
+                "kind": "run_finished",
+                "privacy_class": "project",
+                "payload": {"status": "ok"}
+            }])),
+        }],
+        ..AgentMcpState::default()
+    };
+
+    let allowed = agent_mcp_call_resource_read(
+        &serde_json::json!({
+            "uri": allowed_uri,
+            "max_privacy": "project",
+            "path": db_path.display().to_string()
+        }),
+        &mut state,
+    )
+    .expect("allowed trace read succeeds");
+    assert!(!allowed.is_error);
+
+    state.trace_resources = vec![AgentResource {
+        uri: test_agent_resource_uri(sensitive_uri),
+        kind: AgentResourceKind::Trace,
+        mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+        hash: "trace:audit:sensitive".to_owned(),
+        image: None,
+        body: AgentResourceBody::Json(serde_json::json!([{
+            "kind": "diagnostic_emitted",
+            "privacy_class": "sensitive",
+            "payload": {"message": "restricted trace detail"}
+        }])),
+    }];
+    let denied = agent_mcp_call_resource_read(
+        &serde_json::json!({
+            "uri": sensitive_uri,
+            "max_privacy": "project",
+            "path": db_path.display().to_string()
+        }),
+        &mut state,
+    )
+    .expect("privacy denial serializes");
+    assert!(denied.is_error);
+    assert_eq!(
+        mcp_text_json(&denied)["privacy"],
+        serde_json::json!("sensitive")
+    );
+
+    let store = DebugStore::open(&db_path).expect("debug store opens");
+    let events = store
+        .session_timeline_with_max_privacy(
+            Some("session.mcp.resource_read"),
+            None,
+            10,
+            PrivacyClass::Sensitive,
+        )
+        .expect("trace resource read audit timeline");
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].payload["surface"], "arcweft.resource.read");
+    assert_eq!(events[0].payload["requested_uri"], allowed_uri);
+    assert_eq!(events[0].payload["outcome"], "allowed");
+    assert_eq!(events[1].payload["requested_uri"], sensitive_uri);
+    assert_eq!(events[1].payload["privacy"], "sensitive");
+    assert_eq!(events[1].payload["max_privacy"], "project");
+    assert_eq!(events[1].payload["outcome"], "blocked");
+    drop(store);
+    let _ = std::fs::remove_file(&db_path);
 }
 
 #[test]
@@ -2531,7 +2683,7 @@ fn agent_mcp_debug_close_stale_sessions_abandons_running_sessions() {
 fn agent_mcp_rag_query_enforces_max_privacy() {
     let mut state = AgentMcpState {
         trace_resources: vec![AgentResource {
-            uri: "arcweft://run/run.test/trace.arcwx".to_owned(),
+            uri: test_agent_resource_uri("arcweft://run/run.test/trace.arcwx"),
             kind: AgentResourceKind::Trace,
             mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
             hash: "trace:test".to_owned(),
@@ -2690,7 +2842,9 @@ fn assert_resource_read_audit(db_path: &std::path::Path) {
 fn test_agent_raw_rgba_capture_resource(kind: AgentImageKind) -> AgentResource {
     let capture_name = kind.as_str();
     AgentResource {
-        uri: format!("arcweft://session/cli/frame/0/object.customer.secret.{capture_name}.rgba"),
+        uri: test_agent_resource_uri(format!(
+            "arcweft://session/cli/frame/0/object.customer.secret.{capture_name}.rgba"
+        )),
         kind: AgentResourceKind::Image,
         mime_type: "application/octet-stream".to_owned(),
         hash: "blake3:raw-rgba-test".to_owned(),

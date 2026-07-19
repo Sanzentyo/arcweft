@@ -35,6 +35,7 @@ use arcweft_presentation::{
     input::{InteractionTarget, PointerId, ViewportPoint},
     text_input::{TextInput, TextInputSerial},
 };
+use arcweft_render_text::LineDisplayCatalog;
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderImage,
     RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
@@ -197,6 +198,7 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
         activated.activation_logical_time
     );
     assert_eq!(retained.deterministic_seed, activated.deterministic_seed);
+    assert_dialogue_view_projection(&second);
 
     let mut planner = PlayerFramePlannerState::new();
     PlayerFontSet::bundled_default()
@@ -214,7 +216,7 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
                 style_environment:
                     &arcweft_presentation::appearance::PresentationEnvironment::ENGINE_DEFAULT,
                 style_palettes: &arcweft_presentation::appearance::SystemPaletteSet::ENGINE_DEFAULT,
-                viewport: parity_test_viewport(),
+                viewport: standard_dialogue_test_viewport(),
                 fit: PlayerFrameFit::raw(),
                 image_time_millis: 32,
                 visual_time_millis: 32,
@@ -261,6 +263,30 @@ fn authored_rich_text_fx_retains_one_runtime_instance_and_uses_shared_evaluator(
     assert_eq!(item.paint.post_processes.len(), 1);
 }
 
+fn assert_dialogue_view_projection(step: &arcweft_runtime_driver::session::BundleSessionStep) {
+    assert_eq!(step.presentation.dialogue.len(), 1);
+    assert!(
+        !step.presentation.view.mounts.is_empty(),
+        "dialogue View evaluation must produce a mount: {:?}",
+        step.presentation.view.diagnostics
+    );
+    let dialogue_mount = step
+        .presentation
+        .view
+        .mounts
+        .iter()
+        .find(|mount| mount.dialogue.is_some())
+        .expect("dialogue View evaluation produces a dialogue mount");
+    assert!(
+        !dialogue_mount.text.is_empty(),
+        "dialogue mount must project text: {dialogue_mount:?}"
+    );
+    assert!(
+        !dialogue_mount.paint.is_empty(),
+        "dialogue mount must project paint: {dialogue_mount:?}"
+    );
+}
+
 fn authored_rich_text_fx_bundle() -> ArcweftBundle {
     const SOURCE: &str = r##"
 #[fx]
@@ -301,24 +327,14 @@ entry cli @entry.opening {
     let definitions =
         FxDefinitions::try_new(lower_fx_definitions(&hir).expect("Fx definitions lower"))
             .expect("Fx inventory");
-    let product_awbc = AwbcLowerer::new(
+    bundle_from_runtime_plan(
         &report.plan,
-        &report.line_display_catalog,
-        "web-rich-text-fx.arcw",
-    )
-    .lower()
-    .expect("product AWBC lowers")
-    .program;
-    let mut bundle = bundle_from_runtime_plan(
-        &report.plan,
+        report.line_display_catalog,
         SOURCE,
         "web-rich-text-fx.arcw",
         "entry.opening",
     )
-    .with_product_awbc(product_awbc)
-    .with_fx_definitions(definitions);
-    bundle.display = report.line_display_catalog;
-    bundle
+    .with_fx_definitions(definitions)
 }
 
 #[test]
@@ -752,6 +768,16 @@ const fn parity_test_viewport() -> RenderViewport {
     }
 }
 
+const fn standard_dialogue_test_viewport() -> RenderViewport {
+    RenderViewport {
+        logical_width: 1280.0,
+        logical_height: 720.0,
+        physical_width: 1280,
+        physical_height: 720,
+        scale_factor: 1.0,
+    }
+}
+
 fn authored_image_handle_bundle() -> ArcweftBundle {
     const SOURCE: &str = r#"
 pub asset card_file {
@@ -803,6 +829,7 @@ entry cli @entry.scoped_disposed { goto @flow.scoped_disposed }
     let plan = lower_runtime_plan(&hir).expect("authored fixture lowers to runtime plan");
     bundle_from_runtime_plan(
         &plan,
+        LineDisplayCatalog::default(),
         SOURCE,
         "web-authored-image-handle.arcw",
         "entry.manual_live",
@@ -860,6 +887,7 @@ entry cli @entry.view_scoped_disposed { goto @flow.view_scoped_disposed }
     let plan = lower_runtime_plan(&hir).expect("authored view fixture lowers to runtime plan");
     bundle_from_runtime_plan(
         &plan,
+        LineDisplayCatalog::default(),
         SOURCE,
         "web-authored-view-controls.arcw",
         "entry.view_manual_live",
@@ -872,13 +900,13 @@ entry cli @entry.view_scoped_disposed { goto @flow.view_scoped_disposed }
 
 fn bundle_from_runtime_plan(
     plan: &RuntimePlan,
+    display: LineDisplayCatalog,
     source: &str,
     source_label: &str,
     manifest_entry: &str,
 ) -> ArcweftBundle {
     let bytecode = BytecodeProgram::from_runtime_plan(plan.clone());
     let stats = bytecode.stats();
-    let display = arcweft_render_text::LineDisplayCatalog::default();
     let product_awbc = AwbcLowerer::new(plan, &display, source_label)
         .lower()
         .expect("authored fixture lowers to product AWBC")

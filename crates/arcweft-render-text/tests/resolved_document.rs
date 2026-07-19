@@ -20,7 +20,7 @@ fn line(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        view: None,
+        view: arcweft_view::ViewId::try_new("view.resolved-document.test").unwrap(),
         voice: None,
         look: None,
         style: None,

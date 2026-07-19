@@ -239,8 +239,8 @@ pub(super) fn agent_mcp_call_trace_read(
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "arcweft.trace.read requires arguments.path".to_owned())?;
     let records = super::read_and_validate_agent_trace_records(Path::new(path))?;
-    let resource =
-        trace_resource(&records).map_err(|error| format!("failed to serialize trace: {error}"))?;
+    let resource = trace_resource(&records)
+        .map_err(|error| format!("failed to construct Agent trace resource: {error}"))?;
     state
         .trace_resources
         .retain(|cached| cached.uri != resource.uri);
@@ -626,7 +626,8 @@ pub(super) fn agent_mcp_session_context_resource(
     });
     let bytes = serde_json::to_vec(&body)?;
     Ok(Some(AgentResource {
-        uri: format!("arcweft://session/{session_id}/context.json"),
+        uri: AgentResourceUri::new(format!("arcweft://session/{session_id}/context.json"))
+            .expect("generated session context URI is nonempty"),
         kind: AgentResourceKind::SessionContext,
         mime_type: "application/json".to_owned(),
         hash: agent_mcp_content_hash(bytes),

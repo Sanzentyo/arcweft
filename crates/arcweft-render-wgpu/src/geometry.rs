@@ -769,6 +769,26 @@ pub enum FramePlanError {
 }
 
 impl PreparedFrame {
+    /// Keeps the canonical prepared-text painter graph while making every
+    /// non-text producer transparent for one glyph-coverage render.
+    pub(crate) fn retain_prepared_text_coverage_paint(&mut self, selected_text: PreparedTextId) {
+        for rectangle in &mut self.rectangles {
+            rectangle.rgba[3] = 0.0;
+        }
+        for image in &mut self.images {
+            image.opacity_milli = 0;
+        }
+        self.control_backdrops.clear();
+        self.control_shadows.clear();
+        self.control_filters.clear();
+        self.control_paints.clear();
+        for prepared in &mut self.view_scenes {
+            prepared
+                .scene
+                .retain_prepared_text_coverage_paint(selected_text);
+        }
+    }
+
     #[must_use]
     pub fn with_view_scenes(mut self, view_scenes: impl Into<Vec<PreparedViewScene>>) -> Self {
         self.view_scenes = view_scenes.into();

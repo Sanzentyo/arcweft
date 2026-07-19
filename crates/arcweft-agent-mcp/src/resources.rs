@@ -4,16 +4,12 @@
 //! projection that wraps resources for MCP clients.
 
 use arcweft_agent_policy::PublishedAgentResource;
-use arcweft_agent_protocol::{
-    resource::{AgentResource, AgentResourceBody, AgentResourceKind},
-    trace::AgentTraceRecord,
-};
+use arcweft_agent_protocol::resource::{AGENT_TRACE_MIME_TYPE, AgentResource, AgentResourceBody};
 
 use crate::model::{
-    AGENT_TRACE_MIME_TYPE, McpBlobResourceContents, McpCallToolResult, McpContentBlock,
-    McpListResourceTemplatesResult, McpListResourcesResult, McpReadResourceResult,
-    McpResourceContents, McpResourceDescriptor, McpResourceTemplateDescriptor,
-    McpTextResourceContents,
+    McpBlobResourceContents, McpCallToolResult, McpContentBlock, McpListResourceTemplatesResult,
+    McpListResourcesResult, McpReadResourceResult, McpResourceContents, McpResourceDescriptor,
+    McpResourceTemplateDescriptor, McpTextResourceContents,
 };
 
 pub fn agent_resource_templates() -> Vec<McpResourceTemplateDescriptor> {
@@ -124,7 +120,7 @@ pub fn list_resource_templates_result() -> McpListResourceTemplatesResult {
 pub fn resource_descriptor(published: &PublishedAgentResource) -> McpResourceDescriptor {
     let resource = published.resource();
     McpResourceDescriptor {
-        uri: resource.uri.clone(),
+        uri: resource.uri.as_str().to_owned(),
         name: resource_name(resource),
         title: Some(resource.title().to_owned()),
         description: Some(resource.description()),
@@ -155,42 +151,6 @@ pub fn list_resources_result(resources: &[PublishedAgentResource]) -> McpListRes
     McpListResourcesResult {
         resources: resources.iter().map(resource_descriptor).collect(),
     }
-}
-
-/// Builds an MCP-addressable Agent trace resource from typed trace records.
-///
-/// The trace remains JSON at this boundary; portable binary/archive packaging
-/// for large blobs is handled by higher-level tooling.
-pub fn trace_resource(records: &[AgentTraceRecord]) -> Result<AgentResource, serde_json::Error> {
-    Ok(AgentResource {
-        uri: trace_resource_uri(records),
-        kind: AgentResourceKind::Trace,
-        mime_type: AGENT_TRACE_MIME_TYPE.to_owned(),
-        hash: trace_resource_hash(records),
-        image: None,
-        body: AgentResourceBody::Json(serde_json::to_value(records)?),
-    })
-}
-
-fn trace_resource_uri(records: &[AgentTraceRecord]) -> String {
-    records.first().map_or_else(
-        || "arcweft://run/unknown/trace.arcwx".to_owned(),
-        |record| format!("arcweft://run/{}/trace.arcwx", record.run_id.as_str()),
-    )
-}
-
-fn trace_resource_hash(records: &[AgentTraceRecord]) -> String {
-    records.last().map_or_else(
-        || "trace:empty".to_owned(),
-        |record| {
-            format!(
-                "trace:{}:{}:{}",
-                record.run_id.as_str(),
-                records.len(),
-                record.payload_hash.as_str()
-            )
-        },
-    )
 }
 
 /// Converts an Agent resource into an MCP `resources/read` result.
@@ -285,20 +245,20 @@ pub fn resource_link(resource: &PublishedAgentResource) -> McpContentBlock {
 fn resource_contents(resource: &AgentResource) -> Result<McpResourceContents, serde_json::Error> {
     match &resource.body {
         AgentResourceBody::Json(value) => Ok(McpResourceContents::Text(McpTextResourceContents {
-            uri: resource.uri.clone(),
+            uri: resource.uri.as_str().to_owned(),
             mime_type: Some(resource.mime_type.clone()),
             image: resource.image.clone(),
             text: serde_json::to_string(value)?,
         })),
         AgentResourceBody::Text(text) => Ok(McpResourceContents::Text(McpTextResourceContents {
-            uri: resource.uri.clone(),
+            uri: resource.uri.as_str().to_owned(),
             mime_type: Some(resource.mime_type.clone()),
             image: resource.image.clone(),
             text: text.clone(),
         })),
         AgentResourceBody::BytesBase64(body) => {
             Ok(McpResourceContents::Blob(McpBlobResourceContents {
-                uri: resource.uri.clone(),
+                uri: resource.uri.as_str().to_owned(),
                 mime_type: Some(resource.mime_type.clone()),
                 image: resource.image.clone(),
                 blob: body.data.clone(),

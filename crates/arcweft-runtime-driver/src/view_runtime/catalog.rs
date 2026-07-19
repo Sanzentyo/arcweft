@@ -162,6 +162,11 @@ impl ViewProgramCatalog {
         self.by_view.get(view).copied()
     }
 
+    pub(crate) fn accepts_dialogue_input(&self, view: &ViewId) -> bool {
+        self.definition_index(view)
+            .is_some_and(|index| self.execution_definition(index).accepts_dialogue_input())
+    }
+
     pub(crate) fn execution_definition(
         &self,
         index: ViewDefinitionIndex,

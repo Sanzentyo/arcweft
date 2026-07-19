@@ -163,8 +163,8 @@ pub(crate) fn effective_dialogue_view(
     dialogue: &HirDialogue,
     defaults: &DialogueDisplayDefaults,
     speaker_presets: &[DialogueSpeakerPreset],
-) -> Option<String> {
-    dialogue
+) -> Result<arcweft_view::ViewId, crate::errors::RuntimePlanLowerError> {
+    let selected = dialogue
         .view()
         .map(|id| id.body().to_owned())
         .or_else(|| {
@@ -183,5 +183,10 @@ pub(crate) fn effective_dialogue_view(
                 .and_then(|character| character.view.clone())
         })
         .or_else(|| defaults.global.view.clone())
-        .or_else(|| Some(DEFAULT_DIALOGUE_VIEW.to_owned()))
+        .unwrap_or_else(|| DEFAULT_DIALOGUE_VIEW.to_owned());
+    arcweft_view::ViewId::try_new_engine_owned(selected.clone()).map_err(|error| {
+        crate::errors::RuntimePlanLowerError::new(format!(
+            "dialogue View `{selected}` is not a valid public View identity: {error}"
+        ))
+    })
 }

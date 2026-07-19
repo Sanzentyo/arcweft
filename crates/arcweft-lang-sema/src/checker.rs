@@ -82,13 +82,14 @@ pub use module::{
 
 use fx::FxCatalog;
 use helpers::{
-    await_branch_pattern_type, choice_output_type, default_presentation_slot_family, entity_kind,
-    entity_kind_for_decl, entity_syntax_kind, expr_path_label, function_param_local_type,
-    function_param_local_type_with_generics, ident_pattern_name, is_character_entity_literal,
-    is_drop_callee, is_local_ident, iter_item_type, merge_line_output, normalize_choice_type,
-    pattern_bindings_with_fallback, pattern_bindings_with_nominal_types, signature_generic_names,
-    source_return_types, stmts_diverge, stream_return_types, type_ref_kind,
-    type_ref_kind_with_generics, unify_loop_break_types, variant_payload_type_for_name,
+    await_branch_pattern_type, builtin_path_type, choice_output_type,
+    default_presentation_slot_family, entity_kind, entity_kind_for_decl, entity_syntax_kind,
+    expr_path_label, function_param_local_type, function_param_local_type_with_generics,
+    ident_pattern_name, is_character_entity_literal, is_drop_callee, is_local_ident,
+    iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
+    pattern_bindings_with_nominal_types, signature_generic_names, source_return_types,
+    stmts_diverge, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
+    unify_loop_break_types, variant_payload_type_for_name,
 };
 use signature::{
     available_effect_set, enum_variant_payload_type_for_name, function_param_higher_order_bindings,
@@ -1741,6 +1742,14 @@ impl<'a> TypeChecker<'a> {
             .get(name)
             .or_else(|| self.global_symbols.get(name))
             .or_else(|| self.env.symbol_type(name))
+    }
+
+    fn path_has_known_resolution(&self, path: &str) -> bool {
+        self.symbol_type(path).is_some()
+            || self.function_type(path).is_some()
+            || self.function_signature(path).is_some()
+            || self.check_dotted_path_target(path).is_some()
+            || builtin_path_type(path).is_some()
     }
 
     fn function_type(&self, name: &str) -> Option<&TypeKind> {

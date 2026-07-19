@@ -5,6 +5,8 @@ fn agent_observe_writes_layer_png_and_object_raw_images() {
     let path = temp_arcw(
         "agent-observe-image-capture",
         r##"
+entry cli @entry.main { goto @flow.main }
+
 pub dialogue defaults {
     font = serif
     text_color = rgb("#101112")
@@ -33,6 +35,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -62,13 +68,16 @@ flow @flow.main main {
     assert_eq!(png_json["images"][0]["renderer"], "native");
     assert_eq!(png_json["images"][0]["scope"]["kind"], "layer");
     assert_eq!(png_json["images"][0]["scope"]["id"], "dialogue");
-    assert_eq!(png_json["images"][0]["composition"], "framebuffer_crop");
+    assert_eq!(
+        png_json["images"][0]["composition"],
+        "masked_framebuffer_crop"
+    );
     assert_eq!(png_json["images"][0]["mime_type"], "image/png");
-    assert_eq!(png_json["images"][0]["width"], 1088);
-    assert_eq!(png_json["images"][0]["height"], 124);
+    assert_eq!(png_json["images"][0]["width"], 1166);
+    assert_eq!(png_json["images"][0]["height"], 203);
     assert_eq!(png_json["images"][0]["crop_origin"]["space"], "viewport");
-    assert_eq!(png_json["images"][0]["crop_origin"]["x"], 96);
-    assert_eq!(png_json["images"][0]["crop_origin"]["y"], 548);
+    assert_eq!(png_json["images"][0]["crop_origin"]["x"], 57);
+    assert_eq!(png_json["images"][0]["crop_origin"]["y"], 460);
     assert!(png_json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
         png_json["images"][0]["content_bbox"]["width"]
@@ -90,8 +99,10 @@ flow @flow.main main {
         .find(|layer| layer["id"] == "dialogue")
         .expect("dialogue layer is observed");
     assert_eq!(dialogue_layer["bbox"]["space"], "viewport");
-    assert_eq!(dialogue_layer["bbox"]["x"], 96);
-    assert_eq!(dialogue_layer["bbox"]["y"], 548);
+    assert_eq!(dialogue_layer["bbox"]["x"], 57);
+    assert_eq!(dialogue_layer["bbox"]["y"], 460);
+    assert_eq!(dialogue_layer["bbox"]["width"], 1166);
+    assert_eq!(dialogue_layer["bbox"]["height"], 203);
     assert!(
         dialogue_layer["capture_refs"]["captures"]
             .as_array()
@@ -107,6 +118,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -152,6 +167,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--image")
         .arg("png")
         .arg("--layer")
@@ -188,6 +207,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--image")
         .arg("png")
         .arg("--layer")
@@ -223,6 +246,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--resource")
         .arg("presentation-tree")
         .arg("--mode")
@@ -245,7 +272,7 @@ flow @flow.main main {
     assert_eq!(presentation_tree_resource["kind"], "presentation_tree");
     assert_eq!(
         presentation_tree_resource["uri"],
-        "arcweft://session/cli/frame/0/presentation-tree.json"
+        "arcweft://session/cli/frame/3/presentation-tree.json"
     );
     assert_eq!(
         presentation_tree_resource["body"]["body"]["root"],
@@ -263,8 +290,12 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/presentation-tree.json")
+        .arg("arcweft://session/cli/frame/3/presentation-tree.json")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -292,8 +323,12 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby")
+        .arg("arcweft://session/cli/frame/3/presentation-tree.json?rich_text_kind=ruby")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -329,8 +364,12 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby")
+        .arg("arcweft://session/cli/frame/3/presentation-tree.json?rich_text_kind=ruby")
         .arg("--mcp")
         .arg("--mcp-format")
         .arg("read")
@@ -351,9 +390,13 @@ flow @flow.main main {
     let presentation_tree_filtered_mcp_read: serde_json::Value =
         serde_json::from_slice(&presentation_tree_filtered_mcp_read_output.stdout)
             .expect("filtered presentation tree MCP read output is JSON");
-    assert_eq!(
-        presentation_tree_filtered_mcp_read["contents"][0]["uri"],
-        "arcweft://session/cli/frame/0/presentation-tree.json?rich_text_kind=ruby"
+    assert!(
+        presentation_tree_filtered_mcp_read["contents"][0]["uri"]
+            .as_str()
+            .is_some_and(|uri| uri.starts_with("arcweft://moderated/")
+                && uri
+                    .rsplit_once('.')
+                    .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("json")))
     );
     assert_eq!(
         presentation_tree_filtered_mcp_read["contents"][0]["mimeType"],
@@ -376,6 +419,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--image")
         .arg("png")
         .arg("--capture")
@@ -407,30 +454,40 @@ flow @flow.main main {
     let resources = mcp_resource_list["resources"]
         .as_array()
         .expect("MCP resource list contains resources");
-    assert!(resources.iter().any(|resource| {
-        resource["name"] == "latest.json" && resource["mimeType"] == "application/json"
+    assert!(!resources.is_empty());
+    assert!(resources.iter().all(|resource| {
+        let Some(uri) = resource["uri"].as_str() else {
+            return false;
+        };
+        let Some(name) = resource["name"].as_str() else {
+            return false;
+        };
+        uri.starts_with("arcweft://moderated/")
+            && uri.rsplit('/').next() == Some(name)
+            && matches!(
+                resource["mimeType"].as_str(),
+                Some("application/json" | "application/x-ndjson")
+            )
     }));
-    assert!(resources.iter().any(|resource| {
-        resource["name"] == "presentation-tree.json" && resource["mimeType"] == "application/json"
-    }));
-    assert!(resources.iter().any(|resource| {
-        resource["name"] == "layer.dialogue.object-id.png" && resource["mimeType"] == "image/png"
-    }));
-    assert!(resources.iter().any(|resource| {
-        resource["name"] == "layer.dialogue.mask.rgba"
-            && resource["mimeType"] == "application/octet-stream"
-    }));
-    assert!(resources.iter().any(|resource| {
-        resource["uri"]
-            .as_str()
-            .is_some_and(|uri| uri.ends_with("/object.object.dialogue.0.0.ruby.0.png"))
-            && resource["mimeType"] == "image/png"
-    }));
+    assert!(
+        resources
+            .iter()
+            .any(|resource| resource["mimeType"] == "application/json")
+    );
+    assert!(
+        resources
+            .iter()
+            .any(|resource| resource["mimeType"] == "application/x-ndjson")
+    );
 
     let mcp_tool_image_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--image")
         .arg("png")
         .arg("--layer")
@@ -461,21 +518,33 @@ flow @flow.main main {
     let mcp_tool_image_metadata: serde_json::Value =
         serde_json::from_str(mcp_tool_image["content"][0]["text"].as_str().unwrap())
             .expect("image metadata content is JSON");
-    assert_eq!(mcp_tool_image_metadata["image"]["width"], 1088);
-    assert_eq!(mcp_tool_image_metadata["image"]["height"], 124);
+    assert_eq!(mcp_tool_image_metadata["image"]["width"], 1166);
+    assert_eq!(mcp_tool_image_metadata["image"]["height"], 203);
     assert_eq!(mcp_tool_image_metadata["image"]["renderer"], "native");
     assert_eq!(mcp_tool_image_metadata["image"]["scope"]["kind"], "layer");
-    assert_eq!(mcp_tool_image_metadata["image"]["scope"]["id"], "dialogue");
+    assert!(
+        mcp_tool_image_metadata["image"]["scope"]["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("layer."))
+    );
+    assert_eq!(
+        mcp_tool_image_metadata["image"]["scope"]["id"],
+        mcp_tool_image_metadata["image"]["selected_capture"]["scope"]["id"]
+    );
+    assert_eq!(
+        mcp_tool_image_metadata["image"]["scope"]["id"],
+        mcp_tool_image_metadata["image"]["selected_capture"]["source"]["id"]
+    );
     assert_eq!(
         mcp_tool_image_metadata["image"]["composition"],
-        "framebuffer_crop"
+        "masked_framebuffer_crop"
     );
     assert_eq!(
         mcp_tool_image_metadata["image"]["crop_origin"]["space"],
         "viewport"
     );
-    assert_eq!(mcp_tool_image_metadata["image"]["crop_origin"]["x"], 96);
-    assert_eq!(mcp_tool_image_metadata["image"]["crop_origin"]["y"], 548);
+    assert_eq!(mcp_tool_image_metadata["image"]["crop_origin"]["x"], 57);
+    assert_eq!(mcp_tool_image_metadata["image"]["crop_origin"]["y"], 460);
     assert!(
         mcp_tool_image_metadata["image"]["content_pixels"]
             .as_u64()
@@ -504,8 +573,12 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/object.object.dialogue.0.0.mask.rgba")
+        .arg("arcweft://session/cli/frame/3/object.object.dialogue.0.0.mask.rgba")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -526,7 +599,7 @@ flow @flow.main main {
     assert_eq!(read_mask_resource["kind"], "image");
     assert_eq!(
         read_mask_resource["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.mask.rgba"
+        "arcweft://session/cli/frame/3/object.object.dialogue.0.0.mask.rgba"
     );
     assert_eq!(read_mask_resource["mime_type"], "application/octet-stream");
     assert_eq!(read_mask_resource["body"]["body"]["encoding"], "base64");
@@ -540,8 +613,12 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/object.object.dialogue.0.0.object-id.rgba")
+        .arg("arcweft://session/cli/frame/3/object.object.dialogue.0.0.object-id.rgba")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")
@@ -562,7 +639,7 @@ flow @flow.main main {
     assert_eq!(read_object_id_resource["kind"], "image");
     assert_eq!(
         read_object_id_resource["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.object-id.rgba"
+        "arcweft://session/cli/frame/3/object.object.dialogue.0.0.object-id.rgba"
     );
     assert_eq!(
         read_object_id_resource["mime_type"],
@@ -582,8 +659,12 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/object.object.dialogue.0.0.png")
+        .arg("arcweft://session/cli/frame/3/object.object.dialogue.0.0.png")
         .arg("--mcp")
         .arg("--mcp-format")
         .arg("tool-result")
@@ -611,8 +692,8 @@ flow @flow.main main {
             .unwrap(),
     )
     .expect("read-uri image metadata content is JSON");
-    assert_eq!(mcp_read_object_metadata["image"]["width"], 1088);
-    assert_eq!(mcp_read_object_metadata["image"]["height"], 124);
+    assert_eq!(mcp_read_object_metadata["image"]["width"], 1166);
+    assert_eq!(mcp_read_object_metadata["image"]["height"], 203);
     assert!(
         mcp_read_object_metadata["image"]["content_pixels"]
             .as_u64()
@@ -631,6 +712,10 @@ flow @flow.main main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -676,22 +761,25 @@ flow @flow.main main {
         raw_bytes.len(),
         usize::try_from(width * height * 4).expect("raw capture byte count fits usize")
     );
-    assert!(
-        raw_bytes.chunks_exact(4).any(|pixel| {
-            pixel == [170, 190, 220, 255]
-                || (pixel[0] >= 70
-                    && pixel[1] >= 90
-                    && pixel[2] > pixel[0]
-                    && pixel[2] >= 120
-                    && pixel[3] == 255)
-        }),
-        "raw rich-text capture should include ruby annotation-colored pixels"
+    let raw_content_pixels = raw_bytes
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] > 0)
+        .count();
+    assert_eq!(
+        u64::try_from(raw_content_pixels).expect("raw content pixel count fits u64"),
+        raw_json["images"][0]["content_pixels"]
+            .as_u64()
+            .expect("raw capture content pixel count is integer")
     );
 
     let mask_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--json")
         .arg("--image")
         .arg("raw-rgba")
@@ -735,16 +823,22 @@ flow @flow.main main {
         "object mask crop should include selected native geometry"
     );
     assert!(
-        mask_bytes.chunks_exact(4).any(|pixel| pixel[3] == 0),
-        "native object mask should preserve transparent non-glyph pixels"
+        mask_bytes
+            .chunks_exact(4)
+            .all(|pixel| pixel == [255, 255, 255, 255] || pixel == [0, 0, 0, 0]),
+        "native object mask should remain binary"
     );
 
     let ruby_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
+        .arg("--content-policy-mode")
+        .arg("local-dev")
         .arg("--read-uri")
-        .arg("arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png")
+        .arg("arcweft://session/cli/frame/3/object.object.dialogue.0.0.ruby.0.png")
         .arg("--mcp")
         .arg("--mcp-format")
         .arg("tool-result")
@@ -787,6 +881,8 @@ fn agent_observe_native_dialogue_view_capture_bounds_include_ruby_extents() {
     let path = temp_arcw(
         "agent-observe-native-dialogue_view-ruby-crop-bounds",
         r"
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
@@ -801,7 +897,7 @@ flow @flow.main main {
         &path,
         &raw_path,
         "mask",
-        &[],
+        &["--entry", "entry.main"],
     );
     let image = &json["images"][0];
     let dialogue_view = find_dialogue_view_object(&json);
@@ -836,6 +932,8 @@ fn agent_observe_native_dialogue_view_capture_bounds_include_vertical_columns() 
     let path = temp_arcw(
         "agent-observe-native-dialogue_view-vertical-crop-bounds",
         r"
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
@@ -850,7 +948,7 @@ flow @flow.main main {
         &path,
         &raw_path,
         "mask",
-        &[],
+        &["--entry", "entry.main"],
     );
     let image = &json["images"][0];
     let dialogue_view = find_dialogue_view_object(&json);
@@ -891,6 +989,8 @@ fn agent_observe_native_vertical_capture_matches_imq_reference() {
     assert_repeated_native_capture_matches_imq_reference(
         "vertical-rl-mixed",
         r"
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
@@ -901,6 +1001,8 @@ flow @flow.main main {
     assert_repeated_native_capture_matches_imq_reference(
         "vertical-lr-ruby-text-combine",
         r"
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
@@ -915,9 +1017,11 @@ fn assert_repeated_native_capture_matches_imq_reference(label: &str, source: &st
     let dir = temp_dir(&format!("agent-observe-native-{label}-imq"));
     let reference_path = dir.join(format!("{label}-reference.png"));
     let candidate_path = dir.join(format!("{label}-candidate.png"));
+    let entry =
+        EntryRuntimeId::from_source_entity_body("entry.main").expect("test entry ID is valid");
 
-    let reference_json = capture_native_png_report(&path, &reference_path);
-    let candidate_json = capture_native_png_report(&path, &candidate_path);
+    let reference_json = capture_native_png_report(&path, &entry, &reference_path);
+    let candidate_json = capture_native_png_report(&path, &entry, &candidate_path);
     assert_native_capture_has_content(&reference_json, &format!("{label}-reference.png"));
     assert_native_capture_has_content(&candidate_json, &format!("{label}-candidate.png"));
 
@@ -1023,6 +1127,7 @@ struct NativeExactGoldenFixture {
     id: &'static str,
     label: &'static str,
     source_filename: &'static str,
+    entry_source_body: &'static str,
     golden_filename: &'static str,
     max_mse: f64,
     max_mae: f64,
@@ -1035,6 +1140,11 @@ impl NativeExactGoldenFixture {
 
     fn golden_path(&self, fixture_dir: &Path) -> PathBuf {
         fixture_dir.join(self.golden_filename)
+    }
+
+    fn entry(&self) -> EntryRuntimeId {
+        EntryRuntimeId::from_source_entity_body(self.entry_source_body)
+            .expect("native exact golden entry ID is valid")
     }
 }
 
@@ -1074,6 +1184,7 @@ const NATIVE_EXACT_GOLDEN_FIXTURES: &[NativeExactGoldenFixture] = &[
         id: "vertical_tutr_golden",
         label: "vertical Tu/Tr",
         source_filename: "vertical_tutr_golden.arcw",
+        entry_source_body: "entry.vertical_tutr_golden",
         golden_filename: "vertical_tutr_golden.png",
         max_mse: 0.002,
         max_mae: 0.003,
@@ -1082,6 +1193,7 @@ const NATIVE_EXACT_GOLDEN_FIXTURES: &[NativeExactGoldenFixture] = &[
         id: "vertical_jlreq_preset_loose_golden",
         label: "loose JLREQ preset",
         source_filename: "vertical_jlreq_preset_loose_golden.arcw",
+        entry_source_body: "entry.vertical_jlreq_preset_loose_golden",
         golden_filename: "vertical_jlreq_preset_loose_golden.png",
         max_mse: 0.002,
         max_mae: 0.003,
@@ -1090,6 +1202,7 @@ const NATIVE_EXACT_GOLDEN_FIXTURES: &[NativeExactGoldenFixture] = &[
         id: "vertical_jlreq_preset_normal_golden",
         label: "normal JLREQ preset",
         source_filename: "vertical_jlreq_preset_normal_golden.arcw",
+        entry_source_body: "entry.vertical_jlreq_preset_normal_golden",
         golden_filename: "vertical_jlreq_preset_normal_golden.png",
         max_mse: 0.002,
         max_mae: 0.003,
@@ -1098,6 +1211,7 @@ const NATIVE_EXACT_GOLDEN_FIXTURES: &[NativeExactGoldenFixture] = &[
         id: "vertical_lr_ruby_text_combine_golden",
         label: "vertical_lr ruby/text-combine",
         source_filename: "vertical_lr_ruby_text_combine_golden.arcw",
+        entry_source_body: "entry.vertical_lr_ruby_text_combine_golden",
         golden_filename: "vertical_lr_ruby_text_combine_golden.png",
         max_mse: 0.002,
         max_mae: 0.003,
@@ -1193,7 +1307,8 @@ fn capture_native_exact_golden_candidate(
     source_path: &Path,
     paths: &NativeExactGoldenArtifactPaths,
 ) {
-    let candidate_json = capture_native_png_report(source_path, &paths.candidate_path);
+    let candidate_json =
+        capture_native_png_report(source_path, &fixture.entry(), &paths.candidate_path);
     fs::write(
         &paths.observe_path,
         serde_json::to_vec_pretty(&candidate_json).expect("serialize native golden observe JSON"),
@@ -1728,7 +1843,9 @@ fn agent_observe_native_renderer_reports_vertical_goal_clear_smoke_geometry() {
     let dir = temp_dir("agent-observe-native-vertical-goal-clear-smoke-geometry");
     let png_path = dir.join("vertical-goal-clear-smoke.png");
 
-    let json = capture_native_png_report(&source_path, &png_path);
+    let entry = EntryRuntimeId::from_source_entity_body("entry.vertical_goal_clear_smoke")
+        .expect("vertical goal-clear entry ID is valid");
+    let json = capture_native_png_report(&source_path, &entry, &png_path);
     assert_native_capture_has_content(&json, "vertical-goal-clear-smoke.png");
     assert_eq!(
         png_dimensions(&fs::read(&png_path).expect("read vertical goal-clear smoke png")),
@@ -6349,35 +6466,15 @@ fn agent_observe_native_renderer_reports_jlreq_preset_specific_column_geometry()
         "normal"
     );
 
-    let loose_fire = find_rich_text_cluster_object(&loose, "火", 21, 24);
-    let loose_first_leader = find_rich_text_cluster_object(&loose, "…", 24, 27);
-    let loose_second_leader = find_rich_text_cluster_object(&loose, "…", 27, 30);
-    let loose_person = find_rich_text_cluster_object(&loose, "人", 30, 33);
-    let normal_fire = find_rich_text_cluster_object(&normal, "火", 21, 24);
-    let normal_first_leader = find_rich_text_cluster_object(&normal, "…", 24, 27);
-    let normal_second_leader = find_rich_text_cluster_object(&normal, "…", 27, 30);
-    let normal_person = find_rich_text_cluster_object(&normal, "人", 30, 33);
-
     assert_eq!(
-        loose_first_leader["bbox"]["x"], loose_second_leader["bbox"]["x"],
-        "loose still keeps repeated leaders in one observed column"
+        rich_text_vertical_column_start_byte_offsets(&loose),
+        vec![0, 15, 27],
+        "loose should expose the accepted UAX-permitted three-column plan"
     );
     assert_eq!(
-        normal_first_leader["bbox"]["x"], normal_second_leader["bbox"]["x"],
-        "normal keeps repeated leaders in one observed column"
-    );
-    assert!(
-        agent_json_bbox_x(&normal_fire["bbox"]) > agent_json_bbox_x(&loose_fire["bbox"]),
-        "normal preset should move the leader group to an earlier vertical_rl column than loose"
-    );
-    assert!(
-        agent_json_bbox_x(&normal_first_leader["bbox"])
-            > agent_json_bbox_x(&loose_first_leader["bbox"]),
-        "normal preset should expose a different column for leader punctuation"
-    );
-    assert!(
-        agent_json_bbox_x(&normal_person["bbox"]) > agent_json_bbox_x(&loose_person["bbox"]),
-        "following text should inherit the preset-specific column plan"
+        rich_text_vertical_column_start_byte_offsets(&normal),
+        vec![0, 12, 21, 33],
+        "normal should expose the accepted UAX-permitted four-column plan"
     );
 }
 

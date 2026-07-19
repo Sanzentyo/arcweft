@@ -143,7 +143,7 @@ pub(super) fn agent_observe_all_resources(
     let mut resources = agent_observe_base_resources(report, image_output)?;
     let mut known = resources
         .iter()
-        .map(|resource| resource.uri.clone())
+        .map(|resource| resource.uri.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     for uri in report.layers.iter().flat_map(|layer| {
         layer
@@ -187,7 +187,7 @@ pub(super) fn agent_observe_list_resources(
     let mut resources = agent_observe_base_resources(report, image_output)?;
     let mut known = resources
         .iter()
-        .map(|resource| resource.uri.clone())
+        .map(|resource| resource.uri.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     for layer in &report.layers {
         for capture in &layer.capture_refs.captures {
@@ -339,7 +339,7 @@ pub(super) fn agent_capture_ref_resource(
     spec: AgentCaptureRefResourceSpec<'_>,
 ) -> AgentResource {
     AgentResource {
-        uri: spec.uri.to_owned(),
+        uri: AgentResourceUri::new(spec.uri).expect("capture reference URI is nonempty"),
         kind: AgentResourceKind::Image,
         mime_type: spec.mime_type.to_owned(),
         hash: report.render_hash.clone(),

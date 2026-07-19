@@ -18,8 +18,8 @@ use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, DialogueCallableId, DialogueCalleeIdentity,
     FloatWidth, FxCallableSignatureId, MathCallableId, PRODUCTION_CALLABLE_LIMITS,
-    PresentationCallableId, ReductionConstructorKind, ResolvedCharacterOwner, StdFloatCallableId,
-    StdFloatOperation, VectorDimensions,
+    PresentationArgumentValuePolicy, PresentationCallableId, ReductionConstructorKind,
+    ResolvedCharacterOwner, StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 
 impl BuiltinCallableId {
@@ -475,18 +475,16 @@ pub(in crate::callable) fn presentation_schema(
     let (parameters, policy) = match id {
         PresentationCallableId::View
         | PresentationCallableId::Menu
-        | PresentationCallableId::Overlay => (view_parameters(), open_unchecked()),
+        | PresentationCallableId::Overlay => (view_parameters(id), open_unchecked()),
         PresentationCallableId::Background => (
             vec![
                 required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset)),
-                optional_named(1, "target", TypeKind::entity_ref(EntityKind::Target)),
-                optional_named(2, "slot", TypeKind::entity_ref(EntityKind::Slot)),
-                optional_named(
-                    3,
-                    "scope",
-                    TypeKind::entity_ref(EntityKind::Other("scope".to_owned())),
-                ),
-                optional_named_unchecked(4, "fade"),
+                optional_presentation_named(id, 1, "target"),
+                optional_presentation_named(id, 2, "slot"),
+                optional_presentation_named(id, 3, "scope"),
+                optional_presentation_named(id, 4, "fade"),
+                optional_presentation_named(id, 5, "fit"),
+                optional_presentation_named(id, 6, "opacity"),
             ],
             open_checked(),
         ),
@@ -499,34 +497,47 @@ pub(in crate::callable) fn presentation_schema(
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,
                 ),
-                optional_named_unchecked(1, "asset"),
-                optional_named_unchecked(2, "lifetime"),
-                optional_named(3, "target", TypeKind::entity_ref(EntityKind::Target)),
-                optional_named(4, "layer", TypeKind::entity_ref(EntityKind::Layer)),
-                optional_named(5, "depth", TypeKind::I32),
-                optional_named(6, "enabled", TypeKind::Bool),
-                optional_named(7, "visible", TypeKind::Bool),
+                optional_presentation_named(id, 1, "asset"),
+                optional_presentation_named(id, 2, "lifetime"),
+                optional_presentation_named(id, 3, "target"),
+                optional_presentation_named(id, 4, "layer"),
+                optional_presentation_named(id, 5, "depth"),
+                optional_presentation_named(id, 6, "enabled"),
+                optional_presentation_named(id, 7, "visible"),
+                optional_presentation_named(id, 8, "id"),
+                optional_presentation_named(id, 9, "action"),
+                optional_presentation_named(id, 10, "actions"),
+                optional_presentation_named(id, 11, "fit"),
+                optional_presentation_named(id, 12, "opacity"),
+                optional_presentation_named(id, 13, "x"),
+                optional_presentation_named(id, 14, "y"),
+                optional_presentation_named(id, 15, "width"),
+                optional_presentation_named(id, 16, "height"),
+                optional_presentation_named(id, 17, "focus"),
+                optional_presentation_named(id, 18, "input_capture"),
+                optional_presentation_named(id, 19, "owner"),
+                optional_presentation_named(id, 20, "drop"),
             ],
             open_checked(),
         ),
         PresentationCallableId::PlayerViewport => (
             vec![
-                optional_named_unchecked(0, "width"),
-                optional_named_unchecked(1, "height"),
-                optional_named_unchecked(2, "fit"),
+                optional_presentation_named(id, 0, "width"),
+                optional_presentation_named(id, 1, "height"),
+                optional_presentation_named(id, 2, "fit"),
             ],
             open_checked(),
         ),
         PresentationCallableId::Show => (
-            character_parameters(owner.map(ResolvedCharacterOwner::character), true),
+            character_parameters(id, owner.map(ResolvedCharacterOwner::character), true),
             open_unchecked(),
         ),
         PresentationCallableId::RefShow | PresentationCallableId::Hide => (
-            character_parameters(owner.map(ResolvedCharacterOwner::character), false),
+            character_parameters(id, owner.map(ResolvedCharacterOwner::character), false),
             open_unchecked(),
         ),
         PresentationCallableId::RefBackground | PresentationCallableId::ClearBackground => {
-            (background_reference_parameters(), open_unchecked())
+            (background_reference_parameters(id), open_unchecked())
         }
     };
     Ok(schema(parameters, result, &[], policy, validator))
@@ -604,23 +615,24 @@ fn presentation_result(id: PresentationCallableId) -> TypeKind {
     }
 }
 
-fn view_parameters() -> Vec<CallableParameter> {
+fn view_parameters(id: PresentationCallableId) -> Vec<CallableParameter> {
     vec![
-        required(0, "view", TypeKind::entity_ref(EntityKind::View)),
-        optional_named_unchecked(1, "lifetime"),
-        optional_named(2, "target", TypeKind::entity_ref(EntityKind::Target)),
-        optional_named(3, "layer", TypeKind::entity_ref(EntityKind::Layer)),
-        optional_named_unchecked(4, "id"),
-        optional_named_unchecked(5, "handle"),
-        optional_named_unchecked(6, "key"),
-        optional_named_unchecked(7, "mount"),
-        optional_named(8, "depth", TypeKind::I32),
-        optional_named(9, "visible", TypeKind::Bool),
-        optional_named(10, "enabled", TypeKind::Bool),
+        required_presentation(id, 0, "view"),
+        optional_presentation_named(id, 1, "lifetime"),
+        optional_presentation_named(id, 2, "target"),
+        optional_presentation_named(id, 3, "layer"),
+        optional_presentation_named(id, 4, "id"),
+        optional_presentation_named(id, 5, "handle"),
+        optional_presentation_named(id, 6, "key"),
+        optional_presentation_named(id, 7, "mount"),
+        optional_presentation_named(id, 8, "depth"),
+        optional_presentation_named(id, 9, "visible"),
+        optional_presentation_named(id, 10, "enabled"),
     ]
 }
 
 fn character_parameters(
+    id: PresentationCallableId,
     character: Option<&CharacterId>,
     include_look: bool,
 ) -> Vec<CallableParameter> {
@@ -642,30 +654,18 @@ fn character_parameters(
     }
     let offset = usize::from(include_look);
     parameters.extend([
-        optional_named(
-            1 + offset,
-            "target",
-            TypeKind::entity_ref(EntityKind::Target),
-        ),
-        optional_named(2 + offset, "slot", TypeKind::entity_ref(EntityKind::Slot)),
-        optional_named(
-            3 + offset,
-            "scope",
-            TypeKind::entity_ref(EntityKind::Other("scope".to_owned())),
-        ),
+        optional_presentation_named(id, 1 + offset, "target"),
+        optional_presentation_named(id, 2 + offset, "slot"),
+        optional_presentation_named(id, 3 + offset, "scope"),
     ]);
     parameters
 }
 
-fn background_reference_parameters() -> Vec<CallableParameter> {
+fn background_reference_parameters(id: PresentationCallableId) -> Vec<CallableParameter> {
     vec![
-        optional_named(0, "target", TypeKind::entity_ref(EntityKind::Target)),
-        optional_named(1, "slot", TypeKind::entity_ref(EntityKind::Slot)),
-        optional_named(
-            2,
-            "scope",
-            TypeKind::entity_ref(EntityKind::Other("scope".to_owned())),
-        ),
+        optional_presentation_named(id, 0, "target"),
+        optional_presentation_named(id, 1, "slot"),
+        optional_presentation_named(id, 2, "scope"),
     ]
 }
 
@@ -823,6 +823,46 @@ fn optional_named(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Optional,
     )
+}
+
+fn optional_presentation_named(
+    id: PresentationCallableId,
+    index: usize,
+    name: &str,
+) -> CallableParameter {
+    parameter(
+        index,
+        Some(name),
+        presentation_parameter_type(id, name),
+        CallableParameterPassing::NamedOnly,
+        CallableParameterPresence::Optional,
+    )
+}
+
+fn required_presentation(
+    id: PresentationCallableId,
+    index: usize,
+    name: &str,
+) -> CallableParameter {
+    parameter(
+        index,
+        Some(name),
+        presentation_parameter_type(id, name),
+        CallableParameterPassing::PositionalOrNamed,
+        CallableParameterPresence::Required,
+    )
+}
+
+fn presentation_parameter_type(id: PresentationCallableId, name: &str) -> CallableParameterType {
+    let argument = id
+        .resolve_named_argument(name)
+        .expect("presentation schema parameter belongs to the callable argument catalog");
+    match argument.value_policy() {
+        PresentationArgumentValuePolicy::Exact(ty)
+        | PresentationArgumentValuePolicy::TokenScalar(ty) => CallableParameterType::Exact(ty),
+        PresentationArgumentValuePolicy::Unchecked
+        | PresentationArgumentValuePolicy::MetadataScalar => CallableParameterType::Unchecked,
+    }
 }
 
 fn optional_named_unchecked(index: usize, name: &str) -> CallableParameter {

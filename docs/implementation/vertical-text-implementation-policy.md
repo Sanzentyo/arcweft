@@ -412,7 +412,23 @@ the concrete choices to follow when turning that package into production code.
   GlyphArea pixels.
   `tests/fixtures/native_capture/` contains a checked-in Windows native PNG
   golden for a vertical `Tu`/`Tr` alternate fixture plus checked-in loose/normal
-  JLREQ preset PNG goldens for the repeated-leader column-planning fixture, and
+  JLREQ preset PNG goldens for the `天地。」人山川海。『火水木` closing/opening
+  column-planning fixture. UAX #14 hard constraints filter the permitted break
+  candidates before the owner-approved `balanced_v1` preset preferences are
+  applied, so the loose and normal goldens must record distinct accepted column
+  plans rather than overriding a prohibited break. For this fixture, loose
+  column starts are `[0, 15, 27]` and normal column starts are
+  `[0, 12, 21, 33]`. The reviewed PNG SHA-256 values are:
+  `D9AD2A6F25C86C2DE6B5996E172628628DC94CB136BBBE616995FA6608CC2622`
+  for both Tu and Tr,
+  `493793D4C6C01C28A41A1CDCFEF71606283A2E54DFA7082C97C2272032178B16`
+  for loose,
+  `E8F81573F2A4AEA8AD50E2DEC1FA77A89E2EA218FBA8A8BDD2F5CE8FD10BE4E6`
+  for normal, and
+  `20BE18E730D7F971DFDF7A3AFABBCC1D236861454476B5CC177F6DE9D5EDE6AA`
+  for vertical-lr. They changed because the standard dialogue View now owns
+  its canonical Style placement, not because the line-break contract was
+  weakened. The directory also contains
   a `vertical_lr` ruby/text-combine PNG golden that covers mirrored column
   progression, ruby annotation placement, sideways Latin, upright punctuation,
   and 4-digit text-combine-upright rendering. The
@@ -488,8 +504,10 @@ the concrete choices to follow when turning that package into production code.
   mask/object-id crops tying each half-cell hanging bbox and stable object color
   back to rendered GlyphArea pixels. Preset-specific native Agent coverage
   compares `jlreq=loose` and
-  `jlreq=normal` on the same repeated leader-mark paragraph and asserts that the
-  observed column geometry changes with the selected strictness preset.
+  `jlreq=normal` on the same `天地。」人山川海。『火水木` closing/opening
+  composition. The planner applies UAX #14 prohibitions first and then lets
+  `balanced_v1` score the remaining legal opportunities; the observed column
+  geometry must therefore show distinct accepted plans for the two presets.
   Vertical presentation-form leader coverage also exercises `︙` and the FE30
   vertical two-dot leader `︰` as generated leader classes in Sans I/O layout
   and native Agent fixtures for both `vertical_rl` and `vertical_lr`, with raw

@@ -9,15 +9,16 @@ use arcweft_player_scene::{
     input::InputController,
 };
 use arcweft_render_text::{
-    LineDisplaySpec, RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode,
-    RichTextStyle, RichTextWritingMode, RuntimeLineContext,
+    LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextInlineDirection, RichTextLayout,
+    RichTextNode, RichTextStyle, RichTextWritingMode, RuntimeLineContext,
 };
 use arcweft_render_wgpu::{
     geometry::{PreparedTextOwnerKind, RenderPreferences, RenderViewport},
     view_scene::ViewPrimitive,
 };
 use arcweft_runtime_driver::{
-    dialogue::DialoguePresentationOperation, display::BundlePresentationSnapshot,
+    dialogue::{DialoguePresentationOperation, DialogueViewDefinition},
+    display::BundlePresentationSnapshot,
     view_runtime::BundleViewRuntime,
 };
 
@@ -33,8 +34,8 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
         .frame
         .latest_dialogue_view()
         .expect("standard dialogue View state");
-    assert!(dialogue.bounds.x.abs() < 0.001);
-    assert!(dialogue.bounds.y.abs() < 0.001);
+    assert!((dialogue.bounds.x - 57.6).abs() < 0.001);
+    assert!((dialogue.bounds.y - 460.8).abs() < 0.001);
     assert!((dialogue.bounds.width - 1_164.8).abs() < 0.001);
     assert!((dialogue.bounds.height - 201.6).abs() < 0.001);
     assert!(dialogue.primary_action.is_some());
@@ -74,8 +75,8 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
         .iter()
         .find(|owner| matches!(owner.kind, PreparedTextOwnerKind::DialogueView { .. }))
         .expect("dialogue content owner");
-    assert!(body.object_bounds.x.abs() < 0.001);
-    assert!(body.object_bounds.y.abs() < 0.001);
+    assert!((body.object_bounds.x - 57.6).abs() < 0.001);
+    assert!((body.object_bounds.y - 460.8).abs() < 0.001);
     assert!((body.object_bounds.width - 1_164.8).abs() < 0.001);
     assert!((body.object_bounds.height - 201.6).abs() < 0.001);
     let body = prepared
@@ -92,12 +93,12 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
 
 fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     let line = RuntimeLineId::from_runtime_line_value("say.vertical_ruby").expect("line id");
-    let frame = LineDisplaySpec {
+    let display_spec = LineDisplaySpec {
         line: line.clone(),
         callee: "narrator".to_owned(),
         speaker_label: Some("語り手".to_owned()),
         text_key: None,
-        view: None,
+        view: arcweft_bundle::standard_view::dialogue_view_id(),
         voice: None,
         look: None,
         style: None,
@@ -115,9 +116,11 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
             base: "漢字".to_owned(),
             ruby: "かんじ".to_owned(),
         }]),
-    }
-    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-    .expect("display frame resolves");
+    };
+    let frame = display_spec
+        .clone()
+        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+        .expect("display frame resolves");
 
     let program = dialogue_program();
     let text = dialogue_text();
@@ -126,7 +129,7 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     presentation
         .dialogue
         .apply_operations(&[DialoguePresentationOperation::append(
-            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+            DialogueViewDefinition::new(arcweft_bundle::standard_view::dialogue_view_id()),
             frame,
         )])
         .expect("dialogue append applies");
@@ -146,8 +149,12 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         ViewProductValidationLimits::default(),
     )
     .expect("standard View product");
-    let mut runtime =
-        BundleViewRuntime::try_new(product, Some(text.clone())).expect("standard View runtime");
+    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
+        product,
+        Some(text.clone()),
+        &LineDisplayCatalog::new(vec![display_spec]),
+    )
+    .expect("standard View runtime");
     presentation.view =
         runtime.evaluate_with_dialogue(&[], &presentation.dialogue.view_inputs(), &[], false);
     assert!(presentation.view.diagnostics.is_empty());

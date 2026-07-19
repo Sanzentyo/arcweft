@@ -1,6 +1,6 @@
 //! Literal, path, and short-variant expression typing.
 
-use super::super::helpers::numeric_literal_suffix_type;
+use super::super::helpers::{builtin_path_type, numeric_literal_suffix_type};
 use super::support::{
     has_multiple_numeric_choice_alternatives, is_unit_number_type,
     unique_numeric_choice_alternative,
@@ -227,33 +227,8 @@ impl TypeChecker<'_> {
         if let Some(ty) = self.check_dotted_path_target(path) {
             return Some(ty);
         }
-        if path == "None" {
-            return Some(TypeKind::Option(Box::new(TypeKind::Named("_".to_owned()))));
-        }
-        if path == "asset" {
-            return Some(TypeKind::Named("AssetApi".to_owned()));
-        }
-        if path == "voice" {
-            return Some(TypeKind::Named("VoiceApi".to_owned()));
-        }
-        if path == "state" {
-            return Some(TypeKind::Named("GameState".to_owned()));
-        }
-        if path == "line" {
-            return Some(TypeKind::Named("LineContext".to_owned()));
-        }
-        if path == "auto" {
-            return Some(TypeKind::Named("Auto".to_owned()));
-        }
-        if matches!(path, "InlineFailure" | "InlineFallback" | "FallbackStyle") {
-            return Some(TypeKind::Named(format!("{path}Namespace")));
-        }
-        // Short enum-variant expressions such as `.Instant` rely on expected
-        // type resolution in the full checker. The Phase 1 checker preserves
-        // unknown short variants as variant values after registered symbols and
-        // patch names had a chance to resolve.
-        if path.starts_with('.') {
-            return Some(TypeKind::Named("Variant".to_owned()));
+        if let Some(ty) = builtin_path_type(path) {
+            return Some(ty);
         }
         self.errors
             .push(TypeCheckError::new(format!("unknown symbol `{path}`")));

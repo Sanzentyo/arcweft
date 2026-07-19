@@ -259,6 +259,9 @@ crates/arcweft-render-wgpu/tests/view.rs | D
 ## Remaining work
 
 There is no remaining implementation or design work inside this physical-box
-geometry contract. The unrelated CLI effect-literal baseline defect remains
-visible above and should be repaired in its owning semantic/runtime task; no
-geometry compatibility layer or test weakening is warranted for it.
+geometry contract. The CLI effect-literal baseline defect recorded above was
+the state of this 2026-07-17 reconciliation and was repaired by its owning
+semantic/runtime slice on 2026-07-19. The same later integration cut moved the
+standard dialogue placement into canonical typed Style and kept this contract's
+physical-box consumer free of the deleted sidecar fallback. No geometry
+compatibility layer or test weakening was warranted.

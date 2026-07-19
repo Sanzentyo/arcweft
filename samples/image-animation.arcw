@@ -71,8 +71,36 @@ entry cli @entry.image_static_png {
     goto @flow.image_static_png
 }
 
+entry cli @entry.image_static_jpeg {
+    goto @flow.image_static_jpeg
+}
+
+entry cli @entry.image_static_webp {
+    goto @flow.image_static_webp
+}
+
+entry cli @entry.image_animated_gif {
+    goto @flow.image_animated_gif
+}
+
+entry cli @entry.image_animated_webp {
+    goto @flow.image_animated_webp
+}
+
+entry cli @entry.image_sprite_overlay {
+    goto @flow.image_sprite_overlay
+}
+
 entry cli @entry.image_sprite_released {
     goto @flow.image_sprite_released
+}
+
+entry cli @entry.image_clipped_object {
+    goto @flow.image_clipped_object
+}
+
+entry cli @entry.image_alignment_object {
+    goto @flow.image_alignment_object
 }
 
 flow image_static_png {

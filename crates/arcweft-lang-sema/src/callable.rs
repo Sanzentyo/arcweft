@@ -58,6 +58,7 @@ pub use identity::{
 };
 pub(crate) use limits::ResolverWork;
 pub use limits::{CallableLimits, PRODUCTION_CALLABLE_LIMITS, SignatureWorkReport};
+pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamedArgument};
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{

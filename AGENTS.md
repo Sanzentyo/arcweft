@@ -292,6 +292,15 @@ automated correctness evidence.
   focused changed-crate tests during tight loops, run workspace check/clippy at
   reviewable cut points, and reserve the ignored Tier 2 MCP stdio / exact visual
   golden suite for changes that touch that risk area or milestone validation.
+- Treat a broad integration cut as Tier 2 risk when it **(spans multiple crates
+  or materially changes a public contract) and also affects a runtime, render,
+  Agent, MCP, or capture path**, even when its primary implementation is outside
+  the MCP or capture crates. This does not make an isolated small public-API
+  edit Tier 2 by itself. Before completing a qualifying cut, run `just
+  test-tier2` and reconcile stale Tier 2 expectations, fixtures, resource URIs,
+  semantic identities, and authored View geometry with the current production
+  contract. Do not preserve an obsolete production shape, compatibility alias,
+  or duplicate path merely to satisfy stale slow tests.
 - Do not run full workspace tests after every small edit. Use `just test-fast`
   for the short core/render-text/text-layout/native-player smoke route,
   `just test-rich-text` or `just test-cli-native` for native rich-text/Agent

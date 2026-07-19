@@ -7,11 +7,17 @@ fn imq_is_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn capture_native_png_report(source_path: &Path, png_path: &Path) -> serde_json::Value {
+fn capture_native_png_report(
+    source_path: &Path,
+    entry: &EntryRuntimeId,
+    png_path: &Path,
+) -> serde_json::Value {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("observe")
         .arg(source_path)
+        .arg("--entry")
+        .arg(entry.public_label().into_string())
         .arg("--json")
         .arg("--image")
         .arg("png")
@@ -94,11 +100,34 @@ fn observe_native_rich_text_layer_report(source_path: &Path) -> serde_json::Valu
     observe_native_rich_text_layer_report_with_viewport(source_path, 1280, 720)
 }
 
+fn observe_native_rich_text_layer_report_at_entry(
+    source_path: &Path,
+    entry: &EntryRuntimeId,
+) -> serde_json::Value {
+    let mut command = native_rich_text_layer_observe_command(source_path, 1280, 720);
+    command
+        .arg("--entry")
+        .arg(entry.public_label().into_string());
+    run_native_rich_text_layer_observe(command)
+}
+
 fn observe_native_rich_text_layer_report_with_viewport(
     source_path: &Path,
     viewport_width: u32,
     viewport_height: u32,
 ) -> serde_json::Value {
+    run_native_rich_text_layer_observe(native_rich_text_layer_observe_command(
+        source_path,
+        viewport_width,
+        viewport_height,
+    ))
+}
+
+fn native_rich_text_layer_observe_command(
+    source_path: &Path,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_arcw"));
     command
         .arg("agent")
@@ -113,6 +142,10 @@ fn observe_native_rich_text_layer_report_with_viewport(
         .arg(viewport_width.to_string())
         .arg("--viewport-height")
         .arg(viewport_height.to_string());
+    command
+}
+
+fn run_native_rich_text_layer_observe(mut command: Command) -> serde_json::Value {
     let output = command
         .arg("--page")
         .arg("0")

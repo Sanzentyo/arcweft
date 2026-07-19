@@ -871,7 +871,7 @@ mod tests {
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
-            view: None,
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
             voice: None,
             look: None,
             style: None,

@@ -7,6 +7,8 @@
 
 mod axis_seed;
 mod catalog;
+#[cfg(test)]
+mod dialogue_acceptance_tests;
 mod evaluator;
 mod owner;
 #[cfg(test)]
@@ -31,7 +33,7 @@ use arcweft_presentation::fx::{
     FiniteF32Error, FxGraphChildPath, FxId, FxInstanceId, FxLogicalTime, FxRuntimeType,
     FxRuntimeValue,
 };
-use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
+use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
     ViewId, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot,
     ViewMountState, ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId,
@@ -102,6 +104,7 @@ pub enum BundleViewDiagnosticCode {
     MissingDisplayFrame,
     InvalidDisplayStage,
     MissingDialogueInput,
+    InvalidDialogueViewOwner,
 }
 
 impl BundleViewDiagnosticCode {
@@ -126,6 +129,7 @@ impl BundleViewDiagnosticCode {
             Self::MissingDisplayFrame => "VIEW016_MISSING_DISPLAY_FRAME",
             Self::InvalidDisplayStage => "VIEW017_INVALID_DISPLAY_STAGE",
             Self::MissingDialogueInput => "VIEW018_MISSING_DIALOGUE_INPUT",
+            Self::InvalidDialogueViewOwner => "VIEW019_INVALID_DIALOGUE_VIEW_OWNER",
         }
     }
 }
@@ -143,6 +147,21 @@ pub struct BundleViewDiagnostic {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instruction: Option<u32>,
     pub message: String,
+}
+
+impl BundleViewDiagnostic {
+    fn invalid_dialogue_view_owner(error: &BundleViewRuntimeError) -> Self {
+        Self {
+            code: BundleViewDiagnosticCode::InvalidDialogueViewOwner,
+            handle: None,
+            mount: None,
+            view: error
+                .dialogue_view_definition()
+                .map(|definition| definition.as_str().to_owned()),
+            instruction: None,
+            message: error.to_string(),
+        }
+    }
 }
 
 impl fmt::Display for BundleViewDiagnostic {
@@ -389,6 +408,12 @@ pub enum BundleViewRuntimeError {
     UnallocatedMount { mount: ViewMountId, next: u64 },
     #[error("View snapshot references unknown definition `{definition}`")]
     UnknownDefinition { definition: ViewId },
+    #[error("dialogue presentation selects unknown View definition `{definition}`")]
+    UnknownDialogueViewDefinition { definition: ViewId },
+    #[error("dialogue presentation selects View `{definition}` without a dialogue input parameter")]
+    DialogueViewDefinitionMissingRole { definition: ViewId },
+    #[error("dialogue presentation selects unauthorized View definition `{definition}`")]
+    UnauthorizedDialogueViewDefinition { definition: ViewId },
     #[error("View snapshot path exceeds the maximum depth of {limit}")]
     InstancePathTooDeep { limit: usize },
     #[error("View snapshot mount activates after the saved logical time")]
@@ -401,6 +426,17 @@ pub enum BundleViewRuntimeError {
     DuplicateRootBinding { binding: String },
     #[error("saved View presentation frame does not match the retained mount table: {message}")]
     PresentationFrameMismatch { message: String },
+}
+
+impl BundleViewRuntimeError {
+    fn dialogue_view_definition(&self) -> Option<&ViewId> {
+        match self {
+            Self::UnknownDialogueViewDefinition { definition }
+            | Self::DialogueViewDefinitionMissingRole { definition }
+            | Self::UnauthorizedDialogueViewDefinition { definition } => Some(definition),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -445,6 +481,8 @@ pub struct BundleViewRuntime {
     root_bindings: BTreeMap<String, RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: axis_seed::BundleViewAxisSeedRegistry,
+    declared_dialogue_views: BTreeSet<ViewId>,
+    required_dialogue_views: BTreeSet<ViewId>,
 }
 
 impl Default for BundleViewRuntime {
@@ -526,6 +564,19 @@ impl BundleViewRuntime {
         Self::try_new_with_registry(product, text, ViewRegistry::default())
     }
 
+    /// Builds an evaluator and accepts the exact authored dialogue View owners
+    /// selected by the supplied display catalog before any dialogue input can
+    /// be evaluated.
+    pub fn try_new_with_dialogue_display(
+        product: ValidatedViewProduct,
+        text: Option<ViewTextResource>,
+        display: &LineDisplayCatalog,
+    ) -> Result<Self, BundleViewRuntimeError> {
+        let mut runtime = Self::try_new(product, text)?;
+        runtime.accept_dialogue_view_definitions(display)?;
+        Ok(runtime)
+    }
+
     /// Builds an evaluator while preserving already registered host Views.
     ///
     /// The supplied registry is consumed as a candidate. Arcweft definitions
@@ -584,6 +635,8 @@ impl BundleViewRuntime {
             root_bindings: BTreeMap::new(),
             mounts: BTreeMap::new(),
             axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
+            declared_dialogue_views: BTreeSet::new(),
+            required_dialogue_views: BTreeSet::new(),
         })
     }
 
@@ -618,6 +671,94 @@ impl BundleViewRuntime {
         &self.product
     }
 
+    /// Accepts dialogue display owners only when they belong to this immutable
+    /// runtime generation's View catalog.
+    pub(crate) fn accept_dialogue_view_definitions(
+        &mut self,
+        display: &LineDisplayCatalog,
+    ) -> Result<(), BundleViewRuntimeError> {
+        let catalog = self.catalog.as_ref();
+        let mut accepted = BTreeSet::new();
+        for spec in display.lines() {
+            let Some(catalog) = catalog else {
+                return Err(BundleViewRuntimeError::UnknownDialogueViewDefinition {
+                    definition: spec.view.clone(),
+                });
+            };
+            if catalog.definition_index(&spec.view).is_none() {
+                return Err(BundleViewRuntimeError::UnknownDialogueViewDefinition {
+                    definition: spec.view.clone(),
+                });
+            }
+            if !catalog.accepts_dialogue_input(&spec.view) {
+                return Err(BundleViewRuntimeError::DialogueViewDefinitionMissingRole {
+                    definition: spec.view.clone(),
+                });
+            }
+            accepted.insert(spec.view.clone());
+        }
+        self.declared_dialogue_views.clone_from(&accepted);
+        self.required_dialogue_views = accepted;
+        Ok(())
+    }
+
+    pub(crate) fn validate_dialogue_inputs(
+        &mut self,
+        dialogue: &[DialogueViewInput<'_>],
+    ) -> Result<(), BundleViewRuntimeError> {
+        self.validate_dialogue_input_owners(dialogue)?;
+        self.required_dialogue_views
+            .extend(dialogue.iter().map(|input| input.view.clone()));
+        Ok(())
+    }
+
+    pub(crate) fn transient_dialogue_view_owners(&self) -> Vec<ViewId> {
+        self.required_dialogue_views
+            .difference(&self.declared_dialogue_views)
+            .cloned()
+            .collect()
+    }
+
+    fn validate_dialogue_input_owners(
+        &self,
+        dialogue: &[DialogueViewInput<'_>],
+    ) -> Result<(), BundleViewRuntimeError> {
+        let catalog = self.catalog.as_ref();
+        for input in dialogue {
+            let Some(catalog) = catalog else {
+                return Err(BundleViewRuntimeError::UnknownDialogueViewDefinition {
+                    definition: input.view.clone(),
+                });
+            };
+            if catalog.definition_index(input.view).is_none() {
+                return Err(BundleViewRuntimeError::UnknownDialogueViewDefinition {
+                    definition: input.view.clone(),
+                });
+            }
+            if !catalog.accepts_dialogue_input(input.view) {
+                return Err(BundleViewRuntimeError::DialogueViewDefinitionMissingRole {
+                    definition: input.view.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_authorized_dialogue_inputs(
+        &self,
+        dialogue: &[DialogueViewInput<'_>],
+    ) -> Result<(), BundleViewRuntimeError> {
+        self.validate_dialogue_input_owners(dialogue)?;
+        for input in dialogue {
+            if !self.required_dialogue_views.contains(input.view) {
+                return Err(BundleViewRuntimeError::UnauthorizedDialogueViewDefinition {
+                    definition: input.view.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn accepted_program_id(&self) -> Option<&ViewProgramId> {
         self.catalog.as_ref().map(ViewProgramCatalog::program_id)
     }
@@ -635,6 +776,7 @@ impl BundleViewRuntime {
         dialogue: &[DialogueViewInput<'_>],
         presentation_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
+        self.validate_authorized_dialogue_inputs(dialogue)?;
         let mut expected = BTreeMap::new();
         for input in dialogue {
             if expected
@@ -679,7 +821,7 @@ impl BundleViewRuntime {
                     ),
                 }
             })?;
-            if mounted.view().as_str() != *view {
+            if mounted.view() != *view {
                 return Err(BundleViewRuntimeError::PresentationFrameMismatch {
                     message: format!(
                         "dialogue occurrence `{}` retains View `{}`, expected `{}`",
@@ -702,7 +844,7 @@ impl BundleViewRuntime {
 
     fn validate_snapshot_mount_owners(
         &self,
-        dialogue: &BTreeMap<PresentationHandleId, (&str, DialogueViewState)>,
+        dialogue: &BTreeMap<PresentationHandleId, (&ViewId, DialogueViewState)>,
         presentation_handles: &[PresentationHandleRecord],
     ) -> Result<(), BundleViewRuntimeError> {
         let ordinary = presentation_handles
@@ -734,7 +876,7 @@ impl BundleViewRuntime {
     fn validate_dialogue_frame_outputs(
         &self,
         frame: &BundleViewFrame,
-        expected: &BTreeMap<PresentationHandleId, (&str, DialogueViewState)>,
+        expected: &BTreeMap<PresentationHandleId, (&ViewId, DialogueViewState)>,
     ) -> Result<BTreeSet<ViewOccurrenceKey>, BundleViewRuntimeError> {
         let mut occurrences = BTreeSet::new();
         for output in &frame.mounts {
@@ -1127,7 +1269,7 @@ pub(crate) fn reconciled_root_handles_for_restore(
         let record = PresentationHandleRecord::new(
             input.handle.clone(),
             crate::presentation_handles::PresentationHandleKind::View,
-            input.view.to_owned(),
+            input.view.as_str().to_owned(),
             Some("dialogue".to_owned()),
             crate::presentation_handles::PresentationResourceState::Mounted,
             None,

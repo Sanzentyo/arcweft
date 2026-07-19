@@ -2,6 +2,7 @@ use crate::action::{AgentActionDispatch, AgentActionKind, AgentActionTarget};
 use crate::diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity};
 use crate::geometry::{AgentBBox, AgentCoordinateSpace, AgentRgbaColor, AgentViewport};
 use crate::hit_test::AgentHitTestHit;
+use crate::ids::AgentResourceUri;
 use crate::image::{
     AgentCaptureSourceIdentity, AgentImageAlignment, AgentImageComposition, AgentImageContentBBox,
     AgentImageCropOrigin, AgentImageFit, AgentImageKind, AgentImageMetadata, AgentImageObjectParam,
@@ -1210,4 +1211,19 @@ fn observation_report_builds_mcp_style_resources() {
             ..
         })
     ));
+}
+
+#[test]
+fn canonical_looking_trace_uri_does_not_grant_publication_authority() {
+    let forged = AgentResource {
+        uri: AgentResourceUri::new("arcweft://run/run.protocol/trace.arcwx")
+            .expect("URI is nonempty"),
+        kind: AgentResourceKind::Trace,
+        mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+        hash: "trace".to_owned(),
+        image: None,
+        body: AgentResourceBody::Json(serde_json::json!([])),
+    };
+
+    assert!(!forged.has_canonical_public_uri());
 }

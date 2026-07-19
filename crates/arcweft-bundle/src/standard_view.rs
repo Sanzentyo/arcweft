@@ -12,7 +12,7 @@ use crate::resource_codec::{ProductSourceRef, SourceMapSection, SourceRangeRef};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
-    ViewColorValue, ViewLengthMilli, ViewPropertyKind, ViewSpecifiedValue,
+    ViewColorValue, ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleProgram,
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId,
@@ -20,6 +20,18 @@ use arcweft_view::style::{
 use arcweft_view::{ViewPartLocalName, ViewPartName};
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
+
+/// Stable typed owner of the engine-provided dialogue View.
+///
+/// # Panics
+///
+/// Panics only if the engine-owned constant stops satisfying the canonical
+/// public identity grammar.
+#[must_use]
+pub fn dialogue_view_id() -> arcweft_view::ViewId {
+    arcweft_view::ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID)
+        .expect("the reserved standard dialogue View identity is valid")
+}
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
 pub const DIALOGUE_STYLE_ID: &str = "style.dialogue.standard";
 pub const DIALOGUE_STYLE_SOURCE_ID: &str = "arcweft:standard/dialogue-style";
@@ -201,53 +213,8 @@ pub fn dialogue_style() -> ViewStyleResource {
     )
     .expect("standard dialogue Style source reference is canonical");
     let source = ViewStyleSourceId::new(0);
-    let sheet = ViewStyleSheet::new(
-        style_sheet_id(),
-        Vec::new(),
-        vec![
-            rule(
-                PANEL_PART,
-                vec![declaration(
-                    ViewPropertyKind::BackgroundColor,
-                    rgba(17, 18, 16, 242),
-                    source,
-                )],
-                0,
-                source,
-            ),
-            rule(
-                SPEAKER_PART,
-                vec![
-                    declaration(ViewPropertyKind::Color, rgba(174, 226, 142, 255), source),
-                    declaration(ViewPropertyKind::FontSize, length(25_000), source),
-                    declaration(ViewPropertyKind::LineHeight, length(34_000), source),
-                ],
-                1,
-                source,
-            ),
-            rule(
-                CONTENT_PART,
-                vec![
-                    declaration(ViewPropertyKind::Color, rgba(248, 246, 234, 255), source),
-                    declaration(ViewPropertyKind::FontSize, length(25_000), source),
-                    declaration(ViewPropertyKind::LineHeight, length(34_000), source),
-                ],
-                2,
-                source,
-            ),
-            rule(
-                ACTION_PART,
-                vec![declaration(
-                    ViewPropertyKind::BackgroundColor,
-                    rgba(0, 0, 0, 0),
-                    source,
-                )],
-                3,
-                source,
-            ),
-        ],
-    )
-    .expect("standard dialogue Style sheet is statically valid");
+    let sheet = ViewStyleSheet::new(style_sheet_id(), Vec::new(), dialogue_style_rules(source))
+        .expect("standard dialogue Style sheet is statically valid");
     let resource = ViewStyleResource {
         style_program_id: "std.view.style.program".to_owned(),
         program: ViewStyleProgram::try_new(vec![sheet], Vec::new())
@@ -288,10 +255,87 @@ fn style_sheet_id() -> ViewStyleSheetId {
         .expect("standard dialogue Style ID is statically valid")
 }
 
+fn dialogue_style_rules(source: ViewStyleSourceId) -> Vec<ViewStyleRule> {
+    vec![
+        rule(
+            PANEL_PART,
+            vec![
+                declaration(
+                    ViewPropertyKind::BackgroundColor,
+                    rgba(17, 18, 16, 242),
+                    source,
+                ),
+                declaration(
+                    ViewPropertyKind::Position,
+                    position(ViewPosition::Absolute),
+                    source,
+                ),
+                declaration(ViewPropertyKind::Left, length(57_600), source),
+                declaration(ViewPropertyKind::Top, length(460_800), source),
+            ],
+            0,
+            source,
+        ),
+        rule(
+            SPEAKER_PART,
+            vec![
+                declaration(ViewPropertyKind::Color, rgba(174, 226, 142, 255), source),
+                declaration(ViewPropertyKind::FontSize, length(25_000), source),
+                declaration(ViewPropertyKind::LineHeight, length(34_000), source),
+                declaration(
+                    ViewPropertyKind::Position,
+                    position(ViewPosition::Absolute),
+                    source,
+                ),
+                declaration(ViewPropertyKind::Left, length(28_000), source),
+                declaration(ViewPropertyKind::Top, length(20_000), source),
+            ],
+            1,
+            source,
+        ),
+        rule(
+            CONTENT_PART,
+            vec![
+                declaration(ViewPropertyKind::Color, rgba(248, 246, 234, 255), source),
+                declaration(ViewPropertyKind::FontSize, length(25_000), source),
+                declaration(ViewPropertyKind::LineHeight, length(34_000), source),
+                declaration(
+                    ViewPropertyKind::Position,
+                    position(ViewPosition::Absolute),
+                    source,
+                ),
+                declaration(ViewPropertyKind::Left, length(28_000), source),
+                declaration(ViewPropertyKind::Top, length(58_000), source),
+            ],
+            2,
+            source,
+        ),
+        rule(
+            ACTION_PART,
+            vec![
+                declaration(ViewPropertyKind::BackgroundColor, rgba(0, 0, 0, 0), source),
+                declaration(
+                    ViewPropertyKind::Position,
+                    position(ViewPosition::Absolute),
+                    source,
+                ),
+                declaration(ViewPropertyKind::Left, length(0), source),
+                declaration(ViewPropertyKind::Top, length(0), source),
+            ],
+            3,
+            source,
+        ),
+    ]
+}
+
 fn length(value: i32) -> ViewSpecifiedValue {
     ViewSpecifiedValue::Length {
         value: ViewLengthMilli::new(value),
     }
+}
+
+const fn position(value: ViewPosition) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Position { value }
 }
 
 pub(crate) fn merge_text(

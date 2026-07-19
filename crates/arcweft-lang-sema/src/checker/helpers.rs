@@ -202,6 +202,24 @@ pub(super) fn well_known_field_type(field: &str) -> Option<TypeKind> {
     })
 }
 
+/// Resolves path spellings owned directly by the language rather than by a
+/// local, project symbol, or registered environment.
+pub(super) fn builtin_path_type(path: &str) -> Option<TypeKind> {
+    Some(match path {
+        "None" => TypeKind::Option(Box::new(TypeKind::Named("_".to_owned()))),
+        "asset" => TypeKind::Named("AssetApi".to_owned()),
+        "voice" => TypeKind::Named("VoiceApi".to_owned()),
+        "state" => TypeKind::Named("GameState".to_owned()),
+        "line" => TypeKind::Named("LineContext".to_owned()),
+        "auto" => TypeKind::Named("Auto".to_owned()),
+        "InlineFailure" | "InlineFallback" | "FallbackStyle" => {
+            TypeKind::Named(format!("{path}Namespace"))
+        }
+        path if path.starts_with('.') => TypeKind::Named("Variant".to_owned()),
+        _ => return None,
+    })
+}
+
 pub(super) fn let_else_bindings(
     pattern: &Pattern,
     expr_type: Option<&TypeKind>,

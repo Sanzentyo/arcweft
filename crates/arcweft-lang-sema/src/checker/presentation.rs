@@ -1,3 +1,8 @@
+use crate::callable::{
+    CallableGroupIndex, CallableParameter, CallableParameterPassing, CallableParameterType,
+    PresentationArgumentValuePolicy, PresentationCallableId, PresentationNamedArgument,
+    UnknownNamedArgumentPolicy,
+};
 use crate::diagnostics::TypeCheckError;
 use crate::types::{EntityKind, TypeKind};
 use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
@@ -10,108 +15,276 @@ impl TypeChecker<'_> {
         name: &str,
         args: &[CallArg],
     ) -> Option<TypeKind> {
-        match name {
-            "view" => {
+        let callable = PresentationCallableId::resolve_surface_name(name)?;
+        self.check_presentation_argument_values(callable, args);
+        match callable {
+            PresentationCallableId::View => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::View, "view mount");
-                self.check_presentation_view_named_args(args);
+                self.check_presentation_view_named_args(callable, args);
                 Some(TypeKind::presentation_handle("View"))
             }
-            "menu" => {
+            PresentationCallableId::Menu => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::View, "menu mount");
-                self.check_presentation_view_named_args(args);
+                self.check_presentation_view_named_args(callable, args);
                 Some(TypeKind::presentation_handle("Menu"))
             }
-            "overlay" => {
+            PresentationCallableId::Overlay => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::View, "overlay mount");
-                self.check_presentation_view_named_args(args);
+                self.check_presentation_view_named_args(callable, args);
                 Some(TypeKind::presentation_handle("Overlay"))
             }
-            "bg" => {
+            PresentationCallableId::Background => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Asset, "bg asset");
                 self.check_presentation_background_named_args(args);
                 Some(TypeKind::presentation_handle("BackgroundSurface"))
             }
-            "image" => {
+            PresentationCallableId::Image => {
                 self.check_presentation_image_source_arg(args);
                 self.check_presentation_image_named_args(args);
                 Some(TypeKind::presentation_handle("ImageSurface"))
             }
-            "player_viewport" => {
-                self.check_presentation_viewport_args(args);
+            PresentationCallableId::PlayerViewport => {
+                self.check_presentation_viewport_args(callable, args);
                 Some(TypeKind::presentation_handle("Viewport"))
             }
-            "show" => {
+            PresentationCallableId::Show => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Character, "show character");
-                self.check_character_look_arg(args);
-                self.check_presentation_named_args(args, "character");
+                self.check_presentation_named_args(callable, args, "character");
                 Some(TypeKind::presentation_handle("CharacterSurface"))
             }
-            "ref.bg" => {
-                self.check_presentation_named_args(args, "background");
+            PresentationCallableId::RefBackground => {
+                self.check_presentation_named_args(callable, args, "background");
                 Some(TypeKind::Named("SlotRef<BackgroundSurface>".to_owned()))
             }
-            "ref.show" => {
+            PresentationCallableId::RefShow => {
                 self.check_positional_entity_arg(
                     args,
                     0,
                     &EntityKind::Character,
                     "ref show character",
                 );
-                self.check_presentation_named_args(args, "character");
+                self.check_presentation_named_args(callable, args, "character");
                 Some(TypeKind::Named("SlotRef<CharacterSurface>".to_owned()))
             }
-            "clear.bg" => {
-                self.check_presentation_named_args(args, "background");
+            PresentationCallableId::ClearBackground => {
+                self.check_presentation_named_args(callable, args, "background");
                 self.active_presentation_defaults.remove("background");
                 Some(TypeKind::Named("Option<BackgroundSurface>".to_owned()))
             }
-            "hide" => {
+            PresentationCallableId::Hide => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Character, "hide character");
-                self.check_presentation_named_args(args, "character");
+                self.check_presentation_named_args(callable, args, "character");
                 self.active_presentation_defaults.remove("character");
                 Some(TypeKind::Named("Option<CharacterSurface>".to_owned()))
             }
-            _ => None,
         }
     }
 
-    fn check_presentation_viewport_args(&mut self, args: &[CallArg]) {
+    fn check_presentation_argument_values(
+        &mut self,
+        callable: PresentationCallableId,
+        args: &[CallArg],
+    ) {
+        let Ok(schema) = callable.checker_signature_schema() else {
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return;
+        };
+        let Some(group) = schema.group(CallableGroupIndex::ZERO) else {
+            for arg in args {
+                self.check_expr(arg.value());
+            }
+            return;
+        };
+        let parameters = group.parameters();
+        let mut positional = 0usize;
+        for arg in args {
+            let parameter = match arg {
+                CallArg::Positional(_) => {
+                    let parameter = next_presentation_positional_parameter(parameters, positional);
+                    if let Some(parameter) = parameter {
+                        positional = parameter.index().get() + 1;
+                    }
+                    parameter
+                }
+                CallArg::Named { name, .. } => parameters.iter().find(|parameter| {
+                    parameter
+                        .name()
+                        .is_some_and(|candidate| candidate.as_str() == name)
+                }),
+                CallArg::Spread { .. } => None,
+            };
+            self.check_presentation_argument_value(
+                callable,
+                arg,
+                parameter,
+                schema.argument_policy().unknown_named(),
+            );
+        }
+    }
+
+    fn check_presentation_argument_value(
+        &mut self,
+        callable: PresentationCallableId,
+        arg: &CallArg,
+        parameter: Option<&CallableParameter>,
+        unknown_named: UnknownNamedArgumentPolicy,
+    ) {
+        let value = arg.value();
+        let owned_policy = match arg {
+            CallArg::Named { name, .. } => callable
+                .resolve_named_argument(name)
+                .map(PresentationNamedArgument::value_policy),
+            CallArg::Positional(_) | CallArg::Spread { .. } => None,
+        };
+        let schema_policy = parameter.map(|parameter| match parameter.ty() {
+            CallableParameterType::Exact(expected) => {
+                PresentationArgumentValuePolicy::Exact(expected.clone())
+            }
+            CallableParameterType::Unchecked => PresentationArgumentValuePolicy::Unchecked,
+        });
+        let policy = match (owned_policy, schema_policy) {
+            (
+                Some(PresentationArgumentValuePolicy::Unchecked),
+                Some(schema @ PresentationArgumentValuePolicy::Exact(_)),
+            ) => Some(schema),
+            (Some(owned), _) => Some(owned),
+            (None, schema) => schema,
+        };
+        match policy {
+            Some(PresentationArgumentValuePolicy::Exact(expected)) => {
+                self.check_presentation_exact_argument(callable, arg, parameter, expected, false);
+            }
+            Some(PresentationArgumentValuePolicy::TokenScalar(expected)) => {
+                self.check_presentation_exact_argument(callable, arg, parameter, expected, true);
+            }
+            Some(PresentationArgumentValuePolicy::Unchecked) => {
+                self.check_presentation_unchecked_value(value);
+            }
+            Some(PresentationArgumentValuePolicy::MetadataScalar) => {
+                self.check_presentation_extension_value(value);
+            }
+            None if matches!(arg, CallArg::Spread { .. })
+                || unknown_named == UnknownNamedArgumentPolicy::OpenChecked =>
+            {
+                self.check_expr(value);
+            }
+            None => self.check_presentation_unchecked_value(value),
+        }
+    }
+
+    fn check_presentation_exact_argument(
+        &mut self,
+        callable: PresentationCallableId,
+        argument: &CallArg,
+        parameter: Option<&CallableParameter>,
+        expected: TypeKind,
+        accepts_bare_token: bool,
+    ) {
+        let value = argument.value();
+        if accepts_bare_token && self.is_unresolved_presentation_token(value) {
+            self.reserve_presentation_leaf(value);
+            return;
+        }
+
+        let errors_before = self.errors.len();
+        let actual = self.check_expr_with_expected(value, Some(&expected));
+        if accepts_bare_token && actual.is_none() && self.errors.len() == errors_before {
+            let argument = presentation_argument_label(argument, parameter);
+            self.errors.push(TypeCheckError::new(format!(
+                "presentation call `{}` argument `{argument}` resolved through the normal expression path but has no value type compatible with {expected:?}",
+                callable.surface_name()
+            )));
+            return;
+        }
+        if let Some(actual) = actual.as_ref()
+            && !self.types_compatible(&expected, actual)
+        {
+            let argument = presentation_argument_label(argument, parameter);
+            self.errors.push(TypeCheckError::argument_type_mismatch(
+                callable.surface_name(),
+                argument,
+                expected,
+                actual.clone(),
+            ));
+        }
+    }
+
+    fn check_presentation_unchecked_value(&mut self, value: &Expr) {
+        if presentation_unchecked_leaf(value) {
+            self.reserve_presentation_leaf(value);
+        } else {
+            self.check_expr(value);
+        }
+    }
+
+    fn check_presentation_extension_value(&mut self, value: &Expr) {
+        match value {
+            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
+                self.check_expr_with_expected(value, Some(&TypeKind::I64));
+            }
+            Expr::Literal(Literal::Float { suffix: None, .. }) => {
+                self.check_expr_with_expected(value, Some(&TypeKind::F64));
+            }
+            _ => self.check_presentation_unchecked_value(value),
+        }
+    }
+
+    fn reserve_presentation_leaf(&mut self, value: &Expr) {
+        debug_assert!(presentation_unchecked_leaf(value));
+        self.stats.expressions += 1;
+    }
+
+    fn is_unresolved_presentation_token(&self, value: &Expr) -> bool {
+        match value {
+            Expr::ShortVariant(variant) => self.symbol_type(&format!(".{variant}")).is_none(),
+            // Bare author tokens are surface sugar only while the path has no
+            // normal path resolution. Resolved locals, project functions,
+            // builtins, and dotted targets must keep their actual type and pass
+            // through normal expected-type checking.
+            Expr::Path(path) => !self.path_has_known_resolution(path.as_label()),
+            _ => false,
+        }
+    }
+
+    fn check_presentation_viewport_args(
+        &mut self,
+        callable: PresentationCallableId,
+        args: &[CallArg],
+    ) {
         for arg in args {
             match arg {
-                CallArg::Positional(value) => self.check_presentation_image_loose_value(value),
-                CallArg::Named { name, value } => match name.as_str() {
-                    "width" | "height" => self.check_presentation_viewport_dimension_value(value),
-                    "fit" => {
-                        self.check_presentation_image_loose_value(value);
-                    }
-                    _ => self.reject_unknown_presentation_argument("player_viewport", name, value),
-                },
-                CallArg::Spread { value } => {
-                    self.check_expr(value);
+                CallArg::Named { name, value }
+                    if callable.resolve_named_argument(name).is_none() =>
+                {
+                    self.reject_unknown_presentation_argument("player_viewport", name, value);
                 }
+                CallArg::Positional(_) | CallArg::Spread { .. } | CallArg::Named { .. } => {}
             }
         }
     }
 
-    fn check_presentation_view_named_args(&mut self, args: &[CallArg]) {
+    fn check_presentation_view_named_args(
+        &mut self,
+        callable: PresentationCallableId,
+        args: &[CallArg],
+    ) {
         for arg in args {
             let CallArg::Named { name, value } = arg else {
                 continue;
             };
-            match name.as_str() {
-                "lifetime" => self.check_presentation_lifetime_arg(value),
-                "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
-                "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
-                "id" | "handle" | "key" | "mount" => {
-                    self.check_presentation_image_loose_value(value);
+            match callable.resolve_named_argument(name) {
+                Some(PresentationNamedArgument::Lifetime) => {
+                    self.check_presentation_lifetime_arg(value);
                 }
-                "depth" => self.expect_expr_type(value, &TypeKind::I32, "view depth"),
-                "visible" | "enabled" => {
-                    self.expect_expr_type(value, &TypeKind::Bool, "view lifecycle flag");
+                Some(PresentationNamedArgument::TargetPublicId) => {
+                    self.check_presentation_image_id_value(value, &EntityKind::Target);
                 }
-                _ => {
-                    self.check_expr(value);
+                Some(PresentationNamedArgument::LayerPublicId) => {
+                    self.check_presentation_image_id_value(value, &EntityKind::Layer);
                 }
+                _ => {}
             }
         }
     }
@@ -133,8 +306,7 @@ impl TypeChecker<'_> {
                     value.as_str(),
                     "scope" | "manual" | "detached" | "global" | "line" | "flow"
                 ) => {}
-            other => {
-                self.check_expr(other);
+            _ => {
                 self.errors.push(TypeCheckError::new(
                     "view/image lifetime must be one of `.scope`, `.manual`, `.detached`, `.global`, `.line`, or `.flow`"
                         .to_owned(),
@@ -189,8 +361,7 @@ impl TypeChecker<'_> {
             Expr::Path(path)
                 if self.env.symbol_type(path.as_label())
                     == Some(&TypeKind::entity_ref(EntityKind::Asset)) => {}
-            other => {
-                self.check_expr(other);
+            _ => {
                 self.errors.push(TypeCheckError::new(format!(
                     "{context} must be an Asset reference"
                 )));
@@ -231,8 +402,7 @@ impl TypeChecker<'_> {
             Expr::Path(path)
                 if self.env.symbol_type(path.as_label())
                     == Some(&TypeKind::entity_ref(expected.clone())) => {}
-            other => {
-                self.check_expr(other);
+            _ => {
                 self.errors.push(TypeCheckError::new(format!(
                     "{context} must be a {expected:?} reference"
                 )));
@@ -240,44 +410,30 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_character_look_arg(&mut self, args: &[CallArg]) {
-        let look = args
-            .iter()
-            .find_map(|arg| match arg {
-                CallArg::Named { name, value } if name == "look" => Some(value.as_ref()),
-                _ => None,
-            })
-            .or_else(|| {
-                args.iter()
-                    .filter_map(|arg| match arg {
-                        CallArg::Positional(value) => Some(value),
-                        CallArg::Named { .. } | CallArg::Spread { .. } => None,
-                    })
-                    .nth(1)
-            });
-        let Some(look) = look else {
-            return;
-        };
-        self.check_expr(look);
-    }
-
-    fn check_presentation_named_args(&mut self, args: &[CallArg], slot_family: &str) {
+    fn check_presentation_named_args(
+        &mut self,
+        callable: PresentationCallableId,
+        args: &[CallArg],
+        slot_family: &str,
+    ) {
         for arg in args {
             let CallArg::Named { name, value } = arg else {
                 continue;
             };
-            match name.as_str() {
-                "target" => self.expect_entity_expr_kind(value, &EntityKind::Target, "target"),
-                "slot" => self.expect_slot_family(value, slot_family),
-                "scope" => self.expect_entity_expr_kind(
+            match callable.resolve_named_argument(name) {
+                Some(
+                    PresentationNamedArgument::TargetEntity
+                    | PresentationNamedArgument::TargetPublicId,
+                ) => self.expect_entity_expr_kind(value, &EntityKind::Target, "target"),
+                Some(PresentationNamedArgument::Slot) => {
+                    self.expect_slot_family(value, slot_family);
+                }
+                Some(PresentationNamedArgument::Scope) => self.expect_entity_expr_kind(
                     value,
                     &EntityKind::Other("scope".to_owned()),
                     "scope",
                 ),
-                "look" if slot_family == "character" => {}
-                _ => {
-                    self.check_expr(value);
-                }
+                _ => {}
             }
         }
     }
@@ -287,19 +443,20 @@ impl TypeChecker<'_> {
             let CallArg::Named { name, value } = arg else {
                 continue;
             };
-            match name.as_str() {
-                "target" => self.expect_entity_expr_kind(value, &EntityKind::Target, "target"),
-                "slot" => self.expect_slot_family(value, "background"),
-                "scope" => self.expect_entity_expr_kind(
+            match PresentationCallableId::Background.resolve_named_argument(name) {
+                Some(PresentationNamedArgument::TargetEntity) => {
+                    self.expect_entity_expr_kind(value, &EntityKind::Target, "target");
+                }
+                Some(PresentationNamedArgument::Slot) => {
+                    self.expect_slot_family(value, "background");
+                }
+                Some(PresentationNamedArgument::Scope) => self.expect_entity_expr_kind(
                     value,
                     &EntityKind::Other("scope".to_owned()),
                     "scope",
                 ),
-                "fade" => {
-                    self.check_expr(value);
-                }
-                _ if self.check_presentation_image_common_named_arg(name, value) => {}
-                _ => self.reject_unknown_presentation_argument("bg", name, value),
+                Some(_) => {}
+                None => self.reject_unknown_presentation_argument("bg", name, value),
             }
         }
     }
@@ -309,85 +466,22 @@ impl TypeChecker<'_> {
             let CallArg::Named { name, value } = arg else {
                 continue;
             };
-            match name.as_str() {
-                "asset" => {}
-                "lifetime" => self.check_presentation_lifetime_arg(value),
-                "target" => self.check_presentation_image_id_value(value, &EntityKind::Target),
-                "layer" => self.check_presentation_image_id_value(value, &EntityKind::Layer),
-                "id" | "action" | "actions" | "fit" | "proxy.id" | "proxy.type" | "proxy.role"
-                | "focus" | "input_capture" | "owner" | "drop" => {
-                    self.check_presentation_image_loose_value(value);
+            match PresentationCallableId::Image.resolve_named_argument(name) {
+                Some(PresentationNamedArgument::Lifetime) => {
+                    self.check_presentation_lifetime_arg(value);
                 }
-                "alignment.x" | "alignment.y" => {
-                    self.check_presentation_image_ratio_or_milli_value(value, "image alignment");
+                Some(PresentationNamedArgument::TargetPublicId) => {
+                    self.check_presentation_image_id_value(value, &EntityKind::Target);
                 }
-                "depth" => {
-                    self.expect_expr_type(value, &TypeKind::I32, "image depth");
-                }
-                "opacity" => {
-                    self.check_presentation_image_opacity_value(value);
-                }
-                "enabled" | "visible" => {
-                    self.expect_expr_type(value, &TypeKind::Bool, "image lifecycle flag");
-                }
-                "x" | "y" | "width" | "height" | "transform.tx" | "transform.ty" => {
-                    self.check_expr(value);
-                }
-                "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
-                    self.check_presentation_image_transform_view_value(value);
-                }
-                "playback.start" | "playback.paused_at" | "playback.local_time" => {
-                    self.check_presentation_image_time_value(value);
-                }
-                "playback.rate" => {
-                    self.check_presentation_image_ratio_or_milli_value(
-                        value,
-                        "image playback rate",
-                    );
-                }
-                "proxy.layer" => {
+                Some(
+                    PresentationNamedArgument::LayerPublicId
+                    | PresentationNamedArgument::ProxyLayer,
+                ) => {
                     self.check_presentation_image_id_value(value, &EntityKind::Layer);
                 }
-                "proxy.depth" => {
-                    self.expect_expr_type(value, &TypeKind::I32, "image proxy depth");
-                }
-                "proxy.hit_test" => {
-                    self.expect_expr_type(value, &TypeKind::Bool, "image proxy hit-test flag");
-                }
-                custom if custom.starts_with("param.") => {
-                    self.check_presentation_image_param_value(value);
-                }
-                custom if custom.starts_with("proxy.param.") => {
-                    self.check_presentation_image_param_value(value);
-                }
-                _ => self.reject_unknown_presentation_argument("image", name, value),
+                Some(_) => {}
+                None => self.reject_unknown_presentation_argument("image", name, value),
             }
-        }
-    }
-
-    fn check_presentation_image_common_named_arg(&mut self, name: &str, value: &Expr) -> bool {
-        match name {
-            "fit" => {
-                self.check_presentation_image_loose_value(value);
-                true
-            }
-            "opacity" => {
-                self.check_presentation_image_opacity_value(value);
-                true
-            }
-            "alignment.x" | "alignment.y" => {
-                self.check_presentation_image_ratio_or_milli_value(value, "image alignment");
-                true
-            }
-            "playback.start" | "playback.paused_at" | "playback.local_time" => {
-                self.check_presentation_image_time_value(value);
-                true
-            }
-            "playback.rate" => {
-                self.check_presentation_image_ratio_or_milli_value(value, "image playback rate");
-                true
-            }
-            _ => false,
         }
     }
 
@@ -395,9 +489,8 @@ impl TypeChecker<'_> {
         &mut self,
         command: &str,
         argument: &str,
-        value: &Expr,
+        _value: &Expr,
     ) {
-        self.check_expr(value);
         self.errors
             .push(TypeCheckError::unknown_presentation_argument(
                 command, argument,
@@ -405,109 +498,12 @@ impl TypeChecker<'_> {
     }
 
     fn check_presentation_image_id_value(&mut self, expr: &Expr, expected: &EntityKind) {
-        match expr {
-            Expr::EntityRef(entity) => match entity.as_absolute().and_then(entity_kind) {
+        if let Expr::EntityRef(entity) = expr {
+            match entity.as_absolute().and_then(entity_kind) {
                 Some(kind) if &kind == expected => {}
                 actual => self.errors.push(TypeCheckError::new(format!(
                     "presentation image id must be a {expected:?} reference or public-id string, found {actual:?}"
                 ))),
-            },
-            Expr::Literal(Literal::String(_)) => {}
-            other => {
-                self.check_expr(other);
-            }
-        }
-    }
-
-    fn check_presentation_image_loose_value(&mut self, expr: &Expr) {
-        match expr {
-            Expr::EntityRef(_) | Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
-            other => {
-                self.check_expr(other);
-            }
-        }
-    }
-
-    fn check_presentation_image_param_value(&mut self, expr: &Expr) {
-        match expr {
-            Expr::EntityRef(_)
-            | Expr::Literal(Literal::String(_) | Literal::Bool(_))
-            | Expr::Path(_) => {}
-            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
-                self.expect_expr_type(expr, &TypeKind::I64, "image param integer");
-            }
-            Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, "image param float");
-            }
-            other => {
-                self.check_expr(other);
-            }
-        }
-    }
-
-    fn check_presentation_image_opacity_value(&mut self, expr: &Expr) {
-        self.check_presentation_image_ratio_or_milli_value(expr, "image opacity");
-    }
-
-    fn check_presentation_image_ratio_or_milli_value(&mut self, expr: &Expr, context: &str) {
-        match expr {
-            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
-                self.expect_expr_type(expr, &TypeKind::I32, context);
-            }
-            Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, context);
-            }
-            Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
-            other => {
-                self.check_expr(other);
-            }
-        }
-    }
-
-    fn check_presentation_viewport_dimension_value(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Literal(Literal::UnitNumber { .. } | Literal::String(_)) => {}
-            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
-                self.expect_expr_type(expr, &TypeKind::I32, "viewport dimension");
-            }
-            Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, "viewport dimension");
-            }
-            other => {
-                self.check_expr(other);
-            }
-        }
-    }
-
-    fn check_presentation_image_time_value(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Literal(Literal::Duration { .. }) => {
-                self.expect_expr_type(expr, &TypeKind::Duration, "image playback time");
-            }
-            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
-                self.expect_expr_type(expr, &TypeKind::I32, "image playback time seconds");
-            }
-            Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, "image playback time seconds");
-            }
-            Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
-            other => {
-                self.check_expr(other);
-            }
-        }
-    }
-
-    fn check_presentation_image_transform_view_value(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Literal(Literal::Int(literal)) if literal.suffix().is_none() => {
-                self.expect_expr_type(expr, &TypeKind::I32, "image transform view milli");
-            }
-            Expr::Literal(Literal::Float { suffix: None, .. }) => {
-                self.expect_expr_type(expr, &TypeKind::F64, "image transform view ratio");
-            }
-            Expr::Literal(Literal::String(_)) | Expr::Path(_) => {}
-            other => {
-                self.check_expr(other);
             }
         }
     }
@@ -520,8 +516,7 @@ impl TypeChecker<'_> {
                     "presentation {context} must be a {expected:?} reference, found {actual:?}"
                 ))),
             },
-            other => {
-                self.check_expr(other);
+            _ => {
                 self.errors.push(TypeCheckError::new(format!(
                     "presentation {context} must be an entity reference"
                 )));
@@ -547,12 +542,50 @@ impl TypeChecker<'_> {
                     )));
                 }
             }
-            other => {
-                self.check_expr(other);
+            _ => {
                 self.errors.push(TypeCheckError::new(
                     "presentation slot must be an entity reference".to_owned(),
                 ));
             }
         }
     }
+}
+
+fn next_presentation_positional_parameter(
+    parameters: &[CallableParameter],
+    start: usize,
+) -> Option<&CallableParameter> {
+    parameters.iter().skip(start).find(|parameter| {
+        matches!(
+            parameter.passing(),
+            CallableParameterPassing::PositionalOnly
+                | CallableParameterPassing::PositionalOrNamed
+                | CallableParameterPassing::RestPositional
+        )
+    })
+}
+
+fn presentation_argument_label(
+    argument: &CallArg,
+    parameter: Option<&CallableParameter>,
+) -> String {
+    match argument {
+        CallArg::Named { name, .. } => name.clone(),
+        CallArg::Positional(_) | CallArg::Spread { .. } => {
+            parameter.and_then(CallableParameter::name).map_or_else(
+                || "<positional>".to_owned(),
+                |name| name.as_str().to_owned(),
+            )
+        }
+    }
+}
+
+fn presentation_unchecked_leaf(value: &Expr) -> bool {
+    matches!(
+        value,
+        Expr::EntityRef(_)
+            | Expr::Path(_)
+            | Expr::ShortVariant(_)
+            | Expr::Literal(Literal::String(_))
+    )
 }

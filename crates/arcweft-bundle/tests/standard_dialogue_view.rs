@@ -1,7 +1,8 @@
+use arcweft_bundle::BundleCodecError;
 use arcweft_bundle::resource_codec::view::{
     ViewActionButtonActionResource, ViewDefinitionResource, ViewInstructionSpan,
     ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds,
-    ViewTextBlockBounds, ViewTextSourceKind,
+    ViewStyleResource, ViewTextBlockBounds, ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
     MAX_SOURCE_MAP_DOCUMENTS, SectionCodecError, SourceMapBuildError, SourceMapSection,
@@ -10,10 +11,14 @@ use arcweft_bundle::standard_view::{
     DIALOGUE_STYLE_ID, DIALOGUE_STYLE_SOURCE_ID, DIALOGUE_VIEW_ID, dialogue_program,
     dialogue_style, dialogue_text,
 };
+use arcweft_core::plan::RuntimeLineId;
 use arcweft_presentation::appearance::PresentationColor;
+use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_view::ViewId;
 use arcweft_view::style::{
-    ViewColorValue, ViewPropertyKind, ViewSpecifiedValue, ViewStyleApplicationTarget,
+    ViewColorValue, ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewSpecifiedValue,
+    ViewStyleApplicationTarget, ViewStyleDeclaration,
 };
 
 #[test]
@@ -59,7 +64,21 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
         &source.kind,
         ViewTextSourceKind::Literal { value } if value.is_empty()
     )));
-    assert!(style.program.sheets()[0].rules().iter().any(|rule| {
+    assert_standard_style_declarations(&style);
+
+    program
+        .encode_canonical_section()
+        .expect("standard View program encodes");
+    text.encode_canonical_section()
+        .expect("standard View text encodes");
+    style
+        .encode_canonical_section()
+        .expect("standard View style encodes");
+}
+
+fn assert_standard_style_declarations(style: &ViewStyleResource) {
+    let rules = style.program.sheets()[0].rules();
+    assert!(rules.iter().any(|rule| {
         rule.declarations().iter().any(|declaration| {
             declaration.property() == ViewPropertyKind::BackgroundColor
                 && declaration.value()
@@ -70,15 +89,58 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
                     }
         })
     }));
-
-    program
-        .encode_canonical_section()
-        .expect("standard View program encodes");
-    text.encode_canonical_section()
-        .expect("standard View text encodes");
-    style
-        .encode_canonical_section()
-        .expect("standard View style encodes");
+    assert_declaration(
+        rules[0].declarations(),
+        ViewPropertyKind::Position,
+        &position(ViewPosition::Absolute),
+    );
+    assert_declaration(
+        rules[0].declarations(),
+        ViewPropertyKind::Left,
+        &length(57_600),
+    );
+    assert_declaration(
+        rules[0].declarations(),
+        ViewPropertyKind::Top,
+        &length(460_800),
+    );
+    assert_declaration(
+        rules[1].declarations(),
+        ViewPropertyKind::Position,
+        &position(ViewPosition::Absolute),
+    );
+    assert_declaration(
+        rules[1].declarations(),
+        ViewPropertyKind::Left,
+        &length(28_000),
+    );
+    assert_declaration(
+        rules[1].declarations(),
+        ViewPropertyKind::Top,
+        &length(20_000),
+    );
+    assert_declaration(
+        rules[2].declarations(),
+        ViewPropertyKind::Position,
+        &position(ViewPosition::Absolute),
+    );
+    assert_declaration(
+        rules[2].declarations(),
+        ViewPropertyKind::Left,
+        &length(28_000),
+    );
+    assert_declaration(
+        rules[2].declarations(),
+        ViewPropertyKind::Top,
+        &length(58_000),
+    );
+    assert_declaration(
+        rules[3].declarations(),
+        ViewPropertyKind::Position,
+        &position(ViewPosition::Absolute),
+    );
+    assert_declaration(rules[3].declarations(), ViewPropertyKind::Left, &length(0));
+    assert_declaration(rules[3].declarations(), ViewPropertyKind::Top, &length(0));
 }
 
 #[test]
@@ -220,6 +282,182 @@ fn full_user_source_map_cannot_panic_when_standard_source_is_reserved() {
             limit: MAX_SOURCE_MAP_DOCUMENTS,
         }
     );
+}
+
+#[test]
+fn dialogue_view_id_round_trips_as_the_accepted_public_owner() {
+    let mut bundle = test_bundle();
+    bundle.display = LineDisplayCatalog::new(vec![display_spec(
+        RuntimeLineId::from_runtime_line_value("say.accepted").expect("line ID"),
+        ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
+    )]);
+
+    let encoded = bundle.to_json_bytes().expect("accepted owner encodes");
+    let decoded =
+        arcweft_bundle::ArcweftBundle::from_json_slice(&encoded).expect("accepted owner decodes");
+
+    assert_eq!(decoded.display.lines()[0].view.as_str(), DIALOGUE_VIEW_ID);
+}
+
+#[test]
+fn dialogue_view_id_rejects_malformed_wire_identity() {
+    let mut bundle = test_bundle();
+    bundle.display = LineDisplayCatalog::new(vec![display_spec(
+        RuntimeLineId::from_runtime_line_value("say.malformed").expect("line ID"),
+        ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
+    )]);
+    let mut payload: serde_json::Value =
+        serde_json::from_slice(&bundle.to_json_bytes().expect("fixture encodes"))
+            .expect("fixture JSON");
+    payload["display"]["lines"][0]["view"] = serde_json::json!("not a public View id");
+
+    assert!(matches!(
+        arcweft_bundle::ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&payload).expect("tampered JSON encodes")
+        ),
+        Err(BundleCodecError::Decode(_))
+    ));
+}
+
+fn assert_declaration(
+    declarations: &[ViewStyleDeclaration],
+    property: ViewPropertyKind,
+    value: &ViewSpecifiedValue,
+) {
+    assert!(
+        declarations
+            .iter()
+            .any(|declaration| declaration.property() == property && declaration.value() == value),
+        "missing {property:?} = {value:?}",
+    );
+}
+
+fn length(value: i32) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Length {
+        value: ViewLengthMilli::new(value),
+    }
+}
+
+const fn position(value: ViewPosition) -> ViewSpecifiedValue {
+    ViewSpecifiedValue::Position { value }
+}
+
+#[test]
+fn dialogue_view_id_is_required_and_rejects_null_wire_identity() {
+    let mut bundle = test_bundle();
+    bundle.display = LineDisplayCatalog::new(vec![display_spec(
+        RuntimeLineId::from_runtime_line_value("say.required").expect("line ID"),
+        ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
+    )]);
+    let payload: serde_json::Value =
+        serde_json::from_slice(&bundle.to_json_bytes().expect("fixture encodes"))
+            .expect("fixture JSON");
+
+    let mut missing = payload.clone();
+    missing["display"]["lines"][0]
+        .as_object_mut()
+        .expect("display line object")
+        .remove("view");
+    assert!(matches!(
+        arcweft_bundle::ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&missing).expect("missing-field JSON encodes")
+        ),
+        Err(BundleCodecError::Decode(_))
+    ));
+
+    let mut null = payload;
+    null["display"]["lines"][0]["view"] = serde_json::Value::Null;
+    assert!(matches!(
+        arcweft_bundle::ArcweftBundle::from_json_slice(
+            &serde_json::to_vec(&null).expect("null-field JSON encodes")
+        ),
+        Err(BundleCodecError::Decode(_))
+    ));
+}
+
+#[test]
+fn dialogue_view_id_rejects_unknown_public_owner() {
+    let line = RuntimeLineId::from_runtime_line_value("say.unknown").expect("line ID");
+    let unknown = ViewId::try_new("view.UnknownDialogue").expect("well-formed View ID");
+    let mut bundle = test_bundle();
+    bundle.display = LineDisplayCatalog::new(vec![display_spec(line.clone(), unknown.clone())]);
+
+    assert!(matches!(
+        bundle.to_json_bytes(),
+        Err(BundleCodecError::MissingDialogueViewDefinition { line: actual, view })
+            if actual == line && view == unknown
+    ));
+}
+
+#[test]
+fn dialogue_view_id_rejects_registered_owner_without_dialogue_role() {
+    let line = RuntimeLineId::from_runtime_line_value("say.wrong-role").expect("line ID");
+    let owner = ViewId::try_new("view.NotDialogue").expect("well-formed View ID");
+    let authored = ViewProgramResource {
+        program_id: arcweft_view::ViewProgramId::try_new("view.project.role").unwrap(),
+        definitions: vec![ViewDefinitionResource {
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
+                owner.as_str(),
+            )
+            .unwrap(),
+            body: ViewInstructionSpan::new(0, 0),
+            styles: Vec::new(),
+            parameters: Vec::new(),
+            state_schema_hash: 7,
+        }],
+        ..ViewProgramResource::default()
+    };
+    let mut bundle = test_bundle()
+        .with_view_resources(Some(authored), None)
+        .expect("authored View resources merge");
+    bundle.display = LineDisplayCatalog::new(vec![display_spec(line.clone(), owner.clone())]);
+
+    assert!(matches!(
+        bundle.to_json_bytes(),
+        Err(BundleCodecError::DialogueViewDefinitionMissingRole {
+            line: actual,
+            view,
+        }) if actual == line && view == owner
+    ));
+}
+
+#[test]
+fn dialogue_view_validation_rejects_duplicate_owners_before_role_selection() {
+    let owner = ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID");
+    let mut bundle = test_bundle();
+    let program = bundle.view_program.as_mut().expect("standard View program");
+    let mut duplicate = program.definitions[0].clone();
+    duplicate.parameters.clear();
+    program.definitions.push(duplicate);
+    bundle.display = LineDisplayCatalog::new(vec![display_spec(
+        RuntimeLineId::from_runtime_line_value("say.duplicate-view").expect("line ID"),
+        owner.clone(),
+    )]);
+
+    assert!(matches!(
+        bundle.to_json_bytes(),
+        Err(BundleCodecError::DuplicateViewDefinition { view }) if view == owner
+    ));
+}
+
+fn display_spec(line: RuntimeLineId, view: ViewId) -> LineDisplaySpec {
+    LineDisplaySpec {
+        line,
+        callee: "narrator".to_owned(),
+        speaker_label: None,
+        text_key: None,
+        view,
+        voice: None,
+        look: None,
+        style: None,
+        base_styles: Vec::new(),
+        default_inline_failure_policy: None,
+        style_contributions: Vec::new(),
+        args: Vec::new(),
+        content: RichTextDocument::new(vec![RichTextNode::Text {
+            text: "dialogue".to_owned(),
+        }]),
+    }
 }
 
 fn test_bundle() -> arcweft_bundle::ArcweftBundle {

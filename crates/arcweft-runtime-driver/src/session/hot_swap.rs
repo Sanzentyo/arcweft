@@ -117,6 +117,12 @@ impl BundleSession {
         }
         if compatibility == SwapCompatibility::ContentOnly {
             let dialogue = self.presentation.dialogue.view_inputs();
+            next_runtime
+                .view_runtime
+                .validate_dialogue_inputs(&dialogue)
+                .map_err(|error| BundleHotSwapError::ViewRuntime {
+                    message: error.to_string(),
+                })?;
             let reconciled_root_handles = reconciled_root_handles_for_restore(
                 &self.presentation.presentation_handles,
                 &dialogue,

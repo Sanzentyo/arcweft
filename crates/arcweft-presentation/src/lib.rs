@@ -1,7 +1,8 @@
 use self::character::CharacterRenderSpec;
-use arcweft_id::PublicId;
+use arcweft_id::{IdError, PublicId};
 use core::marker::PhantomData;
 use std::collections::HashMap;
+use thiserror::Error;
 
 pub mod appearance;
 pub mod character;
@@ -46,6 +47,22 @@ pub struct PresentationSlot {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PresentationTarget {
     id: PublicId,
+}
+
+/// Validated target/slot ownership key for one background presentation cell.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct BackgroundSlotAddress {
+    target: PresentationTarget,
+    slot: PresentationSlot,
+}
+
+/// Failure to construct a typed background target/slot address.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum BackgroundSlotAddressError {
+    #[error("background target `{0}` must belong to the `target.*` family")]
+    InvalidTarget(PublicId),
+    #[error("background slot `{0}` must belong to the `slot.background.*` family")]
+    InvalidSlot(PublicId),
 }
 
 /// Scope-bound handle returned by staging calls such as `bg(...)` and `show(...)`.
@@ -233,6 +250,10 @@ impl PresentationTarget {
         Self { id }
     }
 
+    pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
+        PublicId::try_new(value).map(Self::new)
+    }
+
     pub fn scene() -> Self {
         presentation_target("scene")
     }
@@ -242,9 +263,78 @@ impl PresentationTarget {
     }
 }
 
+impl BackgroundSlotAddress {
+    pub fn try_new(
+        target: PresentationTarget,
+        slot: PresentationSlot,
+    ) -> Result<Self, BackgroundSlotAddressError> {
+        if !target.id().as_str().starts_with("target.") {
+            return Err(BackgroundSlotAddressError::InvalidTarget(
+                target.id().clone(),
+            ));
+        }
+        if !slot.id().as_str().starts_with("slot.background.") {
+            return Err(BackgroundSlotAddressError::InvalidSlot(slot.id().clone()));
+        }
+        Ok(Self { target, slot })
+    }
+
+    pub fn default_scene() -> Self {
+        Self {
+            target: PresentationTarget::scene(),
+            slot: PresentationSlot::default_background(),
+        }
+    }
+
+    pub const fn target(&self) -> &PresentationTarget {
+        &self.target
+    }
+
+    pub const fn slot(&self) -> &PresentationSlot {
+        &self.slot
+    }
+
+    /// Stable semantic image owner for this exact target/slot pair.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an address previously accepted by [`Self::try_new`] can
+    /// no longer be represented by the canonical public-ID grammar.
+    pub fn image_id(&self) -> PublicId {
+        if self == &Self::default_scene() {
+            return PublicId::try_new("image.background.default")
+                .expect("the canonical default background image ID is valid");
+        }
+        let target_suffix = self
+            .target
+            .id()
+            .as_str()
+            .strip_prefix("target.")
+            .expect("validated background target family");
+        let slot_suffix = self
+            .slot
+            .id()
+            .as_str()
+            .strip_prefix("slot.")
+            .expect("validated background slot family");
+        PublicId::try_new(format!(
+            "image.background.pair.s{}.{}.t{}.{}",
+            slot_suffix.len(),
+            slot_suffix,
+            target_suffix.len(),
+            target_suffix
+        ))
+        .expect("validated target and slot identities compose a valid image ID")
+    }
+}
+
 impl PresentationSlot {
     pub const fn new(id: PublicId) -> Self {
         Self { id }
+    }
+
+    pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
+        PublicId::try_new(value).map(Self::new)
     }
 
     pub fn default_background() -> Self {

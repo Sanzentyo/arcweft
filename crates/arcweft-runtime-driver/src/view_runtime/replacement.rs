@@ -53,6 +53,8 @@ struct ExpectedViewRuntimeState {
     root_bindings: BTreeMap<String, arcweft_core::value::RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: BundleViewAxisSeedRegistry,
+    declared_dialogue_views: BTreeSet<ViewId>,
+    required_dialogue_views: BTreeSet<ViewId>,
 }
 
 enum PreparedViewPublication {
@@ -109,6 +111,10 @@ pub enum ViewProgramReplacementError {
     Registry(#[from] ViewRegistryError),
     #[error(transparent)]
     Reconcile(#[from] ViewMountReconcileError),
+    #[error("replacement removes required dialogue View definition `{definition}`")]
+    MissingRequiredDialogueView { definition: ViewId },
+    #[error("replacement View `{definition}` no longer owns a typed dialogue input parameter")]
+    RequiredDialogueViewMissingRole { definition: ViewId },
 }
 
 impl AcceptedViewProgramGeneration {
@@ -165,6 +171,7 @@ impl BundleViewRuntime {
         if current.program_id() != candidate_catalog.program_id() {
             return Err(ViewProgramReplacementError::ProgramIdentityMismatch);
         }
+        self.validate_replacement_dialogue_views(&candidate_catalog)?;
         candidate
             .program()
             .ok_or(ViewProgramReplacementError::ProgramIdentityMismatch)?
@@ -350,6 +357,8 @@ impl BundleViewRuntime {
             root_bindings: self.root_bindings.clone(),
             mounts: self.mounts.clone(),
             axis_seeds: self.axis_seeds.clone(),
+            declared_dialogue_views: self.declared_dialogue_views.clone(),
+            required_dialogue_views: self.required_dialogue_views.clone(),
         }
     }
 
@@ -372,6 +381,29 @@ impl BundleViewRuntime {
             && self.root_bindings == expected.root_bindings
             && self.mounts == expected.mounts
             && self.axis_seeds == expected.axis_seeds
+            && self.declared_dialogue_views == expected.declared_dialogue_views
+            && self.required_dialogue_views == expected.required_dialogue_views
+    }
+
+    fn validate_replacement_dialogue_views(
+        &self,
+        candidate: &ViewProgramCatalog,
+    ) -> Result<(), ViewProgramReplacementError> {
+        for definition in &self.required_dialogue_views {
+            if candidate.definition_index(definition).is_none() {
+                return Err(ViewProgramReplacementError::MissingRequiredDialogueView {
+                    definition: definition.clone(),
+                });
+            }
+            if !candidate.accepts_dialogue_input(definition) {
+                return Err(
+                    ViewProgramReplacementError::RequiredDialogueViewMissingRole {
+                        definition: definition.clone(),
+                    },
+                );
+            }
+        }
+        Ok(())
     }
 }
 

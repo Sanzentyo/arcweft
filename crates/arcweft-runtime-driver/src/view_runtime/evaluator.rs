@@ -185,7 +185,7 @@ fn reconcile_root_handles<'a>(
             PresentationHandleRecord::new(
                 input.handle.clone(),
                 PresentationHandleKind::View,
-                input.view.to_owned(),
+                input.view.as_str().to_owned(),
                 Some("dialogue".to_owned()),
                 PresentationResourceState::Mounted,
                 None,
@@ -260,6 +260,14 @@ impl BundleViewRuntime {
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
     ) -> BundleViewFrame {
+        if let Err(error) = self.validate_authorized_dialogue_inputs(dialogue) {
+            return BundleViewFrame {
+                mounts: Vec::new(),
+                diagnostics: vec![BundleViewDiagnostic::invalid_dialogue_view_owner(&error)],
+            };
+        }
+        let mut active_required_dialogue_views = self.declared_dialogue_views.clone();
+        active_required_dialogue_views.extend(dialogue.iter().map(|input| input.view.clone()));
         for binding in bindings {
             self.root_bindings
                 .insert(binding.name.clone(), binding.value.clone());
@@ -395,9 +403,11 @@ impl BundleViewRuntime {
         output.sort_by(|left, right| {
             (&left.handle, &left.path, left.mount).cmp(&(&right.handle, &right.path, right.mount))
         });
+        let diagnostics = std::mem::take(&mut evaluator.diagnostics);
+        self.required_dialogue_views = active_required_dialogue_views;
         BundleViewFrame {
             mounts: output,
-            diagnostics: evaluator.diagnostics,
+            diagnostics,
         }
     }
 

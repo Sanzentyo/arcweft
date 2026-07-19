@@ -223,7 +223,9 @@ pub(super) fn validate_consumer_properties(
 const fn consumer_supports(consumer: StyleConsumer, property: ViewPropertyKind) -> bool {
     match consumer {
         StyleConsumer::Structural(element) => {
-            property.is_inherited() || container_gap_property(element, property)
+            property.is_inherited()
+                || box_geometry_property(property)
+                || container_gap_property(element, property)
         }
         StyleConsumer::Surface(element) => {
             property.is_inherited()
@@ -245,14 +247,11 @@ const fn consumer_supports(consumer: StyleConsumer, property: ViewPropertyKind) 
 }
 
 const fn scroll_box_property(property: ViewPropertyKind) -> bool {
-    matches!(
-        property,
-        ViewPropertyKind::Width
-            | ViewPropertyKind::Height
-            | ViewPropertyKind::TranslateX
-            | ViewPropertyKind::TranslateY
-            | ViewPropertyKind::Scale
-    )
+    box_geometry_property(property)
+        || matches!(
+            property,
+            ViewPropertyKind::OverflowX | ViewPropertyKind::OverflowY
+        )
 }
 
 const fn container_gap_property(element: ViewElementKind, property: ViewPropertyKind) -> bool {
@@ -266,8 +265,26 @@ const fn container_gap_property(element: ViewElementKind, property: ViewProperty
 const fn box_geometry_property(property: ViewPropertyKind) -> bool {
     matches!(
         property,
-        ViewPropertyKind::Width
+        ViewPropertyKind::Display
+            | ViewPropertyKind::Width
             | ViewPropertyKind::Height
+            | ViewPropertyKind::MinWidth
+            | ViewPropertyKind::MinHeight
+            | ViewPropertyKind::MaxWidth
+            | ViewPropertyKind::MaxHeight
+            | ViewPropertyKind::PaddingTop
+            | ViewPropertyKind::PaddingRight
+            | ViewPropertyKind::PaddingBottom
+            | ViewPropertyKind::PaddingLeft
+            | ViewPropertyKind::MarginTop
+            | ViewPropertyKind::MarginRight
+            | ViewPropertyKind::MarginBottom
+            | ViewPropertyKind::MarginLeft
+            | ViewPropertyKind::Position
+            | ViewPropertyKind::Top
+            | ViewPropertyKind::Right
+            | ViewPropertyKind::Bottom
+            | ViewPropertyKind::Left
             | ViewPropertyKind::TranslateX
             | ViewPropertyKind::TranslateY
             | ViewPropertyKind::Scale

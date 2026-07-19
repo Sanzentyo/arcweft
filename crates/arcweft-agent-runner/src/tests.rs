@@ -239,7 +239,7 @@ impl AgentSession for TestSession {
 
     fn read_resource(&mut self, uri: &str) -> Result<AgentResource, Self::Error> {
         Ok(AgentResource {
-            uri: uri.to_owned(),
+            uri: AgentResourceUri::new(uri).expect("test resource URI is nonempty"),
             kind: AgentResourceKind::ObservationLatest,
             mime_type: "application/json".to_owned(),
             hash: "resource.hash".to_owned(),
@@ -374,7 +374,8 @@ fn replay_agent_session_replays_recorded_host_responses_in_order() {
         byte_len: 12,
     };
     let resource = AgentResource {
-        uri: "agent://resource/replay".to_owned(),
+        uri: AgentResourceUri::new("agent://resource/replay")
+            .expect("test resource URI is nonempty"),
         kind: AgentResourceKind::ObservationLatest,
         mime_type: "application/json".to_owned(),
         hash: "state.replay".to_owned(),

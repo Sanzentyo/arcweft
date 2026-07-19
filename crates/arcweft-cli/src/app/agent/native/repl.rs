@@ -512,8 +512,8 @@ pub(super) fn agent_repl_trace_resources(
 
 pub(super) fn agent_repl_trace_resource(
     records: &[AgentTraceRecord],
-) -> Result<AgentResource, String> {
-    trace_resource(records).map_err(|error| format!("failed to serialize trace: {error}"))
+) -> Result<AgentResource, TraceResourceError> {
+    trace_resource(records)
 }
 
 pub(super) fn agent_repl_input(options: &AgentReplOptions) -> Result<String, ExitCode> {

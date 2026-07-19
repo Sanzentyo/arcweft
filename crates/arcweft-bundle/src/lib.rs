@@ -34,6 +34,7 @@ use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_data::{Number, Value};
 use arcweft_layout::stage_placement::StagePlacement;
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(feature = "format-cbor")]
@@ -421,6 +422,18 @@ pub enum BundleCodecError {
     DuplicateImageObject { id: String },
     #[error("bundle contains duplicate character package `{id}`")]
     DuplicateCharacterPackage { id: String },
+    #[error("bundle contains duplicate View definition `{view}`")]
+    DuplicateViewDefinition { view: ViewId },
+    #[error("dialogue line `{line}` selects missing View definition `{view}`")]
+    MissingDialogueViewDefinition {
+        line: arcweft_core::plan::RuntimeLineId,
+        view: ViewId,
+    },
+    #[error("dialogue line `{line}` selects View `{view}` without a dialogue input parameter")]
+    DialogueViewDefinitionMissingRole {
+        line: arcweft_core::plan::RuntimeLineId,
+        view: ViewId,
+    },
     #[error(
         "bundle character package `{character_id}` references missing virtual file asset:{path}"
     )]
@@ -1073,6 +1086,7 @@ impl ArcweftBundle {
                 });
             }
         }
+        self.validate_dialogue_view_definitions()?;
         let dialogue_contract = match &self.view_program {
             Some(program) => program
                 .validate_dialogue_contract(self.view_text.as_ref())
@@ -1107,6 +1121,35 @@ impl ArcweftBundle {
             self.view_style.clone(),
             ViewProductValidationLimits::default(),
         )?;
+        Ok(())
+    }
+
+    fn validate_dialogue_view_definitions(&self) -> Result<(), BundleCodecError> {
+        let mut definitions = BTreeMap::new();
+        for definition in self
+            .view_program
+            .iter()
+            .flat_map(|program| program.definitions.iter())
+        {
+            let view = definition.public_id.to_view_id();
+            if definitions.insert(view.clone(), definition).is_some() {
+                return Err(BundleCodecError::DuplicateViewDefinition { view });
+            }
+        }
+        for spec in self.display.lines() {
+            let Some(definition) = definitions.get(&spec.view) else {
+                return Err(BundleCodecError::MissingDialogueViewDefinition {
+                    line: spec.line.clone(),
+                    view: spec.view.clone(),
+                });
+            };
+            if !definition.accepts_dialogue_input() {
+                return Err(BundleCodecError::DialogueViewDefinitionMissingRole {
+                    line: spec.line.clone(),
+                    view: spec.view.clone(),
+                });
+            }
+        }
         Ok(())
     }
 

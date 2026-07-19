@@ -136,28 +136,48 @@ readback report the resulting object-local `frame_index` and
 `local_time_millis`, even if the observation itself used a different
 `--capture-time`.
 
-Source-level runtime calls can now feed that same presentation-image path for
-the first background slot. During Agent observe, `bg(@asset:.bg.room)` and the
-quoted equivalent resolve to `samples/assets/bg/room.{png,jpg,jpeg,gif,webp}`
-beside the observed `.arcw` source, decode through `arcweft-image`, lower into
-an `ImagePresentationObject`, lower again through `ViewImagePresentationFrame`,
-and populate typed Agent image objects plus object-id keyed native frame-store
-pixels. Multiple background calls use slot semantics: the last valid background
-call wins, avoiding duplicate background object ids. Missing image assets
-produce structured `image_asset_unavailable` diagnostics rather than a debug
-rectangle or a panic.
+Source-level runtime calls feed that same presentation-image path for
+background slots. The shared runtime driver turns `bg(@asset:.bg.room)` into a
+canonical `BundleImageObject` owned by the selected presentation target and
+background slot; it does not search for or activate an unrelated bounded image
+that happens to reference the same asset. The normal player-scene bundle image
+catalog then decodes the referenced payload through `arcweft-image` and emits
+the same prepared image, hit-test, capture, and Agent-observation evidence as
+other image objects. Agent tooling consumes that shared prepared player frame
+and does not reconstruct a separate background object.
+
+Multiple background calls use target-and-slot semantics: the last valid call
+for one pair wins, while different slots or targets coexist with distinct
+stable semantic image identities. The default pair remains
+`image.background.default`; non-default pairs use a length-delimited target and
+slot identity so authored suffixes containing `.target.` cannot collide.
+`bg.clear(...)` removes exactly the selected pair. Missing image assets produce
+structured image-catalog diagnostics rather than a debug rectangle or a panic.
+The provisional `RuntimeCall` carrier is decoded fail-closed for the known
+`bg` and `bg.clear` callees: a missing or malformed asset, target, slot, fit,
+alignment, opacity, or playback value returns a typed
+`BundlePresentationUpdateError`. The complete presentation snapshot update is
+atomic, so a malformed replacement cannot partially apply and a malformed
+clear cannot silently leave a stale background while appearing successful.
+Unknown callees remain outside this decoder.
+Different background slots currently share depth zero and therefore use the
+existing deterministic `(depth, semantic image id)` paint order. Slot names
+such as `far` and `near` do not imply layering. Final named-slot depth/order and
+the removal of the remaining stringly runtime-call argument boundary belong to
+`docs/reviews/requests/2026-07-14-aw-ah-011-and-013-typed-presentation-command-abi.md`;
+this cut does not add a second slot registry, silent compatibility parsing, or
+speculative ordering policy.
 `bg(...)` defaults to cover-fit, centered alignment, full opacity, and normal
 capture-time playback, but it accepts the same `fit`, `alignment.*`, `opacity`,
 and `playback.*` named arguments as bounded `image(...)` so static and animated
 backgrounds can be debugged through the same image-object policy.
 
-Agent observe uses an observation-local source image decode cache keyed by
-public asset id. The cache stores successful decoded `DecodedImage` values for
-the duration of one observation build, so repeated `bg(...)` / `image(...)`
-uses of the same static or animated asset reuse decoded frames while preserving
-deterministic `capture_time` frame selection. Failed filesystem lookups or
-decode errors are not cached, and long-lived eviction policy remains an adapter
-concern.
+The bundle image catalog decodes each accepted asset once when the player scene
+is constructed. Repeated `bg(...)` / `image(...)` objects reuse that decoded
+asset while preserving deterministic visual-time frame selection. This cache
+is shared by player rendering and Agent observation rather than being an
+observation-local alternate decode path; longer-lived adapter eviction remains
+outside the Sans I/O presentation model.
 
 `samples/image-animation.arcw` is the first source-level image sample. It has
 separate flows for static PNG, static JPEG, static WebP, animated GIF, and
@@ -315,6 +335,12 @@ image capture.
    `image-animation.arcw` sample is bundled as a CLI regression to prove
    PNG/JPEG/static WebP/GIF/animated WebP metadata is recorded in
    `image_assets[]` and validated again by `run-bundle`.
+4. Complete named-scope exit for background slots through the typed
+   presentation command and handle lifecycle defined by
+   `docs/reviews/requests/2026-07-14-aw-ah-011-and-013-typed-presentation-command-abi.md`.
+   The current driver owns target/slot replacement and explicit
+   `bg.clear(...)`; it must not grow a second stringly scope registry while that
+   shared typed command boundary is pending.
 
 ## Dependency Policy
 

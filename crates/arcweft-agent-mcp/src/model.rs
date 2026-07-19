@@ -6,8 +6,6 @@
 use arcweft_agent_protocol::image::AgentImageMetadata;
 use serde::{Deserialize, Serialize};
 
-pub const AGENT_TRACE_MIME_TYPE: &str = "application/vnd.arcweft.agent-trace+json";
-
 /// Resource descriptor returned by MCP `resources/list`.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct McpResourceDescriptor {

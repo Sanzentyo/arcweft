@@ -842,9 +842,10 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
     };
+    let dialogue_view = arcweft_view::ViewId::try_new("view.Dialogue").unwrap();
     let dialogue = crate::dialogue::DialogueViewInput {
         handle: handle.clone(),
-        view: "view.Dialogue",
+        view: &dialogue_view,
         frame: &frame,
         state: crate::dialogue::DialogueViewState {
             occurrence: crate::dialogue::DialogueViewOccurrence {

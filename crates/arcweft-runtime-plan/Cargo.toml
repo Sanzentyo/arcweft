@@ -15,6 +15,7 @@ arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-source = { path = "../arcweft-source" }
+arcweft-view = { path = "../arcweft-view" }
 thiserror.workspace = true
 
 [dev-dependencies]

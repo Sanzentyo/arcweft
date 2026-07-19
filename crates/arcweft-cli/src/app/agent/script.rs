@@ -1955,7 +1955,7 @@ impl AgentSession for CliAgentSession {
 
     fn read_resource(&mut self, uri: &str) -> Result<AgentResource, Self::Error> {
         Ok(AgentResource {
-            uri: uri.to_owned(),
+            uri: AgentResourceUri::new(uri).expect("requested resource URI is nonempty"),
             kind: AgentResourceKind::ObservationLatest,
             mime_type: "application/json".to_owned(),
             hash: "cli-resource".to_owned(),

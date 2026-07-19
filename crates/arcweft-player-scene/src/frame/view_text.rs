@@ -61,6 +61,7 @@ struct DialogueFxResolver<'a> {
     context: DialogueTextContext<'a>,
     definitions: &'a FxDefinitions,
     runtime: &'a arcweft_runtime_driver::fx_runtime::BundleFxRuntimeSnapshot,
+    stage_elapsed_millis: u64,
 }
 
 impl FxApplicationResolver for DialogueFxResolver<'_> {
@@ -98,10 +99,25 @@ impl FxApplicationResolver for DialogueFxResolver<'_> {
                 "runtime did not retain the dialogue RichText Fx application instance",
             ))
         })?;
+        let runtime_time = instance
+            .activation_logical_time
+            .try_advance_millis(self.stage_elapsed_millis)
+            .map_err(|error| {
+                Box::new(FxDiagnostic::error(
+                    FxDiagnosticCode::NumericNonFinite,
+                    FxDiagnosticContext {
+                        definition: Some(application.definition().clone()),
+                        instance: Some(instance_id),
+                        source_range: application.source_range(),
+                        ..FxDiagnosticContext::default()
+                    },
+                    format!("dialogue stage Fx sample time is not representable: {error}"),
+                ))
+            })?;
         Ok(FxEvaluationBinding {
             definition,
             instance,
-            runtime_time: self.runtime.logical_time,
+            runtime_time,
         })
     }
 }
@@ -544,6 +560,7 @@ fn push_display_frame(
         context: dialogue,
         definitions: context.fx_definitions,
         runtime: &context.presentation.fx,
+        stage_elapsed_millis: context.visual_time_millis,
     };
     let result = shared.push_prepared_rich_text_stage(
         frame,

@@ -3693,6 +3693,32 @@ pub source @source.values: Source<i64, String> {
 }
 
 #[test]
+fn runtime_plan_keeps_presentation_named_numeric_evidence_aligned() {
+    let parsed = parse_source_text(
+        r#"
+flow main {
+    image(asset = @asset:.bg.pulse, id = "image.pulse", x = 1px, opacity = 0.5, depth = 7, param.count = 9, visible = true)
+    return "done"
+}
+"#,
+    );
+    let hir = lower_source_tree(parsed.typed_tree()).expect("presentation fixture lowers");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "presentation fixture must typecheck: {:#?}",
+        typecheck.diagnostics
+    );
+
+    lower_source_runtime_plan_with_typecheck_stats_and_options(
+        &hir,
+        &typecheck,
+        &RuntimePlanLowerOptions::default(),
+    )
+    .expect("runtime lowering must consume the same per-argument expression evidence");
+}
+
+#[test]
 fn compiles_and_runs_bare_named_iterator_as_identity_into_iterator() {
     let compiled = compile_source(
         r"

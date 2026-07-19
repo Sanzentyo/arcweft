@@ -2031,10 +2031,18 @@ fn agent_mcp_stdio_reads_agent_trace_resource() {
             .iter()
             .any(|tool| tool["name"] == "arcweft.trace.read")
     );
-    assert_eq!(responses[2]["result"]["content"][0]["type"], "resource");
+    assert_eq!(responses[2]["result"]["content"][0]["type"], "text");
+    let trace_metadata: serde_json::Value = serde_json::from_str(
+        responses[2]["result"]["content"][0]["text"]
+            .as_str()
+            .expect("trace tool metadata text"),
+    )
+    .expect("trace tool metadata is JSON");
+    assert_eq!(trace_metadata["content_policy"]["disposition"], "allow");
     assert_eq!(
-        responses[2]["result"]["content"][0]["resource"]["uri"],
-        trace_uri
+        responses[2]["result"]["content"][1]["resource"]["uri"], trace_uri,
+        "allowed trace content must retain its canonical run URI: {}",
+        responses[2]
     );
     assert!(
         responses[3]["result"]["resources"]
@@ -2068,6 +2076,7 @@ fn agent_mcp_stdio_waits_for_observation_predicate() {
                 "name": "arcweft.wait",
                 "arguments": {
                     "source": source.display().to_string(),
+                    "entry": "entry.main",
                     "predicate": {
                         "kind": "compare",
                         "probe": { "kind": "observation_field", "path": "tick" },
@@ -2172,7 +2181,7 @@ fn agent_mcp_stdio_runs_agent_script() {
         assert_eq!(run["ok"], true);
         assert_eq!(run["agent_entries"], 1);
         assert_eq!(run["host_calls"], 1);
-        assert_eq!(run["final_status"], "Done(Return(\"done\"))");
+        assert_eq!(run["final_status"], "Done(Return(\".Ok(...)\"))");
     }
 }
 
@@ -5167,8 +5176,7 @@ fn seed_debug_search_graph(store: &DebugStore, program_hash: StableHash) {
             symbol_id: "symbol:view.main".to_owned(),
             program_hash: program_hash.clone(),
             public_id: Some(
-                arcweft_agent_protocol::ids::PublicId::new("@view.main")
-                    .expect("valid public id"),
+                arcweft_agent_protocol::ids::PublicId::new("@view.main").expect("valid public id"),
             ),
             qualified_name: Some("view.main".to_owned()),
             kind: "view".to_owned(),

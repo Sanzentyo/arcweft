@@ -19,6 +19,16 @@ use arcweft_render_text::{
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 
+pub(super) fn agent_view_prepared_text_root_id(owner: &PreparedTextOwner) -> Option<String> {
+    let PreparedTextOwnerKind::View { mount } = owner.kind else {
+        return None;
+    };
+    Some(format!(
+        "object.text.{}.mount.{mount}",
+        agent_uri_component(owner.semantic_id.as_str())
+    ))
+}
+
 pub(super) fn agent_dialogue_prepared_text_objects(
     capture_step: usize,
     dialogue: usize,
@@ -118,7 +128,6 @@ fn dialogue_view_object(
             capture_step,
             &object_id,
             &bbox,
-            0,
             source,
         ),
         object_layer: None,
@@ -261,7 +270,6 @@ fn dialogue_page_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
                 hit_test: true,
                 hit_regions,
             },
-            page,
         },
     )]
 }
@@ -310,7 +318,6 @@ fn dialogue_line_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
                     hit_test: true,
                     hit_regions: vec![agent_hit_region(AgentHitRegionKind::TextLine, &bbox, range)],
                 },
-                page,
             },
         ));
     }
@@ -355,7 +362,6 @@ fn dialogue_run_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedOb
                     bbox,
                     AgentHitRegionKind::TextRun,
                 ),
-                page,
             },
         ));
         children.extend(dialogue_proxy_objects(
@@ -438,7 +444,6 @@ fn dialogue_proxy_objects(
                             proxy,
                         ),
                     },
-                    page: projection.page,
                 },
             )
         })
@@ -513,7 +518,6 @@ fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
                         ),
                     ],
                 },
-                page,
             },
         ));
     }
@@ -563,7 +567,6 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
                     &bbox,
                     AgentHitRegionKind::TextGlyph,
                 ),
-                page,
             },
         ));
     }
@@ -612,7 +615,6 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
                     &bbox,
                     AgentHitRegionKind::GlyphCluster,
                 ),
-                page,
             },
         ));
     }
@@ -727,7 +729,6 @@ struct DialogueChildSpec<'a> {
     text: String,
     bbox: &'a AgentBBox,
     reference: AgentRichTextElementRef,
-    page: usize,
 }
 
 fn dialogue_child_object(
@@ -756,7 +757,7 @@ fn dialogue_child_object(
         bbox: spec.bbox.clone(),
         polygon: spec.bbox.polygon(),
         capture_refs: agent_object_capture_refs_with_source(
-            "cli", step, spec.id, spec.bbox, spec.page, source,
+            "cli", step, spec.id, spec.bbox, source,
         ),
         object_layer: spec.reference.object_layer.clone(),
         object_depth: spec.reference.object_depth,

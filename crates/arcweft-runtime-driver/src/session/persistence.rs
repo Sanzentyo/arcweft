@@ -261,6 +261,12 @@ impl BundleSession {
 
     fn session_save_blockers(&self) -> Vec<BundleSessionPendingBlocker> {
         let mut blockers = Vec::new();
+        let transient_dialogue_view_owners = self.view_runtime.transient_dialogue_view_owners();
+        if !transient_dialogue_view_owners.is_empty() {
+            blockers.push(BundleSessionPendingBlocker::TransientDialogueViewOwners {
+                views: transient_dialogue_view_owners,
+            });
+        }
         if !self.pending_presentation_inputs.is_empty() {
             blockers.push(BundleSessionPendingBlocker::PendingPresentationInputs {
                 count: self.pending_presentation_inputs.len(),

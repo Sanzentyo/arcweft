@@ -1867,15 +1867,12 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_dotted_path_target(&mut self, path: &str) -> Option<TypeKind> {
+    pub(super) fn check_dotted_path_target(&self, path: &str) -> Option<TypeKind> {
         let (target, field) = path.rsplit_once('.')?;
         if let Some(field_type) = well_known_field_type(field) {
             return Some(field_type);
         }
-        self.locals
-            .get(target)
-            .cloned()
-            .or_else(|| self.env.symbol_type(target).cloned())
+        self.symbol_type(target).cloned()
     }
 
     fn check_select_expr(&mut self, expr: &Expr, select: &SelectExpr) -> Option<TypeKind> {

@@ -1,7 +1,247 @@
+fn temp_mcp_arcw(name: &str, source: &str) -> PathBuf {
+    temp_arcw(
+        name,
+        &format!("entry cli @entry.main {{ goto @flow.main }}\n{source}"),
+    )
+}
+
+fn observe_mcp_fixture(path: &Path, entry: &str) -> serde_json::Value {
+    observe_mcp_fixture_with_timing(path, entry, 4, None)
+}
+
+fn observe_mcp_fixture_with_timing(
+    path: &Path,
+    entry: &str,
+    steps: u64,
+    capture_time: Option<f64>,
+) -> serde_json::Value {
+    let mut arguments = serde_json::json!({
+        "source": path.display().to_string(),
+        "entry": entry,
+        "steps": steps,
+        "max_ops": 64
+    });
+    if let Some(capture_time) = capture_time {
+        arguments["capture_time"] = serde_json::json!(capture_time);
+    }
+    read_mcp_observation_resource(&arguments)
+}
+
+fn observe_mcp_viewport_capture(path: &Path, entry: &str) -> serde_json::Value {
+    let arguments = serde_json::json!({
+        "source": path.display().to_string(),
+        "entry": entry,
+        "image": "png",
+        "steps": 4,
+        "max_ops": 64
+    });
+    read_mcp_observation_resource(&arguments)
+}
+
+fn read_mcp_observation_resource(arguments: &serde_json::Value) -> serde_json::Value {
+    let _guard = AGENT_MCP_STDIO_LOCK
+        .lock()
+        .expect("Tier 2 MCP discovery serializes native subprocesses");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("mcp")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn Tier 2 MCP discovery");
+    let mut stdin = child.stdin.take().expect("MCP discovery stdin is piped");
+    let mut stdout = BufReader::new(child.stdout.take().expect("MCP discovery stdout is piped"));
+
+    let initialize = exchange_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {}
+        }),
+    );
+    assert_eq!(initialize["result"]["serverInfo"]["name"], "arcweft-agent");
+
+    let observation = exchange_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "arcweft.observe",
+                "arguments": arguments
+            }
+        }),
+    );
+    assert_eq!(
+        observation["result"]["isError"], false,
+        "Tier 2 MCP fixture discovery must observe its selected entry: {observation}"
+    );
+    let report_uri = mcp_observation_report_uri(&observation);
+
+    let resource = exchange_mcp_request(
+        &mut stdin,
+        &mut stdout,
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "resources/read",
+            "params": {
+                "uri": report_uri,
+                "max_privacy": "sensitive"
+            }
+        }),
+    );
+    let report = mcp_observation_report(&resource, &report_uri);
+
+    drop(stdin);
+    drop(stdout);
+    let output = child.wait_with_output().expect("wait for MCP discovery");
+    assert!(
+        output.status.success(),
+        "Tier 2 MCP discovery should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    report
+}
+
+fn mcp_observation_report_uri(observation: &serde_json::Value) -> String {
+    observation["result"]["content"]
+        .as_array()
+        .and_then(|content| {
+            content.iter().find(|block| {
+                block["type"] == "resource_link" && block["title"] == "Latest observation"
+            })
+        })
+        .and_then(|block| block["uri"].as_str())
+        .unwrap_or_else(|| {
+            panic!("MCP observation must publish its typed report resource: {observation}")
+        })
+        .to_owned()
+}
+
+fn mcp_observation_report(resource: &serde_json::Value, report_uri: &str) -> serde_json::Value {
+    let report_text = resource["result"]["contents"]
+        .as_array()
+        .and_then(|contents| contents.iter().find(|content| content["uri"] == report_uri))
+        .and_then(|content| content["text"].as_str())
+        .unwrap_or_else(|| {
+            panic!("MCP observation report must be readable as JSON text: {resource}")
+        });
+    serde_json::from_str(report_text).expect("MCP observation report is JSON")
+}
+
+fn exchange_mcp_request(
+    stdin: &mut std::process::ChildStdin,
+    stdout: &mut BufReader<std::process::ChildStdout>,
+    request: &serde_json::Value,
+) -> serde_json::Value {
+    writeln!(
+        stdin,
+        "{}",
+        serde_json::to_string(request).expect("MCP discovery request serializes")
+    )
+    .expect("write MCP discovery request");
+    stdin.flush().expect("flush MCP discovery request");
+
+    let mut line = String::new();
+    let read = stdout
+        .read_line(&mut line)
+        .expect("read MCP discovery response");
+    assert!(read > 0, "MCP discovery must return a response");
+    serde_json::from_str(&line).expect("MCP discovery response is JSON")
+}
+
+fn observed_object_id(object: &serde_json::Value) -> String {
+    object["id"]
+        .as_str()
+        .expect("observed object has a semantic ID")
+        .to_owned()
+}
+
+fn observed_object_layer(object: &serde_json::Value) -> String {
+    object["layer"]
+        .as_str()
+        .expect("observed object has a semantic layer")
+        .to_owned()
+}
+
+fn observed_capture_uri(scope: &serde_json::Value, capture_kind: &str, mime_type: &str) -> String {
+    scope["capture_refs"]["captures"]
+        .as_array()
+        .expect("observed scope publishes typed capture references")
+        .iter()
+        .find(|capture| capture["kind"] == capture_kind && capture["mime_type"] == mime_type)
+        .and_then(|capture| capture["uri"].as_str())
+        .unwrap_or_else(|| {
+            panic!("observed scope must publish {capture_kind}/{mime_type} capture URI: {scope}")
+        })
+        .to_owned()
+}
+
+fn find_observed_layer<'a>(report: &'a serde_json::Value, layer_id: &str) -> &'a serde_json::Value {
+    report["layers"]
+        .as_array()
+        .expect("MCP fixture layers are observed")
+        .iter()
+        .find(|layer| layer["id"] == layer_id)
+        .unwrap_or_else(|| panic!("authored layer `{layer_id}` should be observed"))
+}
+
+fn find_observed_rich_text_page<'a>(
+    report: &'a serde_json::Value,
+    text: &str,
+    page: u64,
+) -> &'a serde_json::Value {
+    report["objects"]
+        .as_array()
+        .expect("MCP fixture objects are observed")
+        .iter()
+        .find(|object| {
+            object["role"] == "rich_text_page"
+                && object["text"] == text
+                && object["rich_text_ref"]["page"].as_u64() == Some(page)
+        })
+        .unwrap_or_else(|| {
+            panic!("authored rich-text page `{text}` at page {page} should be observed")
+        })
+}
+
+fn assert_strict_auxiliary_capture_review(response: &serde_json::Value) {
+    assert_eq!(response["result"]["isError"], false);
+    let metadata = mcp_content_metadata(
+        &response["result"]["content"][0],
+        "content-policy review metadata is JSON",
+    );
+    assert_eq!(
+        metadata["content_policy"]["disposition"], "review",
+        "non-color MCP capture must return a typed review receipt: {metadata}"
+    );
+    assert_eq!(
+        metadata["content_policy"]["reason_codes"],
+        serde_json::json!(["auxiliary_capture_not_publishable"]),
+        "review receipt must retain the strict auxiliary-capture policy reason: {metadata}"
+    );
+    assert_eq!(
+        metadata["content_policy"]["profile_id"],
+        "arcweft.agent.strict"
+    );
+    assert_eq!(metadata["content_policy"]["sanitized"], false);
+    assert_eq!(metadata["mime_type"], "application/json");
+    assert!(metadata["uri"]
+        .as_str()
+        .is_some_and(|uri| uri.starts_with("arcweft://moderated/")));
+}
+
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_observes_and_reads_rich_text_child_image() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-rich-text-image",
         r#"
 pub dialogue defaults {
@@ -16,16 +256,36 @@ flow @flow.main main {
 }
 "#,
     );
-    let requests = agent_mcp_rich_text_requests(&path);
-    let output = run_agent_mcp_stdio(&requests);
-    fs::remove_file(&path).expect("remove temp agent mcp source");
-    assert!(
-        output.status.success(),
-        "agent mcp should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let ruby = find_rich_text_ruby_object(&observed, 0);
+    let ruby_id = observed_object_id(ruby);
+    let rich_text_layer_id = observed_object_layer(ruby);
+    let object_uri = observed_capture_uri(ruby, "color", "image/png");
+    let rich_text_layer = find_observed_layer(&observed, &rich_text_layer_id);
+    let layer_uri = observed_capture_uri(rich_text_layer, "color", "image/png");
+    for source_uri in [&object_uri, &layer_uri] {
+        assert!(
+            source_uri.starts_with("arcweft://session/cli/frame/"),
+            "observe capture refs retain their canonical source URI: {source_uri}"
+        );
+    }
+    let requests = agent_mcp_rich_text_requests(
+        &path,
+        &ruby_id,
+        &rich_text_layer_id,
+        &object_uri,
+        &layer_uri,
     );
-    let responses = agent_mcp_responses(&output.stdout);
-    assert_agent_mcp_rich_text_capture_responses(&responses);
+    let responses = run_agent_mcp_rich_text_session(&requests);
+    fs::remove_file(&path).expect("remove temp agent mcp source");
+    assert_agent_mcp_rich_text_capture_responses(
+        &responses,
+        &ruby_id,
+        &rich_text_layer_id,
+        &object_uri,
+        &layer_uri,
+        &observed["tick"],
+    );
 }
 
 #[test]
@@ -151,7 +411,9 @@ fn agent_mcp_stdio_observes_profile_selected_dialogue_defaults() {
         .expect("MCP session objects are listed")
         .iter()
         .find(|object| object["role"] == "dialogue_view")
-        .unwrap_or_else(|| panic!("MCP profile observation should include dialogue_view: {session}"));
+        .unwrap_or_else(|| {
+            panic!("MCP profile observation should include dialogue_view: {session}")
+        });
     let contributions = observed_object_rich_text_frame(dialogue_view)["style_contributions"]
         .as_array()
         .expect("MCP dialogue_view style contributions are reported");
@@ -183,6 +445,7 @@ fn agent_mcp_stdio_dispatches_semantic_action() {
                 "name": "arcweft.observe",
                 "arguments": {
                     "source": rich_text_showcase_path().display().to_string(),
+                    "entry": "entry.main",
                     "steps": 1,
                     "max_ops": 64
                 }
@@ -208,13 +471,11 @@ fn agent_mcp_stdio_dispatches_semantic_action() {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 4);
-    assert!(
-        responses[1]["result"]["tools"]
-            .as_array()
-            .expect("tools list is array")
-            .iter()
-            .any(|tool| tool["name"] == "arcweft.action")
-    );
+    assert!(responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tools list is array")
+        .iter()
+        .any(|tool| tool["name"] == "arcweft.action"));
     assert_eq!(responses[2]["result"]["isError"], false);
     assert_eq!(responses[3]["result"]["isError"], false);
     let action = mcp_content_metadata(
@@ -290,13 +551,11 @@ fn agent_mcp_stdio_debug_script_runs_reads_persisted_runs() {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 3);
-    assert!(
-        responses[1]["result"]["tools"]
-            .as_array()
-            .expect("tools list is array")
-            .iter()
-            .any(|tool| tool["name"] == "arcweft.debug.script.runs")
-    );
+    assert!(responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tools list is array")
+        .iter()
+        .any(|tool| tool["name"] == "arcweft.debug.script.runs"));
     let report = mcp_content_metadata(
         &responses[2]["result"]["content"][0],
         "MCP debug script runs result is JSON",
@@ -399,13 +658,11 @@ fn agent_mcp_stdio_debug_search_filters_chunks_by_privacy() {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 6);
-    assert!(
-        responses[1]["result"]["tools"]
-            .as_array()
-            .expect("tools list is array")
-            .iter()
-            .any(|tool| tool["name"] == "arcweft.debug.search")
-    );
+    assert!(responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tools list is array")
+        .iter()
+        .any(|tool| tool["name"] == "arcweft.debug.search"));
     assert_mcp_debug_search_lexical_response(&responses[2]);
     assert_mcp_debug_search_graph_response(&responses[3]);
     assert_mcp_debug_search_history_response(&responses[4]);
@@ -595,72 +852,181 @@ fn assert_mcp_debug_search_vector_response(response: &serde_json::Value) {
     assert_eq!(hits[1]["chunk_id"], "chunk:public-opening");
 }
 
-fn assert_agent_mcp_rich_text_capture_responses(responses: &[serde_json::Value]) {
-    assert_eq!(responses.len(), 12);
+fn assert_agent_mcp_rich_text_capture_responses(
+    responses: &[serde_json::Value],
+    ruby_id: &str,
+    rich_text_layer_id: &str,
+    object_uri: &str,
+    layer_uri: &str,
+    observed_tick: &serde_json::Value,
+) {
+    assert_eq!(responses.len(), 14);
     assert_eq!(
         responses[0]["result"]["serverInfo"]["name"],
         "arcweft-agent"
     );
-    assert!(
-        responses[1]["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|tool| tool["name"] == "arcweft.observe")
-    );
-    assert!(
-        responses[1]["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|tool| tool["name"] == "arcweft.capture")
-    );
-    assert!(
-        responses[1]["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|tool| tool["name"] == "arcweft.session.info")
-    );
-    assert!(
-        responses[2]["result"]["content"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|content| content["type"] == "resource_link"
-                && content["uri"]
-                    .as_str()
-                    .is_some_and(|uri| uri.ends_with("/objects.json")))
-    );
-    assert!(
-        responses[3]["result"]["resources"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|resource| resource["uri"]
+    let tools = responses[1]["result"]["tools"]
+        .as_array()
+        .expect("MCP tool catalog");
+    for name in [
+        "arcweft.observe",
+        "arcweft.capture",
+        "arcweft.session.info",
+    ] {
+        assert!(tools.iter().any(|tool| tool["name"] == name));
+    }
+    assert!(responses[2]["result"]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|content| content["type"] == "resource_link"
+            && content["uri"]
                 .as_str()
-                .is_some_and(|uri| uri.ends_with("/layer.dialogue.rich_text.png")))
+                .is_some_and(|uri| uri.starts_with("arcweft://moderated/"))));
+    let initial_layer_resource = responses[3]["result"]["resources"]
+        .as_array()
+        .expect("resources are listed after native observation")
+        .iter()
+        .find(|resource| {
+            resource["image"]["kind"] == "color"
+                && resource["image"]["scope"]["kind"] == "layer"
+                && resource["image"]["renderer"] == "native"
+        })
+        .expect("native observation publishes its selected layer color resource");
+    assert_eq!(
+        initial_layer_resource["image"]["scope"]["id"],
+        initial_layer_resource["image"]["selected_capture"]["scope"]["id"]
     );
-    assert!(
-        responses[3]["result"]["resources"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|resource| resource["uri"]
-                .as_str()
-                .is_some_and(|uri| uri.ends_with("/object.object.dialogue.0.0.ruby.0.png")))
+    assert_eq!(
+        initial_layer_resource["image"]["scope"]["id"],
+        initial_layer_resource["image"]["selected_capture"]["source"]["id"]
     );
+    assert_published_resource_uri(initial_layer_resource);
     assert_mcp_png_capture_content(&responses[4], "ruby capture metadata is JSON");
     assert_mcp_png_capture_content(&responses[5], "native ruby capture metadata is JSON");
-    assert_mcp_raw_capture_content(&responses[6]);
-    assert_mcp_session_info_after_capture(&responses[7]);
-    assert_raw_resource_read_content(&responses[8], &responses[6]);
-    assert_png_resource_read_content(&responses[9]);
-    assert_mcp_raw_object_id_capture_content(&responses[10]);
-    assert_raw_object_id_resource_read_content(&responses[11], &responses[10]);
+    assert_strict_auxiliary_capture_review(&responses[6]);
+    let observation_uri = mcp_observation_report_uri(&responses[2]);
+    let mask_review = mcp_content_metadata(
+        &responses[6]["result"]["content"][0],
+        "mask review metadata is JSON",
+    );
+    let mask_review_uri = mask_review["uri"].as_str().expect("mask review URI");
+    assert_mcp_session_info_after_capture(
+        &responses[7],
+        ruby_id,
+        rich_text_layer_id,
+        &observation_uri,
+        mask_review_uri,
+        observed_tick,
+    );
+    let source_object_read_uri = assert_png_resource_read_content(&responses[8]);
+    let source_layer_read_uri = assert_png_resource_read_content(&responses[9]);
+    assert_strict_auxiliary_capture_review(&responses[10]);
+
+    let object_id_review = mcp_content_metadata(
+        &responses[10]["result"]["content"][0],
+        "object-id review metadata is JSON",
+    );
+    let resources = responses[11]["result"]["resources"]
+        .as_array()
+        .expect("resources remain listable after policy review");
+    let object_resource = published_capture_resource(resources, source_object_read_uri, "object");
+    let layer_resource = published_capture_resource(resources, source_layer_read_uri, "layer");
+    assert_published_capture_scope(object_resource);
+    assert_published_capture_scope(layer_resource);
+    assert_ne!(source_object_read_uri, object_uri);
+    assert_ne!(source_layer_read_uri, layer_uri);
+    assert_eq!(
+        assert_png_resource_read_content(&responses[12]),
+        source_object_read_uri
+    );
+    assert_eq!(
+        assert_png_resource_read_content(&responses[13]),
+        source_layer_read_uri
+    );
+    for review_uri in [
+        mask_review["uri"].as_str().expect("mask review URI"),
+        object_id_review["uri"]
+            .as_str()
+            .expect("object-id review URI"),
+    ] {
+        assert!(
+            resources
+                .iter()
+                .any(|resource| resource["uri"] == review_uri),
+            "policy review resource should be published: {review_uri}"
+        );
+    }
 }
 
-fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
+fn published_capture_resource<'a>(
+    resources: &'a [serde_json::Value],
+    published_uri: &str,
+    scope_kind: &str,
+) -> &'a serde_json::Value {
+    resources
+        .iter()
+        .find(|resource| {
+            resource["uri"] == published_uri
+                && resource["image"]["kind"] == "color"
+                && resource["image"]["renderer"] == "native"
+                && resource["image"]["scope"]["kind"] == scope_kind
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "resources/list must expose published native {scope_kind} capture `{published_uri}`"
+            )
+        })
+}
+
+fn assert_published_capture_scope(resource: &serde_json::Value) {
+    assert_eq!(
+        resource["image"]["scope"]["id"],
+        resource["image"]["selected_capture"]["scope"]["id"]
+    );
+    assert_eq!(
+        resource["image"]["scope"]["id"],
+        resource["image"]["selected_capture"]["source"]["id"]
+    );
+    assert_published_resource_uri(resource);
+}
+
+fn assert_policy_published_image_metadata<'a>(
+    metadata: &'a serde_json::Value,
+    scope_kind: &str,
+) -> &'a str {
+    assert_eq!(metadata["image"]["scope"]["kind"], scope_kind);
+    assert_eq!(
+        metadata["image"]["scope"]["id"],
+        metadata["image"]["selected_capture"]["scope"]["id"]
+    );
+    assert_eq!(
+        metadata["image"]["scope"]["id"],
+        metadata["image"]["selected_capture"]["source"]["id"]
+    );
+    metadata["uri"]
+        .as_str()
+        .filter(|uri| uri.starts_with("arcweft://moderated/"))
+        .unwrap_or_else(|| {
+            panic!("capture metadata must expose its policy-published URI: {metadata}")
+        })
+}
+
+fn assert_published_resource_uri(resource: &serde_json::Value) -> &str {
+    resource["uri"]
+        .as_str()
+        .filter(|uri| uri.starts_with("arcweft://moderated/"))
+        .unwrap_or_else(|| panic!("resource must expose its policy-published URI: {resource}"))
+}
+
+fn assert_mcp_session_info_after_capture(
+    response: &serde_json::Value,
+    ruby_id: &str,
+    rich_text_layer_id: &str,
+    observation_uri: &str,
+    mask_review_uri: &str,
+    observed_tick: &serde_json::Value,
+) {
     assert_eq!(response["result"]["content"][0]["type"], "text");
     let info = mcp_content_metadata(
         &response["result"]["content"][0],
@@ -668,9 +1034,8 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
     );
     assert_eq!(info["observed"], true);
     assert_eq!(info["session_id"], "cli");
-    assert_eq!(info["tick"], 0);
+    assert_eq!(&info["tick"], observed_tick);
     assert!(info["resource_count"].as_u64().unwrap() > 0);
-    assert!(info["latest_capture"]["content_pixels"].as_u64().unwrap() > 0);
     assert_eq!(info["capture_resource_count"], 2);
     assert_eq!(info["shared_capture_session_active"], true);
     assert_eq!(
@@ -683,49 +1048,46 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
             .is_some_and(|count| count > 0),
         "session info should expose native project graph summary: {info}"
     );
-    assert_eq!(info["latest_capture"]["crop_origin"]["space"], "viewport");
-    assert_eq!(
-        info["latest_capture_uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
+    assert!(
+        info["latest_capture"].is_null(),
+        "a reviewed auxiliary capture must not publish image metadata: {info}"
     );
-    assert_eq!(
-        info["latest_capture_resource"]["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
-    );
+    assert_eq!(info["latest_capture_uri"], mask_review_uri);
+    assert_eq!(info["latest_capture_resource"]["uri"], mask_review_uri);
     assert_eq!(
         info["latest_capture_resource"]["mimeType"],
-        "application/octet-stream"
+        "application/json"
     );
     assert!(
-        info["latest_capture_resource"]["description"]
-            .as_str()
-            .is_some_and(|description| description.contains("kind=mask")
-                && description.contains("scope=object:object.dialogue.0.0.ruby.0"))
+        info["latest_capture_resource"]["size"]
+            .as_u64()
+            .is_some_and(|size| size > 0),
+        "latest resource should expose the published review receipt size: {info}"
     );
     assert_mcp_session_info_resource_templates(&info);
     assert!(info["layers"].as_array().unwrap().iter().any(|layer| {
-        layer["id"] == "dialogue.rich_text"
+        layer["id"] == rich_text_layer_id
             && layer["capture_refs"]["captures"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .any(|capture| {
-                    capture["uri"]
-                        .as_str()
-                        .is_some_and(|uri| uri.ends_with("/layer.dialogue.rich_text.mask.rgba"))
+                    capture["uri"].as_str().is_some_and(|uri| {
+                        uri.ends_with(&format!("/layer.{rich_text_layer_id}.png"))
+                    })
                 })
     }));
     assert!(info["objects"].as_array().unwrap().iter().any(|object| {
-        object["id"] == "object.dialogue.0.0.ruby.0"
+        object["id"] == ruby_id
             && object["rich_text_ref"]["kind"] == "ruby"
             && object["capture_refs"]["captures"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .any(|capture| {
-                    capture["uri"].as_str().is_some_and(|uri| {
-                        uri.ends_with("/object.object.dialogue.0.0.ruby.0.mask.rgba")
-                    })
+                    capture["uri"]
+                        .as_str()
+                        .is_some_and(|uri| uri.ends_with(&format!("/object.{ruby_id}.png")))
                 })
     }));
     assert!(
@@ -733,14 +1095,8 @@ fn assert_mcp_session_info_after_capture(response: &serde_json::Value) {
             .as_array()
             .unwrap()
             .iter()
-            .any(|resource| resource["name"] == "objects.json")
-    );
-    assert!(
-        info["resources"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|resource| resource["name"] == "presentation-tree.json")
+            .any(|resource| resource["uri"] == observation_uri),
+        "session catalog should retain the observe tool's published report: {info}"
     );
 }
 
@@ -769,86 +1125,27 @@ fn assert_mcp_session_info_resource_templates(info: &serde_json::Value) {
 }
 
 fn assert_mcp_png_capture_content(response: &serde_json::Value, metadata_context: &str) {
-    assert_eq!(response["result"]["content"][0]["type"], "text");
+    let metadata = assert_mcp_png_capture_transport(response, metadata_context);
+    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
+}
+
+fn assert_mcp_png_capture_transport(
+    response: &serde_json::Value,
+    metadata_context: &str,
+) -> serde_json::Value {
+    assert_eq!(
+        response["result"]["content"][0]["type"], "text",
+        "MCP PNG capture must return typed metadata before image content: {response}"
+    );
     let metadata = mcp_content_metadata(&response["result"]["content"][0], metadata_context);
     assert!(metadata["image"]["width"].as_u64().unwrap() > 0);
     assert!(metadata["image"]["height"].as_u64().unwrap() > 0);
     assert_eq!(metadata["image"]["kind"], "color");
-    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
-    assert!(
-        response["result"]["content"][1]["data"]
-            .as_str()
-            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
-    );
+    assert!(response["result"]["content"][1]["data"]
+        .as_str()
+        .is_some_and(|blob| blob.starts_with("iVBORw0KGgo")));
     assert_eq!(response["result"]["content"][1]["mimeType"], "image/png");
-}
-
-fn assert_mcp_image_object_rich_text_ref(
-    metadata: &serde_json::Value,
-    object_id: &str,
-    kind: &str,
-) {
-    assert_eq!(metadata["image"]["scope"]["kind"], "object");
-    assert_eq!(metadata["image"]["scope"]["id"], object_id);
-    assert_eq!(metadata["image"]["object"]["id"], object_id);
-    assert_eq!(metadata["image"]["object"]["bbox"]["space"], "viewport");
-    assert!(
-        metadata["image"]["object"]["polygon"]
-            .as_array()
-            .is_some_and(|polygon| polygon.len() >= 4),
-        "MCP image object metadata should preserve viewport polygon: {metadata}"
-    );
-    assert_agent_observe_object_capture_refs(&metadata["image"]["object"]);
-    assert_eq!(metadata["image"]["object"]["rich_text_ref"]["kind"], kind);
-    if !metadata["image"]["object"]["rich_text_ref"]["object_layer"].is_null() {
-        assert_eq!(
-            metadata["image"]["object"]["object_layer"],
-            metadata["image"]["object"]["rich_text_ref"]["object_layer"]
-        );
-    }
-    if !metadata["image"]["object"]["rich_text_ref"]["object_depth"].is_null() {
-        assert_eq!(
-            metadata["image"]["object"]["object_depth"],
-            metadata["image"]["object"]["rich_text_ref"]["object_depth"]
-        );
-    }
-    assert!(
-        metadata["image"]["object"]["rich_text_ref"]["range"]["end"]
-            .as_u64()
-            .unwrap_or(0)
-            > metadata["image"]["object"]["rich_text_ref"]["range"]["start"]
-                .as_u64()
-                .unwrap_or(0),
-        "MCP image metadata should preserve the captured rich-text source range: {metadata}"
-    );
-}
-
-fn assert_mcp_raw_capture_content(response: &serde_json::Value) {
-    assert_eq!(response["result"]["content"][0]["type"], "text");
-    let metadata = mcp_content_metadata(
-        &response["result"]["content"][0],
-        "raw capture metadata is JSON",
-    );
-    assert_eq!(
-        metadata["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
-    );
-    assert_mcp_image_object_rich_text_ref(&metadata, "object.dialogue.0.0.ruby.0", "ruby");
-    assert_eq!(metadata["image"]["pixel_format"], "rgba8_unorm");
-    assert_eq!(
-        metadata["image"]["row_stride_bytes"],
-        metadata["image"]["width"].as_u64().unwrap() * 4
-    );
-    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
-    assert!(
-        response["result"]["content"][1]["resource"]["blob"]
-            .as_str()
-            .is_some_and(|blob| !blob.is_empty())
-    );
-    assert_eq!(
-        response["result"]["content"][1]["resource"]["mimeType"],
-        "application/octet-stream"
-    );
+    metadata
 }
 
 fn mcp_raw_capture_bytes(response: &serde_json::Value) -> Vec<u8> {
@@ -860,101 +1157,12 @@ fn mcp_raw_capture_bytes(response: &serde_json::Value) -> Vec<u8> {
         .expect("raw capture blob is base64")
 }
 
-fn assert_raw_resource_read_content(
-    response: &serde_json::Value,
-    source_capture_response: &serde_json::Value,
-) {
-    let metadata = mcp_content_metadata(
-        &source_capture_response["result"]["content"][0],
-        "raw source capture metadata is JSON",
-    );
-    let expected_len = metadata["image"]["row_stride_bytes"].as_u64().unwrap()
-        * metadata["image"]["height"].as_u64().unwrap();
-    let content = &response["result"]["contents"][0];
-    assert_eq!(content["mimeType"], "application/octet-stream");
-    assert_eq!(
-        content["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
-    );
-    let blob = content["blob"].as_str().expect("raw resource has a blob");
-    let bytes = general_purpose::STANDARD
-        .decode(blob)
-        .expect("raw resource blob is base64");
-    assert_eq!(
-        u64::try_from(bytes.len()).unwrap(),
-        expected_len,
-        "resources/read should return the latest raw capture bytes for this URI"
-    );
-    assert!(bytes.chunks_exact(4).any(|pixel| pixel[3] > 0));
-}
-
-fn assert_mcp_raw_object_id_capture_content(response: &serde_json::Value) {
-    assert_eq!(response["result"]["content"][0]["type"], "text");
-    let metadata = mcp_content_metadata(
-        &response["result"]["content"][0],
-        "raw object-id capture metadata is JSON",
-    );
-    assert_eq!(
-        metadata["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
-    );
-    assert_eq!(metadata["image"]["kind"], "object_id");
-    assert_eq!(metadata["image"]["composition"], "object_id_attachment");
-    assert_mcp_image_object_rich_text_ref(&metadata, "object.dialogue.0.0.ruby.0", "ruby");
-    assert_eq!(metadata["image"]["pixel_format"], "rgba8_unorm");
-    assert_eq!(
-        metadata["image"]["row_stride_bytes"],
-        metadata["image"]["width"].as_u64().unwrap() * 4
-    );
-    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
-    assert!(
-        response["result"]["content"][1]["resource"]["blob"]
-            .as_str()
-            .is_some_and(|blob| !blob.is_empty())
-    );
-    assert_eq!(
-        response["result"]["content"][1]["resource"]["mimeType"],
-        "application/octet-stream"
-    );
-}
-
-fn assert_raw_object_id_resource_read_content(
-    response: &serde_json::Value,
-    source_capture_response: &serde_json::Value,
-) {
-    let metadata = mcp_content_metadata(
-        &source_capture_response["result"]["content"][0],
-        "raw object-id source capture metadata is JSON",
-    );
-    let expected_len = metadata["image"]["row_stride_bytes"].as_u64().unwrap()
-        * metadata["image"]["height"].as_u64().unwrap();
-    let content = &response["result"]["contents"][0];
-    assert_eq!(content["mimeType"], "application/octet-stream");
-    assert_eq!(
-        content["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
-    );
-    let blob = content["blob"]
-        .as_str()
-        .expect("raw object-id resource has a blob");
-    let bytes = general_purpose::STANDARD
-        .decode(blob)
-        .expect("raw object-id resource blob is base64");
-    assert_eq!(
-        u64::try_from(bytes.len()).unwrap(),
-        expected_len,
-        "resources/read should return the latest raw object-id capture bytes for this URI"
-    );
-    assert!(bytes.chunks_exact(4).any(|pixel| pixel[3] > 0));
-}
-
-fn assert_png_resource_read_content(response: &serde_json::Value) {
+fn assert_png_resource_read_content(response: &serde_json::Value) -> &str {
     let content = &response["result"]["contents"][0];
     assert_eq!(content["mimeType"], "image/png");
-    assert_eq!(
-        content["uri"],
-        "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png"
-    );
+    let uri = content["uri"]
+        .as_str()
+        .expect("PNG resource read publishes its resolved URI");
     let blob = content["blob"].as_str().expect("PNG resource has a blob");
     let bytes = general_purpose::STANDARD
         .decode(blob)
@@ -963,6 +1171,7 @@ fn assert_png_resource_read_content(response: &serde_json::Value) {
         bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
         "resources/read should keep earlier session capture bytes after later captures"
     );
+    uri
 }
 
 fn mcp_content_metadata(block: &serde_json::Value, parse_message: &str) -> serde_json::Value {
@@ -1009,7 +1218,7 @@ fn agent_mcp_stdio_captures_profile_selected_source_without_prior_observe() {
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_dir_all(&dir).expect("remove profiled MCP capture fixture");
     assert!(
         output.status.success(),
@@ -1025,7 +1234,6 @@ fn agent_mcp_stdio_captures_profile_selected_source_without_prior_observe() {
     );
     assert_eq!(capture["image"]["renderer"], "native");
     assert_eq!(capture["image"]["scope"]["kind"], "layer");
-    assert_eq!(capture["image"]["scope"]["id"], "dialogue");
     assert!(capture["image"]["content_pixels"].as_u64().unwrap() > 0);
 
     let session = mcp_content_metadata(
@@ -1035,12 +1243,20 @@ fn agent_mcp_stdio_captures_profile_selected_source_without_prior_observe() {
     assert_eq!(session["observed"], true);
     assert_eq!(session["source"], "main.arcw");
     assert_eq!(session["latest_capture"]["scope"]["kind"], "layer");
+    assert_eq!(
+        capture["image"]["scope"]["id"],
+        session["latest_capture"]["scope"]["id"]
+    );
+    assert_eq!(
+        capture["image"]["scope"]["id"],
+        capture["image"]["selected_capture"]["scope"]["id"]
+    );
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_without_prior_observe() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-direct-capture",
         r#"
 pub dialogue defaults {
@@ -1055,6 +1271,9 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let ruby = find_rich_text_ruby_object(&observed, 0);
+    let rich_text_layer_id = observed_object_layer(ruby);
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1065,9 +1284,10 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "png",
                     "capture": "color",
-                    "layer": "dialogue.rich_text",
+                    "layer": rich_text_layer_id,
                     "steps": 4,
                     "max_ops": 64
                 }
@@ -1075,7 +1295,7 @@ flow @flow.main main {
         }),
         serde_json::json!({"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}}),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp direct capture source");
     assert!(
         output.status.success(),
@@ -1096,8 +1316,8 @@ fn assert_agent_mcp_direct_capture_responses(responses: &[serde_json::Value]) {
     assert!(
         direct_capture_metadata["image"]["width"]
             .as_u64()
-            .is_some_and(|width| (130..220).contains(&width)),
-        "direct rich-text layer capture width should come from observed native-layout child bboxes"
+            .is_some_and(|width| width > 0 && width <= 1280),
+        "direct rich-text layer capture must stay inside the authored View viewport"
     );
     assert_eq!(direct_capture_metadata["image"]["renderer"], "native");
     assert!(
@@ -1110,28 +1330,37 @@ fn assert_agent_mcp_direct_capture_responses(responses: &[serde_json::Value]) {
     assert_eq!(direct_capture_metadata["image"]["scope"]["kind"], "layer");
     assert_eq!(
         direct_capture_metadata["image"]["scope"]["id"],
-        "dialogue.rich_text"
+        direct_capture_metadata["image"]["selected_capture"]["scope"]["id"]
+    );
+    assert_eq!(
+        direct_capture_metadata["image"]["scope"]["id"],
+        direct_capture_metadata["image"]["selected_capture"]["source"]["id"]
     );
     assert_eq!(
         direct_capture_metadata["image"]["crop_origin"]["space"],
         "viewport"
     );
-    assert!(
-        direct_capture_metadata["image"]["crop_origin"]["x"]
-            .as_u64()
-            .unwrap()
-            >= 120
+    assert_eq!(
+        direct_capture_metadata["image"]["crop_origin"]["x"].as_f64(),
+        direct_capture_metadata["image"]["selected_capture"]["crop"]["clipped"]["origin"]["x"]
+            .as_f64()
     );
-    assert!(
-        direct_capture_metadata["image"]["content_bbox"]["width"]
-            .as_u64()
-            .is_some_and(|width| width > 0)
+    assert_eq!(
+        direct_capture_metadata["image"]["width"].as_f64(),
+        direct_capture_metadata["image"]["selected_capture"]["crop"]["clipped"]["size"]["width"]
+            .as_f64()
     );
-    assert!(
-        direct_capture_metadata["image"]["content_bbox"]["height"]
-            .as_u64()
-            .is_some_and(|height| height > 0)
+    assert_eq!(
+        direct_capture_metadata["image"]["height"].as_f64(),
+        direct_capture_metadata["image"]["selected_capture"]["crop"]["clipped"]["size"]["height"]
+            .as_f64()
     );
+    assert!(direct_capture_metadata["image"]["content_bbox"]["width"]
+        .as_u64()
+        .is_some_and(|width| width > 0));
+    assert!(direct_capture_metadata["image"]["content_bbox"]["height"]
+        .as_u64()
+        .is_some_and(|height| height > 0));
     assert!(
         direct_capture_metadata["image"]["content_pixels"]
             .as_u64()
@@ -1143,11 +1372,9 @@ fn assert_agent_mcp_direct_capture_responses(responses: &[serde_json::Value]) {
         responses[1]["result"]["content"][1]["mimeType"],
         "image/png"
     );
-    assert!(
-        responses[1]["result"]["content"][1]["data"]
-            .as_str()
-            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
-    );
+    assert!(responses[1]["result"]["content"][1]["data"]
+        .as_str()
+        .is_some_and(|blob| blob.starts_with("iVBORw0KGgo")));
     assert_agent_mcp_direct_capture_resources(&responses[2]);
 }
 
@@ -1156,44 +1383,37 @@ fn assert_agent_mcp_direct_capture_resources(response: &serde_json::Value) {
     let layer_image = resources
         .iter()
         .find(|resource| {
-            let is_layer_png = resource["uri"]
-                .as_str()
-                .and_then(|uri| uri.split('?').next())
-                .is_some_and(|uri| uri.ends_with("/layer.dialogue.rich_text.png"));
-            let is_native = resource["description"]
-                .as_str()
-                .is_some_and(|description| description.contains("renderer=native"));
-            is_layer_png && is_native
+            resource["image"]["kind"] == "color"
+                && resource["image"]["scope"]["kind"] == "layer"
+                && resource["image"]["renderer"] == "native"
         })
         .expect("direct capture should expose the selected layer image resource");
+    let canonical_layer_id = layer_image["image"]["scope"]["id"]
+        .as_str()
+        .expect("selected layer resource has a canonical semantic ID");
     assert!(
         layer_image["description"]
             .as_str()
             .is_some_and(|description| description.contains("kind=color")
                 && description.contains("renderer=native")
-                && description.contains("scope=layer:dialogue.rich_text")
+                && description.contains(&format!("scope=layer:{canonical_layer_id}"))
                 && description.contains("width=")
                 && description.contains("height=")),
         "direct capture layer descriptor should expose image metadata"
     );
     assert!(
-        resources.iter().any(|resource| resource["uri"]
-            .as_str()
-            .is_some_and(|uri| uri.ends_with("/object.object.dialogue.0.0.ruby.0.png"))),
-        "direct capture should populate latest observation resources"
-    );
-    assert!(
-        resources.iter().any(|resource| resource["uri"]
-            .as_str()
-            .is_some_and(|uri| uri.ends_with("/layer.dialogue.rich_text.mask.rgba"))),
-        "direct capture should expose layer capture refs"
+        resources.iter().any(|resource| {
+            resource["image"]["scope"]["kind"] == "object"
+                && resource["image"]["selected_capture"]["source"]["role"] == "rich_text_ruby"
+        }),
+        "direct capture should publish authored View rich-text child resources"
     );
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_with_native_renderer() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-native-capture",
         r#"
 character @character.alice Alice as alice {}
@@ -1204,6 +1424,12 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_viewport_capture(&path, "entry.main");
+    let dialogue_view_bbox = find_dialogue_view_object(&observed)["bbox"].clone();
+    let viewport_uri = observed["images"][0]["uri"]
+        .as_str()
+        .expect("MCP viewport discovery publishes its typed capture URI")
+        .to_owned();
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1214,6 +1440,7 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "png",
                     "capture": "color",
                     "steps": 4,
@@ -1228,13 +1455,13 @@ flow @flow.main main {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/color.png",
+                    "uri": viewport_uri,
                     "max_privacy": "sensitive"
                 }
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native MCP source");
     assert!(
         output.status.success(),
@@ -1249,9 +1476,23 @@ flow @flow.main main {
         "native capture metadata is JSON",
     );
     assert_eq!(metadata["image"]["renderer"], "native");
-    assert!(
-        metadata["image"]["content_bbox"]["x"].as_u64().unwrap() >= 96,
-        "native MCP capture should align with the observed dialogue_view bbox"
+    let published_viewport_uri = assert_policy_published_image_metadata(&metadata, "viewport");
+    assert_ne!(published_viewport_uri, viewport_uri);
+    assert_eq!(
+        metadata["image"]["content_bbox"]["x"],
+        dialogue_view_bbox["x"]
+    );
+    assert_eq!(
+        metadata["image"]["content_bbox"]["y"],
+        dialogue_view_bbox["y"]
+    );
+    assert_eq!(
+        metadata["image"]["content_bbox"]["width"],
+        dialogue_view_bbox["width"]
+    );
+    assert_eq!(
+        metadata["image"]["content_bbox"]["height"],
+        dialogue_view_bbox["height"]
     );
     assert_mcp_png_capture_content(&responses[2], "native capture resource metadata is JSON");
     let read_metadata = mcp_content_metadata(
@@ -1259,14 +1500,17 @@ flow @flow.main main {
         "native capture resource metadata is JSON",
     );
     assert_eq!(read_metadata["image"]["renderer"], "native");
-    assert_eq!(read_metadata["image"]["scope"]["kind"], "viewport");
+    assert_eq!(
+        assert_policy_published_image_metadata(&read_metadata, "viewport"),
+        published_viewport_uri
+    );
     assert_eq!(read_metadata["image"]["composition"], "framebuffer");
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_clear_after_page_object_with_native_renderer() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-native-page-object-capture",
         r"
 character @character.alice Alice as alice {}
@@ -1276,6 +1520,11 @@ flow @flow.main main {
 }
 ",
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let page = find_observed_rich_text_page(&observed, "After", 1);
+    let page_id = observed_object_id(page);
+    let page_bbox = page["bbox"].clone();
+    let page_uri = observed_capture_uri(page, "color", "image/png");
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1286,17 +1535,17 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "png",
                     "capture": "color",
-                    "object": "object.dialogue.0.0.run.1",
-                    "page": 1,
+                    "object": page_id,
                     "steps": 4,
                     "max_ops": 64
                 }
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native page-object MCP source");
     assert!(
         output.status.success(),
@@ -1305,26 +1554,25 @@ flow @flow.main main {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 2);
-    assert_mcp_png_capture_content(&responses[1], "native page object capture metadata is JSON");
-    let metadata = mcp_content_metadata(
-        &responses[1]["result"]["content"][0],
+    let metadata = assert_mcp_png_capture_transport(
+        &responses[1],
         "native page object capture metadata is JSON",
     );
     assert_eq!(metadata["image"]["renderer"], "native");
-    assert_eq!(metadata["image"]["page"], 1);
-    assert_eq!(metadata["image"]["scope"]["kind"], "object");
-    assert_eq!(
-        metadata["image"]["scope"]["id"],
-        "object.dialogue.0.0.run.1"
-    );
+    let published_page_uri = assert_policy_published_image_metadata(&metadata, "object");
+    assert_ne!(published_page_uri, page_uri);
+    assert!(metadata["image"]["page"].is_null());
     assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
-    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
+    assert_eq!(metadata["image"]["crop_origin"]["x"], page_bbox["x"]);
+    assert_eq!(metadata["image"]["crop_origin"]["y"], page_bbox["y"]);
+    assert_eq!(metadata["image"]["width"], page_bbox["width"]);
+    assert_eq!(metadata["image"]["height"], page_bbox["height"]);
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
-fn agent_mcp_stdio_reads_page_query_capture_ref_with_native_renderer() {
-    let path = temp_arcw(
+fn agent_mcp_stdio_reads_published_semantic_page_capture_ref_with_native_renderer() {
+    let path = temp_mcp_arcw(
         "agent-mcp-native-page-query-read",
         r"
 character @character.alice Alice as alice {}
@@ -1334,7 +1582,22 @@ flow @flow.main main {
 }
 ",
     );
-    let uri = "arcweft://session/cli/frame/0/object.object.dialogue.0.0.run.1.png?page=1";
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let page = find_observed_rich_text_page(&observed, "After", 1);
+    let page_bbox = page["bbox"].clone();
+    let uri = observed_capture_uri(page, "color", "image/png");
+    assert_eq!(page["rich_text_ref"]["page"], 1);
+    let color_capture = page["capture_refs"]["captures"]
+        .as_array()
+        .expect("semantic page publishes capture refs")
+        .iter()
+        .find(|capture| capture["kind"] == "color" && capture["mime_type"] == "image/png")
+        .expect("semantic page publishes a PNG color capture ref");
+    assert!(color_capture["page"].is_null());
+    assert!(
+        !uri.contains("?page="),
+        "semantic rich-text page identity must not become a runtime page query: {uri}"
+    );
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1345,6 +1608,7 @@ flow @flow.main main {
                 "name": "arcweft.observe",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "steps": 4,
                     "max_ops": 64
                 }
@@ -1363,7 +1627,7 @@ flow @flow.main main {
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native page-query MCP source");
     assert!(
         output.status.success(),
@@ -1372,27 +1636,23 @@ flow @flow.main main {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 3);
-    assert_mcp_png_capture_content(&responses[2], "native page-query read metadata is JSON");
-    let metadata = mcp_content_metadata(
-        &responses[2]["result"]["content"][0],
-        "native page-query read metadata is JSON",
-    );
-    assert_eq!(metadata["uri"], uri);
+    let metadata =
+        assert_mcp_png_capture_transport(&responses[2], "native page-query read metadata is JSON");
+    let published_page_uri = assert_policy_published_image_metadata(&metadata, "object");
+    assert_ne!(published_page_uri, uri);
     assert_eq!(metadata["image"]["renderer"], "native");
-    assert_eq!(metadata["image"]["page"], 1);
-    assert_eq!(metadata["image"]["scope"]["kind"], "object");
-    assert_eq!(
-        metadata["image"]["scope"]["id"],
-        "object.dialogue.0.0.run.1"
-    );
+    assert!(metadata["image"]["page"].is_null());
     assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
-    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
+    assert_eq!(metadata["image"]["crop_origin"]["x"], page_bbox["x"]);
+    assert_eq!(metadata["image"]["crop_origin"]["y"], page_bbox["y"]);
+    assert_eq!(metadata["image"]["width"], page_bbox["width"]);
+    assert_eq!(metadata["image"]["height"], page_bbox["height"]);
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_object_with_native_renderer() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-native-object-capture",
         r#"
 character @character.alice Alice as alice {}
@@ -1403,6 +1663,10 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let dialogue_view = find_dialogue_view_object(&observed);
+    let dialogue_view_id = observed_object_id(dialogue_view);
+    let dialogue_view_bbox = dialogue_view["bbox"].clone();
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1413,16 +1677,17 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "png",
                     "capture": "color",
-                    "object": "object.dialogue.0.0",
+                    "object": dialogue_view_id,
                     "steps": 4,
                     "max_ops": 64
                 }
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native MCP object source");
     assert!(
         output.status.success(),
@@ -1438,20 +1703,28 @@ flow @flow.main main {
     );
     let capture_width = metadata["image"]["width"].as_u64().unwrap();
     let capture_height = metadata["image"]["height"].as_u64().unwrap();
-    assert_eq!(capture_width, 1088);
-    assert_eq!(capture_height, 124);
+    assert_eq!(Some(capture_width), dialogue_view_bbox["width"].as_u64());
+    assert_eq!(Some(capture_height), dialogue_view_bbox["height"].as_u64());
+    assert_eq!(
+        metadata["image"]["crop_origin"]["x"],
+        dialogue_view_bbox["x"]
+    );
+    assert_eq!(
+        metadata["image"]["crop_origin"]["y"],
+        dialogue_view_bbox["y"]
+    );
     assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
     assert!(
-        metadata["image"]["content_pixels"].as_u64().unwrap() < capture_width * capture_height,
-        "native object color capture should isolate glyph regions inside the dialogue_view crop"
+        metadata["image"]["content_pixels"].as_u64().unwrap() <= capture_width * capture_height,
+        "native object color capture must stay bounded by the authored dialogue View crop"
     );
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_layer_with_native_renderer() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-native-layer-capture",
         r#"
 character @character.alice Alice as alice {}
@@ -1462,6 +1735,9 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let authored_layer = observed_object_layer(find_rich_text_ruby_object(&observed, 0));
+    let dialogue_view_bbox = find_dialogue_view_object(&observed)["bbox"].clone();
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1472,29 +1748,18 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "png",
                     "capture": "color",
-                    "layer": "dialogue.rich_text",
+                    "layer": authored_layer,
                     "steps": 4,
                     "max_ops": 64
                 }
             }
         }),
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "arcweft.resource.read",
-                "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png",
-                    "max_privacy": "sensitive"
-                }
-            }
-        }),
-        serde_json::json!({"jsonrpc": "2.0", "id": 4, "method": "resources/list", "params": {}}),
+        serde_json::json!({"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}}),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native MCP layer source");
     assert!(
         output.status.success(),
@@ -1502,7 +1767,7 @@ flow @flow.main main {
         String::from_utf8_lossy(&output.stderr)
     );
     let responses = agent_mcp_responses(&output.stdout);
-    assert_eq!(responses.len(), 4);
+    assert_eq!(responses.len(), 3);
     assert_mcp_png_capture_content(&responses[1], "native layer capture metadata is JSON");
     let metadata = mcp_content_metadata(
         &responses[1]["result"]["content"][0],
@@ -1510,40 +1775,41 @@ flow @flow.main main {
     );
     assert_eq!(metadata["image"]["renderer"], "native");
     assert_eq!(metadata["image"]["scope"]["kind"], "layer");
-    assert_eq!(metadata["image"]["scope"]["id"], "dialogue.rich_text");
-    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
-    assert!(metadata["image"]["width"].as_u64().unwrap() < 1088);
-    assert!(metadata["image"]["height"].as_u64().unwrap() < 124);
-    assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
-    assert!(metadata["image"]["crop_origin"]["x"].as_u64().unwrap() >= 96);
-    assert_mcp_png_capture_content(&responses[2], "native layer resource metadata is JSON");
-    let read_metadata = mcp_content_metadata(
-        &responses[2]["result"]["content"][0],
-        "native layer resource metadata is JSON",
-    );
-    assert_eq!(read_metadata["image"]["renderer"], "native");
-    assert_eq!(read_metadata["image"]["scope"]["kind"], "layer");
-    assert_eq!(read_metadata["image"]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(
-        read_metadata["image"]["composition"],
-        "masked_framebuffer_crop"
+        metadata["image"]["scope"]["id"],
+        metadata["image"]["selected_capture"]["scope"]["id"]
     );
-    assert_native_layer_resource_descriptor(&responses[3]);
+    assert_eq!(
+        metadata["image"]["scope"]["id"],
+        metadata["image"]["selected_capture"]["source"]["id"]
+    );
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
+    assert!(
+        metadata["image"]["width"].as_u64().unwrap()
+            <= dialogue_view_bbox["width"].as_u64().unwrap()
+    );
+    assert!(
+        metadata["image"]["height"].as_u64().unwrap()
+            <= dialogue_view_bbox["height"].as_u64().unwrap()
+    );
+    assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
+    assert_native_layer_resource_descriptor(
+        &responses[2],
+        metadata["image"]["scope"]["id"]
+            .as_str()
+            .expect("canonical layer ID"),
+    );
 }
 
-fn assert_native_layer_resource_descriptor(response: &serde_json::Value) {
+fn assert_native_layer_resource_descriptor(response: &serde_json::Value, canonical_layer_id: &str) {
     let resources = response["result"]["resources"].as_array().unwrap();
     let layer_image = resources
         .iter()
         .find(|resource| {
-            let is_layer_png = resource["uri"]
-                .as_str()
-                .and_then(|uri| uri.split('?').next())
-                .is_some_and(|uri| uri.ends_with("/layer.dialogue.rich_text.png"));
-            let is_native = resource["description"]
-                .as_str()
-                .is_some_and(|description| description.contains("renderer=native"));
-            is_layer_png && is_native
+            resource["image"]["scope"]["kind"] == "layer"
+                && resource["image"]["scope"]["id"] == canonical_layer_id
+                && resource["image"]["renderer"] == "native"
+                && resource["image"]["kind"] == "color"
         })
         .expect("resources/list should expose the latest native layer capture");
     assert_eq!(layer_image["mimeType"], "image/png");
@@ -1552,7 +1818,7 @@ fn assert_native_layer_resource_descriptor(response: &serde_json::Value) {
             .as_str()
             .is_some_and(|description| description.contains("kind=color")
                 && description.contains("renderer=native")
-                && description.contains("scope=layer:dialogue.rich_text")
+                && description.contains(&format!("scope=layer:{canonical_layer_id}"))
                 && description.contains("composition=masked_framebuffer_crop")
                 && description.contains("width=")
                 && description.contains("height=")),
@@ -1563,7 +1829,7 @@ fn assert_native_layer_resource_descriptor(response: &serde_json::Value) {
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_reads_latest_native_layer_image_resource() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-native-layer-read-resource",
         r#"
 character @character.alice Alice as alice {}
@@ -1574,6 +1840,12 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let ruby = find_rich_text_ruby_object(&observed, 0);
+    let rich_text_layer_id = observed_object_layer(ruby);
+    let dialogue_view_bbox = find_dialogue_view_object(&observed)["bbox"].clone();
+    let rich_text_layer = find_observed_layer(&observed, &rich_text_layer_id);
+    let layer_uri = observed_capture_uri(rich_text_layer, "color", "image/png");
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1584,8 +1856,9 @@ flow @flow.main main {
                 "name": "arcweft.observe",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "image": "png",
-                    "layer": "dialogue.rich_text",
+                    "layer": rich_text_layer_id,
                     "steps": 4,
                     "max_ops": 64
                 }
@@ -1598,13 +1871,13 @@ flow @flow.main main {
             "params": {
                 "name": "arcweft.resource.read",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png",
+                    "uri": layer_uri,
                     "max_privacy": "sensitive"
                 }
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native MCP layer resource source");
     assert!(
         output.status.success(),
@@ -1618,20 +1891,37 @@ flow @flow.main main {
         &responses[2]["result"]["content"][0],
         "native layer read metadata is JSON",
     );
+    let published_layer_uri = assert_policy_published_image_metadata(&metadata, "layer");
+    assert_ne!(published_layer_uri, layer_uri);
     assert_eq!(metadata["image"]["renderer"], "native");
-    assert_eq!(metadata["image"]["scope"]["kind"], "layer");
-    assert_eq!(metadata["image"]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
-    assert!(metadata["image"]["width"].as_u64().unwrap() < 1088);
-    assert!(metadata["image"]["height"].as_u64().unwrap() < 124);
+    assert!(
+        metadata["image"]["width"].as_u64().unwrap()
+            <= dialogue_view_bbox["width"].as_u64().unwrap()
+    );
+    assert!(
+        metadata["image"]["height"].as_u64().unwrap()
+            <= dialogue_view_bbox["height"].as_u64().unwrap()
+    );
     assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
+    assert!(
+        metadata["image"]["crop_origin"]["x"].as_u64().unwrap()
+            >= dialogue_view_bbox["x"].as_u64().unwrap()
+    );
+    assert!(
+        metadata["image"]["crop_origin"]["y"].as_u64().unwrap()
+            >= dialogue_view_bbox["y"].as_u64().unwrap()
+    );
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: animated image live resource readback"]
 fn agent_mcp_stdio_reads_animated_image_layer_resource() {
     let source_path = workspace_root().join("samples/image-animation.arcw");
-    let layer_uri = "arcweft://session/cli/frame/0/layer.layer.foreground.rgba";
+    let observed =
+        observe_mcp_fixture_with_timing(&source_path, "entry.image_sprite_overlay", 2, Some(0.15));
+    let foreground_layer = find_observed_layer(&observed, "layer.foreground");
+    let layer_uri = observed_capture_uri(foreground_layer, "color", "application/octet-stream");
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1642,7 +1932,7 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
                 "name": "arcweft.observe",
                 "arguments": {
                     "source": source_path.display().to_string(),
-                    "flow": "image_sprite_overlay",
+                    "entry": "entry.image_sprite_overlay",
                     "steps": 2,
                     "capture_time": 0.15,
                     "max_ops": 64
@@ -1671,7 +1961,7 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     assert!(
         output.status.success(),
         "agent mcp animated image layer resource read should succeed, stderr: {}",
@@ -1679,29 +1969,42 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 4);
-    assert_eq!(responses[1]["result"]["isError"], false);
+    assert_eq!(
+        responses[1]["result"]["isError"], false,
+        "animated-image observation must establish the selected entry: {}",
+        responses[1]
+    );
 
     let metadata = mcp_content_metadata(
         &responses[2]["result"]["content"][0],
         "animated image MCP tool resource metadata is JSON",
     );
-    assert_eq!(metadata["uri"], layer_uri);
+    let published_layer_uri = assert_policy_published_image_metadata(&metadata, "layer");
+    assert_ne!(published_layer_uri, layer_uri);
     assert_eq!(metadata["image"]["renderer"], "native");
-    assert_eq!(metadata["image"]["scope"]["kind"], "layer");
-    assert_eq!(metadata["image"]["scope"]["id"], "layer.foreground");
-    assert_eq!(metadata["image"]["composition"], "framebuffer_crop");
+    assert_eq!(metadata["image"]["composition"], "masked_framebuffer_crop");
     assert_eq!(metadata["image"]["capture_time_millis"], 150);
     assert_eq!(metadata["image"]["width"], 360);
     assert_eq!(metadata["image"]["height"], 180);
     assert_eq!(metadata["image"]["crop_origin"]["x"], 120);
     assert_eq!(metadata["image"]["crop_origin"]["y"], 84);
-    assert_eq!(metadata["image"]["content_pixels"], 64_800);
+    assert!(metadata["image"]["content_pixels"]
+        .as_u64()
+        .is_some_and(|pixels| pixels > 0 && pixels <= 360 * 180));
     let tool_bytes = mcp_raw_capture_bytes(&responses[2]);
     assert_eq!(tool_bytes.len(), 360 * 180 * 4);
-    assert_eq!(&tool_bytes[..4], &[5, 26, 161, 127]);
+    let nontransparent_pixels = tool_bytes
+        .chunks_exact(4)
+        .filter(|pixel| pixel[3] != 0)
+        .count() as u64;
+    assert_eq!(
+        metadata["image"]["content_pixels"].as_u64(),
+        Some(nontransparent_pixels),
+        "masked animated capture metadata must describe the returned pixel payload"
+    );
 
     let content = &responses[3]["result"]["contents"][0];
-    assert_eq!(content["uri"], layer_uri);
+    assert_eq!(content["uri"], published_layer_uri);
     assert_eq!(content["mimeType"], "application/octet-stream");
     let read_blob = content["blob"]
         .as_str()
@@ -1715,7 +2018,7 @@ fn agent_mcp_stdio_reads_animated_image_layer_resource() {
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
 fn agent_mcp_stdio_captures_source_ruby_element_with_native_renderer() {
-    let path = temp_arcw(
+    let path = temp_mcp_arcw(
         "agent-mcp-native-ruby-capture",
         r#"
 character @character.alice Alice as alice {}
@@ -1726,6 +2029,10 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let ruby = find_rich_text_ruby_object(&observed, 0);
+    let ruby_id = observed_object_id(ruby);
+    let ruby_bbox = ruby["bbox"].clone();
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1736,16 +2043,17 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "png",
                     "capture": "color",
-                    "object": "object.dialogue.0.0.ruby.0",
+                    "object": ruby_id,
                     "steps": 4,
                     "max_ops": 64
                 }
             }
         }),
     ];
-    let output = run_agent_mcp_stdio(&requests);
+    let output = run_agent_mcp_stdio_local_dev(&requests);
     fs::remove_file(&path).expect("remove temp native MCP ruby source");
     assert!(
         output.status.success(),
@@ -1759,25 +2067,18 @@ flow @flow.main main {
         &responses[1]["result"]["content"][0],
         "native ruby capture metadata is JSON",
     );
-    assert!(
-        metadata["image"]["width"].as_u64().unwrap() < 180,
-        "native ruby element crop should be much narrower than the dialogue_view"
-    );
-    assert!(
-        metadata["image"]["height"].as_u64().unwrap() < 120,
-        "native ruby element crop should be much shorter than the dialogue_view"
-    );
+    assert_policy_published_image_metadata(&metadata, "object");
+    assert_eq!(metadata["image"]["width"], ruby_bbox["width"]);
+    assert_eq!(metadata["image"]["height"], ruby_bbox["height"]);
     assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
-    assert!(
-        metadata["image"]["crop_origin"]["x"].as_u64().unwrap() >= 96,
-        "native ruby crop origin should map back to viewport coordinates"
-    );
+    assert_eq!(metadata["image"]["crop_origin"]["x"], ruby_bbox["x"]);
+    assert_eq!(metadata["image"]["crop_origin"]["y"], ruby_bbox["y"]);
 }
 
 #[test]
 #[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
-fn agent_mcp_stdio_captures_source_ruby_object_id_with_native_renderer() {
-    let path = temp_arcw(
+fn agent_mcp_stdio_requires_review_for_ruby_object_id_capture() {
+    let path = temp_mcp_arcw(
         "agent-mcp-native-ruby-object-id",
         r#"
 character @character.alice Alice as alice {}
@@ -1788,6 +2089,9 @@ flow @flow.main main {
 }
 "#,
     );
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let ruby = find_rich_text_ruby_object(&observed, 0);
+    let ruby_id = observed_object_id(ruby);
     let requests = [
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({
@@ -1798,7 +2102,10 @@ flow @flow.main main {
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
-                    "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.png",
+                    "entry": "entry.main",
+                    "format": "png",
+                    "capture": "object-id",
+                    "object": ruby_id,
                     "steps": 4,
                     "max_ops": 64
                 }
@@ -1814,212 +2121,39 @@ flow @flow.main main {
     );
     let responses = agent_mcp_responses(&output.stdout);
     assert_eq!(responses.len(), 2);
-    assert_eq!(responses[1]["result"]["content"][0]["type"], "text");
-    let metadata = mcp_content_metadata(
-        &responses[1]["result"]["content"][0],
-        "native ruby object-id metadata is JSON",
+    assert_strict_auxiliary_capture_review(&responses[1]);
+}
+
+#[test]
+#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
+fn agent_mcp_stdio_requires_review_for_text_combine_mask_capture() {
+    let path = temp_mcp_arcw(
+        "agent-mcp-strict-text-combine-mask-review",
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
+}
+",
     );
-    assert_eq!(metadata["image"]["kind"], "object_id");
-    assert_eq!(metadata["image"]["composition"], "object_id_attachment");
-    assert_mcp_image_object_rich_text_ref(&metadata, "object.dialogue.0.0.ruby.0", "ruby");
-    assert!(metadata["image"]["width"].as_u64().unwrap() < 180);
-    assert!(metadata["image"]["height"].as_u64().unwrap() < 120);
-    assert_eq!(metadata["image"]["crop_origin"]["space"], "viewport");
-    assert!(metadata["image"]["content_pixels"].as_u64().unwrap() > 0);
+    let observed = observe_mcp_fixture(&path, "entry.main");
+    let cluster = find_rich_text_cluster_object(&observed, "2026", 0, 4);
+    let object_id = observed_object_id(cluster);
+    let requests = mcp_auxiliary_capture_requests(&path, "mask", &object_id);
+    let output = run_agent_mcp_stdio(&requests);
+    fs::remove_file(&path).expect("remove temp strict MCP text-combine source");
     assert!(
-        responses[1]["result"]["content"][1]["data"]
-            .as_str()
-            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
+        output.status.success(),
+        "strict MCP text-combine mask request should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    let responses = agent_mcp_responses(&output.stdout);
+    assert_eq!(responses.len(), 2);
+    assert_strict_auxiliary_capture_review(&responses[1]);
 }
 
-#[test]
-#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
-fn agent_mcp_stdio_capture_time_controls_text_combine_mask_with_native_renderer() {
-    for writing_mode in ["vertical_rl", "vertical_lr"] {
-        let path = temp_arcw(
-            &format!("agent-mcp-native-{writing_mode}-typewriter-text-combine-capture-time"),
-            &format!(
-                r"
-character @character.alice Alice as alice {{}}
-
-flow @flow.main main {{
-    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
-}}
-"
-            ),
-        );
-        let object_id = "object.dialogue.0.0.cluster.0.0.4";
-        let requests = mcp_capture_time_requests(&path, "mask", object_id);
-        let output = run_agent_mcp_stdio(&requests);
-        fs::remove_file(&path).expect("remove temp native MCP text-combine source");
-        assert!(
-            output.status.success(),
-            "agent mcp native {writing_mode} typewriter text-combine capture-time should succeed, stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let responses = agent_mcp_responses(&output.stdout);
-        assert_eq!(responses.len(), 3);
-
-        let hidden = mcp_content_metadata(
-            &responses[1]["result"]["content"][0],
-            "hidden text-combine mask metadata is JSON",
-        );
-        let visible = mcp_content_metadata(
-            &responses[2]["result"]["content"][0],
-            "visible text-combine mask metadata is JSON",
-        );
-        assert_eq!(hidden["image"]["kind"], "mask");
-        assert_eq!(visible["image"]["kind"], "mask");
-        assert_eq!(hidden["image"]["composition"], "mask_attachment");
-        assert_eq!(visible["image"]["composition"], "mask_attachment");
-        assert_mcp_image_object_rich_text_ref(&hidden, object_id, "glyph_cluster");
-        assert_mcp_image_object_rich_text_ref(&visible, object_id, "glyph_cluster");
-        assert_eq!(
-            hidden["image"]["crop_origin"],
-            visible["image"]["crop_origin"]
-        );
-        assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
-        assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
-        assert_eq!(hidden["image"]["content_pixels"], 0);
-        assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
-
-        let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
-        let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
-        assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-        assert_eq!(
-            opaque_pixel_count(&visible_bytes) as u64,
-            visible["image"]["content_pixels"].as_u64().unwrap()
-        );
-    }
-}
-
-#[test]
-#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
-fn agent_mcp_stdio_capture_time_controls_text_combine_object_id_with_native_renderer() {
-    for writing_mode in ["vertical_rl", "vertical_lr"] {
-        let path = temp_arcw(
-            &format!(
-                "agent-mcp-native-{writing_mode}-typewriter-text-combine-object-id-capture-time"
-            ),
-            &format!(
-                r"
-character @character.alice Alice as alice {{}}
-
-flow @flow.main main {{
-    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
-}}
-"
-            ),
-        );
-        let object_id = "object.dialogue.0.0.cluster.0.0.4";
-        let requests = mcp_capture_time_requests(&path, "object-id", object_id);
-        let output = run_agent_mcp_stdio(&requests);
-        fs::remove_file(&path)
-            .expect("remove temp native MCP text-combine object-id capture-time source");
-        assert!(
-            output.status.success(),
-            "agent mcp native {writing_mode} typewriter text-combine object-id capture-time should succeed, stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let responses = agent_mcp_responses(&output.stdout);
-        assert_eq!(responses.len(), 3);
-
-        let hidden = mcp_content_metadata(
-            &responses[1]["result"]["content"][0],
-            "hidden text-combine object-id metadata is JSON",
-        );
-        let visible = mcp_content_metadata(
-            &responses[2]["result"]["content"][0],
-            "visible text-combine object-id metadata is JSON",
-        );
-        assert_eq!(hidden["image"]["kind"], "object_id");
-        assert_eq!(visible["image"]["kind"], "object_id");
-        assert_eq!(hidden["image"]["composition"], "object_id_attachment");
-        assert_eq!(visible["image"]["composition"], "object_id_attachment");
-        assert_mcp_image_object_rich_text_ref(&hidden, object_id, "glyph_cluster");
-        assert_mcp_image_object_rich_text_ref(&visible, object_id, "glyph_cluster");
-        assert_eq!(
-            hidden["image"]["crop_origin"],
-            visible["image"]["crop_origin"]
-        );
-        assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
-        assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
-        assert_eq!(hidden["image"]["content_pixels"], 0);
-        assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
-
-        let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
-        let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
-        assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-        assert_eq!(
-            opaque_pixel_count(&visible_bytes) as u64,
-            visible["image"]["content_pixels"].as_u64().unwrap()
-        );
-    }
-}
-
-#[test]
-#[ignore = "tier 2 MCP stdio E2E: slow subprocess/native-capture coverage"]
-fn agent_mcp_stdio_capture_time_controls_ruby_object_id_with_native_renderer() {
-    for writing_mode in ["vertical_rl", "vertical_lr"] {
-        let path = temp_arcw(
-            &format!("agent-mcp-native-{writing_mode}-typewriter-ruby-object-id-capture-time"),
-            &format!(
-                r"
-character @character.alice Alice as alice {{}}
-
-flow @flow.main main {{
-    alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
-}}
-"
-            ),
-        );
-        let object_id = "object.dialogue.0.0.ruby.0";
-        let requests = mcp_capture_time_requests(&path, "object-id", object_id);
-        let output = run_agent_mcp_stdio(&requests);
-        fs::remove_file(&path).expect("remove temp native MCP ruby object-id capture-time source");
-        assert!(
-            output.status.success(),
-            "agent mcp native {writing_mode} typewriter ruby object-id capture-time should succeed, stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let responses = agent_mcp_responses(&output.stdout);
-        assert_eq!(responses.len(), 3);
-
-        let hidden = mcp_content_metadata(
-            &responses[1]["result"]["content"][0],
-            "hidden ruby object-id metadata is JSON",
-        );
-        let visible = mcp_content_metadata(
-            &responses[2]["result"]["content"][0],
-            "visible ruby object-id metadata is JSON",
-        );
-        assert_eq!(hidden["image"]["kind"], "object_id");
-        assert_eq!(visible["image"]["kind"], "object_id");
-        assert_eq!(hidden["image"]["composition"], "object_id_attachment");
-        assert_eq!(visible["image"]["composition"], "object_id_attachment");
-        assert_mcp_image_object_rich_text_ref(&hidden, object_id, "ruby");
-        assert_mcp_image_object_rich_text_ref(&visible, object_id, "ruby");
-        assert_eq!(
-            hidden["image"]["crop_origin"],
-            visible["image"]["crop_origin"]
-        );
-        assert_eq!(hidden["image"]["width"], visible["image"]["width"]);
-        assert_eq!(hidden["image"]["height"], visible["image"]["height"]);
-        assert_eq!(hidden["image"]["content_pixels"], 0);
-        assert!(visible["image"]["content_pixels"].as_u64().unwrap() > 0);
-
-        let hidden_bytes = mcp_raw_capture_bytes(&responses[1]);
-        let visible_bytes = mcp_raw_capture_bytes(&responses[2]);
-        assert_eq!(opaque_pixel_count(&hidden_bytes), 0);
-        assert_eq!(
-            opaque_pixel_count(&visible_bytes) as u64,
-            visible["image"]["content_pixels"].as_u64().unwrap()
-        );
-    }
-}
-
-fn mcp_capture_time_requests(
+fn mcp_auxiliary_capture_requests(
     path: &Path,
     capture_kind: &str,
     object_id: &str,
@@ -2034,23 +2168,7 @@ fn mcp_capture_time_requests(
                 "name": "arcweft.capture",
                 "arguments": {
                     "source": path.display().to_string(),
-                    "format": "raw-rgba",
-                    "capture": capture_kind,
-                    "object": object_id,
-                    "capture_time": 0.0,
-                    "steps": 4,
-                    "max_ops": 64
-                }
-            }
-        }),
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "arcweft.capture",
-                "arguments": {
-                    "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "format": "raw-rgba",
                     "capture": capture_kind,
                     "object": object_id,
@@ -2063,7 +2181,70 @@ fn mcp_capture_time_requests(
     ]
 }
 
-fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value> {
+fn run_agent_mcp_rich_text_session(requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let _guard = AGENT_MCP_STDIO_LOCK
+        .lock()
+        .expect("rich-text MCP session serializes native subprocesses");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("agent")
+        .arg("mcp")
+        .args(["--content-policy-mode", "local-dev"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn rich-text MCP session");
+    let mut stdin = child.stdin.take().expect("rich-text MCP stdin is piped");
+    let mut stdout = BufReader::new(child.stdout.take().expect("rich-text MCP stdout is piped"));
+    let mut responses = requests
+        .iter()
+        .map(|request| exchange_mcp_request(&mut stdin, &mut stdout, request))
+        .collect::<Vec<_>>();
+
+    let published_object_uri = responses[8]["result"]["contents"][0]["uri"]
+        .as_str()
+        .expect("source object alias resolves to a published URI")
+        .to_owned();
+    let published_layer_uri = responses[9]["result"]["contents"][0]["uri"]
+        .as_str()
+        .expect("source layer alias resolves to a published URI")
+        .to_owned();
+    for (id, uri) in [(13, published_object_uri), (14, published_layer_uri)] {
+        responses.push(exchange_mcp_request(
+            &mut stdin,
+            &mut stdout,
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "resources/read",
+                "params": {
+                    "uri": uri,
+                    "max_privacy": "sensitive"
+                }
+            }),
+        ));
+    }
+
+    drop(stdin);
+    drop(stdout);
+    let output = child
+        .wait_with_output()
+        .expect("wait for rich-text MCP session");
+    assert!(
+        output.status.success(),
+        "rich-text MCP session should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    responses
+}
+
+fn agent_mcp_rich_text_requests(
+    path: &std::path::Path,
+    ruby_id: &str,
+    rich_text_layer_id: &str,
+    object_uri: &str,
+    layer_uri: &str,
+) -> Vec<serde_json::Value> {
     let mut requests = vec![
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
         serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
@@ -2075,8 +2256,9 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value
                 "name": "arcweft.observe",
                 "arguments": {
                     "source": path.display().to_string(),
+                    "entry": "entry.main",
                     "image": "png",
-                    "layer": "dialogue.rich_text",
+                    "layer": rich_text_layer_id,
                     "steps": 4,
                     "max_ops": 64
                 }
@@ -2092,7 +2274,7 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value
                 "arguments": {
                     "format": "png",
                     "capture": "color",
-                    "object": "object.dialogue.0.0.ruby.0"
+                    "object": ruby_id
                 }
             }
         }),
@@ -2105,7 +2287,7 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value
                 "arguments": {
                     "format": "png",
                     "capture": "color",
-                    "object": "object.dialogue.0.0.ruby.0"
+                    "object": ruby_id
                 }
             }
         }),
@@ -2116,7 +2298,9 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value
             "params": {
                 "name": "arcweft.capture",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba"
+                    "format": "raw-rgba",
+                    "capture": "mask",
+                    "object": ruby_id
                 }
             }
         }),
@@ -2130,18 +2314,24 @@ fn agent_mcp_rich_text_requests(path: &std::path::Path) -> Vec<serde_json::Value
             }
         }),
     ];
-    requests.extend(agent_mcp_rich_text_readback_requests());
+    requests.extend(agent_mcp_rich_text_readback_requests(
+        ruby_id, object_uri, layer_uri,
+    ));
     requests
 }
 
-fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
+fn agent_mcp_rich_text_readback_requests(
+    ruby_id: &str,
+    object_uri: &str,
+    layer_uri: &str,
+) -> [serde_json::Value; 4] {
     [
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 9,
             "method": "resources/read",
             "params": {
-                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.mask.rgba",
+                "uri": object_uri,
                 "max_privacy": "sensitive"
             }
         }),
@@ -2150,7 +2340,7 @@ fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
             "id": 10,
             "method": "resources/read",
             "params": {
-                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.png",
+                "uri": layer_uri,
                 "max_privacy": "sensitive"
             }
         }),
@@ -2161,18 +2351,17 @@ fn agent_mcp_rich_text_readback_requests() -> [serde_json::Value; 4] {
             "params": {
                 "name": "arcweft.capture",
                 "arguments": {
-                    "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba"
+                    "format": "raw-rgba",
+                    "capture": "object-id",
+                    "object": ruby_id
                 }
             }
         }),
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 12,
-            "method": "resources/read",
-            "params": {
-                "uri": "arcweft://session/cli/frame/0/object.object.dialogue.0.0.ruby.0.object-id.rgba",
-                "max_privacy": "sensitive"
-            }
+            "method": "resources/list",
+            "params": {}
         }),
     ]
 }

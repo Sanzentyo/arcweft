@@ -35,13 +35,14 @@ use arcweft_view::style::{
     ViewAxisProviderParticipation, ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedGeneration,
     ViewColorValue, ViewElementState, ViewEnvironmentClause, ViewEnvironmentCondition,
     ViewEnvironmentWrapperIndex, ViewEnvironmentWrapperSource, ViewInheritedBoxAxes,
-    ViewInteractionSelector, ViewLengthMilli, ViewOverflow, ViewPropertyKind, ViewRatioMilli,
-    ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication, ViewStyleApplicationTarget,
-    ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleContribution, ViewStyleContributionSource,
-    ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey, ViewStylePatchId,
-    ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext, ViewStyleRevisionSet,
-    ViewStyleRule, ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleTraceMode,
+    ViewInteractionSelector, ViewLengthMilli, ViewOverflow, ViewPosition, ViewPropertyKind,
+    ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleApplication,
+    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStylePatchId, ViewStylePriority, ViewStyleProgram, ViewStyleResolveContext,
+    ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId, ViewStyleSelector,
+    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    ViewStyleTraceMode,
 };
 use arcweft_view::{ViewElementKind, ViewId, ViewMountId, ViewPartLocalName, ViewPartName};
 
@@ -652,6 +653,54 @@ fn generated_row_target_does_not_masquerade_as_a_surface_consumer() {
             property: ViewPropertyKind::BackgroundColor,
         }
     );
+}
+
+#[test]
+fn every_executable_consumer_accepts_canonical_physical_box_placement() {
+    let mount = empty_mount();
+    let node = BundleViewStyleNode {
+        path: BundleViewInstancePath::default(),
+        instruction: 12,
+        parent: None,
+        kind: BundleViewStyleNodeKind::Custom {
+            element: "test.consumer".to_owned(),
+        },
+        part: None,
+        exported_part: None,
+        applications: Vec::new(),
+    };
+    let computed = computed_style([
+        (
+            ViewPropertyKind::Position,
+            ViewSpecifiedValue::Position {
+                value: ViewPosition::Absolute,
+            },
+        ),
+        (
+            ViewPropertyKind::Left,
+            ViewSpecifiedValue::Length {
+                value: ViewLengthMilli::new(28_000),
+            },
+        ),
+        (
+            ViewPropertyKind::Top,
+            ViewSpecifiedValue::Length {
+                value: ViewLengthMilli::new(20_000),
+            },
+        ),
+    ]);
+
+    for consumer in [
+        StyleConsumer::Structural(ViewElementKind::Row),
+        StyleConsumer::Surface(ViewElementKind::Panel),
+        StyleConsumer::Scroll,
+        StyleConsumer::Control,
+        StyleConsumer::Text,
+        StyleConsumer::Image,
+    ] {
+        validate_consumer_properties(&mount, &node, consumer, &computed)
+            .expect("canonical physical placement reaches the shared geometry owner");
+    }
 }
 
 #[test]

@@ -114,16 +114,19 @@ pub(super) fn agent_scoped_capture_name(prefix: &str, scope: &str, default_name:
 }
 
 pub(super) fn agent_uri_component(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+    let mut component = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-') {
+            component.push(char::from(byte));
+        } else {
+            component.push('%');
+            component.push(char::from(HEX[usize::from(byte >> 4)]));
+            component.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+    component
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -609,19 +612,17 @@ fn agent_layer_capture_ref(spec: AgentLayerCaptureRefSpec<'_>) -> AgentLayerCapt
     }
 }
 
-pub(super) fn agent_object_capture_refs_for_page(
+pub(super) fn agent_object_capture_refs(
     session_id: &str,
     tick: usize,
     object_id: &str,
     bbox: &AgentBBox,
-    page: usize,
 ) -> AgentObjectCaptureRefs {
     agent_object_capture_refs_with_source(
         session_id,
         tick,
         object_id,
         bbox,
-        page,
         AgentCaptureSourceIdentity::Object {
             id: object_id.to_owned(),
             parent_id: None,
@@ -640,7 +641,6 @@ pub(super) fn agent_object_capture_refs_with_source(
     tick: usize,
     object_id: &str,
     bbox: &AgentBBox,
-    page: usize,
     source: AgentCaptureSourceIdentity,
 ) -> AgentObjectCaptureRefs {
     let name = agent_scoped_capture_name("object", object_id, "color");
@@ -656,7 +656,6 @@ pub(super) fn agent_object_capture_refs_with_source(
                 extension: "png",
                 kind: AgentImageKind::Color,
                 bbox,
-                page,
                 source: source.clone(),
             }),
             agent_object_capture_ref(AgentObjectCaptureRefSpec {
@@ -666,7 +665,6 @@ pub(super) fn agent_object_capture_refs_with_source(
                 extension: "rgba",
                 kind: AgentImageKind::Color,
                 bbox,
-                page,
                 source: source.clone(),
             }),
             agent_object_capture_ref(AgentObjectCaptureRefSpec {
@@ -676,7 +674,6 @@ pub(super) fn agent_object_capture_refs_with_source(
                 extension: "png",
                 kind: AgentImageKind::ObjectId,
                 bbox,
-                page,
                 source: source.clone(),
             }),
             agent_object_capture_ref(AgentObjectCaptureRefSpec {
@@ -686,7 +683,6 @@ pub(super) fn agent_object_capture_refs_with_source(
                 extension: "rgba",
                 kind: AgentImageKind::ObjectId,
                 bbox,
-                page,
                 source: source.clone(),
             }),
             agent_object_capture_ref(AgentObjectCaptureRefSpec {
@@ -696,7 +692,6 @@ pub(super) fn agent_object_capture_refs_with_source(
                 extension: "png",
                 kind: AgentImageKind::Mask,
                 bbox,
-                page,
                 source: source.clone(),
             }),
             agent_object_capture_ref(AgentObjectCaptureRefSpec {
@@ -706,7 +701,6 @@ pub(super) fn agent_object_capture_refs_with_source(
                 extension: "rgba",
                 kind: AgentImageKind::Mask,
                 bbox,
-                page,
                 source,
             }),
         ],
@@ -720,7 +714,6 @@ struct AgentObjectCaptureRefSpec<'a> {
     extension: &'a str,
     kind: AgentImageKind,
     bbox: &'a AgentBBox,
-    page: usize,
     source: AgentCaptureSourceIdentity,
 }
 
@@ -735,15 +728,9 @@ fn agent_object_capture_ref(spec: AgentObjectCaptureRefSpec<'_>) -> AgentObjectC
     };
     AgentObjectCaptureRef {
         kind: spec.kind,
-        uri: agent_frame_capture_uri_for_page(
-            spec.session_id,
-            spec.tick,
-            spec.name,
-            spec.extension,
-            spec.page,
-        ),
+        uri: agent_frame_capture_uri(spec.session_id, spec.tick, spec.name, spec.extension),
         mime_type: agent_capture_mime_type(spec.extension).to_owned(),
-        page: spec.page,
+        page: 0,
         width: spec.bbox.width.max(1),
         height: spec.bbox.height.max(1),
         selected_capture: Some(agent_selected_capture_metadata_for_ref(

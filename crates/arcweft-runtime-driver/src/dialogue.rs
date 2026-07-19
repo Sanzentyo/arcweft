@@ -6,6 +6,7 @@ use crate::presentation_handles::PresentationHandleId;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_presentation::fx::{FxApplication, FxInstanceId};
 use arcweft_render_text::{LineDisplayFrame, LineDisplayStage};
+use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 
 pub use arcweft_view::{
@@ -14,41 +15,20 @@ pub use arcweft_view::{
 };
 pub use store::{DialoguePresentationStore, DialoguePresentationStoreError};
 
-/// Canonical authored View selected when a dialogue line does not specify one.
-pub const DEFAULT_DIALOGUE_VIEW: &str = arcweft_bundle::standard_view::DIALOGUE_VIEW_ID;
-
 /// Authored View definition selected for a dialogue presentation.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct DialogueViewDefinition(String);
+pub struct DialogueViewDefinition(ViewId);
 
 impl DialogueViewDefinition {
     #[must_use]
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    pub const fn new(value: ViewId) -> Self {
+        Self(value)
     }
 
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub const fn view_id(&self) -> &ViewId {
         &self.0
-    }
-}
-
-impl Default for DialogueViewDefinition {
-    fn default() -> Self {
-        Self(DEFAULT_DIALOGUE_VIEW.to_owned())
-    }
-}
-
-impl From<&str> for DialogueViewDefinition {
-    fn from(value: &str) -> Self {
-        Self::new(value)
-    }
-}
-
-impl From<String> for DialogueViewDefinition {
-    fn from(value: String) -> Self {
-        Self::new(value)
     }
 }
 
@@ -214,24 +194,18 @@ pub enum DialoguePresentationOperation {
 
 impl DialoguePresentationOperation {
     #[must_use]
-    pub fn append(view: impl Into<DialogueViewDefinition>, frame: LineDisplayFrame) -> Self {
-        Self::Append {
-            view: view.into(),
-            frame,
-        }
+    pub fn append(view: DialogueViewDefinition, frame: LineDisplayFrame) -> Self {
+        Self::Append { view, frame }
     }
 
     #[must_use]
-    pub fn replace(view: impl Into<DialogueViewDefinition>, frame: LineDisplayFrame) -> Self {
-        Self::Replace {
-            view: view.into(),
-            frame,
-        }
+    pub fn replace(view: DialogueViewDefinition, frame: LineDisplayFrame) -> Self {
+        Self::Replace { view, frame }
     }
 
     #[must_use]
-    pub fn clear(view: impl Into<DialogueViewDefinition>) -> Self {
-        Self::Clear { view: view.into() }
+    pub const fn clear(view: DialogueViewDefinition) -> Self {
+        Self::Clear { view }
     }
 }
 
@@ -413,7 +387,7 @@ impl DialoguePresentation {
 #[derive(Clone, Debug)]
 pub struct DialogueViewInput<'a> {
     pub handle: PresentationHandleId,
-    pub view: &'a str,
+    pub view: &'a ViewId,
     pub frame: &'a LineDisplayFrame,
     pub state: DialogueViewState,
 }

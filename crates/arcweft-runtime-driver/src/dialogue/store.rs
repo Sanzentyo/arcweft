@@ -111,7 +111,7 @@ impl DialoguePresentationStore {
                 let stage = entry.current_stage()?;
                 Some(DialogueViewInput {
                     handle: entry.view_handle_id(),
-                    view: dialogue.view.as_str(),
+                    view: dialogue.view.view_id(),
                     frame: &entry.frame,
                     state: DialogueViewState {
                         occurrence: DialogueViewOccurrence {
@@ -289,11 +289,6 @@ impl DialoguePresentationStore {
                 message: format!(
                     "dialogue table key {id:?} does not match its stored presentation id"
                 ),
-            });
-        }
-        if dialogue.view.as_str().is_empty() {
-            return Err(DialoguePresentationStoreError::InvalidSnapshot {
-                message: format!("dialogue presentation {id:?} has an empty View target"),
             });
         }
         if self.definitions.get(&dialogue.view) != Some(&id) {

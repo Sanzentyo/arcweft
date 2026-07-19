@@ -47,7 +47,17 @@ pub(super) fn agent_observe_command(
         })?;
     }
     if let Some(resource) = options.resource {
-        let resource = agent_observe_resource(&observed.report, image_output.as_ref(), resource)?;
+        let resource = if options.mcp
+            && options.mcp_format == AgentObserveMcpFormat::List
+            && resource == AgentObserveResourceKind::All
+        {
+            AgentObserveResourceOutput::Many(agent_observe_list_resources(
+                &observed.report,
+                image_output.as_ref(),
+            )?)
+        } else {
+            agent_observe_resource(&observed.report, image_output.as_ref(), resource)?
+        };
         if options.mcp {
             let resource = agent_observe_mcp_resource_output(
                 resource,
@@ -527,8 +537,7 @@ impl AgentSession for NativeAgentScriptSession<'_> {
             .map_err(|_| NativeAgentScriptSessionError::Capture)?;
         let byte_len = u64::try_from(blob.bytes.len()).unwrap_or(u64::MAX);
         let result = CaptureResult {
-            uri: AgentResourceUri::new(resource.uri)
-                .map_err(|_| NativeAgentScriptSessionError::Capture)?,
+            uri: resource.uri.clone(),
             content_hash: blob.content_hash.clone(),
             media_type: resource.mime_type,
             byte_len,
@@ -1189,7 +1198,8 @@ pub(super) fn agent_observe_resource_by_uri_with_page_and_time_and_frame_store(
         let selected = report.objects.iter().collect::<Vec<_>>();
         let overlay = agent_overlay_svg(&report.viewport, &selected);
         return Ok(AgentResource {
-            uri: uri.to_owned(),
+            uri: AgentResourceUri::new(uri)
+                .expect("matched generated overlay resource URI is nonempty"),
             kind: AgentResourceKind::OverlaySvg,
             mime_type: "image/svg+xml".to_owned(),
             hash: hash_hex(overlay.as_bytes()),
@@ -1248,8 +1258,12 @@ pub(super) fn agent_presentation_tree_resource_from_uri(
 
     Some(
         agent_presentation_tree_query_from_uri(query_string).and_then(|query| {
+            let resource_uri = AgentResourceUri::new(uri).map_err(|error| {
+                eprintln!("error: invalid presentation-tree resource URI: {error}");
+                ExitCode::from(2)
+            })?;
             report
-                .filtered_presentation_tree_resource(uri.to_owned(), &query)
+                .filtered_presentation_tree_resource(resource_uri, &query)
                 .map_err(|error| agent_json_error(&error))
         }),
     )

@@ -1,11 +1,34 @@
 use crate::geometry::{PreparedFrame, RenderViewport};
 use crate::renderer::{SharedRenderer, SharedRendererError};
+use crate::view_scene::PreparedTextId;
 use arcweft_id::PublicId;
 use arcweft_presentation::hit::HitRect;
+use arcweft_render_text::TextColor;
 use num_traits::ToPrimitive;
 use std::collections::HashSet;
-use std::sync::mpsc;
 use thiserror::Error;
+
+mod budget;
+mod readback;
+
+use budget::{PreparedTextCaptureBudget, validate_prepared_text_capture_budget};
+use readback::{padded_rgba_row_bytes, readback_texture_alpha_rect, readback_texture_rgba};
+
+/// Maximum number of independent prepared-text coverage passes in one capture.
+///
+/// One pass preserves exact per-region painter order and metadata without
+/// encoding semantic identity into filtered color channels.
+pub const MAX_PREPARED_TEXT_COVERAGE_PASSES: u64 = 128;
+
+/// Maximum full-frame renderer work for prepared-text coverage, measured in
+/// physical pixels. This is exactly 32 Full HD pass equivalents.
+pub const MAX_PREPARED_TEXT_COVERAGE_RENDER_PIXELS: u64 = 32 * 1_920 * 1_080;
+
+/// Maximum cumulative prepared-text coverage readback in one capture.
+///
+/// Coverage readback is cropped and single-channel, but this limit is stated
+/// in transferred RGBA8 bytes because the GPU copy contract is RGBA8.
+pub const MAX_PREPARED_TEXT_COVERAGE_READBACK_BYTES: u64 = 64 * 1024 * 1024;
 
 /// One typed attachment produced by a shared offscreen capture.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -24,6 +47,63 @@ pub struct CaptureRegion {
     pub id: PublicId,
     pub bounds: HitRect,
     pub object_id_rgba: [u8; 4],
+    geometry: CaptureRegionGeometry,
+}
+
+/// Non-empty, duplicate-free prepared glyph selection from one canonical
+/// frame-local text item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedTextSelection {
+    text: PreparedTextId,
+    glyph_indices: Box<[u32]>,
+}
+
+/// Invalid canonical prepared-text selection metadata.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum PreparedTextSelectionError {
+    #[error("prepared-text selection must contain at least one glyph")]
+    Empty,
+    #[error("prepared-text selection contains duplicate glyph index {glyph_index}")]
+    DuplicateGlyph { glyph_index: u32 },
+}
+
+impl PreparedTextSelection {
+    pub fn try_new(
+        text: PreparedTextId,
+        glyph_indices: impl IntoIterator<Item = u32>,
+    ) -> Result<Self, PreparedTextSelectionError> {
+        let mut glyph_indices = glyph_indices.into_iter().collect::<Vec<_>>();
+        if glyph_indices.is_empty() {
+            return Err(PreparedTextSelectionError::Empty);
+        }
+        glyph_indices.sort_unstable();
+        if let Some(glyph_index) = glyph_indices
+            .windows(2)
+            .find_map(|pair| (pair[0] == pair[1]).then_some(pair[0]))
+        {
+            return Err(PreparedTextSelectionError::DuplicateGlyph { glyph_index });
+        }
+        Ok(Self {
+            text,
+            glyph_indices: glyph_indices.into_boxed_slice(),
+        })
+    }
+
+    #[must_use]
+    pub const fn text(&self) -> PreparedTextId {
+        self.text
+    }
+
+    #[must_use]
+    pub const fn glyph_indices(&self) -> &[u32] {
+        &self.glyph_indices
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum CaptureRegionGeometry {
+    Bounds,
+    PreparedText(PreparedTextSelection),
 }
 
 impl CaptureRegion {
@@ -33,6 +113,24 @@ impl CaptureRegion {
             id,
             bounds,
             object_id_rgba,
+            geometry: CaptureRegionGeometry::Bounds,
+        }
+    }
+
+    /// Uses selected glyphs from the canonical prepared-text batch as the
+    /// attachment coverage while retaining `bounds` as the requested crop.
+    #[must_use]
+    pub fn prepared_text(
+        id: PublicId,
+        bounds: HitRect,
+        object_id_rgba: [u8; 4],
+        selection: PreparedTextSelection,
+    ) -> Self {
+        Self {
+            id,
+            bounds,
+            object_id_rgba,
+            geometry: CaptureRegionGeometry::PreparedText(selection),
         }
     }
 }
@@ -142,6 +240,17 @@ pub struct SharedOffscreenCapture {
     format: wgpu::TextureFormat,
 }
 
+/// Bounded-work dimension reported by a prepared-text capture error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PreparedTextCaptureBudgetMetric {
+    /// Independent shared-renderer coverage passes.
+    Passes,
+    /// Full-frame physical pixels submitted to the renderer.
+    RenderPixels,
+    /// Cropped RGBA8 bytes transferred from GPU textures.
+    ReadbackBytes,
+}
+
 #[derive(Debug, Error)]
 pub enum SharedOffscreenCaptureError {
     #[error("offscreen capture requires an RGBA8 target, not {format:?}")]
@@ -162,10 +271,71 @@ pub enum SharedOffscreenCaptureError {
     InvalidRegionBounds { id: PublicId },
     #[error("capture region id `{id}` occurs more than once")]
     DuplicateRegionId { id: PublicId },
+    #[error("prepared-text capture region `{id}` references missing batch item {text_index}")]
+    MissingPreparedTextItem { id: PublicId, text_index: u32 },
+    #[error(
+        "prepared-text capture region `{id}` references glyph {glyph_index}, but item {text_index} has {glyph_count} glyphs"
+    )]
+    MissingPreparedTextGlyph {
+        id: PublicId,
+        text_index: u32,
+        glyph_index: u32,
+        glyph_count: usize,
+    },
+    #[error("prepared-text capture {metric:?} overflowed while measuring bounded work")]
+    PreparedTextCoverageBudgetOverflow {
+        metric: PreparedTextCaptureBudgetMetric,
+    },
+    #[error(
+        "prepared-text capture requires {actual} coverage passes, exceeding the limit of {limit}"
+    )]
+    PreparedTextCoveragePassBudgetExceeded { actual: u64, limit: u64 },
+    #[error(
+        "prepared-text capture requires {actual} rendered pixels, exceeding the limit of {limit}"
+    )]
+    PreparedTextCoverageRenderBudgetExceeded { actual: u64, limit: u64 },
+    #[error(
+        "prepared-text capture requires {actual} readback bytes, exceeding the limit of {limit}"
+    )]
+    PreparedTextCoverageReadbackBudgetExceeded { actual: u64, limit: u64 },
+    #[error("prepared-text capture region {region_index} is missing its alpha coverage")]
+    MissingPreparedTextCoverage { region_index: usize },
+    #[error("alpha coverage was supplied twice for prepared-text capture region {region_index}")]
+    DuplicatePreparedTextCoverage { region_index: usize },
+    #[error("alpha coverage was supplied for non-prepared capture region {region_index}")]
+    UnexpectedPreparedTextCoverage { region_index: usize },
+    #[error(
+        "prepared-text capture region {region_index} returned {actual_width}x{actual_height} alpha coverage; expected {expected_width}x{expected_height}"
+    )]
+    PreparedTextCoverageExtentMismatch {
+        region_index: usize,
+        expected_width: u32,
+        expected_height: u32,
+        actual_width: u32,
+        actual_height: u32,
+    },
+    #[error(
+        "prepared-text capture region {region_index} returned alpha coverage at ({actual_x}, {actual_y}); expected ({expected_x}, {expected_y})"
+    )]
+    PreparedTextCoverageOriginMismatch {
+        region_index: usize,
+        expected_x: u32,
+        expected_y: u32,
+        actual_x: u32,
+        actual_y: u32,
+    },
+    #[error(
+        "prepared-text capture region {region_index} returned {actual} alpha samples; expected {expected}"
+    )]
+    PreparedTextCoverageSizeMismatch {
+        region_index: usize,
+        expected: usize,
+        actual: usize,
+    },
     #[error("object-id attachment requires an ordered-region capture scope")]
     ObjectIdRequiresRegions,
-    #[error("capture region `{id}` uses transparent black, which is reserved for no object")]
-    TransparentObjectId { id: PublicId },
+    #[error("capture region `{id}` uses non-opaque object-id RGBA {rgba:?}")]
+    NonOpaqueObjectId { id: PublicId, rgba: [u8; 4] },
     #[error("object-id RGBA {rgba:?} occurs more than once")]
     DuplicateObjectIdRgba { rgba: [u8; 4] },
     #[error("capture scope does not intersect the physical frame")]
@@ -224,14 +394,18 @@ impl SharedOffscreenCapture {
         Ok(())
     }
 
-    /// Renders `frame` exactly once, then derives every requested attachment
-    /// from those completed pixels and the supplied ordered region geometry.
+    /// Renders the canonical color frame once and derives the requested
+    /// attachments from its pixels and ordered region geometry. Each
+    /// prepared-text region receives an independent transparent shared-renderer
+    /// pass and cropped readback. Coverage is stamped immediately in painter
+    /// order, keeping memory bounded to one coverage crop without encoding
+    /// semantic IDs into filtered RGB.
     pub fn capture(
         &mut self,
         frame: &PreparedFrame,
         request: &CaptureRequest,
     ) -> Result<SharedFrameCapture, SharedOffscreenCaptureError> {
-        let plan = CapturePlan::new(frame.viewport, request)?;
+        let plan = CapturePlan::new(frame, request)?;
         let width = frame.viewport.physical_width;
         let height = frame.viewport.physical_height;
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
@@ -252,7 +426,70 @@ impl SharedOffscreenCapture {
         self.renderer
             .render_to_view(&self.device, &self.queue, &view, frame)?;
         let color = readback_texture_rgba(&self.device, &self.queue, &texture, width, height)?;
-        plan.derive(&color)
+        let mut capture = plan.begin_capture(&color)?;
+        let RasterScope::Regions(regions) = &plan.scope else {
+            return Ok(capture);
+        };
+        for (region_index, region) in regions.iter().enumerate() {
+            match &region.coverage {
+                RasterCoverage::Bounds => plan.stamp_bounds_region(&mut capture, region),
+                RasterCoverage::PreparedText(selection) if plan.needs_debug_coverage() => {
+                    let rect = intersect(region.rect, plan.crop);
+                    if rect.is_empty() {
+                        continue;
+                    }
+                    let coverage = self.render_prepared_text_coverage(
+                        frame,
+                        region_index,
+                        selection,
+                        rect,
+                        width,
+                        height,
+                    )?;
+                    plan.stamp_prepared_text_region(&mut capture, region_index, region, &coverage)?;
+                }
+                RasterCoverage::PreparedText(_) => {}
+            }
+        }
+        Ok(capture)
+    }
+
+    fn render_prepared_text_coverage(
+        &mut self,
+        frame: &PreparedFrame,
+        region_index: usize,
+        selection: &PreparedTextSelection,
+        rect: PixelRect,
+        width: u32,
+        height: u32,
+    ) -> Result<PreparedTextAlphaCoverage, SharedOffscreenCaptureError> {
+        let attachment_frame = prepared_text_coverage_frame(frame, selection);
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("arcweft-shared-offscreen-prepared-text-coverage"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.renderer.render_coverage_to_view(
+            &self.device,
+            &self.queue,
+            &view,
+            &attachment_frame,
+        )?;
+        Ok(PreparedTextAlphaCoverage {
+            region_index,
+            rect,
+            alpha: readback_texture_alpha_rect(&self.device, &self.queue, &texture, rect)?,
+        })
     }
 }
 
@@ -300,6 +537,20 @@ impl PixelRect {
 struct RasterRegion {
     rect: PixelRect,
     object_id_rgba: [u8; 4],
+    coverage: RasterCoverage,
+}
+
+#[derive(Clone, Debug)]
+enum RasterCoverage {
+    Bounds,
+    PreparedText(PreparedTextSelection),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PreparedTextAlphaCoverage {
+    region_index: usize,
+    rect: PixelRect,
+    alpha: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
@@ -319,9 +570,10 @@ struct CapturePlan {
 
 impl CapturePlan {
     fn new(
-        viewport: RenderViewport,
+        frame: &PreparedFrame,
         request: &CaptureRequest,
     ) -> Result<Self, SharedOffscreenCaptureError> {
+        let viewport = frame.viewport;
         validate_viewport(viewport)?;
         validate_attachments(&request.attachments)?;
 
@@ -333,7 +585,7 @@ impl CapturePlan {
                 RasterScope::WholeFrame
             }
             CaptureScope::Regions(regions) => {
-                RasterScope::Regions(rasterize_regions(viewport, regions, &request.attachments)?)
+                RasterScope::Regions(rasterize_regions(frame, regions, &request.attachments)?)
             }
         };
         let full_frame = PixelRect::full(viewport.physical_width, viewport.physical_height);
@@ -349,6 +601,14 @@ impl CapturePlan {
                 .ok_or(SharedOffscreenCaptureError::EmptyScopeBounds)?,
         };
         rgba_len(crop.width(), crop.height())?;
+        validate_prepared_text_capture_budget(
+            viewport.physical_width,
+            viewport.physical_height,
+            crop,
+            &scope,
+            &request.attachments,
+            PreparedTextCaptureBudget::STANDARD,
+        )?;
 
         Ok(Self {
             frame_width: viewport.physical_width,
@@ -359,7 +619,7 @@ impl CapturePlan {
         })
     }
 
-    fn derive(
+    fn begin_capture(
         &self,
         rendered_color: &[u8],
     ) -> Result<SharedFrameCapture, SharedOffscreenCaptureError> {
@@ -376,8 +636,41 @@ impl CapturePlan {
             .iter()
             .copied()
             .map(|attachment| {
-                self.derive_attachment(attachment, rendered_color)
-                    .map(|rgba| CapturedAttachment { attachment, rgba })
+                let mut rgba = vec![0; rgba_len(self.crop.width(), self.crop.height())?];
+                match (&self.scope, attachment) {
+                    (RasterScope::WholeFrame, CaptureAttachment::Color) => {
+                        copy_color_rect(
+                            &mut rgba,
+                            self.crop,
+                            rendered_color,
+                            self.frame_width,
+                            self.crop,
+                        );
+                    }
+                    (RasterScope::WholeFrame, CaptureAttachment::Mask) => {
+                        rgba.chunks_exact_mut(4)
+                            .for_each(|pixel| pixel.copy_from_slice(&[u8::MAX; 4]));
+                    }
+                    (RasterScope::Regions(regions), CaptureAttachment::Color) => {
+                        for region in regions {
+                            copy_color_rect(
+                                &mut rgba,
+                                self.crop,
+                                rendered_color,
+                                self.frame_width,
+                                region.rect,
+                            );
+                        }
+                    }
+                    (
+                        RasterScope::Regions(_),
+                        CaptureAttachment::ObjectId | CaptureAttachment::Mask,
+                    ) => {}
+                    (RasterScope::WholeFrame, CaptureAttachment::ObjectId) => {
+                        return Err(SharedOffscreenCaptureError::ObjectIdRequiresRegions);
+                    }
+                }
+                Ok(CapturedAttachment { attachment, rgba })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(SharedFrameCapture {
@@ -389,52 +682,235 @@ impl CapturePlan {
         })
     }
 
-    fn derive_attachment(
-        &self,
-        attachment: CaptureAttachment,
-        rendered_color: &[u8],
-    ) -> Result<Vec<u8>, SharedOffscreenCaptureError> {
-        let mut rgba = vec![0; rgba_len(self.crop.width(), self.crop.height())?];
-        match (&self.scope, attachment) {
-            (RasterScope::WholeFrame, CaptureAttachment::Color) => {
-                copy_color_rect(
-                    &mut rgba,
+    fn stamp_bounds_region(&self, capture: &mut SharedFrameCapture, region: &RasterRegion) {
+        for attachment in &mut capture.attachments {
+            match attachment.attachment {
+                CaptureAttachment::Color => {}
+                CaptureAttachment::ObjectId => fill_rect(
+                    &mut attachment.rgba,
                     self.crop,
-                    rendered_color,
-                    self.frame_width,
-                    self.crop,
-                );
-            }
-            (RasterScope::WholeFrame, CaptureAttachment::Mask) => {
-                rgba.chunks_exact_mut(4)
-                    .for_each(|pixel| pixel.copy_from_slice(&[u8::MAX; 4]));
-            }
-            (RasterScope::Regions(regions), CaptureAttachment::Color) => {
-                for region in regions {
-                    copy_color_rect(
-                        &mut rgba,
-                        self.crop,
-                        rendered_color,
-                        self.frame_width,
-                        region.rect,
-                    );
+                    region.rect,
+                    region.object_id_rgba,
+                ),
+                CaptureAttachment::Mask => {
+                    fill_rect(&mut attachment.rgba, self.crop, region.rect, [u8::MAX; 4]);
                 }
-            }
-            (RasterScope::Regions(regions), CaptureAttachment::ObjectId) => {
-                for region in regions {
-                    fill_rect(&mut rgba, self.crop, region.rect, region.object_id_rgba);
-                }
-            }
-            (RasterScope::Regions(regions), CaptureAttachment::Mask) => {
-                for region in regions {
-                    fill_rect(&mut rgba, self.crop, region.rect, [u8::MAX; 4]);
-                }
-            }
-            (RasterScope::WholeFrame, CaptureAttachment::ObjectId) => {
-                return Err(SharedOffscreenCaptureError::ObjectIdRequiresRegions);
             }
         }
-        Ok(rgba)
+    }
+
+    fn stamp_prepared_text_region(
+        &self,
+        capture: &mut SharedFrameCapture,
+        region_index: usize,
+        region: &RasterRegion,
+        coverage: &PreparedTextAlphaCoverage,
+    ) -> Result<(), SharedOffscreenCaptureError> {
+        self.validate_prepared_text_coverage(region_index, region, coverage)?;
+        for attachment in &mut capture.attachments {
+            let value = match attachment.attachment {
+                CaptureAttachment::Color => continue,
+                CaptureAttachment::ObjectId => region.object_id_rgba,
+                CaptureAttachment::Mask => [u8::MAX; 4],
+            };
+            stamp_alpha_coverage(
+                &mut attachment.rgba,
+                self.crop,
+                region.rect,
+                coverage,
+                value,
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn derive(
+        &self,
+        rendered_color: &[u8],
+        prepared_text_coverages: &[PreparedTextAlphaCoverage],
+    ) -> Result<SharedFrameCapture, SharedOffscreenCaptureError> {
+        self.validate_prepared_text_coverages(prepared_text_coverages)?;
+        let mut capture = self.begin_capture(rendered_color)?;
+        if let RasterScope::Regions(regions) = &self.scope {
+            for (region_index, region) in regions.iter().enumerate() {
+                match &region.coverage {
+                    RasterCoverage::Bounds => self.stamp_bounds_region(&mut capture, region),
+                    RasterCoverage::PreparedText(_) if self.needs_debug_coverage() => {
+                        let rect = intersect(region.rect, self.crop);
+                        if rect.is_empty() {
+                            continue;
+                        }
+                        self.stamp_prepared_text_region(
+                            &mut capture,
+                            region_index,
+                            region,
+                            Self::prepared_text_coverage(region_index, prepared_text_coverages)?,
+                        )?;
+                    }
+                    RasterCoverage::PreparedText(_) => {}
+                }
+            }
+        }
+        Ok(capture)
+    }
+
+    fn needs_debug_coverage(&self) -> bool {
+        self.attachments.iter().any(|attachment| {
+            matches!(
+                attachment,
+                CaptureAttachment::ObjectId | CaptureAttachment::Mask
+            )
+        })
+    }
+
+    #[cfg(test)]
+    fn needs_prepared_text_coverage(&self) -> bool {
+        self.needs_debug_coverage()
+            && self
+                .prepared_text_regions()
+                .any(|(region_index, _)| !self.prepared_text_region_rect(region_index).is_empty())
+    }
+
+    #[cfg(test)]
+    fn prepared_text_regions(&self) -> impl Iterator<Item = (usize, &PreparedTextSelection)> {
+        let regions = match &self.scope {
+            RasterScope::Regions(regions) => regions.as_slice(),
+            RasterScope::WholeFrame => &[],
+        };
+        regions
+            .iter()
+            .enumerate()
+            .filter_map(|(region_index, region)| match &region.coverage {
+                RasterCoverage::Bounds => None,
+                RasterCoverage::PreparedText(selection) => Some((region_index, selection)),
+            })
+    }
+
+    #[cfg(test)]
+    fn prepared_text_region_rect(&self, region_index: usize) -> PixelRect {
+        let RasterScope::Regions(regions) = &self.scope else {
+            return PixelRect::full(0, 0);
+        };
+        regions
+            .get(region_index)
+            .map_or(PixelRect::full(0, 0), |region| {
+                intersect(region.rect, self.crop)
+            })
+    }
+
+    fn validate_prepared_text_coverage(
+        &self,
+        region_index: usize,
+        region: &RasterRegion,
+        coverage: &PreparedTextAlphaCoverage,
+    ) -> Result<(), SharedOffscreenCaptureError> {
+        if coverage.region_index != region_index {
+            return Err(
+                SharedOffscreenCaptureError::UnexpectedPreparedTextCoverage {
+                    region_index: coverage.region_index,
+                },
+            );
+        }
+        let expected_rect = intersect(region.rect, self.crop);
+        if coverage.rect.left != expected_rect.left || coverage.rect.top != expected_rect.top {
+            return Err(
+                SharedOffscreenCaptureError::PreparedTextCoverageOriginMismatch {
+                    region_index,
+                    expected_x: expected_rect.left,
+                    expected_y: expected_rect.top,
+                    actual_x: coverage.rect.left,
+                    actual_y: coverage.rect.top,
+                },
+            );
+        }
+        if coverage.rect.width() != expected_rect.width()
+            || coverage.rect.height() != expected_rect.height()
+        {
+            return Err(
+                SharedOffscreenCaptureError::PreparedTextCoverageExtentMismatch {
+                    region_index,
+                    expected_width: expected_rect.width(),
+                    expected_height: expected_rect.height(),
+                    actual_width: coverage.rect.width(),
+                    actual_height: coverage.rect.height(),
+                },
+            );
+        }
+        let expected =
+            usize::try_from(u64::from(expected_rect.width()) * u64::from(expected_rect.height()))
+                .map_err(|_| SharedOffscreenCaptureError::CaptureExtentOverflow {
+                width: expected_rect.width(),
+                height: expected_rect.height(),
+            })?;
+        if coverage.alpha.len() != expected {
+            return Err(
+                SharedOffscreenCaptureError::PreparedTextCoverageSizeMismatch {
+                    region_index,
+                    expected,
+                    actual: coverage.alpha.len(),
+                },
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn validate_prepared_text_coverages(
+        &self,
+        coverages: &[PreparedTextAlphaCoverage],
+    ) -> Result<(), SharedOffscreenCaptureError> {
+        if !self.needs_prepared_text_coverage() {
+            if let Some(coverage) = coverages.first() {
+                return Err(
+                    SharedOffscreenCaptureError::UnexpectedPreparedTextCoverage {
+                        region_index: coverage.region_index,
+                    },
+                );
+            }
+            return Ok(());
+        }
+        let expected_regions = self
+            .prepared_text_regions()
+            .map(|(region_index, _)| region_index)
+            .filter(|region_index| !self.prepared_text_region_rect(*region_index).is_empty())
+            .collect::<HashSet<_>>();
+        let mut seen = HashSet::with_capacity(coverages.len());
+        for coverage in coverages {
+            let region_index = coverage.region_index;
+            if !expected_regions.contains(&region_index) {
+                return Err(
+                    SharedOffscreenCaptureError::UnexpectedPreparedTextCoverage { region_index },
+                );
+            }
+            if !seen.insert(region_index) {
+                return Err(SharedOffscreenCaptureError::DuplicatePreparedTextCoverage {
+                    region_index,
+                });
+            }
+            let RasterScope::Regions(regions) = &self.scope else {
+                unreachable!("prepared-text regions require a region scope");
+            };
+            self.validate_prepared_text_coverage(region_index, &regions[region_index], coverage)?;
+        }
+        if let Some((region_index, _)) = self.prepared_text_regions().find(|(region_index, _)| {
+            !self.prepared_text_region_rect(*region_index).is_empty()
+                && !seen.contains(region_index)
+        }) {
+            return Err(SharedOffscreenCaptureError::MissingPreparedTextCoverage { region_index });
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn prepared_text_coverage(
+        region_index: usize,
+        coverages: &[PreparedTextAlphaCoverage],
+    ) -> Result<&PreparedTextAlphaCoverage, SharedOffscreenCaptureError> {
+        coverages
+            .iter()
+            .find(|coverage| coverage.region_index == region_index)
+            .ok_or(SharedOffscreenCaptureError::MissingPreparedTextCoverage { region_index })
     }
 }
 
@@ -470,7 +946,7 @@ fn validate_attachments(
 }
 
 fn rasterize_regions(
-    viewport: RenderViewport,
+    frame: &PreparedFrame,
     regions: &[CaptureRegion],
     attachments: &[CaptureAttachment],
 ) -> Result<Vec<RasterRegion>, SharedOffscreenCaptureError> {
@@ -494,9 +970,10 @@ fn rasterize_regions(
                 });
             }
             if needs_object_id {
-                if region.object_id_rgba == [0; 4] {
-                    return Err(SharedOffscreenCaptureError::TransparentObjectId {
+                if region.object_id_rgba[3] != u8::MAX {
+                    return Err(SharedOffscreenCaptureError::NonOpaqueObjectId {
                         id: region.id.clone(),
+                        rgba: region.object_id_rgba,
                     });
                 }
                 if !object_ids.insert(region.object_id_rgba) {
@@ -505,12 +982,73 @@ fn rasterize_regions(
                     });
                 }
             }
+            let coverage = match &region.geometry {
+                CaptureRegionGeometry::Bounds => RasterCoverage::Bounds,
+                CaptureRegionGeometry::PreparedText(selection) => {
+                    let item = frame.text.get(selection.text()).ok_or_else(|| {
+                        SharedOffscreenCaptureError::MissingPreparedTextItem {
+                            id: region.id.clone(),
+                            text_index: selection.text().index(),
+                        }
+                    })?;
+                    if let Some(glyph_index) =
+                        selection
+                            .glyph_indices()
+                            .iter()
+                            .copied()
+                            .find(|glyph_index| {
+                                usize::try_from(*glyph_index)
+                                    .ok()
+                                    .is_none_or(|index| index >= item.glyphs.len())
+                            })
+                    {
+                        return Err(SharedOffscreenCaptureError::MissingPreparedTextGlyph {
+                            id: region.id.clone(),
+                            text_index: selection.text().index(),
+                            glyph_index,
+                            glyph_count: item.glyphs.len(),
+                        });
+                    }
+                    RasterCoverage::PreparedText(selection.clone())
+                }
+            };
             Ok(RasterRegion {
-                rect: physical_rect(viewport, region.bounds),
+                rect: physical_rect(frame.viewport, region.bounds),
                 object_id_rgba: region.object_id_rgba,
+                coverage,
             })
         })
         .collect()
+}
+
+fn prepared_text_coverage_frame(
+    frame: &PreparedFrame,
+    selection: &PreparedTextSelection,
+) -> PreparedFrame {
+    let mut attachment = frame.clone();
+    attachment.retain_prepared_text_coverage_paint(selection.text());
+    let text_ids = attachment
+        .text
+        .iter()
+        .map(|(text, _)| text)
+        .collect::<Vec<_>>();
+    for text in text_ids {
+        let Some(item) = attachment.text.get_mut(text) else {
+            continue;
+        };
+        for (index, paint) in item.paint.glyphs.iter_mut().enumerate() {
+            let selected = text == selection.text()
+                && u32::try_from(index)
+                    .ok()
+                    .is_some_and(|glyph| selection.glyph_indices().binary_search(&glyph).is_ok());
+            paint.visible &= selected;
+            if selected {
+                paint.color = TextColor::rgba(u8::MAX, u8::MAX, u8::MAX, u8::MAX);
+            }
+        }
+        item.interaction = arcweft_glyphon::TextInteractionPlan::default();
+    }
+    attachment
 }
 
 fn valid_region_bounds(bounds: HitRect) -> bool {
@@ -569,6 +1107,33 @@ fn copy_color_rect(
     }
 }
 
+fn stamp_alpha_coverage(
+    output: &mut [u8],
+    crop: PixelRect,
+    region: PixelRect,
+    coverage: &PreparedTextAlphaCoverage,
+    value: [u8; 4],
+) {
+    let clipped = intersect(intersect(crop, region), coverage.rect);
+    for y in clipped.top..clipped.bottom {
+        for x in clipped.left..clipped.right {
+            let source_index = usize::try_from(
+                u64::from(y - coverage.rect.top) * u64::from(coverage.rect.width())
+                    + u64::from(x - coverage.rect.left),
+            )
+            .expect("validated alpha extent fits usize");
+            let Some(alpha) = coverage.alpha.get(source_index) else {
+                continue;
+            };
+            if *alpha == 0 {
+                continue;
+            }
+            let output_index = pixel_index(x - crop.left, y - crop.top, crop.width());
+            output[output_index..output_index + 4].copy_from_slice(&value);
+        }
+    }
+}
+
 fn fill_rect(output: &mut [u8], crop: PixelRect, rect: PixelRect, value: [u8; 4]) {
     let clipped = intersect(rect, crop);
     for y in clipped.top..clipped.bottom {
@@ -601,418 +1166,5 @@ fn rgba_len(width: u32, height: u32) -> Result<usize, SharedOffscreenCaptureErro
         .ok_or(SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })
 }
 
-fn readback_texture_rgba(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    width: u32,
-    height: u32,
-) -> Result<Vec<u8>, SharedOffscreenCaptureError> {
-    let padded_row_bytes = padded_rgba_row_bytes(width)?;
-    let buffer_size = u64::from(padded_row_bytes)
-        .checked_mul(u64::from(height))
-        .ok_or(SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })?;
-    let readback = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("arcweft-shared-offscreen-readback"),
-        size: buffer_size,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("arcweft-shared-offscreen-readback-encoder"),
-    });
-    encoder.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(padded_row_bytes),
-                rows_per_image: Some(height),
-            },
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit(Some(encoder.finish()));
-
-    let slice = readback.slice(..);
-    let (sender, receiver) = mpsc::channel();
-    slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = sender.send(result.map_err(|error| error.to_string()));
-    });
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .map_err(|error| SharedOffscreenCaptureError::Readback(error.to_string()))?;
-    receiver
-        .recv()
-        .map_err(|error| SharedOffscreenCaptureError::Readback(error.to_string()))?
-        .map_err(SharedOffscreenCaptureError::Readback)?;
-
-    let mapped = slice.get_mapped_range();
-    let rgba = unpad_rgba_rows(&mapped, width, height, padded_row_bytes)?;
-    drop(mapped);
-    readback.unmap();
-    Ok(rgba)
-}
-
-fn padded_rgba_row_bytes(width: u32) -> Result<u32, SharedOffscreenCaptureError> {
-    let row_bytes = width
-        .checked_mul(4)
-        .ok_or(SharedOffscreenCaptureError::CaptureExtentOverflow { width, height: 1 })?;
-    row_bytes
-        .checked_add(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1)
-        .map(|aligned| {
-            aligned / wgpu::COPY_BYTES_PER_ROW_ALIGNMENT * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT
-        })
-        .ok_or(SharedOffscreenCaptureError::CaptureExtentOverflow { width, height: 1 })
-}
-
-fn unpad_rgba_rows(
-    mapped: &[u8],
-    width: u32,
-    height: u32,
-    padded_row_bytes: u32,
-) -> Result<Vec<u8>, SharedOffscreenCaptureError> {
-    let row_bytes = usize::try_from(
-        width
-            .checked_mul(4)
-            .ok_or(SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })?,
-    )
-    .map_err(|_| SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })?;
-    let padded = usize::try_from(padded_row_bytes)
-        .map_err(|_| SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })?;
-    let height_usize = usize::try_from(height)
-        .map_err(|_| SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })?;
-    let expected_mapped = padded
-        .checked_mul(height_usize)
-        .ok_or(SharedOffscreenCaptureError::CaptureExtentOverflow { width, height })?;
-    if mapped.len() < expected_mapped {
-        return Err(SharedOffscreenCaptureError::Readback(format!(
-            "mapped buffer has {} bytes; expected at least {expected_mapped}",
-            mapped.len()
-        )));
-    }
-    Ok(mapped
-        .chunks_exact(padded)
-        .take(height_usize)
-        .flat_map(|row| row[..row_bytes].iter().copied())
-        .collect())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::{
-        CaptureAttachment, CaptureCropPolicy, CapturePlan, CaptureRegion, CaptureRequest,
-        CaptureScope, SharedOffscreenCaptureError,
-    };
-    use crate::geometry::RenderViewport;
-    use arcweft_id::PublicId;
-    use arcweft_presentation::hit::HitRect;
-
-    fn viewport() -> RenderViewport {
-        RenderViewport {
-            logical_width: 4.0,
-            logical_height: 3.0,
-            physical_width: 4,
-            physical_height: 3,
-            scale_factor: 1.0,
-        }
-    }
-
-    fn region(id: &str, bounds: HitRect, object_id_rgba: [u8; 4]) -> CaptureRegion {
-        CaptureRegion::new(
-            PublicId::try_new(id).expect("test id is valid"),
-            bounds,
-            object_id_rgba,
-        )
-    }
-
-    fn rendered_color() -> Vec<u8> {
-        (0_u8..12)
-            .flat_map(|value| [value, value.wrapping_add(40), 100, u8::MAX])
-            .collect()
-    }
-
-    fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
-        let index = usize::try_from((u64::from(y) * u64::from(width) + u64::from(x)) * 4)
-            .expect("test extent fits usize");
-        rgba[index..index + 4].try_into().expect("one pixel")
-    }
-
-    #[test]
-    fn requested_attachment_order_is_preserved() {
-        let request = CaptureRequest::new(
-            [
-                CaptureAttachment::Mask,
-                CaptureAttachment::Color,
-                CaptureAttachment::ObjectId,
-            ],
-            CaptureScope::Regions(vec![region(
-                "capture.region",
-                HitRect::new(0.0, 0.0, 1.0, 1.0),
-                [1, 2, 3, u8::MAX],
-            )]),
-            CaptureCropPolicy::FullFrame,
-        );
-        let capture = CapturePlan::new(viewport(), &request)
-            .expect("request validates")
-            .derive(&rendered_color())
-            .expect("attachments derive");
-
-        assert_eq!(
-            capture
-                .attachments
-                .iter()
-                .map(|attachment| attachment.attachment)
-                .collect::<Vec<_>>(),
-            vec![
-                CaptureAttachment::Mask,
-                CaptureAttachment::Color,
-                CaptureAttachment::ObjectId,
-            ]
-        );
-    }
-
-    #[test]
-    fn later_region_wins_object_id_overlap() {
-        let first = [10, 20, 30, u8::MAX];
-        let second = [40, 50, 60, u8::MAX];
-        let request = CaptureRequest::new(
-            [CaptureAttachment::ObjectId],
-            CaptureScope::Regions(vec![
-                region("capture.first", HitRect::new(0.0, 0.0, 3.0, 2.0), first),
-                region("capture.second", HitRect::new(1.0, 1.0, 3.0, 2.0), second),
-            ]),
-            CaptureCropPolicy::FullFrame,
-        );
-        let capture = CapturePlan::new(viewport(), &request)
-            .expect("request validates")
-            .derive(&rendered_color())
-            .expect("object-id derives");
-        let object_id = capture
-            .attachment_rgba(CaptureAttachment::ObjectId)
-            .expect("object-id attachment exists");
-
-        assert_eq!(pixel(object_id, 4, 0, 0), first);
-        assert_eq!(pixel(object_id, 4, 1, 1), second);
-        assert_eq!(pixel(object_id, 4, 3, 2), second);
-        assert_eq!(pixel(object_id, 4, 3, 0), [0; 4]);
-    }
-
-    #[test]
-    fn scope_crop_reports_origin_and_preserves_transparent_gaps() {
-        let request = CaptureRequest::new(
-            [CaptureAttachment::Color, CaptureAttachment::Mask],
-            CaptureScope::Regions(vec![
-                region(
-                    "capture.left",
-                    HitRect::new(1.0, 1.0, 1.0, 1.0),
-                    [1, 0, 0, u8::MAX],
-                ),
-                region(
-                    "capture.right",
-                    HitRect::new(3.0, 2.0, 1.0, 1.0),
-                    [2, 0, 0, u8::MAX],
-                ),
-            ]),
-            CaptureCropPolicy::ScopeBounds,
-        );
-        let source = rendered_color();
-        let capture = CapturePlan::new(viewport(), &request)
-            .expect("request validates")
-            .derive(&source)
-            .expect("attachments derive");
-
-        assert_eq!((capture.origin_x, capture.origin_y), (1, 1));
-        assert_eq!((capture.width, capture.height), (3, 2));
-        let color = capture
-            .attachment_rgba(CaptureAttachment::Color)
-            .expect("color attachment exists");
-        let mask = capture
-            .attachment_rgba(CaptureAttachment::Mask)
-            .expect("mask attachment exists");
-        assert_eq!(pixel(color, 3, 0, 0), pixel(&source, 4, 1, 1));
-        assert_eq!(pixel(color, 3, 1, 0), [0; 4]);
-        assert_eq!(pixel(color, 3, 2, 1), pixel(&source, 4, 3, 2));
-        assert_eq!(pixel(mask, 3, 0, 0), [u8::MAX; 4]);
-        assert_eq!(pixel(mask, 3, 1, 0), [0; 4]);
-        assert_eq!(pixel(mask, 3, 2, 1), [u8::MAX; 4]);
-    }
-
-    #[test]
-    fn logical_regions_scale_to_physical_pixels() {
-        let scaled = RenderViewport {
-            physical_width: 8,
-            physical_height: 6,
-            scale_factor: 2.0,
-            ..viewport()
-        };
-        let request = CaptureRequest::new(
-            [CaptureAttachment::Mask],
-            CaptureScope::Regions(vec![region(
-                "capture.scaled",
-                HitRect::new(1.0, 1.0, 1.0, 1.0),
-                [1, 0, 0, u8::MAX],
-            )]),
-            CaptureCropPolicy::ScopeBounds,
-        );
-        let capture = CapturePlan::new(scaled, &request)
-            .expect("request validates")
-            .derive(&[0; 8 * 6 * 4])
-            .expect("mask derives");
-
-        assert_eq!((capture.origin_x, capture.origin_y), (2, 2));
-        assert_eq!((capture.width, capture.height), (2, 2));
-        assert!(
-            capture
-                .attachment_rgba(CaptureAttachment::Mask)
-                .expect("mask exists")
-                .chunks_exact(4)
-                .all(|pixel| pixel == [u8::MAX; 4])
-        );
-    }
-
-    #[test]
-    fn invalid_requests_fail_with_typed_errors() {
-        let empty = CaptureRequest::new([], CaptureScope::WholeFrame, CaptureCropPolicy::FullFrame);
-        assert!(matches!(
-            CapturePlan::new(viewport(), &empty),
-            Err(SharedOffscreenCaptureError::EmptyAttachments)
-        ));
-
-        let duplicate = CaptureRequest::new(
-            [CaptureAttachment::Color, CaptureAttachment::Color],
-            CaptureScope::WholeFrame,
-            CaptureCropPolicy::FullFrame,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &duplicate),
-            Err(SharedOffscreenCaptureError::DuplicateAttachment {
-                attachment: CaptureAttachment::Color
-            })
-        ));
-
-        let object_without_regions = CaptureRequest::new(
-            [CaptureAttachment::ObjectId],
-            CaptureScope::WholeFrame,
-            CaptureCropPolicy::FullFrame,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &object_without_regions),
-            Err(SharedOffscreenCaptureError::ObjectIdRequiresRegions)
-        ));
-
-        let invalid_bounds = CaptureRequest::new(
-            [CaptureAttachment::Mask],
-            CaptureScope::Regions(vec![region(
-                "capture.invalid",
-                HitRect::new(0.0, 0.0, f32::NAN, 1.0),
-                [1, 0, 0, u8::MAX],
-            )]),
-            CaptureCropPolicy::FullFrame,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &invalid_bounds),
-            Err(SharedOffscreenCaptureError::InvalidRegionBounds { .. })
-        ));
-
-        let outside = CaptureRequest::new(
-            [CaptureAttachment::Mask],
-            CaptureScope::Regions(vec![region(
-                "capture.outside",
-                HitRect::new(10.0, 10.0, 1.0, 1.0),
-                [1, 0, 0, u8::MAX],
-            )]),
-            CaptureCropPolicy::ScopeBounds,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &outside),
-            Err(SharedOffscreenCaptureError::EmptyScopeBounds)
-        ));
-    }
-
-    #[test]
-    fn object_id_contract_rejects_ambiguous_region_metadata() {
-        let transparent = CaptureRequest::new(
-            [CaptureAttachment::ObjectId],
-            CaptureScope::Regions(vec![region(
-                "capture.transparent",
-                HitRect::new(0.0, 0.0, 1.0, 1.0),
-                [0; 4],
-            )]),
-            CaptureCropPolicy::FullFrame,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &transparent),
-            Err(SharedOffscreenCaptureError::TransparentObjectId { .. })
-        ));
-
-        let duplicate_id = CaptureRequest::new(
-            [CaptureAttachment::Mask],
-            CaptureScope::Regions(vec![
-                region(
-                    "capture.duplicate",
-                    HitRect::new(0.0, 0.0, 1.0, 1.0),
-                    [1, 0, 0, u8::MAX],
-                ),
-                region(
-                    "capture.duplicate",
-                    HitRect::new(1.0, 1.0, 1.0, 1.0),
-                    [2, 0, 0, u8::MAX],
-                ),
-            ]),
-            CaptureCropPolicy::FullFrame,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &duplicate_id),
-            Err(SharedOffscreenCaptureError::DuplicateRegionId { .. })
-        ));
-
-        let duplicate_rgba = CaptureRequest::new(
-            [CaptureAttachment::ObjectId],
-            CaptureScope::Regions(vec![
-                region(
-                    "capture.first_rgba",
-                    HitRect::new(0.0, 0.0, 1.0, 1.0),
-                    [7, 8, 9, u8::MAX],
-                ),
-                region(
-                    "capture.second_rgba",
-                    HitRect::new(1.0, 1.0, 1.0, 1.0),
-                    [7, 8, 9, u8::MAX],
-                ),
-            ]),
-            CaptureCropPolicy::FullFrame,
-        );
-        assert!(matches!(
-            CapturePlan::new(viewport(), &duplicate_rgba),
-            Err(SharedOffscreenCaptureError::DuplicateObjectIdRgba {
-                rgba: [7, 8, 9, 255]
-            })
-        ));
-    }
-
-    #[test]
-    fn unsupported_target_format_fails_before_device_acquisition() {
-        let Err(error) = pollster::block_on(super::SharedOffscreenCapture::new(
-            wgpu::TextureFormat::Bgra8Unorm,
-        )) else {
-            panic!("BGRA bytes must not be exposed as the promised RGBA attachment");
-        };
-        assert!(matches!(
-            error,
-            SharedOffscreenCaptureError::UnsupportedTextureFormat {
-                format: wgpu::TextureFormat::Bgra8Unorm
-            }
-        ));
-    }
-}
+mod tests;

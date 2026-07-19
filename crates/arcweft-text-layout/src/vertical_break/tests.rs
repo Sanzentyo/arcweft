@@ -40,6 +40,32 @@ fn strictness_changes_closing_opening_paragraph_plan() {
 }
 
 #[test]
+fn balanced_v1_loose_and_normal_choose_distinct_uax_permitted_plans() {
+    let texts = [
+        "天", "地", "。", "」", "人", "山", "川", "海", "。", "『", "火", "水", "木",
+    ];
+    let uax_break_allowed_before = [
+        false, true, false, false, true, true, true, true, false, true, false, true, true,
+    ];
+    let clusters: [VerticalBreakCluster<'_>; 13] =
+        std::array::from_fn(|index| VerticalBreakCluster {
+            text: texts[index],
+            advance: if matches!(texts[index], "。" | "」" | "『") {
+                15.0
+            } else {
+                30.0
+            },
+            break_allowed_before: uax_break_allowed_before[index],
+        });
+
+    let loose = plan(&clusters, 0.0, 0.0, 125.6, JlreqStrictness::Loose);
+    let normal = plan(&clusters, 0.0, 0.0, 125.6, JlreqStrictness::Normal);
+
+    assert_eq!(loose.break_offsets(), &[5, 9]);
+    assert_eq!(normal.break_offsets(), &[4, 7, 11]);
+}
+
+#[test]
 fn uniform_scale_preserves_break_offsets() {
     let base = [
         cluster("春"),

@@ -273,6 +273,16 @@ pub struct ViewDefinitionResource {
     pub state_schema_hash: u64,
 }
 
+impl ViewDefinitionResource {
+    /// Whether this definition owns a parameter that accepts typed dialogue state.
+    #[must_use]
+    pub fn accepts_dialogue_input(&self) -> bool {
+        self.parameters
+            .iter()
+            .any(|parameter| parameter.role == ViewParameterRole::Dialogue)
+    }
+}
+
 impl Default for ViewProgramResource {
     fn default() -> Self {
         Self {

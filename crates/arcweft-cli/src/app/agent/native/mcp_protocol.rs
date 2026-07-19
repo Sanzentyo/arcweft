@@ -87,12 +87,12 @@ impl AgentPublishedResourceCache {
 
     pub(super) fn store(
         &mut self,
-        source_uri: &str,
+        source_uri: &AgentResourceUri,
         published: arcweft_agent_policy::PublishedAgentResource,
     ) -> arcweft_agent_policy::PublishedAgentResource {
-        self.remove_source_uri(source_uri);
-        let public_uri = published.resource().uri.clone();
-        for key in agent_published_resource_source_keys(source_uri) {
+        self.remove_source_uri(source_uri.as_str());
+        let public_uri = published.resource().uri.as_str().to_owned();
+        for key in agent_published_resource_source_keys(source_uri.as_str()) {
             self.public_uri_by_source_uri
                 .insert(key, public_uri.clone());
         }
@@ -100,7 +100,17 @@ impl AgentPublishedResourceCache {
         published
     }
 
-    pub(super) fn remove_source_uri(&mut self, source_uri: &str) {
+    pub(super) fn get_by_source_uri(
+        &self,
+        source_uri: &AgentResourceUri,
+    ) -> Option<&arcweft_agent_policy::PublishedAgentResource> {
+        agent_published_resource_source_keys(source_uri.as_str())
+            .into_iter()
+            .find_map(|key| self.public_uri_by_source_uri.get(&key))
+            .and_then(|public_uri| self.by_public_uri.get(public_uri))
+    }
+
+    fn remove_source_uri(&mut self, source_uri: &str) {
         for key in agent_published_resource_source_keys(source_uri) {
             if let Some(public_uri) = self.public_uri_by_source_uri.remove(&key) {
                 let still_referenced = self
@@ -526,16 +536,17 @@ pub(super) fn agent_mcp_call_session_info(
 ) -> Result<McpCallToolResult, String> {
     let capabilities = agent_mcp_session_capabilities();
     let info = if let Some(report) = state.report.clone() {
+        let latest_capture_source_uri =
+            agent_mcp_latest_capture_resource(state).map(|resource| resource.uri.clone());
         let resources = agent_mcp_current_resources(state)
             .map_err(|_| "failed to build Agent session resource list".to_owned())?;
         let published = agent_publish_resources_for_state(state, resources)?;
         let descriptors = list_resources_result(&published).resources;
-        let latest_capture = agent_mcp_latest_capture_resource(state).cloned();
-        let latest_capture_descriptor = latest_capture
-            .clone()
-            .and_then(|resource| agent_publish_resource_for_state(state, resource).ok())
+        let latest_capture = latest_capture_source_uri
             .as_ref()
-            .map(resource_descriptor);
+            .and_then(|uri| state.published_resources.get_by_source_uri(uri))
+            .cloned();
+        let latest_capture_descriptor = latest_capture.as_ref().map(resource_descriptor);
         serde_json::json!({
             "observed": true,
             "session_id": report.session_id,
@@ -557,8 +568,12 @@ pub(super) fn agent_mcp_call_session_info(
             "capture_resource_count": state.capture_resources.len(),
             "shared_capture_session_active": state.runtime.is_some(),
             "project": state.project_context.as_ref().map(AgentMcpProjectContext::to_json),
-            "latest_capture": latest_capture.as_ref().and_then(|resource| resource.image.as_ref()),
-            "latest_capture_uri": latest_capture.as_ref().map(|resource| resource.uri.as_str()),
+            "latest_capture": latest_capture
+                .as_ref()
+                .and_then(|published| published.resource().image.as_ref()),
+            "latest_capture_uri": latest_capture
+                .as_ref()
+                .map(|published| published.resource().uri.as_str()),
             "latest_capture_resource": latest_capture_descriptor,
             "trace_resource_count": state.trace_resources.len(),
         })
@@ -1542,6 +1557,10 @@ pub(super) fn agent_mcp_call_log_query(
     });
     agent_mcp_json_tool_result(&value, "logs")
 }
+
+#[cfg(test)]
+#[path = "mcp_protocol/latest_capture_tests.rs"]
+mod latest_capture_tests;
 
 #[cfg(test)]
 mod tests {

@@ -335,6 +335,16 @@ needs full end-to-end evidence:
 ```bash
 cargo test -p arcweft-cli --features native-capture --test check agent_mcp_stdio -- --ignored --nocapture
 cargo test -p arcweft-cli --features native-capture --test check agent_observe_writes_layer_png_and_object_raw_images -- --ignored --nocapture
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_object_frame_metadata
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_read_uri_preserves_animated_image_layer_frame_pixels
+cargo test -p arcweft-cli --features native-capture --test check agent_hit_test_capture_time_updates_unpinned_animated_image_frame_metadata
+cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_captures_clipped_animated_image_object
+cargo test -p arcweft-cli --features native-capture --test check text_combine_mask_raw_crop
+cargo test -p arcweft-cli --features native-capture --test check text_combine_object_id_raw_crop
+cargo test -p arcweft-cli --features native-capture --test check typewriter_text_combine_capture_time_controls_all_glyphs
+cargo test -p arcweft-cli --features native-capture --test check typewriter_text_combine_capture_time_controls_object_id
+cargo test -p arcweft-cli --features native-capture --test check typewriter_ruby_capture_time_controls_base_and_annotation
+cargo test -p arcweft-cli --features native-capture --test check typewriter_ruby_capture_time_controls_object_id
 cargo test -p arcweft-cli --features native-capture --test check agent_observe_native_renderer_matches_checked_in_imq_golden_fixture -- --ignored --nocapture
 ```
 
@@ -343,6 +353,7 @@ The equivalent Justfile targets are:
 ```bash
 just test-slow-mcp
 just test-slow-agent-observe
+just test-native-aux-capture
 just test-visual-golden
 just native-visual-artifacts
 just verify-vendor-glyphon
@@ -354,10 +365,11 @@ just verify-full
 ```
 
 Because Tier 2 still includes subprocess/GPU-facing MCP coverage, the broad
-Agent observe resource matrix, and an environment-sensitive visual golden, do
-not run it automatically for every small mainline cut point unless the changed
-code is in that risk area. The MCP stdio part alone is now short enough to run
-as the default validation for Agent MCP protocol, resource URI, capture
+Agent observe resource matrix, exact lower-native auxiliary attachment/reveal
+coverage, and an environment-sensitive visual golden, do not run it
+automatically for every small mainline cut point unless the changed code is in
+that risk area. The MCP stdio part alone is now short enough to run as the
+default validation for Agent MCP protocol, resource URI, capture
 resource lifetime, and native readback changes.
 
 Exact native visual golden status semantics are structured so CI can distinguish
@@ -408,6 +420,16 @@ Operational budget:
   adapter-facing GlyphArea contract changed.
 - Milestone or risky Agent/MCP/capture change: add the explicit Tier 2 target
   that matches the risk, or `just test-tier2` for an exhaustive slow pass.
+- A broad integration cut must run the exhaustive `just test-tier2` target
+  before completion when it spans multiple crates or materially changes a
+  public contract **and** also affects a runtime, render, Agent, MCP, or capture
+  path, even when MCP or capture is not the primary implementation area. An
+  isolated small public-API edit does not qualify on that fact alone. If the
+  slow harness is stale, update its expectations and canonically generated
+  fixtures to the current resource
+  URI, semantic identity, content-policy, and authored View geometry contracts.
+  Do not restore obsolete production behavior or add compatibility aliases to
+  make the old harness pass.
 - Deterministic visual smoke change: run `just test-visual-smoke`; add
   `just test-cli-native` when the native capture CLI surface also changed.
 - Milestone native visual handoff: run `just native-visual-artifacts` on a

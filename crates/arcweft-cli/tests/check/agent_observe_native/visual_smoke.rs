@@ -202,6 +202,8 @@ fn visual_smoke_source(label: &str) -> PathBuf {
     temp_arcw(
         label,
         r#"
+entry cli @entry.main { goto @flow.main }
+
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
@@ -225,6 +227,8 @@ fn visual_smoke_capture(
         .arg("agent")
         .arg("observe")
         .arg(source_path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--image")
         .arg(image_kind);

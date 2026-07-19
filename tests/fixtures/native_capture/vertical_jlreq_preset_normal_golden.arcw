@@ -13,7 +13,7 @@ entry cli @entry.vertical_jlreq_preset_normal_golden {
 
 flow @flow.vertical_jlreq_preset_normal_golden vertical_jlreq_preset_normal_golden {
     alice.say(id=@say.vertical_jlreq_preset_normal_golden.001, voice=auto)[
-        [.vertical_rl jlreq=normal][font "MS Mincho"]天地春夏秋冬月火……人[/font][/][p]
+        [.vertical_rl jlreq=normal][font "MS Mincho"]天地。」人山川海。『火水木[/font][/][p]
     ]
 
     return "vertical_jlreq_preset_normal_golden"

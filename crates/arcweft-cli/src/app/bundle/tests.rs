@@ -1495,12 +1495,12 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
 
     let line_id =
         RuntimeLineId::from_runtime_line_value("say.custom.dialogue").expect("runtime line id");
-    let display_frame = LineDisplaySpec {
+    let display_spec = LineDisplaySpec {
         line: line_id.clone(),
         callee: "character.hero".to_owned(),
         speaker_label: Some("Hero".to_owned()),
         text_key: None,
-        view: Some("view.StoryPanel".to_owned()),
+        view: arcweft_view::ViewId::try_new("view.StoryPanel").unwrap(),
         voice: None,
         look: None,
         style: None,
@@ -1511,13 +1511,17 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
         content: RichTextDocument::new(vec![RichTextNode::Text {
             text: "Custom runtime content".to_owned(),
         }]),
-    }
-    .resolve_frame(&arcweft_render_text::RuntimeLineContext::default())
-    .expect("display frame resolves");
+    };
+    let display_frame = display_spec
+        .clone()
+        .resolve_frame(&arcweft_render_text::RuntimeLineContext::default())
+        .expect("display frame resolves");
     let mut dialogue = DialoguePresentationStore::default();
     dialogue
         .apply_operations(&[DialoguePresentationOperation::append(
-            "view.StoryPanel",
+            arcweft_runtime_driver::dialogue::DialogueViewDefinition::new(
+                arcweft_view::ViewId::try_new("view.StoryPanel").unwrap(),
+            ),
             display_frame.clone(),
         )])
         .expect("dialogue appends");
@@ -1531,8 +1535,12 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .expect("custom dialogue View product validates");
-    let mut runtime = BundleViewRuntime::try_new(product, Some(text))
-        .expect("custom dialogue View runtime builds");
+    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
+        product,
+        Some(text),
+        &LineDisplayCatalog::new(vec![display_spec]),
+    )
+    .expect("custom dialogue View runtime builds");
     let frame = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
 
     assert!(frame.diagnostics.is_empty(), "{frame:#?}");
@@ -1906,7 +1914,7 @@ fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: Some("text.opening.dream".to_owned()),
-        view: None,
+        view: arcweft_bundle::standard_view::dialogue_view_id(),
         voice: None,
         look: None,
         style: None,

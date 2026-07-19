@@ -388,6 +388,87 @@ fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
 }
 
 #[test]
+fn stage_local_fx_time_reaches_dialogue_prepared_glyph_mask() {
+    let id = arcweft_presentation::fx::FxId::try_new("test", "dialogue.stage_time").expect("Fx id");
+    let coverage = FxSamplerProgram::validate(
+        ValueProgramSchema::new(Vec::new(), Vec::new(), FxRuntimeType::F32),
+        vec![
+            ValueInstruction::LoadContext {
+                slot: FxContextSlot::Time,
+            },
+            ValueInstruction::Return,
+        ],
+    )
+    .expect("stage-time coverage sampler");
+    let graph = FxGraph::try_new(vec![FxNode::Mask {
+        fx: id.clone(),
+        properties: vec![
+            FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
+            FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphMask)),
+            FxProperty::new("coverage", FxStaticValue::Sampler(coverage)),
+        ],
+    }])
+    .expect("typed mask graph");
+    let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
+    let application = FxApplication::try_new(id.clone(), Vec::new(), 0, None).expect("application");
+    let activation_logical_time = FxLogicalTime::zero()
+        .try_advance_millis(7_000)
+        .expect("activation time");
+    let instance = FxInstanceSnapshot {
+        instance: application.derive_instance_id(["dialogue", "stage-time"]),
+        definition: id,
+        abi_hash: definition.abi_hash(),
+        activation_logical_time,
+        deterministic_seed: 5,
+        parameters: Vec::new(),
+        child_path: FxGraphChildPath::default(),
+        provider_state: Vec::new(),
+    };
+    let frame = frame(vec![
+        RichTextNode::StyleStart {
+            style: RichTextStyle::Fx {
+                application: application.clone(),
+            },
+        },
+        RichTextNode::Text {
+            text: "時".to_owned(),
+        },
+        RichTextNode::StyleEnd {
+            name: "fx".to_owned(),
+        },
+    ]);
+    let at_stage_start = TestFxResolver {
+        definition: definition.clone(),
+        instance: instance.clone(),
+        runtime_time: activation_logical_time,
+    };
+    let after_one_second = TestFxResolver {
+        definition,
+        instance,
+        runtime_time: activation_logical_time
+            .try_advance_millis(1_000)
+            .expect("stage-local sample time"),
+    };
+
+    let (hidden, _, diagnostics) = prepare(&frame, 0, false, true, &at_stage_start);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let (visible, _, diagnostics) = prepare(&frame, 1_000, false, true, &after_one_second);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let hidden_coverage = hidden.paint.glyphs[0].masks[0]
+        .effective_coverage()
+        .value()
+        .get();
+    let visible_coverage = visible.paint.glyphs[0].masks[0]
+        .effective_coverage()
+        .value()
+        .get();
+    assert!(hidden_coverage.abs() <= f32::EPSILON);
+    assert!((visible_coverage - 1.0).abs() <= f32::EPSILON);
+    assert_eq!(hidden.layout.hash, visible.layout.hash);
+}
+
+#[test]
 fn missing_typed_shader_is_a_typed_diagnostic() {
     let id =
         arcweft_presentation::fx::FxId::try_new("test", "dialogue.missing_shader").expect("Fx id");
@@ -473,7 +554,8 @@ fn frame(nodes: Vec<RichTextNode>) -> arcweft_render_text::LineDisplayFrame {
         callee: "narrator".to_owned(),
         speaker_label: None,
         text_key: None,
-        view: None,
+        view: arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
+            .expect("standard dialogue View id"),
         voice: None,
         look: None,
         style: None,

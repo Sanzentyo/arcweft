@@ -350,6 +350,7 @@ dependencies = [
  "arcweft-layout",
  "arcweft-render-text",
  "base64",
+ "blake3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1181,6 +1182,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-presentation",
+ "arcweft-view",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -1317,6 +1319,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-source",
+ "arcweft-view",
  "blake3",
  "thiserror 2.0.18",
 ]

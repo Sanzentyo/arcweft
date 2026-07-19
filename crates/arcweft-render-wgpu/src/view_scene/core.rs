@@ -443,6 +443,37 @@ fn same_f32(left: f32, right: f32) -> bool {
     (left - right).abs() <= f32::EPSILON
 }
 
+fn retain_prepared_text_node(
+    node: &mut ViewPaintNode,
+    primitives: &[ViewPrimitive],
+    selected_text: PreparedTextId,
+) -> bool {
+    match node {
+        ViewPaintNode::Direct(context) => {
+            let Ok(start) = usize::try_from(context.primitive_range.start) else {
+                return false;
+            };
+            let Ok(end) = usize::try_from(context.primitive_range.end) else {
+                return false;
+            };
+            primitives.get(start..end).is_some_and(|range| {
+                range.iter().any(|primitive| {
+                    matches!(
+                        primitive,
+                        ViewPrimitive::Text(text) if text.text == selected_text
+                    )
+                })
+            })
+        }
+        ViewPaintNode::Group(group) => {
+            group
+                .children
+                .retain_mut(|child| retain_prepared_text_node(child, primitives, selected_text));
+            !group.children.is_empty()
+        }
+    }
+}
+
 impl ViewScene {
     pub fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
@@ -477,6 +508,29 @@ impl ViewScene {
 
     pub fn push_paint_node(&mut self, node: ViewPaintNode) {
         self.paint_nodes.push(node);
+    }
+
+    /// Preserves the selected text primitive and its compositor ancestry while
+    /// making every View-owned non-text primitive transparent for coverage
+    /// redraw. Unrelated groups are removed so their shadows, backdrops, masks,
+    /// and filters cannot contribute alpha to the selected glyph coverage.
+    pub(crate) fn retain_prepared_text_coverage_paint(&mut self, selected_text: PreparedTextId) {
+        for primitive in &mut self.primitives {
+            match primitive {
+                ViewPrimitive::SolidRect(rect) => rect.color.alpha = 0,
+                ViewPrimitive::RoundedRect(rect) => rect.color.alpha = 0,
+                ViewPrimitive::Border(border) => border.color.alpha = 0,
+                ViewPrimitive::LinearGradient(gradient) => {
+                    for stop in &mut gradient.stops {
+                        stop.color.alpha = 0;
+                    }
+                }
+                ViewPrimitive::Image(image) => image.opacity = 0.0,
+                ViewPrimitive::Text(_) => {}
+            }
+        }
+        self.paint_nodes
+            .retain_mut(|node| retain_prepared_text_node(node, &self.primitives, selected_text));
     }
 
     pub fn replace_paint_nodes(&mut self, paint_nodes: Vec<ViewPaintNode>) {
@@ -527,7 +581,10 @@ mod tests {
         ViewPrimitiveRange, ViewScene, ViewSceneContext, ViewSolidRect, ViewSurfaceBackground,
         ViewSurfaceBorder, ViewSurfacePaint, ViewTextPrimitive,
     };
-    use crate::view_scene::ViewPaintNode;
+    use crate::view_scene::{
+        ViewBoxShadow, ViewBoxShadowList, ViewCompositingEffects, ViewCompositingGroup,
+        ViewPaintNode,
+    };
     use arcweft_glyphon::PreparedTextId;
     use arcweft_presentation::hit::HitRect;
 
@@ -631,5 +688,67 @@ mod tests {
             scene.prepared_text_ids().collect::<Vec<_>>(),
             [first, second, first]
         );
+    }
+
+    #[test]
+    fn prepared_text_coverage_prunes_unrelated_compositing_effects() {
+        let selected = PreparedTextId::from_index(3);
+        let unrelated = PreparedTextId::from_index(7);
+        let mut scene = ViewScene::new(320.0, 180.0);
+        scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text: selected }));
+        scene.push_primitive(ViewPrimitive::Text(ViewTextPrimitive { text: unrelated }));
+
+        let selected_context = ViewPaintNode::Direct(ViewSceneContext {
+            transform: ViewAffine2D::IDENTITY,
+            opacity: 1.0,
+            clip: None,
+            primitive_range: ViewPrimitiveRange { start: 0, end: 1 },
+        });
+        let unrelated_context = ViewPaintNode::Direct(ViewSceneContext {
+            transform: ViewAffine2D::IDENTITY,
+            opacity: 1.0,
+            clip: None,
+            primitive_range: ViewPrimitiveRange { start: 1, end: 2 },
+        });
+        let unrelated_effects = ViewCompositingEffects {
+            box_shadows: ViewBoxShadowList::new([ViewBoxShadow::outer(
+                4.0,
+                4.0,
+                8.0,
+                0.0,
+                0.0,
+                ViewColorRgba8 {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    alpha: 255,
+                },
+            )]),
+            ..ViewCompositingEffects::default()
+        };
+        scene.push_paint_node(ViewPaintNode::Group(
+            ViewCompositingGroup::new(
+                HitRect::new(0.0, 0.0, 100.0, 40.0),
+                ViewCompositingEffects::default(),
+            )
+            .with_children(vec![
+                selected_context,
+                ViewPaintNode::Group(
+                    ViewCompositingGroup::new(
+                        HitRect::new(0.0, 40.0, 100.0, 40.0),
+                        unrelated_effects,
+                    )
+                    .with_children(vec![unrelated_context]),
+                ),
+            ]),
+        ));
+
+        scene.retain_prepared_text_coverage_paint(selected);
+
+        let [ViewPaintNode::Group(root)] = scene.paint_nodes() else {
+            panic!("selected text ancestry remains");
+        };
+        assert_eq!(root.children.len(), 1);
+        assert!(matches!(root.children[0], ViewPaintNode::Direct(_)));
     }
 }

@@ -6,9 +6,12 @@ This directory contains intentionally checked-in native-renderer image fixtures.
   `Tu` and `Tr` glyph forms (`。` and `ー`) plus mixed Latin and
   text-combine-upright digits.
 - `vertical_jlreq_preset_loose_golden.arcw` and
-  `vertical_jlreq_preset_normal_golden.arcw` exercise the same repeated-leader
-  paragraph with different JLREQ strictness presets, so visual regression can
-  catch preset-specific column-plan drift.
+  `vertical_jlreq_preset_normal_golden.arcw` exercise the same
+  `天地。」人山川海。『火水木` closing/opening composition with different JLREQ
+  strictness presets. UAX #14 hard constraints determine the permitted break
+  candidates before the `balanced_v1` preset preferences are applied; the
+  fixture includes permitted closing/opening opportunities at which `loose`
+  and `normal` must choose distinct column plans.
 - `vertical_lr_ruby_text_combine_golden.arcw` exercises `vertical_lr` rich text
   with a ruby annotation, a hard line break, sideways Latin, upright punctuation,
   and a 4-digit text-combine-upright cluster.
@@ -35,10 +38,10 @@ This directory contains intentionally checked-in native-renderer image fixtures.
 Regenerate the PNG on a Windows machine with stable native fonts:
 
 ```bash
-cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_tutr_golden.arcw --json --image png --out tests/fixtures/native_capture/vertical_tutr_golden.png --mode drain --steps 4 --max-ops 64
-cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw --json --image png --out tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png --mode drain --steps 4 --max-ops 64
-cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw --json --image png --out tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png --mode drain --steps 4 --max-ops 64
-cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw --json --image png --out tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png --mode drain --steps 4 --max-ops 64
+cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_tutr_golden.arcw --entry entry.vertical_tutr_golden --json --image png --out tests/fixtures/native_capture/vertical_tutr_golden.png --mode drain --steps 4 --max-ops 64
+cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.arcw --entry entry.vertical_jlreq_preset_loose_golden --json --image png --out tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png --mode drain --steps 4 --max-ops 64
+cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.arcw --entry entry.vertical_jlreq_preset_normal_golden --json --image png --out tests/fixtures/native_capture/vertical_jlreq_preset_normal_golden.png --mode drain --steps 4 --max-ops 64
+cargo run -p arcweft-cli -- agent observe tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.arcw --entry entry.vertical_lr_ruby_text_combine_golden --json --image png --out tests/fixtures/native_capture/vertical_lr_ruby_text_combine_golden.png --mode drain --steps 4 --max-ops 64
 ```
 
 The CLI `visual_smoke` tests are the default non-exact validation tier for this
@@ -50,7 +53,9 @@ against the checked-in PNGs with `imq` only when both Windows and the `imq`
 binary are available. A non-ignored CLI fixture-integrity test also checks that
 the checked-in sources keep the intended vertical coverage, that every PNG
 remains a 1280x720 Agent capture, and that the loose/normal preset PNGs are
-distinct. The goal-clear smoke fixture is validated by non-ignored CLI tests
+distinct, preserving evidence that the two presets choose different accepted
+plans without overriding UAX #14 prohibitions. The goal-clear smoke fixture is
+validated by non-ignored CLI tests
 that generate a temporary native PNG; color, mask, and object-id raw crops from
 the same text-combine/typewriter object; and mask / object-id raw crops from the
 vertical ruby objects on both physical sides.

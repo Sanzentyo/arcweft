@@ -1,6 +1,7 @@
 use crate::action::AgentActionTarget;
 use crate::diagnostic::AgentDiagnostic;
 use crate::geometry::AgentViewport;
+use crate::ids::AgentResourceUri;
 use crate::image::AgentImageResource;
 use crate::object::{AgentObservedLayer, AgentObservedObject, AgentObservedView};
 use crate::presentation::{AgentPresentationTree, AgentPresentationTreeQuery};
@@ -56,10 +57,10 @@ impl AgentObservationReport {
     /// Builds the MCP-style latest observation JSON resource.
     pub fn observation_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
-            uri: format!(
+            uri: resource_uri(format!(
                 "arcweft://session/{}/observation/latest.json",
                 self.session_id
-            ),
+            )),
             kind: AgentResourceKind::ObservationLatest,
             mime_type: "application/json".to_owned(),
             hash: self.state_hash.clone(),
@@ -71,10 +72,10 @@ impl AgentObservationReport {
     /// Builds the MCP-style observed objects JSON resource.
     pub fn objects_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
-            uri: format!(
+            uri: resource_uri(format!(
                 "arcweft://session/{}/frame/{}/objects.json",
                 self.session_id, self.tick
-            ),
+            )),
             kind: AgentResourceKind::Objects,
             mime_type: "application/json".to_owned(),
             hash: self.render_hash.clone(),
@@ -86,10 +87,10 @@ impl AgentObservationReport {
     /// Builds the MCP-style observed views JSON resource.
     pub fn views_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
-            uri: format!(
+            uri: resource_uri(format!(
                 "arcweft://session/{}/frame/{}/views.json",
                 self.session_id, self.tick
-            ),
+            )),
             kind: AgentResourceKind::Views,
             mime_type: "application/json".to_owned(),
             hash: self.render_hash.clone(),
@@ -101,10 +102,10 @@ impl AgentObservationReport {
     /// Builds the MCP-style presentation object tree JSON resource.
     pub fn presentation_tree_resource(&self) -> Result<AgentResource, serde_json::Error> {
         self.presentation_tree_resource_with_tree(
-            format!(
+            resource_uri(format!(
                 "arcweft://session/{}/frame/{}/presentation-tree.json",
                 self.session_id, self.tick
-            ),
+            )),
             &self.presentation_tree,
         )
     }
@@ -112,7 +113,7 @@ impl AgentObservationReport {
     /// Builds the MCP-style presentation object tree JSON resource with a typed filter.
     pub fn filtered_presentation_tree_resource(
         &self,
-        uri: String,
+        uri: AgentResourceUri,
         query: &AgentPresentationTreeQuery,
     ) -> Result<AgentResource, serde_json::Error> {
         let tree = self.presentation_tree.filtered(query);
@@ -121,7 +122,7 @@ impl AgentObservationReport {
 
     fn presentation_tree_resource_with_tree(
         &self,
-        uri: String,
+        uri: AgentResourceUri,
         tree: &AgentPresentationTree,
     ) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
@@ -137,10 +138,10 @@ impl AgentObservationReport {
     /// Builds the MCP-style overlay SVG resource when the observation embeds one.
     pub fn overlay_svg_resource(&self) -> Option<AgentResource> {
         self.overlay_svg.as_ref().map(|overlay| AgentResource {
-            uri: format!(
+            uri: resource_uri(format!(
                 "arcweft://session/{}/frame/{}/overlay.svg",
                 self.session_id, self.tick
-            ),
+            )),
             kind: AgentResourceKind::OverlaySvg,
             mime_type: "image/svg+xml".to_owned(),
             hash: self.render_hash.clone(),
@@ -152,7 +153,7 @@ impl AgentObservationReport {
     /// Builds an MCP-style image resource body for an image listed in this observation.
     pub fn image_resource(&self, image: &AgentImageResource, bytes: &[u8]) -> AgentResource {
         AgentResource {
-            uri: image.uri.clone(),
+            uri: resource_uri(image.uri.clone()),
             kind: AgentResourceKind::Image,
             mime_type: image.mime_type.clone(),
             hash: image.hash.clone(),
@@ -167,7 +168,10 @@ impl AgentObservationReport {
     /// Builds the MCP-style signals JSON resource.
     pub fn signals_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
-            uri: format!("arcweft://session/{}/signals.json", self.session_id),
+            uri: resource_uri(format!(
+                "arcweft://session/{}/signals.json",
+                self.session_id
+            )),
             kind: AgentResourceKind::Signals,
             mime_type: "application/json".to_owned(),
             hash: self.state_hash.clone(),
@@ -179,7 +183,7 @@ impl AgentObservationReport {
     /// Builds the MCP-style audio JSON resource.
     pub fn audio_resource(&self) -> Result<AgentResource, serde_json::Error> {
         Ok(AgentResource {
-            uri: format!("arcweft://session/{}/audio.json", self.session_id),
+            uri: resource_uri(format!("arcweft://session/{}/audio.json", self.session_id)),
             kind: AgentResourceKind::Audio,
             mime_type: "application/json".to_owned(),
             hash: self.state_hash.clone(),
@@ -200,7 +204,7 @@ impl AgentObservationReport {
             lines.push('\n');
         }
         Ok(AgentResource {
-            uri: format!("arcweft://session/{}/logs.ndjson", self.session_id),
+            uri: resource_uri(format!("arcweft://session/{}/logs.ndjson", self.session_id)),
             kind: AgentResourceKind::Logs,
             mime_type: "application/x-ndjson".to_owned(),
             hash: self.state_hash.clone(),
@@ -208,4 +212,8 @@ impl AgentObservationReport {
             body: AgentResourceBody::Text(lines),
         })
     }
+}
+
+fn resource_uri(value: String) -> AgentResourceUri {
+    AgentResourceUri::new(value).expect("generated observation resource URI is nonempty")
 }

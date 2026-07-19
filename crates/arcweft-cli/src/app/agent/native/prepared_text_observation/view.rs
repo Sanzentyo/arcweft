@@ -50,10 +50,7 @@ fn view_text_root(
     viewport: &AgentViewport,
 ) -> Option<AgentObservedObject> {
     let bbox = agent_bbox_from_hit_rect(owner.object_bounds, viewport)?;
-    let root_id = format!(
-        "object.text.{}",
-        agent_uri_component(owner.semantic_id.as_str())
-    );
+    let root_id = agent_view_prepared_text_root_id(owner)?;
     let parent_id = owner.parent_id.as_ref().map(ToString::to_string);
     let source = AgentCaptureSourceIdentity::Object {
         id: root_id.clone(),
@@ -75,9 +72,7 @@ fn view_text_root(
         enabled: true,
         bbox: bbox.clone(),
         polygon: bbox.polygon(),
-        capture_refs: agent_object_capture_refs_with_source(
-            "cli", step, &root_id, &bbox, 0, source,
-        ),
+        capture_refs: agent_object_capture_refs_with_source("cli", step, &root_id, &bbox, source),
         object_layer: None,
         object_depth: None,
         text: Some(item.interaction.text.clone()),
@@ -432,7 +427,7 @@ fn view_child_object(
         bbox: spec.bbox.clone(),
         polygon: spec.bbox.polygon(),
         capture_refs: agent_object_capture_refs_with_source(
-            "cli", step, &spec.id, &spec.bbox, 0, source,
+            "cli", step, &spec.id, &spec.bbox, source,
         ),
         object_layer: spec.reference.object_layer.clone(),
         object_depth: spec.reference.object_depth,
@@ -441,5 +436,44 @@ fn view_child_object(
         content: AgentObservedObjectContent::Custom {
             object_type: "prepared_text".to_owned(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn owner(semantic_id: &str, mount: u64) -> PreparedTextOwner {
+        PreparedTextOwner::new(
+            arcweft_render_wgpu::view_scene::PreparedTextId::from_index(0),
+            arcweft_id::PublicId::try_new(semantic_id).expect("test semantic id"),
+            PreparedTextOwnerKind::View { mount },
+            0,
+            HitRect::new(0.0, 0.0, 10.0, 10.0),
+        )
+    }
+
+    #[test]
+    fn prepared_view_text_root_identity_includes_mount_occurrence() {
+        let first = agent_view_prepared_text_root_id(&owner("view.shared.text", 17))
+            .expect("View owner has root");
+        let second = agent_view_prepared_text_root_id(&owner("view.shared.text", 18))
+            .expect("View owner has root");
+
+        assert_ne!(first, second);
+        assert!(first.ends_with(".mount.17"));
+        assert!(second.ends_with(".mount.18"));
+    }
+
+    #[test]
+    fn prepared_view_text_root_identity_encodes_semantic_ids_injectively() {
+        let slash =
+            agent_view_prepared_text_root_id(&owner("view/text", 17)).expect("View owner has root");
+        let underscore =
+            agent_view_prepared_text_root_id(&owner("view_text", 17)).expect("View owner has root");
+
+        assert_ne!(slash, underscore);
+        assert!(slash.contains("view%2Ftext"));
+        assert!(underscore.contains("view_text"));
     }
 }

@@ -3992,18 +3992,60 @@ fn observe_native_jlreq_preset_fixture(strictness: &str, label: &str) -> serde_j
     let path = temp_arcw(
         &format!("agent-observe-native-jlreq-{label}"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r##"
+entry cli @entry.main {{ goto @flow.main }}
+
+pub character @character.alice Alice as alice {{
+    default_voice = auto
+    dialogue_style {{
+        font = "MS Mincho"
+        text_color = "#d9f2ff"
+        text_size = 30
+    }}
+}}
 
 flow @flow.main main {{
-    alice: [.vertical_rl jlreq={strictness}]天地春夏秋冬月火……人[/][p]
+    alice: [.vertical_rl jlreq={strictness}][font "MS Mincho"]天地。」人山川海。『火水木[/font][/][p]
 }}
-"
+"##
         ),
     );
-    let json = observe_native_rich_text_layer_report(&path);
+    let entry =
+        EntryRuntimeId::from_source_entity_body("entry.main").expect("test entry ID is valid");
+    let json = observe_native_rich_text_layer_report_at_entry(&path, &entry);
     fs::remove_file(&path).expect("remove temp preset JLREQ source");
     json
+}
+
+fn rich_text_vertical_column_start_byte_offsets(report: &serde_json::Value) -> Vec<u64> {
+    let mut clusters = report["objects"]
+        .as_array()
+        .expect("objects are reported")
+        .iter()
+        .filter(|object| object["role"] == "rich_text_cluster")
+        .collect::<Vec<_>>();
+    clusters.sort_by_key(|object| {
+        object["rich_text_ref"]["range"]["start"]
+            .as_u64()
+            .expect("rich-text cluster source range start is reported")
+    });
+
+    let mut previous_column = None;
+    clusters
+        .into_iter()
+        .filter_map(|object| {
+            let column = agent_json_bbox_x(&object["bbox"]);
+            if previous_column.replace(column) == Some(column) {
+                None
+            } else {
+                Some(
+                    object["rich_text_ref"]["range"]["start"]
+                        .as_u64()
+                        .expect("rich-text cluster source range start is reported"),
+                )
+            }
+        })
+        .collect()
 }
 
 fn assert_native_jlreq_closing_opening_column_plan(
@@ -4174,4 +4216,3 @@ fn assert_native_strict_jlreq_closing_opening_geometry<'report>(
     );
     opening
 }
-

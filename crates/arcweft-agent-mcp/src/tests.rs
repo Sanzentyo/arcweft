@@ -1,12 +1,11 @@
 use crate::{
     model::{
-        AGENT_TRACE_MIME_TYPE, McpBlobResourceContents, McpContentBlock, McpResourceContents,
-        McpTextResourceContents, McpToolDescriptor,
+        McpBlobResourceContents, McpContentBlock, McpResourceContents, McpTextResourceContents,
+        McpToolDescriptor,
     },
     resources::{
         list_resource_templates_result, list_resources_result, read_resource_result,
         resource_descriptor, resource_link, tool_result_for_resource, tool_result_for_resources,
-        trace_resource,
     },
     tools::agent_tool_descriptors,
 };
@@ -16,14 +15,14 @@ use arcweft_agent_policy::{
 };
 use arcweft_agent_protocol::{
     geometry::AgentCoordinateSpace,
-    ids::{AgentRunId, SessionId, StableHash},
+    ids::{AgentResourceUri, AgentRunId, SessionId, StableHash},
     image::{
         AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
         AgentImageMetadata, AgentImageRenderer, AgentImageScope,
     },
     resource::{
-        AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
-        AgentResourceKind,
+        AGENT_TRACE_MIME_TYPE, AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource,
+        AgentResourceBody, AgentResourceKind, TraceResourceError, trace_resource,
     },
     trace::{AgentTraceKind, AgentTraceRecord},
 };
@@ -31,6 +30,10 @@ use arcweft_content_policy::{
     ClassificationReport, ClassifierIdentity, ClassifierRun, ContentClassifier,
     ContentPolicyEngine, PolicyInputRef, PolicyProfile,
 };
+
+fn resource_uri(value: &str) -> AgentResourceUri {
+    AgentResourceUri::new(value).expect("test resource URI is nonempty")
+}
 
 #[derive(Clone, Debug)]
 struct AllowAllClassifier;
@@ -140,7 +143,7 @@ fn tool_descriptors_include_script_run_surface() {
 #[test]
 fn image_agent_resource_maps_to_mcp_blob_and_image_tool_content() {
     let resource = AgentResource {
-        uri: "arcweft://session/cli/frame/0/layer.dialogue.png".to_owned(),
+        uri: resource_uri("arcweft://session/cli/frame/0/layer.dialogue.png"),
         kind: AgentResourceKind::Image,
         mime_type: "image/png".to_owned(),
         hash: "hash".to_owned(),
@@ -240,8 +243,9 @@ fn image_tool_content_preserves_object_rich_text_ref_metadata() {
         serde_json::from_value(proxy_object_image_metadata_fixture())
             .expect("object image metadata deserializes");
     let resource = AgentResource {
-        uri: "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba"
-            .to_owned(),
+        uri: resource_uri(
+            "arcweft://session/cli/frame/0/object.object.dialogue.0.0.proxy.0.0.mask.rgba",
+        ),
         kind: AgentResourceKind::Image,
         mime_type: "application/octet-stream".to_owned(),
         hash: "hash".to_owned(),
@@ -281,8 +285,9 @@ fn image_tool_content_preserves_image_object_frame_metadata() {
         serde_json::from_value(image_object_frame_metadata_fixture())
             .expect("image object frame metadata deserializes");
     let resource = AgentResource {
-        uri: "arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba"
-            .to_owned(),
+        uri: resource_uri(
+            "arcweft://session/cli/frame/0/object.object.image.layer.foreground.0.1.rgba",
+        ),
         kind: AgentResourceKind::Image,
         mime_type: "application/octet-stream".to_owned(),
         hash: "hash".to_owned(),
@@ -456,7 +461,7 @@ fn image_object_frame_metadata_fixture() -> serde_json::Value {
 fn resource_list_and_observe_tool_result_expose_resource_links() {
     let resources = vec![
         AgentResource {
-            uri: "arcweft://session/cli/observation/latest.json".to_owned(),
+            uri: resource_uri("arcweft://session/cli/observation/latest.json"),
             kind: AgentResourceKind::ObservationLatest,
             mime_type: "application/json".to_owned(),
             hash: "hash".to_owned(),
@@ -464,7 +469,7 @@ fn resource_list_and_observe_tool_result_expose_resource_links() {
             body: AgentResourceBody::Json(serde_json::json!({ "status": "ok" })),
         },
         AgentResource {
-            uri: "arcweft://session/cli/frame/0/layer.dialogue.object-id.png".to_owned(),
+            uri: resource_uri("arcweft://session/cli/frame/0/layer.dialogue.object-id.png"),
             kind: AgentResourceKind::Image,
             mime_type: "image/png".to_owned(),
             hash: "hash".to_owned(),
@@ -597,7 +602,7 @@ fn resource_templates_list_capture_uri_patterns() {
 }
 
 #[test]
-fn trace_resource_maps_to_mcp_text_resource_and_link() {
+fn same_run_trace_resource_maps_to_mcp_text_resource_and_link() {
     let records = trace_records_fixture();
     let resource = trace_resource(&records).expect("trace resource serializes");
     assert_eq!(resource.kind, AgentResourceKind::Trace);
@@ -609,7 +614,8 @@ fn trace_resource_maps_to_mcp_text_resource_and_link() {
     let read = read_resource_result(&resource).expect("trace resource reads");
     let tool = tool_result_for_resource(&resource).expect("trace tool result serializes");
 
-    assert!(has_extension(&list.resources[0].name, "json"));
+    assert_eq!(list.resources[0].uri, "arcweft://run/run.cli/trace.arcwx");
+    assert!(has_extension(&list.resources[0].name, "arcwx"));
     assert_eq!(list.resources[0].title.as_deref(), Some("Agent trace"));
     assert!(
         list.resources[0]
@@ -625,14 +631,46 @@ fn trace_resource_maps_to_mcp_text_resource_and_link() {
     assert!(matches!(
         tool.content.as_slice(),
         [McpContentBlock::Text { text }, McpContentBlock::Resource { resource: McpResourceContents::Text(McpTextResourceContents { uri, .. }) }]
-            if uri.starts_with("arcweft://moderated/") && text.contains("\"content_policy\"")
+            if uri == "arcweft://run/run.cli/trace.arcwx" && text.contains("\"content_policy\"")
     ));
+}
+
+#[test]
+fn empty_trace_resource_uses_the_canonical_unknown_run_identity() {
+    let resource = trace_resource(&[]).expect("empty trace resource serializes");
+
+    assert_eq!(resource.uri, "arcweft://run/run.unknown/trace.arcwx");
+    assert!(resource.has_canonical_public_uri());
+    assert_eq!(resource.hash, "trace:empty");
+    assert_eq!(
+        resource.body,
+        AgentResourceBody::Json(serde_json::json!([]))
+    );
+}
+
+#[test]
+fn mixed_run_trace_records_do_not_produce_a_resource() {
+    let mut records = trace_records_fixture();
+    records[1].run_id = AgentRunId::new("run.other").expect("test run id is canonical");
+
+    let result = trace_resource(&records);
+    let Err(TraceResourceError::MixedRun {
+        expected,
+        actual,
+        index,
+    }) = result
+    else {
+        panic!("mixed-run records must fail before producing a resource");
+    };
+    assert_eq!(expected.as_str(), "run.cli");
+    assert_eq!(actual.as_str(), "run.other");
+    assert_eq!(index, 1);
 }
 
 #[test]
 fn json_agent_resource_maps_to_mcp_text_resource() {
     let resource = AgentResource {
-        uri: "arcweft://session/cli/observation/latest.json".to_owned(),
+        uri: resource_uri("arcweft://session/cli/observation/latest.json"),
         kind: AgentResourceKind::ObservationLatest,
         mime_type: "application/json".to_owned(),
         hash: "hash".to_owned(),

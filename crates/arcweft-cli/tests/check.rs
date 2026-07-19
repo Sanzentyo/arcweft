@@ -46,12 +46,24 @@ fn workspace_path(path: &str) -> PathBuf {
 }
 
 fn run_agent_mcp_stdio(requests: &[serde_json::Value]) -> std::process::Output {
+    run_agent_mcp_stdio_with_options(requests, &[])
+}
+
+fn run_agent_mcp_stdio_local_dev(requests: &[serde_json::Value]) -> std::process::Output {
+    run_agent_mcp_stdio_with_options(requests, &["--content-policy-mode", "local-dev"])
+}
+
+fn run_agent_mcp_stdio_with_options(
+    requests: &[serde_json::Value],
+    options: &[&str],
+) -> std::process::Output {
     let _guard = AGENT_MCP_STDIO_LOCK
         .lock()
         .expect("agent MCP stdio tests serialize native subprocesses");
     let mut child = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("mcp")
+        .args(options)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

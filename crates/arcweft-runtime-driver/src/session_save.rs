@@ -18,7 +18,7 @@ pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 pub use arcweft_core::root::RootStateSnapshotV1;
 use arcweft_presentation::fx::FxDiagnostic;
-use arcweft_view::virtualization::ViewVirtualizationSnapshot;
+use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -99,6 +99,7 @@ pub struct BundleSessionExecutorSnapshot {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BundleSessionPendingBlocker {
+    TransientDialogueViewOwners { views: Vec<ViewId> },
     PendingPresentationInputs { count: usize },
     PendingInputEvents { count: usize },
     PendingTextControlWriteBacks { count: usize },
@@ -115,6 +116,7 @@ impl BundleSessionPendingBlocker {
     #[must_use]
     pub const fn category(&self) -> &'static str {
         match self {
+            Self::TransientDialogueViewOwners { .. } => "presentation",
             Self::ReducerTransactionActive
             | Self::PendingRootEvents { .. }
             | Self::PendingRootCommands { .. } => "root",
@@ -130,6 +132,13 @@ impl BundleSessionPendingBlocker {
 impl std::fmt::Display for BundleSessionPendingBlocker {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::TransientDialogueViewOwners { views } => {
+                write!(
+                    formatter,
+                    "{} transient dialogue View owners are active: {views:?}",
+                    views.len()
+                )
+            }
             Self::PendingPresentationInputs { count } => {
                 write!(formatter, "{count} pending presentation inputs")
             }

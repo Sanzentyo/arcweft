@@ -84,7 +84,7 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets_and_fx(
             .speaker_label_for_callee(character_callee)
             .map(str::to_owned),
         text_key: dialogue.text_key().map(|id| id.body().to_owned()),
-        view: effective_dialogue_view(dialogue, defaults, speaker_presets),
+        view: effective_dialogue_view(dialogue, defaults, speaker_presets)?,
         voice: dialogue.voice().map(expr_label),
         look: dialogue.look().map(expr_label),
         style: dialogue.style().map(expr_label),

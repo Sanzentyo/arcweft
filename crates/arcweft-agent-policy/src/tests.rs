@@ -1,17 +1,38 @@
 use crate::AgentContentPolicyGate;
+use arcweft_agent_protocol::ids::{AgentResourceUri, AgentRunId, SessionId, StableHash};
 use arcweft_agent_protocol::image::{
     AgentImageComposition, AgentImageKind, AgentImageMetadata, AgentImageRenderer, AgentImageScope,
 };
 use arcweft_agent_protocol::resource::{
     AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
-    AgentResourceKind,
+    AgentResourceKind, trace_resource,
 };
+use arcweft_agent_protocol::trace::{AgentTraceKind, AgentTraceRecord};
 use arcweft_content_policy::{
     ClassificationReport, ClassifierIdentity, ClassifierRun, Completeness, ContentClassifier,
     ContentPolicyEngine, FindingTarget, PixelRect, PolicyCategory, PolicyFinding, PolicyInputRef,
     PolicyProfile, RuleClassifier,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+fn resource_uri(value: &str) -> AgentResourceUri {
+    AgentResourceUri::new(value).expect("test resource URI is nonempty")
+}
+
+fn sealed_trace_resource(payload: serde_json::Value) -> AgentResource {
+    trace_resource(&[AgentTraceRecord {
+        schema_version: 1,
+        run_id: AgentRunId::new("run.policy").expect("test run ID is canonical"),
+        session_id: Some(SessionId::new("session.policy").expect("test session ID is nonempty")),
+        sequence: 0,
+        tick: None,
+        kind: AgentTraceKind::DiagnosticEmitted,
+        payload_hash: StableHash::new("blake3:test-payload").expect("test hash is nonempty"),
+        payload,
+        blob_refs: Vec::new(),
+    }])
+    .expect("same-run typed trace resource serializes")
+}
 
 #[derive(Clone, Debug)]
 struct RedClassifier;
@@ -54,7 +75,7 @@ impl ContentClassifier for RedClassifier {
 
 fn raw_rgba_resource(kind: AgentImageKind, pixels: Vec<u8>) -> AgentResource {
     AgentResource {
-        uri: "arcweft://session/test/frame/0/color.rgba".to_owned(),
+        uri: resource_uri("arcweft://session/test/frame/0/color.rgba"),
         kind: AgentResourceKind::Image,
         mime_type: "application/octet-stream".to_owned(),
         hash: "raw".to_owned(),
@@ -220,7 +241,7 @@ fn json_string_values_are_redacted() {
         PolicyProfile::strict_default(),
     ));
     let resource = AgentResource {
-        uri: "arcweft://session/test/observation/latest.json".to_owned(),
+        uri: resource_uri("arcweft://session/test/observation/latest.json"),
         kind: AgentResourceKind::ObservationLatest,
         mime_type: "application/json".to_owned(),
         hash: "raw".to_owned(),
@@ -236,6 +257,103 @@ fn json_string_values_are_redacted() {
         panic!("JSON remains JSON");
     };
     assert_eq!(value["message"], "公開 / [REDACTED] / 公開");
+}
+
+#[test]
+fn allowed_trace_retains_its_canonical_public_uri() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RuleClassifier::strict_builtin(),
+        PolicyProfile::strict_default(),
+    ));
+    let resource = sealed_trace_resource(serde_json::json!({ "status": "ok" }));
+    let canonical_uri = resource.uri.clone();
+
+    let published = gate.publish(resource).expect("trace publication succeeds");
+
+    assert_eq!(
+        published.policy().disposition,
+        arcweft_content_policy::PolicyDisposition::Allow
+    );
+    assert!(!published.policy().sanitized);
+    assert!(published.policy().reason_codes.is_empty());
+    assert_eq!(published.resource().uri, canonical_uri);
+}
+
+#[test]
+fn sanitized_trace_receives_a_moderated_uri() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RuleClassifier::strict_builtin(),
+        PolicyProfile::strict_default(),
+    ));
+    let resource = sealed_trace_resource(serde_json::json!({ "message": "社外秘" }));
+    let canonical_uri = resource.uri.clone();
+
+    let published = gate.publish(resource).expect("trace publication succeeds");
+
+    assert_eq!(
+        published.policy().disposition,
+        arcweft_content_policy::PolicyDisposition::Sanitize
+    );
+    assert!(published.policy().sanitized);
+    assert!(published.resource().uri.starts_with("arcweft://moderated/"));
+    assert_ne!(published.resource().uri, canonical_uri);
+}
+
+#[test]
+fn canonical_trace_spelling_without_a_seal_receives_a_moderated_uri() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RuleClassifier::strict_builtin(),
+        PolicyProfile::strict_default(),
+    ));
+    let forged = AgentResource {
+        uri: resource_uri("arcweft://run/run.policy/trace.arcwx"),
+        kind: AgentResourceKind::Trace,
+        mime_type: "application/vnd.arcweft.agent-trace+json".to_owned(),
+        hash: "forged".to_owned(),
+        image: None,
+        body: AgentResourceBody::Json(serde_json::json!([])),
+    };
+
+    assert!(!forged.has_canonical_public_uri());
+    let published = gate.publish(forged).expect("trace publication succeeds");
+    assert!(published.resource().uri.starts_with("arcweft://moderated/"));
+}
+
+#[test]
+fn trace_wire_round_trip_drops_canonical_publication_authority() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RuleClassifier::strict_builtin(),
+        PolicyProfile::strict_default(),
+    ));
+    let sealed = sealed_trace_resource(serde_json::json!({ "status": "ok" }));
+    assert!(sealed.has_canonical_public_uri());
+    let encoded = serde_json::to_vec(&sealed).expect("trace resource serializes");
+    let decoded: AgentResource =
+        serde_json::from_slice(&encoded).expect("trace resource deserializes");
+
+    assert_eq!(decoded.uri, sealed.uri);
+    assert!(!decoded.has_canonical_public_uri());
+    let published = gate.publish(decoded).expect("trace publication succeeds");
+    assert!(published.resource().uri.starts_with("arcweft://moderated/"));
+}
+
+#[test]
+fn mutated_trace_body_cannot_reuse_a_canonical_public_uri() {
+    let gate = AgentContentPolicyGate::new(ContentPolicyEngine::new(
+        RuleClassifier::strict_builtin(),
+        PolicyProfile::strict_default(),
+    ));
+    let mut forged = sealed_trace_resource(serde_json::json!({ "status": "ok" }));
+    let canonical_uri = forged.uri.clone();
+    forged.body = AgentResourceBody::Json(serde_json::json!([{
+        "run_id": "run.other",
+        "payload": { "status": "forged" }
+    }]));
+
+    assert!(!forged.has_canonical_public_uri());
+    let published = gate.publish(forged).expect("trace publication succeeds");
+    assert_ne!(published.resource().uri, canonical_uri);
+    assert!(published.resource().uri.starts_with("arcweft://moderated/"));
 }
 
 #[test]

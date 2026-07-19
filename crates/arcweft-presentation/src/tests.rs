@@ -87,6 +87,30 @@ fn handles_share_scope_lifetime_and_default_slots() {
 }
 
 #[test]
+fn background_slot_addresses_have_stable_injective_image_owners() {
+    let default = BackgroundSlotAddress::default_scene();
+    assert_eq!(default.image_id().as_str(), "image.background.default");
+
+    let explicit_target = BackgroundSlotAddress::try_new(
+        PresentationTarget::try_new("target.scene.reflection").unwrap(),
+        PresentationSlot::default_background(),
+    )
+    .unwrap();
+    let separator_in_slot = BackgroundSlotAddress::try_new(
+        PresentationTarget::scene(),
+        PresentationSlot::try_new("slot.background.default.target.scene.reflection").unwrap(),
+    )
+    .unwrap();
+
+    assert_ne!(explicit_target, separator_in_slot);
+    assert_ne!(
+        explicit_target.image_id(),
+        separator_in_slot.image_id(),
+        "different target/slot pairs must never alias through separator text"
+    );
+}
+
+#[test]
 fn slot_value_behaves_like_static_option() {
     let mut slot = SlotValue::empty(
         PresentationTarget::scene(),

@@ -1,10 +1,14 @@
 use super::paged_fixture_bundle;
+use arcweft_bundle::resource_codec::view::{
+    ViewDefinitionRef, ViewDefinitionResource, ViewInstructionSpan, ViewParameterResource,
+    ViewParameterRole, ViewProgramResource,
+};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::{BundleSessionSaveError, BundleSessionSnapshot};
 use arcweft_runtime_driver::view_runtime::BundleViewMountOutput;
-use arcweft_view::{ViewInheritedBoxAxes, ViewMountId};
+use arcweft_view::{ViewInheritedBoxAxes, ViewMountId, ViewProgramId};
 
 fn append_orphan_dialogue_mount(
     snapshot: &mut BundleSessionSnapshot,
@@ -163,5 +167,60 @@ fn restore_requires_exact_store_mount_and_output_correspondence() {
         &before,
         missing_retained_mount,
         "has no retained mount",
+    );
+}
+
+#[test]
+fn restore_rejects_catalog_valid_dialogue_owner_not_authorized_by_the_bundle() {
+    const OTHER_DIALOGUE: &str = "view.OtherDialogue";
+    let bundle = paged_fixture_bundle()
+        .with_view_resources(
+            Some(ViewProgramResource {
+                program_id: ViewProgramId::try_new("view.program.restore-authorization").unwrap(),
+                definitions: vec![ViewDefinitionResource {
+                    public_id: ViewDefinitionRef::try_new(OTHER_DIALOGUE).unwrap(),
+                    body: ViewInstructionSpan::new(0, 0),
+                    styles: Vec::new(),
+                    parameters: vec![ViewParameterResource {
+                        ordinal: 0,
+                        name: "dialogue".to_owned(),
+                        role: ViewParameterRole::Dialogue,
+                        value_type: None,
+                        value_slot: None,
+                        default_program: None,
+                    }],
+                    state_schema_hash: 1,
+                }],
+                ..ViewProgramResource::default()
+            }),
+            None,
+        )
+        .expect("second dialogue-capable View joins the accepted catalog");
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let mut value = serde_json::to_value(&before).expect("snapshot encodes");
+    *value
+        .pointer_mut("/presentation/dialogue/presentations/0/view")
+        .expect("dialogue View owner is serialized") = serde_json::json!(OTHER_DIALOGUE);
+    let definitions = value
+        .pointer_mut("/presentation/dialogue/definitions")
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("dialogue definition index is serialized");
+    let presentation = definitions
+        .remove(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID)
+        .expect("standard dialogue owner is indexed");
+    definitions.insert(OTHER_DIALOGUE.to_owned(), presentation);
+    let tampered = serde_json::from_value(value).expect("typed tamper remains internally coherent");
+
+    assert_tamper_is_rejected_atomically(
+        &mut session,
+        &before,
+        tampered,
+        "unauthorized View definition",
     );
 }

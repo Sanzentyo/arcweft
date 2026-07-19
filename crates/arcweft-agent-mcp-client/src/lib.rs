@@ -13,6 +13,7 @@ use arcweft_agent_mcp::model::{
     McpToolDescriptor,
 };
 use arcweft_agent_protocol::{
+    ids::AgentResourceUri,
     protocol::{
         ActionResult, AgentAction, AgentSessionInfo, CaptureRequest, CaptureResult,
         ObservationEnvelope, ObserveRequest,
@@ -275,8 +276,13 @@ fn decode_agent_resource(
             if let Ok(resource) = serde_json::from_str::<AgentResource>(&text.text) {
                 return Ok(resource);
             }
+            let resource_uri =
+                AgentResourceUri::new(text.uri).map_err(|error| McpAgentSessionError::Decode {
+                    operation: "resources/read",
+                    message: format!("resource URI is invalid: {error}"),
+                })?;
             Ok(AgentResource {
-                uri: text.uri,
+                uri: resource_uri,
                 kind: AgentResourceKind::ObservationLatest,
                 mime_type: text
                     .mime_type
@@ -286,21 +292,28 @@ fn decode_agent_resource(
                 body: AgentResourceBody::Text(text.text),
             })
         }
-        McpResourceContents::Blob(blob) => Ok(AgentResource {
-            uri: blob.uri,
-            kind: AgentResourceKind::Image,
-            mime_type: blob
-                .mime_type
-                .unwrap_or_else(|| "application/octet-stream".to_owned()),
-            hash: format!("mcp-resource:{uri}"),
-            image: None,
-            body: AgentResourceBody::BytesBase64(
-                arcweft_agent_protocol::resource::AgentBinaryResourceBody {
-                    encoding: arcweft_agent_protocol::resource::AgentBinaryEncoding::Base64,
-                    data: blob.blob,
-                },
-            ),
-        }),
+        McpResourceContents::Blob(blob) => {
+            let resource_uri =
+                AgentResourceUri::new(blob.uri).map_err(|error| McpAgentSessionError::Decode {
+                    operation: "resources/read",
+                    message: format!("resource URI is invalid: {error}"),
+                })?;
+            Ok(AgentResource {
+                uri: resource_uri,
+                kind: AgentResourceKind::Image,
+                mime_type: blob
+                    .mime_type
+                    .unwrap_or_else(|| "application/octet-stream".to_owned()),
+                hash: format!("mcp-resource:{uri}"),
+                image: None,
+                body: AgentResourceBody::BytesBase64(
+                    arcweft_agent_protocol::resource::AgentBinaryResourceBody {
+                        encoding: arcweft_agent_protocol::resource::AgentBinaryEncoding::Base64,
+                        data: blob.blob,
+                    },
+                ),
+            })
+        }
     }
 }
 

@@ -8,8 +8,8 @@ use arcweft_render_text::{
 };
 use arcweft_text_layout::{
     FontFaceId, FontInventoryHash, LayoutPoint, LayoutRect, LayoutSize, ShapedGlyphKey,
-    ShapedTextGlyph, ShapedTextRun, TextLayoutError, TextLayoutRequest, TextShapeRequest,
-    TextShaper, layout_document,
+    ShapedTextGlyph, ShapedTextRun, TextLayout, TextLayoutError, TextLayoutRequest,
+    TextShapeRequest, TextShaper, layout_document,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -485,6 +485,50 @@ fn authored_jlreq_strictness_changes_the_shaped_vertical_column_plan() {
 }
 
 #[test]
+fn balanced_v1_authored_loose_and_normal_presets_choose_accepted_column_groups() {
+    let text = "天地。」人山川海。『火水木";
+    let vertical = style().with_flow(
+        RichTextWritingMode::VerticalRl,
+        RichTextInlineDirection::Auto,
+    );
+    let with_strictness = |strictness| {
+        document_with_presentation(
+            text,
+            vertical.clone(),
+            RichTextPresentation {
+                layout: Some(RichTextLayout {
+                    writing_mode: RichTextWritingMode::VerticalRl,
+                    jlreq_strictness: strictness,
+                    ..RichTextLayout::default()
+                }),
+                ..RichTextPresentation::default()
+            },
+            Vec::new(),
+            14,
+        )
+    };
+    let request = TextLayoutRequest {
+        size: LayoutSize::new(180.0, 83.733_33),
+        ..request()
+    };
+    let loose = layout_document(
+        &with_strictness(RichTextJlreqStrictness::Loose),
+        request,
+        &mut MockShaper::new(b"font"),
+    )
+    .expect("loose layout succeeds");
+    let normal = layout_document(
+        &with_strictness(RichTextJlreqStrictness::Normal),
+        request,
+        &mut MockShaper::new(b"font"),
+    )
+    .expect("normal layout succeeds");
+
+    assert_eq!(vertical_column_start_offsets(&loose), vec![0, 15, 27]);
+    assert_eq!(vertical_column_start_offsets(&normal), vec![0, 12, 21, 33]);
+}
+
+#[test]
 fn vertical_column_plan_is_independent_of_paint_run_boundaries() {
     let text = "縦夢へ2026XYZ。";
     let vertical = style().with_flow(
@@ -551,4 +595,17 @@ fn vertical_column_plan_is_independent_of_paint_run_boundaries() {
             .map(|glyph| (glyph.source_range, glyph.line_index, glyph.layout_bounds))
             .collect::<Vec<_>>()
     );
+}
+
+fn vertical_column_start_offsets(layout: &TextLayout) -> Vec<usize> {
+    let mut previous_line = None;
+    layout
+        .glyphs
+        .iter()
+        .filter_map(|glyph| {
+            let starts_column = previous_line != Some(glyph.line_index);
+            previous_line = Some(glyph.line_index);
+            starts_column.then_some(glyph.source_range.start)
+        })
+        .collect()
 }

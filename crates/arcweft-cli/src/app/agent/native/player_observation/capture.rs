@@ -2,12 +2,59 @@
 
 use super::{
     AgentImageFrameStore, AgentObservedObject, ExitCode, HitRect, NativeAgentRuntimeState,
-    PlayerPreparedFrame, PreparedFrame, agent_object_id_color,
+    PlayerPreparedFrame, PreparedFrame, agent_object_id_color, agent_view_prepared_text_root_id,
 };
+use arcweft_agent_protocol::rich_text::{AgentRichTextElementKind, AgentRichTextElementRef};
+use arcweft_glyphon::{PreparedGlyph, PreparedGlyphSource, PreparedTextItem};
+use arcweft_render_text::RichTextRange;
+use arcweft_render_wgpu::geometry::PreparedTextOwner;
 use arcweft_render_wgpu::offscreen::{
     CaptureAttachment, CaptureCropPolicy, CaptureRegion, CaptureRequest, CaptureScope,
+    PreparedTextSelection, PreparedTextSelectionError,
 };
 use num_traits::ToPrimitive;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+enum PlayerTextCaptureSelectionError {
+    #[error("rich-text object `{object_id}` has no matching prepared-text owner")]
+    MissingOwner { object_id: String },
+    #[error("rich-text object `{object_id}` matches {owner_count} prepared-text owners")]
+    AmbiguousOwner {
+        object_id: String,
+        owner_count: usize,
+    },
+    #[error("rich-text object `{object_id}` references missing prepared-text item {text_index}")]
+    MissingPreparedTextItem { object_id: String, text_index: u32 },
+    #[error(
+        "rich-text object `{object_id}` range {start}..{end} precedes owner origin {source_origin}"
+    )]
+    RangeBeforeOwner {
+        object_id: String,
+        start: usize,
+        end: usize,
+        source_origin: usize,
+    },
+    #[error("rich-text object `{object_id}` has invalid range {start}..{end}")]
+    InvalidRange {
+        object_id: String,
+        start: usize,
+        end: usize,
+    },
+    #[error("rich-text object `{object_id}` resolves to no prepared glyphs")]
+    NoPreparedGlyphs { object_id: String },
+    #[error("rich-text object `{object_id}` prepared glyph index {glyph_index} exceeds u32")]
+    GlyphIndexOverflow {
+        object_id: String,
+        glyph_index: usize,
+    },
+    #[error("rich-text object `{object_id}` has an invalid prepared glyph selection: {source}")]
+    InvalidSelection {
+        object_id: String,
+        #[source]
+        source: PreparedTextSelectionError,
+    },
+}
 
 pub(super) fn capture_player_observation_frame(
     runtime: &mut NativeAgentRuntimeState,
@@ -57,44 +104,220 @@ fn player_capture_regions(
     let mut ordered = objects
         .iter()
         .enumerate()
-        .filter(|(_, object)| object.visible && player_object_has_capture_region(prepared, object))
+        .filter(|(_, object)| object.visible)
         .collect::<Vec<_>>();
     ordered.sort_by_key(|(source_index, object)| {
         player_capture_region_order(prepared, object, *source_index)
     });
     ordered
         .into_iter()
-        .map(|(_, object)| {
-            let id = arcweft_id::PublicId::try_new(&object.id).map_err(|error| {
-                eprintln!(
-                    "error: observed object id `{}` cannot identify a capture region: {error}",
-                    object.id
-                );
-                ExitCode::FAILURE
-            })?;
-            let x = object.bbox.x.to_f32().ok_or_else(|| {
-                eprintln!("error: capture region x coordinate is not representable as f32");
-                ExitCode::FAILURE
-            })?;
-            let y = object.bbox.y.to_f32().ok_or_else(|| {
-                eprintln!("error: capture region y coordinate is not representable as f32");
-                ExitCode::FAILURE
-            })?;
-            let width = object.bbox.width.to_f32().ok_or_else(|| {
-                eprintln!("error: capture region width is not representable as f32");
-                ExitCode::FAILURE
-            })?;
-            let height = object.bbox.height.to_f32().ok_or_else(|| {
-                eprintln!("error: capture region height is not representable as f32");
-                ExitCode::FAILURE
-            })?;
-            Ok(CaptureRegion::new(
-                id,
-                HitRect::new(x, y, width, height),
-                agent_object_id_color(&object.id),
-            ))
+        .map(|(_, object)| player_capture_region(prepared, object))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|regions| regions.into_iter().flatten().collect())
+}
+
+fn player_capture_region(
+    prepared: &PreparedFrame,
+    object: &AgentObservedObject,
+) -> Result<Option<CaptureRegion>, ExitCode> {
+    let prepared_text = match player_prepared_text_capture_selection(prepared, object) {
+        Ok(selection) => selection,
+        Err(error) => {
+            eprintln!("error: player capture selection failed: {error}");
+            return Err(ExitCode::FAILURE);
+        }
+    };
+    if object.rich_text_ref.is_some() && prepared_text.is_none() {
+        return Ok(None);
+    }
+    if object.rich_text_ref.is_some()
+        && prepared_text.as_ref().is_some_and(|selection| {
+            !player_prepared_text_selection_is_visible(prepared, selection)
+        })
+    {
+        return Ok(None);
+    }
+    if object.rich_text_ref.is_none() && object.role == "text" {
+        return Ok(None);
+    }
+    let id = arcweft_id::PublicId::try_new(&object.id).map_err(|error| {
+        eprintln!(
+            "error: observed object id `{}` cannot identify a capture region: {error}",
+            object.id
+        );
+        ExitCode::FAILURE
+    })?;
+    let x = object.bbox.x.to_f32().ok_or_else(|| {
+        eprintln!("error: capture region x coordinate is not representable as f32");
+        ExitCode::FAILURE
+    })?;
+    let y = object.bbox.y.to_f32().ok_or_else(|| {
+        eprintln!("error: capture region y coordinate is not representable as f32");
+        ExitCode::FAILURE
+    })?;
+    let width = object.bbox.width.to_f32().ok_or_else(|| {
+        eprintln!("error: capture region width is not representable as f32");
+        ExitCode::FAILURE
+    })?;
+    let height = object.bbox.height.to_f32().ok_or_else(|| {
+        eprintln!("error: capture region height is not representable as f32");
+        ExitCode::FAILURE
+    })?;
+    let bounds = HitRect::new(x, y, width, height);
+    let object_id_rgba = agent_object_id_color(&object.id);
+    let Some(selection) = prepared_text else {
+        return Ok(Some(CaptureRegion::new(id, bounds, object_id_rgba)));
+    };
+    Ok(Some(CaptureRegion::prepared_text(
+        id,
+        bounds,
+        object_id_rgba,
+        selection,
+    )))
+}
+
+fn player_prepared_text_capture_selection(
+    prepared: &PreparedFrame,
+    object: &AgentObservedObject,
+) -> Result<Option<PreparedTextSelection>, PlayerTextCaptureSelectionError> {
+    let Some(reference) = object.rich_text_ref.as_ref() else {
+        return Ok(None);
+    };
+    if matches!(
+        reference.kind,
+        AgentRichTextElementKind::TextPage
+            | AgentRichTextElementKind::TextLine
+            | AgentRichTextElementKind::TextRun
+            | AgentRichTextElementKind::TextGlyph
+            | AgentRichTextElementKind::TextObjectProxy
+    ) {
+        return Ok(None);
+    }
+    let owner = player_prepared_text_owner(prepared, object)?;
+    let item = prepared.text.get(owner.text).ok_or_else(|| {
+        PlayerTextCaptureSelectionError::MissingPreparedTextItem {
+            object_id: object.id.clone(),
+            text_index: owner.text.index(),
+        }
+    })?;
+    let local_range = player_local_text_range(object, reference, owner)?;
+    let glyph_indices = player_selected_glyph_indices(object, item, reference, local_range)?;
+    if glyph_indices.is_empty() {
+        return Err(PlayerTextCaptureSelectionError::NoPreparedGlyphs {
+            object_id: object.id.clone(),
+        });
+    }
+    PreparedTextSelection::try_new(owner.text, glyph_indices)
+        .map(Some)
+        .map_err(|source| PlayerTextCaptureSelectionError::InvalidSelection {
+            object_id: object.id.clone(),
+            source,
+        })
+}
+
+fn player_prepared_text_owner<'a>(
+    prepared: &'a PreparedFrame,
+    object: &AgentObservedObject,
+) -> Result<&'a PreparedTextOwner, PlayerTextCaptureSelectionError> {
+    let owners = prepared
+        .prepared_text_owners()
+        .iter()
+        .filter(|owner| player_object_belongs_to_text_owner(object, owner))
+        .collect::<Vec<_>>();
+    let owner = match owners.as_slice() {
+        [owner] => *owner,
+        [] => {
+            return Err(PlayerTextCaptureSelectionError::MissingOwner {
+                object_id: object.id.clone(),
+            });
+        }
+        _ => {
+            return Err(PlayerTextCaptureSelectionError::AmbiguousOwner {
+                object_id: object.id.clone(),
+                owner_count: owners.len(),
+            });
+        }
+    };
+    Ok(owner)
+}
+
+fn player_local_text_range(
+    object: &AgentObservedObject,
+    reference: &AgentRichTextElementRef,
+    owner: &PreparedTextOwner,
+) -> Result<RichTextRange, PlayerTextCaptureSelectionError> {
+    let Some(start) = reference.range.start.checked_sub(owner.source_origin) else {
+        return Err(PlayerTextCaptureSelectionError::RangeBeforeOwner {
+            object_id: object.id.clone(),
+            start: reference.range.start,
+            end: reference.range.end,
+            source_origin: owner.source_origin,
+        });
+    };
+    let Some(end) = reference.range.end.checked_sub(owner.source_origin) else {
+        return Err(PlayerTextCaptureSelectionError::RangeBeforeOwner {
+            object_id: object.id.clone(),
+            start: reference.range.start,
+            end: reference.range.end,
+            source_origin: owner.source_origin,
+        });
+    };
+    if start > end {
+        return Err(PlayerTextCaptureSelectionError::InvalidRange {
+            object_id: object.id.clone(),
+            start,
+            end,
+        });
+    }
+    Ok(RichTextRange::new(start, end))
+}
+
+fn player_selected_glyph_indices(
+    object: &AgentObservedObject,
+    item: &PreparedTextItem,
+    reference: &AgentRichTextElementRef,
+    local_range: RichTextRange,
+) -> Result<Vec<u32>, PlayerTextCaptureSelectionError> {
+    item.glyphs
+        .iter()
+        .enumerate()
+        .filter(|(_, glyph)| player_glyph_matches(reference, glyph, local_range))
+        .map(|(index, _)| {
+            u32::try_from(index).map_err(|_| PlayerTextCaptureSelectionError::GlyphIndexOverflow {
+                object_id: object.id.clone(),
+                glyph_index: index,
+            })
         })
         .collect()
+}
+
+fn player_glyph_matches(
+    reference: &AgentRichTextElementRef,
+    glyph: &PreparedGlyph,
+    local_range: RichTextRange,
+) -> bool {
+    match reference.kind {
+        AgentRichTextElementKind::GlyphCluster => {
+            matches!(glyph.source, PreparedGlyphSource::Body { .. })
+                && usize::try_from(glyph.cluster_index).ok() == Some(reference.index)
+                && local_range.start <= glyph.source_range.start
+                && glyph.source_range.end <= local_range.end
+        }
+        AgentRichTextElementKind::Ruby => match glyph.source {
+            PreparedGlyphSource::Body { .. } => {
+                local_range.start <= glyph.source_range.start
+                    && glyph.source_range.end <= local_range.end
+            }
+            PreparedGlyphSource::Ruby { ruby_index, .. } => {
+                usize::try_from(ruby_index).ok() == Some(reference.index)
+            }
+        },
+        AgentRichTextElementKind::TextPage
+        | AgentRichTextElementKind::TextLine
+        | AgentRichTextElementKind::TextRun
+        | AgentRichTextElementKind::TextGlyph
+        | AgentRichTextElementKind::TextObjectProxy => false,
+    }
 }
 
 fn player_capture_region_order(
@@ -148,10 +371,12 @@ fn player_object_belongs_to_text_owner(
             let root = format!("object.dialogue.{dialogue}.{entry}");
             object.id == root || object.id.starts_with(&format!("{root}."))
         }
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => object
-            .entity
-            .as_deref()
-            .is_some_and(|entity| entity == owner.semantic_id.as_str()),
+        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => {
+            let Some(root) = agent_view_prepared_text_root_id(owner) else {
+                return false;
+            };
+            object.id == root || object.id.starts_with(&format!("{root}."))
+        }
         arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Control => {
             object.id == owner.semantic_id.as_str()
         }
@@ -200,74 +425,18 @@ fn player_text_element_paint_order(
     }
 }
 
-fn player_object_has_capture_region(
+fn player_prepared_text_selection_is_visible(
     prepared: &PreparedFrame,
-    object: &AgentObservedObject,
+    selection: &PreparedTextSelection,
 ) -> bool {
-    let Some(reference) = &object.rich_text_ref else {
-        return object.role != "text";
+    let Some(item) = prepared.text.get(selection.text()) else {
+        return false;
     };
-    match reference.kind {
-        arcweft_agent_protocol::rich_text::AgentRichTextElementKind::GlyphCluster
-        | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::Ruby => {
-            player_prepared_text_element_is_visible(prepared, reference)
-        }
-        arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextPage
-        | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextLine
-        | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextRun
-        | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextGlyph
-        | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextObjectProxy => false,
-    }
-}
-
-fn player_prepared_text_element_is_visible(
-    prepared: &PreparedFrame,
-    reference: &arcweft_agent_protocol::rich_text::AgentRichTextElementRef,
-) -> bool {
-    prepared.prepared_text_owners().iter().any(|owner| {
-        let Some(item) = prepared.text.get(owner.text) else {
-            return false;
-        };
-        let Some(start) = reference.range.start.checked_sub(owner.source_origin) else {
-            return false;
-        };
-        let Some(end) = reference.range.end.checked_sub(owner.source_origin) else {
-            return false;
-        };
-        let local_range = arcweft_render_text::RichTextRange::new(start, end);
-        match reference.kind {
-            arcweft_agent_protocol::rich_text::AgentRichTextElementKind::GlyphCluster => item
-                .layout
-                .glyphs
-                .iter()
-                .enumerate()
-                .filter(|(_, glyph)| glyph_is_cluster_member(glyph, local_range, reference.index))
-                .any(|(index, _)| {
-                    item.paint
-                        .glyphs
-                        .get(index)
-                        .is_some_and(text_paint_is_visible)
-                }),
-            arcweft_agent_protocol::rich_text::AgentRichTextElementKind::Ruby => {
-                let mut paint_offset = item.layout.glyphs.len();
-                item.layout.ruby.iter().any(|ruby| {
-                    let matches = ruby.base_range == local_range;
-                    let visible = matches
-                        && item
-                            .paint
-                            .glyphs
-                            .get(paint_offset..paint_offset.saturating_add(ruby.glyphs.len()))
-                            .is_some_and(|paint| paint.iter().any(text_paint_is_visible));
-                    paint_offset = paint_offset.saturating_add(ruby.glyphs.len());
-                    visible
-                })
-            }
-            arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextPage
-            | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextLine
-            | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextRun
-            | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextGlyph
-            | arcweft_agent_protocol::rich_text::AgentRichTextElementKind::TextObjectProxy => false,
-        }
+    selection.glyph_indices().iter().copied().any(|index| {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| item.paint.glyphs.get(index))
+            .is_some_and(text_paint_is_visible)
     })
 }
 

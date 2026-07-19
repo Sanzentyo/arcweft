@@ -40,7 +40,7 @@ use arcweft_agent_mcp::{
     repl_command::{MCP_REPL_COMMAND_TOOL, McpReplCommandEndpoint, McpReplCommandRequest},
     resources::{
         list_resource_templates_result, list_resources_result, read_resource_result,
-        resource_descriptor, tool_result_for_resource, tool_result_for_resources, trace_resource,
+        resource_descriptor, tool_result_for_resource, tool_result_for_resources,
     },
     tools::agent_tool_descriptors,
 };
@@ -77,7 +77,8 @@ use arcweft_agent_protocol::proxy::{
     AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef,
 };
 use arcweft_agent_protocol::resource::{
-    AgentBinaryEncoding, AgentResource, AgentResourceBody, AgentResourceKind,
+    AgentBinaryEncoding, AgentResource, AgentResourceBody, AgentResourceKind, TraceResourceError,
+    trace_resource,
 };
 use arcweft_agent_protocol::rich_text::{
     AgentHitRegion, AgentHitRegionKind, AgentRichTextElementKind, AgentRichTextElementRef,
@@ -245,11 +246,11 @@ use capture::{
 };
 use image_mapping::{
     AgentSelectedCaptureMetadataSpec, agent_capture_uri, agent_encode_png,
-    agent_frame_capture_uri_for_page, agent_layout_rect_from_bbox,
-    agent_object_capture_refs_for_page, agent_object_id_color, agent_object_layers,
-    agent_object_matches_layer, agent_observed_layers, agent_observed_views, agent_overlay_svg,
-    agent_scoped_capture_name, agent_selected_capture_metadata_for_ref, agent_view_id_for_object,
-    agent_view_scope_for_id, hash_hex,
+    agent_frame_capture_uri_for_page, agent_layout_rect_from_bbox, agent_object_capture_refs,
+    agent_object_id_color, agent_object_layers, agent_object_matches_layer, agent_observed_layers,
+    agent_observed_views, agent_overlay_svg, agent_scoped_capture_name,
+    agent_selected_capture_metadata_for_ref, agent_view_id_for_object, agent_view_scope_for_id,
+    hash_hex,
 };
 use mcp_debug::{
     agent_mcp_call_debug_close_stale_sessions, agent_mcp_call_debug_graph_inventory,
@@ -304,6 +305,7 @@ use player_observation::{
 };
 use prepared_text_observation::{
     agent_dialogue_prepared_text_objects, agent_view_prepared_text_objects,
+    agent_view_prepared_text_root_id,
 };
 use repl::agent_repl_command;
 use runtime_observation::{

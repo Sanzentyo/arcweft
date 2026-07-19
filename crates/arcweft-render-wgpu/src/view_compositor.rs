@@ -721,6 +721,7 @@ impl ViewCompositor {
         encoder: &mut wgpu::CommandEncoder,
         source: &wgpu::TextureView,
         output: &wgpu::TextureView,
+        clear: wgpu::Color,
     ) {
         self.run_shader_pass(
             device,
@@ -735,7 +736,7 @@ impl ViewCompositor {
                     ViewBlendShaderMode::Normal,
                     self.format,
                 ),
-                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                load: wgpu::LoadOp::Clear(clear),
                 blend_over_existing: false,
             },
         );

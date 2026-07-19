@@ -782,7 +782,7 @@ mod tests {
             callee: "alice".to_owned(),
             speaker_label: None,
             text_key: None,
-            view: None,
+            view: arcweft_view::ViewId::try_new("view.playback.test").unwrap(),
             voice: None,
             look: None,
             style: None,

@@ -2,6 +2,7 @@
 
 use crate::{InlineFailurePolicy, RichTextDocument, RichTextStyle};
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 
 /// Rich-text display sidecar generated while lowering a runtime plan.
@@ -18,7 +19,8 @@ pub struct LineDisplaySpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker_label: Option<String>,
     pub text_key: Option<String>,
-    pub view: Option<String>,
+    /// Stable public owner of the authored View used for this dialogue line.
+    pub view: ViewId,
     pub voice: Option<String>,
     pub look: Option<String>,
     pub style: Option<String>,

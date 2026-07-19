@@ -60,7 +60,10 @@ impl PublishedAgentScene {
                     let view_token = summary.opaque_child_token("scene-view", view_index);
                     "image/png".clone_into(&mut resource.mime_type);
                     resource.hash = blake3::hash(&bytes).to_hex().to_string();
-                    resource.uri = summary.moderated_child_uri("scene-view", view_index, "png");
+                    resource.uri = arcweft_agent_protocol::ids::AgentResourceUri::new(
+                        summary.moderated_child_uri("scene-view", view_index, "png"),
+                    )
+                    .expect("generated moderated child URI is nonempty");
                     resource.body = AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
                         encoding: AgentBinaryEncoding::Base64,
                         data: STANDARD.encode(bytes),
