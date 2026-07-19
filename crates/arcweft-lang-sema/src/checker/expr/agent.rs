@@ -710,13 +710,13 @@ impl TypeChecker<'_> {
     fn agent_debug_path_literal(expr: &Expr) -> Option<&str> {
         match expr {
             Expr::Literal(Literal::String(value)) => Some(value),
-            Expr::Call { callee, args }
+            Expr::Call(call)
                 if matches!(
-                    expr_path_label(callee).as_deref(),
+                    expr_path_label(call.callee()).as_deref(),
                     Some("state_path" | "observation_path")
                 ) =>
             {
-                let [CallArg::Positional(path)] = args.as_slice() else {
+                let [CallArg::Positional(path)] = call.args() else {
                     return None;
                 };
                 Self::agent_string_literal(path)

@@ -57,10 +57,10 @@ pub(crate) enum AssertionExpressionCall {
 }
 
 pub(crate) fn classify_expression_call(expr: &Expr) -> Option<AssertionExpressionCall> {
-    let Expr::Call { callee, .. } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         return None;
     };
     let Expr::Path(path) = select.target() else {

@@ -26,7 +26,7 @@ flow @flow.opening opening {
     assert!(matches!(
         &flow.body()[1],
         FlowItem::Stmt(Stmt::Return {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         })
     ));

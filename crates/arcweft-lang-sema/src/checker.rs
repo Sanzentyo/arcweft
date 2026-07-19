@@ -1555,22 +1555,26 @@ impl<'a> TypeChecker<'a> {
                 .get(path.as_label())
                 .cloned()
                 .or_else(|| self.source_function_effect_callable(path.as_label())),
-            Expr::Call { callee, args } => {
+            Expr::Call(call) => {
                 if let Some(callable) = self.last_checked_closure_effect_callable.clone() {
                     return Some(callable);
                 }
-                let callee = expr_path_label(callee)?;
+                let callee = expr_path_label(call.callee())?;
                 if let Some(callable) = self.function_return_effect_callables.get(&callee).cloned()
                 {
                     return Some(callable);
                 }
                 let callable = self.local_function_effects.get(&callee)?.clone();
                 let arity = self.locals.get(&callee)?.function_arity()?;
-                let positional_arg_count = args
+                let positional_arg_count = call
+                    .args()
                     .iter()
                     .filter(|arg| matches!(arg, CallArg::Positional(_)))
                     .count();
-                let all_positional = args.iter().all(|arg| matches!(arg, CallArg::Positional(_)));
+                let all_positional = call
+                    .args()
+                    .iter()
+                    .all(|arg| matches!(arg, CallArg::Positional(_)));
                 (all_positional && positional_arg_count < arity).then_some(callable)
             }
             _ => None,
@@ -1586,7 +1590,7 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         match expr {
-            Expr::Call { .. } => self.last_checked_curried_signature_call.clone(),
+            Expr::Call(_) => self.last_checked_curried_signature_call.clone(),
             Expr::Path(path) => self
                 .local_curried_signature_calls
                 .get(path.as_label())

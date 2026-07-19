@@ -190,8 +190,8 @@ impl TypeChecker<'_> {
             Expr::ArrayRepeat { value, len } => {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
-            Expr::Call { callee, args } => {
-                self.check_call_expr(callee, args, expected, expression_id)
+            Expr::Call(call) => {
+                self.check_call_expr(call.callee(), call.args(), expected, expression_id)
             }
             Expr::Select(select) => self.check_select_expr(expr, select),
             Expr::DialogueCall {

@@ -5,6 +5,35 @@ use super::{
 use crate::ast::common::TextRange;
 use crate::ast::flow::{AuthoredExpr, FlowItem, Stmt, WaitTarget};
 
+pub(super) fn collect_callback_body_expr_source_ranges<'a>(
+    body: &'a Expr,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    let Some(end) = base.checked_add(source.len()) else {
+        return;
+    };
+    let Expr::Block { statements, value } = body else {
+        collect_expr_source_ranges_inner(body, source, base, ranges);
+        return;
+    };
+    ranges.push(ExprSourceRange {
+        expr: body,
+        range: TextRange::new(base, end),
+    });
+    collect_stmt_list_source_ranges(statements, source, base, ranges);
+    if let Some(value) = value {
+        let item_sources = split_top_level_lines(source, base);
+        let (value_source, value_base) = item_sources
+            .get(statements.len())
+            .copied()
+            .or_else(|| item_sources.last().copied())
+            .unwrap_or((source, base));
+        collect_expr_source_ranges_inner(value, value_source, value_base, ranges);
+    }
+}
+
 pub(super) fn collect_thread_expr_source_ranges<'a>(
     body: &'a [FlowItem],
     source: &str,

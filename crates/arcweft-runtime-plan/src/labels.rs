@@ -54,10 +54,11 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
         Expr::ShortVariant(name) => format!(".{name}"),
         Expr::EntityRef(entity) => format!("@{}", entity_ref_label(entity)),
         Expr::Literal(literal) => literal_label(literal),
-        Expr::Call { callee, args } => format!(
+        Expr::Call(call) => format!(
             "{}({})",
-            expr_label(callee),
-            args.iter()
+            expr_label(call.callee()),
+            call.args()
+                .iter()
                 .map(call_arg_label)
                 .collect::<Vec<_>>()
                 .join(", ")

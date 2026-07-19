@@ -1,12 +1,18 @@
+mod recovery;
+
+pub(super) use recovery::{
+    parse_block_expr_recovering_with_base, parse_scope_authored_expr_body_recovering_with_base,
+};
+
 use super::helpers::LogicalBlockItem;
 use super::{
     AuthoredExpr, CstBlockEvent, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
-    MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
-    StmtMatchArm, TextRange, WhileBlock, WhileLetBlock, binding_value_start_in_line,
-    braced_expr_source, collect_logical_block_items, collect_logical_block_items_with_base,
-    indentation, is_typed_stmt, parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt,
-    parse_stmt_with_base, parse_value_scope_stmt_with_stats_and_base, raw_stmt, split_brace_item,
-    split_optional_block_label, split_top_level_binding, split_top_level_keyword_once,
+    MatchBlock, ParseError, Parser, SelectBlock, SelectBranch, SelectBranchHead, Stmt, TextRange,
+    WhileBlock, WhileLetBlock, binding_value_start_in_line, braced_expr_source,
+    collect_logical_block_items, collect_logical_block_items_with_base, indentation, is_typed_stmt,
+    parse_binding_pattern, parse_expr_lossy, parse_pattern, parse_stmt, parse_stmt_with_base,
+    parse_value_scope_stmt_with_stats_and_base, split_brace_item, split_optional_block_label,
+    split_top_level_binding, split_top_level_keyword_once,
 };
 use crate::cst::{
     ArcweftPunctuation, CstPunctuationScan, split_top_level_arcweft_punctuation_once,
@@ -887,7 +893,8 @@ pub(super) fn parse_scope_authored_expr_body_with_base(
             parsed_statements,
             Some(authored_block_value(
                 last,
-                parse_expr_lossy(last.source.as_ref()),
+                crate::expr::parse_expr_at(last.source.as_ref(), last.base)
+                    .unwrap_or_else(|_| crate::expr::Expr::Raw(last.source.as_ref().to_owned())),
             )),
         )
     }
@@ -1059,67 +1066,6 @@ pub(super) fn parse_stmt_lines(body: &str) -> Vec<Stmt> {
         .collect()
 }
 
-pub(super) fn parse_braced_while_let_stmt(
-    stmt_source: &str,
-    head: &str,
-    body: &str,
-    base: Option<usize>,
-    body_base: Option<usize>,
-) -> Option<Stmt> {
-    let rest = head.strip_prefix("while let ")?;
-    let Some((pattern, expr_and_guard)) = split_top_level_binding(rest) else {
-        return Some(raw_stmt(&format!("{head} {{ {body} }}")));
-    };
-    let (expr, guard) = split_pattern_guard(expr_and_guard.trim());
-    let expr = expr.trim();
-    Some(Stmt::WhileLet {
-        pattern: parse_pattern(pattern.trim()),
-        expr: authored_expr_in_stmt_source(stmt_source, expr, base),
-        guard: guard.map(|guard| authored_expr_in_stmt_source(stmt_source, guard.trim(), base)),
-        body: parse_stmt_lines_with_base_option(body, body_base),
-    })
-}
-
-pub(super) fn parse_stmt_match_arms(body: &str, body_base: Option<usize>) -> Vec<StmtMatchArm> {
-    collect_logical_block_items_with_base(body, body_base.unwrap_or(0))
-        .into_iter()
-        .filter_map(|line| {
-            let line_base = body_base.map_or(0, |_| line.base);
-            let line_source = line.source.trim();
-            let (head, value) = split_top_level_arcweft_punctuation_once(
-                line_source,
-                ArcweftPunctuation::FatArrow,
-            )?;
-            let (pattern, guard) = split_pattern_guard(head.trim());
-            let value = value.trim();
-            let value_base =
-                body_base.and_then(|_| line_source.find(value).map(|offset| line_base + offset));
-            let body = value
-                .strip_prefix('{')
-                .and_then(|value| value.strip_suffix('}'))
-                .map_or_else(
-                    || {
-                        vec![body_base.map_or_else(
-                            || parse_stmt(value),
-                            |_| parse_stmt_with_base(value, value_base.unwrap_or(line_base)),
-                        )]
-                    },
-                    |block| {
-                        let block_start = value_base.map(|base| base + '{'.len_utf8());
-                        parse_stmt_lines_with_base_option(block, block_start)
-                    },
-                );
-            Some(StmtMatchArm::new(
-                parse_pattern(pattern.trim()),
-                guard.map(|guard| {
-                    authored_expr_in_stmt_source(line_source, guard.trim(), Some(line_base))
-                }),
-                body,
-            ))
-        })
-        .collect()
-}
-
 fn parse_stmt_lines_from_block_event(block: &CstBlockEvent<'_>) -> Vec<Stmt> {
     parse_stmt_lines_with_base_option(
         &block.body,
@@ -1137,18 +1083,4 @@ fn parse_stmt_lines_with_base_option(body: &str, body_base: Option<usize>) -> Ve
                 .collect()
         },
     )
-}
-
-fn authored_expr_in_stmt_source(
-    stmt_source: &str,
-    expr_source: &str,
-    base: Option<usize>,
-) -> AuthoredExpr {
-    let range = base.and_then(|base| {
-        stmt_source.find(expr_source).map(|start| {
-            let absolute_start = base + start;
-            TextRange::new(absolute_start, absolute_start + expr_source.len())
-        })
-    });
-    AuthoredExpr::with_source(parse_expr_lossy(expr_source), expr_source.to_owned(), range)
 }

@@ -153,17 +153,17 @@ fn token_references(expr: &Expr) -> BTreeSet<String> {
 
 fn collect_token_references(expr: &Expr, references: &mut BTreeSet<String>) {
     match expr {
-        Expr::Call { callee, args } => {
-            if callee.dotted_selector_label().as_deref() == Some("token")
-                && let Some(reference) = args.iter().find_map(|arg| match arg {
+        Expr::Call(call) => {
+            if call.callee().dotted_selector_label().as_deref() == Some("token")
+                && let Some(reference) = call.args().iter().find_map(|arg| match arg {
                     CallArg::Positional(value) => value.dotted_selector_label(),
                     CallArg::Named { .. } | CallArg::Spread { .. } => None,
                 })
             {
                 references.insert(reference);
             }
-            collect_token_references(callee, references);
-            for arg in args {
+            collect_token_references(call.callee(), references);
+            for arg in call.args() {
                 match arg {
                     CallArg::Positional(value) => collect_token_references(value, references),
                     CallArg::Named { value, .. } | CallArg::Spread { value } => {

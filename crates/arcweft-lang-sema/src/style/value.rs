@@ -61,7 +61,7 @@ pub(crate) fn infer_value_kind(
             | UnitNumberSuffix::Bpm
             | UnitNumberSuffix::Bars => None,
         },
-        Expr::Call { callee, .. } => match callee.dotted_selector_label().as_deref() {
+        Expr::Call(call) => match call.callee().dotted_selector_label().as_deref() {
             Some("rgba" | "system_color") => Some(ViewStyleValueKind::Color),
             Some("resource") => Some(ViewStyleValueKind::Resource),
             _ => None,
@@ -453,12 +453,12 @@ fn angle_value(expr: &Expr) -> Option<ViewAngleMilliDegrees> {
 }
 
 fn color_value(expr: &Expr) -> Option<ViewColorValue> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    match callee.dotted_selector_label().as_deref()? {
+    match call.callee().dotted_selector_label().as_deref()? {
         "rgba" => {
-            let channels = positional_args(args)
+            let channels = positional_args(call.args())
                 .map(integer_value)
                 .collect::<Option<Vec<_>>>()?;
             let [red, green, blue, alpha] = channels.as_slice() else {
@@ -474,7 +474,7 @@ fn color_value(expr: &Expr) -> Option<ViewColorValue> {
             })
         }
         "system_color" => {
-            let role = positional_args(args).next().and_then(enum_name)?;
+            let role = positional_args(call.args()).next().and_then(enum_name)?;
             SystemColor::from_source_name(role).map(|role| ViewColorValue::System { role })
         }
         _ => None,
@@ -489,10 +489,10 @@ fn font_family_list(expr: &Expr) -> Option<ViewFontFamilyList> {
         .iter()
         .map(|item| match item {
             Expr::Literal(Literal::String(name)) => ViewFontFamily::named(name.clone()),
-            Expr::Call { callee, args }
-                if callee.dotted_selector_label().as_deref() == Some("system_font") =>
+            Expr::Call(call)
+                if call.callee().dotted_selector_label().as_deref() == Some("system_font") =>
             {
-                positional_args(args)
+                positional_args(call.args())
                     .next()
                     .and_then(enum_name)
                     .and_then(ViewSystemFontFamily::from_source_name)
@@ -512,21 +512,21 @@ fn shadow_list(expr: &Expr) -> Option<Vec<ViewShadow>> {
 }
 
 fn shadow_value(expr: &Expr) -> Option<ViewShadow> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let name = callee.dotted_selector_label()?;
+    let name = call.callee().dotted_selector_label()?;
     let inset = match name.as_str() {
         "shadow" => false,
         "inset_shadow" => true,
         _ => return None,
     };
     Some(ViewShadow {
-        x: named_arg(args, "x").and_then(length_value)?,
-        y: named_arg(args, "y").and_then(length_value)?,
-        blur: named_arg(args, "blur").and_then(length_value)?,
-        spread: named_arg(args, "spread").and_then(length_value)?,
-        color: named_arg(args, "color").and_then(color_value)?,
+        x: named_arg(call.args(), "x").and_then(length_value)?,
+        y: named_arg(call.args(), "y").and_then(length_value)?,
+        blur: named_arg(call.args(), "blur").and_then(length_value)?,
+        spread: named_arg(call.args(), "spread").and_then(length_value)?,
+        color: named_arg(call.args(), "color").and_then(color_value)?,
         inset,
     })
 }
@@ -538,11 +538,11 @@ fn filter_list(expr: &Expr) -> Option<Vec<ViewFilter>> {
     items
         .iter()
         .map(|item| {
-            let Expr::Call { callee, args } = item else {
+            let Expr::Call(call) = item else {
                 return None;
             };
-            let argument = positional_args(args).next()?;
-            match callee.dotted_selector_label().as_deref()? {
+            let argument = positional_args(call.args()).next()?;
+            match call.callee().dotted_selector_label().as_deref()? {
                 "blur" => length_value(argument).map(|radius| ViewFilter::Blur { radius }),
                 "brightness" => {
                     scalar_value(argument).map(|amount| ViewFilter::Brightness { amount })
@@ -559,14 +559,14 @@ fn clip_value(expr: &Expr) -> Option<ViewClip> {
     if let Some(name) = enum_name(expr) {
         return ViewClip::from_source_name(name);
     }
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if callee.dotted_selector_label().as_deref() != Some("rounded_rect") {
+    if call.callee().dotted_selector_label().as_deref() != Some("rounded_rect") {
         return None;
     }
-    let radius = named_arg(args, "radius")
-        .or_else(|| positional_args(args).next())
+    let radius = named_arg(call.args(), "radius")
+        .or_else(|| positional_args(call.args()).next())
         .and_then(length_value)?;
     Some(ViewClip::RoundedRect(ViewBorderRadii {
         top_left: radius,
@@ -593,18 +593,18 @@ fn transition_list(expr: &Expr) -> Option<Vec<ViewStyleTransition>> {
 }
 
 fn transition_value(expr: &Expr) -> Option<ViewStyleTransition> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if callee.dotted_selector_label().as_deref() != Some("transition") {
+    if call.callee().dotted_selector_label().as_deref() != Some("transition") {
         return None;
     }
-    let property = match named_arg(args, "property")? {
+    let property = match named_arg(call.args(), "property")? {
         Expr::Literal(Literal::String(name)) => ViewPropertyKind::from_source_name(name)?,
         value => ViewPropertyKind::from_source_name(value.dotted_selector_label()?.as_str())?,
     };
-    let duration = named_arg(args, "duration").and_then(duration_millis)?;
-    let delay = named_arg(args, "delay").map_or(Some(0), duration_millis)?;
+    let duration = named_arg(call.args(), "duration").and_then(duration_millis)?;
+    let delay = named_arg(call.args(), "delay").map_or(Some(0), duration_millis)?;
     ViewStyleTransition::new(property, duration, delay)
 }
 
@@ -629,23 +629,28 @@ fn duration_millis(expr: &Expr) -> Option<u32> {
 }
 
 fn token_reference(expr: &Expr) -> Option<String> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if callee.dotted_selector_label().as_deref() != Some("token") {
+    if call.callee().dotted_selector_label().as_deref() != Some("token") {
         return None;
     }
-    positional_args(args).next()?.dotted_selector_label()
+    positional_args(call.args()).next()?.dotted_selector_label()
 }
 
 fn resource_value(expr: &Expr) -> Option<PublicId> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if callee.dotted_selector_label().as_deref() != Some("resource") {
+    if call.callee().dotted_selector_label().as_deref() != Some("resource") {
         return None;
     }
-    PublicId::try_new(positional_args(args).next()?.dotted_selector_label()?).ok()
+    PublicId::try_new(
+        positional_args(call.args())
+            .next()?
+            .dotted_selector_label()?,
+    )
+    .ok()
 }
 
 fn enum_name(expr: &Expr) -> Option<&str> {

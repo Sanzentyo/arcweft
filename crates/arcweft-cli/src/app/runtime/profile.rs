@@ -219,7 +219,6 @@ fn add_syntax_stats(total: &mut SyntaxParseStats, item: &SyntaxParseStats) {
     total.block_owned_bytes += item.block_owned_bytes;
     total.raw_owned_bytes += item.raw_owned_bytes;
     total.wiki_scan_performed += item.wiki_scan_performed;
-    total.dot_normalization_owned += item.dot_normalization_owned;
     total.dialogue_rescue_expr_parse_attempts += item.dialogue_rescue_expr_parse_attempts;
     total.numeric_seq_summaries += item.numeric_seq_summaries;
 }

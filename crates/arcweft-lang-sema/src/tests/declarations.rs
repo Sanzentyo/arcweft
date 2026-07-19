@@ -623,8 +623,8 @@ pub impl<T> Mappable for Option<T> {
 
     fn map<B>(self, f: T -> B) -> Option<B> {
         match self {
-            Some(x) => Some(f(x)),
-            None => None,
+            Some(x) => Some(f(x))
+            None => None
         }
     }
 }
@@ -844,7 +844,7 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
     ));
     assert!(matches!(
         function.body_value().map(AuthoredExpr::expr),
-        Some(Expr::Call { callee, .. }) if matches!(callee.as_ref(), Expr::Path(path) if path == "Ok")
+        Some(Expr::Call(call)) if matches!(call.callee(), Expr::Path(path) if path == "Ok")
     ));
 
     let hir = lower_to_hir(&tree).expect("task function lowers");

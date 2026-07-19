@@ -354,32 +354,30 @@ impl ProofExpr {
                 }
             }
             Expr::Binary { lhs, op, rhs } => Self::from_arcweft_binary(lhs, *op, rhs, symbols),
-            Expr::Call { callee, args } if matches!(callee.as_ref(), Expr::Path(path) if path == "old") =>
-            {
-                let [arg] = args.as_slice() else {
+            Expr::Call(call) if matches!(call.callee(), Expr::Path(path) if path == "old") => {
+                let [arg] = call.args() else {
                     return Err(ContractLoweringError::InvalidCall(
                         "old(expr) requires exactly one argument".to_owned(),
                     ));
                 };
                 Self::from_arcweft(arg.value(), symbols)
             }
-            Expr::Call { callee, args }
-                if matches!(selected_callee_method(callee), Some("clamp")) =>
-            {
+            Expr::Call(call) if matches!(selected_callee_method(call.callee()), Some("clamp")) => {
                 Self::from_arcweft_clamp(
-                    selected_callee_receiver(callee).expect("selected callee has receiver"),
-                    args,
+                    selected_callee_receiver(call.callee()).expect("selected callee has receiver"),
+                    call.args(),
                     symbols,
                 )
             }
-            Expr::Call { callee, args }
-                if matches!(selected_callee_method(callee), Some("min" | "max")) =>
+            Expr::Call(call)
+                if matches!(selected_callee_method(call.callee()), Some("min" | "max")) =>
             {
-                let method = selected_callee_method(callee).expect("selected callee has method");
+                let method =
+                    selected_callee_method(call.callee()).expect("selected callee has method");
                 Self::from_arcweft_min_max(
-                    selected_callee_receiver(callee).expect("selected callee has receiver"),
+                    selected_callee_receiver(call.callee()).expect("selected callee has receiver"),
                     method,
-                    args,
+                    call.args(),
                     symbols,
                 )
             }

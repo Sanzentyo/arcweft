@@ -242,7 +242,7 @@ pub(super) fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::BracketSeq(_) => "bracket_seq",
         Expr::NumericBracketSeq(_) => "numeric_bracket_seq",
         Expr::ArrayRepeat { .. } => "array_repeat",
-        Expr::Call { .. } => "call",
+        Expr::Call(_) => "call",
         Expr::Select(_) => "select",
         Expr::DialogueCall { .. } => "dialogue_call",
         Expr::Index { .. } => "index",

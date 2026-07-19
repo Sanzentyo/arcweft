@@ -6,25 +6,12 @@ use crate::ast::ids::{
 };
 use crate::ast::line_plan::LinePlan;
 use crate::ast::pattern::Pattern;
-use crate::cst::{
-    find_last_top_level_punctuation, split_leading_entity_ref_parts,
-    split_leading_relative_entity_ref,
-};
+use crate::cst::{split_leading_entity_ref_parts, split_leading_relative_entity_ref};
 use crate::reference::{BorrowExpr, DerefExpr};
 use crate::types::{TypeRef, parse_type_ref};
-use std::{
-    fmt,
-    ops::{Add, Deref},
-};
+use std::{fmt, ops::Deref};
 use thiserror::Error;
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "AW-AH-009.3.1 Cut 1 lands checked syntax ownership before parser integration in Cut 2"
-    )
-)]
 mod call_syntax;
 #[cfg(test)]
 mod call_syntax_tests;
@@ -53,6 +40,17 @@ use numeric::{digit_matches_radix, split_number_suffix};
 pub use source_ranges::{
     ExprSourceRange, collect_dialogue_call_content_ranges, collect_expr_source_ranges,
 };
+
+/// Inclusive production limit for arguments retained by one source call.
+pub const MAX_CALL_ARGUMENTS: usize = 128;
+/// Inclusive production limit for callback parameters retained by one source call.
+pub const MAX_CALLBACK_PARAMETERS: usize = 128;
+/// Inclusive production limit for nested source calls.
+pub const MAX_NESTED_CALLS: usize = 32;
+/// Inclusive production limit for expression recovery nodes.
+pub const MAX_EXPR_RECOVERY_NODES: usize = 256;
+/// Inclusive production limit for retained expression diagnostics.
+pub const MAX_EXPR_DIAGNOSTICS: usize = 128;
 
 /// Identifier segment used by expression paths and shorthand selectors.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -308,10 +306,7 @@ pub enum Expr {
         value: Box<Expr>,
         len: Box<Expr>,
     },
-    Call {
-        callee: Box<Expr>,
-        args: Vec<CallArg>,
-    },
+    Call(CallExpr),
     Select(SelectExpr),
     DialogueCall {
         callee: Box<Expr>,
@@ -401,19 +396,6 @@ impl Expr {
         Self::Select(SelectExpr::new(target, Name::new(member.into())))
     }
 
-    /// Builds a source-level call expression.
-    pub fn call(callee: Expr, args: Vec<CallArg>) -> Self {
-        Self::Call {
-            callee: Box::new(callee),
-            args,
-        }
-    }
-
-    /// Builds a call whose callee is a source-level dot selector.
-    pub fn selected_call(target: Expr, member: impl Into<String>, args: Vec<CallArg>) -> Self {
-        Self::call(Self::select(target, member), args)
-    }
-
     /// Returns the selector payload when this expression is a dot selector.
     pub fn as_select(&self) -> Option<&SelectExpr> {
         match self {
@@ -434,6 +416,13 @@ impl Expr {
             }
             _ => None,
         }
+    }
+
+    pub(crate) const fn owns_statement_ambiguous_block_tail(&self) -> bool {
+        matches!(
+            self,
+            Self::If { .. } | Self::IfLet { .. } | Self::Match { .. }
+        )
     }
 }
 
@@ -783,7 +772,15 @@ pub enum ComputationBlockKind {
 pub struct ExprParseError {
     code: &'static str,
     range: TextRange,
+    related: Vec<TextRange>,
+    recovery: Option<ExprRecoveryDiagnostic>,
     message: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ExprRecoveryDiagnostic {
+    MissingCallClose { open_paren: TextRange },
+    RecoveredCallArgument,
 }
 
 /// Path-free counters collected while parsing one expression.
@@ -797,17 +794,13 @@ impl ExprParseStats {
     pub const fn numeric_seq_summaries(self) -> usize {
         self.numeric_seq_summaries
     }
-}
 
-impl Add for ExprParseStats {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
+    pub(crate) fn checked_add(self, rhs: Self) -> Option<Self> {
+        Some(Self {
             numeric_seq_summaries: self
                 .numeric_seq_summaries
-                .saturating_add(rhs.numeric_seq_summaries),
-        }
+                .checked_add(rhs.numeric_seq_summaries)?,
+        })
     }
 }
 
@@ -817,19 +810,157 @@ pub fn parse_expr(source: &str) -> Result<Expr, ExprParseError> {
 }
 
 /// Parses a single expression and returns path-free parser counters.
-pub fn parse_expr_with_stats(source: &str) -> Result<ParsedExpr, ExprParseError> {
-    parse_expr_with_stats_at(source, 0)
+pub(crate) fn parse_expr_with_stats(source: &str) -> Result<ParsedExpr, ExprParseError> {
+    let parsed = parse_expr_recovering_at(
+        source,
+        ExprParseScope {
+            source_range: TextRange::new(0, source.len()),
+            end_boundary: CallRecoveryBoundarySyntax::EndOfExpression,
+        },
+    )?;
+    reject_recovery_diagnostics(parsed)
 }
 
 pub(crate) fn parse_expr_at(source: &str, base: usize) -> Result<Expr, ExprParseError> {
-    parse_expr_with_stats_at(source, base).map(|parsed| parsed.expr)
+    let parsed = parse_expr_fragment_recovering_at(
+        source,
+        base,
+        CallRecoveryBoundarySyntax::EndOfExpression,
+    )?;
+    reject_recovery_diagnostics(parsed).map(|parsed| parsed.expr)
 }
 
-fn parse_expr_with_stats_at(source: &str, base: usize) -> Result<ParsedExpr, ExprParseError> {
+pub(crate) fn parse_expr_recovering_at(
+    source: &str,
+    scope: ExprParseScope,
+) -> Result<ParsedExpr, ExprParseError> {
+    let source_range = scope.source_range.as_range();
+    let fragment = source.get(source_range).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.invalid_scope",
+            "expression parse scope is outside the owning source",
+            scope.source_range,
+        )
+    })?;
+    parse_expr_fragment_with_owner(
+        fragment,
+        scope.source_range.start(),
+        source,
+        0,
+        scope.end_boundary,
+    )
+}
+
+pub(crate) fn parse_expr_fragment_recovering_at(
+    source: &str,
+    base: usize,
+    end_boundary: CallRecoveryBoundarySyntax,
+) -> Result<ParsedExpr, ExprParseError> {
+    parse_expr_fragment_with_owner(source, base, source, base, end_boundary)
+}
+
+pub(crate) fn parse_expr_fragment_recovering_with_owner_at(
+    fragment: &str,
+    fragment_base: usize,
+    owner_source: &str,
+    owner_base: usize,
+    end_boundary: CallRecoveryBoundarySyntax,
+) -> Result<ParsedExpr, ExprParseError> {
+    let relative_start = fragment_base.checked_sub(owner_base).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.invalid_scope",
+            "expression fragment starts before its owner source",
+            TextRange::new(fragment_base, fragment_base),
+        )
+    })?;
+    let relative_end = relative_start.checked_add(fragment.len()).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.offset_overflow",
+            "expression fragment owner range overflowed",
+            TextRange::new(fragment_base, fragment_base),
+        )
+    })?;
+    if owner_source.get(relative_start..relative_end) != Some(fragment) {
+        return Err(ExprParseError::at(
+            "syntax.expr.invalid_scope",
+            "expression fragment does not belong to its owner source",
+            TextRange::new(fragment_base, fragment_base),
+        ));
+    }
+    parse_expr_fragment_with_owner(
+        fragment,
+        fragment_base,
+        owner_source,
+        owner_base,
+        end_boundary,
+    )
+}
+
+pub(crate) fn expression_semicolon_ranges_at(
+    source: &str,
+    base: usize,
+) -> Result<Vec<TextRange>, ExprParseError> {
+    Lexer::new(source)
+        .tokenize()
+        .into_iter()
+        .filter(|token| token.token == Token::Semicolon)
+        .map(|token| {
+            let start = base.checked_add(token.start).ok_or_else(|| {
+                ExprParseError::at(
+                    "syntax.expr.offset_overflow",
+                    "statement boundary range overflowed",
+                    TextRange::new(base, base),
+                )
+            })?;
+            let end = base.checked_add(token.end).ok_or_else(|| {
+                ExprParseError::at(
+                    "syntax.expr.offset_overflow",
+                    "statement boundary range overflowed",
+                    TextRange::new(base, base),
+                )
+            })?;
+            Ok(TextRange::new(start, end))
+        })
+        .collect()
+}
+
+fn parse_expr_fragment_with_owner(
+    source: &str,
+    base: usize,
+    owner_source: &str,
+    owner_base: usize,
+    end_boundary: CallRecoveryBoundarySyntax,
+) -> Result<ParsedExpr, ExprParseError> {
+    let scope_base = base;
+    let scope_end = scope_base.checked_add(source.len()).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.offset_overflow",
+            "expression scope range overflowed",
+            TextRange::new(scope_base, scope_base),
+        )
+    })?;
     let trimmed = source.trim();
-    let base = base + subslice_offset(source, trimmed);
+    let trimmed_offset = checked_subslice_offset(source, trimmed, base)?;
+    let base = base.checked_add(trimmed_offset).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.offset_overflow",
+            "expression source offset overflowed",
+            TextRange::new(base, base),
+        )
+    })?;
+    let end = base.checked_add(trimmed.len()).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.offset_overflow",
+            "expression source range overflowed",
+            TextRange::new(base, base),
+        )
+    })?;
     if trimmed.is_empty() {
-        return Err(ExprParseError::new("expected expression"));
+        return Err(ExprParseError::at(
+            "syntax.expr.parse",
+            "expected expression",
+            TextRange::new(base, base),
+        ));
     }
     if let Some(closure) = closure_source::split(trimmed)? {
         let params = parse_closure_params(closure.params)?;
@@ -839,51 +970,49 @@ fn parse_expr_with_stats_at(source: &str, base: usize) -> Result<ParsedExpr, Exp
             .transpose()
             .map_err(|error| ExprParseError::new(&error.to_string()))?;
         let parsed_body = match closure.body {
-            ClosureBodySource::Expr(body) => {
-                parse_expr_with_stats_at(body, base + subslice_offset(trimmed, body))?
+            ClosureBodySource::Expr(body) => parse_expr_fragment_with_owner(
+                body,
+                checked_source_offset(base, trimmed, body)?,
+                owner_source,
+                owner_base,
+                CallRecoveryBoundarySyntax::EndOfExpression,
+            )?,
+            ClosureBodySource::Block(body) => {
+                let body_base = checked_source_offset(base, trimmed, body)?;
+                crate::parser::parse_callback_block_expr_body_recovering_at(body, body_base)?
             }
-            ClosureBodySource::Block(body) => ParsedExpr {
-                expr: crate::parser::parse_callback_block_expr_body(body),
-                stats: ExprParseStats::default(),
-            },
         };
+        let diagnostics = parsed_body.diagnostics;
         return Ok(ParsedExpr {
             expr: Expr::Closure {
                 params,
                 return_type,
                 body: Box::new(parsed_body.expr),
             },
+            range: TextRange::new(base, end),
+            diagnostics,
             stats: parsed_body.stats,
         });
     }
-    if !trimmed.starts_with('[')
-        && let Some((target, index)) = split_bracket_postfix(trimmed)
+    let parsed = ExprParser::new_scoped(pratt::ExprParserScope {
+        source: trimmed,
+        base,
+        validation_source: source,
+        validation_base: scope_base,
+        owner_source,
+        owner_base,
+        end_boundary,
+        recovery_end: scope_end,
+    })
+    .parse()?;
+    if let Some((kind, range)) =
+        collect_expr_source_ranges(&parsed.expr, trimmed, TextRange::new(base, end))
+            .into_iter()
+            .find_map(|entry| {
+                crate::assertion::classify_expression_call(entry.expr())
+                    .map(|kind| (kind, entry.range()))
+            })
     {
-        let parsed_target =
-            parse_expr_with_stats_at(target, base + subslice_offset(trimmed, target))?;
-        let parsed_index = parse_expr_with_stats_at(index, base + subslice_offset(trimmed, index))
-            .unwrap_or_else(|_| ParsedExpr {
-                expr: Expr::Raw(index.to_owned()),
-                stats: ExprParseStats::default(),
-            });
-        return Ok(ParsedExpr {
-            expr: Expr::Index {
-                target: Box::new(parsed_target.expr),
-                index: Box::new(parsed_index.expr),
-            },
-            stats: parsed_target.stats + parsed_index.stats,
-        });
-    }
-    let parsed = ExprParser::new_at(trimmed, base).parse()?;
-    if let Some((kind, range)) = collect_expr_source_ranges(
-        &parsed.expr,
-        trimmed,
-        TextRange::new(base, base + trimmed.len()),
-    )
-    .into_iter()
-    .find_map(|entry| {
-        crate::assertion::classify_expression_call(entry.expr()).map(|kind| (kind, entry.range()))
-    }) {
         let (code, message) = match kind {
             crate::assertion::AssertionExpressionCall::Known(mode) => (
                 "syntax.assert.statement_only",
@@ -902,15 +1031,72 @@ fn parse_expr_with_stats_at(source: &str, base: usize) -> Result<ParsedExpr, Exp
     Ok(parsed)
 }
 
-fn subslice_offset(source: &str, fragment: &str) -> usize {
-    (fragment.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
+fn checked_source_offset(
+    base: usize,
+    source: &str,
+    fragment: &str,
+) -> Result<usize, ExprParseError> {
+    base.checked_add(checked_subslice_offset(source, fragment, base)?)
+        .ok_or_else(|| {
+            ExprParseError::at(
+                "syntax.expr.offset_overflow",
+                "expression source offset overflowed",
+                TextRange::new(base, base),
+            )
+        })
 }
 
-/// Expression parse result bundled with cheap parser counters.
+fn reject_recovery_diagnostics(parsed: ParsedExpr) -> Result<ParsedExpr, ExprParseError> {
+    if let Some(diagnostic) = parsed.diagnostics.first() {
+        return Err(diagnostic.clone());
+    }
+    Ok(parsed)
+}
+
+fn checked_subslice_offset(
+    source: &str,
+    fragment: &str,
+    error_offset: usize,
+) -> Result<usize, ExprParseError> {
+    let offset = (fragment.as_ptr() as usize)
+        .checked_sub(source.as_ptr() as usize)
+        .ok_or_else(|| {
+            ExprParseError::at(
+                "syntax.expr.invalid_subslice",
+                "expression fragment does not belong to the owning source",
+                TextRange::new(error_offset, error_offset),
+            )
+        })?;
+    let end = offset.checked_add(fragment.len()).ok_or_else(|| {
+        ExprParseError::at(
+            "syntax.expr.offset_overflow",
+            "expression fragment range overflowed",
+            TextRange::new(error_offset, error_offset),
+        )
+    })?;
+    if end > source.len() || source.get(offset..end) != Some(fragment) {
+        return Err(ExprParseError::at(
+            "syntax.expr.invalid_subslice",
+            "expression fragment does not belong to the owning source",
+            TextRange::new(error_offset, error_offset),
+        ));
+    }
+    Ok(offset)
+}
+
+/// Expression parse result bundled with its exact owner range and diagnostics.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ParsedExpr {
-    pub expr: Expr,
-    pub stats: ExprParseStats,
+pub(crate) struct ParsedExpr {
+    pub(crate) expr: Expr,
+    pub(crate) range: TextRange,
+    pub(crate) diagnostics: Vec<ExprParseError>,
+    pub(crate) stats: ExprParseStats,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ExprParseScope {
+    pub(crate) source_range: TextRange,
+    pub(crate) end_boundary: CallRecoveryBoundarySyntax,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1156,20 +1342,6 @@ fn parse_entity_expr(source: &str) -> Option<EntityRefSyntax> {
     ))
 }
 
-fn split_bracket_postfix(source: &str) -> Option<(&str, &str)> {
-    let close = source.strip_suffix(']')?;
-    let open = find_last_top_level_open_bracket(close)?;
-    let target = close[..open].trim();
-    if target.is_empty() {
-        return None;
-    }
-    Some((target, &close[open + 1..]))
-}
-
-fn find_last_top_level_open_bracket(source: &str) -> Option<usize> {
-    find_last_top_level_punctuation(source, '[')
-}
-
 fn is_numeric_unit_amount(source: &str) -> bool {
     if source.is_empty() || source.starts_with('_') || source.ends_with('_') {
         return false;
@@ -1183,10 +1355,32 @@ impl ExprParseError {
         Self::at("syntax.expr.parse", message, TextRange::new(0, 0))
     }
 
-    fn at(code: &'static str, message: &str, range: TextRange) -> Self {
+    pub(crate) fn at(code: &'static str, message: &str, range: TextRange) -> Self {
         Self {
             code,
             range,
+            related: Vec::new(),
+            recovery: None,
+            message: message.to_owned(),
+        }
+    }
+
+    pub(crate) fn missing_call_close(insertion: usize, open_paren: TextRange) -> Self {
+        Self {
+            code: "syntax.expr.missing_call_close",
+            range: TextRange::new(insertion, insertion),
+            related: vec![open_paren],
+            recovery: Some(ExprRecoveryDiagnostic::MissingCallClose { open_paren }),
+            message: "missing closing `)` in argument list".to_owned(),
+        }
+    }
+
+    pub(crate) fn recovered_call_argument(message: &str, range: TextRange) -> Self {
+        Self {
+            code: "syntax.expr.recovered_call_argument",
+            range,
+            related: Vec::new(),
+            recovery: Some(ExprRecoveryDiagnostic::RecoveredCallArgument),
             message: message.to_owned(),
         }
     }
@@ -1199,6 +1393,28 @@ impl ExprParseError {
     /// Exact primary byte range in the parsed expression source.
     pub const fn range(&self) -> TextRange {
         self.range
+    }
+
+    /// Related source ranges that explain this failure.
+    pub fn related_ranges(&self) -> &[TextRange] {
+        &self.related
+    }
+
+    pub(crate) const fn recovery_diagnostic(&self) -> Option<ExprRecoveryDiagnostic> {
+        self.recovery
+    }
+
+    pub(crate) fn permits_call_argument_recovery(&self) -> bool {
+        matches!(
+            self.code,
+            "syntax.expr.parse"
+                | "syntax.expr.unexpected_token"
+                | "syntax.expr.missing_prefix_operand"
+                | "syntax.expr.empty_call_argument"
+                | "syntax.expr.invalid_named_spread"
+                | "syntax.expr.missing_call_argument_separator"
+                | "syntax.expr.unbalanced_call_argument"
+        )
     }
 }
 

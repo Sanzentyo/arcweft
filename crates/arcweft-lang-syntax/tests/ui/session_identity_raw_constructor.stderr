@@ -5,7 +5,7 @@ error[E0423]: cannot initialize a tuple struct which contains private fields
   |                   ^^^^^^^^^^^^
   |
 note: constructor is not visible here due to private fields
- --> src/incremental.rs
+ --> src/incremental/database.rs
   |
-  | pub struct SyntaxNodeId(NonZeroU64);
-  |                         ^^^^^^^^^^ private field
+  | pub struct SyntaxNodeId(pub(super) NonZeroU64);
+  |                         ^^^^^^^^^^^^^^^^^^^^^ private field

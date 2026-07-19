@@ -534,7 +534,6 @@ fn syntax_stats(
         block_owned_bytes: to_u64("block owned bytes", stats.block_owned_bytes)?,
         raw_owned_bytes: to_u64("raw owned bytes", stats.raw_owned_bytes)?,
         wiki_scan_performed: to_u64("wiki scans", stats.wiki_scan_performed)?,
-        dot_normalization_owned: to_u64("dot normalization", stats.dot_normalization_owned)?,
         dialogue_rescue_expr_parse_attempts: to_u64(
             "dialogue rescue parse attempts",
             stats.dialogue_rescue_expr_parse_attempts,

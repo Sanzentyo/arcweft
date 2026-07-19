@@ -83,16 +83,16 @@ impl FxCatalog {
     ) -> Result<(String, FxApplication), RuntimePlanLowerError> {
         let expr = parse_expr(tag.attrs().trim())
             .map_err(|error| fx_error(format!("invalid `[fx]` invocation: {error}")))?;
-        let Expr::Call { callee, args } = expr else {
+        let Expr::Call(call) = expr else {
             return Err(fx_error("`[fx]` requires one Fx function call"));
         };
-        let name = callee_name(&callee)
+        let name = callee_name(call.callee())
             .ok_or_else(|| fx_error("`[fx]` target must be a canonical function path"))?;
         let definition = self
             .definitions
             .get(name)
             .ok_or_else(|| fx_error(format!("unknown Fx function `{name}`")))?;
-        let parameters = bind_invocation(definition, &args)?;
+        let parameters = bind_invocation(definition, call.args())?;
         let range = tag.attrs_range();
         let start = u32::try_from(range.start())
             .map_err(|_| fx_error("Fx source range start exceeds u32"))?;
@@ -214,9 +214,12 @@ fn rich_text_value_is_closed(expr: &Expr) -> bool {
     }
     matches!(
         expr,
-        Expr::Call { callee, args }
-            if matches!(callee_name(callee), Some("rgb" | "vec2" | "vec3" | "vec4"))
-                && args.iter().all(|arg| {
+        Expr::Call(call)
+            if matches!(
+                callee_name(call.callee()),
+                Some("rgb" | "vec2" | "vec3" | "vec4")
+            )
+                && call.args().iter().all(|arg| {
                     !matches!(arg, CallArg::Spread { .. })
                         && rich_text_value_is_closed(arg.value())
                 })

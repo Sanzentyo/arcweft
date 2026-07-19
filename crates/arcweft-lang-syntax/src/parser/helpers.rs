@@ -1,12 +1,14 @@
 //! Shared parser helpers that are not tied to a single grammar family.
 
+use std::borrow::Cow;
+
 use super::control_flow::parse_named_block_expr;
 use super::headers::{
     parse_required_entity_ref_syntax, parse_required_id_ref, parse_visibility_prefix, simple_error,
 };
 use super::line_plan::parse_line_plan_body;
 use super::line_plan::parse_line_plan_body_with_body_base;
-use super::recovery::ParseError;
+use super::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
 use super::statements::parse_label_ref;
 use super::{Parser, parse_dialogue_content};
 use crate::ast::{
@@ -25,10 +27,12 @@ use crate::cst::{
 use crate::cst::{
     find_matching_punctuation, find_top_level_matching_punctuation, find_top_level_punctuation,
 };
-use crate::expr::{ComputationBlockKind, Expr, parse_expr, parse_expr_with_stats};
+use crate::expr::{
+    CallRecoveryBoundarySyntax, ComputationBlockKind, Expr, ExprRecoveryDiagnostic, parse_expr,
+    parse_expr_fragment_recovering_at, parse_expr_with_stats,
+};
 use crate::pattern::parse_pattern;
 use crate::types::{TypeRef, parse_type_ref};
-use std::borrow::Cow;
 
 pub(super) enum OptionalLabel {
     None,
@@ -205,7 +209,7 @@ pub(super) fn is_expression_statement_call(trimmed: &str) -> bool {
     if find_top_level_punctuation(trimmed, '[').is_some() {
         return false;
     }
-    matches!(crate::expr::parse_expr(trimmed), Ok(Expr::Call { .. }))
+    matches!(crate::expr::parse_expr(trimmed), Ok(Expr::Call(_)))
 }
 
 pub(super) fn parse_line_options(
@@ -617,23 +621,111 @@ pub(super) fn parse_expr_lossy(source: &str) -> crate::expr::Expr {
     parse_expr_lossy_with_stats(source, None)
 }
 
+pub(super) fn parse_owned_expr_recovering(
+    source: &str,
+    base: usize,
+    stats: Option<&mut SyntaxParseStats>,
+    errors: &mut Vec<ParseError>,
+) -> crate::expr::Expr {
+    let trimmed = source.trim();
+    match parse_expr_fragment_recovering_at(
+        source,
+        base,
+        CallRecoveryBoundarySyntax::EndOfExpression,
+    ) {
+        Ok(parsed) => {
+            if let Some(stats) = stats {
+                if let Some(total) = stats
+                    .numeric_seq_summaries
+                    .checked_add(parsed.stats.numeric_seq_summaries())
+                {
+                    stats.numeric_seq_summaries = total;
+                } else {
+                    errors.push(ParseError::new(
+                        parsed.range,
+                        Vec::new(),
+                        None,
+                        "expression parse statistic overflowed".to_owned(),
+                        Vec::new(),
+                    ));
+                    return crate::expr::Expr::Raw(trimmed.to_owned());
+                }
+            }
+            for diagnostic in &parsed.diagnostics {
+                retain_expr_recovery_diagnostic(diagnostic, errors);
+            }
+            parsed.expr
+        }
+        Err(error) => {
+            if error.code() == "syntax.expr.prefix_depth_limit"
+                && let Some(stats) = stats
+            {
+                let Some(total) = stats.prefix_depth_limit_failures.checked_add(1) else {
+                    errors.push(ParseError::new(
+                        error.range(),
+                        Vec::new(),
+                        None,
+                        "expression prefix-depth statistic overflowed".to_owned(),
+                        Vec::new(),
+                    ));
+                    return crate::expr::Expr::Raw(trimmed.to_owned());
+                };
+                stats.prefix_depth_limit_failures = total;
+            }
+            let mut parse_error = ParseError::new(
+                error.range(),
+                vec!["expression".to_owned()],
+                None,
+                error.to_string(),
+                Vec::new(),
+            );
+            for related in error.related_ranges() {
+                parse_error = parse_error
+                    .with_related(*related, Some("related expression syntax".to_owned()));
+            }
+            errors.push(parse_error);
+            crate::expr::Expr::Raw(trimmed.to_owned())
+        }
+    }
+}
+
+pub(super) fn retain_expr_recovery_diagnostic(
+    diagnostic: &crate::expr::ExprParseError,
+    errors: &mut Vec<ParseError>,
+) {
+    let Some(recovery) = diagnostic.recovery_diagnostic() else {
+        return;
+    };
+    let error = match recovery {
+        ExprRecoveryDiagnostic::MissingCallClose { open_paren } => ParseError::new(
+            diagnostic.range(),
+            vec![")".to_owned()],
+            None,
+            diagnostic.to_string(),
+            vec![
+                RecoverySuggestion::new("insert the missing `)`")
+                    .with_edit(RecoveryEdit::new(diagnostic.range(), ")")),
+            ],
+        )
+        .with_related(open_paren, Some("argument list opens here".to_owned())),
+        ExprRecoveryDiagnostic::RecoveredCallArgument => ParseError::new(
+            diagnostic.range(),
+            vec!["expression".to_owned()],
+            None,
+            diagnostic.to_string(),
+            vec![RecoverySuggestion::new(
+                "replace the malformed argument with a valid expression",
+            )],
+        ),
+    };
+    errors.push(error);
+}
+
 pub(super) fn parse_expr_lossy_with_stats(
     source: &str,
-    mut stats: Option<&mut SyntaxParseStats>,
+    stats: Option<&mut SyntaxParseStats>,
 ) -> crate::expr::Expr {
-    let normalized = normalize_dot_continuations(source);
-    if matches!(normalized, Cow::Owned(_))
-        && let Some(stats) = stats.as_deref_mut()
-    {
-        stats.dot_normalization_owned += 1;
-    }
-    let source = normalized.trim();
-    if let Some(value) = parse_raw_string_literal(source) {
-        return crate::expr::Expr::Literal(crate::expr::Literal::String(value));
-    }
-    if let Some(expr) = parse_static_generic_call(source) {
-        return expr;
-    }
+    let source = source.trim();
     if let Some((head, body)) = split_brace_item(source) {
         let name = head.trim();
         if is_plain_block_callee(name) {
@@ -658,68 +750,7 @@ pub(super) fn parse_expr_lossy_with_stats(
     }
 }
 
-fn normalize_dot_continuations(source: &str) -> Cow<'_, str> {
-    if !source.contains('\n') && !source.contains('\r') {
-        return Cow::Borrowed(source);
-    }
-    if !source
-        .lines()
-        .skip(1)
-        .any(|line| line.trim_start().starts_with('.'))
-    {
-        return Cow::Borrowed(source);
-    }
-    let mut lines = source.lines();
-    let Some(first) = lines.next() else {
-        return Cow::Borrowed("");
-    };
-    let mut normalized = first.trim().to_owned();
-    for line in lines {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with('.') {
-            normalized.push_str(trimmed);
-        } else {
-            normalized.push(' ');
-            normalized.push_str(trimmed);
-        }
-    }
-    Cow::Owned(normalized)
-}
-
-fn parse_static_generic_call(source: &str) -> Option<crate::expr::Expr> {
-    let open = find_top_level_punctuation(source, '(')?;
-    let close = find_matching_punctuation(source, open, '(', ')')?;
-    if !source[close + ')'.len_utf8()..].trim().is_empty() {
-        return None;
-    }
-    let callee = source[..open].trim();
-    if !(callee.contains('<') && callee.contains("::")) {
-        return None;
-    }
-    Some(crate::expr::Expr::Call {
-        callee: Box::new(crate::expr::Expr::Path(callee.into())),
-        args: split_comma_args(&source[open + '('.len_utf8()..close])
-            .into_iter()
-            .map(parse_expr_lossy)
-            .map(crate::expr::CallArg::Positional)
-            .collect(),
-    })
-}
-
-fn parse_raw_string_literal(source: &str) -> Option<String> {
-    let rest = source.strip_prefix('r')?;
-    let hashes = rest.chars().take_while(|ch| *ch == '#').count();
-    let quote_start = 1 + hashes;
-    if !source.get(quote_start..)?.starts_with('"') {
-        return None;
-    }
-    let closing = format!("\"{}", "#".repeat(hashes));
-    let body_start = quote_start + '"'.len_utf8();
-    let body_end = source.get(body_start..)?.strip_suffix(&closing)?;
-    Some(body_end.to_owned())
-}
-
-fn is_plain_block_callee(source: &str) -> bool {
+pub(super) fn is_plain_block_callee(source: &str) -> bool {
     !source.is_empty()
         && source
             .chars()
@@ -919,38 +950,12 @@ pub(super) fn indentation(text: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_logical_block_items, content_may_be_typed_expr, normalize_dot_continuations,
-        parse_expr_lossy_with_stats, parse_expr_with_inline_line_plan_with_stats,
+        collect_logical_block_items, content_may_be_typed_expr,
+        parse_expr_with_inline_line_plan_with_stats,
     };
     use crate::cst::SyntaxParseStats;
     use crate::expr::Expr;
     use std::borrow::Cow;
-
-    #[test]
-    fn dot_continuation_normalization_borrows_when_no_continuation_exists() {
-        assert!(matches!(
-            normalize_dot_continuations("alpha +\nbeta"),
-            Cow::Borrowed("alpha +\nbeta")
-        ));
-    }
-
-    #[test]
-    fn dot_continuation_normalization_owns_only_for_continuation_lines() {
-        match normalize_dot_continuations("value\n    .map(f)\n    .sum()") {
-            Cow::Owned(normalized) => assert_eq!(normalized, "value.map(f).sum()"),
-            Cow::Borrowed(_) => panic!("dot continuation should allocate normalized source"),
-        }
-    }
-
-    #[test]
-    fn dot_continuation_stats_count_owned_normalizations_only() {
-        let mut stats = SyntaxParseStats::default();
-        let _ = parse_expr_lossy_with_stats("alpha +\nbeta", Some(&mut stats));
-        assert_eq!(stats.dot_normalization_owned, 0);
-
-        let _ = parse_expr_lossy_with_stats("value\n    .map(f)", Some(&mut stats));
-        assert_eq!(stats.dot_normalization_owned, 1);
-    }
 
     #[test]
     fn dialogue_rescue_skips_expression_parse_for_obvious_text() {

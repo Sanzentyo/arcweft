@@ -1171,7 +1171,7 @@ fn external_lookup_stale_revision() {
 
     let (changed_root, changed_project, changed_world) = root_project_source(
         "same-world-stale",
-        "fn main() -> Unit { let changed = true; () }\n",
+        "fn main() -> Unit {\n    let changed = true\n    ()\n}\n",
     );
     let changed_facts = one_character_facts(
         &changed_root,

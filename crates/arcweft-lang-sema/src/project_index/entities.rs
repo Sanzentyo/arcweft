@@ -253,8 +253,8 @@ fn index_expr_agent_actions(
     source_name: &SourceName,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match expr {
-        Expr::Call { callee, args } => {
-            index_call_expr_agent_actions(callee, args, index, source_name)
+        Expr::Call(call) => {
+            index_call_expr_agent_actions(call.callee(), call.args(), index, source_name)
         }
         Expr::Select(select) => index_expr_agent_actions(select.target(), index, source_name),
         Expr::Try { expr: target }

@@ -195,7 +195,7 @@ pub(crate) struct CallbackParameterSyntaxInit {
 }
 
 /// Internal failure to uphold parser-owned call syntax invariants.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub(crate) enum CallSyntaxInvariantError {
     #[error("call syntax range is not on a UTF-8 boundary")]
     InvalidUtf8Boundary,
@@ -472,7 +472,15 @@ impl ArgumentListSyntax {
             .into_iter()
             .map(|argument| CallArgumentSyntax::try_from_parser(&validator, argument))
             .collect::<Result<Vec<_>, _>>()?;
-        if init.separators.len() != arguments.len().saturating_sub(1) {
+        let expected_separators = if arguments.is_empty() {
+            0
+        } else {
+            arguments
+                .len()
+                .checked_sub(1)
+                .ok_or(CallSyntaxInvariantError::OffsetOverflow)?
+        };
+        if init.separators.len() != expected_separators {
             return Err(CallSyntaxInvariantError::SeparatorCountMismatch);
         }
         for separator in &init.separators {
@@ -664,7 +672,11 @@ impl CallbackBlockSyntax {
                     return Err(CallSyntaxInvariantError::InvalidCallbackParameterHeader);
                 }
                 validator.token(fat_arrow, "=>")?;
-                if separators.len() != parameters.len().saturating_sub(1) {
+                let expected_separators = parameters
+                    .len()
+                    .checked_sub(1)
+                    .ok_or(CallSyntaxInvariantError::OffsetOverflow)?;
+                if separators.len() != expected_separators {
                     return Err(CallSyntaxInvariantError::SeparatorCountMismatch);
                 }
                 for separator in &separators {

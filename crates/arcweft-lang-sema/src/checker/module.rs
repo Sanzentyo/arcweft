@@ -1763,7 +1763,7 @@ fn unknown_default_inline_failure_policy(expr: &Expr) -> Option<String> {
             }
             _ => None,
         },
-        Expr::Call { callee, args } => unknown_default_inline_failure_constructor(callee, args),
+        Expr::Call(call) => unknown_default_inline_failure_constructor(call.callee(), call.args()),
         _ => None,
     }
 }

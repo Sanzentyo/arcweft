@@ -468,12 +468,12 @@ pub(super) fn selected_higher_order_argument<'a>(
                         actual = None;
                     }
                     FunctionParamSelectorSegment::VariantPayload(variant) => match value {
-                        Expr::Call { callee, args } => {
-                            let callee = expr_path_label(callee)?;
+                        Expr::Call(call) => {
+                            let callee = expr_path_label(call.callee())?;
                             if !variant_constructor_matches(&callee, variant) {
                                 return None;
                             }
-                            let [CallArg::Positional(payload)] = args.as_slice() else {
+                            let [CallArg::Positional(payload)] = call.args() else {
                                 return None;
                             };
                             value = payload;

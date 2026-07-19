@@ -104,7 +104,7 @@ fn effect_label(expression: &Expr) -> Result<String, EffectContractLowerError> {
         Expr::ShortVariant(name) => Ok(format!(".{name}")),
         Expr::Select(select) => effect_label(select.target())
             .map(|target| format!("{target}.{}", select.member().as_str())),
-        Expr::Call { callee, args } => scoped_effect_label(callee, args),
+        Expr::Call(call) => scoped_effect_label(call.callee(), call.args()),
         _ => Err(EffectContractLowerError::UnsupportedSelector {
             expr: Box::new(expression.clone()),
         }),

@@ -6,7 +6,7 @@ use crate::ast::dialogue::{
 use crate::ast::flow::{
     AuthoredExpr, Flow, FlowInit, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, MatchArm,
     MatchBlock, ScopeBlock, ScopeExprBlock, SelectBlock, SelectBranch, SelectBranchHead, Stmt,
-    StmtMatchArm, UnsafeAuditInsertion, WaitTarget, WhileBlock, WhileLetBlock,
+    UnsafeAuditInsertion, WaitTarget, WhileBlock, WhileLetBlock,
 };
 use crate::ast::ids::{IdRef, RelativeId, RelativeIdSpelling};
 use crate::ast::items::{Attribute, Item, RawSyntax, TypedSyntaxTree};
@@ -92,9 +92,9 @@ mod type_ref;
 pub mod view;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
-    parse_block_expr, parse_braced_while_let_stmt, parse_named_block_expr,
-    parse_scope_authored_expr_body, parse_scope_authored_expr_body_with_base,
-    parse_scope_expr_body, parse_stmt_lines, parse_stmt_match_arms, split_pattern_guard,
+    parse_block_expr, parse_named_block_expr, parse_scope_authored_expr_body,
+    parse_scope_authored_expr_body_recovering_with_base, parse_scope_expr_body, parse_stmt_lines,
+    split_pattern_guard,
 };
 pub use fragment::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
@@ -108,10 +108,10 @@ use helpers::{
     parse_dialogue_call_expr_source, parse_expr_lossy, parse_expr_lossy_with_stats,
     parse_expr_with_inline_line_plan_with_stats, parse_inline_with_colon_plan, parse_line_options,
     parse_line_plan_attachment, parse_line_plan_attachment_with_body_base, parse_outer_attribute,
-    parse_type_ref_or_error, parse_with_brace_label, parse_with_indent_label, source_take,
-    split_brace_item, split_brace_item_with_scan, split_call_head, split_comma_args,
-    split_optional_block_label, split_speaker_line, split_top_level_binding,
-    validate_let_type_ascriptions,
+    parse_owned_expr_recovering, parse_type_ref_or_error, parse_with_brace_label,
+    parse_with_indent_label, retain_expr_recovery_diagnostic, source_take, split_brace_item,
+    split_brace_item_with_scan, split_call_head, split_comma_args, split_optional_block_label,
+    split_speaker_line, split_top_level_binding, validate_let_type_ascriptions,
 };
 use line_plan::{
     parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,
@@ -119,7 +119,7 @@ use line_plan::{
 use recovery::{ParseError, RecoverySuggestion};
 use statements::{
     binding_value_start_in_line, braced_expr_source, parse_scope_head, parse_stmt,
-    parse_stmt_with_base, parse_stmt_with_stats_and_base, parse_unsafe_lifetime_block,
+    parse_stmt_recovering_with_base, parse_stmt_with_base, parse_unsafe_lifetime_block,
     parse_value_scope_stmt_with_stats_and_base, raw_stmt,
 };
 
@@ -129,13 +129,11 @@ pub fn parse_source(source: impl Into<String>) -> ParsedSource {
     parse_document(source, ParseOptions::default())
 }
 
-/// Parses a callback block body as an expression block.
-///
-/// This is used by the expression parser for postfix callback sugar such as
-/// `button.on_click { let x = value; action.invoke(...) }`, where the braces
-/// are syntactic callback delimiters rather than ordinary expression grouping.
-pub(crate) fn parse_callback_block_expr_body(body: &str) -> Expr {
-    parse_block_expr(body)
+pub(crate) fn parse_callback_block_expr_body_recovering_at(
+    body: &str,
+    base: usize,
+) -> Result<crate::expr::ParsedExpr, crate::expr::ExprParseError> {
+    control_flow::parse_block_expr_recovering_with_base(body, base)
 }
 
 /// Parses dialogue text content outside a full source document.

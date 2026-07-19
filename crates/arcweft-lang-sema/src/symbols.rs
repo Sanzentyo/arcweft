@@ -831,20 +831,20 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(value, uses);
             collect_expr(len, uses);
         }
-        Expr::Call { callee, args } => {
-            if let Expr::Path(path) = callee.as_ref() {
+        Expr::Call(call) => {
+            if let Expr::Path(path) = call.callee() {
                 uses.push(SymbolUse::new(
                     SymbolUseKind::Call,
                     path.as_label().to_owned(),
                 ));
-            } else if let Expr::Select(select) = callee.as_ref() {
+            } else if let Expr::Select(select) = call.callee() {
                 uses.push(SymbolUse::new(
                     SymbolUseKind::Method,
                     select.member().as_str().to_owned(),
                 ));
             }
-            collect_expr(callee, uses);
-            for arg in args {
+            collect_expr(call.callee(), uses);
+            for arg in call.args() {
                 collect_expr(arg.value(), uses);
             }
         }

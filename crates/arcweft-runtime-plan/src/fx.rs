@@ -172,15 +172,15 @@ impl<'a> FxGraphCompiler<'a> {
         owner: &FxId,
         bindings: &BTreeMap<String, FxStaticValue>,
     ) -> Result<FxGraph, RuntimePlanLowerError> {
-        let Expr::Call { callee, args } = expr else {
+        let Expr::Call(call) = expr else {
             return Err(RuntimePlanLowerError::new(
                 "Fx graph value must be a constructor or Fx function call".to_owned(),
             ));
         };
-        if let Some(member) = fx_constructor_member(callee) {
-            return self.compile_constructor(member, owner, args, bindings);
+        if let Some(member) = fx_constructor_member(call.callee()) {
+            return self.compile_constructor(member, owner, call.args(), bindings);
         }
-        let Some(name) = simple_path(callee) else {
+        let Some(name) = simple_path(call.callee()) else {
             return Err(RuntimePlanLowerError::new(
                 "Fx graph calls must use a canonical function symbol".to_owned(),
             ));
@@ -188,7 +188,7 @@ impl<'a> FxGraphCompiler<'a> {
         let function = *self.functions.get(name).ok_or_else(|| {
             RuntimePlanLowerError::new(format!("Fx graph references unknown Fx function `{name}`"))
         })?;
-        let child_bindings = bind_call(function, args, bindings)?;
+        let child_bindings = bind_call(function, call.args(), bindings)?;
         self.compile_function_graph(function, &child_bindings)
     }
 

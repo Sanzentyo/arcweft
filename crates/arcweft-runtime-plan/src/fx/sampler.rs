@@ -91,7 +91,7 @@ impl SamplerCompiler<'_> {
                 Ok(())
             }
             Expr::Binary { lhs, op, rhs } => self.emit_binary(lhs, *op, rhs),
-            Expr::Call { callee, args } => self.emit_call(callee, args),
+            Expr::Call(call) => self.emit_call(call.callee(), call.args()),
             Expr::Record { path, fields } if path == "Transform2D" => self.emit_transform(fields),
             Expr::If {
                 condition,
@@ -316,7 +316,7 @@ impl SamplerCompiler<'_> {
                     ))
                 })
             }
-            Expr::Call { callee, args } => self.infer_call(callee, args),
+            Expr::Call(call) => self.infer_call(call.callee(), call.args()),
             Expr::Record { path, .. } if path == "Transform2D" => Ok(FxRuntimeType::Transform2D),
             Expr::If {
                 then_branch,

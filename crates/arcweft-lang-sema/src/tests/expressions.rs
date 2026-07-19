@@ -21,15 +21,14 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     let indexed = parse_expr("state.affection[@character.alice]").expect("index expr parses");
     assert!(matches!(indexed, Expr::Index { .. }));
 
-    let dialogue_index =
-        parse_expr("alice.say()[聞いて。[p]]").expect("bracket postfix expr parses");
-    assert!(matches!(dialogue_index, Expr::Index { .. }));
+    let call_index = parse_expr("alice.lines()[0]").expect("call result index parses");
+    assert!(matches!(call_index, Expr::Index { .. }));
 
     let timeline_offset = parse_expr("end-250ms").expect("timeline offset parses");
     assert!(matches!(timeline_offset, Expr::Binary { .. }));
 
     let placeholder = parse_expr("clamp(0, ^, 100)").expect("placeholder call parses");
-    assert!(matches!(placeholder, Expr::Call { .. }));
+    assert!(matches!(placeholder, Expr::Call(_)));
     let partial = parse_expr("_.score >= ^").expect("partial comparison expression parses");
     assert!(matches!(partial, Expr::Binary { .. }));
     let grouped_partial =

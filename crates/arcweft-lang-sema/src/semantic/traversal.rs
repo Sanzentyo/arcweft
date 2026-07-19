@@ -144,11 +144,12 @@ fn stmt_contains_unchecked_promotion(stmt: &Stmt) -> bool {
 )]
 fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
     match expr {
-        Expr::Call { callee, args } => {
-            matches!(callee.as_ref(), Expr::Path(path) if path == "promote_unchecked")
-                || matches!(callee.as_ref(), Expr::Select(select) if select.member() == "promote_unchecked")
-                || expr_contains_unchecked_promotion(callee)
-                || args
+        Expr::Call(call) => {
+            matches!(call.callee(), Expr::Path(path) if path == "promote_unchecked")
+                || matches!(call.callee(), Expr::Select(select) if select.member() == "promote_unchecked")
+                || expr_contains_unchecked_promotion(call.callee())
+                || call
+                    .args()
                     .iter()
                     .any(|arg| expr_contains_unchecked_promotion(arg.value()))
         }
@@ -283,8 +284,8 @@ pub(super) fn is_drop_expr(expr: &Expr) -> bool {
         Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")
     ) || matches!(
         expr,
-        Expr::Call { callee, .. }
-            if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop"))
+        Expr::Call(call)
+            if matches!(call.callee(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop"))
     )
 }
 
@@ -516,15 +517,15 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
             }
             collect_expr_drop_keys(rhs, keys);
         }
-        Expr::Call { callee, args } if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) => {
-            for arg in args {
+        Expr::Call(call) if matches!(call.callee(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) => {
+            for arg in call.args() {
                 if let Expr::LifetimePath { key, .. } = arg.value() {
                     keys.insert(key.clone());
                 }
             }
         }
-        Expr::Call { callee, args } => {
-            if let Expr::Select(select) = callee.as_ref()
+        Expr::Call(call) => {
+            if let Expr::Select(select) = call.callee()
                 && matches!(
                     select.member().as_str(),
                     "drop" | "drop_optional" | "on_drop"
@@ -533,8 +534,8 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
             {
                 keys.insert(key.clone());
             }
-            collect_expr_drop_keys(callee, keys);
-            for arg in args {
+            collect_expr_drop_keys(call.callee(), keys);
+            for arg in call.args() {
                 collect_expr_drop_keys(arg.value(), keys);
             }
         }
@@ -598,9 +599,9 @@ fn collect_stmt_write_accesses(stmt: &Stmt, accesses: &mut BTreeSet<ResourceAcce
 fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
     accesses.extend(resource_accesses_from_expr(expr));
     match expr {
-        Expr::Call { callee, args } => {
-            collect_expr_write_accesses(callee, accesses);
-            for arg in args {
+        Expr::Call(call) => {
+            collect_expr_write_accesses(call.callee(), accesses);
+            for arg in call.args() {
                 collect_expr_write_accesses(arg.value(), accesses);
             }
         }

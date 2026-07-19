@@ -376,10 +376,10 @@ fn reject_fallible_inline_value_without_failure_policy(
     if !matches!(expr_ty, Some(TypeKind::DisplayText)) {
         return;
     }
-    if let Expr::Call { callee, args } = expr {
+    if let Expr::Call(call) = expr {
         validate_inline_call_failure_policy(
-            inline_callable_label(callee),
-            args,
+            inline_callable_label(call.callee()),
+            call.args(),
             has_default_inline_failure_policy,
             errors,
         );
@@ -438,7 +438,7 @@ fn unknown_inline_failure_policy(expr: &Expr) -> Option<String> {
             }
             _ => None,
         },
-        Expr::Call { callee, args } => unknown_inline_failure_constructor(callee, args),
+        Expr::Call(call) => unknown_inline_failure_constructor(call.callee(), call.args()),
         _ => None,
     }
 }
@@ -535,13 +535,13 @@ fn inline_callable_label(expr: &Expr) -> String {
 }
 
 fn wait_mark_name(expr: &Expr) -> Option<String> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if !matches!(callee.as_ref(), Expr::Path(path) if path == "mark") || args.len() != 1 {
+    if !matches!(call.callee(), Expr::Path(path) if path == "mark") || call.args().len() != 1 {
         return None;
     }
-    match args[0].value() {
+    match call.args()[0].value() {
         Expr::Path(path) => Some(path.as_label().to_owned()),
         Expr::ShortVariant(name) => Some(format!(".{name}")),
         Expr::EntityRef(entity) => Some(entity.body().to_owned()),

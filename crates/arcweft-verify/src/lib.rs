@@ -1346,8 +1346,8 @@ impl ObligationCollector {
                 self.collect_expr(value);
                 self.collect_expr(len);
             }
-            Expr::Call { callee, args } => {
-                self.collect_call(callee, args);
+            Expr::Call(call) => {
+                self.collect_call(call.callee(), call.args());
             }
             Expr::Select(select) => self.collect_expr(select.target()),
             Expr::DialogueCall { callee, plan, .. } => {
@@ -1950,8 +1950,8 @@ fn is_must_drop_key(key: &LifetimeKey) -> bool {
 fn is_drop_expr(expr: &Expr) -> bool {
     matches!(
         expr,
-        Expr::Call { callee, .. }
-            if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop"))
+        Expr::Call(call)
+            if matches!(call.callee(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop"))
     )
 }
 

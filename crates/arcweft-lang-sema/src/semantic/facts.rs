@@ -166,8 +166,11 @@ pub(super) fn transfer_reason(stmt: &Stmt, context: ExitReason) -> Option<ExitRe
 fn expr_is_failed_transfer(expr: &Expr) -> bool {
     matches!(
         expr,
-        Expr::Call { callee, .. }
-            if matches!(expr_path_label(callee).as_deref(), Some("panic" | "fail" | "bail"))
+        Expr::Call(call)
+            if matches!(
+                expr_path_label(call.callee()).as_deref(),
+                Some("panic" | "fail" | "bail")
+            )
     )
 }
 

@@ -205,11 +205,11 @@ pub(super) fn register_input_handle_binding(view_let: &ViewLet, state: &mut View
 
 fn input_handle_binding(name: &str, value: &Expr) -> Option<InputHandleBinding> {
     let args = match value {
-        Expr::Call { callee, args }
-            if expr_path_matches(callee, &["input", "text"])
-                || expr_path_matches(callee, &["input", "secure"]) =>
+        Expr::Call(call)
+            if expr_path_matches(call.callee(), &["input", "text"])
+                || expr_path_matches(call.callee(), &["input", "secure"]) =>
         {
-            args
+            call.args()
         }
         _ => return None,
     };

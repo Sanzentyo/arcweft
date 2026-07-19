@@ -7,12 +7,13 @@ use super::headers::{
 use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
     CstLineEvents, CstPunctuationDeltas, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit,
-    FlowItem, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, Stmt, SyntaxParseStats,
-    TextRange, UnsafeAuditInsertion, flat_block_head, indentation, is_await_with_head,
-    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
-    parse_defer_outcome, parse_expr_lossy, parse_flat_fence, parse_line_options,
-    parse_line_plan_attachment, parse_scope_head, parse_stmt_lines, parse_stmt_with_stats_and_base,
-    parse_thread_block, parse_unsafe_lifetime_block, parse_with_brace_label, split_call_head,
+    FlowItem, MappedDialogueSourceBuilder, ParseError, Parser, RawSyntax, ScopeBlock, Stmt,
+    SyntaxParseStats, TextRange, UnsafeAuditInsertion, flat_block_head, indentation,
+    is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
+    parse_await_with, parse_defer_outcome, parse_flat_fence, parse_line_options,
+    parse_line_plan_attachment, parse_owned_expr_recovering, parse_scope_head, parse_stmt_lines,
+    parse_stmt_recovering_with_base, parse_thread_block, parse_unsafe_lifetime_block,
+    parse_with_brace_label, retain_expr_recovery_diagnostic, split_call_head,
     split_top_level_keyword_once,
 };
 use std::borrow::Cow;
@@ -129,7 +130,12 @@ impl<'a> Parser<'a> {
         events: CstLineEvents<'a>,
         base_offset: usize,
     ) -> Vec<FlowItem> {
-        let mut nested = Parser::from_line_events(None, "", events, SyntaxParseStats::default());
+        let mut nested = Parser::from_line_events(
+            self.document,
+            self.source,
+            events,
+            SyntaxParseStats::default(),
+        );
         self.parse_nested_flow_body(&mut nested, base_offset)
     }
 
@@ -223,11 +229,9 @@ impl<'a> Parser<'a> {
                 {
                     let stmt = self.consume_stmt_text_with_continuations(indent);
                     let base = line.start + line.text.len() - line.text.trim_start().len();
-                    return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
-                        stmt.trim(),
-                        &mut self.syntax_stats,
-                        base,
-                    )));
+                    return Some(FlowItem::Stmt(
+                        self.parse_authored_flow_stmt(stmt.trim(), base),
+                    ));
                 }
                 if let Some(item) = self.parse_let_flow_item(kind, indent) {
                     return Some(item);
@@ -236,11 +240,9 @@ impl<'a> Parser<'a> {
             CstFlowItemKind::TypedStmt => {
                 let stmt = self.consume_stmt_text_with_continuations(indent);
                 let base = line.start + line.text.len() - line.text.trim_start().len();
-                return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
-                    stmt.trim(),
-                    &mut self.syntax_stats,
-                    base,
-                )));
+                return Some(FlowItem::Stmt(
+                    self.parse_authored_flow_stmt(stmt.trim(), base),
+                ));
             }
             CstFlowItemKind::Include | CstFlowItemKind::AwaitWith | CstFlowItemKind::Other => {}
         }
@@ -252,11 +254,9 @@ impl<'a> Parser<'a> {
         if is_typed_stmt(trimmed) || trimmed.starts_with("let ") {
             let stmt = self.consume_stmt_text_with_continuations(indent);
             let base = line.start + line.text.len() - line.text.trim_start().len();
-            return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
-                stmt.trim(),
-                &mut self.syntax_stats,
-                base,
-            )));
+            return Some(FlowItem::Stmt(
+                self.parse_authored_flow_stmt(stmt.trim(), base),
+            ));
         }
         if let Some(item) = self.parse_line_flow_item(&line, trimmed) {
             return Some(item);
@@ -286,6 +286,35 @@ impl<'a> Parser<'a> {
             }
         };
         FlowItem::Stmt(statement)
+    }
+
+    fn parse_authored_flow_stmt(&mut self, source: &str, base: usize) -> Stmt {
+        match parse_stmt_recovering_with_base(source, &mut self.syntax_stats, base) {
+            Ok(parsed) => {
+                for diagnostic in &parsed.diagnostics {
+                    retain_expr_recovery_diagnostic(diagnostic, &mut self.errors);
+                }
+                parsed.stmt
+            }
+            Err(error) => {
+                let mut diagnostic = ParseError::new(
+                    error.range(),
+                    vec!["expression".to_owned()],
+                    None,
+                    error.to_string(),
+                    Vec::new(),
+                );
+                for related in error.related_ranges() {
+                    diagnostic = diagnostic
+                        .with_related(*related, Some("related expression syntax".to_owned()));
+                }
+                self.errors.push(diagnostic);
+                let range = base
+                    .checked_add(source.len())
+                    .map(|end| TextRange::new(base, end));
+                Stmt::Raw(RawSyntax::stmt(source, range))
+            }
+        }
     }
 
     fn consume_stmt_text_with_continuations(&mut self, indent: usize) -> Cow<'a, str> {
@@ -354,10 +383,18 @@ impl<'a> Parser<'a> {
         }
         if is_expression_statement_call(trimmed) {
             self.index += 1;
+            let base = line.start + line.text.len() - line.text.trim_start().len();
             return Some(FlowItem::Stmt(Stmt::Expr {
-                expr: parse_expr_lossy(trimmed),
+                expr: parse_owned_expr_recovering(
+                    trimmed,
+                    base,
+                    Some(&mut self.syntax_stats),
+                    &mut self.errors,
+                ),
                 expr_source: Some(trimmed.to_owned()),
-                expr_range: Some(TextRange::new(line.start, line.end)),
+                expr_range: base
+                    .checked_add(trimmed.len())
+                    .map(|end| TextRange::new(base, end)),
             }));
         }
         if let Some(rest) = trimmed.strip_prefix("include ") {
@@ -466,11 +503,7 @@ impl<'a> Parser<'a> {
             self.index += 1;
             let base =
                 start_line.start + start_line.text.len() - start_line.text.trim_start().len();
-            return Some(FlowItem::Stmt(parse_stmt_with_stats_and_base(
-                trimmed,
-                &mut self.syntax_stats,
-                base,
-            )));
+            return Some(FlowItem::Stmt(self.parse_authored_flow_stmt(trimmed, base)));
         }
         let (head, body, _, ok) = self.take_brace_block();
         if ok && let Some(outcome) = parse_defer_outcome(head.trim()) {

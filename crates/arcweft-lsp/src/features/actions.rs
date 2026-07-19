@@ -1027,7 +1027,7 @@ fn speaker_preset_expr_edit(
     expr_range: Option<&TextRange>,
     option: &str,
 ) -> Option<TextEdit> {
-    if !matches!(expr, Expr::Call { .. }) {
+    if !matches!(expr, Expr::Call(_)) {
         return None;
     }
     let expr_range = expr_range?;

@@ -207,21 +207,21 @@ fn parse_expect_file_call(text: &str) -> Option<(String, String)> {
 }
 
 fn parse_expect_method_call(text: &str) -> Option<(String, Vec<CallArg>)> {
-    let Expr::Call { callee, args } = parse_expr(text).ok()? else {
+    let Expr::Call(call) = parse_expr(text).ok()? else {
         return None;
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         return None;
     };
     matches!(select.target(), Expr::Path(path) if path == "expect")
-        .then_some((select.member().as_str().to_owned(), args))
+        .then(|| (select.member().as_str().to_owned(), call.args().to_vec()))
 }
 
 fn virtual_path_label(expr: &Expr) -> Option<String> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         return None;
     };
     if !matches!(select.target(), Expr::Path(path) if path == "path") {
@@ -231,7 +231,7 @@ fn virtual_path_label(expr: &Expr) -> Option<String> {
     if !matches!(method, "save" | "asset" | "temp" | "export") {
         return None;
     }
-    let [relative] = args.as_slice() else {
+    let [relative] = call.args() else {
         return None;
     };
     Some(format!(

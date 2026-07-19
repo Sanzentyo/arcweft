@@ -39,7 +39,7 @@ struct AudioCall<'a> {
 impl<'a> AudioCall<'a> {
     fn from_expr(expr: &'a Expr) -> Option<Self> {
         let (callee, args) = match expr {
-            Expr::Call { callee, args } => (expr_label(callee), args.as_slice()),
+            Expr::Call(call) => (expr_label(call.callee()), call.args()),
             Expr::Path(path) => (path.as_label().to_owned(), &[][..]),
             Expr::ShortVariant(name) => (format!(".{name}"), &[][..]),
             _ => return None,

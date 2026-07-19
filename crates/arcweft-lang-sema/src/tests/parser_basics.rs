@@ -47,7 +47,7 @@ use game.prelude.*
     assert!(matches!(
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Expr {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         })
     ));
@@ -127,20 +127,23 @@ flow @flow.opening opening {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Expr {
-        expr: Expr::Call { callee, args },
+        expr: Expr::Call(call),
         ..
     }) = &flow.body()[0]
     else {
         panic!("expected call statement");
     };
-    assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "show"));
-    assert!(matches!(&args[0], CallArg::Positional(Expr::EntityRef(_))));
+    assert!(matches!(call.callee(), Expr::Path(path) if path == "show"));
     assert!(matches!(
-        &args[2],
+        &call.args()[0],
+        CallArg::Positional(Expr::EntityRef(_))
+    ));
+    assert!(matches!(
+        &call.args()[2],
         CallArg::Named { name, value } if name == "at" && matches!(value.as_ref(), Expr::ShortVariant(path) if path == "right")
     ));
     assert!(matches!(
-        &args[3],
+        &call.args()[3],
         CallArg::Named { name, value } if name == "fade" && matches!(value.as_ref(), Expr::Literal(_))
     ));
 }

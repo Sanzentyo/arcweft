@@ -3,6 +3,8 @@ use super::{
     LifetimeScopeKind, Literal, Token, UnitNumberSuffix, char_literal, digit_matches_radix,
     is_ident_continue, is_ident_start, parse_duration, parse_entity_expr, split_number_suffix,
 };
+use crate::cst::split_top_level_punctuation;
+use crate::types::parse_type_ref;
 
 pub(super) struct Lexer<'a> {
     source: &'a str,
@@ -15,7 +17,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub(super) fn tokenize(mut self) -> Vec<LexedToken> {
-        let mut tokens = Vec::with_capacity(self.source.len().saturating_div(3).saturating_add(1));
+        let mut tokens = Vec::new();
         while let Some(ch) = self.peek_char() {
             if ch.is_whitespace() {
                 self.bump_char();
@@ -45,6 +47,7 @@ impl<'a> Lexer<'a> {
             let start = self.cursor;
             let token = match ch {
                 '"' => self.lex_string_or_char(),
+                'r' if self.raw_string_prefix().is_some() => self.lex_raw_string(),
                 '@' => self.lex_entity(),
                 '\'' => self.lex_lifetime_path(),
                 '0'..='9' => self.lex_number_or_duration(),
@@ -75,7 +78,9 @@ impl<'a> Lexer<'a> {
                     self.fixed_op(ExprOp::RangeInclusive)
                 }
                 '.' if self.starts_with_op(ExprOp::Range) => self.fixed_op(ExprOp::Range),
-                '.' if self.dot_starts_relative_path() => self.lex_relative_path(),
+                '.' if self.dot_starts_relative_path(tokens.last().map(|token| &token.token)) => {
+                    self.lex_relative_path()
+                }
                 '.' => self.single(Token::Dot),
                 '=' if self.starts_with_op(ExprOp::FatArrow) => self.fixed_op(ExprOp::FatArrow),
                 '=' if self.starts_with_op(ExprOp::Eq) => self.fixed_op(ExprOp::Eq),
@@ -96,7 +101,7 @@ impl<'a> Lexer<'a> {
                 _ if is_ident_start(ch) => self.lex_ident(),
                 _ => {
                     self.bump_char();
-                    Token::Ident(ch.to_string())
+                    Token::Invalid(format!("invalid expression token `{ch}`"))
                 }
             };
             tokens.push(LexedToken {
@@ -156,6 +161,30 @@ impl<'a> Lexer<'a> {
         Token::Literal(Literal::String(self.source[start..].to_owned()))
     }
 
+    fn raw_string_prefix(&self) -> Option<usize> {
+        let tail = self.source.get(self.cursor..)?.strip_prefix('r')?;
+        let hashes = tail.chars().take_while(|ch| *ch == '#').count();
+        tail.get(hashes..)?.starts_with('"').then_some(hashes)
+    }
+
+    fn lex_raw_string(&mut self) -> Token {
+        let hashes = self
+            .raw_string_prefix()
+            .expect("raw string lexer is called only for a validated prefix");
+        self.cursor += 'r'.len_utf8() + hashes + '"'.len_utf8();
+        let body_start = self.cursor;
+        let terminator = format!("\"{}", "#".repeat(hashes));
+        let Some(relative_end) = self.source[self.cursor..].find(&terminator) else {
+            self.cursor = self.source.len();
+            return Token::Invalid("unclosed raw string literal".to_owned());
+        };
+        let body_end = self.cursor + relative_end;
+        self.cursor = body_end + terminator.len();
+        Token::Literal(Literal::String(
+            self.source[body_start..body_end].to_owned(),
+        ))
+    }
+
     fn lex_entity(&mut self) -> Token {
         let start = self.cursor;
         if self.starts_with("@<") {
@@ -167,8 +196,10 @@ impl<'a> Lexer<'a> {
                 }
             }
             let raw = &self.source[start..self.cursor];
-            return parse_entity_expr(raw)
-                .map_or_else(|| Token::Ident(raw.to_owned()), Token::Entity);
+            return parse_entity_expr(raw).map_or_else(
+                || Token::Invalid(format!("invalid entity reference `{raw}`")),
+                Token::Entity,
+            );
         }
         self.bump_char();
         while let Some(ch) = self.peek_char() {
@@ -178,7 +209,10 @@ impl<'a> Lexer<'a> {
             self.bump_char();
         }
         let raw = &self.source[start..self.cursor];
-        parse_entity_expr(raw).map_or_else(|| Token::Ident(raw.to_owned()), Token::Entity)
+        parse_entity_expr(raw).map_or_else(
+            || Token::Invalid(format!("invalid entity reference `{raw}`")),
+            Token::Entity,
+        )
     }
 
     fn lex_lifetime_path(&mut self) -> Token {
@@ -275,23 +309,22 @@ impl<'a> Lexer<'a> {
 
     fn consume_number_body(&mut self) {
         self.bump_char();
-        if self.source[self.cursor.saturating_sub(1)..].starts_with('0')
-            && matches!(self.peek_char(), Some('x' | 'X'))
-        {
+        let starts_with_zero = self
+            .cursor
+            .checked_sub('0'.len_utf8())
+            .and_then(|start| self.source.get(start..self.cursor))
+            == Some("0");
+        if starts_with_zero && matches!(self.peek_char(), Some('x' | 'X')) {
             self.bump_char();
             self.consume_radix_digits_or_underscores(16);
             return;
         }
-        if self.source[self.cursor.saturating_sub(1)..].starts_with('0')
-            && matches!(self.peek_char(), Some('b' | 'B'))
-        {
+        if starts_with_zero && matches!(self.peek_char(), Some('b' | 'B')) {
             self.bump_char();
             self.consume_radix_digits_or_underscores(2);
             return;
         }
-        if self.source[self.cursor.saturating_sub(1)..].starts_with('0')
-            && matches!(self.peek_char(), Some('o' | 'O'))
-        {
+        if starts_with_zero && matches!(self.peek_char(), Some('o' | 'O')) {
             self.bump_char();
             self.consume_radix_digits_or_underscores(8);
             return;
@@ -378,7 +411,34 @@ impl<'a> Lexer<'a> {
             }
         }
         if self.peek_char() == Some('<') {
-            self.consume_angle_suffix();
+            self.try_consume_angle_suffix();
+        }
+        while self.starts_with("::") {
+            let segment_start = self.cursor;
+            self.bump_char();
+            self.bump_char();
+            if self.peek_char() == Some('<') {
+                if self.try_consume_angle_suffix() {
+                    continue;
+                }
+                self.cursor = segment_start;
+                break;
+            }
+            let Some(next) = self.peek_char() else {
+                self.cursor = segment_start;
+                break;
+            };
+            if !is_ident_start(next) {
+                self.cursor = segment_start;
+                break;
+            }
+            self.bump_char();
+            while self.peek_char().is_some_and(is_ident_continue) {
+                self.bump_char();
+            }
+            if self.peek_char() == Some('<') {
+                self.try_consume_angle_suffix();
+            }
         }
         let value = &self.source[start..self.cursor];
         match value {
@@ -407,14 +467,22 @@ impl<'a> Lexer<'a> {
         self.starts_with(op.as_str())
     }
 
-    fn dot_starts_relative_path(&self) -> bool {
-        let at_expr_start = self.cursor == 0
-            || self.source[..self.cursor]
-                .chars()
-                .next_back()
-                .is_some_and(|ch| {
-                    ch.is_whitespace() || matches!(ch, '(' | '[' | '{' | ',' | '=' | ':')
-                });
+    fn dot_starts_relative_path(&self, previous: Option<&Token>) -> bool {
+        let at_expr_start = previous.is_none_or(|token| {
+            matches!(
+                token,
+                Token::LParen
+                    | Token::LBracket
+                    | Token::LBrace
+                    | Token::Comma
+                    | Token::Colon
+                    | Token::Semicolon
+                    | Token::Amp
+                    | Token::Star
+                    | Token::Bang
+                    | Token::Op(_)
+            )
+        });
         at_expr_start
             && self
                 .source
@@ -423,22 +491,129 @@ impl<'a> Lexer<'a> {
                 .is_some_and(is_ident_start)
     }
 
-    fn consume_angle_suffix(&mut self) {
-        let mut depth = 0_i32;
+    fn try_consume_angle_suffix(&mut self) -> bool {
+        let start = self.cursor;
+        let mut depth = 0_u32;
+        let mut paren = 0_u32;
+        let mut bracket = 0_u32;
+        let mut has_content = false;
         while let Some(ch) = self.peek_char() {
             match ch {
-                '<' => depth += 1,
+                '<' => {
+                    let Some(next_depth) = depth.checked_add(1) else {
+                        self.cursor = start;
+                        return false;
+                    };
+                    depth = next_depth;
+                }
                 '>' => {
-                    depth -= 1;
+                    let Some(next_depth) = depth.checked_sub(1) else {
+                        self.cursor = start;
+                        return false;
+                    };
+                    depth = next_depth;
                     self.bump_char();
                     if depth == 0 {
-                        break;
+                        if paren != 0 || bracket != 0 {
+                            self.cursor = start;
+                            return false;
+                        }
+                        if !self.static_generic_arguments_are_valid(start) {
+                            self.cursor = start;
+                            return false;
+                        }
+                        let continuation = self.source[self.cursor..].trim_start();
+                        if has_content
+                            && (continuation.starts_with('(')
+                                || continuation.starts_with("::")
+                                || continuation.starts_with('.'))
+                        {
+                            return true;
+                        }
+                        self.cursor = start;
+                        return false;
                     }
                     continue;
                 }
-                _ => {}
+                '(' => {
+                    let Some(next_depth) = paren.checked_add(1) else {
+                        self.cursor = start;
+                        return false;
+                    };
+                    paren = next_depth;
+                    has_content = true;
+                }
+                ')' => {
+                    let Some(next_depth) = paren.checked_sub(1) else {
+                        self.cursor = start;
+                        return false;
+                    };
+                    paren = next_depth;
+                }
+                '[' => {
+                    let Some(next_depth) = bracket.checked_add(1) else {
+                        self.cursor = start;
+                        return false;
+                    };
+                    bracket = next_depth;
+                    has_content = true;
+                }
+                ']' => {
+                    let Some(next_depth) = bracket.checked_sub(1) else {
+                        self.cursor = start;
+                        return false;
+                    };
+                    bracket = next_depth;
+                }
+                _ if ch.is_whitespace()
+                    || ch == ','
+                    || ch == ':'
+                    || ch == '&'
+                    || ch == '\''
+                    || ch == '*'
+                    || ch == '?'
+                    || ch == ';'
+                    || ch == '.'
+                    || is_ident_continue(ch) =>
+                {
+                    if !ch.is_whitespace() && ch != ',' {
+                        has_content = true;
+                    }
+                }
+                _ => {
+                    self.cursor = start;
+                    return false;
+                }
             }
             self.bump_char();
         }
+        self.cursor = start;
+        false
+    }
+
+    fn static_generic_arguments_are_valid(&self, open: usize) -> bool {
+        let Some(inner_start) = open.checked_add('<'.len_utf8()) else {
+            return false;
+        };
+        let Some(inner_end) = self.cursor.checked_sub('>'.len_utf8()) else {
+            return false;
+        };
+        let Some(inner) = self.source.get(inner_start..inner_end) else {
+            return false;
+        };
+        let inner = inner.trim();
+        if inner.is_empty() || inner.starts_with(',') || inner.ends_with(',') {
+            return false;
+        }
+        split_top_level_punctuation(inner, ',')
+            .into_iter()
+            .all(|argument| {
+                let argument = argument.trim();
+                !argument.is_empty()
+                    && !argument.starts_with("::")
+                    && !argument.ends_with("::")
+                    && !argument.contains(":::")
+                    && parse_type_ref(argument).is_ok()
+            })
     }
 }

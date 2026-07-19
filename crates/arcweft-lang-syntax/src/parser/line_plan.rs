@@ -13,25 +13,30 @@ use crate::cst::{
     split_top_level_arcweft_punctuation_once, split_top_level_punctuation,
     split_top_level_punctuation_once,
 };
-use crate::expr::{Expr, parse_expr};
+use crate::expr::Expr;
 use crate::pattern::parse_pattern;
 
 use super::headers::simple_error;
 use super::helpers::LogicalBlockItem;
 use super::{
     ParseError, collect_logical_block_items_with_base, parse_expr_lossy, parse_named_block_expr,
-    parse_stmt, parse_stmt_lines, parse_stmt_with_base, split_brace_item, split_top_level_binding,
+    parse_owned_expr_recovering, parse_stmt, parse_stmt_lines, parse_stmt_with_base,
+    split_brace_item, split_top_level_binding,
 };
 
 pub(super) fn parse_trigger_pattern(source: &str) -> TriggerPattern {
     let source = source.trim();
-    if let Some(trigger) = parse_trigger_call(source) {
+    if let Some(trigger) = parse_trigger_call(source, &mut |source| parse_expr_lossy(source.trim()))
+    {
         return trigger;
     }
     TriggerPattern::Expr(parse_expr_lossy(source))
 }
 
-fn parse_trigger_call(source: &str) -> Option<TriggerPattern> {
+fn parse_trigger_call(
+    source: &str,
+    parse_expr: &mut impl FnMut(&str) -> Expr,
+) -> Option<TriggerPattern> {
     let (open, close) = find_top_level_matching_punctuation(source, '(', ')')?;
     if !source[close + ')'.len_utf8()..].trim().is_empty() {
         return None;
@@ -45,10 +50,15 @@ fn parse_trigger_call(source: &str) -> Option<TriggerPattern> {
         "select" => single_pattern(&args).map(TriggerPattern::Select),
         "task" => single_pattern(&args).map(TriggerPattern::Task),
         "scope" => single_pattern(&args).map(TriggerPattern::Scope),
-        "timeout" => single_expr(&args).map(TriggerPattern::Timeout),
+        "timeout" => {
+            let [arg] = args.as_slice() else {
+                return None;
+            };
+            Some(TriggerPattern::Timeout(parse_expr(arg.trim())))
+        }
         "signal" => {
             let mut args = args;
-            let target = args.first().map(|arg| parse_expr_lossy(arg.trim()))?;
+            let target = args.first().map(|arg| parse_expr(arg.trim()))?;
             let value = (args.len() > 1).then(|| {
                 let rest = args.drain(1..).collect::<Vec<_>>().join(", ");
                 parse_pattern(rest.trim())
@@ -67,13 +77,6 @@ fn single_pattern(args: &[&str]) -> Option<crate::ast::pattern::Pattern> {
         return None;
     };
     Some(parse_pattern(arg.trim()))
-}
-
-fn single_expr(args: &[&str]) -> Option<Expr> {
-    let [arg] = args else {
-        return None;
-    };
-    Some(parse_expr_lossy(arg.trim()))
 }
 
 pub(super) fn parse_defer_outcome(head: &str) -> Option<DeferOutcome> {
@@ -135,49 +138,33 @@ fn parse_line_plan_body_inner(
         if is_multiline_timed_cue_header(trimmed) {
             let cue_indent =
                 logical_item_indentation(normalized_body.as_ref(), body_line_base, line);
-            let mut body_lines = Vec::new();
-            index += 1;
-            while index < lines.len() {
-                let child = &lines[index];
-                let child_source = child.source.as_ref();
-                let child_trimmed = child_source.trim();
-                let child_indent =
-                    logical_item_indentation(normalized_body.as_ref(), body_line_base, child);
-                if !child_trimmed.is_empty() && child_indent <= cue_indent {
-                    break;
-                }
-                if !child_trimmed.is_empty() {
-                    body_lines.push(child_trimmed);
-                }
-                index += 1;
-            }
+            let body_lines = collect_line_plan_children(
+                &lines,
+                &mut index,
+                cue_indent,
+                normalized_body.as_ref(),
+                body_line_base,
+                LinePlanChildProjection::Trimmed,
+            );
             let body = body_lines.join(" ");
-            items.push(parse_line_plan_item(&format!("{trimmed} {body}"), None));
+            items.push(parse_line_plan_item(
+                &format!("{trimmed} {body}"),
+                None,
+                errors,
+            ));
             continue;
         }
         if let Some((pattern, head)) = line_plan_let_colon_head(trimmed) {
             let cue_indent =
                 logical_item_indentation(normalized_body.as_ref(), body_line_base, line);
-            let mut body_lines = Vec::new();
-            index += 1;
-            while index < lines.len() {
-                let child = &lines[index];
-                let child_source = child.source.as_ref();
-                let child_trimmed = child_source.trim();
-                let child_indent =
-                    logical_item_indentation(normalized_body.as_ref(), body_line_base, child);
-                if !child_trimmed.is_empty() && child_indent <= cue_indent {
-                    break;
-                }
-                if !child_trimmed.is_empty() {
-                    body_lines.push(logical_item_source_with_indent(
-                        normalized_body.as_ref(),
-                        body_line_base,
-                        child,
-                    ));
-                }
-                index += 1;
-            }
+            let body_lines = collect_line_plan_children(
+                &lines,
+                &mut index,
+                cue_indent,
+                normalized_body.as_ref(),
+                body_line_base,
+                LinePlanChildProjection::WithIndent,
+            );
             items.push(LinePlanItem::Let {
                 pattern: parse_pattern(pattern.trim()),
                 expr: parse_named_block_expr(head, &body_lines.join("\n")),
@@ -187,33 +174,58 @@ fn parse_line_plan_body_inner(
         if let Some(head) = line_plan_colon_head(trimmed) {
             let cue_indent =
                 logical_item_indentation(normalized_body.as_ref(), body_line_base, line);
-            let mut body_lines = Vec::new();
-            index += 1;
-            while index < lines.len() {
-                let child = &lines[index];
-                let child_source = child.source.as_ref();
-                let child_trimmed = child_source.trim();
-                let child_indent =
-                    logical_item_indentation(normalized_body.as_ref(), body_line_base, child);
-                if !child_trimmed.is_empty() && child_indent <= cue_indent {
-                    break;
-                }
-                if !child_trimmed.is_empty() {
-                    body_lines.push(logical_item_source_with_indent(
-                        normalized_body.as_ref(),
-                        body_line_base,
-                        child,
-                    ));
-                }
-                index += 1;
-            }
+            let body_lines = collect_line_plan_children(
+                &lines,
+                &mut index,
+                cue_indent,
+                normalized_body.as_ref(),
+                body_line_base,
+                LinePlanChildProjection::WithIndent,
+            );
             items.push(parse_line_plan_colon_item(head, &body_lines.join("\n")));
             continue;
         }
-        items.push(parse_line_plan_item(trimmed, line_base));
+        items.push(parse_line_plan_item(trimmed, line_base, errors));
         index += 1;
     }
     LinePlan::new(style, items, range)
+}
+
+#[derive(Clone, Copy)]
+enum LinePlanChildProjection {
+    Trimmed,
+    WithIndent,
+}
+
+fn collect_line_plan_children(
+    lines: &[LogicalBlockItem<'_>],
+    index: &mut usize,
+    parent_indent: usize,
+    body: &str,
+    body_base: usize,
+    projection: LinePlanChildProjection,
+) -> Vec<String> {
+    let mut children = Vec::new();
+    *index += 1;
+    while *index < lines.len() {
+        let child = &lines[*index];
+        let child_source = child.source.as_ref();
+        let trimmed = child_source.trim();
+        let child_indent = logical_item_indentation(body, body_base, child);
+        if !trimmed.is_empty() && child_indent <= parent_indent {
+            break;
+        }
+        if !trimmed.is_empty() {
+            children.push(match projection {
+                LinePlanChildProjection::Trimmed => trimmed.to_owned(),
+                LinePlanChildProjection::WithIndent => {
+                    logical_item_source_with_indent(body, body_base, child)
+                }
+            });
+        }
+        *index += 1;
+    }
+    children
 }
 
 fn logical_item_indentation(body: &str, body_base: usize, item: &LogicalBlockItem<'_>) -> usize {
@@ -395,21 +407,26 @@ fn parse_line_plan_colon_item(head: &str, body: &str) -> LinePlanItem {
     ))
 }
 
-fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
+fn parse_line_plan_item(
+    line: &str,
+    base: Option<usize>,
+    errors: &mut Vec<ParseError>,
+) -> LinePlanItem {
     if let Some((head, body)) = split_brace_item(line)
         && let Some(item) = parse_line_plan_block_item(head, body)
     {
         return item;
     }
     if let Some(rest) = line.strip_prefix("out ") {
-        return LinePlanItem::Out(parse_expr_lossy(rest.trim()));
+        let source = rest.trim();
+        return LinePlanItem::Out(parse_line_plan_expr(line, source, base, errors));
     }
     if let Some(rest) = line.strip_prefix("let ")
         && let Some((pattern, expr)) = split_top_level_binding(rest)
     {
         return LinePlanItem::Let {
             pattern: parse_pattern(pattern.trim()),
-            expr: parse_expr_lossy(expr.trim()),
+            expr: parse_line_plan_expr(line, expr.trim(), base, errors),
         };
     }
     if let Some(rest) = line.strip_prefix("defer ") {
@@ -419,7 +436,7 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
         let source = rest.trim();
         return LinePlanItem::Stmt(Box::new(Stmt::Defer {
             outcome: DeferOutcome::Always,
-            expr: authored_line_plan_expr(line, source, base),
+            expr: authored_line_plan_expr(line, source, base, errors),
         }));
     }
     if let Some(rest) = line.strip_prefix("cancel on ") {
@@ -427,7 +444,7 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
             && let Some(trigger) = head.strip_prefix("cancel on ")
         {
             return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-                parse_trigger_pattern(trigger.trim()),
+                parse_line_plan_trigger(line, trigger.trim(), base, errors),
                 parse_stmt_lines(body.trim()),
             ));
         }
@@ -435,7 +452,7 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
             split_top_level_arcweft_punctuation_once(rest, ArcweftPunctuation::FatArrow)
                 .unwrap_or((rest, ""));
         return LinePlanItem::CancelRule(CancelRuleSyntax::new(
-            parse_trigger_pattern(trigger.trim()),
+            parse_line_plan_trigger(line, trigger.trim(), base, errors),
             parse_line_plan_cancel_action(action.trim()),
         ));
     }
@@ -444,11 +461,11 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
             split_top_level_arcweft_punctuation_once(rest, ArcweftPunctuation::FatArrow)
     {
         return LinePlanItem::On {
-            trigger: parse_trigger_pattern(trigger.trim()),
+            trigger: parse_line_plan_trigger(line, trigger.trim(), base, errors),
             body: vec![Stmt::Expr {
-                expr: parse_expr_lossy(body.trim()),
+                expr: parse_line_plan_expr(line, body.trim(), base, errors),
                 expr_source: Some(body.trim().to_owned()),
-                expr_range: None,
+                expr_range: line_plan_expr_range(line, body.trim(), base),
             }],
         };
     }
@@ -461,8 +478,8 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
             return raw_line_plan_item(line);
         }
         return LinePlanItem::TimedCue {
-            anchor: parse_expr_lossy(anchor.trim()),
-            body: parse_expr_lossy(normalize_timed_cue_body(body)),
+            anchor: parse_line_plan_expr(line, anchor.trim(), base, errors),
+            body: parse_line_plan_expr(line, normalize_timed_cue_body(body), base, errors),
         };
     }
     if is_line_plan_statement(line) {
@@ -473,12 +490,13 @@ fn parse_line_plan_item(line: &str, base: Option<usize>) -> LinePlanItem {
     if let Some((name, value)) = split_top_level_punctuation_once(line, '=') {
         return LinePlanItem::Option {
             name: name.trim().to_owned(),
-            value: parse_expr_lossy(value.trim()),
+            value: parse_line_plan_expr(line, value.trim(), base, errors),
         };
     }
-    if let Ok(expr) = parse_expr(line) {
-        let start = base.unwrap_or(0);
-        if let Some(assertion) = parse_assert_call(&expr, TextRange::new(start, start + line.len()))
+    let expr = parse_line_plan_expr(line, line, base, errors);
+    if !matches!(expr, Expr::Raw(_)) {
+        if let Some(range) = line_plan_expr_range(line, line, base)
+            && let Some(assertion) = parse_assert_call(&expr, range)
         {
             return assertion;
         }
@@ -494,14 +512,53 @@ fn raw_line_plan_item(line: &str) -> LinePlanItem {
     ))
 }
 
-fn authored_line_plan_expr(line: &str, expr_source: &str, base: Option<usize>) -> AuthoredExpr {
-    let range = base.and_then(|base| {
-        line.find(expr_source).map(|start| {
-            let absolute_start = base + start;
-            TextRange::new(absolute_start, absolute_start + expr_source.len())
-        })
-    });
-    AuthoredExpr::with_source(parse_expr_lossy(expr_source), expr_source.to_owned(), range)
+fn authored_line_plan_expr(
+    line: &str,
+    expr_source: &str,
+    base: Option<usize>,
+    errors: &mut Vec<ParseError>,
+) -> AuthoredExpr {
+    let range = line_plan_expr_range(line, expr_source, base);
+    AuthoredExpr::with_source(
+        parse_line_plan_expr(line, expr_source, base, errors),
+        expr_source.to_owned(),
+        range,
+    )
+}
+
+fn parse_line_plan_expr(
+    line: &str,
+    expr_source: &str,
+    base: Option<usize>,
+    errors: &mut Vec<ParseError>,
+) -> Expr {
+    let Some(range) = line_plan_expr_range(line, expr_source, base) else {
+        return parse_expr_lossy(expr_source);
+    };
+    parse_owned_expr_recovering(expr_source, range.start(), None, errors)
+}
+
+fn parse_line_plan_trigger(
+    line: &str,
+    source: &str,
+    base: Option<usize>,
+    errors: &mut Vec<ParseError>,
+) -> TriggerPattern {
+    let mut parse_expr = |expr_source: &str| parse_line_plan_expr(line, expr_source, base, errors);
+    parse_trigger_call(source, &mut parse_expr)
+        .unwrap_or_else(|| TriggerPattern::Expr(parse_expr(source)))
+}
+
+fn line_plan_expr_range(line: &str, expr_source: &str, base: Option<usize>) -> Option<TextRange> {
+    let base = base?;
+    let offset = (expr_source.as_ptr() as usize).checked_sub(line.as_ptr() as usize)?;
+    let relative_end = offset.checked_add(expr_source.len())?;
+    if relative_end > line.len() || line.get(offset..relative_end) != Some(expr_source) {
+        return None;
+    }
+    let start = base.checked_add(offset)?;
+    let end = start.checked_add(expr_source.len())?;
+    Some(TextRange::new(start, end))
 }
 
 fn is_line_plan_statement(line: &str) -> bool {
@@ -571,10 +628,10 @@ fn parse_line_plan_block_item(head: &str, body: &str) -> Option<LinePlanItem> {
 }
 
 fn parse_assert_call(expr: &Expr, range: TextRange) -> Option<LinePlanItem> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let Expr::Path(name) = callee.as_ref() else {
+    let Expr::Path(name) = call.callee() else {
         return None;
     };
     let policy = match name.as_str() {
@@ -582,7 +639,7 @@ fn parse_assert_call(expr: &Expr, range: TextRange) -> Option<LinePlanItem> {
         "debug_assert" => TimelineAssertPolicy::DebugOnly,
         _ => return None,
     };
-    let [condition] = args.as_slice() else {
+    let [condition] = call.args() else {
         return None;
     };
     Some(LinePlanItem::TimelineAssert(TimelineAssert::new(

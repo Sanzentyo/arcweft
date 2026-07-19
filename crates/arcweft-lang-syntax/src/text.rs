@@ -871,16 +871,16 @@ fn trimmed_expr_source(source: &str, absolute_start: usize) -> (&str, TextRange)
 }
 
 fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if !matches!(callee.as_ref(), Expr::Path(path) if path == "ruby") {
+    if !matches!(call.callee(), Expr::Path(path) if path == "ruby") {
         return None;
     }
     let [
         CallArg::Positional(Expr::Literal(Literal::String(base))),
         CallArg::Positional(Expr::Literal(Literal::String(ruby))),
-    ] = args.as_slice()
+    ] = call.args()
     else {
         return None;
     };

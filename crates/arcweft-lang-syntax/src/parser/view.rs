@@ -97,16 +97,53 @@ impl<'a> ViewSourceMap<'a> {
 
     fn location(&self, line: &str) -> Option<TextRange> {
         let pointer = line.as_ptr() as usize;
-        self.lines
-            .iter()
-            .find(|(candidate, _, _)| *candidate == pointer)
-            .map(|(_, start, end)| TextRange::new(*start, *end))
+        let pointer_end = pointer.checked_add(line.len())?;
+        let body_pointer = self.body.as_ptr() as usize;
+        let body_pointer_end = body_pointer.checked_add(self.body.len())?;
+        if pointer >= body_pointer && pointer_end <= body_pointer_end {
+            let offset = pointer.checked_sub(body_pointer)?;
+            let range_start = self.base.checked_add(offset)?;
+            let range_end = range_start.checked_add(line.len())?;
+            return Some(TextRange::new(range_start, range_end));
+        }
+        self.lines.iter().find_map(|(candidate, start, end)| {
+            let line_len = end.checked_sub(*start)?;
+            let candidate_end = candidate.checked_add(line_len)?;
+            if pointer < *candidate || pointer_end > candidate_end {
+                return None;
+            }
+            let offset = pointer.checked_sub(*candidate)?;
+            let range_start = start.checked_add(offset)?;
+            let range_end = range_start.checked_add(line.len())?;
+            Some(TextRange::new(range_start, range_end))
+        })
     }
 
     fn source(&self, range: TextRange) -> Option<&'a str> {
         let start = range.start().checked_sub(self.base)?;
         let end = range.end().checked_sub(self.base)?;
         self.body.get(start..end)
+    }
+
+    fn parse_owned_expr(&self, source: &str, errors: &mut Vec<ParseError>) -> Expr {
+        let Some(range) = self.location(source) else {
+            errors.push(ParseError::new(
+                TextRange::new(self.base, self.base),
+                vec!["View expression with an authored source range".to_owned()],
+                None,
+                "View expression is not a checked subslice of its source owner".to_owned(),
+                Vec::new(),
+            ));
+            return Expr::Raw(source.trim().to_owned());
+        };
+        super::helpers::parse_owned_expr_recovering(source, range.start(), None, errors)
+    }
+
+    fn lines_source(&self, lines: &[&str], consumed: usize) -> Option<(&'a str, TextRange)> {
+        let first = self.location(lines.first()?)?;
+        let last = self.location(lines.get(consumed.checked_sub(1)?)?)?;
+        let range = TextRange::new(first.start(), last.end());
+        self.source(range).map(|source| (source, range))
     }
 }
 
@@ -280,7 +317,7 @@ fn parse_view_exprs(
             continue;
         }
         if line.starts_with("let ") {
-            items.push(parse_view_let_line(line, base, errors));
+            items.push(parse_view_let_line(line, base, source_map, errors));
             index += 1;
             continue;
         }
@@ -337,7 +374,12 @@ fn parse_view_exprs(
     }
 }
 
-fn parse_view_let_line(line: &str, base: usize, errors: &mut Vec<ParseError>) -> ViewExpr {
+fn parse_view_let_line(
+    line: &str,
+    base: usize,
+    source_map: &ViewSourceMap<'_>,
+    errors: &mut Vec<ParseError>,
+) -> ViewExpr {
     let rest = line.strip_prefix("let").map(str::trim).unwrap_or_default();
     let Some((pattern, value)) = split_top_level_binding(rest) else {
         errors.push(simple_error(
@@ -350,7 +392,7 @@ fn parse_view_let_line(line: &str, base: usize, errors: &mut Vec<ParseError>) ->
     };
     ViewExpr::Let(ViewLet::new(
         parse_pattern(pattern.trim()),
-        parse_expr_lossy(value.trim()),
+        source_map.parse_owned_expr(value.trim(), errors),
         TextRange::new(base, base.saturating_add(line.len())),
     ))
 }
@@ -398,7 +440,7 @@ fn parse_view_await_block(
         .collect::<Vec<_>>();
     (
         ViewExpr::Await(ViewAwait::new(
-            parse_expr_lossy(source.trim()),
+            source_map.parse_owned_expr(source.trim(), errors),
             branches,
             TextRange::new(base, base.saturating_add(head.len())),
         )),
@@ -507,7 +549,7 @@ fn parse_view_if_block(
     });
     (
         ViewExpr::If(ViewIf::new(
-            parse_expr_lossy(condition),
+            source_map.parse_owned_expr(condition, errors),
             Box::new(then_branch),
             else_branch,
             TextRange::new(base, base.saturating_add(head.len())),
@@ -543,7 +585,7 @@ fn parse_view_match_block(
         .collect::<Vec<_>>();
     (
         ViewExpr::Match(ViewMatch::new(
-            parse_expr_lossy(scrutinee),
+            source_map.parse_owned_expr(scrutinee, errors),
             arms,
             TextRange::new(base, base.saturating_add(head.len())),
         )),
@@ -575,7 +617,7 @@ fn parse_view_match_arm(
     let (pattern, guard) = split_top_level_keyword_once(head, "when");
     Some(ViewMatchArm::new(
         parse_pattern(pattern.trim()),
-        guard.map(|guard| parse_expr_lossy(guard.trim())),
+        guard.map(|guard| source_map.parse_owned_expr(guard.trim(), errors)),
         parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
     ))
 }
@@ -610,13 +652,13 @@ fn parse_view_for_block(
     let (source, key) = split_top_level_keyword_once(source_and_key, "key");
     let key = key.and_then(|key| {
         split_top_level_punctuation_once(key.trim(), '=')
-            .map(|(_, value)| parse_expr_lossy(value.trim()))
+            .map(|(_, value)| source_map.parse_owned_expr(value.trim(), errors))
     });
     let body = parse_view_exprs(&lines[1..end], base, module_path, source_map, errors);
     (
         ViewExpr::ForEach(ViewForEach::new(
             parse_pattern(pattern.trim()),
-            parse_expr_lossy(source.trim()),
+            source_map.parse_owned_expr(source.trim(), errors),
             key,
             Box::new(body),
             TextRange::new(base, base.saturating_add(head.len())),
@@ -674,8 +716,9 @@ fn parse_view_block(
                 ViewExpr::Fragment(children) => children,
                 child => vec![child],
             };
-            let args =
-                split_simple_call(head).map_or_else(Vec::new, |(_, args)| parse_view_args(args));
+            let args = split_simple_call(head).map_or_else(Vec::new, |(_, args)| {
+                parse_view_args_recovering(args, source_map, errors)
+            });
             let callee = split_simple_call(head)
                 .map_or(head, |(callee, _)| callee)
                 .trim();
@@ -774,7 +817,7 @@ fn parse_view_chain(
     source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> ParsedViewChain {
-    let head = parse_view_head(lines[0], base, module_path, errors);
+    let head = parse_view_head(lines[0], base, module_path, source_map, errors);
     let (modifiers, _) = parse_view_modifiers(&lines[1..], base, module_path, source_map, errors);
     ParsedViewChain { head, modifiers }
 }
@@ -846,12 +889,13 @@ fn parse_view_head(
     line: &str,
     base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> ViewHead {
     let Some((callee, args_source)) = split_simple_call(line) else {
         return ViewHead::Raw(line.to_owned());
     };
-    let args = parse_view_args(args_source);
+    let args = parse_view_args_recovering(args_source, source_map, errors);
     match callee {
         "Button" => ViewHead::Button {
             label: button_label(&args),
@@ -865,15 +909,15 @@ fn parse_view_head(
             args,
         },
         "Text" => ViewHead::Text {
-            source: first_arg_expr(args_source),
+            source: first_arg_expr(&args),
             rich: false,
         },
         "RichText" => ViewHead::Text {
-            source: first_arg_expr(args_source),
+            source: first_arg_expr(&args),
             rich: true,
         },
         "Image" => ViewHead::Image {
-            source: first_arg_expr(args_source),
+            source: first_arg_expr(&args),
         },
         "TextField" => ViewHead::TextField {
             value: text_field_value_expr(&args),
@@ -954,10 +998,9 @@ fn parse_view_modifier(
     let line = lines.first()?.trim();
     if line.starts_with(".fx") {
         let consumed = collect_modifier_lines(lines);
-        let source = lines[..consumed].join(" ");
-        let range = TextRange::new(base, base.saturating_add(source.len()));
+        let (source, range) = source_map.lines_source(lines, consumed)?;
         let arguments = call_arg(source.trim(), ".fx")?;
-        return parse_view_fx_application(arguments, fx_ordinal, range, base, errors)
+        return parse_view_fx_application(arguments, fx_ordinal, range, base, source_map, errors)
             .map(|application| (ViewModifier::Fx(application), consumed));
     }
     if let Some(value) = call_arg(line, ".style") {
@@ -988,7 +1031,7 @@ fn parse_view_modifier(
             .map(|label| (ViewModifier::Part(label), 1));
     }
     if let Some(value) = call_arg(line, ".agent_target")
-        && let Some(target) = entity_ref_expr(&parse_expr_lossy(value))
+        && let Some(target) = entity_ref_expr(&source_map.parse_owned_expr(value, errors))
     {
         return Some((ViewModifier::AgentTarget(target), 1));
     }
@@ -1000,32 +1043,50 @@ fn parse_view_modifier(
         ));
     }
     if let Some(value) = call_arg(line, ".placeholder") {
-        return Some((ViewModifier::Placeholder(parse_expr_lossy(value)), 1));
+        return Some((
+            ViewModifier::Placeholder(source_map.parse_owned_expr(value, errors)),
+            1,
+        ));
     }
     if let Some(value) = call_arg(line, ".label") {
-        return Some((ViewModifier::Label(parse_expr_lossy(value)), 1));
+        return Some((
+            ViewModifier::Label(source_map.parse_owned_expr(value, errors)),
+            1,
+        ));
     }
     if let Some(value) = call_arg(line, ".purpose") {
-        return Some((ViewModifier::Purpose(parse_expr_lossy(value)), 1));
+        return Some((
+            ViewModifier::Purpose(source_map.parse_owned_expr(value, errors)),
+            1,
+        ));
     }
     if let Some(value) = call_arg(line, ".enter_key") {
-        return Some((ViewModifier::EnterKey(parse_expr_lossy(value)), 1));
+        return Some((
+            ViewModifier::EnterKey(source_map.parse_owned_expr(value, errors)),
+            1,
+        ));
     }
-    if let Some(modifier) = view_event_modifier(lines, line) {
+    if let Some(modifier) = view_event_modifier(lines, line, source_map, errors) {
         return Some(modifier);
     }
     if let Some(value) = call_arg(line, ".enabled") {
-        return Some((ViewModifier::Enabled(parse_expr_lossy(value)), 1));
+        return Some((
+            ViewModifier::Enabled(source_map.parse_owned_expr(value, errors)),
+            1,
+        ));
     }
     if let Some(value) = call_arg(line, ".focusable") {
-        let focusable = matches!(parse_expr_lossy(value), Expr::Literal(Literal::Bool(true)));
+        let focusable = matches!(
+            source_map.parse_owned_expr(value, errors),
+            Expr::Literal(Literal::Bool(true))
+        );
         return Some((ViewModifier::Focusable(focusable), 1));
     }
     if let Some((name, value)) = view_property_modifier(line) {
         return Some((
             ViewModifier::Property {
                 name: name.to_owned(),
-                value: parse_expr_lossy(value),
+                value: source_map.parse_owned_expr(value, errors),
             },
             1,
         ));
@@ -1038,6 +1099,7 @@ fn parse_view_fx_application(
     ordinal: ViewFxApplicationOrdinal,
     range: TextRange,
     base: usize,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> Option<ViewFxApplication> {
     let mut arguments = split_top_level_punctuation(source, ',')
@@ -1063,8 +1125,8 @@ fn parse_view_fx_application(
         return None;
     }
 
-    let call = parse_expr_lossy(call_source);
-    let Expr::Call { args, .. } = &call else {
+    let call = source_map.parse_owned_expr(call_source, errors);
+    let Expr::Call(parsed_call) = &call else {
         errors.push(simple_error(
             base,
             call_source.len(),
@@ -1073,7 +1135,8 @@ fn parse_view_fx_application(
         ));
         return None;
     };
-    if args
+    if parsed_call
+        .args()
         .iter()
         .any(|argument| !matches!(argument, CallArg::Named { .. }))
     {
@@ -1115,26 +1178,57 @@ fn parse_view_fx_application(
             ));
             return None;
         }
-        key = Some(parse_expr_lossy(value.trim()));
+        key = Some(source_map.parse_owned_expr(value.trim(), errors));
     }
 
     Some(ViewFxApplication::new(call, key, ordinal, range))
 }
 
-fn view_event_modifier(lines: &[&str], line: &str) -> Option<(ViewModifier, usize)> {
+fn view_event_modifier(
+    lines: &[&str],
+    line: &str,
+    source_map: &ViewSourceMap<'_>,
+    errors: &mut Vec<ParseError>,
+) -> Option<(ViewModifier, usize)> {
     let (head, name, tail) = view_event_head(line)?;
     if tail.starts_with('(') {
         let value = call_arg(line, head)?;
-        return Some((view_on_event(name, parse_expr_lossy(value)), 1));
-    }
-    if tail.starts_with('{') {
-        let (source, consumed, _) = collect_inline_modifier_block(lines, head);
         return Some((
-            view_on_event(name, crate::parser::parse_callback_block_expr_body(&source)),
-            consumed,
+            view_on_event(name, source_map.parse_owned_expr(value, errors)),
+            1,
         ));
     }
+    if tail.starts_with('{') {
+        let (source, consumed, range) = collect_inline_style_block(lines, head, source_map)?;
+        let body = parse_view_callback_body(&source, range, errors);
+        return Some((view_on_event(name, body), consumed));
+    }
     None
+}
+
+fn parse_view_callback_body(source: &str, range: TextRange, errors: &mut Vec<ParseError>) -> Expr {
+    match crate::parser::parse_callback_block_expr_body_recovering_at(source, range.start()) {
+        Ok(parsed) => {
+            for diagnostic in &parsed.diagnostics {
+                super::helpers::retain_expr_recovery_diagnostic(diagnostic, errors);
+            }
+            parsed.expr
+        }
+        Err(error) => {
+            let mut parsed = ParseError::new(
+                error.range(),
+                vec!["View callback expression".to_owned()],
+                None,
+                error.to_string(),
+                Vec::new(),
+            );
+            for related in error.related_ranges() {
+                parsed = parsed.with_related(*related, Some("related callback syntax".to_owned()));
+            }
+            errors.push(parsed);
+            Expr::Raw(source.to_owned())
+        }
+    }
 }
 
 fn view_event_head(line: &str) -> Option<(&str, &str, &str)> {
@@ -1358,6 +1452,29 @@ fn parse_view_args(source: &str) -> Vec<ViewArg> {
         .collect()
 }
 
+fn parse_view_args_recovering(
+    source: &str,
+    source_map: &ViewSourceMap<'_>,
+    errors: &mut Vec<ParseError>,
+) -> Vec<ViewArg> {
+    split_top_level_punctuation(source, ',')
+        .into_iter()
+        .map(str::trim)
+        .filter(|arg| !arg.is_empty())
+        .map(|arg| {
+            match split_top_level_binding(arg)
+                .or_else(|| split_top_level_punctuation_once(arg, ':'))
+            {
+                Some((name, value)) => ViewArg::Named {
+                    name: name.trim().to_owned(),
+                    value: source_map.parse_owned_expr(value.trim(), errors),
+                },
+                None => ViewArg::Positional(source_map.parse_owned_expr(arg, errors)),
+            }
+        })
+        .collect()
+}
+
 fn button_label(args: &[ViewArg]) -> ViewButtonLabel {
     let Some(expr) = args.iter().find_map(|arg| match arg {
         ViewArg::Positional(expr) if entity_ref_expr(expr).is_none() => Some(expr),
@@ -1517,8 +1634,8 @@ fn action_invoke_action(expr: &Expr, range: TextRange) -> Option<ViewAction> {
                     _ => None,
                 })
             }),
-        Expr::Call { callee, args } if is_action_invoke_callee(callee) => {
-            action_invoke_call_action(args, range)
+        Expr::Call(call) if is_action_invoke_callee(call.callee()) => {
+            action_invoke_call_action(call.args(), range)
         }
         Expr::Raw(source) => {
             let source = source
@@ -1644,10 +1761,10 @@ fn expr_source(expr: &Expr) -> Option<String> {
             expr_source(select.target())?,
             select.member().as_str()
         )),
-        Expr::Call { callee, args } => Some(format!(
+        Expr::Call(call) => Some(format!(
             "{}({})",
-            expr_source(callee)?,
-            call_args_source(args)?
+            expr_source(call.callee())?,
+            call_args_source(call.args())?
         )),
         _ => None,
     }
@@ -1670,13 +1787,13 @@ fn strip_parameterized_closure_body(source: &str) -> Option<&str> {
     Some(body.trim())
 }
 
-fn first_arg_expr(source: &str) -> Expr {
-    split_top_level_punctuation(source, ',')
-        .into_iter()
-        .next()
-        .map(str::trim)
-        .filter(|arg| !arg.is_empty())
-        .map_or_else(|| parse_expr_lossy("\"\""), parse_expr_lossy)
+fn first_arg_expr(args: &[ViewArg]) -> Expr {
+    args.first().map_or_else(
+        || parse_expr_lossy("\"\""),
+        |arg| match arg {
+            ViewArg::Positional(expr) | ViewArg::Named { value: expr, .. } => expr.clone(),
+        },
+    )
 }
 
 fn call_arg<'a>(source: &'a str, name: &str) -> Option<&'a str> {
@@ -1703,34 +1820,4 @@ fn collect_inline_style_block(
     let body_start = open.saturating_add('{'.len_utf8()).min(close);
     let range = TextRange::new(first.start() + body_start, first.start() + close);
     Some((block[body_start..close].to_owned(), consumed, range))
-}
-
-fn collect_inline_modifier_block(lines: &[&str], head_prefix: &str) -> (String, usize, usize) {
-    let mut depth = 0_i32;
-    let mut body = Vec::new();
-    let mut consumed = 0;
-    for line in lines {
-        consumed += 1;
-        for ch in line.chars() {
-            match ch {
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                _ => {}
-            }
-        }
-        body.push(*line);
-        if consumed > 0 && depth <= 0 {
-            break;
-        }
-    }
-    let joined = body.join("\n");
-    let head_start = joined.find(head_prefix).unwrap_or_default();
-    let open = joined[head_start + head_prefix.len()..]
-        .find('{')
-        .map_or(head_start + head_prefix.len(), |offset| {
-            head_start + head_prefix.len() + offset
-        });
-    let close = joined.rfind('}').unwrap_or(joined.len());
-    let body_start = open.saturating_add(1).min(close);
-    (joined[body_start..close].to_owned(), consumed, body_start)
 }

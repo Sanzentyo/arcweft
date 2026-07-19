@@ -143,13 +143,13 @@ impl FxCatalog {
         application: &ViewFxApplication,
         errors: &mut Vec<TypeCheckError>,
     ) {
-        let Expr::Call { callee, args } = application.call() else {
+        let Expr::Call(call) = application.call() else {
             errors.push(TypeCheckError::new(
                 "View `.fx(...)` requires an Fx function call".to_owned(),
             ));
             return;
         };
-        let Some(name) = simple_path(callee) else {
+        let Some(name) = simple_path(call.callee()) else {
             errors.push(TypeCheckError::new(
                 "View `.fx(...)` target must resolve from a canonical function path".to_owned(),
             ));
@@ -161,7 +161,7 @@ impl FxCatalog {
             )));
             return;
         };
-        validate_named_call(name, definition, args, false, errors);
+        validate_named_call(name, definition, call.args(), false, errors);
     }
 
     /// Validates `[fx name(...)]` and returns the definition name for span diagnostics.
@@ -186,13 +186,13 @@ impl FxCatalog {
                 return "<invalid>".to_owned();
             }
         };
-        let Expr::Call { callee, args } = expr else {
+        let Expr::Call(call) = expr else {
             errors.push(TypeCheckError::new(
                 "`[fx]` requires a function call such as `notice(accent=...)`".to_owned(),
             ));
             return "<invalid>".to_owned();
         };
-        let Some(name) = simple_path(callee.as_ref()) else {
+        let Some(name) = simple_path(call.callee()) else {
             errors.push(TypeCheckError::new(
                 "`[fx]` target must resolve from a canonical function path".to_owned(),
             ));
@@ -204,7 +204,7 @@ impl FxCatalog {
             )));
             return name.to_owned();
         };
-        validate_named_call(name, definition, &args, true, errors);
+        validate_named_call(name, definition, call.args(), true, errors);
         name.to_owned()
     }
 
@@ -448,13 +448,13 @@ fn validate_graph_expr(
     direct_nodes: &mut usize,
     errors: &mut Vec<TypeCheckError>,
 ) {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         errors.push(TypeCheckError::new(format!(
             "Fx function `{owner}` must return an Fx constructor or another Fx function call"
         )));
         return;
     };
-    if let Some(member) = fx_constructor_member(callee) {
+    if let Some(member) = fx_constructor_member(call.callee()) {
         *direct_nodes = direct_nodes.saturating_add(1);
         let Some(kind) = FxConstructorKind::from_member(member) else {
             errors.push(TypeCheckError::new(format!(
@@ -465,7 +465,7 @@ fn validate_graph_expr(
         validate_constructor_args(
             owner,
             kind,
-            args,
+            call.args(),
             fx_names,
             dependencies,
             direct_nodes,
@@ -473,7 +473,7 @@ fn validate_graph_expr(
         );
         return;
     }
-    let Some(name) = simple_path(callee) else {
+    let Some(name) = simple_path(call.callee()) else {
         errors.push(TypeCheckError::new(format!(
             "Fx function `{owner}` graph calls must use `Fx.name(...)` or an Fx function symbol"
         )));
@@ -486,7 +486,7 @@ fn validate_graph_expr(
         return;
     }
     dependencies.push(name.to_owned());
-    for arg in args {
+    for arg in call.args() {
         if !matches!(arg, CallArg::Named { .. }) {
             errors.push(TypeCheckError::new(format!(
                 "Fx function call `{name}` in `{owner}` accepts named arguments only"
@@ -635,10 +635,14 @@ fn closed_fx_value(expr: &Expr) -> bool {
         return true;
     }
     match expr {
-        Expr::Call { callee, args }
-            if matches!(simple_path(callee), Some("rgb" | "vec2" | "vec3" | "vec4")) =>
+        Expr::Call(call)
+            if matches!(
+                simple_path(call.callee()),
+                Some("rgb" | "vec2" | "vec3" | "vec4")
+            ) =>
         {
-            args.iter()
+            call.args()
+                .iter()
                 .all(|arg| !matches!(arg, CallArg::Spread { .. }) && closed_fx_value(arg.value()))
         }
         _ => false,
@@ -659,7 +663,7 @@ fn closed_value_matches_type(expr: &Expr, expected: &TypeKind) -> Option<bool> {
             super::helpers::literal_type(literal).map(|actual| actual == *expected)
         }
         Expr::ShortVariant(_) => Some(matches!(expected, TypeKind::Named(_))),
-        Expr::Call { callee, .. } => match simple_path(callee) {
+        Expr::Call(call) => match simple_path(call.callee()) {
             Some("rgb") => Some(expected == &TypeKind::Named("Color".to_owned())),
             Some("vec2") => Some(expected == &TypeKind::Named("Vec2".to_owned())),
             Some("vec3") => Some(expected == &TypeKind::Named("Vec3".to_owned())),

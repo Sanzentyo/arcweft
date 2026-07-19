@@ -7,7 +7,7 @@ impl ExprParser {
             self.bump();
             return self.parse_if_let_expr_after_keywords();
         }
-        let condition = self.parse_expr_bp(0)?;
+        let condition = self.parse_control_head_expr()?;
         let then_branch = self.parse_braced_value_expr()?;
         let else_branch = self.parse_optional_else_expr()?;
         Ok(Expr::If {
@@ -25,7 +25,7 @@ impl ExprParser {
         let pattern_end = self.cursor;
         self.expect(&Token::Op(ExprOp::Assign))?;
         let pattern_source = self.token_range_source(pattern_start, pattern_end);
-        let expr = self.parse_expr_bp(0)?;
+        let expr = self.parse_control_head_expr()?;
         let guard = if self.peek_ident("when") {
             self.bump();
             Some(Box::new(self.parse_expr_bp(0)?))
@@ -57,7 +57,7 @@ impl ExprParser {
     }
 
     pub(super) fn parse_match_expr_after_keyword(&mut self) -> Result<Expr, ExprParseError> {
-        let scrutinee = self.parse_expr_bp(0)?;
+        let scrutinee = self.parse_control_head_expr()?;
         self.expect(&Token::LBrace)?;
         let mut arms = Vec::new();
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
@@ -113,9 +113,10 @@ impl ExprParser {
     }
 
     fn parse_braced_value_expr(&mut self) -> Result<Expr, ExprParseError> {
+        let open = self.peek_lexed().clone();
+        let open_range = self.absolute_range(&open)?;
         self.expect(&Token::LBrace)?;
-        let body_start = self.cursor;
-        let mut body_end = body_start;
+        let mut body_end = self.cursor;
         let mut depth = 1usize;
         while depth > 0 {
             let token_index = self.cursor;
@@ -131,18 +132,35 @@ impl ExprParser {
                 _ => {}
             }
         }
-        let body_source = self.token_range_source(body_start, body_end);
-        let value = if body_source.trim().is_empty() {
-            None
-        } else {
-            Some(Box::new(
-                parse_expr(body_source.trim()).unwrap_or(Expr::Raw(body_source)),
-            ))
-        };
-        Ok(Expr::Block {
-            statements: Vec::new(),
-            value,
-        })
+        let close_start = self
+            .tokens
+            .get(body_end)
+            .map(|token| token.start)
+            .ok_or_else(|| {
+                ExprParseError::at(
+                    "syntax.expr.invalid_token_span",
+                    "control block closing token is outside the expression token stream",
+                    open_range,
+                )
+            })?;
+        let body_source = self.source.get(open.end..close_start).ok_or_else(|| {
+            ExprParseError::at(
+                "syntax.expr.invalid_token_span",
+                "control block body is outside the owning expression source",
+                open_range,
+            )
+        })?;
+        let body_base = self.absolute_offset(open.end)?;
+        let parsed =
+            crate::parser::parse_callback_block_expr_body_recovering_at(body_source, body_base)?;
+        match self.retain_nested_parsed_expr(parsed)? {
+            block @ Expr::Block { .. } => Ok(block),
+            _ => Err(ExprParseError::at(
+                "syntax.expr.call_invariant",
+                "control block parser did not produce a block expression",
+                open_range,
+            )),
+        }
     }
 
     fn token_range_source(&self, start: usize, end: usize) -> String {

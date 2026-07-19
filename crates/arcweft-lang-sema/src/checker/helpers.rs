@@ -549,7 +549,7 @@ pub(super) fn variant_payload_type_for_name(
 pub(super) fn is_drop_callee(expr: &Expr) -> bool {
     matches!(expr, Expr::Path(name) if is_drop_name(name))
         || matches!(expr, Expr::Select(select) if is_drop_name(select.member().as_str()))
-        || matches!(expr, Expr::Call { callee, .. } if is_drop_callee(callee))
+        || matches!(expr, Expr::Call(call) if is_drop_callee(call.callee()))
 }
 
 pub(super) fn is_drop_name(name: &str) -> bool {
@@ -738,8 +738,11 @@ pub(super) fn stmt_diverges(stmt: &Stmt) -> bool {
 pub(super) fn expr_diverges(expr: &Expr) -> bool {
     matches!(
         expr,
-        Expr::Call { callee, .. }
-            if matches!(expr_path_label(callee).as_deref(), Some("panic" | "fail" | "bail"))
+        Expr::Call(call)
+            if matches!(
+                expr_path_label(call.callee()).as_deref(),
+                Some("panic" | "fail" | "bail")
+            )
     )
 }
 
@@ -819,16 +822,17 @@ pub(super) fn array_len_matches(label: &str, actual: usize) -> bool {
 }
 
 pub(super) fn default_presentation_slot_family(expr: &Expr) -> Option<&'static str> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if args
+    if call
+        .args()
         .iter()
         .any(|arg| matches!(arg, CallArg::Named { name, .. } if name == "slot"))
     {
         return None;
     }
-    match callee.as_ref() {
+    match call.callee() {
         Expr::Path(name) if name == "bg" => Some("background"),
         Expr::Path(name) if name == "show" => Some("character"),
         _ => None,

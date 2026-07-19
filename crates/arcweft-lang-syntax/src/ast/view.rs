@@ -1399,9 +1399,9 @@ fn collect_expr_action_invokes(
     }
 
     match expr {
-        Expr::Call { callee, args } => {
-            collect_expr_action_invokes(callee, range, invokes);
-            collect_call_arg_action_invokes(args, range, invokes);
+        Expr::Call(call) => {
+            collect_expr_action_invokes(call.callee(), range, invokes);
+            collect_call_arg_action_invokes(call.args(), range, invokes);
         }
         Expr::Closure { body, .. } => collect_expr_action_invokes(body, range, invokes),
         Expr::Block { statements, value }
@@ -1492,8 +1492,8 @@ fn collect_expr_action_invokes(
 
 fn direct_action_invoke(expr: &Expr, range: TextRange) -> Option<ViewActionInvokeAction> {
     match expr {
-        Expr::Call { callee, args } if is_action_invoke_callee(callee) => {
-            action_invoke_call_action(args, range)
+        Expr::Call(call) if is_action_invoke_callee(call.callee()) => {
+            action_invoke_call_action(call.args(), range)
         }
         _ => None,
     }
@@ -1782,11 +1782,11 @@ fn entity_ref_expr(expr: &Expr) -> Option<&EntityRefSyntax> {
 
 fn input_handle_entity(expr: &Expr) -> Option<&EntityRefSyntax> {
     match expr {
-        Expr::Call { callee, args } if expression_path_is(callee, &["input", "text"]) => {
-            first_positional_entity_arg(args)
+        Expr::Call(call) if expression_path_is(call.callee(), &["input", "text"]) => {
+            first_positional_entity_arg(call.args())
         }
-        Expr::Call { callee, args } if expression_path_is(callee, &["input", "secure"]) => {
-            first_positional_entity_arg(args)
+        Expr::Call(call) if expression_path_is(call.callee(), &["input", "secure"]) => {
+            first_positional_entity_arg(call.args())
         }
         _ => None,
     }

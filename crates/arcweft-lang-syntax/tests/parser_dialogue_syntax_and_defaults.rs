@@ -179,7 +179,7 @@ alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto,
         &source[options.style_range().expect("style range").as_range()],
         "@style.dream"
     );
-    assert!(matches!(options.rich_text(), Some(Expr::Call { .. })));
+    assert!(matches!(options.rich_text(), Some(Expr::Call(_))));
     assert_eq!(
         options.rich_text_raw(),
         Some("rich_text_style(ruby=ruby_style(size=11px))")

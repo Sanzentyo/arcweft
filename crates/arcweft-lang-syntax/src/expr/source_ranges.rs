@@ -1,9 +1,18 @@
-use super::{BinaryOp, CallArg, Expr, ExprOp, MatchExprArm, is_ident_continue};
+use super::{CallArg, Expr, ExprOp, MatchExprArm};
 use crate::ast::common::TextRange;
 use crate::ast::dialogue::{DialogueContent, DialogueToken};
 use crate::ast::line_plan::{LinePlan, LinePlanItem};
 
+mod scan;
 mod thread_body;
+
+use scan::{
+    absolute_source_slice, braced_block_inner, delimited_inner, find_binary_operator,
+    find_last_top_level_char, find_last_top_level_operator, find_top_level_char,
+    find_top_level_keyword, find_top_level_operator, matching_delimiter_end,
+    postfix_delimiter_bounds, push_trimmed_segment, split_top_level_lines,
+    split_top_level_segments, trim_source_with_base,
+};
 
 /// Source range for one parsed expression node.
 ///
@@ -137,18 +146,8 @@ fn collect_container_expr_source_ranges<'a>(
             }
             true
         }
-        Expr::Call { callee, args } => {
-            if let Some((open, close)) = postfix_delimiter_bounds(source, '(', ')') {
-                collect_expr_source_ranges_inner(callee, &source[..open], base, ranges);
-                let inner = &source[open + 1..close];
-                let inner_base = base + open + 1;
-                for (arg, (arg_source, arg_base)) in args
-                    .iter()
-                    .zip(split_top_level_segments(inner, inner_base, ','))
-                {
-                    collect_call_arg_source_ranges(arg, arg_source, arg_base, ranges);
-                }
-            }
+        Expr::Call(call) => {
+            collect_call_source_ranges(call, source, base, ranges);
             true
         }
         Expr::Select(select) => {
@@ -162,23 +161,14 @@ fn collect_container_expr_source_ranges<'a>(
             content,
             plan,
         } => {
-            if let Some(parts) = dialogue_call_source_parts(source, base) {
-                collect_expr_source_ranges_inner(
-                    callee,
-                    parts.callee_source,
-                    parts.callee_base,
-                    ranges,
-                );
-                collect_dialogue_content_source_ranges(
-                    content,
-                    parts.content_source,
-                    parts.content_base,
-                    ranges,
-                );
-                if let (Some(plan), Some((body_source, body_base))) = (plan, parts.plan_body) {
-                    collect_line_plan_source_ranges(plan, body_source, body_base, ranges);
-                }
-            }
+            collect_dialogue_call_source_ranges(
+                callee,
+                content,
+                plan.as_ref(),
+                source,
+                base,
+                ranges,
+            );
             true
         }
         Expr::Index { target, index } => {
@@ -204,6 +194,81 @@ fn collect_container_expr_source_ranges<'a>(
             true
         }
         _ => false,
+    }
+}
+
+fn collect_call_source_ranges<'a>(
+    call: &'a super::CallExpr,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    if let Some(callee_source) = absolute_source_slice(source, base, call.callee_range()) {
+        collect_expr_source_ranges_inner(
+            call.callee(),
+            callee_source,
+            call.callee_range().start(),
+            ranges,
+        );
+    }
+    if let Some(parenthesized) = call.parenthesized_syntax() {
+        for (arg, syntax) in call
+            .args()
+            .iter()
+            .zip(parenthesized.argument_list().arguments())
+        {
+            if let Some(value_source) = absolute_source_slice(source, base, syntax.value_range()) {
+                collect_expr_source_ranges_inner(
+                    arg.value(),
+                    value_source,
+                    syntax.value_range().start(),
+                    ranges,
+                );
+            }
+        }
+        return;
+    }
+    let Some(callback) = call.callback_block_syntax() else {
+        return;
+    };
+    let [CallArg::Positional(closure @ Expr::Closure { body, .. })] = call.args() else {
+        return;
+    };
+    ranges.push(ExprSourceRange {
+        expr: closure,
+        range: callback.callback().closure_range(),
+    });
+    if let Some(body_source) = absolute_source_slice(source, base, callback.callback().body_range())
+    {
+        thread_body::collect_callback_body_expr_source_ranges(
+            body,
+            body_source,
+            callback.callback().body_range().start(),
+            ranges,
+        );
+    }
+}
+
+fn collect_dialogue_call_source_ranges<'a>(
+    callee: &'a Expr,
+    content: &'a DialogueContent,
+    plan: Option<&'a LinePlan>,
+    source: &str,
+    base: usize,
+    ranges: &mut Vec<ExprSourceRange<'a>>,
+) {
+    let Some(parts) = dialogue_call_source_parts(source, base) else {
+        return;
+    };
+    collect_expr_source_ranges_inner(callee, parts.callee_source, parts.callee_base, ranges);
+    collect_dialogue_content_source_ranges(
+        content,
+        parts.content_source,
+        parts.content_base,
+        ranges,
+    );
+    if let (Some(plan), Some((body_source, body_base))) = (plan, parts.plan_body) {
+        collect_line_plan_source_ranges(plan, body_source, body_base, ranges);
     }
 }
 
@@ -624,35 +689,6 @@ fn collect_match_expr_source_ranges<'a>(
     }
 }
 
-fn collect_call_arg_source_ranges<'a>(
-    arg: &'a CallArg,
-    source: &str,
-    base: usize,
-    ranges: &mut Vec<ExprSourceRange<'a>>,
-) {
-    match arg {
-        CallArg::Positional(expr) => collect_expr_source_ranges_inner(expr, source, base, ranges),
-        CallArg::Named { value, .. } => {
-            if let Some(eq) = find_top_level_char(source, '=') {
-                collect_expr_source_ranges_inner(value, &source[eq + 1..], base + eq + 1, ranges);
-            }
-        }
-        CallArg::Spread { value } => {
-            let (source, base) = trim_source_with_base(source, base);
-            if let Some(rest) = source.strip_prefix(ExprOp::Spread.as_str()) {
-                collect_expr_source_ranges_inner(
-                    value,
-                    rest,
-                    base + ExprOp::Spread.as_str().len(),
-                    ranges,
-                );
-            } else if let Some(rest) = source.strip_suffix(ExprOp::Spread.as_str()) {
-                collect_expr_source_ranges_inner(value, rest, base, ranges);
-            }
-        }
-    }
-}
-
 fn collect_delimited_items<'a>(
     items: &'a [Expr],
     source: &str,
@@ -712,101 +748,6 @@ fn collect_field_value_ranges<'a>(
             collect_expr_source_ranges_inner(value, field_source, field_base, ranges);
         }
     }
-}
-
-fn trim_source_with_base(source: &str, base: usize) -> (&str, usize) {
-    let start_trim = source.len() - source.trim_start().len();
-    let source = &source[start_trim..];
-    let end = source.trim_end().len();
-    (&source[..end], base + start_trim)
-}
-
-fn delimited_inner(source: &str, base: usize, open: char, close: char) -> Option<(&str, usize)> {
-    let (source, base) = trim_source_with_base(source, base);
-    source
-        .strip_prefix(open)?
-        .strip_suffix(close)
-        .map(|inner| (inner, base + open.len_utf8()))
-}
-
-fn braced_block_inner(source: &str, base: usize) -> Option<(&str, usize)> {
-    let (source, base) = trim_source_with_base(source, base);
-    if let Some(inner) = source
-        .strip_prefix('{')
-        .and_then(|source| source.strip_suffix('}'))
-    {
-        return Some((inner, base + '{'.len_utf8()));
-    }
-    if let Some(open) = find_top_level_char(source, '{')
-        && source.ends_with('}')
-    {
-        return Some((
-            &source[open + '{'.len_utf8()..source.len() - '}'.len_utf8()],
-            base + open + '{'.len_utf8(),
-        ));
-    }
-    if let Some(colon) = find_top_level_char(source, ':') {
-        return Some((
-            &source[colon + ':'.len_utf8()..],
-            base + colon + ':'.len_utf8(),
-        ));
-    }
-    None
-}
-
-fn postfix_delimiter_bounds(source: &str, open: char, close: char) -> Option<(usize, usize)> {
-    let close_start = source
-        .char_indices()
-        .last()
-        .filter(|(_, ch)| *ch == close)
-        .map(|(index, _)| index)?;
-    let mut state = SourceScanState::default();
-    let mut result = None;
-    for (index, ch) in source
-        .char_indices()
-        .take_while(|(index, _)| *index < close_start)
-    {
-        if state.is_top_level_before(ch) && ch == open {
-            result = Some(index);
-        }
-        state.advance(ch);
-    }
-    result.map(|open_start| (open_start, close_start))
-}
-
-fn split_top_level_segments(source: &str, base: usize, delimiter: char) -> Vec<(&str, usize)> {
-    let mut state = SourceScanState::default();
-    let mut start = 0;
-    let mut segments = Vec::new();
-    for (index, ch) in source.char_indices() {
-        if state.is_top_level_before(ch) && ch == delimiter {
-            push_trimmed_segment(source, base, start, index, &mut segments);
-            start = index + ch.len_utf8();
-        }
-        state.advance(ch);
-    }
-    push_trimmed_segment(source, base, start, source.len(), &mut segments);
-    segments
-}
-
-fn split_top_level_lines(source: &str, base: usize) -> Vec<(&str, usize)> {
-    let mut segments = Vec::new();
-    let mut line_start = 0;
-    for line in source.split_inclusive('\n') {
-        let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
-        push_trimmed_segment(
-            source,
-            base,
-            line_start,
-            line_start + line_without_newline.len(),
-            &mut segments,
-        );
-        line_start += line.len();
-    }
-    if line_start < source.len() {
-        push_trimmed_segment(source, base, line_start, source.len(), &mut segments);
-    }
-    segments
 }
 
 fn split_line_plan_item_sources(source: &str, base: usize) -> Vec<(&str, usize)> {
@@ -965,126 +906,6 @@ fn split_top_level_binding(source: &str) -> Option<(&str, &str)> {
     find_top_level_char(source, '=').map(|split| (&source[..split], &source[split + 1..]))
 }
 
-fn push_trimmed_segment<'a>(
-    source: &'a str,
-    base: usize,
-    start: usize,
-    end: usize,
-    segments: &mut Vec<(&'a str, usize)>,
-) {
-    let (segment, segment_base) = trim_source_with_base(&source[start..end], base + start);
-    if !segment.is_empty() {
-        segments.push((segment, segment_base));
-    }
-}
-
-fn find_top_level_char(source: &str, target: char) -> Option<usize> {
-    let mut state = SourceScanState::default();
-    for (index, ch) in source.char_indices() {
-        if state.is_top_level_before(ch) && ch == target {
-            return Some(index);
-        }
-        state.advance(ch);
-    }
-    None
-}
-
-fn find_last_top_level_char(source: &str, target: char) -> Option<usize> {
-    let mut state = SourceScanState::default();
-    let mut result = None;
-    for (index, ch) in source.char_indices() {
-        if state.is_top_level_before(ch) && ch == target {
-            result = Some(index);
-        }
-        state.advance(ch);
-    }
-    result
-}
-
-fn find_top_level_operator(source: &str, operator: &str) -> Option<(usize, usize)> {
-    let mut state = SourceScanState::default();
-    for (index, ch) in source.char_indices() {
-        if state.is_top_level_before(ch)
-            && source[index..].starts_with(operator)
-            && operator_boundaries_match(source, index, operator)
-        {
-            return Some((index, index + operator.len()));
-        }
-        state.advance(ch);
-    }
-    None
-}
-
-fn find_last_top_level_operator(source: &str, operator: &str) -> Option<(usize, usize)> {
-    let mut state = SourceScanState::default();
-    let mut result = None;
-    for (index, ch) in source.char_indices() {
-        if state.is_top_level_before(ch)
-            && source[index..].starts_with(operator)
-            && operator_boundaries_match(source, index, operator)
-        {
-            result = Some((index, index + operator.len()));
-        }
-        state.advance(ch);
-    }
-    result
-}
-
-fn find_binary_operator(source: &str, op: BinaryOp) -> Option<(usize, usize)> {
-    let operator = binary_op_source(op);
-    if matches!(op, BinaryOp::Implies) {
-        find_top_level_operator(source, operator)
-    } else {
-        find_last_top_level_operator(source, operator)
-    }
-}
-
-fn binary_op_source(op: BinaryOp) -> &'static str {
-    match op {
-        BinaryOp::Implies => "=>",
-        BinaryOp::Or => "||",
-        BinaryOp::And => "&&",
-        BinaryOp::In => "in",
-        BinaryOp::Eq => "==",
-        BinaryOp::NotEq => "!=",
-        BinaryOp::Gte => ">=",
-        BinaryOp::Lte => "<=",
-        BinaryOp::Gt => ">",
-        BinaryOp::Lt => "<",
-        BinaryOp::Merge => "&",
-        BinaryOp::Add => "+",
-        BinaryOp::Sub => "-",
-        BinaryOp::Mul => "*",
-        BinaryOp::Div => "/",
-        BinaryOp::Rem => "%",
-    }
-}
-
-fn operator_boundaries_match(source: &str, index: usize, operator: &str) -> bool {
-    if operator == "in" {
-        let before = source[..index].chars().next_back();
-        let after = source[index + operator.len()..].chars().next();
-        before.is_none_or(|ch| !is_ident_continue(ch))
-            && after.is_none_or(|ch| !is_ident_continue(ch))
-    } else {
-        true
-    }
-}
-
-fn find_top_level_keyword(source: &str, keyword: &str) -> Option<usize> {
-    let mut state = SourceScanState::default();
-    for (index, ch) in source.char_indices() {
-        if state.is_top_level_before(ch)
-            && source[index..].starts_with(keyword)
-            && operator_boundaries_match(source, index, keyword)
-        {
-            return Some(index);
-        }
-        state.advance(ch);
-    }
-    None
-}
-
 fn closure_body_source(source: &str, base: usize) -> Option<(&str, usize)> {
     let (source, base) = trim_source_with_base(source, base);
     let after_params = if source.starts_with(ExprOp::Or.as_str()) {
@@ -1148,95 +969,13 @@ fn match_expr_sources(source: &str, base: usize) -> Option<(&str, usize, &str, u
     ))
 }
 
-fn matching_delimiter_end(
-    source: &str,
-    open_start: usize,
-    open: char,
-    close: char,
-) -> Option<usize> {
-    let mut in_quoted_literal = false;
-    let mut escaped = false;
-    let mut depth = 0usize;
-    for (index, ch) in source
-        .char_indices()
-        .skip_while(|(index, _)| *index < open_start)
-    {
-        if in_quoted_literal {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == '"' {
-                in_quoted_literal = false;
-            }
-            continue;
-        }
-        if ch == '"' {
-            in_quoted_literal = true;
-        } else if ch == open {
-            depth += 1;
-        } else if ch == close {
-            depth = depth.checked_sub(1)?;
-            if depth == 0 {
-                return Some(index + ch.len_utf8());
-            }
-        }
-    }
-    None
-}
-
-/// Expression delimiter state. Arcweft char literals use the same double-quoted
-/// payload as strings (`"x"c`); an apostrophe starts a lifetime, not a literal.
-#[derive(Default)]
-struct SourceScanState {
-    paren: usize,
-    bracket: usize,
-    brace: usize,
-    in_quoted_literal: bool,
-    escaped: bool,
-}
-
-impl SourceScanState {
-    fn is_top_level_before(&self, ch: char) -> bool {
-        !self.in_quoted_literal
-            && self.paren == 0
-            && self.bracket == 0
-            && self.brace == 0
-            && !matches!(ch, ')' | ']' | '}')
-    }
-
-    fn advance(&mut self, ch: char) {
-        if self.in_quoted_literal {
-            if self.escaped {
-                self.escaped = false;
-            } else if ch == '\\' {
-                self.escaped = true;
-            } else if ch == '"' {
-                self.in_quoted_literal = false;
-            }
-            return;
-        }
-        match ch {
-            '"' => self.in_quoted_literal = true,
-            '(' => self.paren += 1,
-            ')' => self.paren = self.paren.saturating_sub(1),
-            '[' => self.bracket += 1,
-            ']' => self.bracket = self.bracket.saturating_sub(1),
-            '{' => self.brace += 1,
-            '}' => self.brace = self.brace.saturating_sub(1),
-            _ => {}
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         ast::pattern::Pattern,
         expr::{
-            DottedPath, Expr, IntLiteral, IntRadix, IntSuffix, LifetimeKey, LifetimeScopeKind,
-            Literal, MatchExprArm,
+            BinaryOp, DottedPath, Expr, IntLiteral, IntRadix, IntSuffix, Literal, MatchExprArm,
         },
         parser::parse_dialogue_content,
     };
@@ -1292,19 +1031,13 @@ mod tests {
     #[test]
     fn await_question_keeps_inner_expression_source_range_after_question_mark() {
         let source = "await? load_bg()";
-        let expr = Expr::Await {
-            expr: Box::new(Expr::Call {
-                callee: Box::new(Expr::Path(DottedPath::single("load_bg"))),
-                args: Vec::new(),
-            }),
-            applies_try: true,
-        };
+        let expr = crate::expr::parse_expr(source).expect("authored await call parses");
         let ranges = collect_expr_source_ranges(&expr, source, TextRange::new(0, source.len()));
         let labels = ranges
             .into_iter()
             .filter_map(|range| {
                 let label = match range.expr() {
-                    Expr::Call { .. } => "call",
+                    Expr::Call(_) => "call",
                     Expr::Path(path) if path == "load_bg" => "path",
                     _ => return None,
                 };
@@ -1324,13 +1057,10 @@ mod tests {
         let content = "don't [fx warning()]stop[/fx] [.shake]now[/][p]";
         let source = format!("render('line.focus)[{content}]");
         let expr = Expr::DialogueCall {
-            callee: Box::new(Expr::Call {
-                callee: Box::new(Expr::Path(DottedPath::single("render"))),
-                args: vec![CallArg::Positional(Expr::LifetimePath {
-                    key: LifetimeKey::new(LifetimeScopeKind::Line, vec!["focus".to_owned()]),
-                    optional: false,
-                })],
-            }),
+            callee: Box::new(
+                crate::expr::parse_expr("render('line.focus)")
+                    .expect("authored dialogue callee parses"),
+            ),
             content: Box::new(parse_dialogue_content(content)),
             plan: None,
         };
@@ -1346,10 +1076,9 @@ mod tests {
     fn line_plan_colon_let_block_does_not_absorb_following_items() {
         let source = "alice.say()[Choose again.]\n    with:\n        let cue = at(0.42s):\n            score + 3i64\n        out score + 2i64";
         let expr = Expr::DialogueCall {
-            callee: Box::new(Expr::Call {
-                callee: Box::new(Expr::Path(DottedPath::from("alice.say"))),
-                args: Vec::new(),
-            }),
+            callee: Box::new(
+                crate::expr::parse_expr("alice.say()").expect("authored dialogue callee parses"),
+            ),
             content: Box::new(parse_dialogue_content("Choose again.")),
             plan: Some(crate::ast::line_plan::LinePlan::new(
                 crate::ast::line_plan::BlockStyle::Indent,
@@ -1401,10 +1130,8 @@ mod tests {
                 Some("compute".to_owned()),
                 vec![
                     crate::ast::flow::FlowItem::Stmt(crate::ast::flow::Stmt::Expr {
-                        expr: Expr::Call {
-                            callee: Box::new(Expr::Path(DottedPath::single("first"))),
-                            args: Vec::new(),
-                        },
+                        expr: crate::expr::parse_expr_at("first()", first_start)
+                            .expect("authored first call parses"),
                         expr_source: Some("first()".to_owned()),
                         expr_range: Some(TextRange::new(
                             first_start,
@@ -1412,10 +1139,8 @@ mod tests {
                         )),
                     }),
                     crate::ast::flow::FlowItem::Stmt(crate::ast::flow::Stmt::Expr {
-                        expr: Expr::Call {
-                            callee: Box::new(Expr::Path(DottedPath::single("second"))),
-                            args: Vec::new(),
-                        },
+                        expr: crate::expr::parse_expr_at("second()", second_start)
+                            .expect("authored second call parses"),
                         expr_source: Some("second()".to_owned()),
                         expr_range: Some(TextRange::new(
                             second_start,

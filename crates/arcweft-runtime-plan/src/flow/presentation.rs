@@ -11,26 +11,26 @@ pub(super) struct PresentationMountCall<'a> {
 }
 
 pub(super) fn presentation_mount_call(expr: &Expr) -> Option<PresentationMountCall<'_>> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let kind = match callee.as_ref() {
+    let kind = match call.callee() {
         Expr::Path(path) if path.is_single("view") => "view",
         Expr::Path(path) if path.is_single("image") => "image",
         Expr::Path(path) if path.is_single("menu") => "menu",
         Expr::Path(path) if path.is_single("overlay") => "overlay",
         _ => return None,
     };
-    let resource = args.iter().find_map(|arg| match arg {
+    let resource = call.args().iter().find_map(|arg| match arg {
         CallArg::Positional(value) => Some(value),
         CallArg::Named { .. } | CallArg::Spread { .. } => None,
     })?;
-    let register_scope_cleanup = named_call_arg(args, "lifetime")
+    let register_scope_cleanup = named_call_arg(call.args(), "lifetime")
         .is_none_or(|lifetime| presentation_lifetime_is_scoped(&expr_label(lifetime)));
     Some(PresentationMountCall {
         kind,
         resource,
-        args,
+        args: call.args(),
         register_scope_cleanup,
     })
 }

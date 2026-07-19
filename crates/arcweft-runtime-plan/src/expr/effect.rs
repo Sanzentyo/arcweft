@@ -65,10 +65,7 @@ pub(crate) fn lower_runtime_effect_strict_with_pure(
         Expr::Path(_) | Expr::ShortVariant(_) => {
             Ok(LoweredRuntimeEffect::Static(runtime_call_effect(expr)))
         }
-        Expr::Call {
-            callee,
-            args: authored_args,
-        } => {
+        Expr::Call(call) => {
             let lowered = lower_runtime_expr_strict_with_pure(expr, helpers)?;
             let (RuntimeExpr::Call { args, .. } | RuntimeExpr::MethodCall { args, .. }) = lowered
             else {
@@ -77,7 +74,7 @@ pub(crate) fn lower_runtime_effect_strict_with_pure(
                     expr_label(expr)
                 ));
             };
-            lower_effect_call(expr, &expr_label(callee), authored_args, args)
+            lower_effect_call(expr, &expr_label(call.callee()), call.args(), args)
         }
         _ => Err(format!(
             "effect statement must be a host call or callable path, found `{}`",
@@ -316,9 +313,9 @@ fn is_closed_generic_effect_arg(expr: &RuntimeExpr) -> bool {
 
 fn runtime_call(expr: &Expr) -> RuntimeCall {
     match expr {
-        Expr::Call { callee, args } => RuntimeCall {
-            callee: expr_label(callee),
-            args: args.iter().map(call_arg_label).collect(),
+        Expr::Call(call) => RuntimeCall {
+            callee: expr_label(call.callee()),
+            args: call.args().iter().map(call_arg_label).collect(),
         },
         Expr::Path(path) => RuntimeCall {
             callee: path.as_label().to_owned(),

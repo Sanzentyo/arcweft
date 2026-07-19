@@ -1,8 +1,7 @@
 //! Runtime function-value extraction for source-local top-level `fn` bodies.
 
 use crate::expr::{
-    RuntimePureHelperLookup, desugar::substitute_pipe_left,
-    lower_runtime_expr_strict_with_function_locals_and_pure,
+    RuntimePureHelperLookup, lower_runtime_expr_strict_with_function_locals_and_pure,
 };
 use arcweft_core::value::RuntimeExpr;
 use arcweft_lang_hir::{
@@ -13,7 +12,7 @@ use arcweft_lang_hir::{
             items::FunctionKind,
             pattern::{Pattern, VariantPatternPayload},
         },
-        expr::{CallArg, ClosureParam, Expr, MatchExprArm},
+        expr::{CallArg, CallExpr, ClosureParam, Expr, MatchExprArm},
         types::TypeRef,
     },
 };
@@ -81,6 +80,7 @@ pub(crate) fn runtime_function_value_map(
 struct RuntimeFunctionValueContext<'helpers, 'functions> {
     function_locals: BTreeMap<String, FunctionLocalSignature>,
     pure_helpers: RuntimePureHelperLookup<'helpers, 'functions, 'static>,
+    pipe_binding_depth: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -207,6 +207,7 @@ fn runtime_function_value_context<'helpers, 'functions>(
     RuntimeFunctionValueContext {
         function_locals,
         pure_helpers,
+        pipe_binding_depth: 0,
     }
 }
 
@@ -448,16 +449,15 @@ fn runtime_function_value_expr_supported(
                     .iter()
                     .all(|arm| runtime_function_value_match_arm_supported(arm, context))
         }
-        Expr::Call { callee, args } => {
-            runtime_function_value_local_function_call_supported(callee, args, context)
-                || runtime_function_value_pure_helper_call_supported(callee, args, context)
-                || runtime_function_value_source_function_call_supported(callee, args, context)
-        }
+        Expr::Call(call) => runtime_function_value_call_supported(call, context),
         Expr::Pipe { lhs, rhs } => runtime_function_value_pipe_supported(lhs, rhs, context),
+        Expr::Placeholder(arcweft_lang_hir::syntax::expr::Placeholder::PipeLeft) => {
+            context.pipe_binding_depth > 0
+        }
         Expr::LifetimePath { .. }
         | Expr::Borrow(_)
         | Expr::Deref(_)
-        | Expr::Placeholder(_)
+        | Expr::Placeholder(arcweft_lang_hir::syntax::expr::Placeholder::Partial)
         | Expr::DialogueCall { .. }
         | Expr::Try { .. }
         | Expr::Await { .. }
@@ -467,6 +467,19 @@ fn runtime_function_value_expr_supported(
             runtime_function_value_closure_supported(params, body, context)
         }
     }
+}
+
+fn runtime_function_value_call_supported(
+    call: &CallExpr,
+    context: &RuntimeFunctionValueContext<'_, '_>,
+) -> bool {
+    runtime_function_value_local_function_call_supported(call.callee(), call.args(), context)
+        || runtime_function_value_pure_helper_call_supported(call.callee(), call.args(), context)
+        || runtime_function_value_source_function_call_supported(
+            call.callee(),
+            call.args(),
+            context,
+        )
 }
 
 fn runtime_function_value_closure_supported(
@@ -540,7 +553,12 @@ fn runtime_function_value_pipe_supported(
     context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> bool {
     if rhs.contains_pipe_left() {
-        return runtime_function_value_expr_supported(&substitute_pipe_left(rhs, lhs), context);
+        if !runtime_function_value_expr_supported(lhs, context) {
+            return false;
+        }
+        let mut scoped_context = context.clone();
+        scoped_context.pipe_binding_depth = scoped_context.pipe_binding_depth.saturating_add(1);
+        return runtime_function_value_expr_supported(rhs, &scoped_context);
     }
     runtime_function_value_expr_supported(lhs, context)
         && runtime_function_value_data_last_pipe_rhs_supported(lhs, rhs, context)
@@ -557,11 +575,11 @@ fn runtime_function_value_data_last_pipe_rhs_supported(
             &[CallArg::Positional(lhs.clone())],
             context,
         ),
-        Expr::Call { callee, args } => {
-            let Expr::Path(path) = callee.as_ref() else {
+        Expr::Call(call) => {
+            let Expr::Path(path) = call.callee() else {
                 return false;
             };
-            let mut pipe_args = args.clone();
+            let mut pipe_args = call.args().to_vec();
             pipe_args.push(CallArg::Positional(lhs.clone()));
             runtime_function_value_data_last_callable_supported(
                 path.as_label(),
@@ -675,15 +693,19 @@ fn runtime_function_value_expr_function_signature(
             body,
         } => runtime_function_value_closure_supported(params, body, context)
             .then(|| function_local_signature_from_closure(params, return_type.as_ref())),
-        Expr::Call { callee, args }
-            if runtime_function_value_local_function_call_supported(callee, args, context) =>
+        Expr::Call(call)
+            if runtime_function_value_local_function_call_supported(
+                call.callee(),
+                call.args(),
+                context,
+            ) =>
         {
-            let Expr::Path(path) = callee.as_ref() else {
+            let Expr::Path(path) = call.callee() else {
                 return None;
             };
             context
                 .function_local_signature(path.as_label())
-                .and_then(|signature| function_local_result_signature(signature, args.len()))
+                .and_then(|signature| function_local_result_signature(signature, call.args().len()))
         }
         Expr::Pipe { lhs, rhs } => {
             runtime_function_value_pipe_function_signature(lhs, rhs, context)
@@ -698,10 +720,12 @@ fn runtime_function_value_pipe_function_signature(
     context: &RuntimeFunctionValueContext<'_, '_>,
 ) -> Option<FunctionLocalSignature> {
     if rhs.contains_pipe_left() {
-        return runtime_function_value_expr_function_signature(
-            &substitute_pipe_left(rhs, lhs),
-            context,
-        );
+        if !runtime_function_value_expr_supported(lhs, context) {
+            return None;
+        }
+        let mut scoped_context = context.clone();
+        scoped_context.pipe_binding_depth = scoped_context.pipe_binding_depth.saturating_add(1);
+        return runtime_function_value_expr_function_signature(rhs, &scoped_context);
     }
     if !runtime_function_value_expr_supported(lhs, context) {
         return None;
@@ -712,11 +736,11 @@ fn runtime_function_value_pipe_function_signature(
             &[CallArg::Positional(lhs.clone())],
             context,
         ),
-        Expr::Call { callee, args } => {
-            let Expr::Path(path) = callee.as_ref() else {
+        Expr::Call(call) => {
+            let Expr::Path(path) = call.callee() else {
                 return None;
             };
-            let mut pipe_args = args.clone();
+            let mut pipe_args = call.args().to_vec();
             pipe_args.push(CallArg::Positional(lhs.clone()));
             runtime_function_value_data_last_signature(path.as_label(), &pipe_args, context)
         }

@@ -30,8 +30,9 @@ use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, collect_logical_block_items, collect_logical_block_items_with_base,
-    parse_expr_lossy, parse_scope_authored_expr_body, parse_scope_authored_expr_body_with_base,
-    parse_type_ref_or_error, split_top_level_binding,
+    parse_expr_lossy, parse_scope_authored_expr_body,
+    parse_scope_authored_expr_body_recovering_with_base, parse_type_ref_or_error,
+    split_top_level_binding,
 };
 
 impl Parser<'_> {
@@ -84,10 +85,14 @@ impl Parser<'_> {
             contract_lines.first().copied(),
             &signature,
         )?;
-        let (body_statements, body_value) = block.body_range.as_ref().map_or_else(
-            || parse_scope_authored_expr_body(body),
-            |range| parse_scope_authored_expr_body_with_base(body, range.start),
-        );
+        let (body_statements, body_value) = match block.body_range.as_ref() {
+            Some(range) => parse_scope_authored_expr_body_recovering_with_base(
+                body,
+                range.start,
+                &mut self.errors,
+            ),
+            None => parse_scope_authored_expr_body(body),
+        };
 
         Some(FunctionItem::new(FunctionInit {
             attrs,
@@ -1479,8 +1484,8 @@ fn parse_trait_member(
             .map_or((item, None), |(head, body, body_base)| {
                 (head, Some((body, body_base)))
             });
-        return parse_fn_signature(signature_source).map_or_else(
-            |error| {
+        return match parse_fn_signature(signature_source) {
+            Err(error) => {
                 errors.push(simple_error(
                     item_base,
                     signature_source.len(),
@@ -1488,13 +1493,15 @@ fn parse_trait_member(
                     "a valid trait function signature",
                 ));
                 TraitMember::Raw(item.to_owned())
-            },
-            |signature| {
+            }
+            Ok(signature) => {
                 let (body, body_statements, body_value) = body.map_or_else(
                     || (None, Vec::new(), None),
                     |(body, body_base)| {
                         let (body_statements, body_value) =
-                            parse_scope_authored_expr_body_with_base(body, body_base);
+                            parse_scope_authored_expr_body_recovering_with_base(
+                                body, body_base, errors,
+                            );
                         (Some(body.to_owned()), body_statements, body_value)
                     },
                 );
@@ -1504,8 +1511,8 @@ fn parse_trait_member(
                     body_statements,
                     body_value: body_value.map(Box::new),
                 }
-            },
-        );
+            }
+        };
     }
     TraitMember::Raw(item.to_owned())
 }
@@ -1550,8 +1557,8 @@ fn parse_impl_member(
     if let Some((head, body, body_base)) = split_brace_item_with_body_base(item, item_base)
         && head.starts_with("fn ")
     {
-        return parse_fn_signature(head).map_or_else(
-            |error| {
+        return match parse_fn_signature(head) {
+            Err(error) => {
                 errors.push(simple_error(
                     item_base,
                     head.len(),
@@ -1559,18 +1566,18 @@ fn parse_impl_member(
                     "a valid impl function signature",
                 ));
                 ImplMember::Raw(item.to_owned())
-            },
-            |signature| {
+            }
+            Ok(signature) => {
                 let (body_statements, body_value) =
-                    parse_scope_authored_expr_body_with_base(body, body_base);
+                    parse_scope_authored_expr_body_recovering_with_base(body, body_base, errors);
                 ImplMember::Function {
                     signature,
                     body: body.to_owned(),
                     body_statements,
                     body_value: body_value.map(Box::new),
                 }
-            },
-        );
+            }
+        };
     }
     if item.starts_with("fn ") {
         return parse_fn_signature(item).map_or_else(

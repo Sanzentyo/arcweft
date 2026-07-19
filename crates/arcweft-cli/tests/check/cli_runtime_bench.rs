@@ -862,7 +862,7 @@ fn runtime_plan_fixture_path() -> PathBuf {
         r##"
 pub view PlanDialogue(dialogue: DialogueView) {
     Panel {
-        Text(dialogue.speaker)
+        Text(dialogue.character.display_name)
         RichText(dialogue.content)
     }
 }

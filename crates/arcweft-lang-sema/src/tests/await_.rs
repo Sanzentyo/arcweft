@@ -68,13 +68,13 @@ flow @flow.loading loading {
         panic!("expected await with");
     };
     assert!(await_with.applies_try());
-    assert!(matches!(await_with.expr(), Expr::Call { .. }));
+    assert!(matches!(await_with.expr(), Expr::Call(_)));
     let pending = await_with.pending().expect("pending branch");
     assert_eq!(pending.kind(), AwaitBranchKind::Pending);
     assert!(matches!(
         pending.body()[0],
         FlowItem::Stmt(Stmt::Expr {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         })
     ));
@@ -109,7 +109,7 @@ flow @flow.loading loading {
     assert!(matches!(
         await_with.branches()[1].body()[0],
         FlowItem::Stmt(Stmt::Expr {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         })
     ));
@@ -140,13 +140,13 @@ flow @flow.loading loading {
         panic!("expected await with");
     };
     assert!(await_with.applies_try());
-    assert!(matches!(await_with.expr(), Expr::Call { .. }));
+    assert!(matches!(await_with.expr(), Expr::Call(_)));
     let pending = await_with.pending().expect("pending branch");
     assert_eq!(pending.body().len(), 1);
     assert!(matches!(
         pending.body()[0],
         FlowItem::Stmt(Stmt::Expr {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         })
     ));
@@ -169,7 +169,7 @@ flow @flow.loading loading {
         panic!("expected await with");
     };
     assert!(await_with.applies_try());
-    assert!(matches!(await_with.expr(), Expr::Call { .. }));
+    assert!(matches!(await_with.expr(), Expr::Call(_)));
 }
 
 #[test]

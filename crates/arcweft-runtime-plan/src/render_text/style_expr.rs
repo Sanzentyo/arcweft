@@ -10,12 +10,13 @@ use crate::labels::expr_label;
 use super::helpers::{expr_style_value, style_call_name};
 
 pub(crate) fn display_styles_from_expr(expr: &Expr) -> Vec<RichTextStyle> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return Vec::new();
     };
-    let Some(name) = style_call_name(callee) else {
+    let Some(name) = style_call_name(call.callee()) else {
         return Vec::new();
     };
+    let args = call.args();
     match name {
         "font" => first_positional_value(args)
             .map(|attrs| RichTextStyle::Font {
@@ -241,8 +242,8 @@ fn first_positional_value(args: &[CallArg]) -> Option<String> {
 
 fn color_from_expr(expr: &Expr) -> RichTextColor {
     match expr {
-        Expr::Call { callee, args } if matches!(style_call_name(callee), Some("rgb" | "color")) => {
-            first_positional_expr(args)
+        Expr::Call(call) if matches!(style_call_name(call.callee()), Some("rgb" | "color")) => {
+            first_positional_expr(call.args())
                 .map(expr_style_value)
                 .map_or_else(
                     || RichTextColor::from_attrs(&expr_label(expr)),

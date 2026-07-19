@@ -510,7 +510,7 @@ impl LinePlanGraphLowerer {
                 key: expr_label(lhs),
             }];
         }
-        if matches!(expr, Expr::Call { .. } | Expr::Path(_)) {
+        if matches!(expr, Expr::Call(_) | Expr::Path(_)) {
             return vec![runtime_call_effect(expr)];
         }
         self.errors.push(LinePlanLowerError::new(format!(
@@ -758,11 +758,11 @@ fn resource_access(
 }
 
 fn lower_wait_target_expr(expr: &Expr) -> RuntimeWaitTarget {
-    if let Expr::Call { callee, args } = expr
-        && matches!(callee.as_ref(), Expr::Path(path) if path == "mark")
-        && args.len() == 1
+    if let Expr::Call(call) = expr
+        && matches!(call.callee(), Expr::Path(path) if path == "mark")
+        && call.args().len() == 1
     {
-        RuntimeWaitTarget::Mark(expr_label(args[0].value()))
+        RuntimeWaitTarget::Mark(expr_label(call.args()[0].value()))
     } else {
         RuntimeWaitTarget::Expr(expr_label(expr))
     }
@@ -788,13 +788,13 @@ fn accesses_conflict(left: &ResourceAccess, right: &ResourceAccess) -> bool {
 }
 
 fn line_memo_request(expr: &Expr) -> Option<LineMemoRequest> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    if !matches!(callee.as_ref(), Expr::Path(path) if path == "memo") {
+    if !matches!(call.callee(), Expr::Path(path) if path == "memo") {
         return None;
     }
-    let (first, rest) = args.split_first()?;
+    let (first, rest) = call.args().split_first()?;
     let name = match first {
         CallArg::Positional(Expr::Path(path)) => path.as_label().to_owned(),
         CallArg::Positional(Expr::ShortVariant(name)) => name.as_str().to_owned(),
@@ -818,8 +818,8 @@ fn line_memo_request(expr: &Expr) -> Option<LineMemoRequest> {
 fn is_drop_intrinsic(expr: &Expr) -> bool {
     match expr {
         Expr::Path(path) => matches!(path.as_str(), "drop" | "drop_optional"),
-        Expr::Call { callee, .. } => {
-            matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional"))
+        Expr::Call(call) => {
+            matches!(call.callee(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional"))
         }
         _ => false,
     }

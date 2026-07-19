@@ -80,3 +80,58 @@ flow @flow.assignment_demo {
         ]
     ));
 }
+
+#[test]
+fn function_tail_control_roles_follow_typed_statement_ownership() {
+    let parsed = parse_source(
+        r"
+fn tail_match(value: i64) -> i64 {
+    match value {
+        0 => 1
+        _ => 2
+    }
+}
+
+fn terminal_loop() {
+    loop {
+        break
+    }
+}
+
+fn terminal_select(value: i64) {
+    select value
+}
+",
+    );
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let tree = parsed.typed_tree();
+    let function = |name: &str| {
+        tree.items().iter().find_map(|item| match item {
+            Item::Function(function) if function.signature().name() == name => Some(function),
+            _ => None,
+        })
+    };
+
+    let tail_match = function("tail_match").expect("tail_match function");
+    assert!(matches!(
+        tail_match
+            .body_value()
+            .map(arcweft_lang_syntax::ast::flow::AuthoredExpr::expr),
+        Some(Expr::Match { .. })
+    ));
+    assert!(tail_match.body_statements().is_empty());
+
+    let terminal_loop = function("terminal_loop").expect("terminal_loop function");
+    assert!(terminal_loop.body_value().is_none());
+    assert!(matches!(
+        terminal_loop.body_statements(),
+        [Stmt::Loop { .. }]
+    ));
+
+    let terminal_select = function("terminal_select").expect("terminal_select function");
+    assert!(terminal_select.body_value().is_none());
+    assert!(matches!(
+        terminal_select.body_statements(),
+        [Stmt::Select(_)]
+    ));
+}

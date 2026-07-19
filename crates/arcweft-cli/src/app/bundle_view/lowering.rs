@@ -1086,17 +1086,18 @@ fn lower_fx_application(
     application: &ViewFxApplication,
     state: &mut ViewLoweringState,
 ) -> Result<Option<ViewProgramInstruction>, ViewSidecarError> {
-    let Expr::Call { callee, args } = application.call() else {
+    let Expr::Call(call) = application.call() else {
         return Ok(None);
     };
-    let Some(function) = callee.dotted_selector_label() else {
+    let Some(function) = call.callee().dotted_selector_label() else {
         return Ok(None);
     };
     let name = function.rsplit('.').next().unwrap_or(&function);
     let Some(definition) = state.fx_definitions.get(name).cloned() else {
         return Ok(None);
     };
-    let arguments = args
+    let arguments = call
+        .args()
         .iter()
         .enumerate()
         .map(|(ordinal, argument)| {

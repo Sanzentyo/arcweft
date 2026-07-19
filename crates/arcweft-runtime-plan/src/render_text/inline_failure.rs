@@ -11,7 +11,7 @@ pub(crate) fn inline_failure_policy(
     default: Option<&InlineFailurePolicy>,
 ) -> InlineFailurePolicy {
     match expr {
-        Expr::Call { args, .. } => inline_failure_policy_from_args(args)
+        Expr::Call(call) => inline_failure_policy_from_args(call.args())
             .or_else(|| default.cloned())
             .unwrap_or(InlineFailurePolicy::FailLine),
         _ => default.cloned().unwrap_or(InlineFailurePolicy::FailLine),
@@ -20,7 +20,8 @@ pub(crate) fn inline_failure_policy(
 
 pub(crate) fn inline_fallback_source_label(expr: &Expr) -> String {
     match expr {
-        Expr::Call { args, .. } => args
+        Expr::Call(call) => call
+            .args()
             .iter()
             .find_map(|arg| match arg {
                 CallArg::Positional(value) => Some(expr_label(value)),
@@ -64,7 +65,7 @@ fn inline_failure_policy_from_expr(expr: &Expr) -> InlineFailurePolicy {
 
 fn inline_failure_constructor(expr: &Expr) -> Option<InlineFailurePolicy> {
     let args = match expr {
-        Expr::Call { callee, args } if constructor_name(callee)? == "fallback" => args,
+        Expr::Call(call) if constructor_name(call.callee())? == "fallback" => call.args(),
         _ => return None,
     };
     let fallback = args
@@ -118,7 +119,7 @@ fn constructor_name(expr: &Expr) -> Option<&str> {
 fn enum_variant_name(expr: &Expr) -> Option<(&str, &str)> {
     match expr {
         Expr::Path(value) => value.strip_prefix('.').map(|variant| ("", variant)),
-        Expr::Call { callee, args } if args.is_empty() => match callee.as_ref() {
+        Expr::Call(call) if call.args().is_empty() => match call.callee() {
             Expr::Select(select) => match select.target() {
                 Expr::Path(namespace) => Some((namespace.as_str(), select.member().as_str())),
                 _ => None,

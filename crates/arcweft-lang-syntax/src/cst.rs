@@ -91,7 +91,6 @@ pub struct SyntaxParseStats {
     pub block_owned_bytes: usize,
     pub raw_owned_bytes: usize,
     pub wiki_scan_performed: usize,
-    pub dot_normalization_owned: usize,
     pub dialogue_rescue_expr_parse_attempts: usize,
     pub numeric_seq_summaries: usize,
     pub prefix_depth_limit_failures: usize,
@@ -409,16 +408,18 @@ pub(crate) use entity_ref::{
     starts_leading_entity_ref, starts_leading_relative_entity_ref, starts_leading_relative_id,
 };
 #[cfg(test)]
-pub(crate) use punctuation::find_last_depth_zero_open_punctuation;
-#[cfg(test)]
 pub(crate) use punctuation::split_top_level_punctuation_sequence_once;
 pub(crate) use punctuation::{
     ArcweftPunctuation, CstPunctuationScan, collect_wiki_link_ranges, contains_arcweft_punctuation,
-    find_last_top_level_punctuation, find_matching_angle_group, find_matching_punctuation,
-    find_top_level_matching_punctuation, find_top_level_punctuation, split_first_string_literal,
+    find_matching_angle_group, find_matching_punctuation, find_top_level_matching_punctuation,
+    find_top_level_punctuation, split_first_string_literal,
     split_last_top_level_punctuation_sequence_once, split_top_level_arcweft_punctuation_once,
     split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
     strip_prefix_arcweft_punctuation, strip_suffix_arcweft_punctuation,
+};
+#[cfg(test)]
+pub(crate) use punctuation::{
+    find_last_depth_zero_open_punctuation, find_last_top_level_punctuation,
 };
 pub(crate) use text::{
     nonempty_trimmed_source_lines, source_line_count, source_line_iter, split_leading_ident,

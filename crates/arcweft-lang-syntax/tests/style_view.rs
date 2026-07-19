@@ -119,7 +119,7 @@ fn native_style_multiline_values_keep_expression_and_source_ranges() {
         .as_rule()
         .expect("top-level rule")
         .declarations()[0];
-    assert!(matches!(declaration.value().expr(), Expr::Call { .. }));
+    assert!(matches!(declaration.value().expr(), Expr::Call(_)));
     assert_eq!(
         &source[declaration.value().range().as_range()],
         declaration.value().source()
@@ -730,6 +730,47 @@ pub view FeedbackForm() {
 }
 
 #[test]
+fn view_text_argument_retains_recovered_call_at_the_authored_owner_boundary() {
+    let source = r"
+pub view RecoveredText() {
+  Text(format(α, β)
+}
+";
+    let parsed = parse_source(source);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("view View body");
+    let ViewExpr::Text(text) = view.value() else {
+        panic!("expected Text View expression");
+    };
+    assert!(
+        matches!(text.source(), Expr::Call(_)),
+        "recovered argument: {:?}",
+        text.source()
+    );
+
+    let boundary = source
+        .find("β)")
+        .map(|offset| offset + "β".len())
+        .expect("authored outer View call boundary");
+    let diagnostic = parsed
+        .errors()
+        .iter()
+        .find(|error| error.message().contains("missing closing `)`"))
+        .expect("missing call close diagnostic");
+    assert_eq!(
+        *diagnostic.range(),
+        arcweft_lang_syntax::ast::common::TextRange::new(boundary, boundary)
+    );
+}
+
+#[test]
 fn view_reactive_if_match_for_parse_to_structured_view_exprs() {
     let parsed = parse_source(
         r"
@@ -935,9 +976,9 @@ pub view Warning(state: WarningState) {
     assert!(applications[1].key().is_none());
     assert!(matches!(
         applications[0].call(),
-        arcweft_lang_syntax::expr::Expr::Call { args, .. }
-            if args.len() == 2
-                && args.iter().all(|arg| matches!(
+        arcweft_lang_syntax::expr::Expr::Call(call)
+            if call.args().len() == 2
+                && call.args().iter().all(|arg| matches!(
                     arg,
                     arcweft_lang_syntax::expr::CallArg::Named { .. }
                 ))

@@ -201,13 +201,13 @@ fn lower_agent_wait_task_request(
 
 fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
     match expr {
-        Expr::Call { callee, args } => {
-            let name = expr_label(callee);
+        Expr::Call(call) => {
+            let name = expr_label(call.callee());
             let (capability, operation) = split_capability_operation(&name);
             Some(CallParts {
                 capability,
                 operation,
-                args,
+                args: call.args(),
             })
         }
         Expr::Await { expr, .. } | Expr::Try { expr } => call_parts(expr),
@@ -217,8 +217,8 @@ fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
 
 fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
     match expr {
-        Expr::Call { callee, args } => {
-            let operation = match expr_label(callee).as_str() {
+        Expr::Call(call) => {
+            let operation = match expr_label(call.callee()).as_str() {
                 "observe" => "observe",
                 "advance_text" => "advance_text",
                 "capture" => "capture",
@@ -238,7 +238,7 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
             Some(CallParts {
                 capability: "agent".to_owned(),
                 operation: operation.to_owned(),
-                args,
+                args: call.args(),
             })
         }
         Expr::Await { expr, .. } | Expr::Try { expr } => agent_call_parts(expr),
@@ -304,15 +304,15 @@ fn host_argument_error(
 
 fn lower_host_arg_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
     match expr {
-        Expr::Call { callee, args }
+        Expr::Call(call)
             if matches!(
-                expr_label(callee).as_str(),
+                expr_label(call.callee()).as_str(),
                 "path.save" | "path.asset" | "path.temp" | "path.export"
-            ) && args.len() == 1 =>
+            ) && call.args().len() == 1 =>
         {
             Ok(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::from_label(expr_label(callee)),
-                args: vec![lower_host_arg_expr(args[0].value())?],
+                callee: RuntimeCallTarget::from_label(expr_label(call.callee())),
+                args: vec![lower_host_arg_expr(call.args()[0].value())?],
             })
         }
         other => lower_runtime_expr_strict(other),
@@ -321,8 +321,8 @@ fn lower_host_arg_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
 
 fn lower_agent_host_arg_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
     match expr {
-        Expr::Call { callee, args } if expr_label(callee) == "viewport_point" => {
-            lower_agent_viewport_point_expr(args)
+        Expr::Call(call) if expr_label(call.callee()) == "viewport_point" => {
+            lower_agent_viewport_point_expr(call.args())
         }
         Expr::ShortVariant(name) => Ok(RuntimeExpr::Value(RuntimeValue::String(name.to_string()))),
         _ => lower_host_arg_expr(expr),
@@ -369,16 +369,16 @@ fn agent_named_args_expr(fields: Vec<RuntimeFieldExpr>) -> RuntimeExpr {
 
 fn lower_agent_predicate_expr(expr: &Expr) -> Result<Option<RuntimeExpr>, String> {
     match expr {
-        Expr::Call { callee, args }
-            if selected_callee_method(callee)
+        Expr::Call(call)
+            if selected_callee_method(call.callee())
                 .and_then(agent_compare_op)
                 .is_some() =>
         {
-            let receiver = selected_callee_receiver(callee)
+            let receiver = selected_callee_receiver(call.callee())
                 .ok_or_else(|| "agent comparison is missing its receiver".to_owned())?;
-            let method = selected_callee_method(callee)
+            let method = selected_callee_method(call.callee())
                 .ok_or_else(|| "agent comparison is missing its method".to_owned())?;
-            let [CallArg::Positional(value)] = args.as_slice() else {
+            let [CallArg::Positional(value)] = call.args() else {
                 return Err("agent comparison requires one positional value".to_owned());
             };
             Ok(Some(runtime_record_expr([
@@ -394,8 +394,8 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Result<Option<RuntimeExpr>, String
                 runtime_field_expr("value", lower_agent_host_arg_expr(value)?),
             ])))
         }
-        Expr::Call { callee, args } if expr_label(callee) == "exists" => {
-            let [CallArg::Positional(probe)] = args.as_slice() else {
+        Expr::Call(call) if expr_label(call.callee()) == "exists" => {
+            let [CallArg::Positional(probe)] = call.args() else {
                 return Err("exists(...) requires one positional probe".to_owned());
             };
             Ok(Some(runtime_record_expr([
@@ -403,8 +403,8 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Result<Option<RuntimeExpr>, String
                 runtime_field_expr("probe", lower_agent_probe_expr(probe)?),
             ])))
         }
-        Expr::Call { callee, args } if expr_label(callee) == "action_enabled" => {
-            let [CallArg::Positional(target)] = args.as_slice() else {
+        Expr::Call(call) if expr_label(call.callee()) == "action_enabled" => {
+            let [CallArg::Positional(target)] = call.args() else {
                 return Err("action_enabled(...) requires one positional target".to_owned());
             };
             Ok(Some(runtime_record_expr([
@@ -418,16 +418,16 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Result<Option<RuntimeExpr>, String
                 ),
             ])))
         }
-        Expr::Call { callee, args } if matches!(expr_label(callee).as_str(), "all" | "any") => {
-            let kind = expr_label(callee);
-            let predicates = lower_agent_predicate_args(args)?;
+        Expr::Call(call) if matches!(expr_label(call.callee()).as_str(), "all" | "any") => {
+            let kind = expr_label(call.callee());
+            let predicates = lower_agent_predicate_args(call.args())?;
             Ok(Some(runtime_record_expr([
                 runtime_field_expr("kind", runtime_string_expr(&kind)),
                 runtime_field_expr("predicates", RuntimeExpr::Tuple(predicates)),
             ])))
         }
-        Expr::Call { callee, args } if expr_label(callee) == "not" => {
-            let [CallArg::Positional(predicate)] = args.as_slice() else {
+        Expr::Call(call) if expr_label(call.callee()) == "not" => {
+            let [CallArg::Positional(predicate)] = call.args() else {
                 return Err("not(...) requires one positional predicate".to_owned());
             };
             let predicate = lower_agent_predicate_expr(predicate)?
@@ -437,10 +437,11 @@ fn lower_agent_predicate_expr(expr: &Expr) -> Result<Option<RuntimeExpr>, String
                 runtime_field_expr("predicate", predicate),
             ])))
         }
-        Expr::Call { callee, args }
-            if selected_callee_method(callee) == Some("has_error")
-                && selected_callee_receiver(callee).is_some_and(is_agent_diagnostics_call)
-                && args.is_empty() =>
+        Expr::Call(call)
+            if selected_callee_method(call.callee()) == Some("has_error")
+                && selected_callee_receiver(call.callee())
+                    .is_some_and(is_agent_diagnostics_call)
+                && call.args().is_empty() =>
         {
             Ok(Some(runtime_record_expr([runtime_field_expr(
                 "kind",
@@ -468,7 +469,8 @@ fn selected_callee_method(expr: &Expr) -> Option<&str> {
 fn is_agent_diagnostics_call(expr: &Expr) -> bool {
     matches!(
         expr,
-        Expr::Call { callee, args } if expr_label(callee) == "diagnostics" && args.is_empty()
+        Expr::Call(call)
+            if expr_label(call.callee()) == "diagnostics" && call.args().is_empty()
     )
 }
 
@@ -495,14 +497,12 @@ fn lower_agent_predicate_args(args: &[CallArg]) -> Result<Vec<RuntimeExpr>, Stri
 
 fn lower_agent_probe_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
     match expr {
-        Expr::Call { callee, args }
-            if matches!(expr_label(callee).as_str(), "signal" | "metric") =>
-        {
-            let [CallArg::Positional(target)] = args.as_slice() else {
+        Expr::Call(call) if matches!(expr_label(call.callee()).as_str(), "signal" | "metric") => {
+            let [CallArg::Positional(target)] = call.args() else {
                 return Err("signal/metric probe requires one positional target".to_owned());
             };
             Ok(runtime_record_expr([
-                runtime_field_expr("kind", runtime_string_expr(&expr_label(callee))),
+                runtime_field_expr("kind", runtime_string_expr(&expr_label(call.callee()))),
                 runtime_field_expr(
                     "target",
                     runtime_string_expr(
@@ -512,13 +512,13 @@ fn lower_agent_probe_expr(expr: &Expr) -> Result<RuntimeExpr, String> {
                 ),
             ]))
         }
-        Expr::Call { callee, args }
-            if matches!(expr_label(callee).as_str(), "state" | "observation") =>
+        Expr::Call(call)
+            if matches!(expr_label(call.callee()).as_str(), "state" | "observation") =>
         {
-            let [CallArg::Positional(path)] = args.as_slice() else {
+            let [CallArg::Positional(path)] = call.args() else {
                 return Err("state/observation probe requires one path".to_owned());
             };
-            let probe_kind = expr_label(callee);
+            let probe_kind = expr_label(call.callee());
             let constructor = match probe_kind.as_str() {
                 "state" => "state_path",
                 "observation" => "observation_path",
@@ -547,8 +547,8 @@ fn agent_id_label(expr: &Expr) -> Option<String> {
 
 fn lower_agent_path_expr(expr: &Expr, constructor: &str) -> Result<RuntimeExpr, String> {
     match expr {
-        Expr::Call { callee, args } if expr_label(callee) == constructor => {
-            let [CallArg::Positional(path)] = args.as_slice() else {
+        Expr::Call(call) if expr_label(call.callee()) == constructor => {
+            let [CallArg::Positional(path)] = call.args() else {
                 return Err(format!("{constructor}(...) requires one positional path"));
             };
             lower_agent_host_arg_expr(path)
@@ -580,7 +580,7 @@ mod tests {
     };
     use arcweft_core::task::HostTaskArgTemplate;
     use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr};
-    use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal, Placeholder};
+    use arcweft_lang_hir::syntax::expr::{Expr, parse_expr};
 
     #[test]
     fn host_request_rejects_non_call_target_instead_of_synthesizing_payload() {
@@ -602,10 +602,7 @@ mod tests {
 
     #[test]
     fn host_request_rejects_unlowerable_argument_with_typed_slot_context() {
-        let request = Expr::Call {
-            callee: Box::new(Expr::Path("storage.write".into())),
-            args: vec![CallArg::Positional(Expr::Placeholder(Placeholder::Partial))],
-        };
+        let request = parse_expr("storage.write(_)").expect("host request fixture parses");
 
         let error = lower_host_task_request(&request)
             .expect_err("an executable host argument must not become a string label");
@@ -622,26 +619,15 @@ mod tests {
         assert_eq!(operation, "write");
         assert_eq!(argument, RuntimeHostRequestArgument::Positional(0));
         assert!(
-            reason.contains("unsupported runtime value expression"),
+            reason.contains("partial placeholder is outside a runtime binding scope"),
             "{reason}"
         );
     }
 
     #[test]
     fn host_request_preserves_supported_typed_path_constructor() {
-        let save_path = Expr::Call {
-            callee: Box::new(Expr::Path("path.save".into())),
-            args: vec![CallArg::Positional(Expr::Literal(Literal::String(
-                "slot-a".to_owned(),
-            )))],
-        };
-        let request = Expr::Call {
-            callee: Box::new(Expr::Path("storage.write".into())),
-            args: vec![CallArg::Named {
-                name: "path".to_owned(),
-                value: Box::new(save_path),
-            }],
-        };
+        let request = parse_expr("storage.write(path = path.save(\"slot-a\"))")
+            .expect("typed path request fixture parses");
 
         let lowered = lower_host_task_request(&request).expect("typed path argument lowers");
         assert_eq!(lowered.capability.0, "storage");

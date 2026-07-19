@@ -323,8 +323,13 @@ fn index_expr_symbol_dependency_relations(
                 );
             }
         }
-        Expr::Call { callee, args } => {
-            index = index_call_expr_symbol_dependency_relations(parent, callee, args, index)?;
+        Expr::Call(call) => {
+            index = index_call_expr_symbol_dependency_relations(
+                parent,
+                call.callee(),
+                call.args(),
+                index,
+            )?;
         }
         Expr::Select(select) => {
             index = index_expr_symbol_dependency_relations(parent, select.target(), index)?;
@@ -851,8 +856,9 @@ fn index_compound_expr_dependency_relations(
         | Expr::Placeholder(_)
         | Expr::NumericBracketSeq(_)
         | Expr::Raw(_) => {}
-        Expr::Call { callee, args } => {
-            index = index_call_expr_dependency_relations(parent, callee, args, index)?;
+        Expr::Call(call) => {
+            index =
+                index_call_expr_dependency_relations(parent, call.callee(), call.args(), index)?;
         }
         Expr::Select(select) => {
             index = index_expr_dependency_relations(parent, select.target(), index)?;

@@ -284,7 +284,7 @@ impl ViewValueProgramCompiler {
         &mut self,
         source: &Expr,
     ) -> Result<ViewValueProgramId, ViewValueCompileError> {
-        if matches!(source, Expr::Call { .. } | Expr::Await { .. }) {
+        if matches!(source, Expr::Call(_) | Expr::Await { .. }) {
             let discriminant = symbol_discriminant(&format!("{source:?}"));
             let label = u32::from_le_bytes(discriminant.to_le_bytes());
             let mut instructions = Vec::new();
@@ -433,8 +433,8 @@ impl ViewValueProgramCompiler {
                 instructions.push(ValueInstruction::Select);
                 Ok(value_type)
             }
-            Expr::Call { callee, args } => {
-                self.emit_intrinsic(callee, args, expected, instructions)
+            Expr::Call(call) => {
+                self.emit_intrinsic(call.callee(), call.args(), expected, instructions)
             }
             Expr::Raw(source) if source == "true" || source == "false" => {
                 emit_literal(&Literal::Bool(source == "true"), expected, instructions)

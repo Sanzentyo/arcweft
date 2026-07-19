@@ -96,20 +96,20 @@ pub(super) fn expr_path_eq(expr: &Expr, expected: &str) -> bool {
 }
 
 pub(super) fn selected_call_member(expr: &Expr) -> Option<&str> {
-    let Expr::Call { callee, .. } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         return None;
     };
     Some(select.member().as_str())
 }
 
 pub(super) fn selected_call_args(expr: &Expr) -> Option<&[CallArg]> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    matches!(callee.as_ref(), Expr::Select(_)).then_some(args.as_slice())
+    matches!(call.callee(), Expr::Select(_)).then_some(call.args())
 }
 
 pub(super) fn borrow_capture_env() -> TypeCheckEnv {

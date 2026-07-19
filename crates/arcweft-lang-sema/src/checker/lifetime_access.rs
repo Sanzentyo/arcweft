@@ -42,7 +42,7 @@ impl TypeChecker<'_> {
                 self.drop_lifetime_key(&key);
                 Some(())
             }
-            Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) =>
+            Expr::Call(call) if matches!(call.callee(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop")) =>
             {
                 self.drop_lifetime_key(&key);
                 Some(())
@@ -64,13 +64,13 @@ impl TypeChecker<'_> {
 
     pub(super) fn release_direct_drop_expr(&mut self, expr: &Expr) {
         match expr {
-            Expr::Call { callee, args } if is_drop_callee(callee) => {
-                if let Expr::Select(select) = callee.as_ref()
+            Expr::Call(call) if is_drop_callee(call.callee()) => {
+                if let Expr::Select(select) = call.callee()
                     && let Expr::Path(name) = select.target()
                 {
                     self.release_borrow_local(name.as_label());
                 }
-                for arg in args {
+                for arg in call.args() {
                     if let Expr::Path(name) = arg.value() {
                         self.release_borrow_local(name.as_label());
                     }

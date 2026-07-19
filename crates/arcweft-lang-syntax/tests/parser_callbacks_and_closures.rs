@@ -17,25 +17,29 @@ fn select_path(expr: &Expr) -> Option<String> {
 }
 
 fn assert_selected_call<'a>(expr: &'a Expr, path: &str) -> &'a [CallArg] {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected call expression: {expr:?}");
     };
-    assert_eq!(select_path(callee), Some(path.to_owned()));
-    args
+    assert_eq!(select_path(call.callee()), Some(path.to_owned()));
+    call.args()
 }
 
 #[test]
 fn speaker_preset_call_arguments_are_typed_expressions() {
     let expr = parse_expr("alice(face=.smile, voice=auto, view=@view:.side)")
         .expect("speaker preset argument list parses");
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected call expression");
     };
-    assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "alice"));
-    assert_eq!(args.len(), 3);
-    assert!(args.iter().all(|arg| matches!(arg, CallArg::Named { .. })));
+    assert!(matches!(call.callee(), Expr::Path(path) if path == "alice"));
+    assert_eq!(call.args().len(), 3);
     assert!(
-        matches!(&args[0], CallArg::Named { value, .. } if matches!(value.as_ref(), Expr::ShortVariant(path) if path == "smile"))
+        call.args()
+            .iter()
+            .all(|arg| matches!(arg, CallArg::Named { .. }))
+    );
+    assert!(
+        matches!(&call.args()[0], CallArg::Named { value, .. } if matches!(value.as_ref(), Expr::ShortVariant(path) if path == "smile"))
     );
 }
 
@@ -43,13 +47,13 @@ fn speaker_preset_call_arguments_are_typed_expressions() {
 fn call_arguments_keep_positional_spread_nodes() {
     let expr =
         parse_expr("log_info(\"loaded\", fields...)").expect("positional spread argument parses");
-    let Expr::Call { args, .. } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected call expression");
     };
 
-    assert_eq!(args.len(), 2);
+    assert_eq!(call.args().len(), 2);
     assert!(matches!(
-        &args[1],
+        &call.args()[1],
         CallArg::Spread { value } if matches!(value.as_ref(), Expr::Path(path) if path == "fields")
     ));
 }
@@ -60,16 +64,16 @@ fn postfix_callback_block_lowers_to_selected_call_closure_arg() {
         r#"Button("Send").on_click { action.invoke(@action:.feedback.submit, value = name.text) }"#,
     )
     .expect("callback block parses");
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected selected callback call");
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         panic!("expected selected callee");
     };
     assert_eq!(select.member().as_str(), "on_click");
-    assert!(matches!(select.target(), Expr::Call { .. }));
-    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
-        panic!("expected single closure arg: {args:?}");
+    assert!(matches!(select.target(), Expr::Call(_)));
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = call.args() else {
+        panic!("expected single closure arg: {:?}", call.args());
     };
     assert!(params.is_empty());
     assert!(matches!(
@@ -78,8 +82,8 @@ fn postfix_callback_block_lowers_to_selected_call_closure_arg() {
             statements,
             value: Some(value),
         } if statements.is_empty()
-            && matches!(value.as_ref(), Expr::Call { callee, .. }
-                if select_path(callee) == Some("action.invoke".to_owned()))
+            && matches!(value.as_ref(), Expr::Call(call)
+                if select_path(call.callee()) == Some("action.invoke".to_owned()))
     ));
 }
 
@@ -105,8 +109,8 @@ fn postfix_callback_block_supports_parameterized_closure_after_call_select_unifi
             statements,
             value: Some(value),
         } if statements.is_empty()
-            && matches!(value.as_ref(), Expr::Call { callee, .. }
-                if select_path(callee) == Some("item.label".to_owned()))
+            && matches!(value.as_ref(), Expr::Call(call)
+                if select_path(call.callee()) == Some("item.label".to_owned()))
     ));
 }
 
@@ -129,7 +133,7 @@ fn closures_keep_pattern_and_type_ascription_parameters() {
     ));
     assert!(matches!(
         body.as_ref(),
-        Expr::Call { callee, .. } if select_path(callee) == Some("item.label".to_owned())
+        Expr::Call(call) if select_path(call.callee()) == Some("item.label".to_owned())
     ));
 }
 
@@ -215,11 +219,11 @@ fn call_arg_closure_keeps_explicit_return_type() {
 fn parenthesized_closure_can_be_called_immediately() {
     let expr = parse_expr(r#"(|name: String| -> String { name })("arc")"#)
         .expect("parenthesized closure call parses");
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected closure call");
     };
     assert!(matches!(
-        callee.as_ref(),
+        call.callee(),
         Expr::Closure {
             params,
             return_type,
@@ -229,7 +233,7 @@ fn parenthesized_closure_can_be_called_immediately() {
             && matches!(body.as_ref(), Expr::Block { .. })
     ));
     assert!(matches!(
-        args.as_slice(),
+        call.args(),
         [CallArg::Positional(Expr::Literal(_))]
     ));
 }
@@ -244,11 +248,11 @@ fn parenthesized_zero_arg_closure_can_be_called_immediately() {
 "#,
     )
     .expect("parenthesized zero-arg closure call parses");
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected zero-arg closure call");
     };
     assert!(matches!(
-        callee.as_ref(),
+        call.callee(),
         Expr::Closure {
             params,
             return_type,
@@ -257,7 +261,7 @@ fn parenthesized_zero_arg_closure_can_be_called_immediately() {
             && matches!(return_type, Some(TypeRef::Path(path)) if path == "String")
             && matches!(body.as_ref(), Expr::Block { .. })
     ));
-    assert!(args.is_empty());
+    assert!(call.args().is_empty());
 }
 
 #[test]
@@ -298,16 +302,16 @@ fn postfix_callback_block_preserves_multi_statement_body() {
 }"#,
     )
     .expect("multi-statement callback block parses");
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         panic!("expected selected callback call");
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         panic!("expected selected callee");
     };
 
     assert_eq!(select.member().as_str(), "on_click");
-    let [CallArg::Positional(Expr::Closure { params, body, .. })] = args.as_slice() else {
-        panic!("expected single closure arg: {args:?}");
+    let [CallArg::Positional(Expr::Closure { params, body, .. })] = call.args() else {
+        panic!("expected single closure arg: {:?}", call.args());
     };
     assert!(params.is_empty());
     let Expr::Block {
@@ -320,6 +324,6 @@ fn postfix_callback_block_preserves_multi_statement_body() {
     assert!(matches!(statements.as_slice(), [Stmt::Let { .. }]));
     assert!(matches!(
         value.as_ref(),
-        Expr::Call { callee, .. } if select_path(callee) == Some("action.invoke".to_owned())
+        Expr::Call(call) if select_path(call.callee()) == Some("action.invoke".to_owned())
     ));
 }

@@ -391,16 +391,16 @@ fn fill_runtime_flat_batch_inputs(
 }
 
 fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
-    let Expr::Call { callee, args } = parse_expr(bench_measure_body(section)?).ok()? else {
+    let Expr::Call(call) = parse_expr(bench_measure_body(section)?).ok()? else {
         return None;
     };
-    let Expr::Path(callee) = callee.as_ref() else {
+    let Expr::Path(callee) = call.callee() else {
         return None;
     };
     if callee != "pure" {
         return None;
     }
-    let [helper] = args.as_slice() else {
+    let [helper] = call.args() else {
         return None;
     };
     match helper.value() {

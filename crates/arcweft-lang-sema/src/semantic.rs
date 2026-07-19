@@ -1279,7 +1279,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_expr(value, state);
                 self.collect_expr(len, state);
             }
-            Expr::Call { callee, args } => self.collect_call(callee, args, state),
+            Expr::Call(call) => self.collect_call(call.callee(), call.args(), state),
             Expr::Select(select) => self.collect_expr(select.target(), state),
             Expr::DialogueCall { callee, plan, .. } => {
                 self.collect_expr(callee, state);

@@ -229,17 +229,17 @@ fn canonical_log_signal_metric_are_ordinary_calls() {
     assert!(matches!(
         parse_expr(r#"log.info("selected {id:?}", id = selected.id)"#)
             .expect("log.info parses as ordinary expression"),
-        Expr::Call { .. }
+        Expr::Call(_)
     ));
     assert!(matches!(
         parse_expr("signal.set(@signal.current_flow, @flow.opening)")
             .expect("signal.set parses as ordinary expression"),
-        Expr::Call { .. }
+        Expr::Call(_)
     ));
     assert!(matches!(
         parse_expr("metric.set(@metric.frame_time_ms, frame_time.ms())")
             .expect("metric.set parses as ordinary expression"),
-        Expr::Call { .. }
+        Expr::Call(_)
     ));
 }
 
@@ -401,8 +401,8 @@ flow @flow.opening opening {
 }
 
 #[test]
-fn line_plan_runtime_lowering_rejects_raw_items() {
-    let tree = parse_ok(
+fn line_plan_parser_rejects_items_outside_the_current_grammar() {
+    let parsed = parse_source(
         r"
 flow @flow.raw raw {
     alice[待って。[p]]
@@ -411,14 +411,12 @@ flow @flow.raw raw {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("raw line plan fixture lowers to HIR");
-    let errors = lower_line_task_groups(&hir).expect_err("raw line plan item is rejected");
 
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("raw line-plan item"))
-    );
+    assert!(parsed.errors().iter().any(|error| {
+        error
+            .message()
+            .contains("unexpected token after expression")
+    }));
 }
 
 #[test]
@@ -923,7 +921,7 @@ flow @flow.main main {
                     && role == "from"
             ) && error
                 .reason()
-                .contains("unsupported runtime value expression")
+                .contains("partial placeholder is outside a runtime binding scope")
         })
         .expect("source from error retains structured context");
     let range = error

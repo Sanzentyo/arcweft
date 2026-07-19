@@ -34,8 +34,8 @@ fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
         token.public_id() == "color.accent"
             && matches!(
                 token.value().expr(),
-                Expr::Call { callee, .. }
-                    if callee.dotted_selector_label().as_deref() == Some("rgba")
+                Expr::Call(call)
+                    if call.callee().dotted_selector_label().as_deref() == Some("rgba")
             )
     }));
     assert!(style_body_has_predicate(sheet.body(), "hover"));

@@ -16,6 +16,34 @@ fn generic_strict_failure_preserves_type_code_range_and_message() {
 }
 
 #[test]
+fn strict_parser_lexes_raw_strings_with_embedded_hash_markers() {
+    for (source, expected) in [
+        ("r\"plain\"", "plain"),
+        ("r#\"one hash\"#", "one hash"),
+        (
+            "r##\"nested { braces } and \"# marker text\"##",
+            "nested { braces } and \"# marker text",
+        ),
+    ] {
+        let parsed = parse_expr(source).expect("raw string parses");
+        assert!(matches!(
+            parsed,
+            Expr::Literal(super::Literal::String(value)) if value == expected
+        ));
+    }
+}
+
+#[test]
+fn strict_parser_rejects_unterminated_raw_strings_at_the_token_range() {
+    for source in ["r\"plain", "r#\"embedded \" quote", "r##\"value\"#"] {
+        let error = strict_error(source);
+        assert_eq!(error.code(), "syntax.expr.parse");
+        assert_eq!(error.range(), TextRange::new(0, source.len()));
+        assert_eq!(error.to_string(), "unclosed raw string literal");
+    }
+}
+
+#[test]
 fn parses_field_access_comparison() {
     let parsed = parse_expr("self.current < self.end")
         .expect("field access comparison parses as an expression");
@@ -91,6 +119,20 @@ fn reference_prefixes_obey_postfix_and_infix_precedence() {
             op: BinaryOp::Merge,
             ..
         } if matches!(lhs.as_ref(), Expr::Borrow(_))
+    ));
+}
+
+#[test]
+fn merge_operator_starts_a_short_variant_rhs() {
+    let parsed = parse_expr(".smile & .casual").expect("short-variant patch merge parses");
+    assert!(matches!(
+        parsed,
+        Expr::Binary {
+            lhs,
+            op: BinaryOp::Merge,
+            rhs,
+        } if matches!(lhs.as_ref(), Expr::ShortVariant(name) if name.as_str() == "smile")
+            && matches!(rhs.as_ref(), Expr::ShortVariant(name) if name.as_str() == "casual")
     ));
 }
 
@@ -203,6 +245,37 @@ fn prefix_depth_limit_is_inclusive_and_typed() {
         error.to_string(),
         "expression prefix nesting exceeds the inclusive limit of 64"
     );
+}
+
+#[test]
+fn value_if_with_statement_body_retains_the_typed_control_owner() {
+    let source = r"
+if self.current < self.end {
+    let value = self.current
+    self.current = self.current + 1
+    Some(value)
+} else {
+    None
+}
+";
+    let parsed = parse_expr(source).expect("value if expression");
+    assert!(matches!(parsed, Expr::If { .. }));
+}
+
+#[test]
+fn control_head_brace_boundary_keeps_callback_blocks_enabled_inside_branches() {
+    let parsed = parse_expr("if object.visible { button.on_click { emit() } } else { fallback }")
+        .expect("value if with callback branch");
+    let Expr::If { then_branch, .. } = parsed else {
+        panic!("expected typed if expression");
+    };
+    assert!(matches!(
+        then_branch.as_ref(),
+        Expr::Block {
+            value: Some(value),
+            ..
+        } if matches!(value.as_ref(), Expr::Call(_))
+    ));
 }
 
 #[test]

@@ -637,6 +637,7 @@ impl Parser<'_> {
     ) -> LinePlan {
         let mut raw = String::new();
         let mut end = start;
+        let mut body_start = None;
         while self.index < self.events.len() {
             let line = self.current();
             let trimmed = line.text.trim();
@@ -651,13 +652,17 @@ impl Parser<'_> {
             if !raw.is_empty() {
                 raw.push('\n');
             }
+            body_start.get_or_insert(line.start);
             raw.push_str(&line.text);
             end = line.end;
             self.index += 1;
         }
-        parse_line_plan_attachment(
+        let body_base = body_start.unwrap_or(end);
+        let body = self.source.get(body_base..end).unwrap_or(raw.as_str());
+        parse_line_plan_attachment_with_body_base(
             BlockStyle::Indent,
-            &raw,
+            body,
+            body_base,
             TextRange::new(start, end),
             label,
             &mut self.errors,

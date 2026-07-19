@@ -437,7 +437,6 @@ pub(crate) struct SyntaxProfileStats {
     pub(crate) block_owned_bytes: usize,
     pub(crate) raw_owned_bytes: usize,
     pub(crate) wiki_scan_performed: usize,
-    pub(crate) dot_normalization_owned: usize,
     pub(crate) dialogue_rescue_expr_parse_attempts: usize,
     pub(crate) numeric_seq_summaries: usize,
 }
@@ -452,7 +451,6 @@ impl From<SyntaxParseStats> for SyntaxProfileStats {
             block_owned_bytes: stats.block_owned_bytes,
             raw_owned_bytes: stats.raw_owned_bytes,
             wiki_scan_performed: stats.wiki_scan_performed,
-            dot_normalization_owned: stats.dot_normalization_owned,
             dialogue_rescue_expr_parse_attempts: stats.dialogue_rescue_expr_parse_attempts,
             numeric_seq_summaries: stats.numeric_seq_summaries,
         }

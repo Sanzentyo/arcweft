@@ -143,10 +143,10 @@ fn lower_inferred_static_value(
         Expr::EntityRef(_) => lower_static_value(expr, FxStaticType::Resource, bindings),
         Expr::BracketSeq(_) => lower_static_value(expr, FxStaticType::List, bindings),
         Expr::RecordLiteral(_) => lower_static_value(expr, FxStaticType::Record, bindings),
-        Expr::Call { callee, .. } if simple_path(callee) == Some("rgb") => {
+        Expr::Call(call) if simple_path(call.callee()) == Some("rgb") => {
             lower_static_value(expr, FxStaticType::Runtime(FxRuntimeType::Color), bindings)
         }
-        Expr::Call { callee, .. } if simple_path(callee) == Some("vec2") => {
+        Expr::Call(call) if simple_path(call.callee()) == Some("vec2") => {
             lower_static_value(expr, FxStaticType::Runtime(FxRuntimeType::Vec2), bindings)
         }
         Expr::Unary { .. } => {
@@ -336,16 +336,16 @@ fn lower_seconds(expr: &Expr) -> Result<Seconds, RuntimePlanLowerError> {
 }
 
 fn lower_color(expr: &Expr) -> Result<FxColor, RuntimePlanLowerError> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return Err(runtime_expected_error(expr, FxRuntimeType::Color));
     };
-    let Some(function) = simple_path(callee) else {
+    let Some(function) = simple_path(call.callee()) else {
         return Err(runtime_expected_error(expr, FxRuntimeType::Color));
     };
     if !matches!(function, "rgb" | "rgba") {
         return Err(runtime_expected_error(expr, FxRuntimeType::Color));
     }
-    let [CallArg::Positional(Expr::Literal(Literal::String(hex)))] = args.as_slice() else {
+    let [CallArg::Positional(Expr::Literal(Literal::String(hex)))] = call.args() else {
         return Err(error(format!(
             "Fx `{function}` currently requires one hexadecimal string literal"
         )));
@@ -354,13 +354,13 @@ fn lower_color(expr: &Expr) -> Result<FxColor, RuntimePlanLowerError> {
 }
 
 fn lower_vec2(expr: &Expr) -> Result<FxVec2, RuntimePlanLowerError> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return Err(runtime_expected_error(expr, FxRuntimeType::Vec2));
     };
-    if simple_path(callee) != Some("vec2") {
+    if simple_path(call.callee()) != Some("vec2") {
         return Err(runtime_expected_error(expr, FxRuntimeType::Vec2));
     }
-    let [first, second] = args.as_slice() else {
+    let [first, second] = call.args() else {
         return Err(error("Fx vec2 requires exactly two positional values"));
     };
     let [CallArg::Positional(first), CallArg::Positional(second)] = [first, second] else {

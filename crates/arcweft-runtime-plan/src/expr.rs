@@ -30,7 +30,7 @@ pub(crate) mod desugar;
 mod effect;
 mod enum_constructor;
 mod named_callable;
-use desugar::{expr_contains_partial_placeholder, substitute_partial_placeholder};
+use desugar::expr_contains_partial_placeholder;
 pub(crate) use effect::{
     LoweredRuntimeEffect, lower_runtime_effect_strict_with_pure, runtime_call_effect,
 };
@@ -49,6 +49,7 @@ pub(crate) struct RuntimePureHelperLookup<'helpers, 'functions, 'locals> {
     typed_lowering_evidence: Option<RuntimeTypedLoweringEvidenceLookup<'helpers>>,
     expression_cursor: Option<&'helpers Cell<usize>>,
     pipe_binding_depth: Option<u32>,
+    partial_binding_name: Option<&'static str>,
 }
 
 static EMPTY_PURE_HELPER_IDS: LazyLock<BTreeMap<String, RuntimePureHelperId>> =
@@ -67,6 +68,7 @@ impl<'helpers> RuntimePureHelperLookup<'helpers, 'static, 'static> {
             typed_lowering_evidence: None,
             expression_cursor: None,
             pipe_binding_depth: None,
+            partial_binding_name: None,
         }
     }
 }
@@ -81,6 +83,7 @@ fn empty_runtime_lookup<'helpers, 'functions, 'locals>()
         typed_lowering_evidence: None,
         expression_cursor: None,
         pipe_binding_depth: None,
+        partial_binding_name: None,
     }
 }
 
@@ -97,6 +100,7 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             typed_lowering_evidence: self.typed_lowering_evidence,
             expression_cursor: self.expression_cursor,
             pipe_binding_depth: self.pipe_binding_depth,
+            partial_binding_name: self.partial_binding_name,
         }
     }
 
@@ -112,6 +116,7 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             typed_lowering_evidence: self.typed_lowering_evidence,
             expression_cursor: self.expression_cursor,
             pipe_binding_depth: self.pipe_binding_depth,
+            partial_binding_name: self.partial_binding_name,
         }
     }
 
@@ -130,6 +135,7 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             )),
             expression_cursor: Some(expression_cursor),
             pipe_binding_depth: self.pipe_binding_depth,
+            partial_binding_name: self.partial_binding_name,
         }
     }
 
@@ -155,6 +161,7 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
             ),
             expression_cursor: Some(expression_cursor),
             pipe_binding_depth: self.pipe_binding_depth,
+            partial_binding_name: self.partial_binding_name,
         }
     }
 
@@ -169,6 +176,15 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
     fn pipe_binding_name(self) -> Option<String> {
         self.pipe_binding_depth
             .map(|depth| format!("\0arcweft.pipe.{depth}"))
+    }
+
+    fn enter_partial_binding(mut self, name: &'static str) -> Self {
+        self.partial_binding_name = Some(name);
+        self
+    }
+
+    const fn partial_binding_name(self) -> Option<&'static str> {
+        self.partial_binding_name
     }
 
     fn id(self, name: &str) -> Option<RuntimePureHelperId> {
@@ -276,6 +292,18 @@ impl<'helpers, 'functions, 'locals> RuntimePureHelperLookup<'helpers, 'functions
     fn has_expected_function_value_evidence(self, expression_id: RuntimeTypedExpressionId) -> bool {
         self.typed_lowering_evidence
             .is_some_and(|evidence| evidence.has_expected_function_value(expression_id))
+    }
+
+    fn should_lower_partial_function_value(
+        self,
+        expr: &Expr,
+        expression_id: Option<RuntimeTypedExpressionId>,
+        expected_by_type: bool,
+    ) -> bool {
+        (expected_by_type
+            || expression_id.is_some_and(|id| self.has_expected_function_value_evidence(id)))
+            && self.partial_binding_name().is_none()
+            && expr_contains_partial_placeholder(expr)
     }
 
     fn has_function_value_reference_evidence(
@@ -402,11 +430,11 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
                 })
                 .collect(),
         },
-        Expr::Call { callee, args } => lower_runtime_selected_call(callee, args)
-            .or_else(|| lower_choice_action_call(callee, args))
+        Expr::Call(call) => lower_runtime_selected_call(call.callee(), call.args())
+            .or_else(|| lower_choice_action_call(call.callee(), call.args()))
             .unwrap_or_else(|| RuntimeExpr::Call {
-                callee: RuntimeCallTarget::from_label(expr_label(callee)),
-                args: args.iter().map(lower_runtime_call_arg).collect(),
+                callee: RuntimeCallTarget::from_label(expr_label(call.callee())),
+                args: call.args().iter().map(lower_runtime_call_arg).collect(),
             }),
         Expr::Index { target, index } => {
             lower_runtime_index_expr(target, index).unwrap_or_else(|| lower_runtime_expr(target))
@@ -446,11 +474,11 @@ pub(crate) fn lower_runtime_expr_strict_with_expected_type(
     helpers: RuntimePureHelperLookup<'_, '_, '_>,
 ) -> Result<RuntimeExpr, String> {
     let evidence_expression_id = helpers.current_expression_id();
-    if (expected_ty.is_some_and(single_param_function_type)
-        || evidence_expression_id
-            .is_some_and(|id| helpers.has_expected_function_value_evidence(id)))
-        && expr_contains_partial_placeholder(expr)
-    {
+    if helpers.should_lower_partial_function_value(
+        expr,
+        evidence_expression_id,
+        expected_ty.is_some_and(single_param_function_type),
+    ) {
         helpers.next_expression_id();
         lower_partial_placeholder_function_expr(expr, Some(helpers))
     } else if let Some(lowered) = lower_expected_enum_record_constructor(expr, expected_ty, helpers)
@@ -468,10 +496,9 @@ fn lower_runtime_expr_strict_with_helpers(
     let expression_id = helpers.and_then(RuntimePureHelperLookup::next_expression_id);
     let resolved_numeric_type =
         helpers.and_then(|helpers| helpers.resolved_numeric_type(expression_id));
-    if expression_id.is_some_and(|id| {
-        helpers.is_some_and(|helpers| helpers.has_expected_function_value_evidence(id))
-    }) && expr_contains_partial_placeholder(expr)
-    {
+    if helpers.is_some_and(|helpers| {
+        helpers.should_lower_partial_function_value(expr, expression_id, false)
+    }) {
         return lower_partial_placeholder_function_expr(expr, helpers);
     }
     if let Some(value) = lower_strict_negated_signed_min(expr, helpers) {
@@ -543,7 +570,9 @@ fn lower_runtime_expr_strict_with_helpers(
             statements, value, ..
         } => lower_strict_block_expr(statements, value.as_deref(), helpers),
         Expr::Closure { params, body, .. } => lower_strict_closure_expr(params, body, helpers),
-        Expr::Call { callee, args } => lower_strict_call_expr(callee, args, helpers, expression_id),
+        Expr::Call(call) => {
+            lower_strict_call_expr(call.callee(), call.args(), helpers, expression_id)
+        }
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
         Expr::Try { .. } => unsupported_runtime_control_value(RuntimeControlValue::Try),
@@ -553,11 +582,14 @@ fn lower_runtime_expr_strict_with_helpers(
             .and_then(RuntimePureHelperLookup::pipe_binding_name)
             .map(RuntimeExpr::Local)
             .ok_or_else(|| "pipe-left placeholder is outside a runtime pipe scope".to_owned()),
+        Expr::Placeholder(Placeholder::Partial) => helpers
+            .and_then(RuntimePureHelperLookup::partial_binding_name)
+            .map(|name| RuntimeExpr::Local(name.to_owned()))
+            .ok_or_else(|| "partial placeholder is outside a runtime binding scope".to_owned()),
         Expr::Thread { .. }
         | Expr::LifetimePath { .. }
         | Expr::Borrow(_)
         | Expr::Deref(_)
-        | Expr::Placeholder(Placeholder::Partial)
         | Expr::Raw(_) => unsupported_strict_runtime_expr(expr),
     }
 }
@@ -645,10 +677,16 @@ fn lower_partial_placeholder_function_expr(
     expr: &Expr,
     helpers: Option<RuntimePureHelperLookup<'_, '_, '_>>,
 ) -> Result<RuntimeExpr, String> {
-    let param_name = "__arcweft_partial";
-    let body = substitute_partial_placeholder(partial_placeholder_body_expr(expr), param_name);
-    lower_runtime_expr_strict_with_helpers(&body, helpers).map(|body| RuntimeExpr::Function {
-        params: vec![param_name.to_owned()],
+    const PARAM_NAME: &str = "__arcweft_partial";
+    let scoped_helpers = helpers
+        .unwrap_or_else(empty_runtime_lookup)
+        .enter_partial_binding(PARAM_NAME);
+    lower_runtime_expr_strict_with_helpers(
+        partial_placeholder_body_expr(expr),
+        Some(scoped_helpers),
+    )
+    .map(|body| RuntimeExpr::Function {
+        params: vec![PARAM_NAME.to_owned()],
         body: Box::new(body),
     })
 }
@@ -1732,17 +1770,19 @@ fn lower_strict_map_method_call(
         return None;
     }
     if expr_contains_partial_placeholder(arg.value()) {
-        let param_name = "_item";
-        let body = substitute_partial_placeholder(arg.value(), param_name);
+        const PARAM_NAME: &str = "_item";
+        let scoped_helpers = helpers
+            .unwrap_or_else(empty_runtime_lookup)
+            .enter_partial_binding(PARAM_NAME);
         return Some(
             lower_runtime_expr_strict_with_helpers(receiver, helpers).and_then(|source| {
-                lower_runtime_expr_strict_with_helpers(&body, helpers).map(|body| {
-                    RuntimeExpr::Map {
+                lower_runtime_expr_strict_with_helpers(arg.value(), Some(scoped_helpers)).map(
+                    |body| RuntimeExpr::Map {
                         source: Box::new(source),
-                        param: param_name.to_owned(),
+                        param: PARAM_NAME.to_owned(),
                         body: Box::new(body),
-                    }
-                })
+                    },
+                )
             }),
         );
     }
@@ -1786,17 +1826,19 @@ fn lower_strict_filter_method_call(
         return None;
     }
     if expr_contains_partial_placeholder(arg.value()) {
-        let param_name = "_item";
-        let body = substitute_partial_placeholder(arg.value(), param_name);
+        const PARAM_NAME: &str = "_item";
+        let scoped_helpers = helpers
+            .unwrap_or_else(empty_runtime_lookup)
+            .enter_partial_binding(PARAM_NAME);
         return Some(
             lower_runtime_expr_strict_with_helpers(receiver, helpers).and_then(|source| {
-                lower_runtime_expr_strict_with_helpers(&body, helpers).map(|body| {
-                    RuntimeExpr::Filter {
+                lower_runtime_expr_strict_with_helpers(arg.value(), Some(scoped_helpers)).map(
+                    |body| RuntimeExpr::Filter {
                         source: Box::new(source),
-                        param: param_name.to_owned(),
+                        param: PARAM_NAME.to_owned(),
                         body: Box::new(body),
-                    }
-                })
+                    },
+                )
             }),
         );
     }

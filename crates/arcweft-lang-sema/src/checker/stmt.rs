@@ -808,7 +808,7 @@ fn assignment_target_label(target: &Expr) -> String {
         Expr::Path(path) => path.as_label().to_owned(),
         Expr::ShortVariant(name) => format!(".{name}"),
         Expr::Index { target, .. } => format!("{}[]", assignment_target_label(target)),
-        Expr::Call { .. } => "call(...)".to_owned(),
+        Expr::Call(_) => "call(...)".to_owned(),
         _ => format!("{target:?}"),
     }
 }

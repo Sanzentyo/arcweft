@@ -260,6 +260,7 @@ pub(crate) fn find_top_level_punctuation(source: &str, punctuation: char) -> Opt
 }
 
 /// Finds the last top-level punctuation token while ignoring strings and comments.
+#[cfg(test)]
 pub(crate) fn find_last_top_level_punctuation(source: &str, punctuation: char) -> Option<usize> {
     let mut paren = 0usize;
     let mut square = 0usize;

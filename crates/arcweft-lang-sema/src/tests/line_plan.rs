@@ -57,7 +57,7 @@ with:
         &plan.items()[0],
         LinePlanItem::TimedCue {
             anchor: Expr::Literal(_),
-            body: Expr::Call { .. }
+            body: Expr::Call(_)
         }
     ));
 }
@@ -234,35 +234,31 @@ flow @flow.line_handles line_handles {
 
 #[test]
 fn rejects_inline_parallel_group_heads_without_block_delimiters() {
-    for (source, raw_fragment) in [
-        (
-            r"
+    for source in [
+        r"
 alice[おはよう。[p]]
 with:
     start cue_move()
 ",
-            "start cue_move()",
-        ),
-        (
-            r"
+        r"
 alice[おはよう。[p]]
 with:
     together cue_move()
 ",
-            "together cue_move()",
-        ),
     ] {
-        let tree = parse_ok(source);
-        let hir = lower_to_hir(&tree).expect("lossy line plan still lowers");
-        let errors =
-            validate_typecheck_ready(&hir).expect_err("inline line-plan group head is rejected");
+        let parsed = parse_source(source);
+        let [error] = parsed.errors() else {
+            panic!(
+                "inline line-plan group head should produce one ordinary parse error: {:?}",
+                parsed.errors()
+            );
+        };
         assert!(
-            errors
-                .iter()
-                .any(|error| error.message().contains("raw")
-                    && error.message().contains(raw_fragment)),
-            "expected raw line plan error for `{raw_fragment}` in {errors:?}"
+            error
+                .message()
+                .contains("unexpected token after expression")
         );
+        assert_eq!(&source[error.range().as_range()], "cue_move");
     }
 }
 
@@ -308,7 +304,7 @@ with:
     assert!(matches!(
         &plan.items()[1],
         LinePlanItem::Let {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         }
     ));
@@ -683,7 +679,7 @@ flow @flow.opening opening {
     assert_eq!(together_items.len(), 3);
     assert!(matches!(
         &together_items[0],
-        LinePlanItem::Expr(Expr::Call { .. })
+        LinePlanItem::Expr(Expr::Call(_))
     ));
 
     let hir = lower_to_hir(&tree).expect("line plan parallel groups lower");
@@ -904,19 +900,19 @@ flow @flow.opening opening {
         panic!("expected speaker line");
     };
     let plan = line.plan().expect("line plan");
-    let [LinePlanItem::Expr(Expr::Call { callee, args })] = plan.items() else {
+    let [LinePlanItem::Expr(Expr::Call(call))] = plan.items() else {
         panic!("expected memo call item");
     };
-    assert!(matches!(callee.as_ref(), Expr::Path(path) if path == "memo"));
-    assert_eq!(args.len(), 3);
+    assert!(matches!(call.callee(), Expr::Path(path) if path == "memo"));
+    assert_eq!(call.args().len(), 3);
     assert!(
-        matches!(&args[0], CallArg::Positional(Expr::ShortVariant(path)) if path == "rich_text")
+        matches!(&call.args()[0], CallArg::Positional(Expr::ShortVariant(path)) if path == "rich_text")
     );
     assert!(
-        matches!(&args[1], CallArg::Named { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))
+        matches!(&call.args()[1], CallArg::Named { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))
     );
     assert!(
-        matches!(&args[2], CallArg::Named { name, value } if name == "cache" && matches!(value.as_ref(), Expr::ShortVariant(path) if path == "flow"))
+        matches!(&call.args()[2], CallArg::Named { name, value } if name == "cache" && matches!(value.as_ref(), Expr::ShortVariant(path) if path == "flow"))
     );
 
     let hir = lower_to_hir(&tree).expect("line plan memo lowers");
@@ -958,7 +954,7 @@ with:
         &plan.items()[0],
         LinePlanItem::TimedCue {
             anchor: Expr::Literal(_),
-            body: Expr::Call { .. }
+            body: Expr::Call(_)
         }
     ));
 }

@@ -29,15 +29,15 @@ pub(crate) fn speaker_preset_from_let(
     expr_range: Option<&TextRange>,
 ) -> Option<(String, DialogueSpeakerPreset)> {
     let name = pattern_ident(pattern)?;
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let defaults = speaker_preset_defaults(name, args, expr_source, expr_range);
+    let defaults = speaker_preset_defaults(name, call.args(), expr_source, expr_range);
     Some((
         name.to_owned(),
         DialogueSpeakerPreset {
             name: name.to_owned(),
-            callee: expr_label(callee),
+            callee: expr_label(call.callee()),
             defaults,
         },
     ))

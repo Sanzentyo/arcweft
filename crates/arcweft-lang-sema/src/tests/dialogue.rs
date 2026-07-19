@@ -19,7 +19,7 @@ pub flow @flow.alice_enters alice_enters {
     assert!(matches!(
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Expr {
-            expr: Expr::Call { .. },
+            expr: Expr::Call(_),
             ..
         })
     ));
@@ -333,11 +333,9 @@ fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
     );
 
     assert!(tokens.iter().any(|token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")));
-    assert!(
-        tokens
-            .iter()
-            .any(|token| matches!(token, DialogueToken::Expr(expr) if matches!(expr.expr(), Expr::Call { .. })))
-    );
+    assert!(tokens.iter().any(
+        |token| matches!(token, DialogueToken::Expr(expr) if matches!(expr.expr(), Expr::Call(_)))
+    ));
     assert!(
         tokens
             .iter()
@@ -677,7 +675,7 @@ fn dialogue_tokenizer_normalizes_function_ruby_to_ruby_token() {
         tokens.iter().all(|token| !matches!(
             token,
             DialogueToken::Expr(expr)
-                if matches!(expr.expr(), Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(path) if path == "ruby"))
+                if matches!(expr.expr(), Expr::Call(call) if matches!(call.callee(), Expr::Path(path) if path == "ruby"))
         )),
         "ruby(...) interpolation should normalize to Ruby token, got {tokens:?}"
     );

@@ -252,8 +252,8 @@ fn summarize_stmt_match_control(arms: &[StmtMatchArm]) -> ProjectFlowControlSumm
 fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
     let mut summary = ProjectFlowControlSummary::default();
     match expr {
-        Expr::Call { callee, args } => {
-            summary.merge(summarize_expr_call_control(callee, args));
+        Expr::Call(call) => {
+            summary.merge(summarize_expr_call_control(call.callee(), call.args()));
         }
         Expr::Select(select) => summary.merge(summarize_expr_control(select.target())),
         Expr::Try { expr: target }

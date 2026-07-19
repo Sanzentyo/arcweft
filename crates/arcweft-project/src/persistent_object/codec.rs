@@ -936,7 +936,6 @@ fn put_syntax_stats(writer: &mut BinaryWriter, value: &SyntaxStatsObject) {
     writer.put_u64(value.block_owned_bytes);
     writer.put_u64(value.raw_owned_bytes);
     writer.put_u64(value.wiki_scan_performed);
-    writer.put_u64(value.dot_normalization_owned);
     writer.put_u64(value.dialogue_rescue_expr_parse_attempts);
     writer.put_u64(value.numeric_seq_summaries);
 }
@@ -952,7 +951,6 @@ fn read_syntax_stats(reader: &mut BinaryReader<'_>) -> Result<SyntaxStatsObject,
         block_owned_bytes: reader.read_u64("stats.block_owned_bytes")?,
         raw_owned_bytes: reader.read_u64("stats.raw_owned_bytes")?,
         wiki_scan_performed: reader.read_u64("stats.wiki_scan_performed")?,
-        dot_normalization_owned: reader.read_u64("stats.dot_normalization_owned")?,
         dialogue_rescue_expr_parse_attempts: reader
             .read_u64("stats.dialogue_rescue_expr_parse_attempts")?,
         numeric_seq_summaries: reader.read_u64("stats.numeric_seq_summaries")?,
@@ -1194,7 +1192,6 @@ mod tests {
                 block_owned_bytes: 0,
                 raw_owned_bytes: 0,
                 wiki_scan_performed: 0,
-                dot_normalization_owned: 0,
                 dialogue_rescue_expr_parse_attempts: 0,
                 numeric_seq_summaries: 0,
             },

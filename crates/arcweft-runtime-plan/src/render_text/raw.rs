@@ -263,11 +263,12 @@ pub(crate) fn find_top_level_raw_punctuation(source: &str, needle: char) -> Opti
 }
 
 fn nested_style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String)> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return Vec::new();
     };
-    match style_call_name(callee) {
-        Some("text_style" | "dialogue_style" | "style" | "rich_text_style") => args
+    match style_call_name(call.callee()) {
+        Some("text_style" | "dialogue_style" | "style" | "rich_text_style") => call
+            .args()
             .iter()
             .flat_map(|arg| match arg {
                 CallArg::Named { name, value } => {
@@ -278,7 +279,8 @@ fn nested_style_assignment_paths(path: &str, expr: &Expr) -> Vec<(String, String
                 CallArg::Spread { .. } => Vec::new(),
             })
             .collect(),
-        Some("ruby_style" | "layout_style") => args
+        Some("ruby_style" | "layout_style") => call
+            .args()
             .iter()
             .filter_map(|arg| match arg {
                 CallArg::Named { name, value } => {

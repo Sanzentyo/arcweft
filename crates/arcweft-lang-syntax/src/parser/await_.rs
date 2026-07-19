@@ -215,7 +215,12 @@ impl Parser<'_> {
             let body = self.collect_line_range_source(body_range);
             return parse_await_branch_body(body.trim());
         };
-        let mut nested = Parser::from_line_events(None, "", events, SyntaxParseStats::default());
+        let mut nested = Parser::from_line_events(
+            self.document,
+            self.source,
+            events,
+            SyntaxParseStats::default(),
+        );
         let mut items = Vec::new();
         while nested.index < nested.events.len() {
             nested.skip_blank_and_comments();

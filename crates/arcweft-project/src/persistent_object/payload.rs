@@ -47,7 +47,6 @@ pub struct SyntaxStatsObject {
     pub block_owned_bytes: u64,
     pub raw_owned_bytes: u64,
     pub wiki_scan_performed: u64,
-    pub dot_normalization_owned: u64,
     pub dialogue_rescue_expr_parse_attempts: u64,
     pub numeric_seq_summaries: u64,
 }

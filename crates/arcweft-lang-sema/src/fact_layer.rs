@@ -163,13 +163,13 @@ pub(crate) fn write_capability_for_call(callee: &Expr) -> Option<Capability> {
 }
 
 pub(crate) fn capability_from_expr(expr: &Expr) -> Option<Capability> {
-    if let Expr::Call { callee, args } = expr
-        && expr_path_label(callee).as_deref() == Some("state.write")
+    if let Expr::Call(call) = expr
+        && expr_path_label(call.callee()).as_deref() == Some("state.write")
     {
-        return state_write_capability(args);
+        return state_write_capability(call.args());
     }
-    if let Expr::Call { callee, .. } = expr
-        && let Some(callee) = expr_path_label(callee)
+    if let Expr::Call(call) = expr
+        && let Some(callee) = expr_path_label(call.callee())
     {
         return Some(Capability::new(callee));
     }
@@ -213,14 +213,14 @@ pub(crate) fn resource_accesses_from_expr(expr: &Expr) -> BTreeSet<ResourceAcces
 
 fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<ResourceAccess>) {
     match expr {
-        Expr::Call { callee, args }
+        Expr::Call(call)
             if matches!(
-                expr_path_label(callee).as_deref(),
+                expr_path_label(call.callee()).as_deref(),
                 Some("signal.set" | "metric.set")
             ) =>
         {
-            if let Some(target) = args.first() {
-                match expr_path_label(callee).as_deref() {
+            if let Some(target) = call.args().first() {
+                match expr_path_label(call.callee()).as_deref() {
                     Some("signal.set") => {
                         accesses.insert(ResourceAccess::write(EffectResource::Signal(expr_label(
                             target.value(),
@@ -234,14 +234,14 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
                     _ => {}
                 }
             }
-            collect_resource_accesses_from_expr(callee, accesses);
-            for arg in args {
+            collect_resource_accesses_from_expr(call.callee(), accesses);
+            for arg in call.args() {
                 collect_resource_accesses_from_expr(arg.value(), accesses);
             }
         }
-        Expr::Call { callee, args } => {
-            collect_resource_accesses_from_expr(callee, accesses);
-            for arg in args {
+        Expr::Call(call) => {
+            collect_resource_accesses_from_expr(call.callee(), accesses);
+            for arg in call.args() {
                 collect_resource_accesses_from_expr(arg.value(), accesses);
             }
         }

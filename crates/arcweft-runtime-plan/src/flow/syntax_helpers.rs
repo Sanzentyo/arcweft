@@ -55,13 +55,13 @@ pub(super) fn method_name(method: &str) -> &str {
 }
 
 pub(super) fn selected_call_parts(expr: &Expr) -> Option<(&Expr, &str, &[CallArg])> {
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let Expr::Select(select) = callee.as_ref() else {
+    let Expr::Select(select) = call.callee() else {
         return None;
     };
-    Some((select.target(), select.member().as_str(), args.as_slice()))
+    Some((select.target(), select.member().as_str(), call.args()))
 }
 
 pub(super) fn traverse_callee(args: &[CallArg]) -> Result<&Expr, String> {

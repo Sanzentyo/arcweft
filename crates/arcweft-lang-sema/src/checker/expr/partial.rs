@@ -85,8 +85,8 @@ impl TypeChecker<'_> {
             Expr::Binary { lhs, op, rhs } => {
                 self.infer_partial_placeholder_binary_function_type(lhs, *op, rhs)
             }
-            Expr::Call { callee, args } => {
-                self.infer_partial_placeholder_call_function_type(callee, args)
+            Expr::Call(call) => {
+                self.infer_partial_placeholder_call_function_type(call.callee(), call.args())
             }
             _ => None,
         }
@@ -325,8 +325,9 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
         Expr::Index { target, index } => {
             expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(index)
         }
-        Expr::Call { callee, args } => {
-            expr_contains_partial_placeholder(callee) || args.iter().any(call_arg_contains_partial)
+        Expr::Call(call) => {
+            expr_contains_partial_placeholder(call.callee())
+                || call.args().iter().any(call_arg_contains_partial)
         }
         Expr::DialogueCall { callee, .. } => expr_contains_partial_placeholder(callee),
         Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, rhs, .. } => {

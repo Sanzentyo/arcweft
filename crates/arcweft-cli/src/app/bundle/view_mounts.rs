@@ -280,9 +280,9 @@ fn collect_mounted_view_ids_from_expr(expr: &Expr, ids: &mut BTreeSet<String>) {
             collect_mounted_view_ids_from_expr(value, ids);
             collect_mounted_view_ids_from_expr(len, ids);
         }
-        Expr::Call { callee, args } => {
-            collect_mounted_view_ids_from_expr(callee, ids);
-            collect_mounted_view_ids_from_call_args(args, ids);
+        Expr::Call(call) => {
+            collect_mounted_view_ids_from_expr(call.callee(), ids);
+            collect_mounted_view_ids_from_call_args(call.args(), ids);
         }
         Expr::Select(select) => collect_mounted_view_ids_from_expr(select.target(), ids),
         Expr::Index { target, index } => {
@@ -429,16 +429,16 @@ fn mounted_view_id_from_expr(expr: &Expr) -> Option<String> {
         }
         _ => {}
     }
-    let Expr::Call { callee, args } = expr else {
+    let Expr::Call(call) = expr else {
         return None;
     };
-    let callee = match callee.as_ref() {
+    let callee = match call.callee() {
         Expr::Path(callee) => callee.as_label(),
         Expr::Raw(callee) => callee.as_str(),
         _ => return None,
     };
     (callee == "view").then(|| {
-        args.iter().find_map(|arg| match arg {
+        call.args().iter().find_map(|arg| match arg {
             CallArg::Positional(Expr::EntityRef(reference)) => Some(reference.canonical_body()),
             CallArg::Named { .. } | CallArg::Spread { .. } | CallArg::Positional(_) => None,
         })

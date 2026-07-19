@@ -164,7 +164,6 @@ fn parsed_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
             block_owned_bytes: 0,
             raw_owned_bytes: 0,
             wiki_scan_performed: 0,
-            dot_normalization_owned: 0,
             dialogue_rescue_expr_parse_attempts: 0,
             numeric_seq_summaries: 0,
         },

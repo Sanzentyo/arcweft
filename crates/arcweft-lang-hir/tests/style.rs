@@ -40,7 +40,7 @@ fn named_style_lowers_to_hir_owned_selector_and_expression_nodes() {
             .declarations()[0]
             .value()
             .expr(),
-        Expr::Call { .. }
+        Expr::Call(_)
     ));
 }
 

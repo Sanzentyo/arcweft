@@ -31,8 +31,9 @@ impl Expr {
                 target: value,
                 index: len,
             } => value.contains_pipe_left() || len.contains_pipe_left(),
-            Self::Call { callee, args } => {
-                callee.contains_pipe_left() || args.iter().any(call_arg_contains_pipe_left)
+            Self::Call(call) => {
+                call.callee().contains_pipe_left()
+                    || call.args().iter().any(call_arg_contains_pipe_left)
             }
             Self::Select(select) => select.target().contains_pipe_left(),
             Self::DialogueCall { callee, .. } => callee.contains_pipe_left(),
