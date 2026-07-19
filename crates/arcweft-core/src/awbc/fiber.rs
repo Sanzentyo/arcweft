@@ -982,9 +982,12 @@ fn validate_nested_runtime_value(
     value: &RuntimeValue,
     depth: usize,
 ) -> Result<(), FiberStateError> {
-    if depth > 64 {
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
         return Err(FiberStateError::InvalidRuntimeFunction {
-            reason: "runtime value nesting exceeds 64 levels".to_owned(),
+            reason: format!(
+                "runtime value nesting exceeds {} levels",
+                crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
+            ),
         });
     }
     match value {
@@ -996,6 +999,10 @@ fn validate_nested_runtime_value(
         RuntimeValue::Record(fields) => fields
             .iter()
             .try_for_each(|field| validate_nested_runtime_value(program, &field.value, depth + 1)),
+        RuntimeValue::NominalRecord(record) => record
+            .fields()
+            .iter()
+            .try_for_each(|field| validate_nested_runtime_value(program, field, depth + 1)),
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => items
             .iter()
             .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
@@ -1718,6 +1725,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(_) => "sequence",
         RuntimeValue::Record(_) => "record",
+        RuntimeValue::NominalRecord(record) => record.type_id().as_str(),
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

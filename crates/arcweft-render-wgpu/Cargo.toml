@@ -23,6 +23,7 @@ wgpu.workspace = true
 
 [dev-dependencies]
 arcweft-core = { path = "../arcweft-core" }
+arcweft-dialogue = { path = "../arcweft-dialogue" }
 pollster.workspace = true
 wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }
 

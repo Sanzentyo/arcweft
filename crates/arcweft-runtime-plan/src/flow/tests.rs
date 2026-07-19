@@ -1,10 +1,11 @@
 use super::*;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::value::{RuntimeFieldValue, RuntimeSeq, runtime_sequence_from_literal_values};
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
-    InlineFailurePolicy, RichTextCascadeLayer, RichTextColor, RichTextSettingSource, RichTextStyle,
+    RichTextCascadeLayer, RichTextColor, RichTextSettingSource, RichTextStyle,
 };
 
 #[test]

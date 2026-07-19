@@ -17,6 +17,7 @@ pub mod input;
 pub mod interaction;
 pub mod layer;
 pub mod replay;
+pub mod rich_text;
 pub mod router;
 pub mod semantic;
 pub mod text_editor;

@@ -1,7 +1,8 @@
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_render_text::{
-    DialogueHostEvent, InlineFailurePolicy, LineDisplaySpec, Milli, ResolvedTextDocument,
-    ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, RichTextControl, RichTextDocument,
+    DialogueHostEvent, LineDisplaySpec, Milli, ResolvedTextDocument, ResolvedTextRun,
+    ResolvedTextRunSource, ResolvedTextStyle, RichTextControl, RichTextDocument,
     RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextPresentation,
     RichTextPresentationStyle, RichTextRange, RichTextRubyPosition, RichTextStyle,
     RichTextWritingMode, RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily,

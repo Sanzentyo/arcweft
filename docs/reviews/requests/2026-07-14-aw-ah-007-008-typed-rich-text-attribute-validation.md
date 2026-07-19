@@ -65,7 +65,7 @@ Use the current checkout, with these files as the minimum ownership map:
 - `crates/arcweft-lang-sema/src/checker/line_plan.rs` and
   `crates/arcweft-lang-sema/src/checker/fx.rs` for semantic checking and Fx
   inventory integration;
-- `crates/arcweft-dialogue/src/rich_text.rs` for the closed builtin Fx family,
+- `crates/arcweft-presentation/src/rich_text.rs` for the closed builtin Fx family,
   phase, and property inventory;
 - `crates/arcweft-runtime-plan/src/render_text/attrs.rs`, `tag.rs`,
   `contributions.rs`, and `fx/builtins.rs` for every raw reparse and current
@@ -118,7 +118,7 @@ The renderer then sees a valid value and cannot recover the cause or range.
   `DialogueTagArgValue`, including exact source spelling, decoded value, key
   range, value range, and authored order. Extend or lower this structure; do
   not reopen raw tag text downstream.
-- AW-AH-005/006 are implemented. `arcweft-dialogue::rich_text::BuiltinRichTextFx`
+- AW-AH-005/006 are implemented. `arcweft-presentation::rich_text::BuiltinRichTextFx`
   is the closed owner of builtin selector, family, phase, and property-schema
   metadata. Attribute-free `[.sparkle]` already follows the typed Fx path.
   Do not rebuild those membership or phase tables.

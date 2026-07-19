@@ -2,9 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_dialogue::rich_text::canonical_tag_name;
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTagKind, DialogueToken};
-use arcweft_render_text::{InlineFailurePolicy, RichTextControl, RichTextNode, RichTextStyle};
+use arcweft_presentation::rich_text::canonical_tag_name;
+use arcweft_render_text::{RichTextControl, RichTextNode, RichTextStyle};
 
 use crate::errors::RuntimePlanLowerError;
 use crate::render_text::{

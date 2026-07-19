@@ -12,7 +12,7 @@ use arcweft_lang_syntax::ast::flow::{
 };
 use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_lang_syntax::text::{RichTextTagFamily, inferred_rich_text_tag_family};
+use arcweft_presentation::rich_text::{RichTextTagFamily, inferred_tag_family};
 use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
@@ -415,7 +415,7 @@ fn selected_inline_style_path(
 
 fn inferred_inline_style_path(tag: &DialogueTag, offset: usize) -> Option<String> {
     let (selector, selector_range) = dot_selector(tag.name(), tag.name_range())?;
-    let path_for = match inferred_rich_text_tag_family(selector, tag.attrs())? {
+    let path_for = match inferred_tag_family(selector, tag.attrs())? {
         RichTextTagFamily::Style => style_selector_path,
         RichTextTagFamily::Layout => layout_selector_path,
         RichTextTagFamily::Transform => transform_selector_path,

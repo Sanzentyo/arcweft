@@ -1,4 +1,5 @@
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_presentation::{
     fx::{
         Angle, FiniteF32, FxApplication, FxApplicationResolver, FxColor, FxContextSlot,
@@ -10,8 +11,8 @@ use arcweft_presentation::{
     hit::HitRect,
 };
 use arcweft_render_text::{
-    InlineFailurePolicy, LineDisplaySpec, RichTextControl, RichTextDocument, RichTextLayout,
-    RichTextNode, RichTextStyle, RichTextWritingMode, RuntimeLineContext, TextWeight,
+    LineDisplaySpec, RichTextControl, RichTextDocument, RichTextLayout, RichTextNode,
+    RichTextStyle, RichTextWritingMode, RuntimeLineContext, TextWeight,
 };
 
 use super::*;

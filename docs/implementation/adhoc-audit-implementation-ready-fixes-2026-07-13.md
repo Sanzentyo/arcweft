@@ -10,7 +10,7 @@ behavior; no source gate is used.
 
 ### AW-AH-005 and AW-AH-006 — RichText builtin ownership
 
-- Made `arcweft-dialogue::rich_text::BuiltinRichTextFx` the closed owner of
+- Made the shared rich-text model's `BuiltinRichTextFx` the closed owner of
   builtin selector, family, phase, and property-schema metadata.
 - Replaced the syntax and runtime-plan membership tables with owner lookups and
   typed exhaustive dispatch.

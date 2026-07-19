@@ -16,6 +16,7 @@ arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-launch = { path = "../arcweft-launch" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-runtime-host = { path = "../arcweft-runtime-host" }
@@ -35,7 +36,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-arcweft-presentation = { path = "../arcweft-presentation" }
 toml.workspace = true
 
 [lib]

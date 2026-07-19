@@ -416,6 +416,13 @@ impl AwbcInventory {
                     .map(|field| self.constant_runtime_value(&field.value))
                     .collect(),
             },
+            RuntimeValue::NominalRecord(record) => {
+                panic!(
+                    "nominal runtime record `{}` cannot be encoded as an AWBC constant before \
+                     its nominal schema is registered",
+                    record.type_id().as_str()
+                )
+            }
             RuntimeValue::Variant { name, payload, .. } => AwbcConstant::Variant {
                 ty: self.dynamic_ty(),
                 case: stable_ordinal(name),

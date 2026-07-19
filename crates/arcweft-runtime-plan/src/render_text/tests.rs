@@ -1,13 +1,13 @@
 use super::*;
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
-    DialogueHostEvent, FallbackStylePolicy, FxTarget, InlineFailurePolicy, InlineFallback, Milli,
-    RichTextCascadeLayer, RichTextColor, RichTextControl, RichTextFontFamily,
-    RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam, RichTextRubyPosition,
-    RichTextSettingSource, RichTextSourceRange, RichTextStyle, RichTextStyleContribution,
-    RichTextTransformOrigin, RichTextWritingMode, RuntimeLineContext,
+    DialogueHostEvent, FxTarget, Milli, RichTextCascadeLayer, RichTextColor, RichTextControl,
+    RichTextFontFamily, RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam,
+    RichTextRubyPosition, RichTextSettingSource, RichTextSourceRange, RichTextStyle,
+    RichTextStyleContribution, RichTextTransformOrigin, RichTextWritingMode, RuntimeLineContext,
 };
 
 fn line_id(value: &str) -> RuntimeLineId {

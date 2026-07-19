@@ -38,10 +38,7 @@ pub use rich_effects::{
     RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
     parse_z_index_token,
 };
-pub use rich_text::{
-    DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, InlineTextFailure,
-    RichTextControl, RichTextDocument, RichTextNode,
-};
+pub use rich_text::{DialogueHostEvent, RichTextControl, RichTextDocument, RichTextNode};
 pub use style::{
     RichTextColor, RichTextFontFamily, RichTextPresentationStyle, RichTextStyle,
     presentation_from_styles,

@@ -13,9 +13,9 @@ use arcweft_lang_syntax::{
     },
     cst::is_identifier,
     expr::{CallArg, Expr, parse_expr},
-    text::inferred_rich_text_tag_family,
     types::{FnParamKind, TypeRef},
 };
+use arcweft_presentation::rich_text::inferred_tag_family;
 
 use crate::{diagnostics::TypeCheckError, types::TypeKind};
 
@@ -210,8 +210,7 @@ impl FxCatalog {
 
     pub(super) fn inferred_tag_is_mark(&self, tag: &DialogueTag) -> bool {
         !self.inferred_tag_is_text_proxy(tag)
-            && inferred_rich_text_tag_family(tag.name().trim_start_matches('.'), tag.attrs())
-                .is_none()
+            && inferred_tag_family(tag.name().trim_start_matches('.'), tag.attrs()).is_none()
             && tag.attrs().trim().is_empty()
     }
 

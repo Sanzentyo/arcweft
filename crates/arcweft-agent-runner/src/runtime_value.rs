@@ -37,6 +37,16 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
                 .map(|field| (field.name.clone(), runtime_value_to_json(&field.value)))
                 .collect(),
         ),
+        RuntimeValue::NominalRecord(record) => serde_json::json!({
+            "kind": "nominal_record",
+            "type": record.type_id().as_str(),
+            "layout": record.layout(),
+            "fields": record
+                .fields()
+                .iter()
+                .map(runtime_value_to_json)
+                .collect::<Vec<_>>(),
+        }),
         RuntimeValue::Variant {
             path,
             name,

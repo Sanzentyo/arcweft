@@ -812,9 +812,14 @@ dependencies = [
 name = "arcweft-dialogue"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
+ "arcweft-core",
  "arcweft-id",
  "arcweft-ref",
  "arcweft-source",
+ "arcweft-view",
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
@@ -917,7 +922,7 @@ dependencies = [
 name = "arcweft-lang-syntax"
 version = "0.1.0"
 dependencies = [
- "arcweft-dialogue",
+ "arcweft-presentation",
  "arcweft-source",
  "blake3",
  "rowan",
@@ -1204,6 +1209,7 @@ name = "arcweft-render-wgpu"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
+ "arcweft-dialogue",
  "arcweft-glyphon",
  "arcweft-id",
  "arcweft-layout",

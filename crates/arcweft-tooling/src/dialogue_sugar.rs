@@ -4,8 +4,9 @@ use arcweft_lang_syntax::{
         items::{Attribute, Item},
     },
     source::ParsedSource,
-    text::{RichTextTagFamily, find_dialogue_tag_boundary, inferred_rich_text_tag_family},
+    text::find_dialogue_tag_boundary,
 };
+use arcweft_presentation::rich_text::{RichTextTagFamily, inferred_tag_family};
 use std::collections::BTreeSet;
 
 use crate::{dialogue_content::visit_dialogue_contents, model::TextEdit};
@@ -312,7 +313,7 @@ fn inferred_rich_text_family(
     if inferred_text_proxy_type(selector, attrs, context).is_some() {
         return Some("object");
     }
-    match inferred_rich_text_tag_family(selector, attrs) {
+    match inferred_tag_family(selector, attrs) {
         Some(RichTextTagFamily::Style) => Some("style"),
         Some(RichTextTagFamily::Layout) => Some("layout"),
         Some(RichTextTagFamily::Transform) => Some("transform"),

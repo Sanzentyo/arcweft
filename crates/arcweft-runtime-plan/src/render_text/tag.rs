@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
-use arcweft_dialogue::rich_text::{RichTextTagFamily, canonical_tag_name, inferred_tag_family};
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTag, DialogueToken};
+use arcweft_presentation::rich_text::{RichTextTagFamily, canonical_tag_name, inferred_tag_family};
 use arcweft_render_text::{
-    DialogueHostEvent, FxTarget, InlineFailurePolicy, Milli, RichTextAngle, RichTextControl,
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNode,
-    RichTextObjectProxy, RichTextPresentationStyle, RichTextRubyPosition, RichTextStyle,
-    RichTextTransform, RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode,
-    RichTextWritingMode, parse_milli_token, parse_z_index_token,
+    DialogueHostEvent, FxTarget, Milli, RichTextAngle, RichTextControl, RichTextInlineDirection,
+    RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextObjectProxy,
+    RichTextPresentationStyle, RichTextRubyPosition, RichTextStyle, RichTextTransform,
+    RichTextTransformOrigin, RichTextVec2, RichTextVerticalLatinMode, RichTextWritingMode,
+    parse_milli_token, parse_z_index_token,
 };
 
 use crate::{errors::RuntimePlanLowerError, labels::expr_label};

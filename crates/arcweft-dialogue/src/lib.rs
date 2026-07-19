@@ -1,48 +1,24 @@
-use arcweft_id::{EntityId, PublicId, TextKey};
-use arcweft_ref::{Id, Ref};
-use arcweft_source::SourceAnchor;
+use arcweft_id::PublicId;
 use core::time::Duration;
-use thiserror::Error;
 
-pub mod rich_text;
+mod character_dialogue;
+mod inline_failure;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SpeakerRef {
-    id: PublicId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum View {}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueLine {
-    speaker: SpeakerRef,
-    options: SayOptions,
-    content: DialogueContent,
-    plan: LinePlan,
-    source: SourceAnchor,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SayOptions {
-    pub id: Option<PublicId>,
-    pub text_key: Option<TextKey>,
-    pub voice: Option<VoicePolicy>,
-    pub look: Option<PublicId>,
-    pub view: Option<Ref<View>>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SpeakerPreset {
-    speaker: SpeakerRef,
-    options: SayOptions,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum VoicePolicy {
-    Auto,
-    Id(PublicId),
-}
+pub use character_dialogue::{
+    CharacterDialogue, CharacterDialogueCleanupValue, CharacterDialogueConfig,
+    CharacterDialogueContentApplication, CharacterDialogueContractIdentity,
+    CharacterDialogueCustomFieldId, CharacterDialogueCustomValue, CharacterDialogueFocusValue,
+    CharacterDialogueHookValue, CharacterDialogueLimits, CharacterDialoguePatch,
+    CharacterDialoguePortraitValue, CharacterDialogueRichTextValue,
+    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueRuntimeSchema, CharacterDialogueStageValue, CharacterDialogueStyleValue,
+    CharacterDialogueTypedValue, CharacterDialogueValue, CharacterDialogueValueError,
+    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId,
+    PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath, StructuredPatch,
+};
+pub use inline_failure::{
+    FallbackStylePolicy, InlineFailurePolicy, InlineFallback, InlineTextFailure,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueContent {
@@ -202,220 +178,11 @@ pub enum LineExit {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueLineBuilder {
-    preset: SpeakerPreset,
-    options: SayOptions,
-    content: Option<DialogueContent>,
-    plan: LinePlanBuilder,
-    source: Option<SourceAnchor>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LinePlanBuilder {
     cues: Vec<TimelineCue>,
     steps: Vec<LinePlanStep>,
     cancel_rules: Vec<CancelRule>,
     output: Option<OutPayload>,
-}
-
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("{kind}")]
-pub struct DialogueBuildError {
-    kind: DialogueBuildErrorKind,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum DialogueBuildErrorKind {
-    #[error("dialogue line content is required")]
-    MissingContent,
-    #[error("dialogue line source is required")]
-    MissingSource,
-}
-
-impl SpeakerRef {
-    pub const fn new(id: PublicId) -> Self {
-        Self { id }
-    }
-
-    pub const fn id(&self) -> &PublicId {
-        &self.id
-    }
-
-    #[must_use]
-    pub fn preset(&self, options: SayOptions) -> SpeakerPreset {
-        SpeakerPreset {
-            speaker: self.clone(),
-            options,
-        }
-    }
-}
-
-pub fn character(name: &str) -> SpeakerRef {
-    SpeakerRef::new(domain_id("character", name))
-}
-
-pub fn view(name: &str) -> Ref<View> {
-    Ref::new(Id::new(entity_domain_id("view", name)))
-}
-
-/// Creates a dialogue line id from a full public id such as `say.opening.001`.
-///
-/// # Panics
-///
-/// Panics when `name` is not a valid `PublicId`.
-pub fn line_id(name: &str) -> PublicId {
-    PublicId::try_new(name).expect("line id helper requires a valid public id")
-}
-
-fn look_id(name: &str) -> PublicId {
-    domain_id("look", name)
-}
-
-fn domain_id(domain: &str, name: &str) -> PublicId {
-    PublicId::try_new(format!("{domain}.{name}")).expect("domain helper requires a valid public id")
-}
-
-fn entity_domain_id(domain: &str, name: &str) -> EntityId {
-    EntityId::try_new(format!("{domain}.{name}")).expect("domain helper requires a valid entity id")
-}
-
-impl DialogueLine {
-    pub fn new(
-        speaker: SpeakerRef,
-        options: SayOptions,
-        content: DialogueContent,
-        plan: LinePlan,
-        source: SourceAnchor,
-    ) -> Self {
-        Self {
-            speaker,
-            options,
-            content,
-            plan,
-            source,
-        }
-    }
-
-    pub fn from_preset(
-        preset: &SpeakerPreset,
-        options: SayOptions,
-        content: DialogueContent,
-        plan: LinePlan,
-        source: SourceAnchor,
-    ) -> Self {
-        Self::new(
-            preset.speaker.clone(),
-            preset.options.clone().merged_with(options),
-            content,
-            plan,
-            source,
-        )
-    }
-
-    pub const fn speaker(&self) -> &SpeakerRef {
-        &self.speaker
-    }
-
-    pub const fn options(&self) -> &SayOptions {
-        &self.options
-    }
-
-    pub const fn content(&self) -> &DialogueContent {
-        &self.content
-    }
-
-    pub const fn plan(&self) -> &LinePlan {
-        &self.plan
-    }
-
-    pub const fn source(&self) -> &SourceAnchor {
-        &self.source
-    }
-}
-
-impl SayOptions {
-    pub const fn empty() -> Self {
-        Self {
-            id: None,
-            text_key: None,
-            voice: None,
-            look: None,
-            view: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_voice(mut self, voice: VoicePolicy) -> Self {
-        self.voice = Some(voice);
-        self
-    }
-
-    #[must_use]
-    pub fn with_look(mut self, look: PublicId) -> Self {
-        self.look = Some(look);
-        self
-    }
-
-    #[must_use]
-    pub fn with_view(mut self, view: Ref<View>) -> Self {
-        self.view = Some(view);
-        self
-    }
-
-    fn merged_with(self, override_options: Self) -> Self {
-        Self {
-            id: override_options.id.or(self.id),
-            text_key: override_options.text_key.or(self.text_key),
-            voice: override_options.voice.or(self.voice),
-            look: override_options.look.or(self.look),
-            view: override_options.view.or(self.view),
-        }
-    }
-}
-
-impl Default for SayOptions {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-
-impl SpeakerPreset {
-    pub fn new(speaker: SpeakerRef) -> Self {
-        Self {
-            speaker,
-            options: SayOptions::empty(),
-        }
-    }
-
-    #[must_use]
-    pub fn voice(mut self, voice: VoicePolicy) -> Self {
-        self.options.voice = Some(voice);
-        self
-    }
-
-    #[must_use]
-    pub fn look(mut self, look: &str) -> Self {
-        self.options.look = Some(look_id(look));
-        self
-    }
-
-    #[must_use]
-    pub fn view(mut self, view: Ref<View>) -> Self {
-        self.options.view = Some(view);
-        self
-    }
-
-    pub fn say(&self) -> DialogueLineBuilder {
-        DialogueLineBuilder::new(self.clone())
-    }
-
-    pub const fn speaker(&self) -> &SpeakerRef {
-        &self.speaker
-    }
-
-    pub const fn options(&self) -> &SayOptions {
-        &self.options
-    }
 }
 
 impl DialogueContent {
@@ -663,90 +430,6 @@ impl Default for LinePlan {
     }
 }
 
-impl DialogueLineBuilder {
-    fn new(preset: SpeakerPreset) -> Self {
-        Self {
-            preset,
-            options: SayOptions::empty(),
-            content: None,
-            plan: LinePlanBuilder::new(),
-            source: None,
-        }
-    }
-
-    #[must_use]
-    pub fn id(mut self, id: PublicId) -> Self {
-        self.options.id = Some(id);
-        self
-    }
-
-    #[must_use]
-    pub fn voice(mut self, voice: VoicePolicy) -> Self {
-        self.options.voice = Some(voice);
-        self
-    }
-
-    #[must_use]
-    pub fn look(mut self, look: &str) -> Self {
-        self.options.look = Some(look_id(look));
-        self
-    }
-
-    #[must_use]
-    pub fn view(mut self, view: Ref<View>) -> Self {
-        self.options.view = Some(view);
-        self
-    }
-
-    #[must_use]
-    pub fn content(mut self, content: DialogueContent) -> Self {
-        self.content = Some(content);
-        self
-    }
-
-    /// Binds the line to an explicitly supplied revision-bound source span.
-    #[must_use]
-    pub fn source(mut self, source: SourceAnchor) -> Self {
-        self.source = Some(source);
-        self
-    }
-
-    #[must_use]
-    pub fn at(mut self, offset: Duration, cue: Cue<'_>) -> Self {
-        self.plan = self.plan.at(offset, cue);
-        self
-    }
-
-    #[must_use]
-    pub fn cancel_on(mut self, input: InputEventKind, action: CancelAction) -> Self {
-        self.plan = self.plan.cancel_on(input, action);
-        self
-    }
-
-    #[must_use]
-    pub fn out_payload(mut self, payload: OutPayload) -> Self {
-        self.plan = self.plan.out_payload(payload);
-        self
-    }
-
-    pub fn build(self) -> Result<DialogueLine, DialogueBuildError> {
-        let content = self
-            .content
-            .ok_or_else(|| DialogueBuildError::new(DialogueBuildErrorKind::MissingContent))?;
-        let source = self
-            .source
-            .ok_or_else(|| DialogueBuildError::new(DialogueBuildErrorKind::MissingSource))?;
-
-        Ok(DialogueLine::from_preset(
-            &self.preset,
-            self.options,
-            content,
-            self.plan.build(),
-            source,
-        ))
-    }
-}
-
 impl LinePlanBuilder {
     pub const fn new() -> Self {
         Self {
@@ -829,16 +512,6 @@ impl InputEventKind {
             Self::BackToTitle => "BackToTitle".to_owned(),
             Self::Named(name) => name,
         }
-    }
-}
-
-impl DialogueBuildError {
-    const fn new(kind: DialogueBuildErrorKind) -> Self {
-        Self { kind }
-    }
-
-    pub const fn kind(&self) -> DialogueBuildErrorKind {
-        self.kind
     }
 }
 

@@ -5,8 +5,8 @@ mod program;
 
 use std::collections::BTreeMap;
 
-use arcweft_dialogue::rich_text::{BuiltinRichTextFx, BuiltinRichTextFxPhase};
 use arcweft_presentation::fx::{FxDefinition, FxId, FxPhase, FxTarget};
+use arcweft_presentation::rich_text::{BuiltinRichTextFx, BuiltinRichTextFxPhase};
 
 use crate::{errors::RuntimePlanLowerError, render_text::attrs::parse_attrs};
 
@@ -143,8 +143,8 @@ pub(super) fn fx_error(message: impl Into<String>) -> RuntimePlanLowerError {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_dialogue::rich_text::BuiltinRichTextFx;
     use arcweft_presentation::fx::{FxNode, FxPhase, FxStaticValue, FxTarget};
+    use arcweft_presentation::rich_text::BuiltinRichTextFx;
 
     use super::{CompiledBuiltinRichTextFx, compile_builtin_rich_text_fx};
 

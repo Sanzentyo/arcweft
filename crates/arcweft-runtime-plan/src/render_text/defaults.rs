@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_hir::syntax::ast::common::Visibility;
 use arcweft_lang_hir::syntax::ast::dialogue::DialogueDefaultsItem;
 use arcweft_lang_hir::syntax::ast::items::{Attribute, EntityDeclKind, StructItem};
 use arcweft_render_text::{
-    InlineFailurePolicy, Milli, RichTextObjectProxyDeclaration, RichTextParam, RichTextStyle,
-    RichTextStyleContribution, parse_milli_token,
+    Milli, RichTextObjectProxyDeclaration, RichTextParam, RichTextStyle, RichTextStyleContribution,
+    parse_milli_token,
 };
 
 use super::attrs::{param_from_value, parse_attr_args, trim_quotes, truthy_attr};

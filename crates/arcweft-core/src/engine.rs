@@ -160,7 +160,7 @@ pub enum FlowControlStackEntryKind {
     WhileLet {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
-        guard: Option<RuntimeExpr>,
+        guard: Option<Box<RuntimeExpr>>,
         body: std::sync::Arc<[FlowOp]>,
     },
 }

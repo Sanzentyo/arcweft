@@ -1,12 +1,12 @@
 use std::ops::Range;
 
-use arcweft_dialogue::rich_text::{RichTextTagFamily, inferred_tag_family};
 use arcweft_lang_hir::model::HirDialogue;
 use arcweft_lang_hir::syntax::ast::common::TextRange;
 use arcweft_lang_hir::syntax::ast::dialogue::{
     DialogueContent, DialogueTag, DialogueTagArg, DialogueToken,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
+use arcweft_presentation::rich_text::{RichTextTagFamily, inferred_tag_family};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextSourceRange,
     RichTextStyle, RichTextStyleContribution,

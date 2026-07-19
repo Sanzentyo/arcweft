@@ -1,10 +1,11 @@
 //! Resolved dialogue display frame and source map.
 
 use crate::{
-    DialogueHostEvent, InlineFailurePolicy, InlineTextFailure, RichTextControl,
-    RichTextPresentation, RichTextStyle, RichTextStyleContribution,
+    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextStyle,
+    RichTextStyleContribution,
 };
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{InlineFailurePolicy, InlineTextFailure};
 use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
 

@@ -1019,6 +1019,15 @@ fn validate_replay_safe_value(
             }
             Ok(())
         }
+        RuntimeValue::NominalRecord(record) => {
+            if record.fields().len() > limits.max_sequence_items {
+                return Err("replay-safe payload exceeds nominal field budget".to_owned());
+            }
+            for field in record.fields() {
+                validate_replay_safe_value(field, limits, depth + 1, nodes)?;
+            }
+            Ok(())
+        }
         RuntimeValue::Variant { payload, .. } => {
             if let Some(payload) = payload {
                 validate_replay_safe_value(payload, limits, depth + 1, nodes)?;

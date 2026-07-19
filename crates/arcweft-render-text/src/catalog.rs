@@ -1,7 +1,8 @@
 //! Runtime-plan dialogue display catalog.
 
-use crate::{InlineFailurePolicy, RichTextDocument, RichTextStyle};
+use crate::{RichTextDocument, RichTextStyle};
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 

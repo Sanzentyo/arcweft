@@ -308,75 +308,13 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Range(value) => value.label(),
         RuntimeValue::EntityRef(value) => format!("@{value}"),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
-        RuntimeValue::Seq(RuntimeSeq::Values(values)) => format!("seq/values/{}", values.len()),
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Units(len))) => format!("seq/units/{len}"),
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I8(values))) => {
-            format!("seq/i8/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I16(values))) => {
-            format!("seq/i16/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I32(values))) => {
-            format!("seq/i32/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I64(values))) => {
-            format!("seq/i64/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::I128(values))) => {
-            format!("seq/i128/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::ISize(values))) => {
-            format!("seq/isize/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U8(values))) => {
-            format!("seq/u8/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U16(values))) => {
-            format!("seq/u16/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U32(values))) => {
-            format!("seq/u32/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U64(values))) => {
-            format!("seq/u64/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::U128(values))) => {
-            format!("seq/u128/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(values))) => {
-            format!("seq/usize/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F32(values))) => {
-            format!("seq/f32/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F64(values))) => {
-            format!("seq/f64/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bool(values))) => {
-            format!("seq/bool/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bytes(values))) => {
-            format!("seq/bytes/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Chars(values))) => {
-            format!("seq/chars/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Durations(values))) => {
-            format!("seq/durations/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Strings(values))) => {
-            format!("seq/strings/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::EntityRefs(values))) => {
-            format!("seq/entity_refs/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::TupleColumns(values)) => {
-            format!("seq/tuple_columns/{}", values.len())
-        }
-        RuntimeValue::Seq(RuntimeSeq::RecordColumns(values)) => {
-            format!("seq/record_columns/{}", values.len())
-        }
+        RuntimeValue::Seq(sequence) => runtime_sequence_summary(sequence),
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::NominalRecord(record) => format!(
+            "nominal-record/{}/{}",
+            record.type_id().as_str(),
+            record.fields().len()
+        ),
         RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
@@ -387,6 +325,36 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         }
         RuntimeValue::Iterator(_) => "iterator".to_owned(),
     }
+}
+
+fn runtime_sequence_summary(sequence: &RuntimeSeq) -> String {
+    let (kind, len) = match sequence {
+        RuntimeSeq::Values(values) => ("values", values.len()),
+        RuntimeSeq::Dense(DenseSeq::Units(len)) => return format!("seq/units/{len}"),
+        RuntimeSeq::Dense(DenseSeq::I8(values)) => ("i8", values.len()),
+        RuntimeSeq::Dense(DenseSeq::I16(values)) => ("i16", values.len()),
+        RuntimeSeq::Dense(DenseSeq::I32(values)) => ("i32", values.len()),
+        RuntimeSeq::Dense(DenseSeq::I64(values)) => ("i64", values.len()),
+        RuntimeSeq::Dense(DenseSeq::I128(values)) => ("i128", values.len()),
+        RuntimeSeq::Dense(DenseSeq::ISize(values)) => ("isize", values.len()),
+        RuntimeSeq::Dense(DenseSeq::U8(values)) => ("u8", values.len()),
+        RuntimeSeq::Dense(DenseSeq::U16(values)) => ("u16", values.len()),
+        RuntimeSeq::Dense(DenseSeq::U32(values)) => ("u32", values.len()),
+        RuntimeSeq::Dense(DenseSeq::U64(values)) => ("u64", values.len()),
+        RuntimeSeq::Dense(DenseSeq::U128(values)) => ("u128", values.len()),
+        RuntimeSeq::Dense(DenseSeq::USize(values)) => ("usize", values.len()),
+        RuntimeSeq::Dense(DenseSeq::F32(values)) => ("f32", values.len()),
+        RuntimeSeq::Dense(DenseSeq::F64(values)) => ("f64", values.len()),
+        RuntimeSeq::Dense(DenseSeq::Bool(values)) => ("bool", values.len()),
+        RuntimeSeq::Dense(DenseSeq::Bytes(values)) => ("bytes", values.len()),
+        RuntimeSeq::Dense(DenseSeq::Chars(values)) => ("chars", values.len()),
+        RuntimeSeq::Dense(DenseSeq::Durations(values)) => ("durations", values.len()),
+        RuntimeSeq::Dense(DenseSeq::Strings(values)) => ("strings", values.len()),
+        RuntimeSeq::Dense(DenseSeq::EntityRefs(values)) => ("entity_refs", values.len()),
+        RuntimeSeq::TupleColumns(values) => ("tuple_columns", values.len()),
+        RuntimeSeq::RecordColumns(values) => ("record_columns", values.len()),
+    };
+    format!("seq/{kind}/{len}")
 }
 
 pub(super) fn jit_command(command: JitCommand) -> Result<(), ExitCode> {

@@ -7,10 +7,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-character = { path = "../arcweft-character" }
+arcweft-core = { path = "../arcweft-core" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-ref = { path = "../arcweft-ref" }
 arcweft-source = { path = "../arcweft-source" }
+arcweft-view = { path = "../arcweft-view" }
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lib]
 path = "src/lib.rs"

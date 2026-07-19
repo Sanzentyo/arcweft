@@ -1,4 +1,5 @@
 use crate::awbc::schema::AwbcFunctionId;
+use crate::entry::{RuntimeSchemaError, RuntimeValueDigest};
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::RuntimePattern;
 use crate::plan::{
@@ -12,11 +13,20 @@ use thiserror::Error;
 
 mod env;
 mod integer;
+mod nesting;
+mod nominal_record;
+mod option_value;
 mod range;
 mod sequence_constructors;
 mod sequence_impls;
 
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
+pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
+pub use nominal_record::{RuntimeNominalRecordError, RuntimeNominalRecordValue};
+pub use option_value::{
+    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
+};
+use option_value::{runtime_option_none, runtime_option_some};
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 pub use sequence_constructors::{
     runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
@@ -139,6 +149,7 @@ pub enum RuntimeValue {
     Tuple(Vec<RuntimeValue>),
     Seq(RuntimeSeq),
     Record(Vec<RuntimeFieldValue>),
+    NominalRecord(RuntimeNominalRecordValue),
     Function(RuntimeFunctionValue),
     Variant {
         path: Option<String>,
@@ -489,6 +500,33 @@ impl RuntimeIntrinsic {
 }
 
 impl RuntimeValue {
+    /// Returns this value as a nominal record without accepting anonymous
+    /// structural records.
+    #[must_use]
+    pub const fn as_nominal_record(&self) -> Option<&RuntimeNominalRecordValue> {
+        match self {
+            Self::NominalRecord(record) => Some(record),
+            _ => None,
+        }
+    }
+
+    /// Encodes the deterministic replay/save identity of this value.
+    pub fn try_canonical_bytes(
+        &self,
+        max_encoded_bytes: usize,
+    ) -> Result<Vec<u8>, RuntimeSchemaError> {
+        crate::entry::canonical_runtime_value_bytes(self, max_encoded_bytes)
+    }
+
+    /// Hashes the deterministic replay/save identity of this value.
+    pub fn try_digest(
+        &self,
+        max_encoded_bytes: usize,
+    ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+        let bytes = self.try_canonical_bytes(max_encoded_bytes)?;
+        Ok(RuntimeValueDigest::from_bytes(blake3::hash(&bytes).into()))
+    }
+
     pub const fn i8(value: i8) -> Self {
         Self::Int(RuntimeInt::i8(value))
     }
@@ -1920,86 +1958,6 @@ pub fn evaluate_core_iter_next_intrinsic(
     ]))
 }
 
-pub fn evaluate_core_option_is_some_intrinsic(
-    value: &RuntimeValue,
-) -> Result<RuntimeValue, RuntimeEvalError> {
-    match runtime_option_payload(value) {
-        Some(RuntimeOptionPayload::Some) => Ok(RuntimeValue::Bool(true)),
-        Some(RuntimeOptionPayload::None) => Ok(RuntimeValue::Bool(false)),
-        None => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
-            "core.option.is_some expected Option, found {}",
-            runtime_value_label(value)
-        ))),
-    }
-}
-
-pub fn evaluate_core_option_unwrap_intrinsic(
-    value: RuntimeValue,
-) -> Result<RuntimeValue, RuntimeEvalError> {
-    match value {
-        RuntimeValue::Variant {
-            path,
-            name,
-            payload: Some(payload),
-        } if is_option_path(path.as_deref()) && name == "Some" => Ok(*payload),
-        RuntimeValue::Variant {
-            path,
-            name,
-            payload: None,
-        } if is_option_path(path.as_deref()) && name == "None" => Err(
-            RuntimeEvalError::ExpectedBracketSeq("core.option.unwrap called on None".to_owned()),
-        ),
-        value => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
-            "core.option.unwrap expected Option, found {}",
-            runtime_value_label(&value)
-        ))),
-    }
-}
-
-enum RuntimeOptionPayload {
-    Some,
-    None,
-}
-
-fn runtime_option_payload(value: &RuntimeValue) -> Option<RuntimeOptionPayload> {
-    let RuntimeValue::Variant {
-        path,
-        name,
-        payload,
-    } = value
-    else {
-        return None;
-    };
-    if !is_option_path(path.as_deref()) {
-        return None;
-    }
-    match (name.as_str(), payload.as_deref()) {
-        ("Some", Some(_)) => Some(RuntimeOptionPayload::Some),
-        ("None", None) => Some(RuntimeOptionPayload::None),
-        _ => None,
-    }
-}
-
-fn is_option_path(path: Option<&str>) -> bool {
-    path.is_none_or(|path| path == "Option")
-}
-
-fn runtime_option_some(value: RuntimeValue) -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: Some("Option".to_owned()),
-        name: "Some".to_owned(),
-        payload: Some(Box::new(value)),
-    }
-}
-
-fn runtime_option_none() -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: Some("Option".to_owned()),
-        name: "None".to_owned(),
-        payload: None,
-    }
-}
-
 pub fn runtime_sequence_values(values: Vec<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::values(values))
 }
@@ -2488,6 +2446,13 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             RuntimeSeq::RecordColumns(values) => format!("seq/record_columns/{}", values.len()),
         },
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
+        RuntimeValue::NominalRecord(record) => {
+            format!(
+                "nominal-record/{}/{}",
+                record.type_id().as_str(),
+                record.fields().len()
+            )
+        }
         RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

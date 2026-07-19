@@ -1,4 +1,4 @@
-//! Shared rich-text tag and built-in effect vocabulary.
+//! Renderer-independent rich-text tag and built-in effect vocabulary.
 
 /// Canonical family of an inferred dot-selector rich-text tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

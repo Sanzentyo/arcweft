@@ -1,10 +1,10 @@
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineTextFailure};
 use arcweft_render_text::{
-    DialogueHostEvent, FallbackStylePolicy, InlineFailurePolicy, InlineTextFailure,
-    LineDisplaySpec, RichTextColor, RichTextControl, RichTextControlMarker, RichTextDocument,
-    RichTextFontFamily, RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyAnnotation,
-    RichTextStyle, RichTextTextSource, RuntimeLineContext,
+    DialogueHostEvent, LineDisplaySpec, RichTextColor, RichTextControl, RichTextControlMarker,
+    RichTextDocument, RichTextFontFamily, RichTextNode, RichTextPresentation, RichTextRange,
+    RichTextRubyAnnotation, RichTextStyle, RichTextTextSource, RuntimeLineContext,
 };
 
 fn line_id(value: &str) -> RuntimeLineId {

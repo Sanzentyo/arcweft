@@ -6,8 +6,8 @@ use crate::{
     RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextStyle,
     RichTextWritingMode, presentation_from_styles,
 };
-use arcweft_dialogue::rich_text::canonical_tag_name;
 use arcweft_presentation::fx::FxColor;
+use arcweft_presentation::rich_text::canonical_tag_name;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
 use thiserror::Error;

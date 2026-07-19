@@ -7,11 +7,6 @@ use crate::ast::{
 };
 use crate::expr::{CallArg, Expr, Literal, parse_expr};
 
-pub use arcweft_dialogue::rich_text::{
-    RichTextTagFamily, canonical_tag_name as canonical_rich_text_tag_name,
-    inferred_tag_family as inferred_rich_text_tag_family,
-};
-
 /// Parsed dialogue-text tokens plus recoverable text-mode diagnostics.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueTextParse {
@@ -897,12 +892,11 @@ fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_dialogue::rich_text::BuiltinRichTextFx;
-
-    use super::{
-        RichTextTagFamily, find_dialogue_tag_boundary, inferred_rich_text_tag_family,
-        parse_dialogue_text,
+    use arcweft_presentation::rich_text::{
+        BuiltinRichTextFx, RichTextTagFamily, inferred_tag_family,
     };
+
+    use super::{find_dialogue_tag_boundary, parse_dialogue_text};
     use crate::ast::{
         common::TextRange,
         dialogue::{DialogueTagKind, DialogueToken},
@@ -913,14 +907,14 @@ mod tests {
         for effect in BuiltinRichTextFx::ALL {
             for attrs in ["", "phase=glyph_transform"] {
                 assert_eq!(
-                    inferred_rich_text_tag_family(effect.selector(), attrs),
+                    inferred_tag_family(effect.selector(), attrs),
                     Some(RichTextTagFamily::Effect),
                     "{} with `{attrs}`",
                     effect.selector()
                 );
             }
         }
-        assert_eq!(inferred_rich_text_tag_family("unknown", ""), None);
+        assert_eq!(inferred_tag_family("unknown", ""), None);
     }
 
     #[test]

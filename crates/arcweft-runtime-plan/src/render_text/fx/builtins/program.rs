@@ -5,12 +5,12 @@ mod value_expr;
 
 use std::collections::BTreeMap;
 
-use arcweft_dialogue::rich_text::{
-    BuiltinRichTextFx, BuiltinRichTextFxPhase, BuiltinRichTextFxProperty,
-};
 use arcweft_presentation::fx::{
     FxContextSlot, FxGraph, FxId, FxNode, FxPhase, FxProperty, FxResourceId, FxRuntimeType,
     FxRuntimeValue, FxSamplerProgram, FxStaticValue, FxTarget,
+};
+use arcweft_presentation::rich_text::{
+    BuiltinRichTextFx, BuiltinRichTextFxPhase, BuiltinRichTextFxProperty,
 };
 
 use crate::errors::RuntimePlanLowerError;

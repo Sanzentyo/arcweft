@@ -201,7 +201,7 @@ impl RuntimeTypeSchema {
 ///
 /// Record fields are ordered by field identity, integers retain their exact
 /// width, and every collection length is checked before it is encoded.
-pub(crate) fn canonical_runtime_value_bytes(
+pub fn canonical_runtime_value_bytes(
     value: &RuntimeValue,
     max_encoded_bytes: usize,
 ) -> Result<Vec<u8>, RuntimeSchemaError> {
@@ -333,7 +333,7 @@ impl CanonicalRuntimeValueBytes {
                     });
                 }
                 self.u8(5)?;
-                self.u32(value.to_bits())
+                self.u32(if *value == 0.0 { 0 } else { value.to_bits() })
             }
             RuntimeValue::F64(value) => {
                 if !value.is_finite() {
@@ -343,7 +343,7 @@ impl CanonicalRuntimeValueBytes {
                     });
                 }
                 self.u8(6)?;
-                self.u64(value.to_bits())
+                self.u64(if *value == 0.0 { 0 } else { value.to_bits() })
             }
             RuntimeValue::String(value) => {
                 self.u8(7)?;
@@ -397,6 +397,16 @@ impl CanonicalRuntimeValueBytes {
                 for field in fields {
                     self.string(&field.name)?;
                     self.value(&field.value)?;
+                }
+                Ok(())
+            }
+            RuntimeValue::NominalRecord(record) => {
+                self.u8(15)?;
+                self.string(record.type_id().as_str())?;
+                self.extend(record.layout().as_bytes())?;
+                self.len(record.fields().len())?;
+                for field in record.fields() {
+                    self.value(field)?;
                 }
                 Ok(())
             }
@@ -955,6 +965,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Seq(_) => "sequence",
         RuntimeValue::Record(_) => "record",
+        RuntimeValue::NominalRecord(_) => "nominal record",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

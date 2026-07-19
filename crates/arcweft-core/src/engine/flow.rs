@@ -301,7 +301,7 @@ impl Engine {
                         kind: FlowControlStackEntryKind::WhileLet {
                             pattern: pattern.clone(),
                             expr: expr.clone(),
-                            guard: guard.clone(),
+                            guard: guard.clone().map(Box::new),
                             body: Arc::clone(&body),
                         },
                     });
@@ -940,7 +940,7 @@ impl Engine {
                 self.push_ops(vec![FlowOp::WhileLetNext {
                     pattern,
                     expr,
-                    guard,
+                    guard: guard.map(|guard| *guard),
                     body,
                 }]);
             }

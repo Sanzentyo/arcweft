@@ -1,8 +1,9 @@
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_lang_hir::model::HirDialogue;
 use arcweft_render_text::{
-    InlineFailurePolicy, LineDisplayArg, LineDisplaySpec, RichTextCascadeLayer, RichTextDocument,
-    RichTextSettingSource, RichTextStyle, RichTextStyleContribution,
+    LineDisplayArg, LineDisplaySpec, RichTextCascadeLayer, RichTextDocument, RichTextSettingSource,
+    RichTextStyle, RichTextStyleContribution,
 };
 
 use crate::errors::RuntimePlanLowerError;

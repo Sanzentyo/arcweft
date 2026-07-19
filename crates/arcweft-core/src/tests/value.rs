@@ -1,21 +1,129 @@
 use crate::{
+    entry::{RuntimeNominalTypeId, TypeLayoutHash},
     plan::RuntimePureHelperId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv, RuntimeExpr, RuntimeFieldValue,
-        RuntimeIntrinsic, RuntimeIterator, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        evaluate_core_iter_collect_intrinsic, evaluate_std_float_intrinsic,
-        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
-        runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
-        runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
-        runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-        runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
-        runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-        runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_units,
-        runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
-        runtime_sequence_repeat_value, runtime_value_label,
+        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv,
+        RuntimeExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeIterator,
+        RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        RuntimeValueNestingError, evaluate_core_iter_collect_intrinsic,
+        evaluate_std_float_intrinsic, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
+        runtime_sequence_dense_chars, runtime_sequence_dense_durations,
+        runtime_sequence_dense_entity_refs, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
+        runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
+        runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
+        runtime_sequence_dense_strings, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
+        runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
+        runtime_sequence_dense_units, runtime_sequence_dense_usize,
+        runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
     },
 };
+
+#[test]
+fn nominal_and_anonymous_records_have_distinct_identity_and_bytes() {
+    let nominal = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+        RuntimeNominalTypeId::try_new("test.Named").expect("type"),
+        TypeLayoutHash::from_bytes([7; 32]),
+        vec![RuntimeValue::i32(1)],
+    ));
+    let anonymous = RuntimeValue::Record(vec![RuntimeFieldValue {
+        name: "value".to_owned(),
+        value: RuntimeValue::i32(1),
+    }]);
+
+    assert_ne!(nominal, anonymous);
+    assert_ne!(
+        nominal.try_canonical_bytes(1024).expect("nominal bytes"),
+        anonymous
+            .try_canonical_bytes(1024)
+            .expect("anonymous bytes")
+    );
+    assert_eq!(runtime_value_label(&nominal), "nominal-record/test.Named/1");
+}
+
+#[test]
+fn canonical_float_encoding_normalizes_negative_zero_and_rejects_non_finite() {
+    assert_eq!(
+        RuntimeValue::F32(-0.0)
+            .try_canonical_bytes(32)
+            .expect("negative zero"),
+        RuntimeValue::F32(0.0)
+            .try_canonical_bytes(32)
+            .expect("positive zero")
+    );
+    assert_eq!(
+        RuntimeValue::F64(-0.0)
+            .try_digest(32)
+            .expect("negative zero"),
+        RuntimeValue::F64(0.0)
+            .try_digest(32)
+            .expect("positive zero")
+    );
+    assert!(RuntimeValue::F32(f32::NAN).try_canonical_bytes(32).is_err());
+    assert!(
+        RuntimeValue::F64(f64::INFINITY)
+            .try_canonical_bytes(32)
+            .is_err()
+    );
+}
+
+#[test]
+fn runtime_value_nesting_accepts_64_and_rejects_65() {
+    fn nested_nominal(depth: usize) -> RuntimeValue {
+        let type_id = RuntimeNominalTypeId::try_new("test.Nested").expect("type");
+        let layout = TypeLayoutHash::from_bytes([19; 32]);
+        (0..depth).fold(RuntimeValue::Unit, |value, _| {
+            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+                type_id.clone(),
+                layout,
+                vec![value],
+            ))
+        })
+    }
+
+    nested_nominal(MAX_RUNTIME_VALUE_NESTING_DEPTH)
+        .validate_nesting_depth(MAX_RUNTIME_VALUE_NESTING_DEPTH)
+        .expect("depth 64 is accepted");
+    assert_eq!(
+        nested_nominal(MAX_RUNTIME_VALUE_NESTING_DEPTH + 1)
+            .validate_nesting_depth(MAX_RUNTIME_VALUE_NESTING_DEPTH)
+            .expect_err("depth 65 is rejected"),
+        RuntimeValueNestingError::Exceeded {
+            maximum: MAX_RUNTIME_VALUE_NESTING_DEPTH,
+        }
+    );
+}
+
+#[test]
+fn option_none_conversion_rejects_same_named_non_option_variants() {
+    let option = RuntimeValue::Variant {
+        path: Some("Option".to_owned()),
+        name: "Some".to_owned(),
+        payload: Some(Box::new(RuntimeValue::Bool(true))),
+    };
+    assert_eq!(
+        option.option_none_with_same_path(),
+        Some(RuntimeValue::Variant {
+            path: Some("Option".to_owned()),
+            name: "None".to_owned(),
+            payload: None,
+        })
+    );
+
+    let unrelated = RuntimeValue::Variant {
+        path: Some("custom.Choice".to_owned()),
+        name: "Some".to_owned(),
+        payload: Some(Box::new(RuntimeValue::Bool(true))),
+    };
+    assert_eq!(unrelated.option_none_with_same_path(), None);
+
+    let malformed = RuntimeValue::Variant {
+        path: Some("Option".to_owned()),
+        name: "Some".to_owned(),
+        payload: None,
+    };
+    assert_eq!(malformed.option_none_with_same_path(), None);
+}
 
 #[test]
 fn runtime_collection_indices_use_one_width_preserving_conversion_rule() {

@@ -1,14 +1,15 @@
 //! Runtime binding resolution into a dialogue display frame.
 
 use crate::{
-    DialogueHostEvent, InlineFailurePolicy, InlineFallback, InlineTextFailure, LineDisplayFrame,
-    LineDisplaySpec, RichTextControl, RichTextControlMarker, RichTextDisplayMap,
-    RichTextHostEventMarker, RichTextNode, RichTextRange, RichTextRubyAnnotation, RichTextStyle,
-    RichTextTextRun, RichTextTextSource, presentation_from_styles,
+    DialogueHostEvent, LineDisplayFrame, LineDisplaySpec, RichTextControl, RichTextControlMarker,
+    RichTextDisplayMap, RichTextHostEventMarker, RichTextNode, RichTextRange,
+    RichTextRubyAnnotation, RichTextStyle, RichTextTextRun, RichTextTextSource,
+    presentation_from_styles,
 };
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
-use arcweft_dialogue::rich_text::canonical_tag_name;
+use arcweft_dialogue::{InlineFailurePolicy, InlineFallback, InlineTextFailure};
+use arcweft_presentation::rich_text::canonical_tag_name;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -471,6 +472,9 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(_) => "[...]".to_owned(),
         RuntimeValue::Tuple(_) => "(...)".to_owned(),
         RuntimeValue::Record(_) => "{...}".to_owned(),
+        RuntimeValue::NominalRecord(record) => {
+            format!("<{}>", record.type_id().as_str())
+        }
         RuntimeValue::Function(function) => format!("<function/{}>", function.arity()),
         RuntimeValue::Variant { name, .. } => format!(".{name}"),
     }
@@ -490,6 +494,7 @@ fn runtime_value_is_truthy(value: &RuntimeValue) -> bool {
         | RuntimeValue::TensorF64(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
+        | RuntimeValue::NominalRecord(_)
         | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => true,
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => !value.is_empty(),
