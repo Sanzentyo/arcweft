@@ -18,6 +18,16 @@ use std::{
 };
 use thiserror::Error;
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "AW-AH-009.3.1 Cut 1 lands checked syntax ownership before parser integration in Cut 2"
+    )
+)]
+mod call_syntax;
+#[cfg(test)]
+mod call_syntax_tests;
 mod char_literal;
 mod closure_parse;
 mod closure_source;
@@ -26,6 +36,13 @@ mod numeric;
 mod pipe_scope;
 mod source_ranges;
 
+pub use call_syntax::{
+    ArgumentListSyntax, ArgumentListTerminatorSyntax, CallArgumentFormSyntax,
+    CallArgumentRecoverySyntax, CallArgumentSyntax, CallExpr, CallRecoveryBoundarySyntax,
+    CallRecoveryTokenKind, CallSurfaceSyntax, CallbackBlockCallSyntax, CallbackBlockSyntax,
+    CallbackParameterHeaderSyntax, CallbackParameterSyntax, CallbackParameterTypeSyntax,
+    ParenthesizedCallSyntax,
+};
 use closure_parse::parse_closure_params;
 use closure_source::ClosureBodySource;
 pub use numeric::{
