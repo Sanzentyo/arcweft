@@ -338,6 +338,51 @@ shared changes were settling. The standard dialogue style assertions, ruby
 mask report assertions, and Web Fx dialogue-mount assertions were extracted
 into responsibility-named helpers. No lint suppression was added.
 
+### Bounded dialogue/Agent rerun at `84f9574cf` — 2026-07-21
+
+The retained rerun evidence is bound to exact commit
+`84f9574cfd4a8e0325895156f58f50e5cf4e4c57`
+(`Record TTS implementation entry gates`). It does not claim that later,
+currently untested commits pass the same matrix.
+
+The audited `D:\git\arcweft-tier2-dialogue-*.log` files and the contemporaneous
+[single-manifest decoder note](2026-07-20-lang-01-5-1-single-manifest-decoder-wip.md)
+record these results:
+
+| Tier 2 group | Verified result |
+| --- | --- |
+| slow MCP stdio | 22/22 passed |
+| slow Agent observe | 1/1 passed |
+| native auxiliary capture | 10 recipe groups, 16/16 tests passed |
+| visual golden | 7/7 passed: 2 visual-smoke, 1 fixture-integrity, and 4 exact-golden tests |
+
+The 22-case MCP selection at this revision does not retroactively rewrite the
+earlier 23-case validation history above.
+
+The first `test-slow-agent-observe` attempt stopped during compilation because
+the isolated workspace did not contain the intentionally ignored
+`web/assets/noto-sans-jp-vf.ttf` fixture. No Agent test ran in that attempt.
+The expected 9,590,844-byte font fixture was supplied from the root checkout
+(SHA-256
+`5113756F8A3B5D01B2211025E267C50121E3B36F465B7BBAF3CDAF4C3430BFD0`);
+the exact command was then rerun and passed 1/1. This was an isolated-workspace
+setup issue, not a production or test failure.
+
+At that exact commit, the selected slow MCP, Agent observation, native
+auxiliary-capture, and visual-golden groups all followed the accepted authored
+View identity, prepared-text geometry, capture URI, and resource publication
+contracts. That closes the previously recorded stale dialogue/Agent harness
+gap for the tested revision without restoring an old URI, semantic identity,
+geometry fallback, or alternate renderer. The related production boundaries
+are documented in the
+[CharacterDialogue domain cut](2026-07-19-aw-ah-009-4-cut1-character-dialogue-domain.md),
+[dialogue View ID acceptance boundary](dialogue-view-id-acceptance-boundary-2026-07-19.md),
+and
+[dialogue profile presentation-owner intake](2026-07-20-lang-01-5-1-1-dialogue-profile-presentation-owner-intake.md).
+Any later broad dialogue, runtime, Agent, MCP, or capture cut must rerun the
+applicable Tier 2 groups rather than treating this commit-bound evidence as a
+moving green baseline.
+
 ## Compatibility and deviations
 
 No compatibility alias, dual reader, removed-syntax recognizer, source gate,
