@@ -4,7 +4,7 @@ Date: 2026-07-03
 
 ## Summary
 
-`samples/zundamon-stand-switch/main.arcw` renders correctly through
+`samples/zundamon-stand-switch/src/main.arcw` renders correctly through
 player-backed `agent observe`, and the rendered PNG and observe JSON now both
 expose the standing Zundamon image object.
 
@@ -28,9 +28,9 @@ the standing image remains at the same absolute position and size.
 The following commands were run from the repository root:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/main.arcw --steps 2 --image png --capture color --content-policy-mode local-dev --out target/zundamon-debug/zundamon-agent-final.png --json
-cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/main.arcw --steps 2 --viewport-width 1920 --viewport-height 1080 --image png --capture color --content-policy-mode local-dev --out target/zundamon-debug/zundamon-agent-1920x1080.png --json
-cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/main.arcw --steps 2 --viewport-width 2560 --viewport-height 1440 --image png --capture color --content-policy-mode local-dev --out target/zundamon-debug/zundamon-agent-2560x1440.png --json
+cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/src/main.arcw --steps 2 --image png --capture color --content-policy-mode local-dev --out target/zundamon-debug/zundamon-agent-final.png --json
+cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/src/main.arcw --steps 2 --viewport-width 1920 --viewport-height 1080 --image png --capture color --content-policy-mode local-dev --out target/zundamon-debug/zundamon-agent-1920x1080.png --json
+cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/src/main.arcw --steps 2 --viewport-width 2560 --viewport-height 1440 --image png --capture color --content-policy-mode local-dev --out target/zundamon-debug/zundamon-agent-2560x1440.png --json
 ```
 
 Observed geometry:
@@ -107,7 +107,7 @@ that sample tooling flattens into PNGs.
 by the default `arcw bundle --format awfb` path. For this script, use:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- bundle samples/zundamon-stand-switch/main.arcw --format json --output target/zundamon-debug/zundamon-stand-switch.bundle.json
+cargo run -p arcweft-cli --bin arcw -- bundle samples/zundamon-stand-switch/src/main.arcw --format json --output target/zundamon-debug/zundamon-stand-switch.bundle.json
 cargo +nightly -Zscript tools/capture-bundle-scene-frame.rs target/zundamon-debug/zundamon-stand-switch.bundle.json --output target/zundamon-debug/zundamon-native-normal-1280.png --width 1280 --height 720
 ```
 

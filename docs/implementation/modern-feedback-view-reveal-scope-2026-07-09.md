@@ -94,7 +94,7 @@ Browser verification on
 Known validation notes:
 
 - `just web-player-refresh` still emits existing AWF0103 hints for
-  `web/demo.arcw` explicit image ids.
+  `web/src/main.arcw` explicit image ids.
 - Focused clippy exits successfully but reports existing warnings outside this
   cut, including syntax AST large enum variants, runtime-driver `Option<Option>`
   helpers, web text-input bool parameters, and native clipboard match style.

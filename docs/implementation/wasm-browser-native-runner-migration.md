@@ -86,7 +86,7 @@ Implemented in the current checkout:
 - `arcweft-player-web` boots the browser player through wasm-bindgen, winit, and
   `arcweft-render-web`; JavaScript only fetches bytes and surfaces fatal/status
   events.
-- `web/demo.arcw` declares generated background, character stand, GIF, and WebP
+- `web/src/main.arcw` declares generated background, character stand, GIF, and WebP
   assets, and `web/demo.awfb` is regenerated from that source.
 - `tools/generate-webgpu-demo-assets.rs` is a Rust script with embedded Cargo
   metadata that generates and validates the PNG/GIF/WebP fixtures.

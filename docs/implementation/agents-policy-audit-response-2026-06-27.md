@@ -23,7 +23,7 @@ parser boundaries:
   type names to domain policy names while preserving behavior.
 - F6: rename the optional bincode boundary from compatibility/legacy wording
   to explicit external interop wording, without adding compatibility aliases.
-- Web parity fixture: regenerate `web/demo.awfb` from `web/demo.arcw` after
+- Web parity fixture: regenerate `web/demo.awfb` from `web/src/main.arcw` after
   the pulled audit exposed a stale checked-in AWFB in `just test-workspace`.
 - CLI stdio MCP test stability: replace a fixed sleep in the stderr-tail
   timeout test with a bounded wait for the child stderr reader to observe the

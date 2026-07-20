@@ -33,7 +33,7 @@ safe implementation cut.
   `RuntimePlan` used for their legacy structured bytecode fixture, so workspace
   smoke tests no longer fail before reaching the remaining web demo fixture gap.
 - The web demo fixture `web/demo.awfb` has been regenerated as a binary AWFB
-  with product AWBC from the current `web/demo.arcw` source.
+  with product AWBC from the current `web/src/main.arcw` source.
 - Web parity frame preparation now advances the opening dialogue line through
   `BundleSession::queue_dialogue_advance()` before comparing the two-choice,
   four-image frame, keeping concrete runtime input event construction inside
@@ -95,7 +95,7 @@ sequence-preserving requests so they are not accidentally deferred to seq-03:
 - `cargo fmt --all -- --check`
 - `cargo check -p arcweft-core -p arcweft-bundle -p arcweft-runtime-driver -p arcweft-runtime-host -p arcweft-project-loader -p arcweft-cli -p arcweft-player-native --all-targets --all-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo run -p arcweft-cli --quiet -- bundle web/demo.arcw --output target/codex-web-demo/demo.awfb`
+- `cargo run -p arcweft-cli --quiet -- bundle web/src/main.arcw --output target/codex-web-demo/demo.awfb`
 - `cargo run -p arcweft-cli --quiet -- inspect target/codex-web-demo/demo.awfb --json`
 - `cargo test -p arcweft-player-web --test parity --all-features`
 - `cargo test -p arcweft-project-loader fetch_release_product_bundle_decodes_cached_awfb_product --all-features -- --nocapture`

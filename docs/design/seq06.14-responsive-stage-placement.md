@@ -4,7 +4,7 @@
 
 This design defines one deterministic placement contract for presentation image objects and character-stage objects. It is deliberately renderer-independent and belongs in `arcweft-layout`, because the contract crosses bundle encoding, runtime/player frame planning, shared wgpu rendering, native/web output, Agent observe metadata, selected capture metadata, and visual golden fixtures.
 
-The immediate bug motivating the design is `samples/zundamon-stand-switch/main.arcw`: the standing image is authored as 1280x720-era absolute pixels, so 1920x1080 and 2560x1440 output keeps the character at the old location while the rest of the frame expands. The new contract keeps old absolute fields as explicit absolute mode, but makes responsive anchor placement the intended authoring path.
+The immediate bug motivating the design is `samples/zundamon-stand-switch/src/main.arcw`: the standing image is authored as 1280x720-era absolute pixels, so 1920x1080 and 2560x1440 output keeps the character at the old location while the rest of the frame expands. The new contract keeps old absolute fields as explicit absolute mode, but makes responsive anchor placement the intended authoring path.
 
 ## Coordinate spaces
 

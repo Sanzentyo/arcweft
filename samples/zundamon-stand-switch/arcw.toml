@@ -6,9 +6,9 @@ id = "org.arcweft.samples.zundamon-stand-switch"
 version = "0.1.0"
 
 [build]
-source-dir = "."
+source-dir = "src"
 
 [profiles."game.main"]
 kind = "game"
 entry = "@entry.main"
-source = "main.arcw"
+source = "src/main.arcw"

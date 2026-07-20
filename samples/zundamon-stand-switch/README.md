@@ -32,10 +32,10 @@ samples/zundamon-stand-switch/assets/zundamon/
 Run through the CLI routes after preparing assets:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- compile samples/zundamon-stand-switch/main.arcw --emit check
-cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/main.arcw
-cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/main.arcw --runner headless --steps 2 --mode drain --max-ops 32 --json
-cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/main.arcw --steps 2 --image png --capture color --content-policy-mode local-dev --out target/zundamon-agent.png --json
+cargo run -p arcweft-cli --bin arcw -- compile samples/zundamon-stand-switch/src/main.arcw --emit check
+cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/src/main.arcw
+cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/src/main.arcw --runner headless --steps 2 --mode drain --max-ops 32 --json
+cargo run -p arcweft-cli --bin arcw -- agent observe samples/zundamon-stand-switch/src/main.arcw --steps 2 --image png --capture color --content-policy-mode local-dev --out target/zundamon-agent.png --json
 ```
 
 Inside this sample directory, the same profile run is just:
@@ -47,7 +47,7 @@ cargo run -p arcweft-cli --bin arcw -- run
 Capture the shared native/WebGPU scene, including presentation images:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- bundle samples/zundamon-stand-switch/main.arcw --output target/zundamon-stand-switch.awfb
+cargo run -p arcweft-cli --bin arcw -- bundle samples/zundamon-stand-switch/src/main.arcw --output target/zundamon-stand-switch.awfb
 cargo +nightly -Zscript tools/capture-bundle-scene-frame.rs target/zundamon-stand-switch.awfb --output target/zundamon-native-scene.png
 cargo +nightly -Zscript tools/capture-bundle-scene-frame.rs target/zundamon-stand-switch.awfb --output target/zundamon-native-smile.png --select-choice choice.zundamon.to_smile
 ```
@@ -55,7 +55,7 @@ cargo +nightly -Zscript tools/capture-bundle-scene-frame.rs target/zundamon-stan
 For the browser player, update the ignored `web/local/` bundle with:
 
 ```bash
-cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/main.arcw --runner web
+cargo run -p arcweft-cli --bin arcw -- run samples/zundamon-stand-switch/src/main.arcw --runner web
 ```
 
 Then open `web/index.html?bundle=./local/zundamon-stand-switch.awfb` after the

@@ -1,7 +1,7 @@
 # Web Player Static Assets
 
 This directory is the schema-1 project asset root and also contains checked-in
-browser-served static resources. Authored image inputs for `web/demo.arcw` live
+browser-served static resources. Authored image inputs for `web/src/main.arcw` live
 under `generated/`; the bundler admits declared assets rather than walking
 unreferenced browser files into the bundle.
 

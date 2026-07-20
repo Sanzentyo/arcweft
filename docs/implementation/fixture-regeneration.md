@@ -19,7 +19,7 @@ Current refresh targets:
 
 | Target | Source | Command |
 | --- | --- | --- |
-| `web/demo.awfb` | `web/arcw.toml` profile `main` (`web/demo.arcw`) | `just fixture-refresh-web-demo-awfb` |
+| `web/demo.awfb` | `web/arcw.toml` profile `main` (`web/src/main.arcw`) | `just fixture-refresh-web-demo-awfb` |
 | `web/bundle-assets/generated/background.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `web/bundle-assets/generated/character_stand.png` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |
 | `web/bundle-assets/generated/gif_pulse.gif` | `tools/generate-webgpu-demo-assets.rs` | `just fixture-refresh-webgpu-demo-assets` |

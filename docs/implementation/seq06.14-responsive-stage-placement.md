@@ -23,7 +23,7 @@ The overlay intentionally avoids solving placement in browser DOM/CSS, canvas 2D
 | `crates/arcweft-agent-protocol/src/object.rs` | Report authored/resolved placement in image content. |
 | `crates/arcweft-cli/src/app/agent/native/player_observation.rs` | Populate Agent observe placement metadata from prepared `RenderImage`. |
 | `crates/arcweft-cli/tests/responsive_stage_placement.rs` | Run real CLI bundle/observe coverage for responsive placement and typed conflict diagnostics. |
-| `samples/zundamon-stand-switch/main.arcw` | Switch stand images to responsive top-right anchor placement. |
+| `samples/zundamon-stand-switch/src/main.arcw` | Switch stand images to responsive top-right anchor placement. |
 
 ## Resolution order
 

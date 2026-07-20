@@ -152,9 +152,9 @@ The manifest migration deliberately does not preserve source
 the shared top-level migration. The following maintained inputs still depend on
 that removed owner and must be reconciled in the same cut:
 
-- `web/demo.arcw`;
+- `web/src/main.arcw`;
 - `web/tests/fixtures/style-environment-player.arcw`;
-- `samples/zundamon-stand-switch/main.arcw`;
+- `samples/zundamon-stand-switch/src/main.arcw`;
 - `samples/rich-text-effects-animation.arcw`;
 - `samples/rich-text-showcase.arcw`;
 - `samples/native-style-parity/main.arcw`;
@@ -390,6 +390,16 @@ After every implementation-ready slice above has landed at a coherent cut:
 
 Current focused evidence:
 
+- the public `arcweft-launch` maintained-manifest integration test decodes all
+  13 tracked `arcw.toml` fixtures through `SourceBackedManifest::decode` and
+  verifies canonical schema 1. This exposed invalid root-valued
+  `source-dir = "."` entries in the Zundamon stand-switch and Web samples;
+  both sources now live at canonical `src/main.arcw` paths, their manifests
+  select those exact files, and exact `arcw check` profile runs pass;
+- the checked-in prebuilt `web/demo.awfb` was not regenerated in this manifest
+  test slice. Current regeneration also changes unrelated bundled font/payload
+  content by more than 5 MiB; deterministic artifact regeneration remains part
+  of the Web fixture and Tier 2 review cut rather than this source-layout fix;
 - `cargo check -p arcweft-launch -p arcweft-project
   -p arcweft-project-loader --all-targets` passed;
 - `cargo test -p arcweft-launch` passed all 32 decoder, source-map, strict

@@ -487,7 +487,7 @@ calls `sprite.release()`. The native Agent observe integration smoke selects
 that entry, requests the stale image object scope, and verifies that the image
 object is absent while the report carries `AGENT_CAPTURE_MISSING_SCOPE`.
 
-The checked-in `web/demo.awfb` fixture was regenerated from `web/demo.arcw`
+The checked-in `web/demo.awfb` fixture was regenerated from `web/src/main.arcw`
 with the current AWFB schema after updating the fixture entry dispatch from
 removed `start(@flow.main)` syntax to `goto @flow.main`. The parity test
 expectation now follows the current display contract by observing the speaker

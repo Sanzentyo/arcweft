@@ -6,9 +6,9 @@ id = "org.arcweft.web.demo"
 version = "0.1.0"
 
 [build]
-source-dir = "."
+source-dir = "src"
 
 [profiles.main]
 kind = "game"
 entry = "@entry.main"
-source = "demo.arcw"
+source = "src/main.arcw"
