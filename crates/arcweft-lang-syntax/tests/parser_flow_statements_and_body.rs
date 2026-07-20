@@ -179,6 +179,43 @@ fn label(i: i32) -> String {
 }
 
 #[test]
+fn function_let_initializer_retains_if_let_expression() {
+    let tree = parse_ok(
+        r"
+fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
+    let selected = if let .Some(value) = maybe when value > fallback {
+        value
+    } else {
+        fallback
+    }
+    return selected
+}
+",
+    );
+    let Item::Function(function) = &tree.items()[0] else {
+        panic!("expected function");
+    };
+    let [
+        Stmt::Let {
+            expr:
+                Expr::IfLet {
+                    guard: Some(_),
+                    else_branch: Some(_),
+                    ..
+                },
+            ..
+        },
+        Stmt::Return { .. },
+    ] = function.body_statements()
+    else {
+        panic!(
+            "expected typed if-let initializer followed by return, got {:?}",
+            function.body_statements()
+        );
+    };
+}
+
+#[test]
 fn function_tail_bracket_owner_retains_recovered_call_and_close_bracket() {
     let source = "fn demo() {\n    [f(α, β]\n}\n";
     let parsed = arcweft_lang_syntax::parser::parse_source(source);

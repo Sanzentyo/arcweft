@@ -28,7 +28,7 @@ impl ExprParser {
         let expr = self.parse_control_head_expr()?;
         let guard = if self.peek_ident("when") {
             self.bump();
-            Some(Box::new(self.parse_expr_bp(0)?))
+            Some(Box::new(self.parse_control_head_expr()?))
         } else {
             None
         };

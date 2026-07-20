@@ -79,6 +79,22 @@ fn parses_pipe_rhs_if_let_expression() {
 }
 
 #[test]
+fn parses_standalone_if_let_expression_with_guard_and_value_blocks() {
+    let parsed =
+        parse_expr("if let .Some(value) = maybe when value > fallback { value } else { fallback }")
+            .expect("standalone if-let parses as an expression");
+
+    assert!(matches!(
+        parsed,
+        Expr::IfLet {
+            guard: Some(_),
+            else_branch: Some(_),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parses_pipe_rhs_match_expression() {
     let parsed = parse_expr("ready |> match ^ { true => 7i64 false => 1i64 }")
         .expect("pipe rhs match parses as an expression");
