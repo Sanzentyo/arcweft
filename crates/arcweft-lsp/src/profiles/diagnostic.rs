@@ -212,9 +212,9 @@ fn topology_diagnostic(
             )
             .with_resource(resource)
         }
-        Error::ExternalModuleMetadataHash { import, path }
-        | Error::ExternalModuleMetadataDecode { import, path, .. } => {
-            let resource = path.display().to_string();
+        Error::ExternalModuleMetadataHash { import, id }
+        | Error::ExternalModuleMetadataDecode { import, id, .. } => {
+            let resource = id.path().as_str();
             LspProfileDiagnostic::new(
                 LspProfileDiagnosticKind::ExternalModuleMetadataParse,
                 format!("invalid generated metadata for import `{import}`"),

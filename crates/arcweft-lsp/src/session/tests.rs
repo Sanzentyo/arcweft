@@ -64,12 +64,15 @@ entry agent @entry.agent.main {
 "#;
     project.write(
         "arcw.toml",
-        r#"[package]
-name = "entry-definition-position-encodings"
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.entry-definition-position-encodings"
+version = "0.1.0"
 
 [profiles.agent]
 kind = "agent"
-entry = "entry.agent.main"
+entry = "@entry.agent.main"
 source = "src/main.arcw"
 "#,
     );
@@ -1852,6 +1855,10 @@ flow @flow.main main {}\n";
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the end-to-end test verifies result projection plus hit, miss, stable-none, and error cache behavior"
+)]
 fn signature_help_uses_native_registered_adapter_candidate() {
     let project = TestProject::new("lsp-session-signature-adapter");
     project.write(
@@ -1890,9 +1897,9 @@ flow @flow.main main {}\n";
         uri.clone(),
         position_after(source, "infer.add_f32("),
     );
+    let first_result = response.result.expect("signature help response");
     let signature: SignatureHelp =
-        serde_json::from_value(response.result.expect("signature help response"))
-            .expect("signature help response decodes");
+        serde_json::from_value(first_result.clone()).expect("signature help response decodes");
 
     let first = signature.signatures.first().expect("signature item");
     assert_eq!(
@@ -1920,22 +1927,64 @@ flow @flow.main main {}\n";
     assert_eq!(signature.active_signature, Some(0));
     assert_eq!(signature.active_parameter, Some(0));
 
-    let outside = native_signature_response(
+    let accepted = session
+        .read()
+        .expect("session read")
+        .profile_for_uri(&uri)
+        .accepted_environment()
+        .expect("accepted environment");
+    let first_cache = accepted.signature_cache_snapshot_for_test();
+    assert_eq!(first_cache.entries, 1);
+    assert_eq!(first_cache.misses, 1);
+    assert_eq!(first_cache.insertions, 1);
+    assert_eq!(first_cache.hits, 0);
+
+    let cached = native_signature_response(
         &session,
         &runtime,
         &client,
         4,
         uri.clone(),
+        position_after(source, "infer.add_f32("),
+    );
+    assert_eq!(cached.result, Some(first_result));
+    let cached_snapshot = accepted.signature_cache_snapshot_for_test();
+    assert_eq!(cached_snapshot.entries, 1);
+    assert_eq!(cached_snapshot.misses, 1);
+    assert_eq!(cached_snapshot.insertions, 1);
+    assert_eq!(cached_snapshot.hits, 1);
+
+    let outside = native_signature_response(
+        &session,
+        &runtime,
+        &client,
+        5,
+        uri.clone(),
         position_of(source, "infer.add_f32"),
     );
     assert_eq!(outside.result, Some(serde_json::Value::Null));
     assert!(outside.error.is_none());
+    let outside_cached = native_signature_response(
+        &session,
+        &runtime,
+        &client,
+        6,
+        uri.clone(),
+        position_of(source, "infer.add_f32"),
+    );
+    assert_eq!(outside_cached.result, Some(serde_json::Value::Null));
+    assert!(outside_cached.error.is_none());
+    let stable_none = accepted.signature_cache_snapshot_for_test();
+    assert_eq!(stable_none.entries, 2);
+    assert_eq!(stable_none.misses, 2);
+    assert_eq!(stable_none.insertions, 2);
+    assert_eq!(stable_none.hits, 2);
 
     let invalid = native_signature_response(
         &session,
         &runtime,
         &client,
-        5,
+        7,
         uri,
         Position::new(u32::MAX, 0),
     );
@@ -1946,6 +1995,11 @@ flow @flow.main main {}\n";
         Some(serde_json::json!({
             "code": "aw.signature.request.invalid_lsp_position"
         }))
+    );
+    assert_eq!(
+        accepted.signature_cache_snapshot_for_test(),
+        stable_none,
+        "invalid positions never mutate the semantic cache"
     );
 
     runtime.shutdown();
@@ -2495,7 +2549,7 @@ fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {
     );
 }
 
-fn open_text(session: &mut ArcweftLspSession, uri: Uri, text: &str) {
+pub(super) fn open_text(session: &mut ArcweftLspSession, uri: Uri, text: &str) {
     let open = Notification::new(
         DidOpenTextDocument::METHOD.to_owned(),
         DidOpenTextDocumentParams {
@@ -2698,7 +2752,7 @@ fn inlay_hint_string_labels(hints: &[InlayHint]) -> Vec<String> {
         .collect()
 }
 
-fn position_of(source: &str, needle: &str) -> Position {
+pub(super) fn position_of(source: &str, needle: &str) -> Position {
     let offset = source.find(needle).expect("needle in source");
     let before = &source[..offset];
     let line = before.bytes().filter(|byte| *byte == b'\n').count();
@@ -2711,7 +2765,7 @@ fn position_of(source: &str, needle: &str) -> Position {
     )
 }
 
-fn position_after(source: &str, needle: &str) -> Position {
+pub(super) fn position_after(source: &str, needle: &str) -> Position {
     let start = source.find(needle).expect("needle in source");
     let end = start + needle.len();
     let before = &source[..end];
@@ -2760,7 +2814,7 @@ fn adapter_manifest(id: &str, function: &str) -> String {
     toml::to_string(&toml::Value::Table(manifest)).expect("adapter manifest TOML")
 }
 
-fn file_uri(path: &Path) -> Uri {
+pub(super) fn file_uri(path: &Path) -> Uri {
     let normalized = path.to_string_lossy().replace('\\', "/");
     let uri = if normalized
         .as_bytes()
@@ -2774,12 +2828,12 @@ fn file_uri(path: &Path) -> Uri {
     uri.parse().expect("file uri")
 }
 
-struct TestProject {
+pub(super) struct TestProject {
     root: PathBuf,
 }
 
 impl TestProject {
-    fn new(name: &str) -> Self {
+    pub(super) fn new(name: &str) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system clock")
@@ -2789,11 +2843,11 @@ impl TestProject {
         Self { root }
     }
 
-    fn path(&self, path: &str) -> PathBuf {
+    pub(super) fn path(&self, path: &str) -> PathBuf {
         self.root.join(path)
     }
 
-    fn write(&self, path: &str, contents: &str) {
+    pub(super) fn write(&self, path: &str, contents: &str) {
         let path = self.path(path);
         if let Some(parent) = path.parent() {
             create_dir_all(parent).expect("create parent");

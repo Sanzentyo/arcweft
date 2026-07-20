@@ -12,7 +12,7 @@ use arcweft_lang_sema::registration::{
 };
 use arcweft_lang_sema::{
     callable::{CallableQueryLimitError, ResolveCallError, SemanticSignatureError},
-    signature::SignatureQueryError,
+    signature::{SignatureQueryError, SignatureQueryOutcome},
 };
 use arcweft_source::{SourceDocument, SourceDocumentIdentity};
 use lsp_server::{ErrorCode, RequestId, Response, ResponseError};
@@ -25,6 +25,7 @@ use crate::{
     positions::CheckedPositionError,
     profiles::{
         accepted_project::{AcceptedHirLookupError, AcceptedModuleKey, AcceptedProjectSnapshot},
+        caches::SignatureCacheKey,
         state::{
             AcceptedEnvironmentGeneration, AcceptedProfileEnvironment, AcceptedProfileKey,
             LspProfileState,
@@ -74,6 +75,28 @@ pub(crate) struct PreparedSignatureRequest {
     lease: AcceptedDocumentHirLease,
     stamp: SignatureRequestStamp,
     active: ActiveRequest,
+}
+
+/// Semantic result retained until the final stamp gate decides cache publication.
+#[derive(Debug)]
+pub(crate) struct SignatureRequestResult {
+    key: SignatureCacheKey,
+    outcome: Arc<SignatureQueryOutcome>,
+    cache: SignatureCacheDisposition,
+}
+
+/// Pre-work cache disposition after exact session/profile/gate validation.
+#[derive(Debug)]
+pub(crate) enum SignatureRequestWork {
+    Hit(SignatureRequestResult),
+    Miss(SignatureCacheKey),
+}
+
+/// Whether this request resolved from the exact accepted-generation cache.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SignatureCacheDisposition {
+    Hit,
+    Miss,
 }
 
 /// Signature request could not acquire one exact accepted URI/source/module/HIR chain.
@@ -441,6 +464,20 @@ impl SignatureRequestStamp {
     pub(crate) const fn module(&self) -> &AcceptedModuleKey {
         &self.module
     }
+
+    /// Projects the one existing request stamp into its semantic cache identity.
+    pub(crate) fn cache_key(&self, byte_offset: usize) -> SignatureCacheKey {
+        SignatureCacheKey::new(
+            self.generation,
+            self.world_id.clone(),
+            self.symbol_revision,
+            self.character_revision,
+            self.character_digest,
+            self.accepted_document_identity.clone(),
+            Some(self.lsp_version),
+            byte_offset,
+        )
+    }
 }
 
 impl PreparedSignatureRequest {
@@ -492,6 +529,34 @@ impl PreparedSignatureRequest {
 
     pub(crate) fn control_arc(&self) -> Arc<RequestControl> {
         Arc::clone(self.active.control())
+    }
+}
+
+impl SignatureRequestResult {
+    pub(crate) fn new(
+        key: SignatureCacheKey,
+        outcome: Arc<SignatureQueryOutcome>,
+        cache: SignatureCacheDisposition,
+    ) -> Self {
+        Self {
+            key,
+            outcome,
+            cache,
+        }
+    }
+
+    pub(crate) const fn outcome(&self) -> &Arc<SignatureQueryOutcome> {
+        &self.outcome
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        SignatureCacheKey,
+        Arc<SignatureQueryOutcome>,
+        SignatureCacheDisposition,
+    ) {
+        (self.key, self.outcome, self.cache)
     }
 }
 

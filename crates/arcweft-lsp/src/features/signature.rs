@@ -28,10 +28,10 @@ pub(crate) enum SignatureProjectionError {
 
 /// Converts one native semantic outcome without name lookup or source fallback.
 pub(crate) fn signature_help(
-    outcome: SignatureQueryOutcome,
+    outcome: &SignatureQueryOutcome,
 ) -> Result<Option<SignatureHelp>, SignatureProjectionError> {
     match outcome {
-        SignatureQueryOutcome::Help(help) => project_help(&help).map(Some),
+        SignatureQueryOutcome::Help(help) => project_help(help).map(Some),
         SignatureQueryOutcome::NotApplicable(_) => Ok(None),
     }
 }

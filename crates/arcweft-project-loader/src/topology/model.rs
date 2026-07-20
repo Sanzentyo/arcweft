@@ -703,17 +703,17 @@ pub enum ProfileTopologyLoadError {
     },
     #[error("selected adapter `{id}` was not found in the complete checked registry")]
     AdapterSelection { id: String },
-    #[error("generated metadata `{path}` raw hash does not match import `{import}`")]
+    #[error("generated metadata raw hash does not match import `{import}`")]
     ExternalModuleMetadataHash {
         import: ExternalModuleImportId,
-        path: PathBuf,
+        id: ProfileTopologyResourceId,
     },
-    #[error("failed to decode generated metadata `{path}` for import `{import}`: {source}")]
+    #[error("failed to decode generated metadata for import `{import}`: {source}")]
     ExternalModuleMetadataDecode {
         import: ExternalModuleImportId,
-        path: PathBuf,
+        id: ProfileTopologyResourceId,
         #[source]
-        source: arcweft_adapter_metadata::AdapterMetadataCodecError,
+        source: Box<arcweft_adapter_metadata::AdapterMetadataCodecError>,
     },
     #[error("generated metadata import `{import}` expected {field} `{expected}`, found `{actual}`")]
     ExternalModuleMetadataExpectation {

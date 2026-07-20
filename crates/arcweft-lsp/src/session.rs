@@ -215,6 +215,7 @@ impl ArcweftLspSession {
                         crate::requests::SignatureCancellationReason::DocumentChanged,
                     );
                 }
+                self.evict_signature_document_for_uri(&params.text_document.uri);
                 let snapshot = self.documents.open(params, self.position_encoding);
                 self.refresh_profile_for_uri(snapshot.uri(), requests);
                 self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, true);
@@ -232,6 +233,7 @@ impl ArcweftLspSession {
                         crate::requests::SignatureCancellationReason::DocumentChanged,
                     );
                 }
+                self.evict_signature_document_for_uri(&params.text_document.uri);
                 let snapshot = self.documents.change(params, self.position_encoding)?;
                 self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, true);
                 Ok(vec![self.refresh_document_diagnostics(&snapshot)])
@@ -248,6 +250,7 @@ impl ArcweftLspSession {
                         crate::requests::SignatureCancellationReason::DocumentClosed,
                     );
                 }
+                self.evict_signature_document_for_uri(&params.text_document.uri);
                 let affected_profiles = self
                     .profiles_by_uri
                     .iter()
@@ -627,6 +630,28 @@ impl ArcweftLspSession {
         self.profiles_by_uri.insert(key, profile);
     }
 
+    fn evict_signature_document_for_uri(&self, uri: &lsp_types::Uri) {
+        let uri = LspUriKey::from_uri(uri);
+        let mut accepted = Vec::new();
+        for environment in self
+            .profiles_by_uri
+            .values()
+            .filter_map(LspProfile::accepted_environment)
+        {
+            if accepted
+                .iter()
+                .all(|current| !Arc::ptr_eq(current, &environment))
+            {
+                accepted.push(environment);
+            }
+        }
+        for environment in accepted {
+            if let Some(document) = environment.project().source_identity_by_uri(&uri) {
+                environment.evict_signature_document(document);
+            }
+        }
+    }
+
     fn refresh_profile_for_open_documents(
         &mut self,
         requests: Option<&crate::requests::RequestRegistry>,
@@ -990,5 +1015,7 @@ mod lifecycle;
 #[cfg(test)]
 mod parser_diagnostic_tests;
 mod signature;
+#[cfg(test)]
+mod signature_cache_tests;
 #[cfg(test)]
 mod tests;

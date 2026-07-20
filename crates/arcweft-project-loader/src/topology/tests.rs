@@ -536,10 +536,11 @@ fn generated_metadata_raw_hash_mismatch_aborts_topology() {
 
     let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
-    assert!(matches!(
-        error,
-        super::ProfileTopologyLoadError::ExternalModuleMetadataHash { .. }
-    ));
+    let super::ProfileTopologyLoadError::ExternalModuleMetadataHash { id, .. } = error else {
+        panic!("expected generated metadata hash error");
+    };
+    assert_eq!(id.owner(), &project.owner());
+    assert_eq!(id.path().as_str(), "generated/truck.adapter.json");
 }
 
 #[test]
@@ -555,10 +556,11 @@ fn generated_metadata_decode_failure_aborts_topology_after_exact_hash() {
 
     let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
-    assert!(matches!(
-        error,
-        super::ProfileTopologyLoadError::ExternalModuleMetadataDecode { .. }
-    ));
+    let super::ProfileTopologyLoadError::ExternalModuleMetadataDecode { id, .. } = error else {
+        panic!("expected generated metadata decode error");
+    };
+    assert_eq!(id.owner(), &project.owner());
+    assert_eq!(id.path().as_str(), "generated/truck.adapter.json");
 }
 
 #[test]

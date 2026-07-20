@@ -296,11 +296,12 @@ impl<'a> TopologyBuilder<'a> {
                 },
                 &path,
             )?;
+            let id = resource.id().clone();
             let document = Arc::clone(resource.document());
             if RawDigest::for_bytes(document.text().as_bytes()) != import.metadata_hash {
                 return Err(ProfileTopologyLoadError::ExternalModuleMetadataHash {
                     import: import_id.clone(),
-                    path,
+                    id,
                 });
             }
             self.budget.charge_work(1)?;
@@ -308,8 +309,8 @@ impl<'a> TopologyBuilder<'a> {
                 SourceBackedAdapterMetadata::decode(document.text()).map_err(|source| {
                     ProfileTopologyLoadError::ExternalModuleMetadataDecode {
                         import: import_id.clone(),
-                        path: path.clone(),
-                        source,
+                        id: id.clone(),
+                        source: Box::new(source),
                     }
                 })?;
             let accepted = metadata.metadata();

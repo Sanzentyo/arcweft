@@ -74,7 +74,6 @@ impl AcceptedProjectFootprint {
         self.modules
     }
 
-    #[allow(dead_code, reason = "retained for bounded accepted-project metrics")]
     pub(crate) const fn source_bytes(self) -> u64 {
         self.source_bytes
     }

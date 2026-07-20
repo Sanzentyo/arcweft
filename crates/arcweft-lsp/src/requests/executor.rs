@@ -14,7 +14,7 @@ use crate::session::ArcweftLspSession;
 
 use super::{
     RequestAdmissionError, RequestGateState, RequestRegistry, SignatureCancellationReason,
-    signature::PreparedSignatureRequest,
+    signature::{PreparedSignatureRequest, SignatureRequestWork},
 };
 
 pub(crate) const SIGNATURE_WORKER_COUNT: usize = 4;
@@ -193,9 +193,16 @@ impl SignatureExecutorShared {
         reason = "the worker owns the prepared request and its active cleanup guard for the entire execution"
     )]
     fn execute(&self, request: PreparedSignatureRequest) {
-        let result = {
+        let work = {
             let session = self.session.read().unwrap_or_else(PoisonError::into_inner);
-            session.signature_help(&request)
+            session.signature_work(&request)
+        };
+        let result = match work {
+            Ok(SignatureRequestWork::Hit(result)) => Ok(result),
+            Ok(SignatureRequestWork::Miss(key)) => {
+                ArcweftLspSession::compute_signature(&request, key)
+            }
+            Err(error) => Err(error),
         };
         let session = self.session.read().unwrap_or_else(PoisonError::into_inner);
         session.publish_signature_result(&request, result, &self.responses);

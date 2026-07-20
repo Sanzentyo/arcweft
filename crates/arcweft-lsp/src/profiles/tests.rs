@@ -55,24 +55,25 @@ fn failed_rebuild_preserves_generation_and_cache() {
         .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
     assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
     let accepted = state.current().expect("first accepted environment");
-    accepted.insert_cache_for_test("analysis", "accepted");
+    accepted.seed_signature_cache_for_test(0);
     let generation = accepted.generation();
-    let cache = accepted.cache_snapshot_for_test();
+    let cache = accepted.signature_cache_snapshot_for_test();
 
     project.write("src/main.arcw", "fn main( {\n");
     let failed = resolver
         .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
 
     assert!(
-        failed
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| { diagnostic.kind() == LspProfileDiagnosticKind::CharacterCatalog })
+        failed.diagnostics().iter().any(|diagnostic| {
+            diagnostic.kind() == LspProfileDiagnosticKind::ProjectSourceParse
+        }),
+        "{:?}",
+        failed.diagnostics()
     );
     let retained = state.current().expect("accepted environment is retained");
     assert!(Arc::ptr_eq(&retained, &accepted));
     assert_eq!(retained.generation(), generation);
-    assert_eq!(retained.cache_snapshot_for_test(), cache);
+    assert_eq!(retained.signature_cache_snapshot_for_test(), cache);
 }
 
 #[test]
@@ -116,9 +117,9 @@ fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
         .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
     assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
     let accepted = state.current().expect("first accepted environment");
-    accepted.insert_cache_for_test("analysis", "accepted");
+    accepted.seed_signature_cache_for_test(0);
     let generation = accepted.generation();
-    let cache = accepted.cache_snapshot_for_test();
+    let cache = accepted.signature_cache_snapshot_for_test();
 
     project.write("generated/truck.adapter.json", "{ not valid metadata");
     let failed = resolver
@@ -135,7 +136,7 @@ fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
     assert!(Arc::ptr_eq(&retained, &accepted));
     assert!(Arc::ptr_eq(retained.world(), accepted.world()));
     assert_eq!(retained.generation(), generation);
-    assert_eq!(retained.cache_snapshot_for_test(), cache);
+    assert_eq!(retained.signature_cache_snapshot_for_test(), cache);
 }
 
 #[test]

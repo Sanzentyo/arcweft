@@ -7,7 +7,7 @@ use std::{
 
 use arcweft_lang_sema::signature::{SignatureQuery, SignatureQueryControl, query_signature};
 use lsp_server::{Message, RequestId, Response};
-use lsp_types::{SignatureHelp, SignatureHelpParams};
+use lsp_types::SignatureHelpParams;
 
 use crate::{
     documents::rebind_overlay,
@@ -16,7 +16,8 @@ use crate::{
         RequestGateState, RequestRegistry, SignatureRequestBinding,
         signature::{
             AcceptedDocumentHirLease, PreparedSignatureRequest, SignatureAcquireError,
-            SignatureRequestError, SignatureRequestStale, SignatureRequestStamp,
+            SignatureCacheDisposition, SignatureRequestError, SignatureRequestResult,
+            SignatureRequestStale, SignatureRequestStamp, SignatureRequestWork,
         },
     },
     uri_key::LspUriKey,
@@ -172,30 +173,44 @@ impl ArcweftLspSession {
 
     #[allow(
         clippy::result_large_err,
-        reason = "stale rejection retains the exact accepted request identity evidence"
+        reason = "the pre-work boundary preserves exact acquisition and freshness failure evidence"
     )]
-    pub(crate) fn validate_signature_request(
+    pub(crate) fn signature_work(
         &self,
         prepared: &PreparedSignatureRequest,
-    ) -> Result<(), SignatureRequestStale> {
+    ) -> Result<SignatureRequestWork, SignatureRequestError> {
+        let accepted = prepared.stamp().profile_state().accepted_read();
         let control = prepared.control();
         let gate = control.gate();
-        self.validate_signature_stamp(prepared.stamp(), control, *gate)
-    }
-
-    #[allow(
-        clippy::result_large_err,
-        reason = "the request preserves exact acquisition, semantic, and projection failure evidence"
-    )]
-    pub(crate) fn signature_help(
-        &self,
-        prepared: &PreparedSignatureRequest,
-    ) -> Result<Option<SignatureHelp>, SignatureRequestError> {
-        self.validate_signature_request(prepared)?;
+        self.validate_signature_stamp(prepared.stamp(), control, *gate, accepted.as_ref())?;
         let byte_offset = prepared
             .snapshot()
             .line_index()
             .try_byte_offset_from_position(prepared.position())?;
+        let key = prepared.stamp().cache_key(byte_offset);
+        let mut cache = prepared.stamp().accepted().signature_cache();
+        self.validate_signature_stamp(prepared.stamp(), control, *gate, accepted.as_ref())?;
+        let cached = cache.cached(&key);
+        self.validate_signature_stamp(prepared.stamp(), control, *gate, accepted.as_ref())?;
+        if let Some(outcome) = cached {
+            return Ok(SignatureRequestWork::Hit(SignatureRequestResult::new(
+                key,
+                outcome,
+                SignatureCacheDisposition::Hit,
+            )));
+        }
+        Ok(SignatureRequestWork::Miss(key))
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "the unlocked semantic boundary preserves exact acquisition and query failure evidence"
+    )]
+    pub(crate) fn compute_signature(
+        prepared: &PreparedSignatureRequest,
+        key: crate::profiles::caches::SignatureCacheKey,
+    ) -> Result<SignatureRequestResult, SignatureRequestError> {
+        let byte_offset = key.byte_offset();
         let lease = prepared.lease();
         let query = SignatureQuery::production(
             lease.world(),
@@ -207,28 +222,96 @@ impl ArcweftLspSession {
                 Some(prepared.control().deadline()),
             ),
         )?;
-        crate::features::signature::signature_help(query_signature(query)?).map_err(Into::into)
+        let outcome = Arc::new(query_signature(query)?);
+        Ok(SignatureRequestResult::new(
+            key,
+            outcome,
+            SignatureCacheDisposition::Miss,
+        ))
     }
 
     pub(crate) fn publish_signature_result(
         &self,
         prepared: &PreparedSignatureRequest,
-        result: Result<Option<SignatureHelp>, SignatureRequestError>,
+        result: Result<SignatureRequestResult, SignatureRequestError>,
         responses: &crossbeam_channel::Sender<Message>,
     ) {
+        self.publish_signature_result_inner(prepared, result, responses, || {});
+    }
+
+    #[cfg(test)]
+    pub(crate) fn publish_signature_result_after_projection(
+        &self,
+        prepared: &PreparedSignatureRequest,
+        result: Result<SignatureRequestResult, SignatureRequestError>,
+        responses: &crossbeam_channel::Sender<Message>,
+        after_projection: impl FnOnce(),
+    ) {
+        self.publish_signature_result_inner(prepared, result, responses, after_projection);
+    }
+
+    fn publish_signature_result_inner(
+        &self,
+        prepared: &PreparedSignatureRequest,
+        result: Result<SignatureRequestResult, SignatureRequestError>,
+        responses: &crossbeam_channel::Sender<Message>,
+        after_projection: impl FnOnce(),
+    ) {
+        let accepted = prepared.stamp().profile_state().accepted_read();
         let control = prepared.control();
         let mut gate = control.gate();
-        let response = match self.validate_signature_stamp(prepared.stamp(), control, *gate) {
+        let mut cache = prepared.stamp().accepted().signature_cache();
+        let (mut response, mut insertion) = match self.validate_signature_stamp(
+            prepared.stamp(),
+            control,
+            *gate,
+            accepted.as_ref(),
+        ) {
             Ok(()) => match result {
-                Ok(result) => Response::new_ok(prepared.request_id().clone(), result),
-                Err(error) => error.into_response(prepared.request_id().clone()),
+                Ok(result) => {
+                    match crate::features::signature::signature_help(result.outcome().as_ref()) {
+                        Ok(help) => {
+                            let (key, outcome, cache) = result.into_parts();
+                            let insertion = (cache == SignatureCacheDisposition::Miss)
+                                .then_some((key, outcome));
+                            (
+                                Response::new_ok(prepared.request_id().clone(), help),
+                                insertion,
+                            )
+                        }
+                        Err(error) => (
+                            SignatureRequestError::from(error)
+                                .into_response(prepared.request_id().clone()),
+                            None,
+                        ),
+                    }
+                }
+                Err(error) => (error.into_response(prepared.request_id().clone()), None),
             },
-            Err(error) => {
-                SignatureRequestError::from(error).into_response(prepared.request_id().clone())
-            }
+            Err(error) => (
+                SignatureRequestError::from(error).into_response(prepared.request_id().clone()),
+                None,
+            ),
         };
+        after_projection();
+        if let Err(error) =
+            self.validate_signature_stamp(prepared.stamp(), control, *gate, accepted.as_ref())
+        {
+            response =
+                SignatureRequestError::from(error).into_response(prepared.request_id().clone());
+            insertion = None;
+        }
         if responses.send(Message::Response(response)).is_ok() {
-            *gate = RequestGateState::Finished;
+            if let Some((key, outcome)) = insertion {
+                let _ = cache.insert(
+                    key,
+                    outcome,
+                    prepared.stamp().project().footprint().source_bytes(),
+                );
+            }
+            if *gate == RequestGateState::Active {
+                *gate = RequestGateState::Finished;
+            }
         }
     }
 
@@ -242,6 +325,7 @@ impl ArcweftLspSession {
         stamp: &SignatureRequestStamp,
         control: &crate::requests::RequestControl,
         gate: RequestGateState,
+        current: Option<&Arc<crate::profiles::state::AcceptedProfileEnvironment>>,
     ) -> Result<(), SignatureRequestStale> {
         validate_gate(control, gate)?;
         if control.binding().document() != stamp.protocol_document() {
@@ -290,8 +374,7 @@ impl ArcweftLspSession {
             return Err(SignatureRequestStale::ProfileStateReplaced);
         }
 
-        let accepted_guard = stamp.profile_state().accepted_read();
-        let Some(current) = accepted_guard.as_ref() else {
+        let Some(current) = current else {
             return Err(SignatureRequestStale::AcceptedReplaced);
         };
         if current.profile() != stamp.profile() {
