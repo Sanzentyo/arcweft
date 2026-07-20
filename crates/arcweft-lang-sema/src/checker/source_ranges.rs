@@ -4,6 +4,7 @@ use arcweft_lang_syntax::{
     ast::common::TextRange,
     expr::{Expr, Placeholder, collect_expr_source_ranges},
 };
+use arcweft_source::SourceSpan;
 
 impl TypeChecker<'_> {
     pub(super) fn check_expr_with_expected_at_range(
@@ -62,5 +63,21 @@ impl TypeChecker<'_> {
         self.expression_source_ranges
             .get(&ExprNodeKey::from_expr(expr))
             .copied()
+    }
+
+    pub(super) fn source_span_for_current_range(&self, range: TextRange) -> Option<SourceSpan> {
+        let module = self.current_module.as_ref()?;
+        self.checked_module
+            .project_source_span(module, range)
+            .or_else(|| {
+                (module == self.checked_module.module_path())
+                    .then(|| self.checked_module.source_span(range))
+                    .flatten()
+            })
+    }
+
+    pub(super) fn source_span_for_expr(&self, expr: &Expr) -> Option<SourceSpan> {
+        self.source_range_for_expr(expr)
+            .and_then(|range| self.source_span_for_current_range(range))
     }
 }

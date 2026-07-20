@@ -26,19 +26,23 @@ pub use catalog::{
     ProjectCallableCatalog, RegisteredCallableCatalog, RegisteredProjectModuleCallables,
 };
 pub use dialogue::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
+pub(crate) use error::CallTargetFactError;
 pub use error::{
-    BuiltinIdentityError, CallTargetFactError, CallableBuildLimitError, CallableCatalogBuildError,
-    CallableCatalogError, CallableDiagnosticCode, CallableDocumentationError,
-    CallableFamilyInvariantCode, CallableIdentityError, CallableIndexKind, CallablePathError,
-    CallablePublicationError, CallableQueryLimitError, CallableScalarError, CallableScalarKind,
-    CallableSchemaError, CallableSourceError, CorruptCallableCatalogReason, ResolveCallError,
-    RustProvenanceError, RustProvenanceField, SemanticSignatureError,
+    BuiltinIdentityError, CallableBuildLimitError, CallableCatalogBuildError, CallableCatalogError,
+    CallableDiagnosticCode, CallableDocumentationError, CallableFamilyInvariantCode,
+    CallableIdentityError, CallableIndexKind, CallablePathError, CallablePublicationError,
+    CallableQueryLimitError, CallableScalarError, CallableScalarKind, CallableSchemaError,
+    CallableSourceError, CorruptCallableCatalogReason, ResolveCallError, RustProvenanceError,
+    RustProvenanceField, SemanticSignatureError,
 };
 pub use facts::{
-    CallPoison, CallTargetFact, CallTargetFactMode, CallTargetFacts, CallableDiagnostic,
-    CallableDiagnosticRelated, CallableDiagnosticSeverity, CallableDiagnosticSubject,
-    CheckedCallArgumentFact, CheckedCallArgumentSlotFact, SemanticParameter,
-    SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp, SemanticSignatureIndex,
+    CallPoison, CallableDiagnostic, CallableDiagnosticRelated, CallableDiagnosticSeverity,
+    CallableDiagnosticSubject, SemanticParameter, SemanticParameterGroup, SemanticSignature,
+    SemanticSignatureHelp, SemanticSignatureIndex,
+};
+pub(crate) use facts::{
+    CallTargetFactMode, CallTargetFacts, CheckedCallArgumentFact, CheckedCallArgumentSlotFact,
+    CheckedCallArgumentSlotInput, CheckedCallTarget,
 };
 pub use identity::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentIndex,

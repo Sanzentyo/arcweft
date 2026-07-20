@@ -5,10 +5,13 @@ use std::sync::{
 
 use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_source::{SourceDocument, SourceRange};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use crate::{
-    checker::{TypeExpressionId, analyze_registered_project_types, analyze_types},
+    checker::{
+        TypeExpressionId, analyze_registered_project_types, analyze_types,
+        module::analyze_registered_project_types_for_call_facts,
+    },
     effect_row::EffectRow,
     env::{FunctionParam, FunctionSignature, TypeCheckEnv},
     registration::{
@@ -23,14 +26,15 @@ use crate::{
     types::TypeKind,
 };
 
+use super::facts::CallTargetFact;
 use super::{
-    AdapterPackageId, CallCallee, CallResolverRequest, CallSourceContext, CallableArgumentPolicy,
-    CallableCandidateId, CallableDocumentation, CallableEffectSchema, CallableGroupIndex,
-    CallableGroupKind, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
-    CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
-    CallableParameterPresence, CallableParameterType, CallablePath, CallableQueryLimitError,
-    CallableSignatureSchema, CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
-    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
+    AdapterPackageId, CallCallee, CallPoison, CallResolverRequest, CallSourceContext,
+    CallTargetFactError, CallableArgumentPolicy, CallableCandidateId, CallableDocumentation,
+    CallableEffectSchema, CallableGroupIndex, CallableGroupKind, CallableLookupKey, CallableName,
+    CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
+    CallableQueryLimitError, CallableSignatureSchema, CallableValidator, EnvironmentCallableKind,
+    EnvironmentCallableOwner, EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
     EnvironmentDeclarationOrdinal, LexicalCallableScope, PRODUCTION_CALLABLE_LIMITS,
     ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedCallTarget, ResolverWork,
     RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
@@ -193,6 +197,186 @@ fn free_resolver_returns_project_standard_and_adapter_candidates() {
         SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
     ));
     assert!(matches!(dotted.id(), CallableCandidateId::Environment(_)));
+}
+
+#[test]
+fn focused_registered_call_facts_retain_exact_source_and_checked_mapping() {
+    let fixture = ResolverFixture::new();
+    let call = exact_span(&fixture.document, "standard_value(2i32)");
+    let module = fixture.project.linked_module();
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &module,
+        &fixture.world,
+        call.clone(),
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted focused call source");
+    assert!(
+        report.report().diagnostics.is_empty(),
+        "focused analysis retains the ordinary checker report"
+    );
+    let facts = report
+        .focused_call_target_facts()
+        .expect("focused call facts");
+
+    assert_eq!(facts.call_span(), &call);
+    assert_eq!(facts.document(), fixture.document.identity());
+    assert_eq!(facts.result(), Some(&TypeKind::String));
+    assert_eq!(facts.current_group(), CallableGroupIndex::ZERO);
+    assert_eq!(facts.next_group(), None);
+    assert_eq!(facts.function_value_type(), None);
+    assert_eq!(facts.poison(), CallPoison::Clean);
+    assert!(facts.diagnostics().is_empty());
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = facts.target()
+    else {
+        panic!("focused standard call must retain the selected resolver product")
+    };
+    assert!(matches!(selected.id(), CallableCandidateId::Environment(_)));
+    assert_eq!(considered.as_ref(), std::slice::from_ref(selected.as_ref()));
+
+    let [argument] = facts.arguments() else {
+        panic!("standard call must retain one authored argument")
+    };
+    assert_eq!(argument.index().get(), 0);
+    assert_eq!(argument.authored_name(), None);
+    assert!(!argument.spread());
+    assert_eq!(argument.poison(), CallPoison::Clean);
+    let [slot] = argument.slots() else {
+        panic!("ordinary argument must retain one checked slot")
+    };
+    assert_eq!(slot.slot().get(), 0);
+    assert_eq!(
+        slot.mapped().expect("mapped parameter").group(),
+        CallableGroupIndex::ZERO
+    );
+    assert_eq!(
+        slot.mapped().expect("mapped parameter").parameter().get(),
+        0
+    );
+    assert_eq!(slot.inferred(), Some(&TypeKind::I32));
+    assert_eq!(slot.expected(), Some(&TypeKind::I32));
+    assert_eq!(slot.poison(), CallPoison::Clean);
+    assert_eq!(
+        source_text(&fixture.document, slot.source().expect("slot source")),
+        "2i32"
+    );
+    assert!(work.consumed() > 0);
+}
+
+#[test]
+fn focused_registered_call_requires_the_exact_complete_call_span() {
+    let fixture = ResolverFixture::new();
+    let callee_only = exact_span(&fixture.document, "standard_value");
+    let module = fixture.project.linked_module();
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &module,
+        &fixture.world,
+        callee_only.clone(),
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted focused call source");
+
+    assert!(matches!(
+        report.focused_call_target_facts(),
+        Err(CallTargetFactError::FocusedTargetMissing { call }) if call == callee_only
+    ));
+}
+
+#[test]
+fn focused_registered_call_uses_caller_owned_cancellation_and_work() {
+    let fixture = ResolverFixture::new();
+    let call = exact_span(&fixture.document, "project_value(1i32)");
+    let module = fixture.project.linked_module();
+    let cancellation = AtomicBool::new(true);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &module,
+        &fixture.world,
+        call.clone(),
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted focused call source");
+
+    assert!(matches!(
+        report.focused_call_target_facts(),
+        Err(CallTargetFactError::Resolve { call: actual, reason })
+            if actual == call && reason.as_ref() == &ResolveCallError::Cancelled
+    ));
+    assert_eq!(work.consumed(), 0);
+
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(0);
+    let report = analyze_registered_project_types_for_call_facts(
+        &module,
+        &fixture.world,
+        call.clone(),
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted focused call source");
+    assert!(matches!(
+        report.focused_call_target_facts(),
+        Err(CallTargetFactError::Resolve {
+            call: actual,
+            reason
+        }) if actual == call
+            && matches!(
+                reason.as_ref(),
+                ResolveCallError::Work(CallableQueryLimitError::Work {
+                    requested: 1,
+                    consumed: 0,
+                    limit: 0,
+                })
+            )
+    ));
+    assert_eq!(work.consumed(), 0);
+}
+
+#[test]
+fn focused_registered_call_rejects_a_nonaccepted_source_identity() {
+    let fixture = ResolverFixture::new();
+    let foreign = SourceDocument::try_new(
+        SourceDocumentId::try_new("foreign-call").expect("foreign id"),
+        SourceName::Memory,
+        "standard_value(2i32)",
+    )
+    .expect("foreign document");
+    let call = exact_span(&foreign, "standard_value(2i32)");
+    let module = fixture.project.linked_module();
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let result = analyze_registered_project_types_for_call_facts(
+        &module,
+        &fixture.world,
+        call,
+        &cancellation,
+        &mut work,
+    );
+
+    assert!(matches!(
+        result,
+        Err(CallTargetFactError::FocusedSourceUnavailable { document })
+            if document == foreign.identity().clone()
+    ));
+    assert_eq!(
+        work.consumed(),
+        0,
+        "foreign source rejection must not perform semantic work"
+    );
 }
 
 #[test]
@@ -378,6 +562,51 @@ flow @flow.main main {
         "standalone generic untyped calls retain the same policy: {:?}",
         standalone.diagnostics
     );
+
+    let call = exact_span(
+        &fixture.document,
+        r#"custom_untyped(1i32, label = "open", [2i32]..., values..., 5i32...)"#,
+    );
+    let module = fixture.project.linked_module();
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let focused = analyze_registered_project_types_for_call_facts(
+        &module,
+        &fixture.world,
+        call,
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted focused call source");
+    let facts = focused
+        .focused_call_target_facts()
+        .expect("focused untyped facts");
+    assert_eq!(facts.arguments().len(), 5);
+    assert_eq!(
+        facts.arguments()[0]
+            .slots()
+            .first()
+            .and_then(super::facts::CheckedCallArgumentSlotFact::mapped)
+            .map(|coordinate| coordinate.parameter().get()),
+        Some(0)
+    );
+    assert_eq!(
+        facts.arguments()[1]
+            .authored_name()
+            .map(CallableName::as_str),
+        Some("label")
+    );
+    assert_eq!(facts.arguments()[1].slots()[0].mapped(), None);
+    for argument in &facts.arguments()[2..] {
+        assert!(argument.spread());
+        assert_eq!(
+            argument.slots().len(),
+            1,
+            "unchecked spread retains one authored untyped slot"
+        );
+        assert_eq!(argument.slots()[0].mapped(), None);
+        assert_eq!(argument.poison(), CallPoison::Clean);
+    }
 }
 
 #[test]
@@ -813,6 +1042,22 @@ fn resolved_candidate(outcome: ResolveCallOutcome) -> super::ResolvedCallable {
     };
     assert_eq!(candidates.len().get(), 1);
     candidates.first().clone()
+}
+
+fn exact_span(document: &SourceDocument, needle: &str) -> arcweft_source::SourceSpan {
+    let start = document.text().find(needle).expect("unique source needle");
+    assert_eq!(
+        document.text()[start + needle.len()..].find(needle),
+        None,
+        "source needle must identify one call"
+    );
+    document
+        .span(SourceRange::new(start, start + needle.len()))
+        .expect("exact source span")
+}
+
+fn source_text<'a>(document: &'a SourceDocument, span: &arcweft_source::SourceSpan) -> &'a str {
+    &document.text()[span.range().as_range()]
 }
 
 fn callable_path(segments: &[&str]) -> CallablePath {

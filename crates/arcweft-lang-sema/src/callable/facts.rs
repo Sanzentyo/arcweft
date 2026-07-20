@@ -1,4 +1,8 @@
 //! Checker-owned callable facts and public semantic signature results.
+#![allow(
+    dead_code,
+    reason = "focused fact accessors are consumed by the following native signature-query cut"
+)]
 
 use std::{collections::HashSet, sync::Arc};
 
@@ -10,23 +14,22 @@ use super::{
     CallableArgumentIndex, CallableArgumentSlotIndex, CallableCandidateId, CallableDiagnosticCode,
     CallableDocumentation, CallableGroupIndex, CallableGroupKind, CallableLimits, CallableName,
     CallableParameterCoordinate, CallableParameterPassing, CallableParameterPresence,
-    CallableParameterSource, CallableParameterType, CallableQueryLimitError,
-    CallableSignatureSchema, CallableSource, NonCallableSource, SemanticSignatureError,
-    SignatureOrigin, SignatureWorkReport, UnknownCallKind,
+    CallableParameterSource, CallableParameterType, CallableQueryLimitError, CallableSource,
+    NonCallableSource, ResolvedCallable, SemanticSignatureError, SignatureOrigin,
+    SignatureWorkReport,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CallTargetFactMode {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CallTargetFactMode {
     Disabled,
-    Focused { expression: TypeExpressionId },
-    All,
+    Focused { call: SourceSpan },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallTargetFacts {
+pub(crate) struct CallTargetFacts {
     expression: TypeExpressionId,
     document: SourceDocumentIdentity,
-    call_span: Option<SourceSpan>,
+    call_span: SourceSpan,
     target: CallTargetFact,
     arguments: Arc<[CheckedCallArgumentFact]>,
     result: Option<TypeKind>,
@@ -39,28 +42,22 @@ pub struct CallTargetFacts {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallTargetFact {
+pub(crate) enum CallTargetFact {
     Selected {
-        primary: CallableCandidateId,
-        equivalent: Arc<[CallableCandidateId]>,
-        considered: Arc<[CallableCandidateId]>,
-        origin: Box<SignatureOrigin>,
-        schema: Arc<CallableSignatureSchema>,
+        selected: Box<ResolvedCallable>,
+        considered: Arc<[ResolvedCallable]>,
     },
     Ambiguous {
-        candidates: Arc<[CallableCandidateId]>,
+        candidates: Arc<[ResolvedCallable]>,
     },
     NonCallable {
         source: NonCallableSource,
         ty: TypeKind,
     },
-    Missing {
-        kind: UnknownCallKind,
-    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedCallArgumentFact {
+pub(crate) struct CheckedCallArgumentFact {
     index: CallableArgumentIndex,
     source: Option<SourceSpan>,
     authored_name: Option<CallableName>,
@@ -70,13 +67,35 @@ pub struct CheckedCallArgumentFact {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedCallArgumentSlotFact {
+pub(crate) struct CheckedCallArgumentSlotFact {
     slot: CallableArgumentSlotIndex,
     expression: TypeExpressionId,
     source: Option<SourceSpan>,
     mapped: Option<CallableParameterCoordinate>,
     inferred: Option<TypeKind>,
     expected: Option<TypeKind>,
+    poison: CallPoison,
+}
+
+pub(crate) struct CheckedCallArgumentSlotInput {
+    pub(crate) slot: CallableArgumentSlotIndex,
+    pub(crate) expression: TypeExpressionId,
+    pub(crate) source: Option<SourceSpan>,
+    pub(crate) mapped: Option<CallableParameterCoordinate>,
+    pub(crate) inferred: Option<TypeKind>,
+    pub(crate) expected: Option<TypeKind>,
+    pub(crate) poison: CallPoison,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedCallTarget {
+    target: CallTargetFact,
+    result: Option<TypeKind>,
+    arguments: Arc<[CheckedCallArgumentFact]>,
+    effects: EffectRow,
+    current_group: CallableGroupIndex,
+    next_group: Option<CallableGroupIndex>,
+    function_value_type: Option<TypeKind>,
     poison: CallPoison,
 }
 
@@ -99,86 +118,253 @@ impl CallPoison {
 }
 
 impl CallTargetFacts {
-    pub const fn expression(&self) -> TypeExpressionId {
+    pub(crate) fn try_new(
+        expression: TypeExpressionId,
+        document: SourceDocumentIdentity,
+        call_span: SourceSpan,
+        checked: CheckedCallTarget,
+        diagnostics: Vec<CallableDiagnostic>,
+        limits: &CallableLimits,
+    ) -> Result<Self, SemanticSignatureError> {
+        validate_span(&document, &call_span)?;
+        if diagnostics.len() > limits.max_diagnostics() {
+            return Err(CallableQueryLimitError::Diagnostics {
+                actual: diagnostics.len(),
+                limit: limits.max_diagnostics(),
+            }
+            .into());
+        }
+        for (argument_index, argument) in checked.arguments.iter().enumerate() {
+            let expected = CallableArgumentIndex::try_from_usize(argument_index)
+                .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
+            if argument.index != expected || (!argument.spread && argument.slots.is_empty()) {
+                return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
+            }
+            if let Some(source) = &argument.source {
+                validate_span(&document, source)?;
+            }
+            for (slot_index, slot) in argument.slots.iter().enumerate() {
+                let expected = CallableArgumentSlotIndex::try_from_usize(slot_index)
+                    .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
+                if slot.slot != expected {
+                    return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
+                }
+                if let Some(source) = &slot.source {
+                    validate_span(&document, source)?;
+                }
+                if let (CallTargetFact::Selected { selected, .. }, Some(coordinate)) =
+                    (&checked.target, slot.mapped)
+                    && selected
+                        .schema()
+                        .group(coordinate.group())
+                        .and_then(|group| group.parameters().get(coordinate.parameter().get()))
+                        .is_none()
+                {
+                    return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
+                }
+            }
+        }
+        for diagnostic in &diagnostics {
+            if let Some(span) = diagnostic.span() {
+                validate_span(&document, span)?;
+            }
+            for related in diagnostic.related() {
+                if let Some(span) = related.span() {
+                    validate_span(&document, span)?;
+                }
+            }
+        }
+        Ok(Self {
+            expression,
+            document,
+            call_span,
+            target: checked.target,
+            arguments: checked.arguments,
+            result: checked.result,
+            effects: checked.effects,
+            current_group: checked.current_group,
+            next_group: checked.next_group,
+            function_value_type: checked.function_value_type,
+            poison: checked.poison,
+            diagnostics: diagnostics.into(),
+        })
+    }
+
+    pub(crate) const fn expression(&self) -> TypeExpressionId {
         self.expression
     }
-    pub const fn document(&self) -> &SourceDocumentIdentity {
+    pub(crate) const fn document(&self) -> &SourceDocumentIdentity {
         &self.document
     }
-    pub const fn call_span(&self) -> Option<&SourceSpan> {
-        self.call_span.as_ref()
+    pub(crate) const fn call_span(&self) -> &SourceSpan {
+        &self.call_span
     }
-    pub const fn target(&self) -> &CallTargetFact {
+    pub(crate) const fn target(&self) -> &CallTargetFact {
         &self.target
     }
-    pub fn arguments(&self) -> &[CheckedCallArgumentFact] {
+    pub(crate) fn arguments(&self) -> &[CheckedCallArgumentFact] {
         &self.arguments
     }
-    pub const fn result(&self) -> Option<&TypeKind> {
+    pub(crate) const fn result(&self) -> Option<&TypeKind> {
         self.result.as_ref()
     }
-    pub const fn effects(&self) -> &EffectRow {
+    pub(crate) const fn effects(&self) -> &EffectRow {
         &self.effects
     }
-    pub const fn current_group(&self) -> CallableGroupIndex {
+    pub(crate) const fn current_group(&self) -> CallableGroupIndex {
         self.current_group
     }
-    pub const fn next_group(&self) -> Option<CallableGroupIndex> {
+    pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
         self.next_group
     }
-    pub const fn function_value_type(&self) -> Option<&TypeKind> {
+    pub(crate) const fn function_value_type(&self) -> Option<&TypeKind> {
         self.function_value_type.as_ref()
     }
-    pub const fn poison(&self) -> CallPoison {
+    pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
     }
-    pub fn diagnostics(&self) -> &[CallableDiagnostic] {
+    pub(crate) fn diagnostics(&self) -> &[CallableDiagnostic] {
         &self.diagnostics
     }
 }
 
 impl CheckedCallArgumentFact {
-    pub const fn index(&self) -> CallableArgumentIndex {
+    pub(crate) fn new(
+        index: CallableArgumentIndex,
+        source: Option<SourceSpan>,
+        authored_name: Option<CallableName>,
+        spread: bool,
+        slots: Vec<CheckedCallArgumentSlotFact>,
+        poison: CallPoison,
+    ) -> Self {
+        Self {
+            index,
+            source,
+            authored_name,
+            spread,
+            slots: slots.into(),
+            poison,
+        }
+    }
+
+    pub(crate) const fn index(&self) -> CallableArgumentIndex {
         self.index
     }
-    pub const fn source(&self) -> Option<&SourceSpan> {
+    pub(crate) const fn source(&self) -> Option<&SourceSpan> {
         self.source.as_ref()
     }
-    pub const fn authored_name(&self) -> Option<&CallableName> {
+    pub(crate) const fn authored_name(&self) -> Option<&CallableName> {
         self.authored_name.as_ref()
     }
-    pub const fn spread(&self) -> bool {
+    pub(crate) const fn spread(&self) -> bool {
         self.spread
     }
-    pub fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
+    pub(crate) fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
         &self.slots
     }
-    pub const fn poison(&self) -> CallPoison {
+    pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
     }
 }
 
 impl CheckedCallArgumentSlotFact {
-    pub const fn slot(&self) -> CallableArgumentSlotIndex {
+    pub(crate) fn new(input: CheckedCallArgumentSlotInput) -> Self {
+        Self {
+            slot: input.slot,
+            expression: input.expression,
+            source: input.source,
+            mapped: input.mapped,
+            inferred: input.inferred,
+            expected: input.expected,
+            poison: input.poison,
+        }
+    }
+
+    pub(crate) const fn slot(&self) -> CallableArgumentSlotIndex {
         self.slot
     }
-    pub const fn expression(&self) -> TypeExpressionId {
+    pub(crate) const fn expression(&self) -> TypeExpressionId {
         self.expression
     }
-    pub const fn source(&self) -> Option<&SourceSpan> {
+    pub(crate) const fn source(&self) -> Option<&SourceSpan> {
         self.source.as_ref()
     }
-    pub const fn mapped(&self) -> Option<CallableParameterCoordinate> {
+    pub(crate) const fn mapped(&self) -> Option<CallableParameterCoordinate> {
         self.mapped
     }
-    pub const fn inferred(&self) -> Option<&TypeKind> {
+    pub(crate) const fn inferred(&self) -> Option<&TypeKind> {
         self.inferred.as_ref()
     }
-    pub const fn expected(&self) -> Option<&TypeKind> {
+    pub(crate) const fn expected(&self) -> Option<&TypeKind> {
         self.expected.as_ref()
     }
-    pub const fn poison(&self) -> CallPoison {
+    pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
+    }
+}
+
+impl CheckedCallTarget {
+    pub(crate) fn selected(
+        selected: &ResolvedCallable,
+        considered: &[ResolvedCallable],
+        arguments: Vec<CheckedCallArgumentFact>,
+        result: TypeKind,
+        current_group: CallableGroupIndex,
+        poison: CallPoison,
+    ) -> Self {
+        let next_group = CallableGroupIndex::try_from_usize(current_group.get() + 1)
+            .ok()
+            .filter(|next| selected.schema().group(*next).is_some());
+        Self {
+            target: CallTargetFact::Selected {
+                selected: Box::new(selected.clone()),
+                considered: considered.to_vec().into(),
+            },
+            result: Some(result),
+            arguments: arguments.into(),
+            effects: selected.schema().effects().declared().clone(),
+            current_group,
+            next_group,
+            function_value_type: None,
+            poison,
+        }
+    }
+
+    pub(crate) fn ambiguous(
+        candidates: &[ResolvedCallable],
+        arguments: Vec<CheckedCallArgumentFact>,
+        current_group: CallableGroupIndex,
+    ) -> Self {
+        Self {
+            target: CallTargetFact::Ambiguous {
+                candidates: candidates.to_vec().into(),
+            },
+            result: None,
+            arguments: arguments.into(),
+            effects: EffectRow::closed(crate::effects::EffectSet::new()),
+            current_group,
+            next_group: None,
+            function_value_type: None,
+            poison: CallPoison::Rejected,
+        }
+    }
+
+    pub(crate) fn non_callable(
+        source: NonCallableSource,
+        ty: TypeKind,
+        arguments: Vec<CheckedCallArgumentFact>,
+        current_group: CallableGroupIndex,
+    ) -> Self {
+        Self {
+            target: CallTargetFact::NonCallable { source, ty },
+            result: None,
+            arguments: arguments.into(),
+            effects: EffectRow::closed(crate::effects::EffectSet::new()),
+            current_group,
+            next_group: None,
+            function_value_type: None,
+            poison: CallPoison::Rejected,
+        }
     }
 }
 

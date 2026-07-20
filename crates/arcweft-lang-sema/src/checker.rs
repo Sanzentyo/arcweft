@@ -2,6 +2,9 @@ use crate::borrow::{
     BorrowLocalState, BorrowStateCheckpoint, BorrowStateDelta, BorrowStateDeltaEntry,
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
+use crate::callable::{
+    CallTargetFactMode, CallTargetFacts, CheckedCallTarget, PRODUCTION_CALLABLE_LIMITS,
+};
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, CheckedSpeakerLine,
     SemanticScopeId, SemanticSymbolIdentity,
@@ -56,6 +59,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod assertion;
 pub mod borrow_state;
+mod call_target_facts;
 mod canonicalization;
 pub mod choice;
 pub mod effects;
@@ -80,6 +84,7 @@ pub use module::{
     analyze_registered_project_types_for_canonicalization, analyze_types,
 };
 
+use call_target_facts::{CallResolverControl, CallTargetFactRecorder};
 use fx::FxCatalog;
 use helpers::{
     await_branch_pattern_type, builtin_path_type, choice_output_type,
@@ -481,6 +486,7 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
 
 struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
+    checked_module: &'a HirModule,
     errors: Vec<TypeCheckError>,
     warnings: Vec<TypeCheckWarning>,
     active_borrow_lifetimes: BTreeMap<String, usize>,
@@ -554,6 +560,8 @@ struct TypeChecker<'a> {
     project_function_signatures: BTreeMap<CallableDeclarationId, FunctionSignature>,
     project_callable_references: Vec<ProjectCallableReference>,
     project_entity_references: Vec<ProjectEntityReference>,
+    call_target_fact_recorder: CallTargetFactRecorder,
+    call_resolver_control: CallResolverControl<'a>,
     local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
     semantic_scope_stack: Vec<SemanticScopeId>,
     next_semantic_scope: u32,
@@ -790,22 +798,34 @@ struct LoopContext {
 }
 
 impl TypeChecker<'_> {
-    fn new(env: &TypeCheckEnv) -> TypeChecker<'_> {
-        TypeChecker::new_with_project(env, None, None, None)
+    fn new<'a>(env: &'a TypeCheckEnv, module: &'a HirModule) -> TypeChecker<'a> {
+        TypeChecker::new_with_project(
+            env,
+            module,
+            None,
+            None,
+            None,
+            CallTargetFactMode::Disabled,
+            CallResolverControl::ordinary(),
+        )
     }
 }
 
 impl<'a> TypeChecker<'a> {
     fn new_with_project(
         env: &'a TypeCheckEnv,
+        checked_module: &'a HirModule,
         canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
         project_symbols: Option<&'a ProjectSymbolTable>,
         registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
+        call_target_fact_mode: CallTargetFactMode,
+        call_resolver_control: CallResolverControl<'a>,
     ) -> Self {
         let registered_environment =
             registered_world.map(crate::registration::RegisteredSemanticWorld::environment);
         TypeChecker {
             env,
+            checked_module,
             errors: Vec::new(),
             warnings: Vec::new(),
             active_borrow_lifetimes: BTreeMap::new(),
@@ -882,12 +902,46 @@ impl<'a> TypeChecker<'a> {
             project_function_signatures: BTreeMap::new(),
             project_callable_references: Vec::new(),
             project_entity_references: Vec::new(),
+            call_target_fact_recorder: CallTargetFactRecorder::new(call_target_fact_mode),
+            call_resolver_control,
             local_symbol_identities: HashMap::new(),
             semantic_scope_stack: Vec::new(),
             next_semantic_scope: 0,
             next_semantic_binding: 0,
             current_module: None,
             checked_speaker_lines: Vec::new(),
+        }
+    }
+
+    pub(super) fn records_call_target_facts(
+        &self,
+        call_span: Option<&arcweft_source::SourceSpan>,
+    ) -> bool {
+        self.call_target_fact_recorder.wants(call_span)
+    }
+
+    pub(super) fn record_call_target_facts(
+        &mut self,
+        expression: TypeExpressionId,
+        document: &arcweft_source::SourceDocumentIdentity,
+        call_span: &arcweft_source::SourceSpan,
+        checked: CheckedCallTarget,
+    ) {
+        if !self.records_call_target_facts(Some(call_span)) {
+            return;
+        }
+        match CallTargetFacts::try_new(
+            expression,
+            document.clone(),
+            call_span.clone(),
+            checked,
+            Vec::new(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        ) {
+            Ok(facts) => self.call_target_fact_recorder.record(facts),
+            Err(reason) => self
+                .call_target_fact_recorder
+                .record_unavailable(call_span, reason),
         }
     }
 

@@ -18,8 +18,8 @@ use arcweft_lang_syntax::ast::dialogue::DialogueContent;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
-    AwaitExpr, BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder,
-    SelectExpr, UnaryOp,
+    AwaitExpr, BinaryOp, CallArg, CallExpr, ComputationBlockKind, Literal, MatchExprArm,
+    Placeholder, SelectExpr, UnaryOp,
 };
 use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
 
@@ -190,9 +190,7 @@ impl TypeChecker<'_> {
             Expr::ArrayRepeat { value, len } => {
                 Some(self.check_array_repeat_expr(value, len, expected))
             }
-            Expr::Call(call) => {
-                self.check_call_expr(call.callee(), call.args(), expected, expression_id)
-            }
+            Expr::Call(call) => self.check_call_expr(call, expected, expression_id),
             Expr::Select(select) => self.check_select_expr(expr, select),
             Expr::DialogueCall {
                 callee,
@@ -720,11 +718,12 @@ impl TypeChecker<'_> {
 
     fn check_call_expr(
         &mut self,
-        callee: &Expr,
-        args: &[CallArg],
+        call: &CallExpr,
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        let callee = call.callee();
+        let args = call.args();
         if let Some(name) = expr_path_label(callee)
             && self.fx.is_definition(&name)
         {
@@ -755,7 +754,7 @@ impl TypeChecker<'_> {
             self.check_untyped_function_args(args);
             return Some(ty);
         }
-        match self.check_registered_catalog_free_call(callee, args, expected, expression_id) {
+        match self.check_registered_catalog_free_call(call, expected, expression_id) {
             registered_call::RegisteredFreeCallOutcome::NotHandled => {}
             registered_call::RegisteredFreeCallOutcome::Checked(result) => return result,
         }
@@ -785,7 +784,7 @@ impl TypeChecker<'_> {
             return self.check_path_call_expr(name, args, expected, expression_id);
         }
         if let Expr::Select(select) = callee
-            && let Some(ty) = self.check_selected_callee_call(select, args, expression_id)
+            && let Some(ty) = self.check_selected_callee_call(call, select, expression_id)
         {
             return Some(ty);
         }
@@ -1070,12 +1069,14 @@ impl TypeChecker<'_> {
 
     fn check_selected_callee_call(
         &mut self,
+        call: &CallExpr,
         select: &SelectExpr,
-        args: &[CallArg],
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        let args = call.args();
         let method = select.member().as_str();
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
+        let receiver_expression = TypeExpressionId::from_index(self.stats.expressions);
         let receiver_type = self.check_expr(select.target());
         if is_drop_name(method_name) {
             for arg in args {
@@ -1088,7 +1089,8 @@ impl TypeChecker<'_> {
                 select.target(),
                 &receiver_type,
                 method_name,
-                args,
+                call,
+                receiver_expression,
                 expression_id,
             )
         })
@@ -1099,10 +1101,19 @@ impl TypeChecker<'_> {
         receiver: &Expr,
         receiver_type: &TypeKind,
         method_name: &str,
-        args: &[CallArg],
+        call: &CallExpr,
+        receiver_expression: TypeExpressionId,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
-        match self.check_inherent_method_call(receiver_type, method_name, args, expression_id) {
+        let args = call.args();
+        match self.check_inherent_method_call(
+            receiver_type,
+            method_name,
+            args,
+            call,
+            receiver_expression,
+            expression_id,
+        ) {
             InherentMethodCallOutcome::Missing => {}
             InherentMethodCallOutcome::Checked(return_type) => return return_type,
         }
@@ -1142,6 +1153,8 @@ impl TypeChecker<'_> {
         receiver_type: &TypeKind,
         method_name: &str,
         args: &[CallArg],
+        call: &CallExpr,
+        receiver_expression: TypeExpressionId,
         expression_id: TypeExpressionId,
     ) -> InherentMethodCallOutcome {
         if method_name == "traverse" {
@@ -1157,7 +1170,8 @@ impl TypeChecker<'_> {
         match self.check_registered_catalog_method_call(
             receiver_type,
             method_name,
-            args,
+            call,
+            receiver_expression,
             expression_id,
         ) {
             registered_call::RegisteredMethodCallOutcome::NotHandled => {}

@@ -176,6 +176,10 @@ impl ResolverWork {
         Self { consumed: 0, limit }
     }
 
+    pub(crate) fn reset(&mut self) {
+        self.consumed = 0;
+    }
+
     pub(crate) fn charge(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
         let next = self
             .consumed

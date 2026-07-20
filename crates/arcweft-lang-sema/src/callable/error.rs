@@ -4,9 +4,8 @@ use std::sync::Arc;
 
 use arcweft_lang_hir::symbol::{CallableDeclarationId, ProjectSymbolTargetId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use thiserror::Error;
-
-use crate::checker::TypeExpressionId;
 
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
@@ -336,11 +335,30 @@ pub enum ResolveCallError {
     Work(#[from] CallableQueryLimitError),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallTargetFactError {
-    FocusedTargetMissing { expression: TypeExpressionId },
-    FocusedTargetDuplicate { expression: TypeExpressionId },
-    DuplicateExpression { expression: TypeExpressionId },
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "the full focused error surface is consumed by the following native query cut"
+)]
+pub(crate) enum CallTargetFactError {
+    #[error("focused call-target facts require focused checker mode")]
+    FocusedModeRequired,
+    #[error("focused call source is not part of the accepted project: {document:?}")]
+    FocusedSourceUnavailable { document: SourceDocumentIdentity },
+    #[error("focused call target {call:?} was not recorded")]
+    FocusedTargetMissing { call: SourceSpan },
+    #[error("focused call target {call:?} was recorded more than once")]
+    FocusedTargetDuplicate { call: SourceSpan },
+    #[error("focused call target {call:?} could not retain checked facts: {reason}")]
+    Unavailable {
+        call: SourceSpan,
+        reason: SemanticSignatureError,
+    },
+    #[error("focused call target {call:?} could not be resolved: {reason}")]
+    Resolve {
+        call: SourceSpan,
+        reason: Box<ResolveCallError>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

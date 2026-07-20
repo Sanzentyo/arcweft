@@ -1,5 +1,6 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
+use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallTargetFactReport};
 use super::line_plan::DialogueContentRangeMode;
 use super::{
     ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
@@ -12,7 +13,10 @@ use super::{
     normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
     type_ref_kind_with_generics, validate_typecheck_ready,
 };
-use crate::callable::{CallableParameterType, CallableSignatureSchema};
+use crate::callable::{
+    CallTargetFactError, CallTargetFactMode, CallTargetFacts, CallableParameterType,
+    CallableSignatureSchema, ResolverWork,
+};
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
 };
@@ -45,7 +49,10 @@ use arcweft_lang_syntax::types::{
 };
 use arcweft_source::SourceDocumentId;
 use arcweft_source::SourceDocumentIdentity;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    sync::atomic::AtomicBool,
+};
 
 impl TypeCheckReport {
     pub fn into_result(self) -> Result<(), Vec<TypeCheckError>> {
@@ -101,11 +108,45 @@ impl TypeCheckReport {
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "consumed by the following native semantic signature-query cut"
+)]
+pub(crate) struct FocusedCallTypeCheckReport {
+    report: TypeCheckReport,
+    call_targets: CallTargetFactReport,
+}
+
+#[allow(
+    dead_code,
+    reason = "consumed by the following native semantic signature-query cut"
+)]
+impl FocusedCallTypeCheckReport {
+    pub(crate) const fn report(&self) -> &TypeCheckReport {
+        &self.report
+    }
+
+    pub(crate) fn focused_call_target_facts(
+        &self,
+    ) -> Result<&CallTargetFacts, CallTargetFactError> {
+        let CallTargetFactMode::Focused { call } = &self.call_targets.mode else {
+            return Err(CallTargetFactError::FocusedModeRequired);
+        };
+        if let Some(error) = &self.call_targets.error {
+            return Err(error.clone());
+        }
+        self.call_targets
+            .fact
+            .as_ref()
+            .ok_or_else(|| CallTargetFactError::FocusedTargetMissing { call: call.clone() })
+    }
+}
+
 /// Analyzes lowered HIR with an explicit symbol/method environment.
 pub fn analyze_types(module: &HirModule, env: &TypeCheckEnv) -> TypeCheckReport {
     let (style_catalog, style_diagnostics) = check_view_styles(module);
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
-    let mut checker = TypeChecker::new(env);
+    let mut checker = TypeChecker::new(env, module);
     finish_type_check(
         module,
         style_catalog,
@@ -125,9 +166,12 @@ pub fn analyze_registered_project_types(
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
     let mut checker = TypeChecker::new_with_project(
         registered.environment().typecheck_env(),
+        module,
         None,
         Some(registered.symbols()),
         Some(registered),
+        CallTargetFactMode::Disabled,
+        CallResolverControl::ordinary(),
     );
     finish_type_check(
         module,
@@ -137,6 +181,51 @@ pub fn analyze_registered_project_types(
         view_part_diagnostics,
         &mut checker,
     )
+}
+
+#[allow(
+    dead_code,
+    reason = "consumed by the following native semantic signature-query cut"
+)]
+pub(crate) fn analyze_registered_project_types_for_call_facts(
+    module: &HirModule,
+    registered: &crate::registration::RegisteredSemanticWorld,
+    call: arcweft_source::SourceSpan,
+    cancellation: &AtomicBool,
+    work: &mut ResolverWork,
+) -> Result<FocusedCallTypeCheckReport, CallTargetFactError> {
+    if !registered
+        .symbols()
+        .modules()
+        .any(|module| registered.symbols().source_identity(module) == Some(call.source()))
+    {
+        return Err(CallTargetFactError::FocusedSourceUnavailable {
+            document: call.source().clone(),
+        });
+    }
+    let (style_catalog, style_diagnostics) = check_view_styles(module);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
+    let mut checker = TypeChecker::new_with_project(
+        registered.environment().typecheck_env(),
+        module,
+        None,
+        Some(registered.symbols()),
+        Some(registered),
+        CallTargetFactMode::Focused { call },
+        CallResolverControl::caller_owned(cancellation, work),
+    );
+    let (report, call_targets) = finish_type_check_with_call_facts(
+        module,
+        style_catalog,
+        style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
+        &mut checker,
+    );
+    Ok(FocusedCallTypeCheckReport {
+        report,
+        call_targets,
+    })
 }
 
 /// Analyzes a registered project while retaining exact-source speaker-line evidence.
@@ -151,9 +240,12 @@ pub fn analyze_registered_project_types_for_canonicalization(
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
     let mut checker = TypeChecker::new_with_project(
         registered.environment().typecheck_env(),
+        &module,
         Some(sources),
         Some(registered.symbols()),
         Some(registered),
+        CallTargetFactMode::Disabled,
+        CallResolverControl::ordinary(),
     );
     Ok(finish_type_check(
         &module,
@@ -213,8 +305,15 @@ pub fn analyze_project_types_for_canonicalization(
     let module = project.linked_module();
     let (style_catalog, style_diagnostics) = check_view_styles(&module);
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
-    let mut checker =
-        TypeChecker::new_with_project(env, Some(sources), Some(&project_symbols), None);
+    let mut checker = TypeChecker::new_with_project(
+        env,
+        &module,
+        Some(sources),
+        Some(&project_symbols),
+        None,
+        CallTargetFactMode::Disabled,
+        CallResolverControl::ordinary(),
+    );
     Ok(finish_type_check(
         &module,
         style_catalog,
@@ -288,6 +387,25 @@ fn finish_type_check(
     view_part_diagnostics: Vec<ViewPartDiagnostic>,
     checker: &mut TypeChecker<'_>,
 ) -> TypeCheckReport {
+    finish_type_check_with_call_facts(
+        module,
+        style_catalog,
+        style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
+        checker,
+    )
+    .0
+}
+
+fn finish_type_check_with_call_facts(
+    module: &HirModule,
+    style_catalog: crate::style::CheckedViewStyleCatalog,
+    style_diagnostics: Vec<crate::style::StyleDiagnostic>,
+    view_part_catalog: crate::view_part::CheckedViewPartCatalog,
+    view_part_diagnostics: Vec<ViewPartDiagnostic>,
+    checker: &mut TypeChecker<'_>,
+) -> (TypeCheckReport, CallTargetFactReport) {
     checker
         .errors
         .extend(style_diagnostics.into_iter().map(TypeCheckError::style));
@@ -304,7 +422,11 @@ fn finish_type_check(
         .warnings
         .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
     let canonicalization_inventories = checker.finish_canonicalization_inventories();
-    TypeCheckReport {
+    let call_target_fact_recorder = std::mem::replace(
+        &mut checker.call_target_fact_recorder,
+        CallTargetFactRecorder::new(CallTargetFactMode::Disabled),
+    );
+    let report = TypeCheckReport {
         diagnostics: std::mem::take(&mut checker.errors),
         warnings: std::mem::take(&mut checker.warnings),
         stats: checker.stats.clone(),
@@ -321,7 +443,8 @@ fn finish_type_check(
         canonicalization_inventories,
         project_callable_references: std::mem::take(&mut checker.project_callable_references),
         project_entity_references: std::mem::take(&mut checker.project_entity_references),
-    }
+    };
+    (report, call_target_fact_recorder.finish())
 }
 
 impl TypeChecker<'_> {
