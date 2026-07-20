@@ -36,6 +36,17 @@ impl ViewId {
         PublicId::try_new_engine_owned(value).map(Self)
     }
 
+    /// Engine-owned fallback used when a launch profile does not select a View.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the compile-time reserved identity `std.view.dialogue` stops
+    /// satisfying the engine-owned `PublicId` contract.
+    pub fn standard_dialogue() -> Self {
+        Self::try_new_engine_owned("std.view.dialogue")
+            .expect("the reserved standard dialogue View identity is valid")
+    }
+
     pub const fn from_public_id(value: PublicId) -> Self {
         Self(value)
     }
@@ -226,6 +237,11 @@ mod tests {
             view
         );
         assert!(serde_json::from_str::<ViewId>("\"#view.dialogue\"").is_err());
+    }
+
+    #[test]
+    fn standard_dialogue_identity_uses_the_engine_owned_namespace() {
+        assert_eq!(ViewId::standard_dialogue().as_str(), "std.view.dialogue");
     }
 
     #[test]

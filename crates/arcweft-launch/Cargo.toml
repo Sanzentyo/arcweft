@@ -7,11 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-dialogue = { path = "../arcweft-dialogue" }
 arcweft-manifest-model.workspace = true
 arcweft-source = { path = "../arcweft-source" }
+arcweft-view = { path = "../arcweft-view" }
 serde = { workspace = true, features = ["derive"] }
+taplo = { version = "0.14.0", default-features = false }
 thiserror.workspace = true
-toml.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

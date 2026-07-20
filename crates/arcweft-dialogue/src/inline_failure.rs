@@ -4,17 +4,20 @@ use crate::CharacterDialogueStyleValue;
 use serde::{Deserialize, Serialize};
 
 /// Failure handling policy for one runtime interpolation expression.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum InlineFailurePolicy {
+    #[default]
     FailLine,
     Discard,
-    Fallback { fallback: InlineFallback },
+    Fallback {
+        fallback: InlineFallback,
+    },
 }
 
 /// Fallback rendering strategy for a failed runtime interpolation expression.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum InlineFallback {
     Text {
         text: String,
@@ -31,7 +34,7 @@ pub enum InlineFallback {
 
 /// Style behavior for fallback rendering.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 pub enum FallbackStylePolicy {
     Plain,
     InheritSurrounding,

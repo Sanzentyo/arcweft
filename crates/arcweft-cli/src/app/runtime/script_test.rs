@@ -34,7 +34,7 @@ pub(in crate::app) fn script_test_command(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
+    );
     script_test_selection(
         &selection,
         RuntimeStepRunConfig {
@@ -72,7 +72,7 @@ pub(in crate::app) fn script_test_selection(
         }
         ExitCode::FAILURE
     })?;
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let source = NativeRunSource::new(selection.path(), &file_roots);
     let output = ScriptTestRunReport {
         tests: manifest

@@ -73,22 +73,25 @@ bench @bench.opening {
 
 fn cli_test_bench_profile_manifest() -> &'static str {
     r#"
+schema = 1
+
 [package]
-name = "profile-cli-test-bench"
+id = "org.arcweft.test.profile-cli-test-bench"
+version = "0.1.0"
 
 [profiles."cli.main"]
 kind = "cli"
 source = "src/tool.arcw"
-entry = "entry.cli.main"
+entry = "@entry.cli.main"
 
 [profiles."test.opening"]
 kind = "test"
-entry = "entry.test.opening"
+entry = "@entry.test.opening"
 source = "src/opening_test.arcw"
 
 [profiles."bench.opening"]
 kind = "bench"
-entry = "entry.bench.opening"
+entry = "@entry.bench.opening"
 source = "src/opening_bench.arcw"
 "#
 }

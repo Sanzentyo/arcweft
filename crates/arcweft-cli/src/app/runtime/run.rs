@@ -29,7 +29,7 @@ use arcweft_bundle::{
 use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::plan::RuntimeEntryKind;
-use arcweft_launch::{LaunchKind, LaunchPlayerViewportFit, ResolvedLaunchProfile};
+use arcweft_launch::{LaunchKind, LaunchPlayerViewportFit, resolve::ResolvedLaunchProfile};
 #[cfg(feature = "native-player")]
 use arcweft_layout::ScalePolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -88,7 +88,7 @@ pub(in crate::app) fn runtime_run_command(
             options.pure_object_artifacts,
             options.math_backend,
             options.math_wgpu_min_elements,
-        )?;
+        );
         match run_game_target(options, &selection, pure_config)? {
             RunTargetOutcome::Handled => return Ok(()),
             RunTargetOutcome::UseHeadless => {}
@@ -110,7 +110,7 @@ fn runtime_run_headless_command(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
+    );
     if let Some(profile) = selection.profile() {
         match profile.kind() {
             LaunchKind::Server => {
@@ -161,7 +161,7 @@ fn runtime_run_headless_command(
     })?;
     let entry = selection.command_entry(options.entry.as_deref())?;
     let entry = select_runtime_entry(&plan, entry)?;
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let trace = run_runtime_steps(
         plan,
         &entry,
@@ -808,17 +808,12 @@ fn watch_input_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCo
     if let Some(manifest) = selection.project_manifest() {
         paths.push(manifest.to_path_buf());
         paths.extend(watch_project_source_paths(manifest)?);
-    } else if let Some(profile) = selection.profile() {
-        if let Some(manifest) = selection.resource_manifest() {
-            paths.push(manifest.to_path_buf());
-        }
-        if let Ok(manifest) = arcweft_project_loader::project::discover_manifest(profile.source()) {
-            paths.extend(watch_project_source_paths(&manifest)?);
-            paths.push(manifest);
-        }
-        paths.extend(profile.adapter_manifests().iter().cloned());
-        paths.extend(profile.character_manifests().iter().cloned());
-        paths.extend(profile.rust_metadata().iter().cloned());
+    } else if let Some(topology) = selection.profile_topology() {
+        paths.extend(
+            topology
+                .resources()
+                .map(|resource| resource.path().to_path_buf()),
+        );
     }
     paths.extend(watch_authored_resource_paths(selection)?);
     Ok(paths)
@@ -837,7 +832,7 @@ fn watch_project_source_paths(manifest: &Path) -> Result<Vec<PathBuf>, ExitCode>
 }
 
 fn watch_authored_resource_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCode> {
-    let roots = selection.authored_resource_roots()?;
+    let roots = selection.authored_resource_roots();
     let mut paths = Vec::new();
     for dir in [roots.asset(), roots.content()] {
         if dir.exists() {
@@ -923,7 +918,7 @@ fn profile_bundle_stem(profile: &ResolvedLaunchProfile) -> Option<&str> {
             .rsplit_once('.')
             .is_some_and(|(_, segment)| segment == "main")
     {
-        source_path_bundle_stem(profile.source())
+        None
     } else {
         Some(id)
     }
@@ -1041,8 +1036,14 @@ fn frame_fit_for_selection(
         arcweft_player_scene::frame::PlayerFrameFit::raw()
     } else {
         arcweft_player_scene::frame::PlayerFrameFit::design(
-            viewport.design_width(),
-            viewport.design_height(),
+            viewport
+                .design_width()
+                .expect("non-raw viewport has a validated design width")
+                .get(),
+            viewport
+                .design_height()
+                .expect("non-raw viewport has a validated design height")
+                .get(),
             scale_policy,
         )
     })
@@ -1067,15 +1068,21 @@ fn web_player_frame_fit_query(selection: &SourceSelection) -> String {
         return String::new();
     };
     let fit = match viewport.fit() {
-        LaunchPlayerViewportFit::Raw => "raw",
+        LaunchPlayerViewportFit::Raw => return "&fit=raw".to_owned(),
         LaunchPlayerViewportFit::Contain => "contain",
         LaunchPlayerViewportFit::Cover => "cover",
         LaunchPlayerViewportFit::Stretch => "stretch",
     };
     format!(
         "&fit={fit}&designWidth={}&designHeight={}",
-        viewport.design_width(),
-        viewport.design_height()
+        viewport
+            .design_width()
+            .expect("non-raw viewport has a validated design width")
+            .get(),
+        viewport
+            .design_height()
+            .expect("non-raw viewport has a validated design height")
+            .get()
     )
 }
 
@@ -1094,8 +1101,11 @@ mod tests {
         fs::write(
             root.join("arcw.toml"),
             r#"
+schema = 1
+
 [package]
-name = "watch_test"
+id = "org.arcweft.test.watch-test"
+version = "0.1.0"
 "#,
         )
         .expect("manifest writes");
@@ -1138,8 +1148,11 @@ flow @flow.opening opening { return "ok" }
         fs::write(
             root.join("arcw.toml"),
             r#"
+schema = 1
+
 [package]
-name = "watch_virtual_test"
+id = "org.arcweft.test.watch-virtual-test"
+version = "0.1.0"
 "#,
         )
         .expect("manifest writes");
@@ -1170,8 +1183,11 @@ name = "watch_virtual_test"
         fs::write(
             root.join("arcw.toml"),
             r#"
+schema = 1
+
 [package]
-name = "watch_virtual_addition_test"
+id = "org.arcweft.test.watch-virtual-addition-test"
+version = "0.1.0"
 "#,
         )
         .expect("manifest writes");

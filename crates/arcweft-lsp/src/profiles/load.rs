@@ -5,9 +5,8 @@ use super::{
     state::LspProfileState,
     uri::file_path_from_uri,
 };
-use arcweft_launch::{
-    LaunchKeyPath, LaunchManifestSourceMap, LaunchProfileSelection, LaunchTokenPath,
-};
+use arcweft_launch::{LaunchProfileSelection, accepted::SourceBackedManifest};
+use arcweft_manifest_model::ProfileId;
 use arcweft_project_loader::topology::LoadedProfileTopology;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use std::{
@@ -32,28 +31,17 @@ pub(crate) fn apply_registered_topology(
     characters: arcweft_character::catalog::CharacterCatalog,
 ) {
     let selected = topology.selected_profile();
-    let manifest = topology.loaded_project().manifest_document();
+    let manifest = topology.loaded_project().manifest();
     profile.adapter = topology.adapter().clone();
     profile.declared_manifests = topology.registration_adapter_manifests().to_vec();
-    profile.dialogue_defaults = selected.dialogue_defaults().map(str::to_owned);
-    profile.dialogue_defaults_selection = selected.dialogue_defaults().and_then(|_| {
-        dialogue_defaults_selection(
-            topology.loaded_project().sources().manifest_path(),
-            manifest,
-            selected.id().as_str(),
-            topology.loaded_project().launch().source_map(),
-        )
-    });
     profile.entry_selection = entry_selection(
         topology.loaded_project().sources().manifest_path(),
         manifest,
-        selected.id().as_str(),
-        topology.loaded_project().launch().source_map(),
+        selected.id(),
     );
     profile.entry_selections = entry_selections(
         topology.loaded_project().sources().manifest_path(),
         manifest,
-        topology.loaded_project().launch(),
     );
     profile.characters = characters;
     profile.resolved_profile = Some(selected.clone());
@@ -153,7 +141,7 @@ impl LspProfileResolver {
             profile_id: self.profile_id.clone(),
             source: Box::new(error),
         })?;
-        Ok(self.profile_from_registered(registered, state))
+        self.profile_from_registered(registered, state, accepted.as_ref())
     }
 
     fn find_manifest(&self, document_path: &Path) -> Option<PathBuf> {
@@ -168,43 +156,33 @@ impl LspProfileResolver {
         &self,
         registered: super::environment::RegisteredProfileCandidate,
         state: Arc<LspProfileState>,
-    ) -> LspProfile {
+        expected: Option<&Arc<super::state::AcceptedProfileEnvironment>>,
+    ) -> Result<LspProfile, LspProfileLoadError> {
         let (candidate, characters, topology) = registered.into_parts();
         state
-            .replace_accepted(candidate)
-            .expect("a fresh active profile state accepts generation one");
+            .replace_accepted_with(expected, candidate, |_| {})
+            .map_err(|source| LspProfileLoadError::ProfilePublication { source })?;
         let profile = topology.selected_profile();
-        let manifest = topology.loaded_project().manifest_document();
-        LspProfile {
+        let manifest = topology.loaded_project().manifest();
+        Ok(LspProfile {
             adapter: topology.adapter().clone(),
             declared_manifests: topology.registration_adapter_manifests().to_vec(),
             runner: self.runner,
-            dialogue_defaults: profile.dialogue_defaults().map(str::to_owned),
-            dialogue_defaults_selection: profile.dialogue_defaults().and_then(|_| {
-                dialogue_defaults_selection(
-                    topology.loaded_project().sources().manifest_path(),
-                    manifest,
-                    profile.id().as_str(),
-                    topology.loaded_project().launch().source_map(),
-                )
-            }),
             entry_selection: entry_selection(
                 topology.loaded_project().sources().manifest_path(),
                 manifest,
-                profile.id().as_str(),
-                topology.loaded_project().launch().source_map(),
+                profile.id(),
             ),
             entry_selections: entry_selections(
                 topology.loaded_project().sources().manifest_path(),
                 manifest,
-                topology.loaded_project().launch(),
             ),
             characters,
             resolved_profile: Some(profile.clone()),
             state,
             diagnostics: Vec::new(),
             arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
-        }
+        })
     }
 
     fn default_with_diagnostic_and_state(
@@ -219,68 +197,38 @@ impl LspProfileResolver {
     }
 }
 
-fn dialogue_defaults_selection(
-    manifest_path: &Path,
-    document: &Arc<arcweft_source::SourceDocument>,
-    profile_id: &str,
-    source_map: &LaunchManifestSourceMap,
-) -> Option<ProfileSourceSelection> {
-    let value_range = source_map
-        .token(&LaunchTokenPath::Key {
-            path: LaunchKeyPath::new(vec![
-                "profiles".to_owned(),
-                profile_id.to_owned(),
-                "dialogue_defaults".to_owned(),
-            ]),
-            occurrence: 0,
-        })?
-        .string_content()?
-        .range()
-        .as_range();
-    Some(ProfileSourceSelection {
-        path: manifest_path.to_path_buf(),
-        document: Arc::clone(document),
-        value_range,
-    })
-}
-
 fn entry_selection(
     manifest_path: &Path,
-    document: &Arc<arcweft_source::SourceDocument>,
-    profile_id: &str,
-    source_map: &LaunchManifestSourceMap,
+    manifest: &SourceBackedManifest,
+    profile_id: &ProfileId,
 ) -> Option<ProfileSourceSelection> {
-    let value_range = source_map
-        .token(&LaunchTokenPath::Key {
-            path: LaunchKeyPath::new(vec![
-                "profiles".to_owned(),
-                profile_id.to_owned(),
-                "entry".to_owned(),
-            ]),
-            occurrence: 0,
-        })?
-        .string_content()?
-        .range()
-        .as_range();
+    let value_range = manifest.profile_entry_span(profile_id)?.range().as_range();
     Some(ProfileSourceSelection {
         path: manifest_path.to_path_buf(),
-        document: Arc::clone(document),
+        document: Arc::clone(manifest.document()),
         value_range,
     })
 }
 
 fn entry_selections(
     manifest_path: &Path,
-    document: &Arc<arcweft_source::SourceDocument>,
-    launch: &arcweft_launch::SourceBackedLaunchManifest,
+    manifest: &SourceBackedManifest,
 ) -> Vec<(String, ProfileSourceSelection)> {
-    launch
-        .manifest()
-        .profiles()
-        .iter()
-        .filter_map(|(profile_id, profile)| {
-            entry_selection(manifest_path, document, profile_id, launch.source_map())
-                .map(|selection| (profile.entry().as_str().to_owned(), selection))
+    manifest
+        .profile_entries()
+        .map(|(_, entry, span)| {
+            (
+                entry
+                    .as_str()
+                    .strip_prefix('@')
+                    .unwrap_or_else(|| entry.as_str())
+                    .to_owned(),
+                ProfileSourceSelection {
+                    path: manifest_path.to_path_buf(),
+                    document: Arc::clone(manifest.document()),
+                    value_range: span.range().as_range(),
+                },
+            )
         })
         .collect()
 }

@@ -104,6 +104,13 @@ string_id!(TargetTriple, "target triple", valid_target_triple);
 string_id!(WitWorldId, "WIT world ID", valid_visible_text);
 string_id!(TypeReference, "adapter type reference", valid_visible_text);
 
+impl AdapterProfileId {
+    /// Canonical Sans-I/O adapter profile used when a launch profile omits one.
+    pub fn sans_io() -> Self {
+        Self("sans-io".into())
+    }
+}
+
 impl PackageId {
     pub fn new(value: impl Into<Box<str>>) -> Result<Self, IdentifierError> {
         let value = value.into();

@@ -1,8 +1,6 @@
-use crate::{
-    graph::{ModuleDependency, ModuleGraph, ModuleGraphError, ModuleNode},
-    manifest::ProjectManifest,
-};
+use crate::graph::{ModuleDependency, ModuleGraph, ModuleGraphError, ModuleNode};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_manifest_model::{BuildSpec, PackageSpec};
 use arcweft_source::SourceDocument;
 use std::{
     collections::BTreeMap,
@@ -31,7 +29,9 @@ pub struct ProjectSourceFile {
 pub struct ProjectSources {
     manifest_path: PathBuf,
     project_root: PathBuf,
-    manifest: ProjectManifest,
+    package: PackageSpec,
+    build: BuildSpec,
+    manifest_document: Arc<SourceDocument>,
     modules: BTreeMap<CanonicalModulePath, ProjectSourceFile>,
     graph: ModuleGraph,
 }
@@ -115,7 +115,9 @@ impl ProjectSources {
     pub fn new(
         manifest_path: PathBuf,
         project_root: PathBuf,
-        manifest: ProjectManifest,
+        package: PackageSpec,
+        build: BuildSpec,
+        manifest_document: Arc<SourceDocument>,
         modules: impl IntoIterator<Item = ProjectSourceFile>,
     ) -> Result<Self, ProjectSourcesError> {
         let mut module_map = BTreeMap::new();
@@ -138,7 +140,9 @@ impl ProjectSources {
         Ok(Self {
             manifest_path,
             project_root,
-            manifest,
+            package,
+            build,
+            manifest_document,
             modules: module_map,
             graph,
         })
@@ -152,8 +156,16 @@ impl ProjectSources {
         &self.project_root
     }
 
-    pub const fn manifest(&self) -> &ProjectManifest {
-        &self.manifest
+    pub const fn package(&self) -> &PackageSpec {
+        &self.package
+    }
+
+    pub const fn build(&self) -> &BuildSpec {
+        &self.build
+    }
+
+    pub const fn manifest_document(&self) -> &Arc<SourceDocument> {
+        &self.manifest_document
     }
 
     pub const fn graph(&self) -> &ModuleGraph {
@@ -178,6 +190,6 @@ impl ProjectSources {
     }
 
     pub fn target_root(&self) -> PathBuf {
-        self.manifest.target_root(&self.project_root)
+        self.project_root.join(self.build.target_dir.as_path())
     }
 }

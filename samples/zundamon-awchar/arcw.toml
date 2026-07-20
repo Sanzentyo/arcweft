@@ -1,14 +1,25 @@
-default = "dev"
+schema = 1
+default-profile = "dev"
 
 [package]
-name = "zundamon-awchar"
+id = "org.arcweft.samples.zundamon-awchar"
+version = "0.1.0"
 
 [build]
 source-dir = "src"
 
+[content-units.characters]
+roots = ["@character.zundamon"]
+visibility = "package"
+demand = "required"
+
 [profiles.dev]
 kind = "game"
-entry = "entry.main"
+entry = "@entry.main"
 source = "src/main.arcw"
 adapter = "sans-io"
-character_manifests = ["assets/zundamon.awchar"]
+
+[profiles.dev.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"

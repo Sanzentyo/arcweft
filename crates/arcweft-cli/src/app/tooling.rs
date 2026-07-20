@@ -266,7 +266,7 @@ fn canonicalize_project_source(
         })
         .collect::<Result<Vec<_>, ToolingError>>()?;
     let hir_project = HirProject::new(
-        loaded.sources().manifest().package().name().as_str(),
+        loaded.sources().package().id.as_str(),
         lowered.iter().map(|(module, _)| module.clone()),
     )
     .map_err(|error| semantic_data_unavailable(path, error.to_string()))?;

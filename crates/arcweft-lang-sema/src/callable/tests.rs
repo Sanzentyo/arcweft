@@ -1017,6 +1017,21 @@ fn presentation_paths_are_exact_and_receiver_keys_are_structural() {
 }
 
 #[test]
+fn image_schema_leaves_the_source_slot_optional_for_the_named_asset_form() {
+    let image = super::schema::presentation_schema(PresentationCallableId::Image, None)
+        .expect("image schema");
+    let source = &image.groups()[0].parameters()[0];
+
+    assert_eq!(source.name().map(CallableName::as_str), Some("source"));
+    assert_eq!(source.passing(), CallableParameterPassing::PositionalOnly);
+    assert_eq!(source.presence(), CallableParameterPresence::Optional);
+    assert_eq!(
+        image.validator(),
+        &CallableValidator::Presentation(PresentationCallableId::Image)
+    );
+}
+
+#[test]
 fn dialogue_identity_table_is_complete() {
     let character = CharacterId::try_new("character.alice").expect("character id");
     assert_eq!(

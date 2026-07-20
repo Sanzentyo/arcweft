@@ -1,10 +1,16 @@
 use super::{
-    LoadedDocumentOwnership, ProfileDependencyResourceSeed, ProfileTopologyErrorCode,
-    ProfileTopologyLimits, ProfileTopologyLoadRequest, ProfileTopologyLogicalPath,
-    ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, ProfileTopologyResourceId,
-    ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, load_profile_topology,
+    ProfileTopologyErrorCode, ProfileTopologyLimits, ProfileTopologyLoadRequest,
+    ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, ProfileTopologyResourceKind,
+    ProfileTopologyResourceOrigin, load_profile_topology,
 };
-use arcweft_adapter_context::{manifest::AdapterEffectCapability, standard::standard_registry};
+use arcweft_adapter_context::{
+    manifest::{AdapterCallableName, AdapterEffectCapability, AdapterManifest, AdapterRegistry},
+    standard::standard_registry,
+};
+use arcweft_adapter_metadata::{
+    AdapterFunctionExport, AdapterMetadata, AdapterParameter, AdapterTarget, FunctionPurity,
+    ProcessAbi, ProcessTarget, ProcessTransport, WasmAbi, WasmTarget,
+};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_sema::{
     check::typecheck_hir, diagnostics::TypeCheckErrorKind,
@@ -12,17 +18,20 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_launch::LaunchProfileSelection;
-use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPurity,
-    ArcweftRustTypeRef,
+use arcweft_manifest_model::{
+    CapabilityId, FieldName, FunctionName, ManifestVisibility, RawDigest, TypeReference, WitWorldId,
 };
-use arcweft_source::SourceDocumentId;
+use arcweft_source::SourceSetRevision;
 use std::{fmt::Write as _, fs, path::PathBuf};
 
 const ROOT_SOURCE: &str = "fn main() -> Unit { () }\n";
+const TRUCK_METADATA: &str =
+    include_str!("../../../arcweft-adapter-metadata/tests/fixtures/truck-rust.adapter.json");
+const CHARACTER_MANIFEST: &str =
+    include_str!("../../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json");
 
 #[test]
-fn open_manifest_overlay_precedes_disk_parse() {
+fn open_manifest_overlay_precedes_disk_decode() {
     let project = TestProject::new("topology-manifest-overlay");
     project.write("arcw.toml", &manifest("disk", "src/main.arcw", ""));
     project.write("src/main.arcw", ROOT_SOURCE);
@@ -32,7 +41,6 @@ fn open_manifest_overlay_precedes_disk_parse() {
     let topology = project.load(
         LaunchProfileSelection::Automatic { previous: None },
         &overlays,
-        &[],
     );
 
     assert_eq!(topology.selected_profile().id().as_str(), "open");
@@ -50,7 +58,7 @@ fn overlay_manifest_can_exist_without_disk_file() {
     project.write("src/main.arcw", ROOT_SOURCE);
     let overlays = vec![project.overlay("arcw.toml", &manifest("dev", "src/main.arcw", ""))];
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
 
     assert_eq!(topology.selected_profile().id().as_str(), "dev");
     assert_eq!(topology.consumed_overlay_ids().len(), 1);
@@ -72,7 +80,7 @@ fn selected_source_overlay_builds_exact_import_closure() {
         ),
     ];
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
     let logical_paths = topology
         .resources()
         .map(|resource| resource.id().path().as_str())
@@ -97,7 +105,7 @@ fn selected_source_outside_default_root_is_the_profile_crate_root() {
         "mod crate.feature\nfn value() -> Unit { () }\n",
     );
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[]);
     let logical_paths = topology
         .resources()
         .map(|resource| resource.id().path().as_str())
@@ -116,7 +124,7 @@ fn selected_source_outside_default_root_rejects_non_root_module_declaration() {
         "mod crate.feature\nfn main() -> Unit { () }\n",
     );
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
     let super::ProfileTopologyLoadError::ModuleDeclaration { id, source, .. } = error else {
         panic!("expected selected-root module declaration error");
@@ -141,7 +149,7 @@ fn unresolved_import_reports_exact_import_source() {
         "use crate.missing.value\nfn main() -> Unit { () }\n",
     );
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
     let super::ProfileTopologyLoadError::ModuleImport {
         id, import, span, ..
@@ -155,87 +163,151 @@ fn unresolved_import_reports_exact_import_source() {
 }
 
 #[test]
-fn awchar_suffix_resolves_without_directory_probe() {
-    let project = TestProject::new("topology-awchar-overlay");
-    project.write(
-        "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "character_manifests = [\"characters/zundamon.awchar\"]",
-        ),
-    );
+fn character_content_root_uses_canonical_asset_package_path() {
+    let project = TestProject::new("topology-character-content-root");
+    project.write("arcw.toml", &character_profile_manifest());
     project.write("src/main.arcw", ROOT_SOURCE);
     let overlays = vec![project.overlay(
-        "characters/zundamon.awchar/character.awchar.json",
-        include_str!(
-            "../../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
-        ),
+        "assets/zundamon.awchar/character.awchar.json",
+        CHARACTER_MANIFEST,
     )];
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
     let character = topology
         .resources()
-        .find(|resource| resource.kind() == &ProfileTopologyResourceKind::CharacterManifest)
+        .find(|resource| {
+            matches!(
+                resource.kind(),
+                ProfileTopologyResourceKind::CharacterPackageManifest { .. }
+            )
+        })
         .expect("character retained");
 
     assert_eq!(character.origin(), ProfileTopologyResourceOrigin::Overlay);
     assert_eq!(
         character.id().path().as_str(),
-        "characters/zundamon.awchar/character.awchar.json"
+        "assets/zundamon.awchar/character.awchar.json"
     );
 }
 
 #[test]
-fn direct_character_manifest_path_remains_direct() {
-    let project = TestProject::new("topology-direct-character");
+fn character_package_identity_must_match_the_selected_content_root() {
+    let project = TestProject::new("topology-character-id-mismatch");
+    project.write("arcw.toml", &character_profile_manifest());
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write(
+        "assets/zundamon.awchar/character.awchar.json",
+        &CHARACTER_MANIFEST.replace("character.zundamon", "character.akane"),
+    );
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::CharacterIdentityMismatch {
+            expected,
+            actual,
+            ..
+        } if expected.as_str() == "character.zundamon"
+            && actual.as_str() == "character.akane"
+    ));
+}
+
+#[test]
+fn nested_character_identity_maps_to_nested_asset_package_path() {
+    let project = TestProject::new("topology-nested-character-path");
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "character_manifests = [\"characters/zundamon.json\"]",
-        ),
+        &character_profile_manifest().replace("@character.zundamon", "@character.npc.alice"),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
+    let nested_manifest = CHARACTER_MANIFEST.replace("character.zundamon", "character.npc.alice");
     let overlays = vec![project.overlay(
-        "characters/zundamon.json",
-        include_str!(
-            "../../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
-        ),
+        "assets/npc/alice.awchar/character.awchar.json",
+        &nested_manifest,
     )];
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
+    let character = topology
+        .resources()
+        .find(|resource| {
+            matches!(
+                resource.kind(),
+                ProfileTopologyResourceKind::CharacterPackageManifest { .. }
+            )
+        })
+        .expect("nested character retained");
 
-    assert!(topology.resources().any(|resource| {
-        resource.kind() == &ProfileTopologyResourceKind::CharacterManifest
-            && resource.id().path().as_str() == "characters/zundamon.json"
-    }));
+    assert_eq!(
+        character.id().path().as_str(),
+        "assets/npc/alice.awchar/character.awchar.json"
+    );
 }
 
 #[test]
-fn adapter_overlay_decodes_before_adapter_selection() {
-    let project = TestProject::new("topology-adapter-overlay");
+fn missing_or_invalid_selected_character_package_aborts_topology() {
+    let missing = TestProject::new("topology-character-manifest-missing");
+    missing.write("arcw.toml", &character_profile_manifest());
+    missing.write("src/main.arcw", ROOT_SOURCE);
+    let error = missing.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ResourceRead {
+            kind: ProfileTopologyResourceKind::CharacterPackageManifest { .. },
+            ..
+        }
+    ));
+
+    let invalid = TestProject::new("topology-character-manifest-invalid");
+    invalid.write("arcw.toml", &character_profile_manifest());
+    invalid.write("src/main.arcw", ROOT_SOURCE);
+    invalid.write("assets/zundamon.awchar/character.awchar.json", "{ invalid");
+    let error = invalid.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::CharacterManifest { .. }
+    ));
+}
+
+#[test]
+fn unselected_optional_content_unit_does_not_claim_a_file_backed_resource() {
+    let project = TestProject::new("topology-unselected-optional-content");
+    let manifest = character_profile_manifest()
+        .replace("demand = \"required\"", "demand = \"optional\"")
+        .replace(
+            "[profiles.dev.content.characters]\nresidency = \"startup\"\nplacement = \"embedded\"\ncompression = \"none\"\n",
+            "",
+        );
+    project.write("arcw.toml", &manifest);
+    project.write("src/main.arcw", ROOT_SOURCE);
+
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(!topology.resources().any(|resource| matches!(
+        resource.kind(),
+        ProfileTopologyResourceKind::CharacterPackageManifest { .. }
+    )));
+}
+
+#[test]
+fn selected_profile_uses_only_the_host_registry_adapter() {
+    let project = TestProject::new("topology-host-adapter-selection");
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "adapter = \"custom-overlay\"\nadapter_manifests = [\"adapters/custom.toml\"]",
-        ),
+        &manifest("dev", "src/main.arcw", "adapter = \"custom\""),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
-    project.write("adapters/custom.toml", &adapter_manifest("disk-other"));
-    let overlays =
-        vec![project.overlay("adapters/custom.toml", &adapter_manifest("custom-overlay"))];
+    let registry =
+        AdapterRegistry::new().with_manifest(AdapterManifest::new("custom", "Custom Host"));
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
+    let topology =
+        project.load_with_registry(LaunchProfileSelection::Explicit("dev"), &[], registry);
 
-    assert_eq!(topology.adapter().id().as_str(), "custom-overlay");
+    assert_eq!(topology.adapter().id().as_str(), "custom");
     assert_eq!(topology.registration_adapter_manifests().len(), 1);
     assert_eq!(
         topology.registration_adapter_manifests()[0].id().as_str(),
-        "custom-overlay"
+        "custom"
     );
 }
 
@@ -244,37 +316,41 @@ fn selected_profile_owns_one_exact_adapter_effect_inventory() {
     let project = TestProject::new("topology-selected-adapter-effects");
     project.write(
         "arcw.toml",
-        r#"[package]
-name = "topology-tests"
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.topology-tests"
 version = "0.1.0"
 
 [profiles.read]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
 adapter = "reader"
-adapter_manifests = ["adapters/reader.toml", "adapters/network.toml"]
 
 [profiles.network]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
 adapter = "network"
-adapter_manifests = ["adapters/reader.toml", "adapters/network.toml"]
 "#,
     );
     project.write("src/main.arcw", ROOT_SOURCE);
-    project.write(
-        "adapters/reader.toml",
-        &adapter_manifest_with_effects("reader", &["fs.read"]),
-    );
-    project.write(
-        "adapters/network.toml",
-        &adapter_manifest_with_effects("network", &["net.read"]),
-    );
+    let registry = AdapterRegistry::new()
+        .with_manifest(
+            AdapterManifest::new("reader", "Reader")
+                .with_effect(AdapterEffectCapability::new("fs.read")),
+        )
+        .with_manifest(
+            AdapterManifest::new("network", "Network")
+                .with_effect(AdapterEffectCapability::new("net.read")),
+        );
 
-    let read = project.load(LaunchProfileSelection::Explicit("read"), &[], &[]);
-    assert_eq!(read.selected_profile().id().as_str(), "read");
+    let read = project.load_with_registry(
+        LaunchProfileSelection::Explicit("read"),
+        &[],
+        registry.clone(),
+    );
     assert_eq!(read.adapter().id().as_str(), "reader");
     assert_eq!(
         read.adapter()
@@ -284,15 +360,9 @@ adapter_manifests = ["adapters/reader.toml", "adapters/network.toml"]
             .collect::<Vec<_>>(),
         ["fs.read"]
     );
-    assert_eq!(read.adapter_sources().len(), 2);
-    assert_eq!(read.registration_adapter_manifests().len(), 1);
-    assert_eq!(
-        read.registration_adapter_manifests()[0].id().as_str(),
-        "reader"
-    );
 
-    let network = project.load(LaunchProfileSelection::Explicit("network"), &[], &[]);
-    assert_eq!(network.selected_profile().id().as_str(), "network");
+    let network =
+        project.load_with_registry(LaunchProfileSelection::Explicit("network"), &[], registry);
     assert_eq!(network.adapter().id().as_str(), "network");
     assert_eq!(
         network
@@ -302,11 +372,6 @@ adapter_manifests = ["adapters/reader.toml", "adapters/network.toml"]
             .map(AdapterEffectCapability::as_str)
             .collect::<Vec<_>>(),
         ["net.read"]
-    );
-    assert_eq!(network.registration_adapter_manifests().len(), 1);
-    assert_eq!(
-        network.registration_adapter_manifests()[0].id().as_str(),
-        "network"
     );
 
     let parsed = parse_source(
@@ -338,186 +403,304 @@ flow @flow.main main effects { fs.read } {
 }
 
 #[test]
-fn duplicate_adapter_ids_are_rejected() {
-    let project = TestProject::new("topology-duplicate-adapter");
+fn selected_host_adapter_must_exist() {
+    let project = TestProject::new("topology-missing-host-adapter");
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "adapter = \"duplicate\"\nadapter_manifests = [\"adapters/a.toml\", \"adapters/b.toml\"]",
-        ),
+        &manifest("dev", "src/main.arcw", "adapter = \"missing\""),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
-    project.write("adapters/a.toml", &adapter_manifest("duplicate"));
-    project.write("adapters/b.toml", &adapter_manifest("duplicate"));
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
-    assert_eq!(error.code(), ProfileTopologyErrorCode::DuplicateAdapterId);
+    assert_eq!(error.code(), ProfileTopologyErrorCode::AdapterSelection);
 }
 
 #[test]
-fn declared_adapter_failure_has_no_sans_io_fallback() {
-    let project = TestProject::new("topology-malformed-adapter");
+fn generated_metadata_publishes_exact_mounted_type_function_and_activity_facts() {
+    let project = TestProject::new("topology-generated-facts");
+    let metadata = metadata_with_function();
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "adapter = \"custom\"\nadapter_manifests = [\"adapters/custom.toml\"]",
-        ),
+        &external_module_manifest(&metadata, Some("activity.truck_game"), None),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
-    project.write("adapters/custom.toml", "schema_version = ");
+    project.write("generated/truck.adapter.json", &metadata);
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[]);
 
-    assert_eq!(error.code(), ProfileTopologyErrorCode::AdapterManifest);
-}
-
-#[test]
-fn rust_metadata_overlay_applies_before_base_environment() {
-    let project = TestProject::new("topology-rust-overlay");
-    project.write(
-        "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "adapter = \"custom\"\nadapter_manifests = [\"adapters/custom.toml\"]\nrust_metadata = [\"metadata/custom.json\"]",
-        ),
-    );
-    project.write("src/main.arcw", ROOT_SOURCE);
-    project.write("adapters/custom.toml", &adapter_manifest("custom"));
-    project.write("metadata/custom.json", &rust_manifest_json("disk_export"));
-    let overlays = vec![project.overlay(
-        "metadata/custom.json",
-        &rust_manifest_json("overlay_export"),
-    )];
-
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
-
-    assert_eq!(topology.adapter().rust_functions().len(), 1);
+    assert_eq!(topology.external_modules().len(), 1);
     assert_eq!(
-        topology.adapter().rust_functions()[0].path().segments()[0].as_str(),
-        "overlay_export"
+        topology.external_modules()[0].document().text(),
+        metadata.as_str()
     );
+    let retained = topology.external_modules()[0].metadata().metadata();
+    assert_eq!(
+        retained.exports.types[1].visibility,
+        ManifestVisibility::Private
+    );
+    assert_eq!(retained.exports.functions[0].purity, FunctionPurity::Pure);
+    assert!(topology.adapter().symbols().iter().any(|symbol| {
+        symbol.path().to_string() == "mini_games.truck.TruckResult"
+            && symbol.ty()
+                == &arcweft_adapter_context::manifest::AdapterTypeKind::Named(
+                    "mini_games.truck.TruckResult".to_owned(),
+                )
+    }));
+    assert!(
+        !topology
+            .adapter()
+            .symbols()
+            .iter()
+            .any(|symbol| symbol.path().to_string().ends_with("TruckTelemetry")),
+        "private metadata exports are not project-visible"
+    );
+    let function = topology
+        .adapter()
+        .functions()
+        .iter()
+        .find(|function| {
+            function
+                .path()
+                .segments()
+                .iter()
+                .map(AdapterCallableName::as_str)
+                .collect::<Vec<_>>()
+                == ["mini_games", "truck", "drive"]
+        })
+        .expect("mounted generated function");
+    assert_eq!(function.signature().groups()[0].parameters().len(), 1);
+    assert_eq!(topology.registration_adapter_manifests().len(), 1);
 }
 
 #[test]
-fn declared_rust_failure_has_no_partial_application() {
-    let project = TestProject::new("topology-rust-atomic-failure");
+fn generated_projection_rejects_purity_and_effect_mismatch_without_altering_retained_shape() {
+    let project = TestProject::new("topology-generated-purity-mismatch");
+    let metadata = metadata_with_inconsistent_purity();
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "adapter = \"custom\"\nadapter_manifests = [\"adapters/custom.toml\"]\nrust_metadata = [\"metadata/first.json\", \"metadata/second.json\"]",
-        ),
+        &external_module_manifest(&metadata, None, None),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
-    project.write("adapters/custom.toml", &adapter_manifest("custom"));
-    project.write("metadata/first.json", &rust_manifest_json("first_export"));
-    project.write("metadata/second.json", "{ malformed");
+    project.write("generated/truck.adapter.json", &metadata);
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
-    assert_eq!(error.code(), ProfileTopologyErrorCode::RustMetadata);
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ExternalModuleFacts(
+            super::ExternalModuleFactsError::FunctionPurity { purity: "pure", .. }
+        )
+    ));
 }
 
 #[test]
-fn workspace_path_outside_root_requires_dependency_seed() {
-    let project = TestProject::new("topology-outside-without-seed");
-    let dependency = TestProject::new("topology-outside-resource");
-    dependency.write("custom.toml", &adapter_manifest("custom"));
+fn generated_metadata_overlay_is_the_only_admitted_revision() {
+    let project = TestProject::new("topology-generated-overlay");
+    let metadata = metadata_with_function();
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            &format!(
-                "adapter = \"custom\"\nadapter_manifests = [\"{}\"]",
-                slash(&dependency.path("custom.toml"))
-            ),
-        ),
+        &external_module_manifest(&metadata, Some("activity.truck_game"), None),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
+    project.write("generated/truck.adapter.json", TRUCK_METADATA);
+    let overlays = vec![project.overlay("generated/truck.adapter.json", &metadata)];
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
+    let resource = topology
+        .resources()
+        .find(|resource| {
+            matches!(
+                resource.kind(),
+                ProfileTopologyResourceKind::ExternalModuleMetadata { .. }
+            )
+        })
+        .expect("metadata resource retained");
 
-    assert_eq!(error.code(), ProfileTopologyErrorCode::UnownedResourcePath);
-}
-
-#[test]
-fn dependency_seed_satisfies_exact_outside_path() {
-    let project = TestProject::new("topology-dependency-seed");
-    let dependency = TestProject::new("topology-dependency-root");
-    let resource_path = dependency.path("custom.toml");
-    let owner = ProfileTopologyOwnerId::dependency("registry:custom@1").expect("dependency owner");
-    let id = ProfileTopologyResourceId::new(
-        owner,
-        ProfileTopologyLogicalPath::try_new("custom.toml").expect("logical path"),
-    );
-    let source_id = SourceDocumentId::try_new("arcweft-dependency://custom@1/custom.toml")
-        .expect("dependency source id");
-    let seed = ProfileDependencyResourceSeed::try_new(
-        id.clone(),
-        ProfileTopologyResourceKind::AdapterManifest,
-        dependency.root().to_path_buf(),
-        resource_path.clone(),
-        source_id.clone(),
-    )
-    .expect("dependency seed");
-    project.write(
-        "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            &format!(
-                "adapter = \"custom\"\nadapter_manifests = [\"{}\"]",
-                slash(&resource_path)
-            ),
-        ),
-    );
-    project.write("src/main.arcw", ROOT_SOURCE);
-    let overlays = vec![
-        ProfileTopologyOverlaySeed::try_new(resource_path, adapter_manifest("custom"))
-            .expect("dependency overlay"),
-    ];
-
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[seed]);
-    let resource = topology.resource(&id).expect("dependency retained");
-
-    assert_eq!(resource.ownership(), LoadedDocumentOwnership::Dependency);
-    assert_eq!(resource.document().identity().id(), &source_id);
     assert_eq!(resource.origin(), ProfileTopologyResourceOrigin::Overlay);
+    assert_eq!(resource.document().text(), metadata);
+}
+
+#[test]
+fn generated_metadata_raw_hash_mismatch_aborts_topology() {
+    let project = TestProject::new("topology-generated-hash-mismatch");
+    project.write(
+        "arcw.toml",
+        &external_module_manifest(TRUCK_METADATA, None, None),
+    );
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write(
+        "generated/truck.adapter.json",
+        &format!("{TRUCK_METADATA}\n"),
+    );
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ExternalModuleMetadataHash { .. }
+    ));
+}
+
+#[test]
+fn generated_metadata_decode_failure_aborts_topology_after_exact_hash() {
+    let project = TestProject::new("topology-generated-decode-failure");
+    let malformed = "{ malformed";
+    project.write(
+        "arcw.toml",
+        &external_module_manifest(malformed, None, None),
+    );
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write("generated/truck.adapter.json", malformed);
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ExternalModuleMetadataDecode { .. }
+    ));
+}
+
+#[test]
+fn every_generated_metadata_expectation_mismatch_aborts_topology() {
+    let canonical = external_module_manifest(TRUCK_METADATA, None, None);
+    for (field, value) in [
+        ("expected-package", "com.example.not-truck"),
+        ("expected-version", "9.9.9"),
+        ("expected-module", "not_truck"),
+        (
+            "expected-abi-hash",
+            "blake3:0000000000000000000000000000000000000000000000000000000000000000",
+        ),
+    ] {
+        let project = TestProject::new(&format!("topology-generated-{field}-mismatch"));
+        project.write(
+            "arcw.toml",
+            &replace_manifest_string_field(&canonical, field, value),
+        );
+        project.write("src/main.arcw", ROOT_SOURCE);
+        project.write("generated/truck.adapter.json", TRUCK_METADATA);
+
+        let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+        let expected_field = field.strip_prefix("expected-").expect("expected field");
+        assert!(
+            matches!(
+                &error,
+                super::ProfileTopologyLoadError::ExternalModuleMetadataExpectation {
+                    field: actual,
+                    ..
+                } if *actual == expected_field
+            ),
+            "{field}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn expected_family_mismatch_rejects_rust_wasm_and_process_metadata() {
+    let families = [
+        ("rust", TRUCK_METADATA.to_owned(), "wasm"),
+        (
+            "wasm",
+            metadata_with_target(AdapterTarget::Wasm(WasmTarget {
+                abi: WasmAbi,
+                world: WitWorldId::new("arcweft:test/truck").expect("WIT world"),
+            })),
+            "process",
+        ),
+        (
+            "process",
+            metadata_with_target(AdapterTarget::Process(ProcessTarget {
+                abi: ProcessAbi,
+                transport: ProcessTransport,
+            })),
+            "rust",
+        ),
+    ];
+    for (actual_family, metadata, wrong_family) in families {
+        let project = TestProject::new(&format!(
+            "topology-generated-{actual_family}-family-mismatch"
+        ));
+        let manifest = external_module_manifest(&metadata, None, None);
+        project.write(
+            "arcw.toml",
+            &replace_manifest_string_field(&manifest, "expected-family", wrong_family),
+        );
+        project.write("src/main.arcw", ROOT_SOURCE);
+        project.write("generated/truck.adapter.json", &metadata);
+
+        let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+        assert!(matches!(
+            &error,
+            super::ProfileTopologyLoadError::ExternalModuleMetadataExpectation {
+                field: "family",
+                actual,
+                ..
+            } if actual == actual_family
+        ));
+    }
+}
+
+#[test]
+fn activity_binding_requires_the_selected_generated_export() {
+    let project = TestProject::new("topology-generated-activity-missing");
+    project.write(
+        "arcw.toml",
+        &external_module_manifest(TRUCK_METADATA, Some("activity.truck_game"), None)
+            .replace("export = \"truck_game\"", "export = \"missing\""),
+    );
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write("generated/truck.adapter.json", TRUCK_METADATA);
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ExternalModuleFacts(
+            super::ExternalModuleFactsError::ActivityExportMissing { .. }
+        )
+    ));
+}
+
+#[test]
+fn activity_binding_requires_the_exact_abstract_activity_identity() {
+    let project = TestProject::new("topology-generated-activity-identity");
+    project.write(
+        "arcw.toml",
+        &external_module_manifest(TRUCK_METADATA, Some("activity.other"), None),
+    );
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write("generated/truck.adapter.json", TRUCK_METADATA);
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ExternalModuleFacts(
+            super::ExternalModuleFactsError::ActivityIdentityMismatch { .. }
+        )
+    ));
 }
 
 #[test]
 fn consumed_overlay_ids_are_sorted_and_complete() {
     let project = TestProject::new("topology-consumed-overlay-order");
-    let manifest_text = manifest(
-        "dev",
-        "src/main.arcw",
-        "character_manifests = [\"characters/zundamon.json\"]\nadapter = \"custom\"\nadapter_manifests = [\"adapters/custom.toml\"]",
-    );
     let overlays = vec![
-        project.overlay("arcw.toml", &manifest_text),
+        project.overlay("arcw.toml", &character_profile_manifest()),
         project.overlay(
             "src/main.arcw",
             "use crate.feature\nfn main() -> Unit { () }\n",
         ),
         project.overlay("src/feature.arcw", "mod crate.feature\n"),
         project.overlay(
-            "characters/zundamon.json",
-            include_str!(
-                "../../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
-            ),
+            "assets/zundamon.awchar/character.awchar.json",
+            CHARACTER_MANIFEST,
         ),
-        project.overlay("adapters/custom.toml", &adapter_manifest("custom")),
     ];
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays, &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
     let actual = topology
         .consumed_overlay_ids()
         .map(|id| id.path().as_str().to_owned())
@@ -526,7 +709,50 @@ fn consumed_overlay_ids_are_sorted_and_complete() {
     expected.sort();
 
     assert_eq!(actual, expected);
-    assert_eq!(actual.len(), 5);
+    assert_eq!(actual.len(), 4);
+}
+
+#[test]
+fn topology_source_revision_covers_every_retained_resource_identity() {
+    let project = TestProject::new("topology-complete-source-revision");
+    let manifest = format!(
+        "{}\n[content-units.characters]\nroots = [\"@character.zundamon\"]\nvisibility = \"package\"\ndemand = \"required\"\n[profiles.dev.content.characters]\nresidency = \"startup\"\nplacement = \"embedded\"\ncompression = \"none\"\n",
+        external_module_manifest(TRUCK_METADATA, None, None)
+    );
+    project.write("arcw.toml", &manifest);
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write("generated/truck.adapter.json", TRUCK_METADATA);
+    let overlays = vec![project.overlay(
+        "assets/zundamon.awchar/character.awchar.json",
+        CHARACTER_MANIFEST,
+    )];
+
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
+    let expected = SourceSetRevision::try_for_identities(
+        topology
+            .resources()
+            .map(|resource| resource.document().identity()),
+    )
+    .expect("retained source identities form one revision");
+
+    assert_eq!(topology.source_revision(), expected);
+    assert!(
+        topology
+            .resources()
+            .any(|resource| matches!(resource.kind(), ProfileTopologyResourceKind::Manifest))
+    );
+    assert!(topology.resources().any(|resource| matches!(
+        resource.kind(),
+        ProfileTopologyResourceKind::ArcweftModule { .. }
+    )));
+    assert!(topology.resources().any(|resource| matches!(
+        resource.kind(),
+        ProfileTopologyResourceKind::ExternalModuleMetadata { .. }
+    )));
+    assert!(topology.resources().any(|resource| matches!(
+        resource.kind(),
+        ProfileTopologyResourceKind::CharacterPackageManifest { .. }
+    )));
 }
 
 #[test]
@@ -536,7 +762,7 @@ fn loaded_topology_survives_disk_mutation() {
     project.write("arcw.toml", &manifest_text);
     project.write("src/main.arcw", ROOT_SOURCE);
 
-    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[]);
     fs::remove_file(project.path("arcw.toml")).expect("manifest removed");
     fs::remove_file(project.path("src/main.arcw")).expect("source removed");
 
@@ -554,105 +780,17 @@ fn loaded_topology_survives_disk_mutation() {
 }
 
 #[test]
-fn duplicate_topology_logical_id_is_fatal() {
-    let project = TestProject::new("topology-duplicate-logical-id");
-    project.write(
-        "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            "character_manifests = [\"characters/zundamon.json\", \"characters/zundamon.json\"]",
-        ),
-    );
-    project.write("src/main.arcw", ROOT_SOURCE);
-    project.write(
-        "characters/zundamon.json",
-        include_str!(
-            "../../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
-        ),
-    );
-
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
-
-    assert_eq!(error.code(), ProfileTopologyErrorCode::DuplicateLogicalId);
-}
-
-#[test]
-fn duplicate_normalized_path_with_distinct_ids_is_fatal() {
+fn one_path_cannot_be_claimed_as_source_and_generated_metadata() {
     let project = TestProject::new("topology-duplicate-path");
-    let dependency = TestProject::new("topology-duplicate-path-dependency");
-    let shared_path = dependency.path("shared.toml");
-    dependency.write("shared.toml", &adapter_manifest("custom"));
     project.write(
         "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            &format!(
-                "adapter = \"custom\"\nadapter_manifests = [\"{0}\"]\nrust_metadata = [\"{0}\"]",
-                slash(&shared_path)
-            ),
-        ),
+        &external_module_manifest_with_path(ROOT_SOURCE, "src/main.arcw"),
     );
     project.write("src/main.arcw", ROOT_SOURCE);
-    let adapter_seed = dependency_seed(
-        "registry:adapter@1",
-        "shared.toml",
-        ProfileTopologyResourceKind::AdapterManifest,
-        dependency.root(),
-        &shared_path,
-        "arcweft-dependency://adapter@1/shared.toml",
-    );
-    let rust_seed = dependency_seed(
-        "registry:rust@1",
-        "shared.toml",
-        ProfileTopologyResourceKind::RustMetadata,
-        dependency.root(),
-        &shared_path,
-        "arcweft-dependency://rust@1/shared.toml",
-    );
 
-    let error = project.load_error(
-        LaunchProfileSelection::Explicit("dev"),
-        &[],
-        &[adapter_seed, rust_seed],
-    );
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
     assert_eq!(error.code(), ProfileTopologyErrorCode::DuplicatePath);
-}
-
-#[test]
-fn dependency_seed_does_not_match_by_filename() {
-    let project = TestProject::new("topology-dependency-no-fuzzy-match");
-    let referenced = TestProject::new("topology-dependency-referenced");
-    let seeded = TestProject::new("topology-dependency-seeded");
-    let referenced_path = referenced.path("custom.toml");
-    let seeded_path = seeded.path("custom.toml");
-    seeded.write("custom.toml", &adapter_manifest("custom"));
-    project.write(
-        "arcw.toml",
-        &manifest(
-            "dev",
-            "src/main.arcw",
-            &format!(
-                "adapter = \"custom\"\nadapter_manifests = [\"{}\"]",
-                slash(&referenced_path)
-            ),
-        ),
-    );
-    project.write("src/main.arcw", ROOT_SOURCE);
-    let seed = dependency_seed(
-        "registry:custom@1",
-        "custom.toml",
-        ProfileTopologyResourceKind::AdapterManifest,
-        seeded.root(),
-        &seeded_path,
-        "arcweft-dependency://custom@1/custom.toml",
-    );
-
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[seed]);
-
-    assert_eq!(error.code(), ProfileTopologyErrorCode::UnownedResourcePath);
 }
 
 #[test]
@@ -665,7 +803,7 @@ fn topology_diagnostics_are_bounded() {
     }
     project.write("src/main.arcw", &source);
 
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[], &[]);
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
 
     let super::ProfileTopologyLoadError::ModuleSyntax {
         diagnostics,
@@ -697,15 +835,11 @@ fn topology_single_resource_byte_limit_is_inclusive() {
     let exact = padded_toml(&manifest("dev", "src/main.arcw", ""), maximum);
     let exact_overlays = vec![project.overlay("arcw.toml", &exact)];
 
-    project.load(
-        LaunchProfileSelection::Explicit("dev"),
-        &exact_overlays,
-        &[],
-    );
+    project.load(LaunchProfileSelection::Explicit("dev"), &exact_overlays);
 
     let one_over = format!("{exact}x");
     let one_overlays = vec![project.overlay("arcw.toml", &one_over)];
-    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &one_overlays, &[]);
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &one_overlays);
     assert!(matches!(
         error,
         super::ProfileTopologyLoadError::Limit {
@@ -725,11 +859,7 @@ fn topology_resource_limit_is_inclusive() {
         .expect("resource limit fits usize");
     let exact_overlays = module_overlays(&exact_project, exact_module_count);
 
-    let topology = exact_project.load(
-        LaunchProfileSelection::Explicit("dev"),
-        &exact_overlays,
-        &[],
-    );
+    let topology = exact_project.load(LaunchProfileSelection::Explicit("dev"), &exact_overlays);
     assert_eq!(
         u64::try_from(topology.resources().len()).expect("resource count fits u64"),
         ProfileTopologyLimits::PRODUCTION.resources()
@@ -738,8 +868,7 @@ fn topology_resource_limit_is_inclusive() {
     let one_over_project = TestProject::new("topology-resource-limit-one-over");
     one_over_project.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
     let one_overlays = module_overlays(&one_over_project, exact_module_count + 1);
-    let error =
-        one_over_project.load_error(LaunchProfileSelection::Explicit("dev"), &one_overlays, &[]);
+    let error = one_over_project.load_error(LaunchProfileSelection::Explicit("dev"), &one_overlays);
     assert!(matches!(
         error,
         super::ProfileTopologyLoadError::Limit {
@@ -753,63 +882,186 @@ fn topology_resource_limit_is_inclusive() {
 
 fn manifest(profile: &str, source: &str, extra: &str) -> String {
     format!(
-        r#"[package]
-name = "topology-tests"
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.topology-tests"
 version = "0.1.0"
 
 [profiles."{profile}"]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "{source}"
 {extra}
 "#
     )
 }
 
-fn adapter_manifest(id: &str) -> String {
-    format!(
-        r#"schema_version = 1
-id = "{id}"
-display_name = "{id}"
-functions = []
-host_calls = []
+fn character_profile_manifest() -> String {
+    r#"schema = 1
+
+[package]
+id = "org.arcweft.topology-tests"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.zundamon"]
+visibility = "package"
+demand = "required"
+
+[profiles.dev]
+kind = "game"
+entry = "@entry.game.main"
+source = "src/main.arcw"
+
+[profiles.dev.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
 "#
+    .to_owned()
+}
+
+fn external_module_manifest(
+    metadata: &str,
+    activity: Option<&str>,
+    expected_package: Option<&str>,
+) -> String {
+    external_module_manifest_with(
+        metadata,
+        "generated/truck.adapter.json",
+        activity,
+        expected_package,
     )
 }
 
-fn adapter_manifest_with_effects(id: &str, effects: &[&str]) -> String {
-    let effects = effects
-        .iter()
-        .map(|effect| format!("\"{effect}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        r#"schema_version = 1
-id = "{id}"
-display_name = "{id}"
-effects = [{effects}]
-functions = []
-host_calls = []
+fn external_module_manifest_with_path(metadata: &str, path: &str) -> String {
+    external_module_manifest_with(metadata, path, None, None)
+}
+
+fn external_module_manifest_with(
+    metadata: &str,
+    path: &str,
+    activity: Option<&str>,
+    expected_package: Option<&str>,
+) -> String {
+    let decoded: serde_json::Value = serde_json::from_str(metadata).unwrap_or_else(|_| {
+        serde_json::json!({
+            "abi_hash": "blake3:0000000000000000000000000000000000000000000000000000000000000000",
+            "package": { "id": "com.example.truck", "version": "1.2.3" },
+            "module": { "id": "truck" },
+            "target": { "family": "rust" },
+        })
+    });
+    let package = expected_package.unwrap_or_else(|| {
+        decoded["package"]["id"]
+            .as_str()
+            .expect("metadata package ID")
+    });
+    let version = decoded["package"]["version"]
+        .as_str()
+        .expect("metadata package version");
+    let module = decoded["module"]["id"]
+        .as_str()
+        .expect("metadata module ID");
+    let family = decoded["target"]["family"]
+        .as_str()
+        .expect("metadata target family");
+    let abi_hash = decoded["abi_hash"].as_str().expect("metadata ABI hash");
+    let raw_hash = RawDigest::for_bytes(metadata.as_bytes());
+    let implementation = activity.map_or(String::new(), |_| {
+        r#"
+[activity-implementations.truck]
+module = "truck"
+export = "truck_game"
 "#
+        .to_owned()
+    });
+    let binding = activity.map_or(String::new(), |activity| {
+        format!(
+            "activity-bindings = [{{ activity = \"{activity}\", implementation = \"truck\" }}]\n"
+        )
+    });
+    format!(
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.topology-tests"
+version = "0.1.0"
+
+[external-modules.truck]
+mount = "mini_games.truck"
+metadata = "{path}"
+metadata-hash = "{raw_hash}"
+expected-package = "{package}"
+expected-version = "{version}"
+expected-module = "{module}"
+expected-family = "{family}"
+expected-abi-hash = "{abi_hash}"
+visibility = "package"
+demand = "required"
+{implementation}
+[profiles.dev]
+kind = "game"
+entry = "@entry.game.main"
+source = "src/main.arcw"
+external-modules = ["truck"]
+{binding}"#
     )
 }
 
-fn rust_manifest_json(function: &str) -> String {
-    ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "topology_adapter".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_function(ArcweftRustFunction {
-        name: function.to_owned(),
-        rust_path: format!("topology_adapter::{}", function.replace('.', "_")),
-        params: Vec::new(),
-        return_type: ArcweftRustTypeRef::Unit,
-        purity: ArcweftRustPurity::Pure,
+fn metadata_with_function() -> String {
+    let mut metadata: AdapterMetadata =
+        serde_json::from_str(TRUCK_METADATA).expect("canonical metadata fixture");
+    metadata.exports.functions.push(AdapterFunctionExport {
+        name: FunctionName::new("drive").expect("function name"),
+        visibility: arcweft_manifest_model::ManifestVisibility::Public,
+        params: vec![AdapterParameter {
+            name: FieldName::new("request").expect("field name"),
+            ty: TypeReference::new("TruckResult").expect("type reference"),
+        }],
+        return_type: TypeReference::new("Need<TruckResult, TruckResult>").expect("type reference"),
+        purity: FunctionPurity::Pure,
         effects: Vec::new(),
-    })
-    .to_json_pretty()
-    .expect("Rust metadata encodes")
+    });
+    metadata.abi_hash = metadata.computed_abi_hash().expect("ABI hash");
+    metadata.payload_hash = metadata.computed_payload_hash().expect("payload hash");
+    serde_json::to_string_pretty(&metadata).expect("metadata JSON")
+}
+
+fn metadata_with_target(target: AdapterTarget) -> String {
+    let mut metadata: AdapterMetadata =
+        serde_json::from_str(TRUCK_METADATA).expect("canonical metadata fixture");
+    metadata.target = target;
+    metadata.abi_hash = metadata.computed_abi_hash().expect("ABI hash");
+    metadata.payload_hash = metadata.computed_payload_hash().expect("payload hash");
+    serde_json::to_string_pretty(&metadata).expect("metadata JSON")
+}
+
+fn metadata_with_inconsistent_purity() -> String {
+    let mut metadata: AdapterMetadata =
+        serde_json::from_str(&metadata_with_function()).expect("generated metadata");
+    metadata.exports.functions[0]
+        .effects
+        .push(CapabilityId::new("truck.drive").expect("capability ID"));
+    metadata.abi_hash = metadata.computed_abi_hash().expect("ABI hash");
+    metadata.payload_hash = metadata.computed_payload_hash().expect("payload hash");
+    serde_json::to_string_pretty(&metadata).expect("metadata JSON")
+}
+
+fn replace_manifest_string_field(manifest: &str, field: &str, value: &str) -> String {
+    let prefix = format!("{field} = ");
+    manifest
+        .lines()
+        .map(|line| {
+            if line.starts_with(&prefix) {
+                format!("{field} = \"{value}\"")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn padded_toml(base: &str, length: usize) -> String {
@@ -839,27 +1091,6 @@ fn module_overlays(project: &TestProject, module_count: usize) -> Vec<ProfileTop
     overlays
 }
 
-fn dependency_seed(
-    package: &str,
-    logical_path: &str,
-    kind: ProfileTopologyResourceKind,
-    root: &std::path::Path,
-    path: &std::path::Path,
-    source_id: &str,
-) -> ProfileDependencyResourceSeed {
-    ProfileDependencyResourceSeed::try_new(
-        ProfileTopologyResourceId::new(
-            ProfileTopologyOwnerId::dependency(package).expect("dependency owner"),
-            ProfileTopologyLogicalPath::try_new(logical_path).expect("logical path"),
-        ),
-        kind,
-        root.to_path_buf(),
-        path.to_path_buf(),
-        SourceDocumentId::try_new(source_id).expect("source id"),
-    )
-    .expect("dependency seed")
-}
-
 fn slash(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
@@ -881,10 +1112,6 @@ impl TestProject {
         let root = std::env::temp_dir().join(unique);
         fs::create_dir_all(&root).expect("fixture root");
         Self { root }
-    }
-
-    fn root(&self) -> &std::path::Path {
-        &self.root
     }
 
     fn path(&self, relative: &str) -> PathBuf {
@@ -916,19 +1143,24 @@ impl TestProject {
         &self,
         selection: LaunchProfileSelection<'_>,
         overlays: &[ProfileTopologyOverlaySeed],
-        dependencies: &[ProfileDependencyResourceSeed],
+    ) -> super::LoadedProfileTopology {
+        self.load_with_registry(selection, overlays, standard_registry())
+    }
+
+    fn load_with_registry(
+        &self,
+        selection: LaunchProfileSelection<'_>,
+        overlays: &[ProfileTopologyOverlaySeed],
+        registry: AdapterRegistry,
     ) -> super::LoadedProfileTopology {
         let manifest_path = self.path("arcw.toml");
-        load_profile_topology(
-            ProfileTopologyLoadRequest::new(
-                &manifest_path,
-                self.owner(),
-                selection,
-                overlays,
-                standard_registry(),
-            )
-            .with_dependency_resources(dependencies),
-        )
+        load_profile_topology(ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            self.owner(),
+            selection,
+            overlays,
+            registry,
+        ))
         .expect("topology loads")
     }
 
@@ -936,19 +1168,15 @@ impl TestProject {
         &self,
         selection: LaunchProfileSelection<'_>,
         overlays: &[ProfileTopologyOverlaySeed],
-        dependencies: &[ProfileDependencyResourceSeed],
     ) -> super::ProfileTopologyLoadError {
         let manifest_path = self.path("arcw.toml");
-        load_profile_topology(
-            ProfileTopologyLoadRequest::new(
-                &manifest_path,
-                self.owner(),
-                selection,
-                overlays,
-                standard_registry(),
-            )
-            .with_dependency_resources(dependencies),
-        )
+        load_profile_topology(ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            self.owner(),
+            selection,
+            overlays,
+            standard_registry(),
+        ))
         .expect_err("topology fails")
     }
 }

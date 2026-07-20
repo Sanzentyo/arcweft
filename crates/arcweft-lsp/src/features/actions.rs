@@ -62,7 +62,7 @@ pub fn actions(
         ));
     }
     actions.extend(effect_contract_actions(profile, uri, document));
-    actions.extend(dialogue_override_actions(profile, uri, document, offset));
+    actions.extend(dialogue_override_actions(uri, document, offset));
     Ok(actions)
 }
 
@@ -115,7 +115,6 @@ fn effect_contract_actions(
 }
 
 fn dialogue_override_actions(
-    profile: &LspProfile,
     uri: &Uri,
     document: &DocumentSnapshot,
     offset: usize,
@@ -123,9 +122,7 @@ fn dialogue_override_actions(
     let Some(insertion) = dialogue_option_insertion_at(document.text(), offset) else {
         return Vec::new();
     };
-    let Some(cascade) =
-        effective_dialogue_cascade_at(document, offset, profile.dialogue_defaults())
-    else {
+    let Some(cascade) = effective_dialogue_cascade_at(document, offset) else {
         return Vec::new();
     };
 
@@ -136,7 +133,6 @@ fn dialogue_override_actions(
     actions.extend(dialogue_defaults_actions(
         uri,
         document,
-        profile.dialogue_defaults(),
         &cascade.spec.style_contributions,
     ));
     actions
@@ -223,7 +219,6 @@ fn speaker_preset_actions(
 fn dialogue_defaults_actions(
     uri: &Uri,
     document: &DocumentSnapshot,
-    selected_profile: Option<&str>,
     contributions: &[RichTextStyleContribution],
 ) -> Vec<CodeAction> {
     contributions
@@ -233,7 +228,7 @@ fn dialogue_defaults_actions(
         .filter_map(|contribution| {
             let edit = dialogue_defaults_edit(
                 document.text(),
-                selected_profile,
+                None,
                 &contribution.path,
                 &contribution.value,
             )?;
@@ -337,6 +332,7 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         | Item::Enum(_)
         | Item::Struct(_)
         | Item::TypeAlias(_)
+        | Item::Resource(_)
         | Item::EntityDecl(_)
         | Item::Entry(_)
         | Item::ExternCapability(_)

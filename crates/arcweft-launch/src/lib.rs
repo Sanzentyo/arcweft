@@ -3,26 +3,19 @@
 //! Launch profiles are the canonical representation of command-specific runtime
 //! context. CLI commands lower into this data before semantic checking or execution.
 
+pub mod accepted;
+mod decode;
+pub mod diagnostic;
+pub mod manifest;
 mod model;
-pub mod parse;
-pub mod source;
+pub mod resolve;
+mod source_map;
+mod tree_de;
 
 pub use arcweft_manifest_model::{
     ContentCompression, ContentPlacement, ContentResidency, EntrySelectionId, LaunchKind, ProfileId,
 };
 
 pub use model::{
-    LaunchBuildProfileSpec, LaunchContentProfileSpec, LaunchDebugPolicy, LaunchHotReloadFallback,
-    LaunchHotReloadMode, LaunchHotReloadProfileSpec, LaunchHotReloadStatePolicy, LaunchMathBackend,
-    LaunchPlayerProfileSpec, LaunchPlayerViewportFit, LaunchPlayerViewportSpec, LaunchProfileError,
-    LaunchProfileManifest, LaunchProfileSelection, LaunchProfileSpec, LaunchPureBackend,
-    LaunchPureProfileSpec, LaunchSourcePolicy, ResolvedLaunchProfile,
+    LaunchMathBackend, LaunchPlayerViewportFit, LaunchProfileSelection, LaunchPureBackend,
 };
-pub use parse::{LaunchDocumentError, TomlStructuralErrorKind};
-pub use source::{
-    LaunchKeyPath, LaunchManifestSourceMap, LaunchToken, LaunchTokenPath,
-    SourceBackedLaunchManifest,
-};
-
-#[cfg(test)]
-mod tests;

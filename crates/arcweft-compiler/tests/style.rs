@@ -11,8 +11,8 @@ use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFact
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use arcweft_lang_syntax::ast::view::{ViewExpr, ViewModifier};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::graph::ModuleDependency;
-use arcweft_project::manifest::ProjectManifest;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -27,8 +27,7 @@ fn project_context(project: &ProjectSources) -> ProjectCompilationContext {
         .map(|source| Arc::clone(source.document()))
         .collect::<Vec<_>>();
     let root = project.root_module().document();
-    let package = CallablePackageId::try_new(project.manifest().package().name().as_str())
-        .expect("package id");
+    let package = CallablePackageId::try_new(project.package().id.as_str()).expect("package id");
     let world =
         ProjectSymbolWorldId::try_new(package, root.identity().id().clone(), "compiler-style-test")
             .expect("symbol world");
@@ -225,73 +224,7 @@ fn style_compiler_rejects_an_application_to_a_missing_sheet() {
 
 #[test]
 fn style_compiler_qualifies_equal_local_patch_ranges_and_uses_checked_ordinals() {
-    let child = CanonicalModulePath::from_segments([
-        ModuleSegment::new("child").expect("valid module segment")
-    ]);
-    let root_body = r#"pub view Root() {
-    Button("Root").style { opacity = 800milli }
-}
-"#;
-    let child_source = r#"mod child
-
-pub view Child() {
-    Button("Child").style { opacity = 700milli }
-}
-"#;
-    let root_style_offset = root_body.find(".style").expect("root inline Style site");
-    let child_style_offset = child_source
-        .find(".style")
-        .expect("child inline Style site");
-    let root_source = format!(
-        "{}{}",
-        " ".repeat(child_style_offset - root_style_offset),
-        root_body
-    );
-    assert_eq!(
-        root_source.find(".style"),
-        child_source.find(".style"),
-        "fixture must exercise equal module-local Style ranges"
-    );
-    let manifest = ProjectManifest::parse_toml(
-        r#"[package]
-name = "style-project"
-"#,
-    )
-    .expect("valid project manifest");
-    let project = ProjectSources::new(
-        PathBuf::from("arcw.toml"),
-        PathBuf::new(),
-        manifest,
-        [
-            ProjectSourceFile::new(
-                CanonicalModulePath::crate_root(),
-                PathBuf::from("src/main.arcw"),
-                Arc::new(
-                    SourceDocument::try_new(
-                        SourceDocumentId::try_new("src/main.arcw").expect("root document id"),
-                        SourceName::path("src/main.arcw"),
-                        root_source,
-                    )
-                    .expect("root document"),
-                ),
-                [ModuleDependency::new(child.clone())],
-            ),
-            ProjectSourceFile::new(
-                child.clone(),
-                PathBuf::from("src/child.arcw"),
-                Arc::new(
-                    SourceDocument::try_new(
-                        SourceDocumentId::try_new("src/child.arcw").expect("child document id"),
-                        SourceName::path("src/child.arcw"),
-                        child_source,
-                    )
-                    .expect("child document"),
-                ),
-                [],
-            ),
-        ],
-    )
-    .expect("valid source inventory");
+    let (project, child) = project_with_equal_local_style_patch_ranges();
     let context = project_context(&project);
     let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
         .expect("linked Style project compiles");
@@ -329,6 +262,84 @@ name = "style-project"
             ))]
         );
     }
+}
+
+fn project_with_equal_local_style_patch_ranges() -> (ProjectSources, CanonicalModulePath) {
+    let child = CanonicalModulePath::from_segments([
+        ModuleSegment::new("child").expect("valid module segment")
+    ]);
+    let root_body = r#"pub view Root() {
+    Button("Root").style { opacity = 800milli }
+}
+"#;
+    let child_source = r#"mod child
+
+pub view Child() {
+    Button("Child").style { opacity = 700milli }
+}
+"#;
+    let root_style_offset = root_body.find(".style").expect("root inline Style site");
+    let child_style_offset = child_source
+        .find(".style")
+        .expect("child inline Style site");
+    let root_source = format!(
+        "{}{}",
+        " ".repeat(child_style_offset - root_style_offset),
+        root_body
+    );
+    assert_eq!(
+        root_source.find(".style"),
+        child_source.find(".style"),
+        "fixture must exercise equal module-local Style ranges"
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        PackageSpec {
+            id: PackageId::new("org.arcweft.style-project").expect("package ID"),
+            version: PackageVersion::new("0.1.0").expect("package version"),
+        },
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://style-project/arcw.toml")
+                    .expect("manifest document ID"),
+                SourceName::path("arcw.toml"),
+                "schema = 1\n[package]\nid = \"org.arcweft.style-project\"\nversion = \"0.1.0\"\n",
+            )
+            .expect("manifest document"),
+        ),
+        [
+            ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                Arc::new(
+                    SourceDocument::try_new(
+                        SourceDocumentId::try_new("src/main.arcw").expect("root document id"),
+                        SourceName::path("src/main.arcw"),
+                        root_source,
+                    )
+                    .expect("root document"),
+                ),
+                [ModuleDependency::new(child.clone())],
+            ),
+            ProjectSourceFile::new(
+                child.clone(),
+                PathBuf::from("src/child.arcw"),
+                Arc::new(
+                    SourceDocument::try_new(
+                        SourceDocumentId::try_new("src/child.arcw").expect("child document id"),
+                        SourceName::path("src/child.arcw"),
+                        child_source,
+                    )
+                    .expect("child document"),
+                ),
+                [],
+            ),
+        ],
+    )
+    .expect("valid source inventory");
+    (project, child)
 }
 
 fn styled_producer_ranges(hir: &HirModule, view: &PublicId) -> Vec<TextRange> {

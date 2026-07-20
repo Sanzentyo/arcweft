@@ -3,6 +3,7 @@ use core::time::Duration;
 
 mod character_dialogue;
 mod inline_failure;
+mod presentation_profile;
 
 pub use character_dialogue::{
     CharacterDialogue, CharacterDialogueCleanupValue, CharacterDialogueConfig,
@@ -19,6 +20,7 @@ pub use character_dialogue::{
 pub use inline_failure::{
     FallbackStylePolicy, InlineFailurePolicy, InlineFallback, InlineTextFailure,
 };
+pub use presentation_profile::DialoguePresentationProfile;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueContent {

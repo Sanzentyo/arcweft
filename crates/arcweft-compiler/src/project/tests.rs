@@ -11,7 +11,8 @@ use arcweft_lang_syntax::ast::{
     symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
 };
 use arcweft_lang_syntax::{lint::SyntaxLintCode, parser::recovery::ParseErrorKind};
-use arcweft_project::{manifest::ProjectManifest, sources::ProjectSourceFile};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::ProjectSourceFile;
 use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
 use std::path::PathBuf;
 
@@ -29,7 +30,9 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
-        ProjectManifest::parse_toml("[package]\nname = \"removed-role\"\n").expect("manifest"),
+        package("org.arcweft.removed-role"),
+        BuildSpec::default(),
+        manifest_document("removed-role"),
         [ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             source_path,
@@ -54,6 +57,25 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
         Vec::new(),
     );
     (project, context)
+}
+
+fn package(id: &str) -> PackageSpec {
+    PackageSpec {
+        id: PackageId::new(id).expect("package ID"),
+        version: PackageVersion::new("0.1.0").expect("package version"),
+    }
+}
+
+fn manifest_document(name: &str) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("arcweft-project://{name}/arcw.toml"))
+                .expect("manifest document ID"),
+            SourceName::path("arcw.toml"),
+            format!("schema = 1\n[package]\nid = \"org.arcweft.{name}\"\nversion = \"0.1.0\"\n"),
+        )
+        .expect("manifest document"),
+    )
 }
 
 #[test]
@@ -316,8 +338,9 @@ fn pending_stores_discard_on_registration_error() {
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
-        ProjectManifest::parse_toml("[package]\nname = \"compiler-registration\"\n")
-            .expect("manifest"),
+        package("org.arcweft.compiler-registration"),
+        BuildSpec::default(),
+        manifest_document("compiler-registration"),
         [ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             source_path.clone(),

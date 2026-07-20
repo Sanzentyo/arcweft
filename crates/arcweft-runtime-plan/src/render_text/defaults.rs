@@ -95,6 +95,16 @@ impl DialogueDisplayDefaults {
         Ok(defaults)
     }
 
+    pub(crate) fn with_inline_failure_policy(
+        mut self,
+        policy: Option<&InlineFailurePolicy>,
+    ) -> Self {
+        if let Some(policy) = policy {
+            self.global.default_inline_failure_policy = Some(policy.clone());
+        }
+        self
+    }
+
     pub(crate) fn character_for_callee(&self, callee: &str) -> Option<&DialogueStyleDefaults> {
         character_callee_keys(callee)
             .into_iter()

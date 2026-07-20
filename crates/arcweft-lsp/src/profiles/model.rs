@@ -6,7 +6,7 @@ use super::{
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_character::catalog::CharacterCatalog;
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_launch::ResolvedLaunchProfile;
+use arcweft_launch::resolve::ResolvedLaunchProfile;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use arcweft_source::{SourceDocument, SourceDocumentIdentity};
 use arcweft_verify_lsp::{ArcweftLspContext, ArcweftLspProfileContextBuilder};
@@ -23,8 +23,6 @@ pub struct LspProfile {
     pub(super) adapter: AdapterManifest,
     pub(super) declared_manifests: Vec<AdapterManifest>,
     pub(super) runner: RuntimeHostRunnerKind,
-    pub(super) dialogue_defaults: Option<String>,
-    pub(super) dialogue_defaults_selection: Option<ProfileSourceSelection>,
     pub(super) entry_selection: Option<ProfileSourceSelection>,
     pub(super) entry_selections: Vec<(String, ProfileSourceSelection)>,
     pub(super) characters: CharacterCatalog,
@@ -49,8 +47,6 @@ impl LspProfile {
             adapter,
             declared_manifests: Vec::new(),
             runner,
-            dialogue_defaults: None,
-            dialogue_defaults_selection: None,
             entry_selection: None,
             entry_selections: Vec::new(),
             characters: CharacterCatalog::default(),
@@ -67,8 +63,6 @@ impl LspProfile {
             adapter: standard::sans_io_manifest(),
             declared_manifests: Vec::new(),
             runner,
-            dialogue_defaults: None,
-            dialogue_defaults_selection: None,
             entry_selection: None,
             entry_selections: Vec::new(),
             characters: CharacterCatalog::default(),
@@ -106,11 +100,6 @@ impl LspProfile {
         &self.diagnostics
     }
 
-    /// Dialogue defaults profile selected by the launch profile, if any.
-    pub fn dialogue_defaults(&self) -> Option<&str> {
-        self.dialogue_defaults.as_deref()
-    }
-
     /// Character manifests selected by the active launch profile.
     pub const fn characters(&self) -> &CharacterCatalog {
         &self.characters
@@ -129,11 +118,6 @@ impl LspProfile {
     /// Shared accepted-environment state used by profile rebuilds.
     pub fn state(&self) -> &Arc<LspProfileState> {
         &self.state
-    }
-
-    /// Source location of the launch profile's `dialogue_defaults` selection.
-    pub fn dialogue_defaults_selection(&self) -> Option<&ProfileSourceSelection> {
-        self.dialogue_defaults_selection.as_ref()
     }
 
     /// Source location of the launch profile's canonical `entry` value.

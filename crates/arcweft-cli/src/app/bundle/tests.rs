@@ -19,6 +19,16 @@ mod scroll_style;
 mod view_part_recovery;
 mod view_sidecars;
 
+fn image_declaration_document(source: &str) -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-test://bundle-image-declaration")
+            .expect("test source identity"),
+        SourceName::path("bundle-image-declaration.arcw"),
+        source,
+    )
+    .expect("test source document")
+}
+
 fn image_await(id: &str) -> FlowOp {
     FlowOp::Await {
         binding: None,
@@ -335,15 +345,16 @@ fn launch_profile_compiles_without_enumerating_default_source_root() {
     fs::write(
         &manifest_path,
         r#"
-default = "main"
+schema = 1
+default-profile = "main"
 
 [package]
-name = "launch-only"
+id = "org.arcweft.test.launch-only"
 version = "0.1.0"
 
 [profiles.main]
 kind = "cli"
-entry = "entry.main"
+entry = "@entry.main"
 source = "demo.arcw"
 "#,
     )
@@ -366,7 +377,7 @@ source = "demo.arcw"
         selection
             .package_identity()
             .expect("package identity resolves"),
-        "launch-only"
+        "org.arcweft.test.launch-only"
     );
     super::super::project::load_and_check_selection(&selection, None)
         .expect("launch profile compiles its selected source directly");
@@ -848,7 +859,7 @@ fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
     )
     .expect("modern feedback view profile resolves");
     let mut phases = Vec::new();
-    let semantic = semantic_context_for_selection(&selection, None, &mut phases)
+    let semantic = semantic_context_for_selection(&selection, None)
         .expect("modern feedback project semantic context loads");
     let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)
         .expect("modern feedback project compiles through the canonical profile path");
@@ -2174,8 +2185,14 @@ fn project_bundle_for_selection_attaches_product_awbc_before_awfb_encoding() {
     fs::write(
         &manifest_path,
         r#"
+schema = 1
+
 [package]
-name = "product_awbc_builder"
+id = "org.arcweft.test.product-awbc-builder"
+version = "0.1.0"
+
+[build]
+source-dir = "src"
 "#,
     )
     .expect("temporary manifest writes");
@@ -2211,7 +2228,7 @@ flow main {
 }
 
 #[test]
-fn project_bundle_uses_manifest_resource_roots_and_project_local_state() {
+fn project_bundle_uses_schema_one_asset_root_and_project_local_state() {
     let unique = format!(
         "arcweft-project-resource-roots-{}-{}",
         std::process::id(),
@@ -2222,10 +2239,10 @@ fn project_bundle_uses_manifest_resource_roots_and_project_local_state() {
     );
     let root = std::env::temp_dir().join(unique);
     let source_root = root.join("src");
-    let custom_asset_root = root.join("game-assets").join("bg");
+    let asset_root = root.join("assets").join("bg");
     let state_root = root.join(".arcweft").join("save");
     fs::create_dir_all(&source_root).expect("temporary project source directory");
-    fs::create_dir_all(&custom_asset_root).expect("custom asset directory");
+    fs::create_dir_all(&asset_root).expect("project asset directory");
     fs::create_dir_all(&state_root).expect("project state directory");
     fs::create_dir_all(source_root.join(".arcweft/save")).expect("source-local legacy state");
     let manifest_path = root.join("arcw.toml");
@@ -2233,12 +2250,14 @@ fn project_bundle_uses_manifest_resource_roots_and_project_local_state() {
     fs::write(
         &manifest_path,
         r#"
-[package]
-name = "resource_root_builder"
+schema = 1
 
-[resources]
-asset-dir = "game-assets"
-content-dir = "game-content"
+[package]
+id = "org.arcweft.test.resource-root-builder"
+version = "0.1.0"
+
+[build]
+source-dir = "src"
 "#,
     )
     .expect("temporary manifest writes");
@@ -2252,7 +2271,7 @@ flow main { return "done" }
     )
     .expect("temporary project source writes");
     fs::write(
-        custom_asset_root.join("room.png"),
+        asset_root.join("room.png"),
         sample_image_virtual_file("bg/room.png").bytes,
     )
     .expect("custom asset writes");
@@ -2270,7 +2289,7 @@ flow main { return "done" }
         vec![BundleVirtualFileSpace::Asset, BundleVirtualFileSpace::Save],
         &mut phases,
     )
-    .expect("project bundle uses explicit roots");
+    .expect("project bundle uses schema-one roots");
 
     assert!(
         artifact
@@ -2406,7 +2425,7 @@ fn static_image_asset_refs_collects_line_task_image_calls() {
 
 #[test]
 fn static_image_asset_refs_collects_declared_image_object_assets() {
-    let declarations = parse_declared_image_objects(
+    let document = image_declaration_document(
         r"
 image @image.sample.pulse {
     asset = @asset:.bg.pulse
@@ -2419,6 +2438,7 @@ image @image.sample.pulse {
 }
 ",
     );
+    let declarations = parse_declared_image_objects(&document);
 
     assert_eq!(
         static_image_asset_refs(&plan_with_ops(Vec::new()), &declarations),
@@ -2428,7 +2448,7 @@ image @image.sample.pulse {
 
 #[test]
 fn bundle_image_objects_collect_declared_bounds_and_opacity() {
-    let declarations = parse_declared_image_objects(
+    let document = image_declaration_document(
         r"
 image @image.sample.pulse {
     asset = @asset:.bg.pulse
@@ -2460,8 +2480,9 @@ image @image.sample.pulse {
 }
 ",
     );
+    let declarations = parse_declared_image_objects(&document);
 
-    let objects = bundle_image_objects(&declarations).expect("image object metadata");
+    let objects = bundle_image_objects(&declarations, &document).expect("image object metadata");
 
     assert_eq!(
         objects,
@@ -2527,7 +2548,7 @@ image @image.sample.pulse {
 
 #[test]
 fn bundle_image_objects_ignore_unknown_declaration_fields() {
-    let declarations = parse_declared_image_objects(
+    let document = image_declaration_document(
         r"
 image @image.sample.unknown_fields {
     asset = @asset:.bg.poster
@@ -2540,8 +2561,9 @@ image @image.sample.unknown_fields {
 }
 ",
     );
+    let declarations = parse_declared_image_objects(&document);
 
-    let objects = bundle_image_objects(&declarations).expect("image object metadata");
+    let objects = bundle_image_objects(&declarations, &document).expect("image object metadata");
     let object = objects.first().expect("declared image object");
 
     assert_eq!(

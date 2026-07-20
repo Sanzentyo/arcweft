@@ -201,6 +201,24 @@ impl SourceDocument {
             range,
         })
     }
+
+    /// Zero-width span at the beginning of this exact document revision.
+    #[must_use]
+    pub fn start_span(&self) -> SourceSpan {
+        SourceSpan {
+            source: Arc::clone(&self.identity),
+            range: SourceRange::new(0, 0),
+        }
+    }
+
+    /// Zero-width span immediately after the final byte of this exact document revision.
+    #[must_use]
+    pub fn end_span(&self) -> SourceSpan {
+        SourceSpan {
+            source: Arc::clone(&self.identity),
+            range: SourceRange::new(self.text.len(), self.text.len()),
+        }
+    }
 }
 
 /// Byte range permanently bound to one exact source document revision.
@@ -364,6 +382,21 @@ mod tests {
             document("manifest", "abc").span(SourceRange::new(2, 1)),
             Err(SourceSpanError::Reversed)
         );
+    }
+
+    #[test]
+    fn boundary_spans_preserve_exact_multibyte_revision() {
+        let source = document("manifest", "aéz");
+        let start = source.start_span();
+        let end = source.end_span();
+
+        assert_eq!(start.range(), SourceRange::new(0, 0));
+        assert_eq!(
+            end.range(),
+            SourceRange::new(source.text().len(), source.text().len())
+        );
+        assert_eq!(start.source(), source.identity());
+        assert_eq!(end.source(), source.identity());
     }
 
     #[test]

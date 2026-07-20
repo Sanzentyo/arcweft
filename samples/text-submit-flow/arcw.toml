@@ -1,7 +1,9 @@
+schema = 1
+
 [package]
-name = "text-submit-flow"
+id = "org.arcweft.samples.text-submit-flow"
 version = "0.1.0"
 
-[launch.main]
+[profiles.main]
 kind = "game"
 source = "src/main.arcw"

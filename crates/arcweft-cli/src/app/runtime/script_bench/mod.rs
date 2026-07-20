@@ -51,12 +51,12 @@ pub(in crate::app) fn script_bench_selection(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
+    );
     let mut phases = Vec::new();
-    let semantic = semantic_context_for_selection(selection, None, &mut phases)?;
+    let semantic = semantic_context_for_selection(selection, None)?;
     let compiled = compile_profile_runtime_plan(selection, &semantic, &mut phases)?;
     let host_policy = native_host_policy_for_selection(selection)?;
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let manifest = collect_script_tests(&compiled.hir);
     let pure_helpers =
         lower_source_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);

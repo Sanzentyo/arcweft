@@ -51,8 +51,11 @@ fn release_project_diagnostics_reject_dynamic_goto() {
     fs::write(
         root.join("arcw.toml"),
         r#"
+schema = 1
+
 [package]
-name = "release_dynamic_goto"
+id = "org.arcweft.test.release-dynamic-goto"
+version = "0.1.0"
 "#,
     )
     .expect("manifest writes");
@@ -262,8 +265,11 @@ fn cache_test_project(label: &str) -> (PathBuf, ProfileOptions) {
     fs::write(
         root.join("arcw.toml"),
         r#"
+schema = 1
+
 [package]
-name = "cache_persistent_query"
+id = "org.arcweft.test.cache-persistent-query"
+version = "0.1.0"
 "#,
     )
     .expect("manifest writes");

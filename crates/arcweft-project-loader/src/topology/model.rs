@@ -1,17 +1,23 @@
 use super::{ProfileTopologyLogicalPath, ProfileTopologyOwnerId, ProfileTopologyResourceId};
 use crate::{
-    adapter_manifest::{self, LoadedAdapterManifest},
-    character_manifest, project,
-    rust_metadata::{self, LoadedRustMetadata},
+    character_manifest,
+    layout::{ContainedProjectLayout, ProjectLayoutContainmentError},
+    project,
 };
 use arcweft_adapter_context::manifest::{
-    AdapterCallableModelError, AdapterManifest, AdapterRegistry, AdapterRegistryError,
+    AdapterCallableModelError, AdapterManifest, AdapterRegistry, AdapterSymbolPathError,
 };
+use arcweft_adapter_metadata::SourceBackedAdapterMetadata;
 use arcweft_lang_sema::registration::CharacterDefinitionLimits;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_launch::{
-    LaunchDocumentError, LaunchProfileError, LaunchProfileSelection, ResolvedLaunchProfile,
+    LaunchProfileSelection, accepted::SourceBackedManifest, diagnostic::ManifestReport,
+    resolve::ResolvedLaunchProfile,
 };
+use arcweft_manifest_model::{
+    ActivityId, AdapterExportId, ExternalModuleImportId, ExternalModuleImportSpec,
+};
+use arcweft_project::layout::ProjectLayoutSpec;
 use arcweft_source::{
     MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentId, SourceSetRevision, SourceSpan,
 };
@@ -41,10 +47,15 @@ pub enum LoadedDocumentAccess {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProfileTopologyResourceKind {
     Manifest,
-    ArcweftModule { module: CanonicalModulePath },
-    CharacterManifest,
-    AdapterManifest,
-    RustMetadata,
+    ArcweftModule {
+        module: CanonicalModulePath,
+    },
+    CharacterPackageManifest {
+        character: arcweft_character::id::CharacterId,
+    },
+    ExternalModuleMetadata {
+        import: ExternalModuleImportId,
+    },
 }
 
 /// Authority that supplied the exact retained bytes.
@@ -201,6 +212,7 @@ pub struct ProfileTopologyLoadRequest<'a> {
     pub(super) overlays: &'a [ProfileTopologyOverlaySeed],
     pub(super) dependency_resources: &'a [ProfileDependencyResourceSeed],
     pub(super) base_adapters: AdapterRegistry,
+    pub(super) layout: ProjectLayoutSpec,
 }
 
 impl<'a> ProfileTopologyLoadRequest<'a> {
@@ -218,6 +230,7 @@ impl<'a> ProfileTopologyLoadRequest<'a> {
             overlays,
             dependency_resources: &[],
             base_adapters,
+            layout: ProjectLayoutSpec::default(),
         }
     }
 
@@ -229,31 +242,80 @@ impl<'a> ProfileTopologyLoadRequest<'a> {
         self.dependency_resources = resources;
         self
     }
+
+    #[must_use]
+    pub fn with_layout(mut self, layout: ProjectLayoutSpec) -> Self {
+        self.layout = layout;
+        self
+    }
 }
 
 /// Complete immutable product of one bounded topology transaction.
 #[derive(Clone, Debug)]
 pub struct LoadedProfileTopology {
     loaded_project: project::LoadedProject,
+    manifest: Arc<SourceBackedManifest>,
     selected_profile: ResolvedLaunchProfile,
-    adapter_sources: Arc<[LoadedAdapterManifest]>,
+    layout: ContainedProjectLayout,
+    external_modules: Arc<[LoadedExternalModuleMetadata]>,
     adapter: AdapterManifest,
     registration_adapter_manifests: Arc<[AdapterManifest]>,
-    rust_metadata_sources: Arc<[LoadedRustMetadata]>,
     resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
     consumed_overlay_ids: Arc<[ProfileTopologyResourceId]>,
     source_revision: SourceSetRevision,
     work: u64,
 }
 
+/// One selected generated-module document after exact hash and identity checks.
+#[derive(Clone, Debug)]
+pub struct LoadedExternalModuleMetadata {
+    import_id: ExternalModuleImportId,
+    import: ExternalModuleImportSpec,
+    document: Arc<SourceDocument>,
+    metadata: SourceBackedAdapterMetadata,
+}
+
+impl LoadedExternalModuleMetadata {
+    pub(super) fn new(
+        import_id: ExternalModuleImportId,
+        import: ExternalModuleImportSpec,
+        document: Arc<SourceDocument>,
+        metadata: SourceBackedAdapterMetadata,
+    ) -> Self {
+        Self {
+            import_id,
+            import,
+            document,
+            metadata,
+        }
+    }
+
+    pub const fn import_id(&self) -> &ExternalModuleImportId {
+        &self.import_id
+    }
+
+    pub const fn import(&self) -> &ExternalModuleImportSpec {
+        &self.import
+    }
+
+    pub const fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
+    }
+
+    pub const fn metadata(&self) -> &SourceBackedAdapterMetadata {
+        &self.metadata
+    }
+}
+
 impl LoadedProfileTopology {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         loaded_project: project::LoadedProject,
+        manifest: Arc<SourceBackedManifest>,
         selected_profile: ResolvedLaunchProfile,
-        adapter_sources: Vec<LoadedAdapterManifest>,
+        layout: ContainedProjectLayout,
+        external_modules: Vec<LoadedExternalModuleMetadata>,
         adapter: AdapterManifest,
-        rust_metadata_sources: Vec<LoadedRustMetadata>,
         resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
         consumed_overlay_ids: Vec<ProfileTopologyResourceId>,
         source_revision: SourceSetRevision,
@@ -262,11 +324,12 @@ impl LoadedProfileTopology {
         let registration_adapter_manifests = Arc::from([adapter.clone()]);
         Self {
             loaded_project,
+            manifest,
             selected_profile,
-            adapter_sources: adapter_sources.into(),
+            layout,
+            external_modules: external_modules.into(),
             adapter,
             registration_adapter_manifests,
-            rust_metadata_sources: rust_metadata_sources.into(),
             resources,
             consumed_overlay_ids: consumed_overlay_ids.into(),
             source_revision,
@@ -282,8 +345,16 @@ impl LoadedProfileTopology {
         &self.selected_profile
     }
 
-    pub fn adapter_sources(&self) -> &[LoadedAdapterManifest] {
-        &self.adapter_sources
+    pub const fn manifest(&self) -> &Arc<SourceBackedManifest> {
+        &self.manifest
+    }
+
+    pub const fn layout(&self) -> &ContainedProjectLayout {
+        &self.layout
+    }
+
+    pub fn external_modules(&self) -> &[LoadedExternalModuleMetadata] {
+        &self.external_modules
     }
 
     pub const fn adapter(&self) -> &AdapterManifest {
@@ -292,10 +363,6 @@ impl LoadedProfileTopology {
 
     pub fn registration_adapter_manifests(&self) -> &[AdapterManifest] {
         &self.registration_adapter_manifests
-    }
-
-    pub fn rust_metadata_sources(&self) -> &[LoadedRustMetadata] {
-        &self.rust_metadata_sources
     }
 
     pub fn resources(&self) -> impl ExactSizeIterator<Item = &LoadedProfileTopologyResource> {
@@ -368,8 +435,8 @@ pub enum ProfileTopologyErrorCode {
     ManifestNotFound,
     ResourceRead,
     ResourceUtf8,
-    ProjectManifest,
-    LaunchManifest,
+    Manifest,
+    ProjectLayout,
     ProfileSelection,
     UnownedResourcePath,
     DuplicateLogicalId,
@@ -378,10 +445,8 @@ pub enum ProfileTopologyErrorCode {
     ModuleDeclaration,
     ModuleImport,
     CharacterManifest,
-    AdapterManifest,
-    DuplicateAdapterId,
     AdapterSelection,
-    RustMetadata,
+    ExternalModuleMetadata,
     DependencySeed,
     Limit,
     ArithmeticOverflow,
@@ -400,10 +465,148 @@ pub enum ProfileTopologySeedError {
     LogicalPathMismatch { expected: String, actual: String },
     #[error("dependency relative path `{path}` is not valid UTF-8")]
     NonUtf8 { path: PathBuf },
+    #[error("topology path `{path}` cannot be represented as a logical resource path: {source}")]
+    LogicalPath {
+        path: PathBuf,
+        #[source]
+        source: super::ProfileTopologyPathError,
+    },
     #[error("overlay path `{path}` occurs more than once")]
     DuplicateOverlayPath { path: PathBuf },
     #[error("dependency seed path `{path}` and role occur more than once")]
     DuplicateDependencySeed { path: PathBuf },
+}
+
+/// Failure while projecting accepted generated metadata into mounted project facts.
+#[derive(Debug, Error)]
+pub enum ExternalModuleFactsError {
+    #[error(
+        "Activity binding `{activity}` selects generated import `{import}` that was not admitted"
+    )]
+    ActivityImportMissing {
+        activity: ActivityId,
+        import: ExternalModuleImportId,
+    },
+    #[error(
+        "generated import `{import}` has an invalid mounted symbol for export `{export}`: {source}"
+    )]
+    Symbol {
+        import: ExternalModuleImportId,
+        export: String,
+        #[source]
+        source: AdapterSymbolPathError,
+    },
+    #[error(
+        "generated import `{import}` has an invalid mounted callable for export `{export}`: {source}"
+    )]
+    Callable {
+        import: ExternalModuleImportId,
+        export: String,
+        #[source]
+        source: AdapterCallableModelError,
+    },
+    #[error(
+        "generated import `{import}` export `{export}` has unsupported type reference `{reference}`"
+    )]
+    TypeReference {
+        import: ExternalModuleImportId,
+        export: String,
+        reference: String,
+    },
+    #[error(
+        "generated import `{import}` export `{export}` type reference exceeded its {kind:?} limit: observed {observed}, maximum {maximum}"
+    )]
+    TypeReferenceLimit {
+        import: ExternalModuleImportId,
+        export: String,
+        kind: TypeReferenceLimitKind,
+        observed: usize,
+        maximum: usize,
+    },
+    #[error("generated mounted identity `{identity}` occurs more than once")]
+    DuplicateMountedIdentity { identity: String },
+    #[error(
+        "generated import `{import}` function `{function}` declares purity `{purity}` inconsistent with its effects"
+    )]
+    FunctionPurity {
+        import: ExternalModuleImportId,
+        function: String,
+        purity: &'static str,
+    },
+    #[error(
+        "Activity binding `{activity}` selects missing export `{export}` from generated import `{import}`"
+    )]
+    ActivityExportMissing {
+        activity: ActivityId,
+        import: ExternalModuleImportId,
+        export: AdapterExportId,
+    },
+    #[error(
+        "Activity binding `{expected}` selects generated export `{export}` from import `{import}`, but that export declares `{actual}`"
+    )]
+    ActivityIdentityMismatch {
+        import: ExternalModuleImportId,
+        export: AdapterExportId,
+        expected: ActivityId,
+        actual: ActivityId,
+    },
+    #[error("generated module projection lost its adapter while {operation}")]
+    ProjectionState { operation: &'static str },
+}
+
+impl ExternalModuleFactsError {
+    pub(super) fn callable(
+        import: &ExternalModuleImportId,
+        export: &str,
+        source: AdapterCallableModelError,
+    ) -> Self {
+        Self::Callable {
+            import: import.clone(),
+            export: export.to_owned(),
+            source,
+        }
+    }
+}
+
+/// Explicit resource limits for projecting one generated type reference.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TypeReferenceLimits {
+    bytes: usize,
+    nesting_depth: usize,
+    work: usize,
+}
+
+impl TypeReferenceLimits {
+    /// Production envelope for one generated callable type reference.
+    pub const PRODUCTION: Self = Self::new(4_096, 64, 1_024);
+
+    pub const fn new(bytes: usize, nesting_depth: usize, work: usize) -> Self {
+        Self {
+            bytes,
+            nesting_depth,
+            work,
+        }
+    }
+
+    pub const fn bytes(self) -> usize {
+        self.bytes
+    }
+
+    pub const fn nesting_depth(self) -> usize {
+        self.nesting_depth
+    }
+
+    pub const fn work(self) -> usize {
+        self.work
+    }
+}
+
+/// Counter whose inclusive generated type-reference limit was exceeded.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeReferenceLimitKind {
+    Bytes,
+    NestingDepth,
+    Work,
 }
 
 /// Fatal failure of one all-or-nothing topology transaction.
@@ -413,34 +616,34 @@ pub enum ProfileTopologyLoadError {
     ManifestNotFound { path: PathBuf },
     #[error("failed to read topology resource `{path}`: {source}")]
     ResourceRead {
-        id: ProfileTopologyResourceId,
+        id: Box<ProfileTopologyResourceId>,
+        kind: ProfileTopologyResourceKind,
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
     #[error("topology resource `{path}` is not valid UTF-8")]
     ResourceUtf8 {
-        id: ProfileTopologyResourceId,
+        id: Box<ProfileTopologyResourceId>,
+        kind: ProfileTopologyResourceKind,
         path: PathBuf,
     },
-    #[error("failed to parse project manifest `{path}`: {source}")]
-    ProjectManifest {
-        id: ProfileTopologyResourceId,
+    #[error("failed to decode manifest `{path}`: {source}")]
+    Manifest {
+        id: Box<ProfileTopologyResourceId>,
         path: PathBuf,
         #[source]
-        source: Box<arcweft_project::manifest::ProjectManifestError>,
-    },
-    #[error("failed to parse source-backed launch manifest `{path}`: {source}")]
-    LaunchManifest {
-        id: ProfileTopologyResourceId,
-        path: PathBuf,
-        #[source]
-        source: Box<LaunchDocumentError>,
+        source: ManifestReport,
     },
     #[error("failed to select or resolve a launch profile: {source}")]
     ProfileSelection {
         #[source]
-        source: LaunchProfileError,
+        source: ManifestReport,
+    },
+    #[error("failed to contain the project layout: {source}")]
+    ProjectLayout {
+        #[source]
+        source: ProjectLayoutContainmentError,
     },
     #[error("topology path `{path}` is not owned by the workspace or an exact dependency seed")]
     UnownedResourcePath {
@@ -452,7 +655,7 @@ pub enum ProfileTopologyLoadError {
         first: Box<LoadedProfileTopologyResource>,
         conflicting: Box<LoadedProfileTopologyResource>,
     },
-    #[error("topology path is claimed by distinct logical IDs")]
+    #[error("topology path is claimed by distinct resources")]
     DuplicatePath {
         first: Box<LoadedProfileTopologyResource>,
         conflicting: Box<LoadedProfileTopologyResource>,
@@ -486,29 +689,41 @@ pub enum ProfileTopologyLoadError {
         #[source]
         source: Box<character_manifest::LoadError>,
     },
-    #[error("failed to decode adapter manifest `{path}`: {source}")]
-    AdapterManifest {
-        id: ProfileTopologyResourceId,
-        path: PathBuf,
+    #[error("invalid character content root `{reference}`: {source}")]
+    CharacterReference {
+        reference: String,
         #[source]
-        source: Box<adapter_manifest::LoadError>,
+        source: arcweft_character::id::CharacterIdError,
     },
-    #[error(transparent)]
-    DuplicateAdapterId(#[from] AdapterRegistryError),
+    #[error("character package `{path}` declares `{actual}`, but content selected `{expected}`")]
+    CharacterIdentityMismatch {
+        path: PathBuf,
+        expected: arcweft_character::id::CharacterId,
+        actual: arcweft_character::id::CharacterId,
+    },
     #[error("selected adapter `{id}` was not found in the complete checked registry")]
     AdapterSelection { id: String },
-    #[error("failed to decode Rust metadata `{path}`: {source}")]
-    RustMetadata {
-        id: ProfileTopologyResourceId,
+    #[error("generated metadata `{path}` raw hash does not match import `{import}`")]
+    ExternalModuleMetadataHash {
+        import: ExternalModuleImportId,
+        path: PathBuf,
+    },
+    #[error("failed to decode generated metadata `{path}` for import `{import}`: {source}")]
+    ExternalModuleMetadataDecode {
+        import: ExternalModuleImportId,
         path: PathBuf,
         #[source]
-        source: Box<rust_metadata::LoadError>,
+        source: arcweft_adapter_metadata::AdapterMetadataCodecError,
     },
-    #[error("Rust metadata `{path}` contains an invalid callable: {source}")]
-    RustCallableModel {
-        path: PathBuf,
-        source: AdapterCallableModelError,
+    #[error("generated metadata import `{import}` expected {field} `{expected}`, found `{actual}`")]
+    ExternalModuleMetadataExpectation {
+        import: ExternalModuleImportId,
+        field: &'static str,
+        expected: String,
+        actual: String,
     },
+    #[error(transparent)]
+    ExternalModuleFacts(#[from] ExternalModuleFactsError),
     #[error("invalid dependency or overlay seed: {source}")]
     DependencySeed {
         #[source]
@@ -530,22 +745,23 @@ impl ProfileTopologyLoadError {
             Self::ManifestNotFound { .. } => ProfileTopologyErrorCode::ManifestNotFound,
             Self::ResourceRead { .. } => ProfileTopologyErrorCode::ResourceRead,
             Self::ResourceUtf8 { .. } => ProfileTopologyErrorCode::ResourceUtf8,
-            Self::ProjectManifest { .. } => ProfileTopologyErrorCode::ProjectManifest,
-            Self::LaunchManifest { .. } => ProfileTopologyErrorCode::LaunchManifest,
+            Self::Manifest { .. } => ProfileTopologyErrorCode::Manifest,
             Self::ProfileSelection { .. } => ProfileTopologyErrorCode::ProfileSelection,
+            Self::ProjectLayout { .. } => ProfileTopologyErrorCode::ProjectLayout,
             Self::UnownedResourcePath { .. } => ProfileTopologyErrorCode::UnownedResourcePath,
             Self::DuplicateLogicalId { .. } => ProfileTopologyErrorCode::DuplicateLogicalId,
             Self::DuplicatePath { .. } => ProfileTopologyErrorCode::DuplicatePath,
             Self::ModuleSyntax { .. } => ProfileTopologyErrorCode::ModuleSyntax,
             Self::ModuleDeclaration { .. } => ProfileTopologyErrorCode::ModuleDeclaration,
             Self::ModuleImport { .. } => ProfileTopologyErrorCode::ModuleImport,
-            Self::CharacterManifest { .. } => ProfileTopologyErrorCode::CharacterManifest,
-            Self::AdapterManifest { .. } => ProfileTopologyErrorCode::AdapterManifest,
-            Self::DuplicateAdapterId(_) => ProfileTopologyErrorCode::DuplicateAdapterId,
+            Self::CharacterManifest { .. }
+            | Self::CharacterReference { .. }
+            | Self::CharacterIdentityMismatch { .. } => ProfileTopologyErrorCode::CharacterManifest,
             Self::AdapterSelection { .. } => ProfileTopologyErrorCode::AdapterSelection,
-            Self::RustMetadata { .. } | Self::RustCallableModel { .. } => {
-                ProfileTopologyErrorCode::RustMetadata
-            }
+            Self::ExternalModuleMetadataHash { .. }
+            | Self::ExternalModuleMetadataDecode { .. }
+            | Self::ExternalModuleMetadataExpectation { .. }
+            | Self::ExternalModuleFacts(_) => ProfileTopologyErrorCode::ExternalModuleMetadata,
             Self::DependencySeed { .. } => ProfileTopologyErrorCode::DependencySeed,
             Self::Limit { .. } => ProfileTopologyErrorCode::Limit,
             Self::ArithmeticOverflow { .. } => ProfileTopologyErrorCode::ArithmeticOverflow,

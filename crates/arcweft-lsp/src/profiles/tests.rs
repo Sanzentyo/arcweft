@@ -1,10 +1,7 @@
 use super::state::LspProfileState;
 use super::*;
+use arcweft_manifest_model::RawDigest;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
-use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
-    ArcweftRustPurity, ArcweftRustTypeRef,
-};
 use std::{
     fs::{self, create_dir_all, write},
     path::{Component, PathBuf},
@@ -12,62 +9,18 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const TRUCK_METADATA: &str =
+    include_str!("../../../arcweft-adapter-metadata/tests/fixtures/truck-rust.adapter.json");
+
 #[test]
-fn resolves_project_profile_adapter_and_rust_metadata() {
+fn resolves_project_profile_and_external_module_metadata() {
     let project = TestProject::new("lsp-profile-resolve");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-resolve"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "custom-echo"
-adapter_manifests = ["adapters/custom-echo.toml"]
-rust_metadata = ["target/arcweft/custom.json"]
-"#,
+        &external_module_manifest(TRUCK_METADATA, "generated/truck.adapter.json"),
     );
     project.write("src/main.arcw", "flow @.main main {}\n");
-    project.write(
-        "adapters/custom-echo.toml",
-        r#"
-schema_version = 1
-id = "custom-echo"
-display_name = "Custom Echo"
-
-[[functions]]
-name = "custom.echo"
-return_type = "String"
-params = [{ name = "value", ty = "String" }]
-
-[[host_calls]]
-id = "custom.echo"
-return_type = "Unit"
-"#,
-    );
-    let rust_manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "custom_adapter".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_function(ArcweftRustFunction {
-        name: "custom_score".to_owned(),
-        rust_path: "custom_adapter::score".to_owned(),
-        params: vec![ArcweftRustParam {
-            name: "value".to_owned(),
-            ty: ArcweftRustTypeRef::I32,
-        }],
-        return_type: ArcweftRustTypeRef::I64,
-        purity: ArcweftRustPurity::Pure,
-        effects: Vec::new(),
-    });
-    project.write(
-        "target/arcweft/custom.json",
-        &rust_manifest.to_json_pretty().expect("metadata json"),
-    );
+    project.write("generated/truck.adapter.json", TRUCK_METADATA);
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
     let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
@@ -77,18 +30,14 @@ return_type = "Unit"
         "unexpected diagnostics: {:?}",
         profile.diagnostics()
     );
-    assert_eq!(profile.adapter().id().as_str(), "custom-echo");
-    assert!(profile.adapter().functions().iter().any(|function| {
-        function
+    assert_eq!(profile.adapter().id().as_str(), "sans-io");
+    assert!(profile.adapter().symbols().iter().any(|symbol| {
+        symbol
             .path()
             .segments()
             .iter()
-            .map(arcweft_adapter_context::callable::AdapterCallableName::as_str)
-            .eq(["custom", "echo"])
-    }));
-    assert!(profile.adapter().rust_functions().iter().any(|function| {
-        function.path().segments().len() == 1
-            && function.path().segments()[0].as_str() == "custom_score"
+            .map(arcweft_adapter_context::manifest::AdapterSymbolSegment::as_str)
+            .eq(["mini_games", "truck", "TruckResult"])
     }));
 }
 
@@ -97,16 +46,7 @@ fn failed_rebuild_preserves_generation_and_cache() {
     let project = TestProject::new("lsp-profile-failed-rebuild");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-failed-rebuild"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-"#,
+        &minimal_manifest("lsp-profile-failed-rebuild", "server", ""),
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
@@ -136,35 +76,40 @@ adapter = "sans-io"
 }
 
 #[test]
-fn malformed_adapter_symbol_path_preserves_the_real_accepted_profile_state() {
+fn closed_profile_state_reports_typed_publication_failure_without_mutation() {
+    let project = TestProject::new("lsp-profile-closed-publication");
+    project.write(
+        "arcw.toml",
+        &minimal_manifest("lsp-profile-closed-publication", "server", ""),
+    );
+    project.write("src/main.arcw", "fn main() -> Unit { () }\n");
+    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let state = Arc::new(LspProfileState::new());
+    state.shutdown();
+
+    let profile = resolver
+        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+
+    assert!(state.current().is_none());
+    assert!(
+        profile
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::ProfilePublication),
+        "{:?}",
+        profile.diagnostics(),
+    );
+}
+
+#[test]
+fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
     let project = TestProject::new("lsp-profile-malformed-adapter-path");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-malformed-adapter-path"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "custom-symbols"
-adapter_manifests = ["adapters/custom-symbols.toml"]
-"#,
+        &external_module_manifest(TRUCK_METADATA, "generated/truck.adapter.json"),
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
-    project.write(
-        "adapters/custom-symbols.toml",
-        r#"
-schema_version = 1
-id = "custom-symbols"
-display_name = "Custom Symbols"
-
-[[symbols]]
-name = "adapter.viewport"
-ty = "I32"
-"#,
-    );
+    project.write("generated/truck.adapter.json", TRUCK_METADATA);
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
     let state = Arc::new(LspProfileState::new());
     let first = resolver
@@ -175,26 +120,14 @@ ty = "I32"
     let generation = accepted.generation();
     let cache = accepted.cache_snapshot_for_test();
 
-    project.write(
-        "adapters/custom-symbols.toml",
-        r#"
-schema_version = 1
-id = "custom-symbols"
-display_name = "Custom Symbols"
-
-[[symbols]]
-name = "adapter..viewport"
-ty = "I32"
-"#,
-    );
+    project.write("generated/truck.adapter.json", "{ not valid metadata");
     let failed = resolver
         .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
 
     assert!(
-        failed
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::AdapterManifestParse),
+        failed.diagnostics().iter().any(|diagnostic| {
+            diagnostic.kind() == LspProfileDiagnosticKind::ExternalModuleMetadataParse
+        }),
         "{:?}",
         failed.diagnostics()
     );
@@ -222,92 +155,38 @@ fn missing_manifest_is_reported_without_absolute_path() {
 }
 
 #[test]
-fn adapter_manifest_diagnostic_keeps_profile_relative_resource() {
-    let project = TestProject::new("lsp-profile-adapter-diagnostic");
-    project.write(
-        "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-adapter-diagnostic"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "missing"
-adapter_manifests = ["adapters/missing.toml"]
-"#,
-    );
-    project.write("src/main.arcw", "flow @.main main {}\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let diagnostic = profile
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::AdapterManifestRead)
-        .expect("adapter manifest diagnostic");
-
-    assert_eq!(diagnostic.profile_id(), Some("dev"));
-    assert_eq!(diagnostic.resource(), Some("adapters/missing.toml"));
-    assert!(!diagnostic.message().contains(":/"));
-    assert!(!diagnostic.message().contains(":\\"));
-}
-
-#[test]
-fn invalid_adapter_manifest_diagnostic_keeps_profile_relative_resource() {
-    let project = TestProject::new("lsp-profile-adapter-invalid");
-    project.write(
-        "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-adapter-invalid"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "missing"
-adapter_manifests = ["adapters/bad.toml"]
-"#,
-    );
-    project.write("src/main.arcw", "flow @.main main {}\n");
-    project.write("adapters/bad.toml", "schema_version = ");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let diagnostic = profile
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::AdapterManifestParse)
-        .expect("adapter manifest parse diagnostic");
-
-    assert_eq!(diagnostic.profile_id(), Some("dev"));
-    assert_eq!(diagnostic.resource(), Some("adapters/bad.toml"));
-    assert!(!diagnostic.message().contains(":/"));
-    assert!(!diagnostic.message().contains(":\\"));
-}
-
-#[test]
 fn failed_topology_resource_uses_owner_relative_identity() {
     let project = TestProject::new("lsp-profile-token-map-range");
-    let manifest = r#"
+    let manifest = r#"schema = 1
+
 [package]
-name = "lsp-profile-token-map-range"
+id = "org.arcweft.lsp-profile-token-map-range"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.missing"]
+visibility = "package"
+demand = "required"
 
 [profiles.other]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
-adapter = "sans-io"
-character_manifests = ["assets/missing.awchar"]
+
+[profiles.other.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
 
 [profiles.dev]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
-adapter = "sans-io"
-character_manifests = ["assets/missing.awchar"]
+
+[profiles.dev.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
 "#;
     project.write("arcw.toml", manifest);
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
@@ -328,21 +207,11 @@ character_manifests = ["assets/missing.awchar"]
 }
 
 #[test]
-fn missing_rust_metadata_diagnostic_keeps_profile_relative_resource() {
+fn missing_external_module_metadata_diagnostic_keeps_profile_relative_resource() {
     let project = TestProject::new("lsp-profile-rust-missing");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-rust-missing"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-rust_metadata = ["target/arcweft/missing.json"]
-"#,
+        &external_module_manifest(TRUCK_METADATA, "generated/missing.adapter.json"),
     );
     project.write("src/main.arcw", "flow @.main main {}\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
@@ -351,83 +220,113 @@ rust_metadata = ["target/arcweft/missing.json"]
     let diagnostic = profile
         .diagnostics()
         .iter()
-        .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::RustMetadataRead)
-        .expect("rust metadata read diagnostic");
+        .find(|diagnostic| {
+            diagnostic.kind() == LspProfileDiagnosticKind::ExternalModuleMetadataRead
+        })
+        .expect("external module metadata read diagnostic");
 
     assert_eq!(diagnostic.profile_id(), Some("dev"));
-    assert_eq!(diagnostic.resource(), Some("target/arcweft/missing.json"));
+    assert_eq!(
+        diagnostic.resource(),
+        Some("generated/missing.adapter.json")
+    );
     assert!(!diagnostic.message().contains(":/"));
     assert!(!diagnostic.message().contains(":\\"));
 }
 
 #[test]
-fn invalid_rust_metadata_diagnostic_keeps_profile_relative_resource() {
+fn invalid_external_module_metadata_diagnostic_keeps_profile_relative_resource() {
     let project = TestProject::new("lsp-profile-rust-invalid");
+    let invalid = "{ not json";
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-profile-rust-invalid"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-rust_metadata = ["target/arcweft/bad.json"]
-"#,
+        &external_module_manifest(invalid, "generated/bad.adapter.json"),
     );
     project.write("src/main.arcw", "flow @.main main {}\n");
-    project.write("target/arcweft/bad.json", "{ not json");
+    project.write("generated/bad.adapter.json", invalid);
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
 
     let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
     let diagnostic = profile
         .diagnostics()
         .iter()
-        .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::RustMetadataParse)
-        .expect("rust metadata parse diagnostic");
+        .find(|diagnostic| {
+            diagnostic.kind() == LspProfileDiagnosticKind::ExternalModuleMetadataParse
+        })
+        .expect("external module metadata parse diagnostic");
 
     assert_eq!(diagnostic.profile_id(), Some("dev"));
-    assert_eq!(diagnostic.resource(), Some("target/arcweft/bad.json"));
+    assert_eq!(diagnostic.resource(), Some("generated/bad.adapter.json"));
     assert!(!diagnostic.message().contains(":/"));
     assert!(!diagnostic.message().contains(":\\"));
 }
 
-#[test]
-fn resolves_dialogue_defaults_selection_source_range() {
-    let project = TestProject::new("lsp-profile-dialogue-defaults-selection");
-    let manifest = r#"
+fn minimal_manifest(project: &str, kind: &str, profile_extra: &str) -> String {
+    format!(
+        r#"schema = 1
+
 [package]
-name = "lsp-profile-dialogue-defaults-selection"
+id = "org.arcweft.{project}"
+version = "0.1.0"
 
 [profiles.dev]
-kind = "game"
-entry = "entry.game.main"
+kind = "{kind}"
+entry = "@entry.server.main"
 source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.mobile"
+{profile_extra}
+"#
+    )
+}
 
-[profiles.other]
-kind = "game"
-entry = "entry.game.main"
+fn external_module_manifest(metadata: &str, path: &str) -> String {
+    let decoded = serde_json::from_str::<serde_json::Value>(metadata).ok();
+    let package = decoded
+        .as_ref()
+        .and_then(|value| value["package"]["id"].as_str())
+        .unwrap_or("com.example.truck");
+    let version = decoded
+        .as_ref()
+        .and_then(|value| value["package"]["version"].as_str())
+        .unwrap_or("1.2.3");
+    let module = decoded
+        .as_ref()
+        .and_then(|value| value["module"]["id"].as_str())
+        .unwrap_or("truck");
+    let family = decoded
+        .as_ref()
+        .and_then(|value| value["target"]["family"].as_str())
+        .unwrap_or("rust");
+    let abi_hash = decoded
+        .as_ref()
+        .and_then(|value| value["abi_hash"].as_str())
+        .unwrap_or("blake3:0000000000000000000000000000000000000000000000000000000000000000");
+    let raw_hash = RawDigest::for_bytes(metadata.as_bytes());
+    format!(
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.lsp-profile-external"
+version = "0.1.0"
+
+[external-modules.truck]
+mount = "mini_games.truck"
+metadata = "{path}"
+metadata-hash = "{raw_hash}"
+expected-package = "{package}"
+expected-version = "{version}"
+expected-module = "{module}"
+expected-family = "{family}"
+expected-abi-hash = "{abi_hash}"
+visibility = "package"
+demand = "required"
+
+[profiles.dev]
+kind = "server"
+entry = "@entry.server.main"
 source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.debug"
-"#;
-    project.write("arcw.toml", manifest);
-    project.write("src/main.arcw", "flow @.main main {}\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let selection = profile
-        .dialogue_defaults_selection()
-        .expect("dialogue defaults source selection");
-    let range = selection.value_range();
-
-    assert_eq!(&selection.source()[range.clone()], "dialogue.mobile");
-    assert_eq!(selection.path(), project.path("arcw.toml").as_path());
-    assert!(selection.uri().is_some());
+external-modules = ["truck"]
+"#
+    )
 }
 
 struct TestProject {

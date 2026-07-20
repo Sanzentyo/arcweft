@@ -12,10 +12,8 @@ use arcweft_id::PublicId;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::registration::ProjectRegistrationFacts;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_project::{
-    manifest::ProjectManifest,
-    sources::{ProjectSourceFile, ProjectSources},
-};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
@@ -25,7 +23,7 @@ use crate::{
     source::ParsedReplCell,
 };
 
-const REPL_PACKAGE_NAME: &str = "arcweft-agent-repl";
+const REPL_PACKAGE_NAME: &str = "org.arcweft.tool.agent-repl";
 
 pub(crate) fn compile_repl_cell(
     parsed: &ParsedReplCell,
@@ -37,74 +35,9 @@ pub(crate) fn compile_repl_cell(
             message: error.to_string(),
         }
     })?;
-    let source_path = PathBuf::from(format!("repl/{}.arcw", parsed.synthetic_controller_name));
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new(format!(
-                "arcweft-repl://{}/{}.arcw",
-                base.generation().as_u64(),
-                parsed.synthetic_controller_name
-            ))
-            .map_err(|error| ReplTransactionError::Compile {
-                phase: ReplTransactionPhase::ClassifyParse,
-                message: error.to_string(),
-            })?,
-            SourceName::path(source_path.display().to_string()),
-            parsed.synthetic_source.clone(),
-        )
-        .map_err(|error| ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::ClassifyParse,
-            message: error.to_string(),
-        })?,
-    );
-    let project = ProjectSources::new(
-        PathBuf::from("arcw.toml"),
-        PathBuf::new(),
-        ProjectManifest::parse_toml(&format!("[package]\nname = \"{REPL_PACKAGE_NAME}\"\n"))
-            .map_err(|error| ReplTransactionError::Compile {
-                phase: ReplTransactionPhase::ClassifyParse,
-                message: error.to_string(),
-            })?,
-        [ProjectSourceFile::new(
-            CanonicalModulePath::crate_root(),
-            source_path,
-            Arc::clone(&document),
-            [],
-        )],
-    )
-    .map_err(|error| ReplTransactionError::Compile {
-        phase: ReplTransactionPhase::ClassifyParse,
-        message: error.to_string(),
-    })?;
-    let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new(REPL_PACKAGE_NAME).map_err(|error| {
-            ReplTransactionError::Compile {
-                phase: ReplTransactionPhase::HirLowering,
-                message: error.to_string(),
-            }
-        })?,
-        document.identity().id().clone(),
-        format!("repl-cell-{}", parsed.synthetic_controller_name),
-    )
-    .map_err(|error| ReplTransactionError::Compile {
-        phase: ReplTransactionPhase::HirLowering,
-        message: error.to_string(),
-    })?;
-    let facts = ProjectRegistrationFacts::try_new(
-        world,
-        vec![Arc::clone(&document)],
-        Vec::new(),
-        Vec::new(),
-    )
-    .map_err(|error| ReplTransactionError::Compile {
-        phase: ReplTransactionPhase::SemanticEffectChecks,
-        message: error
-            .diagnostics()
-            .iter()
-            .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
-            .collect::<Vec<_>>()
-            .join("; "),
-    })?;
+    let (source_path, document) = repl_source_document(parsed, base)?;
+    let project = repl_project(source_path, &document)?;
+    let facts = repl_registration_facts(parsed, &document)?;
     let context = ProjectCompilationContext::new(
         Arc::new(base.project().typecheck_env()),
         Arc::new(facts),
@@ -127,6 +60,114 @@ pub(crate) fn compile_repl_cell(
             message: error.to_string(),
         }
     })
+}
+
+fn repl_source_document(
+    parsed: &ParsedReplCell,
+    base: &ReplBaseSnapshot,
+) -> Result<(PathBuf, Arc<SourceDocument>), ReplTransactionError> {
+    let source_path = PathBuf::from(format!("repl/{}.arcw", parsed.synthetic_controller_name));
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!(
+                "arcweft-repl://{}/{}.arcw",
+                base.generation().as_u64(),
+                parsed.synthetic_controller_name
+            ))
+            .map_err(|error| ReplTransactionError::Compile {
+                phase: ReplTransactionPhase::ClassifyParse,
+                message: error.to_string(),
+            })?,
+            SourceName::path(source_path.display().to_string()),
+            parsed.synthetic_source.clone(),
+        )
+        .map_err(|error| ReplTransactionError::Compile {
+            phase: ReplTransactionPhase::ClassifyParse,
+            message: error.to_string(),
+        })?,
+    );
+    Ok((source_path, document))
+}
+
+fn repl_project(
+    source_path: PathBuf,
+    document: &Arc<SourceDocument>,
+) -> Result<ProjectSources, ReplTransactionError> {
+    ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        PackageSpec {
+            id: PackageId::new(REPL_PACKAGE_NAME).map_err(|error| {
+                ReplTransactionError::Compile {
+                    phase: ReplTransactionPhase::ClassifyParse,
+                    message: error.to_string(),
+                }
+            })?,
+            version: PackageVersion::new("0.0.0").map_err(|error| {
+                ReplTransactionError::Compile {
+                    phase: ReplTransactionPhase::ClassifyParse,
+                    message: error.to_string(),
+                }
+            })?,
+        },
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-repl://manifest").map_err(|error| {
+                    ReplTransactionError::Compile {
+                        phase: ReplTransactionPhase::ClassifyParse,
+                        message: error.to_string(),
+                    }
+                })?,
+                SourceName::Memory,
+                "",
+            )
+            .map_err(|error| ReplTransactionError::Compile {
+                phase: ReplTransactionPhase::ClassifyParse,
+                message: error.to_string(),
+            })?,
+        ),
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            source_path,
+            Arc::clone(document),
+            [],
+        )],
+    )
+    .map_err(|error| ReplTransactionError::Compile {
+        phase: ReplTransactionPhase::ClassifyParse,
+        message: error.to_string(),
+    })
+}
+
+fn repl_registration_facts(
+    parsed: &ParsedReplCell,
+    document: &Arc<SourceDocument>,
+) -> Result<ProjectRegistrationFacts, ReplTransactionError> {
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(REPL_PACKAGE_NAME).map_err(|error| {
+            ReplTransactionError::Compile {
+                phase: ReplTransactionPhase::HirLowering,
+                message: error.to_string(),
+            }
+        })?,
+        document.identity().id().clone(),
+        format!("repl-cell-{}", parsed.synthetic_controller_name),
+    )
+    .map_err(|error| ReplTransactionError::Compile {
+        phase: ReplTransactionPhase::HirLowering,
+        message: error.to_string(),
+    })?;
+    ProjectRegistrationFacts::try_new(world, vec![Arc::clone(document)], Vec::new(), Vec::new())
+        .map_err(|error| ReplTransactionError::Compile {
+            phase: ReplTransactionPhase::SemanticEffectChecks,
+            message: error
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+                .collect::<Vec<_>>()
+                .join("; "),
+        })
 }
 
 fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionError {

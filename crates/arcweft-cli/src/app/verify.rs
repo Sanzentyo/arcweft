@@ -235,7 +235,7 @@ fn verify_types_runtime_self_check(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
+    );
     let mut executor = run_profile_phase(&mut checked.phases, "executor_prepare", || {
         RuntimeExecutorInstance::new(runtime_plan, entry, options.executor, pure_config).map_err(
             |error| {
@@ -248,7 +248,7 @@ fn verify_types_runtime_self_check(
         )
     })?;
     let host_policy = native_host_policy_for_selection(selection)?;
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let trace = run_profile_phase(&mut checked.phases, "run", || {
         run_runtime_steps_with_executor(
             &mut executor,

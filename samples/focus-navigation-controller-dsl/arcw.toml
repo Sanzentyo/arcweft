@@ -1,7 +1,9 @@
+schema = 1
+
 [package]
-name = "focus-navigation-controller-dsl"
+id = "org.arcweft.samples.focus-navigation-controller-dsl"
 version = "0.1.0"
 
-[launch.main]
+[profiles.main]
 kind = "game"
 source = "src/main.arcw"

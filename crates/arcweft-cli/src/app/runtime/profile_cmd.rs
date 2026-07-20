@@ -31,9 +31,8 @@ pub(in crate::app) fn runtime_profile_command(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
-    let semantic =
-        semantic_context_for_selection(&selection, options.adapter.as_deref(), &mut phases)?;
+    );
+    let semantic = semantic_context_for_selection(&selection, options.adapter.as_deref())?;
     let host_policy =
         native_host_policy_for_selection_with_adapter(&selection, options.adapter.as_deref())?;
     if !is_arcw_path(selection.path()) {
@@ -57,7 +56,7 @@ pub(in crate::app) fn runtime_profile_command(
             ExitCode::FAILURE
         })
     })?;
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let trace = run_profile_phase(&mut phases, "run", || {
         run_runtime_steps_with_executor(
             &mut executor,

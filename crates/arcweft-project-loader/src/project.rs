@@ -9,10 +9,9 @@ use arcweft_lang_syntax::{
     },
     parser::parse_source,
 };
-use arcweft_launch::SourceBackedLaunchManifest;
+use arcweft_launch::{accepted::SourceBackedManifest, diagnostic::ManifestReport};
 use arcweft_project::{
     graph::ModuleDependency,
-    manifest::{AuthoredResourceRoots, ProjectManifest, ResourceManifest},
     sources::{ProjectSourceFile, ProjectSources},
 };
 use arcweft_source::{
@@ -33,9 +32,8 @@ pub const PROJECT_MANIFEST_FILE: &str = "arcw.toml";
 #[derive(Clone, Debug)]
 pub struct LoadedProject {
     sources: ProjectSources,
-    manifest_document: Arc<SourceDocument>,
     module_documents: BTreeMap<CanonicalModulePath, Arc<SourceDocument>>,
-    launch: SourceBackedLaunchManifest,
+    manifest: Arc<SourceBackedManifest>,
 }
 
 /// Project discovery, source loading, or module resolution failure.
@@ -61,12 +59,8 @@ pub enum ProjectLoadError {
         #[source]
         source: std::io::Error,
     },
-    #[error(transparent)]
-    ProjectManifest(#[from] arcweft_project::manifest::ProjectManifestError),
-    #[error("failed to parse launch profiles: {0}")]
-    LaunchManifest(#[from] arcweft_launch::LaunchProfileError),
-    #[error("failed to parse source-backed launch manifest: {0}")]
-    LaunchDocument(#[from] arcweft_launch::LaunchDocumentError),
+    #[error("failed to decode the project manifest: {0}")]
+    Manifest(#[from] ManifestReport),
     #[error("source file `{path}` is outside source root `{source_root}`")]
     OutsideSourceRoot { path: PathBuf, source_root: PathBuf },
     #[error("project document `{path}` is outside project root `{project_root}`")]
@@ -195,21 +189,25 @@ impl LoadedProject {
     pub(crate) fn from_exact_documents(
         manifest_path: PathBuf,
         project_root: PathBuf,
-        manifest: ProjectManifest,
-        manifest_document: Arc<SourceDocument>,
-        launch: SourceBackedLaunchManifest,
+        manifest: Arc<SourceBackedManifest>,
         modules: Vec<ProjectSourceFile>,
     ) -> Result<Self, ProjectLoadError> {
         let module_documents = modules
             .iter()
             .map(|module| (module.module().clone(), Arc::clone(module.document())))
             .collect();
-        let sources = ProjectSources::new(manifest_path, project_root, manifest, modules)?;
+        let sources = ProjectSources::new(
+            manifest_path,
+            project_root,
+            manifest.manifest().package().clone(),
+            manifest.manifest().build().clone(),
+            Arc::clone(manifest.document()),
+            modules,
+        )?;
         Ok(Self {
             sources,
-            manifest_document,
             module_documents,
-            launch,
+            manifest,
         })
     }
 
@@ -217,12 +215,12 @@ impl LoadedProject {
         &self.sources
     }
 
-    pub const fn launch(&self) -> &SourceBackedLaunchManifest {
-        &self.launch
+    pub const fn manifest(&self) -> &Arc<SourceBackedManifest> {
+        &self.manifest
     }
 
     pub fn manifest_document(&self) -> &Arc<SourceDocument> {
-        &self.manifest_document
+        self.manifest.document()
     }
 
     pub fn module_documents(
@@ -269,29 +267,6 @@ pub fn load_discovered_with_limits(
     load_with_limits(&discover_manifest(start)?, limits)
 }
 
-/// Loads only the authored asset/content roots from an explicit `arcw.toml`.
-///
-/// This accepts launch-only manifests without requiring a package source tree.
-pub fn load_authored_resource_roots(
-    manifest_path: &Path,
-) -> Result<AuthoredResourceRoots, ProjectLoadError> {
-    let manifest_source = read_to_string(manifest_path)?;
-    let resources = ResourceManifest::parse_project_toml(&manifest_source)?;
-    let project_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-    Ok(resources.resolve(project_root))
-}
-
-/// Loads package metadata from an explicit `arcw.toml` without requiring its
-/// default source root to exist.
-///
-/// Launch-profile manifests may point directly at a source outside `src/`.
-/// Callers that only need package identity must not trigger project source
-/// discovery as a side effect.
-pub fn load_project_manifest(manifest_path: &Path) -> Result<ProjectManifest, ProjectLoadError> {
-    let manifest_source = read_to_string(manifest_path)?;
-    ProjectManifest::parse_toml(&manifest_source).map_err(ProjectLoadError::from)
-}
-
 /// Loads one explicit `arcw.toml` and all `.arcw` sources under its source root.
 pub fn load(manifest_path: &Path) -> Result<LoadedProject, ProjectLoadError> {
     load_with_limits(manifest_path, ProjectLoadLimits::new(u64::MAX, u64::MAX))
@@ -304,16 +279,17 @@ pub fn load_with_limits(
 ) -> Result<LoadedProject, ProjectLoadError> {
     let mut budget = ProjectLoadBudget::new(limits);
     let manifest_source = budget.read_document(manifest_path)?;
-    let manifest = ProjectManifest::parse_toml(&manifest_source)?;
     let project_root = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-    let package = manifest.package().name().as_str();
     let manifest_document = Arc::new(SourceDocument::try_new(
-        project_document_id(package, project_root, manifest_path)?,
+        manifest_document_id(manifest_path)?,
         SourceName::path(manifest_path.display().to_string()),
         manifest_source,
     )?);
-    let launch = SourceBackedLaunchManifest::parse_document(&manifest_document)?;
-    let source_root = manifest.source_root(project_root);
+    let manifest = Arc::new(SourceBackedManifest::decode(Arc::clone(
+        &manifest_document,
+    ))?);
+    let package = manifest.manifest().package().id.as_str();
+    let source_root = project_root.join(manifest.manifest().build().source_dir.as_path());
     let source_paths = collect_arcw_files(&source_root, limits.documents(), budget.documents)?;
     let scanned = source_paths
         .into_iter()
@@ -336,15 +312,27 @@ pub fn load_with_limits(
     let sources = ProjectSources::new(
         manifest_path.to_path_buf(),
         project_root.to_path_buf(),
-        manifest,
+        manifest.manifest().package().clone(),
+        manifest.manifest().build().clone(),
+        Arc::clone(&manifest_document),
         modules,
     )?;
     Ok(LoadedProject {
         sources,
-        manifest_document,
         module_documents,
-        launch,
+        manifest,
     })
+}
+
+pub(crate) fn manifest_document_id(
+    manifest_path: &Path,
+) -> Result<SourceDocumentId, ProjectLoadError> {
+    let digest = blake3::hash(manifest_path.to_string_lossy().as_bytes());
+    SourceDocumentId::try_new(format!(
+        "arcweft-project://manifest/{}/arcw.toml",
+        digest.to_hex()
+    ))
+    .map_err(ProjectLoadError::from)
 }
 
 #[derive(Clone, Debug)]
@@ -673,18 +661,11 @@ fn read_utf8_bounded(
         })
 }
 
-fn read_to_string(path: &Path) -> Result<String, ProjectLoadError> {
-    fs::read_to_string(path).map_err(|source| ProjectLoadError::Read {
-        path: path.to_path_buf(),
-        source,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         ProjectLoadBudget, ProjectLoadError, ProjectLoadLimitKind, inferred_module_path,
-        load_project_manifest, load_with_limits, project_document_id,
+        load_with_limits, project_document_id,
     };
     use crate::project_limits::ProjectLoadLimits;
     use std::{fs, path::Path};
@@ -710,8 +691,7 @@ mod tests {
             let source_root = root.join("src");
             fs::create_dir_all(&source_root).expect("fixture source root creates");
             let manifest = root.join("arcw.toml");
-            let manifest_source =
-                "[package]\nname = \"limits-fixture\"\nversion = \"0.1.0\"\n".to_owned();
+            let manifest_source = "schema = 1\n[package]\nid = \"org.arcweft.fixtures.project-limits\"\nversion = \"0.1.0\"\n".to_owned();
             fs::write(&manifest, &manifest_source).expect("fixture manifest writes");
             fs::write(source_root.join("main.arcw"), module_source).expect("fixture module writes");
             Self {
@@ -753,41 +733,6 @@ mod tests {
             inferred_module_path(root, Path::new("src/game/mod.arcw")),
             Err(ProjectLoadError::ModFileLayout { .. })
         ));
-    }
-
-    #[test]
-    fn loads_package_metadata_without_enumerating_default_source_root() {
-        let unique = format!(
-            "arcweft-project-manifest-metadata-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system clock follows epoch")
-                .as_nanos()
-        );
-        let root = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&root).expect("fixture root creates");
-        let manifest_path = root.join("arcw.toml");
-        fs::write(
-            &manifest_path,
-            r#"
-[package]
-name = "launch-only"
-version = "0.1.0"
-
-[profiles.main]
-kind = "game"
-entry = "entry.game.main"
-source = "demo.arcw"
-"#,
-        )
-        .expect("fixture manifest writes");
-
-        let manifest =
-            load_project_manifest(&manifest_path).expect("package metadata loads without src");
-        assert_eq!(manifest.package().name().as_str(), "launch-only");
-
-        fs::remove_dir_all(root).expect("fixture root removes");
     }
 
     #[test]

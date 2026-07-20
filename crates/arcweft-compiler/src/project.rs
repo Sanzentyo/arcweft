@@ -410,19 +410,16 @@ where
             })?;
             project_modules.push(bound);
         }
-        let hir_project = HirProject::new(
-            project.manifest().package().name().as_str(),
-            project_modules,
-        )
-        .map_err(|error| {
-            linked_error(
-                ProjectCompileStage::HirProject,
-                [
-                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code("hir.project"),
-                ],
-            )
-        })?;
+        let hir_project =
+            HirProject::new(project.package().id.as_str(), project_modules).map_err(|error| {
+                linked_error(
+                    ProjectCompileStage::HirProject,
+                    [
+                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                            .with_code("hir.project"),
+                    ],
+                )
+            })?;
         let registered_world = registration::register(&hir_project, context)?;
         let linked_hir = hir_project.linked_module();
         hir::resolve_registered_hir_references(&linked_hir, &registered_world).map_err(
@@ -494,7 +491,7 @@ where
         let entry_callables = entry_runtime::stateful_callable_requests(&checked_entries);
         let runtime_options = runtime_options
             .clone()
-            .with_package_identity(project.manifest().package().name().as_str())
+            .with_package_identity(project.package().id.as_str())
             .with_agent_controllers(agent_controllers)
             .with_entry_callables(entry_callables);
         let mut runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
@@ -575,7 +572,7 @@ where
     C: ProjectCompileCache,
 {
     let fingerprints = build_unit_fingerprints(project);
-    let incremental = project.manifest().build().incremental();
+    let incremental = project.build().incremental;
     let mut modules = Vec::with_capacity(project.modules().len());
     let mut summaries = Vec::with_capacity(project.graph().compile_units().len());
     let mut pending_stores = PendingProjectCompileStores::new();
@@ -709,7 +706,7 @@ fn build_unit_fingerprints(
         let unit = project.graph().compile_unit(unit_id);
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"arcweft-project-compile-unit-v2\0");
-        hasher.update(project.manifest().package().name().as_str().as_bytes());
+        hasher.update(project.package().id.as_str().as_bytes());
         for module in unit.modules() {
             hasher.update(module.to_string().as_bytes());
             hasher.update(&project.module(module).unwrap().source_hash().as_bytes());

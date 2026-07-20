@@ -20,8 +20,6 @@ run with `arcw`.
 - [rich-text-fx.arcw](rich-text-fx.arcw) - typed reusable presentation Fx with
   required/default named parameters, ordered composition, View `.fx(...)`, and
   dialogue `[fx ...]...[/fx]` application.
-- [rich-text-profiled](rich-text-profiled/README.md) - project-shaped rich-text
-  sample with launch profiles that select different `dialogue defaults`
   profiles for provenance-aware runtime-plan and LSP cascade checks.
 - [native-style-parity](native-style-parity/README.md) - image-free Web/native
   renderer parity sample for typed native Style and choice rendering.

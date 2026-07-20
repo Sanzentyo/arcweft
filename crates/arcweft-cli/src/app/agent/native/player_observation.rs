@@ -158,7 +158,7 @@ pub(super) fn native_player_runtime_state_for_options(
         ExitCode::FAILURE
     })?;
     let host_policy = native_host_policy_for_selection(&selection)?;
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let host = NativeTaskBridge::try_new(
         selection.path(),
         file_roots,

@@ -57,7 +57,7 @@ pub fn snapshot_compiled_project(
                 target_triple: request.target_triple.clone(),
                 target_features: request.target_features.clone(),
                 profile: request.profile.clone(),
-                package: sources.manifest().package().name().as_str().to_owned(),
+                package: sources.package().id.as_str().to_owned(),
                 logical_item: unit
                     .modules()
                     .iter()
@@ -99,7 +99,7 @@ fn project_fingerprint(
         source_bytes.extend_from_slice(&module.source_hash().as_bytes());
     }
     ProjectFingerprint::new(ProjectFingerprintInput {
-        package: sources.manifest().package().name().as_str().to_owned(),
+        package: sources.package().id.as_str().to_owned(),
         compiler_build_id: request.compiler_build_id.clone(),
         target_triple: request.target_triple.clone(),
         target_features: request.target_features.clone(),

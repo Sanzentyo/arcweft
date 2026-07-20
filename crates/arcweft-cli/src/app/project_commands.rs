@@ -361,7 +361,7 @@ impl ProjectCommandReport {
         let sources = state.loaded.sources();
         Self {
             status: if failed { "failed" } else { "ok" },
-            package: sources.manifest().package().name().as_str().to_owned(),
+            package: sources.package().id.as_str().to_owned(),
             manifest: sources.manifest_path().display().to_string(),
             selected_profile: state
                 .selection
@@ -465,7 +465,7 @@ pub(super) fn project_build_command(options: &ProjectBuildOptions) -> Result<(),
                     base,
                     &artifacts.bundle_bytes,
                     &target_root,
-                    state.loaded.sources().manifest().package().name().as_str(),
+                    state.loaded.sources().package().id.as_str(),
                 )
             })?,
         );
@@ -569,7 +569,7 @@ fn write_project_build_artifacts(
         );
         ExitCode::FAILURE
     })?;
-    let package = state.loaded.sources().manifest().package().name().as_str();
+    let package = state.loaded.sources().package().id.as_str();
     let metadata_path = target_root.join(format!("{package}.project.json"));
     let plan_path = target_root.join(format!("{package}.plan"));
     let snapshot_path = target_root.join(format!("{package}.snapshot.json"));
@@ -741,14 +741,7 @@ impl FullBuildPersistentArtifactContext {
             .expect("single_project_unit has one module")
             .module()
             .to_string();
-        let package = state
-            .loaded
-            .sources()
-            .manifest()
-            .package()
-            .name()
-            .as_str()
-            .to_owned();
+        let package = state.loaded.sources().package().id.as_str().to_owned();
         let bytecode_unit = FullBuildBytecodeUnitArtifact {
             module: module.clone(),
             runtime_plan_unit_digest: BuildDigest::of(plan_bytes),
@@ -1101,14 +1094,7 @@ fn project_build_input_digest(state: &ProjectCommandState) -> Result<BuildDigest
 fn store_project_build_cache_artifacts(
     inputs: &ProjectBuildCacheInputs<'_>,
 ) -> Result<Vec<ProjectBuildCacheRecordReport>, ExitCode> {
-    let package = inputs
-        .state
-        .loaded
-        .sources()
-        .manifest()
-        .package()
-        .name()
-        .as_str();
+    let package = inputs.state.loaded.sources().package().id.as_str();
     let store = FilesystemCacheStore::new(inputs.cache_root);
     let _lock = store.lock_package(package).map_err(|error| {
         eprintln!(
@@ -1193,7 +1179,7 @@ fn store_persistent_query_write_through(
     persistent_artifacts: &FullBuildPersistentArtifactContext,
 ) -> Result<PersistentQueryWriteThroughResult, ExitCode> {
     let sources = state.loaded.sources();
-    let package = sources.manifest().package().name().as_str();
+    let package = sources.package().id.as_str();
     let store = FilesystemCacheStore::new(cache_root);
     let _lock = store.lock_package(package).map_err(|error| {
         eprintln!(
@@ -1202,7 +1188,7 @@ fn store_persistent_query_write_through(
         );
         ExitCode::FAILURE
     })?;
-    let incremental = sources.manifest().build().incremental();
+    let incremental = sources.build().incremental;
     let mut result = PersistentQueryWriteThroughResult {
         queries: Vec::new(),
         reports: Vec::new(),
@@ -1967,13 +1953,7 @@ fn project_build_watch_loop(
                     &base_bytes,
                     &artifacts.bundle_bytes,
                 )?;
-                let package = next_state
-                    .loaded
-                    .sources()
-                    .manifest()
-                    .package()
-                    .name()
-                    .as_str();
+                let package = next_state.loaded.sources().package().id.as_str();
                 let patch_output =
                     write_project_build_patch_artifact(target_root, package, &patch_artifact)?;
                 println!(
@@ -2119,13 +2099,12 @@ where
             path: loaded.sources().root_module().path().to_path_buf(),
         }
     };
-    let mut phases = Vec::new();
     let source_document = Arc::clone(
         loaded
             .module_document(loaded.sources().root_module().module())
             .expect("loaded projects retain their root source document"),
     );
-    let semantic = semantic_context_for_selection(&selection, None, &mut phases)?;
+    let semantic = semantic_context_for_selection(&selection, None)?;
     let runtime_options = runtime_plan_options_for_selection(&selection)?;
     let context = project_compilation_context(&loaded, &selection, &semantic)?;
     let compiled =
@@ -2171,15 +2150,7 @@ where
 
 fn project_build_id(loaded: &LoadedProject, compiled: &CompiledProject) -> String {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(
-        loaded
-            .sources()
-            .manifest()
-            .package()
-            .name()
-            .as_str()
-            .as_bytes(),
-    );
+    bytes.extend_from_slice(loaded.sources().package().id.as_str().as_bytes());
     for unit in compiled.compile_units() {
         bytes.extend_from_slice(&unit.fingerprint().as_bytes());
     }

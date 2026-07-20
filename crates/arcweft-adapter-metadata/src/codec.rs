@@ -1,6 +1,8 @@
 use crate::{
     AdapterMetadata,
-    strict_json::{AdapterMetadataSourceMap, StrictJsonError, parse_strict_json},
+    strict_json::{
+        AdapterMetadataDecodeLimits, AdapterMetadataSourceMap, StrictJsonError, parse_strict_json,
+    },
 };
 use arcweft_manifest_model::{CanonicalJsonError, SemanticDigest, canonical_json_bytes};
 use serde::Serialize;
@@ -39,7 +41,15 @@ pub enum AdapterMetadataCodecError {
 impl SourceBackedAdapterMetadata {
     /// Decodes and verifies one complete UTF-8 metadata document without I/O.
     pub fn decode(source: &str) -> Result<Self, AdapterMetadataCodecError> {
-        let (value, source_map) = parse_strict_json(source)?;
+        Self::decode_with_limits(source, AdapterMetadataDecodeLimits::PRODUCTION)
+    }
+
+    /// Decodes with explicit deterministic resource limits.
+    pub fn decode_with_limits(
+        source: &str,
+        limits: AdapterMetadataDecodeLimits,
+    ) -> Result<Self, AdapterMetadataCodecError> {
+        let (value, source_map) = parse_strict_json(source, limits)?;
         let metadata = serde_json::from_value::<AdapterMetadata>(value).map_err(|error| {
             AdapterMetadataCodecError::Typed {
                 message: error.to_string(),

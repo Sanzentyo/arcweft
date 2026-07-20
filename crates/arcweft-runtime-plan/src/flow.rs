@@ -56,6 +56,7 @@ use arcweft_core::task::{
     HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_lang_hir::entry::HirEntryItem;
 use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirFor, HirFunction,
@@ -123,6 +124,7 @@ pub struct RuntimeAgentControllerRequest {
 pub struct RuntimePlanLowerOptions {
     package_identity: Option<String>,
     dialogue_defaults: Option<String>,
+    dialogue_inline_failure: Option<InlineFailurePolicy>,
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
     trait_methods: Vec<RuntimeTraitMethod>,
     typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
@@ -141,6 +143,7 @@ impl RuntimePlanLowerOptions {
         Self {
             package_identity: None,
             dialogue_defaults: None,
+            dialogue_inline_failure: None,
             for_iteration_evidence: Vec::new(),
             trait_methods: Vec::new(),
             typed_lowering_evidence: Vec::new(),
@@ -166,6 +169,13 @@ impl RuntimePlanLowerOptions {
     #[must_use]
     pub fn with_dialogue_defaults(mut self, id: impl Into<String>) -> Self {
         self.dialogue_defaults = Some(id.into());
+        self
+    }
+
+    /// Supplies the selected launch profile's global inline-failure policy.
+    #[must_use]
+    pub fn with_dialogue_inline_failure(mut self, policy: InlineFailurePolicy) -> Self {
+        self.dialogue_inline_failure = Some(policy);
         self
     }
 
@@ -249,6 +259,12 @@ impl RuntimePlanLowerOptions {
     #[must_use]
     pub fn dialogue_defaults(&self) -> Option<&str> {
         self.dialogue_defaults.as_deref()
+    }
+
+    /// Selected global inline-failure policy, if supplied by a launch profile.
+    #[must_use]
+    pub const fn dialogue_inline_failure(&self) -> Option<&InlineFailurePolicy> {
+        self.dialogue_inline_failure.as_ref()
     }
 
     /// Canonical package identity for source-defined cross-section references.
@@ -577,7 +593,8 @@ pub(crate) fn lower_runtime_flows(
         module,
         options.dialogue_defaults(),
     )
-    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?
+    .with_inline_failure_policy(options.dialogue_inline_failure());
     let mut lowerer = FlowRuntimeLowerer {
         module,
         agent_controller: false,
@@ -667,7 +684,8 @@ fn lower_agent_function_controller_flow(
         module,
         options.dialogue_defaults(),
     )
-    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?
+    .with_inline_failure_policy(options.dialogue_inline_failure());
     let mut lowerer = FlowRuntimeLowerer {
         module,
         agent_controller: true,

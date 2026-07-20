@@ -451,6 +451,36 @@ flow @flow.main main {
 }
 
 #[test]
+fn runtime_plan_options_apply_profile_inline_failure_policy() {
+    let parsed = parse_source(
+        r"
+character @character.alice Alice as alice {}
+
+flow @flow.main main {
+    alice: Hello #[missing][p]
+}
+",
+    );
+    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let report = lower_runtime_plan_with_stats_and_options(
+        &hir,
+        &RuntimePlanLowerOptions::default()
+            .with_dialogue_inline_failure(InlineFailurePolicy::Discard),
+    )
+    .expect("runtime plan lowers with profile inline-failure policy");
+    let spec = report
+        .line_display_catalog
+        .lines()
+        .first()
+        .expect("line display spec");
+
+    assert_eq!(
+        spec.default_inline_failure_policy,
+        Some(InlineFailurePolicy::Discard)
+    );
+}
+
+#[test]
 fn speaker_preset_styles_join_dialogue_cascade() {
     let source = r##"
 pub dialogue defaults {

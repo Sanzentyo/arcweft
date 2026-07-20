@@ -140,13 +140,7 @@ pub(crate) fn register_profile_environment(
         .collect::<Result<Vec<_>, RegisterProfileEnvironmentError>>()?;
     let project = Arc::new(
         HirProject::new(
-            topology
-                .loaded_project()
-                .sources()
-                .manifest()
-                .package()
-                .name()
-                .as_str(),
+            topology.loaded_project().sources().package().id.as_str(),
             modules,
         )
         .map_err(|error| RegisterProfileEnvironmentError::ProjectAssembly(error.to_string()))?,

@@ -50,7 +50,6 @@ impl EffectiveDialogueCascade {
 pub(crate) fn effective_dialogue_cascade_at(
     document: &DocumentSnapshot,
     offset: usize,
-    selected_dialogue_defaults: Option<&str>,
 ) -> Option<EffectiveDialogueCascade> {
     let parsed = parse_source(document.text());
     if !parsed.errors().is_empty() {
@@ -71,10 +70,7 @@ pub(crate) fn effective_dialogue_cascade_at(
     if dialogue_index >= dialogues.len() {
         return None;
     }
-    let runtime_options = selected_dialogue_defaults
-        .map_or_else(RuntimePlanLowerOptions::default, |id| {
-            RuntimePlanLowerOptions::default().with_dialogue_defaults(id)
-        });
+    let runtime_options = RuntimePlanLowerOptions::default();
     let report = lower_source_runtime_plan_with_stats_and_options(&hir, &runtime_options).ok()?;
     let spec = report.line_display_catalog.lines().get(dialogue_index)?;
     Some(EffectiveDialogueCascade {

@@ -372,6 +372,12 @@ pub struct LspProfileState {
     accepted: RwLock<Option<Arc<AcceptedProfileEnvironment>>>,
 }
 
+#[derive(Clone, Copy)]
+enum AcceptedEnvironmentExpectation<'a> {
+    Any,
+    Exact(Option<&'a Arc<AcceptedProfileEnvironment>>),
+}
+
 impl LspProfileState {
     pub const fn new() -> Self {
         Self {
@@ -411,12 +417,25 @@ impl LspProfileState {
         &self,
         candidate: AcceptedProfileCandidate,
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
-        self.replace_accepted_with(None, candidate, |_| {})
+        self.replace_accepted_inner(AcceptedEnvironmentExpectation::Any, candidate, |_| {})
     }
 
     pub(crate) fn replace_accepted_with(
         &self,
         expected: Option<&Arc<AcceptedProfileEnvironment>>,
+        candidate: AcceptedProfileCandidate,
+        before_swap: impl FnOnce(Option<&Arc<AcceptedProfileEnvironment>>),
+    ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
+        self.replace_accepted_inner(
+            AcceptedEnvironmentExpectation::Exact(expected),
+            candidate,
+            before_swap,
+        )
+    }
+
+    fn replace_accepted_inner(
+        &self,
+        expected: AcceptedEnvironmentExpectation<'_>,
         candidate: AcceptedProfileCandidate,
         before_swap: impl FnOnce(Option<&Arc<AcceptedProfileEnvironment>>),
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
@@ -427,12 +446,15 @@ impl LspProfileState {
         if self.lifecycle() != ProfileEnvironmentLifecycle::Active {
             return Err(AcceptedEnvironmentReplaceError::ShuttingDown);
         }
-        if let Some(expected) = expected
-            && accepted
-                .as_ref()
-                .is_none_or(|current| !Arc::ptr_eq(current, expected))
-        {
-            return Err(AcceptedEnvironmentReplaceError::CurrentChanged);
+        if let AcceptedEnvironmentExpectation::Exact(expected) = expected {
+            let current_matches = match (expected, accepted.as_ref()) {
+                (None, None) => true,
+                (Some(expected), Some(current)) => Arc::ptr_eq(current, expected),
+                (None | Some(_), _) => false,
+            };
+            if !current_matches {
+                return Err(AcceptedEnvironmentReplaceError::CurrentChanged);
+            }
         }
         let generation = accepted.as_ref().map_or(Ok(1), |current| {
             current
@@ -902,15 +924,20 @@ mod tests {
             .expect("initial environment");
         let admitted = Arc::new(Barrier::new(2));
         let release = Arc::new(Barrier::new(2));
+        let expected = state.current().expect("initial environment retained");
         let replacement = {
             let state = Arc::clone(&state);
             let admitted = Arc::clone(&admitted);
             let release = Arc::clone(&release);
             thread::spawn(move || {
-                state.replace_accepted_with(None, accepted_candidate(registered_world()), |_| {
-                    admitted.wait();
-                    release.wait();
-                })
+                state.replace_accepted_with(
+                    Some(&expected),
+                    accepted_candidate(registered_world()),
+                    |_| {
+                        admitted.wait();
+                        release.wait();
+                    },
+                )
             })
         };
         admitted.wait();
@@ -960,6 +987,31 @@ mod tests {
         shutdown.join().expect("shutdown thread");
         assert_eq!(state.lifecycle(), ProfileEnvironmentLifecycle::Closed);
         assert!(state.current().is_none());
+    }
+
+    #[test]
+    fn exact_empty_publication_rejects_an_intervening_accepted_environment() {
+        let state = LspProfileState::new();
+        let accepted = state
+            .replace_accepted(accepted_candidate(registered_world()))
+            .expect("intervening environment");
+
+        assert_eq!(
+            state
+                .replace_accepted_with(None, accepted_candidate(registered_world()), |_| {})
+                .expect_err("the previously empty state is no longer current"),
+            AcceptedEnvironmentReplaceError::CurrentChanged
+        );
+        assert!(
+            Arc::ptr_eq(
+                state
+                    .current()
+                    .as_ref()
+                    .expect("accepted environment remains"),
+                &accepted,
+            ),
+            "failed compare-and-swap must not mutate the accepted environment",
+        );
     }
 
     fn wait_for_lifecycle(state: &LspProfileState, expected: ProfileEnvironmentLifecycle) {

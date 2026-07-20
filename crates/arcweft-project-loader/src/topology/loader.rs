@@ -1,14 +1,18 @@
 use super::{
-    LoadedDocumentAccess, LoadedDocumentOwnership, LoadedProfileTopology,
-    LoadedProfileTopologyResource, ProfileDependencyResourceSeed, ProfileTopologyLimits,
-    ProfileTopologyLoadError, ProfileTopologyLoadRequest, ProfileTopologyLogicalPath,
-    ProfileTopologyOwnerId, ProfileTopologyResourceId, ProfileTopologyResourceKind,
-    ProfileTopologyResourceOrigin, ProfileTopologySeedError,
+    LoadedDocumentAccess, LoadedDocumentOwnership, LoadedExternalModuleMetadata,
+    LoadedProfileTopology, LoadedProfileTopologyResource, ProfileDependencyResourceSeed,
+    ProfileTopologyLimits, ProfileTopologyLoadError, ProfileTopologyLoadRequest,
+    ProfileTopologyLogicalPath, ProfileTopologyOwnerId, ProfileTopologyResourceId,
+    ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, ProfileTopologySeedError,
     budget::ProfileTopologyBudget,
+    external::{extend_selected_adapter, validate_activity_bindings},
     model::{slash_relative_path, validate_absolute_normalized_path},
 };
-use crate::{adapter_manifest, character_manifest, project, rust_metadata};
-use arcweft_adapter_context::{manifest::AdapterRegistry, standard::SANS_IO_ADAPTER_ID};
+use crate::layout::{ContainedProjectLayout, ProjectPathRole, canonical_project_root};
+use crate::{character_manifest, project};
+use arcweft_adapter_context::manifest::{AdapterManifest, AdapterRegistry};
+use arcweft_adapter_metadata::{AdapterTarget, SourceBackedAdapterMetadata};
+use arcweft_character::id::CharacterId;
 use arcweft_lang_syntax::{
     ast::{
         common::UseTreeKind,
@@ -17,10 +21,9 @@ use arcweft_lang_syntax::{
     },
     parser::parse_source,
 };
-use arcweft_launch::{ResolvedLaunchProfile, SourceBackedLaunchManifest};
-use arcweft_project::{
-    graph::ModuleDependency, manifest::ProjectManifest, sources::ProjectSourceFile,
-};
+use arcweft_launch::{accepted::SourceBackedManifest, resolve::ResolvedLaunchProfile};
+use arcweft_manifest_model::{AdapterFamily, RawDigest};
+use arcweft_project::{graph::ModuleDependency, sources::ProjectSourceFile};
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSetRevision,
 };
@@ -46,6 +49,7 @@ struct TopologyBuilder<'a> {
     overlays: BTreeMap<PathBuf, Arc<str>>,
     dependency_resources: &'a [ProfileDependencyResourceSeed],
     base_adapters: AdapterRegistry,
+    layout: arcweft_project::layout::ProjectLayoutSpec,
     resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
     paths: BTreeMap<PathBuf, ProfileTopologyResourceId>,
     consumed_overlays: BTreeSet<ProfileTopologyResourceId>,
@@ -79,23 +83,35 @@ impl<'a> TopologyBuilder<'a> {
                 source: ProfileTopologySeedError::DependencyOwnerRequired,
             });
         }
-        let project_root = request
-            .manifest_path
-            .parent()
-            .ok_or_else(|| ProfileTopologyLoadError::ManifestNotFound {
+        let requested_project_root = request.manifest_path.parent().ok_or_else(|| {
+            ProfileTopologyLoadError::ManifestNotFound {
                 path: request.manifest_path.to_path_buf(),
-            })?
-            .to_path_buf();
+            }
+        })?;
+        let project_root = canonical_project_root(requested_project_root)
+            .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
+        let manifest_path = request
+            .manifest_path
+            .strip_prefix(requested_project_root)
+            .map(|relative| project_root.join(relative))
+            .map_err(|_| ProfileTopologyLoadError::ManifestNotFound {
+                path: request.manifest_path.to_path_buf(),
+            })?;
         let mut overlays = BTreeMap::new();
         for overlay in request.overlays {
+            let path = overlay
+                .path()
+                .strip_prefix(requested_project_root)
+                .map_or_else(
+                    |_| overlay.path().to_path_buf(),
+                    |relative| project_root.join(relative),
+                );
             if overlays
-                .insert(overlay.path().to_path_buf(), Arc::clone(overlay.source()))
+                .insert(path.clone(), Arc::clone(overlay.source()))
                 .is_some()
             {
                 return Err(ProfileTopologyLoadError::DependencySeed {
-                    source: ProfileTopologySeedError::DuplicateOverlayPath {
-                        path: overlay.path().to_path_buf(),
-                    },
+                    source: ProfileTopologySeedError::DuplicateOverlayPath { path },
                 });
             }
         }
@@ -111,13 +127,14 @@ impl<'a> TopologyBuilder<'a> {
             }
         }
         Ok(Self {
-            manifest_path: request.manifest_path.to_path_buf(),
+            manifest_path,
             project_root,
             workspace_owner: request.workspace_owner,
             selection: request.selection,
             overlays,
             dependency_resources: request.dependency_resources,
             base_adapters: request.base_adapters,
+            layout: request.layout,
             resources: BTreeMap::new(),
             paths: BTreeMap::new(),
             consumed_overlays: BTreeSet::new(),
@@ -126,49 +143,54 @@ impl<'a> TopologyBuilder<'a> {
     }
 
     fn load(mut self) -> Result<LoadedProfileTopology, ProfileTopologyLoadError> {
-        let (project_manifest, manifest_document, launch) = self.load_primary_manifest()?;
-        self.charge_selection_work(launch.manifest())?;
-        let profile_id = launch
-            .manifest()
-            .select_profile_id(self.selection)
+        let manifest = self.load_primary_manifest()?;
+        self.charge_selection_work()?;
+        let selected_profile = manifest
+            .resolve_profile(self.selection)
             .map_err(|source| ProfileTopologyLoadError::ProfileSelection { source })?;
-        let selected_profile = launch
-            .manifest()
-            .resolve_profile(profile_id, &self.project_root)
-            .map_err(|source| ProfileTopologyLoadError::ProfileSelection { source })?;
-        let package = project_manifest.package().name().as_str().to_owned();
-        let source_root = project_manifest.source_root(&self.project_root);
-        let modules = self.load_modules(&package, &source_root, selected_profile.source())?;
-        self.load_character_resources(&package, &selected_profile)?;
-        let (adapter_sources, adapter, rust_metadata_sources) =
-            self.load_adapter_resources(&package, &selected_profile)?;
+        let layout = ContainedProjectLayout::try_new(
+            &self.project_root,
+            manifest.manifest().build(),
+            &self.layout,
+        )
+        .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
+        self.project_root = layout.project_root().to_path_buf();
+        let package = manifest.manifest().package().id.as_str().to_owned();
+        let selected_source = layout
+            .project_root()
+            .join(selected_profile.source().as_path());
+        let modules =
+            self.load_modules(&package, layout.source_root().as_path(), &selected_source)?;
+        self.load_character_resources(&package, &selected_profile, &layout)?;
+        let external_modules =
+            self.load_external_module_metadata(&package, &selected_profile, &layout)?;
+        validate_activity_bindings(&selected_profile, &external_modules)?;
+        let adapter = self.select_adapter(&selected_profile)?;
+        let adapter = extend_selected_adapter(adapter, &external_modules)?;
         self.freeze(
-            project_manifest,
-            manifest_document,
-            launch,
+            manifest,
+            layout,
             modules,
             selected_profile,
-            adapter_sources,
+            external_modules,
             adapter,
-            rust_metadata_sources,
         )
     }
 
     fn load_primary_manifest(
         &mut self,
-    ) -> Result<
-        (
-            ProjectManifest,
-            Arc<SourceDocument>,
-            SourceBackedLaunchManifest,
-        ),
-        ProfileTopologyLoadError,
-    > {
-        let manifest_id = ProfileTopologyResourceId::new(
-            self.workspace_owner.clone(),
-            ProfileTopologyLogicalPath::try_new("arcw.toml")
-                .expect("the canonical manifest logical path is valid"),
-        );
+    ) -> Result<Arc<SourceBackedManifest>, ProfileTopologyLoadError> {
+        let manifest_logical_path =
+            ProfileTopologyLogicalPath::try_new("arcw.toml").map_err(|source| {
+                ProfileTopologyLoadError::DependencySeed {
+                    source: ProfileTopologySeedError::LogicalPath {
+                        path: PathBuf::from("arcw.toml"),
+                        source,
+                    },
+                }
+            })?;
+        let manifest_id =
+            ProfileTopologyResourceId::new(self.workspace_owner.clone(), manifest_logical_path);
         let manifest_claim = ResourceClaim {
             id: manifest_id.clone(),
             kind: ProfileTopologyResourceKind::Manifest,
@@ -179,22 +201,14 @@ impl<'a> TopologyBuilder<'a> {
         };
         let manifest_text = self.acquire_manifest_text(&manifest_claim)?;
         self.budget.charge_work(1)?;
-        let project_manifest =
-            ProjectManifest::parse_toml(&manifest_text.source).map_err(|source| {
-                ProfileTopologyLoadError::ProjectManifest {
-                    id: manifest_id.clone(),
-                    path: self.manifest_path.clone(),
-                    source: Box::new(source),
-                }
-            })?;
-        let package = project_manifest.package().name().as_str().to_owned();
         let manifest_document = Self::document_for_claim(
             &manifest_claim,
-            project::project_document_id(&package, &self.project_root, &self.manifest_path)
-                .map_err(|_| ProfileTopologyLoadError::UnownedResourcePath {
+            project::manifest_document_id(&self.manifest_path).map_err(|_| {
+                ProfileTopologyLoadError::UnownedResourcePath {
                     path: self.manifest_path.clone(),
                     kind: ProfileTopologyResourceKind::Manifest,
-                })?,
+                }
+            })?,
             &manifest_text,
         )?;
         self.finalize(
@@ -203,144 +217,193 @@ impl<'a> TopologyBuilder<'a> {
             manifest_text.origin,
         )?;
         self.budget.charge_work(1)?;
-        let launch =
-            SourceBackedLaunchManifest::parse_document(&manifest_document).map_err(|source| {
-                ProfileTopologyLoadError::LaunchManifest {
-                    id: manifest_id,
-                    path: self.manifest_path.clone(),
-                    source: Box::new(source),
-                }
-            })?;
-        Ok((project_manifest, manifest_document, launch))
+        SourceBackedManifest::decode(manifest_document)
+            .map(Arc::new)
+            .map_err(|source| ProfileTopologyLoadError::Manifest {
+                id: Box::new(manifest_id),
+                path: self.manifest_path.clone(),
+                source,
+            })
     }
 
     fn load_character_resources(
         &mut self,
         package: &str,
         selected_profile: &ResolvedLaunchProfile,
+        layout: &ContainedProjectLayout,
     ) -> Result<(), ProfileTopologyLoadError> {
-        for path in selected_profile.character_manifests() {
-            let path = character_manifest::manifest_path(path);
-            let resource = self.acquire_document(
-                package,
-                ProfileTopologyResourceKind::CharacterManifest,
-                &path,
-            )?;
-            self.budget.charge_work(1)?;
-            character_manifest::decode(path.clone(), Arc::clone(resource.document())).map_err(
-                |source| ProfileTopologyLoadError::CharacterManifest {
-                    id: resource.id().clone(),
-                    path,
-                    source: Box::new(source),
-                },
-            )?;
+        for content in selected_profile.content().values() {
+            for root in content.unit().roots.as_slice() {
+                let reference = root.0.as_str();
+                let Some(owner) = reference.strip_prefix("@character.") else {
+                    continue;
+                };
+                let character = CharacterId::try_new(&reference[1..]).map_err(|source| {
+                    ProfileTopologyLoadError::CharacterReference {
+                        reference: reference.to_owned(),
+                        source,
+                    }
+                })?;
+                let mut package_path = layout.asset_root().as_path().to_path_buf();
+                for segment in owner.split('.') {
+                    package_path.push(segment);
+                }
+                package_path.set_extension("awchar");
+                let path = character_manifest::manifest_path(&package_path);
+                let resource = self.acquire_document(
+                    package,
+                    ProfileTopologyResourceKind::CharacterPackageManifest {
+                        character: character.clone(),
+                    },
+                    &path,
+                )?;
+                self.budget.charge_work(1)?;
+                let loaded =
+                    character_manifest::decode(path.clone(), Arc::clone(resource.document()))
+                        .map_err(|source| ProfileTopologyLoadError::CharacterManifest {
+                            id: resource.id().clone(),
+                            path: path.clone(),
+                            source: Box::new(source),
+                        })?;
+                if loaded.manifest().manifest().character() != &character {
+                    return Err(ProfileTopologyLoadError::CharacterIdentityMismatch {
+                        path,
+                        expected: character,
+                        actual: loaded.manifest().manifest().character().clone(),
+                    });
+                }
+            }
         }
         Ok(())
     }
 
-    fn load_adapter_resources(
+    fn load_external_module_metadata(
         &mut self,
         package: &str,
         selected_profile: &ResolvedLaunchProfile,
-    ) -> Result<
-        (
-            Vec<adapter_manifest::LoadedAdapterManifest>,
-            arcweft_adapter_context::manifest::AdapterManifest,
-            Vec<rust_metadata::LoadedRustMetadata>,
-        ),
-        ProfileTopologyLoadError,
-    > {
-        let mut adapter_sources = Vec::new();
-        let mut registry = std::mem::take(&mut self.base_adapters);
-        for path in selected_profile.adapter_manifests() {
-            let resource =
-                self.acquire_document(package, ProfileTopologyResourceKind::AdapterManifest, path)?;
+        layout: &ContainedProjectLayout,
+    ) -> Result<Vec<LoadedExternalModuleMetadata>, ProfileTopologyLoadError> {
+        let mut loaded = Vec::with_capacity(selected_profile.external_modules().len());
+        for (import_id, import) in selected_profile.external_modules() {
+            let path = layout
+                .contain_project_path(&import.metadata, ProjectPathRole::ExternalMetadata)
+                .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
+            let path = path.as_path().to_path_buf();
+            let resource = self.acquire_document(
+                package,
+                ProfileTopologyResourceKind::ExternalModuleMetadata {
+                    import: import_id.clone(),
+                },
+                &path,
+            )?;
+            let document = Arc::clone(resource.document());
+            if RawDigest::for_bytes(document.text().as_bytes()) != import.metadata_hash {
+                return Err(ProfileTopologyLoadError::ExternalModuleMetadataHash {
+                    import: import_id.clone(),
+                    path,
+                });
+            }
             self.budget.charge_work(1)?;
-            let loaded = adapter_manifest::decode(path.clone(), Arc::clone(resource.document()))
-                .map_err(|source| ProfileTopologyLoadError::AdapterManifest {
-                    id: resource.id().clone(),
-                    path: path.clone(),
-                    source: Box::new(source),
+            let metadata =
+                SourceBackedAdapterMetadata::decode(document.text()).map_err(|source| {
+                    ProfileTopologyLoadError::ExternalModuleMetadataDecode {
+                        import: import_id.clone(),
+                        path: path.clone(),
+                        source,
+                    }
                 })?;
-            self.budget.charge_work(1)?;
-            registry = registry.try_with_manifest(loaded.manifest().clone())?;
-            adapter_sources.push(loaded);
+            let accepted = metadata.metadata();
+            require_external_metadata_field(
+                import_id,
+                "package",
+                &import.expected_package,
+                &accepted.package.id,
+            )?;
+            require_external_metadata_field(
+                import_id,
+                "version",
+                &import.expected_version,
+                &accepted.package.version,
+            )?;
+            require_external_metadata_field(
+                import_id,
+                "module",
+                &import.expected_module,
+                &accepted.module.id,
+            )?;
+            let actual_family = match &accepted.target {
+                AdapterTarget::Rust(_) => AdapterFamily::Rust,
+                AdapterTarget::Wasm(_) => AdapterFamily::Wasm,
+                AdapterTarget::Process(_) => AdapterFamily::Process,
+            };
+            require_external_metadata_field(
+                import_id,
+                "family",
+                adapter_family_name(import.expected_family),
+                adapter_family_name(actual_family),
+            )?;
+            require_external_metadata_field(
+                import_id,
+                "abi-hash",
+                &import.expected_abi_hash,
+                &accepted.abi_hash,
+            )?;
+            loaded.push(LoadedExternalModuleMetadata::new(
+                import_id.clone(),
+                import.clone(),
+                document,
+                metadata,
+            ));
         }
+        Ok(loaded)
+    }
 
-        let selected_adapter_id = selected_profile.adapter().unwrap_or(SANS_IO_ADAPTER_ID);
-        let mut adapter = registry.get(selected_adapter_id).cloned().ok_or_else(|| {
+    fn select_adapter(
+        &mut self,
+        selected_profile: &ResolvedLaunchProfile,
+    ) -> Result<AdapterManifest, ProfileTopologyLoadError> {
+        let registry = std::mem::take(&mut self.base_adapters);
+        let selected_adapter_id = selected_profile.adapter().as_str();
+        registry.get(selected_adapter_id).cloned().ok_or_else(|| {
             ProfileTopologyLoadError::AdapterSelection {
                 id: selected_adapter_id.to_owned(),
             }
-        })?;
-
-        let mut rust_metadata_sources = Vec::new();
-        for path in selected_profile.rust_metadata() {
-            let resource =
-                self.acquire_document(package, ProfileTopologyResourceKind::RustMetadata, path)?;
-            self.budget.charge_work(1)?;
-            let loaded = rust_metadata::decode(path.clone(), Arc::clone(resource.document()))
-                .map_err(|source| ProfileTopologyLoadError::RustMetadata {
-                    id: resource.id().clone(),
-                    path: path.clone(),
-                    source: Box::new(source),
-                })?;
-            rust_metadata_sources.push(loaded);
-        }
-        for loaded in &rust_metadata_sources {
-            self.budget.charge_work(1)?;
-            adapter = adapter
-                .try_with_rust_manifest(loaded.manifest())
-                .map_err(|source| ProfileTopologyLoadError::RustCallableModel {
-                    path: loaded.path().to_path_buf(),
-                    source,
-                })?;
-        }
-        Ok((adapter_sources, adapter, rust_metadata_sources))
+        })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn freeze(
         self,
-        project_manifest: ProjectManifest,
-        manifest_document: Arc<SourceDocument>,
-        launch: SourceBackedLaunchManifest,
+        manifest: Arc<SourceBackedManifest>,
+        layout: ContainedProjectLayout,
         modules: Vec<ProjectSourceFile>,
         selected_profile: ResolvedLaunchProfile,
-        adapter_sources: Vec<adapter_manifest::LoadedAdapterManifest>,
-        adapter: arcweft_adapter_context::manifest::AdapterManifest,
-        rust_metadata_sources: Vec<rust_metadata::LoadedRustMetadata>,
+        external_modules: Vec<LoadedExternalModuleMetadata>,
+        adapter: AdapterManifest,
     ) -> Result<LoadedProfileTopology, ProfileTopologyLoadError> {
+        let selected_source = layout
+            .project_root()
+            .join(selected_profile.source().as_path());
+        let root_kind = ProfileTopologyResourceKind::ArcweftModule {
+            module: CanonicalModulePath::crate_root(),
+        };
+        let root_resource_id = self
+            .resources
+            .values()
+            .find(|resource| resource.kind() == &root_kind)
+            .map(|resource| resource.id().clone())
+            .ok_or_else(|| ProfileTopologyLoadError::UnownedResourcePath {
+                path: selected_source.clone(),
+                kind: root_kind,
+            })?;
         let loaded_project = project::LoadedProject::from_exact_documents(
             self.manifest_path.clone(),
             self.project_root.clone(),
-            project_manifest,
-            manifest_document,
-            launch,
+            Arc::clone(&manifest),
             modules,
         )
         .map_err(|source| ProfileTopologyLoadError::ModuleDeclaration {
-            id: self
-                .resources
-                .values()
-                .find(|resource| {
-                    matches!(
-                        resource.kind(),
-                        ProfileTopologyResourceKind::ArcweftModule { module }
-                            if module.is_crate_root()
-                    )
-                })
-                .map_or_else(
-                    || {
-                        ProfileTopologyResourceId::new(
-                            self.workspace_owner.clone(),
-                            ProfileTopologyLogicalPath::try_new("unknown.arcw")
-                                .expect("fallback logical path is valid"),
-                        )
-                    },
-                    |resource| resource.id().clone(),
-                ),
-            path: selected_profile.source().to_path_buf(),
+            id: root_resource_id,
+            path: selected_source,
             source: Box::new(source),
         })?;
         let source_revision = SourceSetRevision::try_for_identities(
@@ -354,10 +417,11 @@ impl<'a> TopologyBuilder<'a> {
         let work = self.budget.work();
         Ok(LoadedProfileTopology::new(
             loaded_project,
+            manifest,
             selected_profile,
-            adapter_sources,
+            layout,
+            external_modules,
             adapter,
-            rust_metadata_sources,
             self.resources,
             self.consumed_overlays.into_iter().collect(),
             source_revision,
@@ -365,28 +429,8 @@ impl<'a> TopologyBuilder<'a> {
         ))
     }
 
-    fn charge_selection_work(
-        &mut self,
-        manifest: &arcweft_launch::LaunchProfileManifest,
-    ) -> Result<(), ProfileTopologyLoadError> {
-        if matches!(
-            self.selection,
-            arcweft_launch::LaunchProfileSelection::Explicit(_)
-        ) {
-            return Ok(());
-        }
-        if manifest.default_profile().is_some() {
-            return self.budget.charge_work(1);
-        }
-        if let arcweft_launch::LaunchProfileSelection::Automatic { previous: Some(_) } =
-            self.selection
-        {
-            self.budget.charge_work(1)?;
-        }
-        if !manifest.profiles().is_empty() {
-            self.budget.charge_work(1)?;
-        }
-        Ok(())
+    fn charge_selection_work(&mut self) -> Result<(), ProfileTopologyLoadError> {
+        self.budget.charge_work(1)
     }
 
     fn load_modules(
@@ -414,15 +458,22 @@ impl<'a> TopologyBuilder<'a> {
         let mut dependencies = BTreeMap::<CanonicalModulePath, Vec<ModuleDependency>>::new();
 
         while let Some(module) = queue.pop_first() {
-            let (path, document) = module_resources
-                .get(&module)
-                .cloned()
-                .expect("queued modules have retained source documents");
-            let resource_id = self
-                .paths
-                .get(&path)
-                .cloned()
-                .expect("module path has a topology resource ID");
+            let Some((path, document)) = module_resources.get(&module).cloned() else {
+                return Err(ProfileTopologyLoadError::UnownedResourcePath {
+                    path: module_path(source_root, &module),
+                    kind: ProfileTopologyResourceKind::ArcweftModule {
+                        module: module.clone(),
+                    },
+                });
+            };
+            let resource_id = self.paths.get(&path).cloned().ok_or_else(|| {
+                ProfileTopologyLoadError::UnownedResourcePath {
+                    path: path.clone(),
+                    kind: ProfileTopologyResourceKind::ArcweftModule {
+                        module: module.clone(),
+                    },
+                }
+            })?;
             let module_dependencies = self.load_module_dependencies(
                 package,
                 source_root,
@@ -461,7 +512,9 @@ impl<'a> TopologyBuilder<'a> {
         let parsed = parse_source(document.text());
         if !parsed.errors().is_empty() {
             let maximum = usize::try_from(ProfileTopologyLimits::PRODUCTION.diagnostics())
-                .expect("the production diagnostic limit fits usize");
+                .map_err(|_| ProfileTopologyLoadError::ArithmeticOverflow {
+                    kind: super::ProfileTopologyLimitKind::Diagnostics,
+                })?;
             let truncated = parsed.errors().len() > maximum;
             let retained = if truncated { maximum - 1 } else { maximum };
             let mut diagnostics = parsed
@@ -503,6 +556,8 @@ impl<'a> TopologyBuilder<'a> {
                 package,
                 source_root,
                 module,
+                path,
+                resource_id,
                 spanned.path(),
                 module_resources,
                 queue,
@@ -579,6 +634,8 @@ impl<'a> TopologyBuilder<'a> {
         package: &str,
         source_root: &Path,
         importer: &CanonicalModulePath,
+        importer_path: &Path,
+        importer_id: &ProfileTopologyResourceId,
         import: &ProjectSymbolPath,
         module_resources: &mut BTreeMap<CanonicalModulePath, (PathBuf, Arc<SourceDocument>)>,
         queue: &mut BTreeSet<CanonicalModulePath>,
@@ -595,20 +652,8 @@ impl<'a> TopologyBuilder<'a> {
             let candidate = ModulePath::new(import.root(), segments[..length].iter().cloned())
                 .and_then(|module| module.resolve_from(importer))
                 .map_err(|source| ProfileTopologyLoadError::ModuleDeclaration {
-                    id: self
-                        .resources
-                        .values()
-                        .find(|resource| {
-                            matches!(resource.kind(), ProfileTopologyResourceKind::ArcweftModule { module } if module == importer)
-                        })
-                        .expect("importer resource exists")
-                        .id()
-                        .clone(),
-                    path: module_resources
-                        .get(importer)
-                        .expect("importer path exists")
-                        .0
-                        .clone(),
+                    id: importer_id.clone(),
+                    path: importer_path.to_path_buf(),
                     source: Box::new(project::ProjectLoadError::ModulePath(source)),
                 })?;
             if module_resources.contains_key(&candidate) {
@@ -679,10 +724,12 @@ impl<'a> TopologyBuilder<'a> {
     ) -> Result<LoadedProfileTopologyResource, ProfileTopologyLoadError> {
         let claim = self.claim_for_path(package, kind, path)?;
         let bound = self.acquire_required_text(&claim)?;
-        let source_id = claim
-            .source_id
-            .clone()
-            .expect("non-manifest claims have source document IDs");
+        let source_id = claim.source_id.clone().ok_or_else(|| {
+            ProfileTopologyLoadError::UnownedResourcePath {
+                path: claim.path.clone(),
+                kind: claim.kind.clone(),
+            }
+        })?;
         let document = Self::document_for_claim(&claim, source_id, &bound)?;
         self.finalize(claim, document, bound.origin)
     }
@@ -721,10 +768,12 @@ impl<'a> TopologyBuilder<'a> {
         self.check_duplicate_claim(&claim)?;
         self.budget.charge_resource()?;
         self.budget.charge_work(1)?;
-        let source_id = claim
-            .source_id
-            .clone()
-            .expect("module claims have source document IDs");
+        let source_id = claim.source_id.clone().ok_or_else(|| {
+            ProfileTopologyLoadError::UnownedResourcePath {
+                path: claim.path.clone(),
+                kind: claim.kind.clone(),
+            }
+        })?;
         let document = Self::document_for_claim(&claim, source_id, &bound)?;
         self.finalize(claim, document, bound.origin).map(Some)
     }
@@ -752,14 +801,16 @@ impl<'a> TopologyBuilder<'a> {
     fn read_disk(&self, claim: &ResourceClaim) -> Result<BoundText, ProfileTopologyLoadError> {
         let bytes =
             fs::read(&claim.path).map_err(|source| ProfileTopologyLoadError::ResourceRead {
-                id: claim.id.clone(),
+                id: Box::new(claim.id.clone()),
+                kind: claim.kind.clone(),
                 path: claim.path.clone(),
                 source,
             })?;
         self.budget.check_source_bytes(bytes.len())?;
         let source =
             String::from_utf8(bytes).map_err(|_| ProfileTopologyLoadError::ResourceUtf8 {
-                id: claim.id.clone(),
+                id: Box::new(claim.id.clone()),
+                kind: claim.kind.clone(),
                 path: claim.path.clone(),
             })?;
         Ok(BoundText {
@@ -825,8 +876,14 @@ impl<'a> TopologyBuilder<'a> {
             return Ok(ResourceClaim {
                 id: ProfileTopologyResourceId::new(
                     self.workspace_owner.clone(),
-                    ProfileTopologyLogicalPath::try_new(logical)
-                        .expect("workspace relative paths were validated"),
+                    ProfileTopologyLogicalPath::try_new(logical).map_err(|source| {
+                        ProfileTopologyLoadError::DependencySeed {
+                            source: ProfileTopologySeedError::LogicalPath {
+                                path: relative.to_path_buf(),
+                                source,
+                            },
+                        }
+                    })?,
                 ),
                 kind,
                 path: path.to_path_buf(),
@@ -854,25 +911,57 @@ impl<'a> TopologyBuilder<'a> {
     }
 
     fn check_duplicate_claim(&self, claim: &ResourceClaim) -> Result<(), ProfileTopologyLoadError> {
+        if let Some(first_id) = self.paths.get(&claim.path) {
+            let first = self.resources.get(first_id).ok_or_else(|| {
+                ProfileTopologyLoadError::UnownedResourcePath {
+                    path: claim.path.clone(),
+                    kind: claim.kind.clone(),
+                }
+            })?;
+            if first.id() != &claim.id || first.kind() != &claim.kind {
+                return Err(ProfileTopologyLoadError::DuplicatePath {
+                    first: Box::new(first.clone()),
+                    conflicting: Box::new(conflicting_resource(first, claim)),
+                });
+            }
+        }
         if let Some(first) = self.resources.get(&claim.id) {
             return Err(ProfileTopologyLoadError::DuplicateLogicalId {
                 first: Box::new(first.clone()),
                 conflicting: Box::new(conflicting_resource(first, claim)),
             });
         }
-        if let Some(first_id) = self.paths.get(&claim.path)
-            && first_id != &claim.id
-        {
-            let first = self
-                .resources
-                .get(first_id)
-                .expect("path index refers to a retained resource");
-            return Err(ProfileTopologyLoadError::DuplicatePath {
-                first: Box::new(first.clone()),
-                conflicting: Box::new(conflicting_resource(first, claim)),
-            });
-        }
         Ok(())
+    }
+}
+
+fn require_external_metadata_field<T>(
+    import: &arcweft_manifest_model::ExternalModuleImportId,
+    field: &'static str,
+    expected: &T,
+    actual: &T,
+) -> Result<(), ProfileTopologyLoadError>
+where
+    T: std::fmt::Display + PartialEq + ?Sized,
+{
+    if expected != actual {
+        return Err(
+            ProfileTopologyLoadError::ExternalModuleMetadataExpectation {
+                import: import.clone(),
+                field,
+                expected: expected.to_string(),
+                actual: actual.to_string(),
+            },
+        );
+    }
+    Ok(())
+}
+
+const fn adapter_family_name(family: AdapterFamily) -> &'static str {
+    match family {
+        AdapterFamily::Rust => "rust",
+        AdapterFamily::Wasm => "wasm",
+        AdapterFamily::Process => "process",
     }
 }
 

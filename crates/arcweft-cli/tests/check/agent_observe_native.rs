@@ -1,5 +1,5 @@
 use super::{
-    AGENT_MCP_STDIO_LOCK, agent_mcp_responses, project_shape_metadata, rich_text_showcase_path,
+    agent_mcp_responses, agent_mcp_stdio_guard, project_shape_metadata, rich_text_showcase_path,
     run_agent_mcp_stdio, run_agent_mcp_stdio_local_dev, seed_debug_search_db, stable_hash,
     temp_arcw, temp_dir, workspace_path, workspace_root,
 };

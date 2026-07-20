@@ -1,17 +1,14 @@
-default = "main"
+schema = 1
+default-profile = "main"
 
 [package]
-name = "web-demo"
+id = "org.arcweft.web.demo"
 version = "0.1.0"
 
 [build]
 source-dir = "."
 
-[resources]
-asset-dir = "bundle-assets"
-content-dir = "content"
-
 [profiles.main]
 kind = "game"
-entry = "entry.main"
+entry = "@entry.main"
 source = "demo.arcw"

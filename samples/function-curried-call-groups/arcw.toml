@@ -1,7 +1,9 @@
+schema = 1
+
 [package]
-name = "function-curried-call-groups"
+id = "org.arcweft.samples.function-curried-call-groups"
 version = "0.1.0"
 
-[launch.main]
+[profiles.main]
 kind = "cli"
 source = "src/main.arcw"

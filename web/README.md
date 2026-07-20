@@ -76,9 +76,10 @@ frame observation summary used by the native/Web parity tests. Set
 It also verifies `[p]` as a same-dialogue page transition through the dialogue
 instance, stage, page index, and page count in `arcweft.web_observation.v3`.
 
-`web/arcw.toml` mounts `web/bundle-assets/` as the Arcweft authored asset root.
-`web/assets/` is reserved for browser-served fonts and static files and is not
-walked into `demo.awfb`.
+`web/arcw.toml` uses the schema-1 project asset root at `web/assets/`.
+The bundler admits only assets referenced by `demo.arcw`; browser-served fonts
+and other static files in the same root are not implicitly walked into
+`demo.awfb`.
 
 ## Manual launch
 

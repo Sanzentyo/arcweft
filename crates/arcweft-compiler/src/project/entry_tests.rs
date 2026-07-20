@@ -28,10 +28,8 @@ use arcweft_lang_sema::{
     registration::ProjectRegistrationFacts,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_project::{
-    manifest::ProjectManifest,
-    sources::{ProjectSourceFile, ProjectSources},
-};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
@@ -93,7 +91,20 @@ fn entry_project(
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
-        ProjectManifest::parse_toml("[package]\nname = \"compiler-entry\"\n").expect("manifest"),
+        PackageSpec {
+            id: PackageId::new("org.arcweft.compiler-entry").expect("package ID"),
+            version: PackageVersion::new("0.1.0").expect("package version"),
+        },
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-project://compiler-entry/arcw.toml")
+                    .expect("manifest document ID"),
+                SourceName::path("arcw.toml"),
+                "schema = 1\n[package]\nid = \"org.arcweft.compiler-entry\"\nversion = \"0.1.0\"\n",
+            )
+            .expect("manifest document"),
+        ),
         [ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             source_path,

@@ -30,6 +30,7 @@ path = "src/lib.rs"
 [dev-dependencies]
 arcweft-agent-runner = { path = "../arcweft-agent-runner" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
+arcweft-manifest-model = { path = "../arcweft-manifest-model" }
 trybuild.workspace = true
 
 [lints]

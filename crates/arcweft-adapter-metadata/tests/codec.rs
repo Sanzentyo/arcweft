@@ -1,4 +1,7 @@
-use arcweft_adapter_metadata::{AdapterMetadataCodecError, SourceBackedAdapterMetadata};
+use arcweft_adapter_metadata::{
+    AdapterMetadataCodecError, AdapterMetadataDecodeLimitKind, AdapterMetadataDecodeLimits,
+    SourceBackedAdapterMetadata, StrictJsonError,
+};
 use arcweft_manifest_model::RawDigest;
 
 const RUST_METADATA: &str = include_str!("fixtures/truck-rust.adapter.json");
@@ -175,5 +178,54 @@ fn duplicate_exports_and_requirements_are_rejected_before_hash_verification() {
     assert!(matches!(
         SourceBackedAdapterMetadata::decode(&duplicate_requirement),
         Err(AdapterMetadataCodecError::DuplicateRequirement { .. })
+    ));
+}
+
+#[test]
+fn public_decoder_reports_typed_resource_limit_failures() {
+    let error = SourceBackedAdapterMetadata::decode_with_limits(
+        RUST_METADATA,
+        AdapterMetadataDecodeLimits::new(32, usize::MAX, usize::MAX),
+    )
+    .expect_err("metadata must exceed the test byte limit");
+
+    assert!(matches!(
+        error,
+        AdapterMetadataCodecError::Json(StrictJsonError::Limit {
+            kind: AdapterMetadataDecodeLimitKind::Bytes,
+            observed,
+            maximum: 32,
+            span: None,
+        }) if observed == RUST_METADATA.len()
+    ));
+
+    let depth_error = SourceBackedAdapterMetadata::decode_with_limits(
+        RUST_METADATA,
+        AdapterMetadataDecodeLimits::new(usize::MAX, 1, usize::MAX),
+    )
+    .expect_err("metadata must exceed the test nesting limit");
+    assert!(matches!(
+        depth_error,
+        AdapterMetadataCodecError::Json(StrictJsonError::Limit {
+            kind: AdapterMetadataDecodeLimitKind::NestingDepth,
+            observed: 2,
+            maximum: 1,
+            span: Some(_),
+        })
+    ));
+
+    let node_error = SourceBackedAdapterMetadata::decode_with_limits(
+        RUST_METADATA,
+        AdapterMetadataDecodeLimits::new(usize::MAX, usize::MAX, 1),
+    )
+    .expect_err("metadata must exceed the test lexical-node limit");
+    assert!(matches!(
+        node_error,
+        AdapterMetadataCodecError::Json(StrictJsonError::Limit {
+            kind: AdapterMetadataDecodeLimitKind::Nodes,
+            observed: 2,
+            maximum: 1,
+            span: Some(_),
+        })
     ));
 }

@@ -820,7 +820,7 @@ pub(in crate::callable) fn presentation_schema(
                     Some("source"),
                     CallableParameterType::Unchecked,
                     CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Required,
+                    CallableParameterPresence::Optional,
                 ),
                 optional_presentation_named(id, 1, "asset"),
                 optional_presentation_named(id, 2, "lifetime"),

@@ -1,7 +1,9 @@
 # Web Player Static Assets
 
-This directory contains checked-in browser-served static resources. Arcweft
-authoring inputs for `web/demo.arcw` live separately under `web/bundle-assets/`.
+This directory is the schema-1 project asset root and also contains checked-in
+browser-served static resources. Authored image inputs for `web/demo.arcw` live
+under `generated/`; the bundler admits declared assets rather than walking
+unreferenced browser files into the bundle.
 
 - `arcweft-demo.ttf`: Noto Sans Regular, licensed under the SIL Open Font
   License. The license text is checked in as `LICENSE-NotoSans.txt`.

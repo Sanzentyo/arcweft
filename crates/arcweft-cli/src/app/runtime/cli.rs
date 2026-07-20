@@ -28,7 +28,7 @@ pub(in crate::app) fn runtime_cli_command(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
+    );
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
@@ -63,7 +63,7 @@ pub(in crate::app) fn runtime_cli_command(
         value: RuntimeValue::i64(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
     });
 
-    let file_roots = selection.native_file_roots()?;
+    let file_roots = selection.native_file_roots();
     let trace = run_runtime_steps(
         plan,
         &entry,

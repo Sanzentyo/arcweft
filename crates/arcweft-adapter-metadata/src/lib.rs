@@ -14,5 +14,6 @@ pub use model::{
     RustTarget, WasmAbi, WasmTarget,
 };
 pub use strict_json::{
-    AdapterMetadataSourceMap, JsonPath, JsonPathSegment, JsonToken, StrictJsonError,
+    AdapterMetadataDecodeLimitKind, AdapterMetadataDecodeLimits, AdapterMetadataSourceMap,
+    JsonPath, JsonPathSegment, JsonToken, StrictJsonError,
 };

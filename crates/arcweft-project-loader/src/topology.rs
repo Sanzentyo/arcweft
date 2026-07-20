@@ -1,6 +1,7 @@
 //! Bounded, overlay-first loading of one exact launch-profile topology.
 
 mod budget;
+mod external;
 mod id;
 mod loader;
 mod model;
@@ -11,11 +12,12 @@ pub use id::{
 };
 pub use loader::load_profile_topology;
 pub use model::{
-    LoadedDocumentAccess, LoadedDocumentOwnership, LoadedProfileTopology,
-    LoadedProfileTopologyResource, ProfileDependencyResourceSeed, ProfileTopologyErrorCode,
-    ProfileTopologyLimitKind, ProfileTopologyLimits, ProfileTopologyLoadError,
-    ProfileTopologyLoadRequest, ProfileTopologyOverlaySeed, ProfileTopologyResourceKind,
-    ProfileTopologyResourceOrigin, ProfileTopologySeedError,
+    ExternalModuleFactsError, LoadedDocumentAccess, LoadedDocumentOwnership,
+    LoadedExternalModuleMetadata, LoadedProfileTopology, LoadedProfileTopologyResource,
+    ProfileDependencyResourceSeed, ProfileTopologyErrorCode, ProfileTopologyLimitKind,
+    ProfileTopologyLimits, ProfileTopologyLoadError, ProfileTopologyLoadRequest,
+    ProfileTopologyOverlaySeed, ProfileTopologyResourceKind, ProfileTopologyResourceOrigin,
+    ProfileTopologySeedError, TypeReferenceLimitKind, TypeReferenceLimits,
 };
 
 #[cfg(test)]

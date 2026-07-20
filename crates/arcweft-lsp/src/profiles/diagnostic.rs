@@ -1,5 +1,5 @@
 use arcweft_source::SourceSpan;
-use std::{fmt, path::Path};
+use std::fmt;
 use thiserror::Error;
 
 /// One profile metadata diagnostic with exact source provenance when available.
@@ -25,14 +25,16 @@ pub enum LspProfileDiagnosticKind {
     ManifestParse,
     /// The selected profile could not be resolved.
     ProfileResolve,
-    /// A project-local adapter manifest could not be read.
-    AdapterManifestRead,
-    /// A project-local adapter manifest could not be parsed.
-    AdapterManifestParse,
-    /// Rust ABI metadata could not be read.
-    RustMetadataRead,
-    /// Rust ABI metadata could not be parsed.
-    RustMetadataParse,
+    /// A complete profile candidate could not be atomically published.
+    ProfilePublication,
+    /// An Arcweft project source could not be read.
+    ProjectSourceRead,
+    /// An Arcweft project source could not be parsed or linked.
+    ProjectSourceParse,
+    /// Generated external-module metadata could not be read.
+    ExternalModuleMetadataRead,
+    /// Generated external-module metadata could not be decoded or admitted.
+    ExternalModuleMetadataParse,
     /// A character manifest could not be read.
     CharacterManifestRead,
     /// A character manifest could not be parsed or validated.
@@ -52,6 +54,11 @@ pub(super) enum LspProfileLoadError {
         profile_id: Option<String>,
         #[source]
         source: Box<super::environment::RegisterProfileEnvironmentError>,
+    },
+    #[error("profile candidate could not be published: {source}")]
+    ProfilePublication {
+        #[source]
+        source: super::state::AcceptedEnvironmentReplaceError,
     },
 }
 
@@ -123,10 +130,11 @@ impl LspProfileDiagnosticKind {
             Self::ManifestRead => "profile.manifest.read",
             Self::ManifestParse => "profile.manifest.parse",
             Self::ProfileResolve => "profile.resolve",
-            Self::AdapterManifestRead => "profile.adapter_manifest.read",
-            Self::AdapterManifestParse => "profile.adapter_manifest.parse",
-            Self::RustMetadataRead => "profile.rust_metadata.read",
-            Self::RustMetadataParse => "profile.rust_metadata.parse",
+            Self::ProfilePublication => "profile.publication",
+            Self::ProjectSourceRead => "profile.project_source.read",
+            Self::ProjectSourceParse => "profile.project_source.parse",
+            Self::ExternalModuleMetadataRead => "profile.external_module_metadata.read",
+            Self::ExternalModuleMetadataParse => "profile.external_module_metadata.parse",
             Self::CharacterManifestRead => "profile.character_manifest.read",
             Self::CharacterManifestParse => "profile.character_manifest.parse",
             Self::CharacterCatalog => "profile.character_manifest.catalog",
@@ -142,6 +150,7 @@ impl LspProfileLoadError {
             Self::Environment { profile_id, source } => {
                 return environment_diagnostic(*source, profile_id);
             }
+            Self::ProfilePublication { .. } => LspProfileDiagnosticKind::ProfilePublication,
         };
         LspProfileDiagnostic::new(kind, self.to_string())
     }
@@ -178,22 +187,22 @@ fn topology_diagnostic(
     use arcweft_project_loader::topology::ProfileTopologyLoadError as Error;
 
     match error {
-        Error::ResourceRead { id, .. } => {
+        Error::ResourceRead { id, kind, .. } => {
             let resource = id.path().as_str();
-            let kind = if resource == "arcw.toml" {
-                LspProfileDiagnosticKind::ManifestRead
-            } else if resource.contains(".awchar") {
-                LspProfileDiagnosticKind::CharacterManifestRead
-            } else if Path::new(resource)
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
-            {
-                LspProfileDiagnosticKind::RustMetadataRead
-            } else {
-                LspProfileDiagnosticKind::AdapterManifestRead
-            };
-            LspProfileDiagnostic::new(kind, format!("failed to read `{resource}`"))
+            let diagnostic_kind =
+                topology_resource_diagnostic_kind(kind, TopologyResourceFailure::Read);
+            LspProfileDiagnostic::new(diagnostic_kind, format!("failed to read `{resource}`"))
                 .with_resource(resource)
+        }
+        Error::ResourceUtf8 { id, kind, .. } => {
+            let resource = id.path().as_str();
+            let diagnostic_kind =
+                topology_resource_diagnostic_kind(kind, TopologyResourceFailure::Parse);
+            LspProfileDiagnostic::new(
+                diagnostic_kind,
+                format!("resource `{resource}` is not valid UTF-8"),
+            )
+            .with_resource(resource)
         }
         Error::CharacterManifest { id, source, .. } => {
             let resource = id.path().as_str();
@@ -203,25 +212,64 @@ fn topology_diagnostic(
             )
             .with_resource(resource)
         }
-        Error::AdapterManifest { id, source, .. } => {
-            let resource = id.path().as_str();
+        Error::ExternalModuleMetadataHash { import, path }
+        | Error::ExternalModuleMetadataDecode { import, path, .. } => {
+            let resource = path.display().to_string();
             LspProfileDiagnostic::new(
-                LspProfileDiagnosticKind::AdapterManifestParse,
-                format!("invalid adapter manifest `{resource}`: {source}"),
+                LspProfileDiagnosticKind::ExternalModuleMetadataParse,
+                format!("invalid generated metadata for import `{import}`"),
             )
             .with_resource(resource)
         }
-        Error::RustMetadata { id, source, .. } => {
-            let resource = id.path().as_str();
-            LspProfileDiagnostic::new(
-                LspProfileDiagnosticKind::RustMetadataParse,
-                format!("invalid Rust metadata `{resource}`: {source}"),
-            )
-            .with_resource(resource)
-        }
-        Error::ProjectManifest { .. } | Error::LaunchManifest { .. } => {
+        Error::ExternalModuleMetadataExpectation { import, .. }
+        | Error::ExternalModuleFacts(
+            arcweft_project_loader::topology::ExternalModuleFactsError::Symbol { import, .. }
+            | arcweft_project_loader::topology::ExternalModuleFactsError::Callable { import, .. }
+            | arcweft_project_loader::topology::ExternalModuleFactsError::TypeReference {
+                import,
+                ..
+            }
+            | arcweft_project_loader::topology::ExternalModuleFactsError::FunctionPurity {
+                import,
+                ..
+            }
+            | arcweft_project_loader::topology::ExternalModuleFactsError::ActivityExportMissing {
+                import,
+                ..
+            }
+            | arcweft_project_loader::topology::ExternalModuleFactsError::ActivityIdentityMismatch {
+                import,
+                ..
+            },
+        ) => LspProfileDiagnostic::new(
+            LspProfileDiagnosticKind::ExternalModuleMetadataParse,
+            format!("generated metadata import `{import}` was rejected"),
+        )
+        .with_resource(import.as_str()),
+        Error::ExternalModuleFacts(
+            arcweft_project_loader::topology::ExternalModuleFactsError::DuplicateMountedIdentity {
+                identity,
+            },
+        ) => LspProfileDiagnostic::new(
+            LspProfileDiagnosticKind::ExternalModuleMetadataParse,
+            format!("generated mounted identity `{identity}` occurs more than once"),
+        ),
+        Error::Manifest { .. } => {
             LspProfileDiagnostic::new(LspProfileDiagnosticKind::ManifestParse, error.to_string())
         }
+        Error::ModuleSyntax { id, .. } | Error::ModuleDeclaration { id, .. } => {
+            let resource = id.path().as_str();
+            LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::ProjectSourceParse,
+                error.to_string(),
+            )
+            .with_resource(resource)
+        }
+        Error::ModuleImport { path, .. } => LspProfileDiagnostic::new(
+            LspProfileDiagnosticKind::ProjectSourceParse,
+            error.to_string(),
+        )
+        .with_resource(path.display().to_string()),
         Error::ProfileSelection { .. } | Error::AdapterSelection { .. } => {
             LspProfileDiagnostic::new(LspProfileDiagnosticKind::ProfileResolve, error.to_string())
         }
@@ -229,6 +277,46 @@ fn topology_diagnostic(
             LspProfileDiagnosticKind::CharacterCatalog,
             format!("exact profile topology was rejected ({:?})", error.code()),
         ),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TopologyResourceFailure {
+    Read,
+    Parse,
+}
+
+fn topology_resource_diagnostic_kind(
+    resource: &arcweft_project_loader::topology::ProfileTopologyResourceKind,
+    failure: TopologyResourceFailure,
+) -> LspProfileDiagnosticKind {
+    use arcweft_project_loader::topology::ProfileTopologyResourceKind as Resource;
+
+    match (resource, failure) {
+        (Resource::Manifest, TopologyResourceFailure::Read) => {
+            LspProfileDiagnosticKind::ManifestRead
+        }
+        (Resource::Manifest, TopologyResourceFailure::Parse) => {
+            LspProfileDiagnosticKind::ManifestParse
+        }
+        (Resource::ArcweftModule { .. }, TopologyResourceFailure::Read) => {
+            LspProfileDiagnosticKind::ProjectSourceRead
+        }
+        (Resource::ArcweftModule { .. }, TopologyResourceFailure::Parse) => {
+            LspProfileDiagnosticKind::ProjectSourceParse
+        }
+        (Resource::CharacterPackageManifest { .. }, TopologyResourceFailure::Read) => {
+            LspProfileDiagnosticKind::CharacterManifestRead
+        }
+        (Resource::CharacterPackageManifest { .. }, TopologyResourceFailure::Parse) => {
+            LspProfileDiagnosticKind::CharacterManifestParse
+        }
+        (Resource::ExternalModuleMetadata { .. }, TopologyResourceFailure::Read) => {
+            LspProfileDiagnosticKind::ExternalModuleMetadataRead
+        }
+        (Resource::ExternalModuleMetadata { .. }, TopologyResourceFailure::Parse) => {
+            LspProfileDiagnosticKind::ExternalModuleMetadataParse
+        }
     }
 }
 

@@ -21,10 +21,8 @@ use arcweft_compiler::project::{
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::registration::ProjectRegistrationFacts;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_project::{
-    manifest::ProjectManifest,
-    sources::{ProjectSourceFile, ProjectSources},
-};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::sync::Arc;
@@ -75,7 +73,7 @@ pub(super) fn compile_agent_script_source(
     selected_entry: &str,
     target_project: &ProjectSemanticIndex,
 ) -> Result<arcweft_compiler::types::CompiledAgentBundle, String> {
-    const PACKAGE_NAME: &str = "arcweft-agent-script";
+    const PACKAGE_NAME: &str = "org.arcweft.tool.agent-script";
 
     let selected_entry =
         SemaPublicId::try_new(selected_entry.to_owned()).map_err(|error| error.to_string())?;
@@ -93,8 +91,20 @@ pub(super) fn compile_agent_script_source(
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
-        ProjectManifest::parse_toml(&format!("[package]\nname = \"{PACKAGE_NAME}\"\n"))
+        PackageSpec {
+            id: PackageId::new(PACKAGE_NAME).map_err(|error| error.to_string())?,
+            version: PackageVersion::new("0.0.0").map_err(|error| error.to_string())?,
+        },
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-agent-script://manifest")
+                    .map_err(|error| error.to_string())?,
+                SourceName::Memory,
+                "",
+            )
             .map_err(|error| error.to_string())?,
+        ),
         [ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             source_path,

@@ -23,6 +23,12 @@ impl TypeKind {
             }
             (Self::ActionName, Self::String | Self::Named(_)) => true,
             (Self::AgentValue, actual) => is_agent_value_type(actual),
+            (Self::Ref(expected), Self::Ref(actual)) if expected.kind() == actual.kind() => {
+                // A payload-free reference is a family constraint used by
+                // shared callable schemas. It accepts a retained payload
+                // specialization without erasing that payload from `actual`.
+                expected.value().is_none()
+            }
             (Self::Choice(alternatives), Self::Choice(actual_alternatives)) => actual_alternatives
                 .iter()
                 .all(|actual| choice_injection_target(alternatives, actual).is_some()),
@@ -162,4 +168,31 @@ fn choice_injection_target<'a>(
         .filter(|alternative| alternative.accepts(actual));
     let selected = compatible_alternatives.next()?;
     compatible_alternatives.next().is_none().then_some(selected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TypeKind;
+    use crate::types::EntityKind;
+
+    #[test]
+    fn family_entity_reference_accepts_payload_specialization() {
+        let family = TypeKind::entity_ref(EntityKind::Signal);
+        let typed = TypeKind::entity_ref_with_value(EntityKind::Signal, TypeKind::Bool);
+
+        assert!(family.accepts(&typed));
+        assert!(!typed.accepts(&family));
+    }
+
+    #[test]
+    fn typed_entity_reference_requires_compatible_family_and_payload() {
+        let expected = TypeKind::entity_ref_with_value(EntityKind::Signal, TypeKind::Bool);
+        let matching = TypeKind::entity_ref_with_value(EntityKind::Signal, TypeKind::Bool);
+        let wrong_payload = TypeKind::entity_ref_with_value(EntityKind::Signal, TypeKind::String);
+        let wrong_family = TypeKind::entity_ref_with_value(EntityKind::Metric, TypeKind::Bool);
+
+        assert!(expected.accepts(&matching));
+        assert!(!expected.accepts(&wrong_payload));
+        assert!(!expected.accepts(&wrong_family));
+    }
 }

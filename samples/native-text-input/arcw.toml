@@ -1,7 +1,9 @@
+schema = 1
+
 [package]
-name = "native-text-input"
+id = "org.arcweft.samples.native-text-input"
 version = "0.1.0"
 
-[launch.main]
+[profiles.main]
 kind = "game"
 source = "src/main.arcw"

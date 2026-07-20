@@ -125,7 +125,7 @@ pub(crate) fn rename(
                     );
                     changes.entry(uri).or_default().push(TextEdit::new(
                         line_index.range_from_byte_span(range.start, range.end),
-                        canonical.clone(),
+                        format!("@{canonical}"),
                     ));
                 }
             }

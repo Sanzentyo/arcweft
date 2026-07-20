@@ -9,7 +9,7 @@ use crate::app::shared::print_json;
 use crate::server_adapter::{NativeHttpServerConfig, serve_native_http};
 use arcweft_adapter_context::standard;
 use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
-use arcweft_launch::LaunchKind;
+use arcweft_launch::{LaunchKind, manifest::LaunchListenAddress, resolve::ResolvedLaunchProfile};
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use std::net::SocketAddr;
@@ -59,7 +59,7 @@ pub(in crate::app) fn runtime_serve_command(
         options.pure_object_artifacts,
         options.math_backend,
         options.math_wgpu_min_elements,
-    )?;
+    );
     runtime_serve_selection(
         &selection,
         options.entry.as_deref(),
@@ -134,7 +134,7 @@ pub(in crate::app) fn runtime_serve_selection(
     };
     let listen = match config.listen {
         Some(listen) => Some(listen),
-        None => serve_profile_listen_addr(selection)?,
+        None => serve_profile_listen_addr(selection),
     };
     if let Some(listen) = listen {
         let server_report = serve_native_http(
@@ -184,12 +184,9 @@ pub(in crate::app) fn runtime_serve_selection(
     }
 }
 
-fn serve_profile_listen_addr(selection: &SourceSelection) -> Result<Option<SocketAddr>, ExitCode> {
-    let Some(raw) = selection.profile().and_then(|profile| profile.listen()) else {
-        return Ok(None);
-    };
-    raw.parse::<SocketAddr>().map(Some).map_err(|error| {
-        eprintln!("error: invalid launch profile listen address `{raw}`: {error}");
-        ExitCode::from(2)
-    })
+fn serve_profile_listen_addr(selection: &SourceSelection) -> Option<SocketAddr> {
+    selection
+        .profile()
+        .and_then(ResolvedLaunchProfile::listen)
+        .map(LaunchListenAddress::socket_addr)
 }

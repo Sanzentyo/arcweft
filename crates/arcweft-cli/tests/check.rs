@@ -3,16 +3,10 @@ use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use arcweft_adapter_context::manifest::{
-    AdapterEffectCapability, AdapterHostCall, AdapterManifest,
-};
 use arcweft_agent_protocol::ids::{PublicId, SessionId, StableHash};
-use arcweft_core::task::{HostTaskRequest, TaskSpec};
-use arcweft_core::value::RuntimePayload;
 use arcweft_debug_model::chunk::{ChunkId, ChunkSourceKind, DebugChunk, PrivacyClass};
 use arcweft_debug_model::diagnostic::DebugDiagnostic;
 use arcweft_debug_model::embedding::{EmbeddingModelDescriptor, StoredEmbedding};
@@ -25,19 +19,18 @@ use arcweft_debug_model::session::{DebugSession, DebugSessionStatus};
 use arcweft_debug_model::sink::DebugEventSink;
 use arcweft_debug_model::test_result::DebugTestResult;
 use arcweft_debug_sqlite::store::DebugStore;
-use arcweft_host_adapter::{HostAdapter, HostTaskMetrics, HostTaskOutcome};
-use arcweft_runtime_host::{
-    BundleRunnerOptions, NativeAdapterRegistrar, run_bundle_file_with_native_adapters,
-};
-use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
-    ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
-    ArcweftRustVariant,
-};
 
-static CUSTOM_BUNDLE_ADAPTER_CALLS: AtomicUsize = AtomicUsize::new(0);
-static CUSTOM_BUNDLE_ADAPTER_OUTPUT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static AGENT_MCP_STDIO_LOCK: Mutex<()> = Mutex::new(());
+
+fn agent_mcp_stdio_guard() -> MutexGuard<'static, ()> {
+    // A failed subprocess assertion does not corrupt shared state: the mutex
+    // only serializes independent native processes. Recovering the guard lets
+    // the remaining Tier 2 cases report their own evidence instead of
+    // cascading through `PoisonError`.
+    AGENT_MCP_STDIO_LOCK
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
 
 fn workspace_path(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -57,9 +50,7 @@ fn run_agent_mcp_stdio_with_options(
     requests: &[serde_json::Value],
     options: &[&str],
 ) -> std::process::Output {
-    let _guard = AGENT_MCP_STDIO_LOCK
-        .lock()
-        .expect("agent MCP stdio tests serialize native subprocesses");
+    let _guard = agent_mcp_stdio_guard();
     let mut child = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
         .arg("mcp")
@@ -215,7 +206,9 @@ fn temp_arcw_project(name: &str, source: &str) -> PathBuf {
     let root = temp_dir(name);
     fs::write(
         root.join("arcw.toml"),
-        format!("[package]\nname = \"{name}\"\n"),
+        format!(
+            "schema = 1\n[package]\nid = \"org.arcweft.cli-tests.{name}\"\nversion = \"0.1.0\"\n"
+        ),
     )
     .expect("write temp project manifest");
     let source_dir = root.join("src");
@@ -766,36 +759,4 @@ fn julia_is_available() -> bool {
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
-fn truck_game_rust_manifest() -> ArcweftRustManifest {
-    ArcweftRustManifest::builder(ArcweftRustPackage {
-        name: "truck_game".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_type(ArcweftRustTypeDecl {
-        name: "Rank".to_owned(),
-        rust_path: "truck_game::Rank".to_owned(),
-        kind: ArcweftRustTypeKind::Enum {
-            variants: vec![ArcweftRustVariant {
-                name: "Gold".to_owned(),
-                fields: Vec::new(),
-            }],
-        },
-    })
-    .with_function(ArcweftRustFunction {
-        name: "score_to_rank".to_owned(),
-        rust_path: "truck_game::score_to_rank".to_owned(),
-        params: vec![ArcweftRustParam {
-            name: "score".to_owned(),
-            ty: ArcweftRustTypeRef::I32,
-        }],
-        return_type: ArcweftRustTypeRef::Named {
-            name: "Rank".to_owned(),
-        },
-        purity: ArcweftRustPurity::Pure,
-        effects: Vec::new(),
-    })
-    .build()
 }

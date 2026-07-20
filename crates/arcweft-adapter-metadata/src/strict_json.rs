@@ -4,6 +4,22 @@ use serde_json::{Number, Value};
 use std::{collections::BTreeMap, fmt, ops::Range};
 use thiserror::Error;
 
+/// Explicit resource limits for one generated adapter-metadata decode.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdapterMetadataDecodeLimits {
+    bytes: usize,
+    nesting_depth: usize,
+    nodes: usize,
+}
+
+/// Counter whose inclusive adapter-metadata decode limit was exceeded.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AdapterMetadataDecodeLimitKind {
+    Bytes,
+    NestingDepth,
+    Nodes,
+}
+
 /// Typed path into a generated metadata JSON document.
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct JsonPath(Vec<JsonPathSegment>);
@@ -33,6 +49,15 @@ pub struct AdapterMetadataSourceMap {
 pub enum StrictJsonError {
     #[error("invalid generated metadata JSON: {message}")]
     Syntax { message: String },
+    #[error(
+        "generated metadata JSON exceeded its {kind:?} limit: observed {observed}, maximum {maximum}"
+    )]
+    Limit {
+        kind: AdapterMetadataDecodeLimitKind,
+        observed: usize,
+        maximum: usize,
+        span: Option<Range<usize>>,
+    },
     #[error("duplicate JSON key `{key}` at {path:?}")]
     DuplicateKey {
         path: JsonPath,
@@ -44,6 +69,40 @@ pub enum StrictJsonError {
     Null { path: JsonPath, span: Range<usize> },
     #[error("floating-point values are not admitted at {path:?}")]
     Float { path: JsonPath, span: Range<usize> },
+}
+
+impl AdapterMetadataDecodeLimits {
+    /// Production envelope for one generated metadata document.
+    ///
+    /// The byte ceiling matches the accepted source-document boundary. The
+    /// smaller structural ceilings bound source-map allocation and recursive
+    /// lowering independently of source length.
+    pub const PRODUCTION: Self = Self::new(8_388_608, 64, 65_536);
+
+    /// Creates inclusive byte, nesting, and node ceilings.
+    ///
+    /// The node ceiling is charged lexically before deserialization, including
+    /// containers, scalar values, string values, and object keys. Semantic
+    /// values are charged again while the source map is built.
+    pub const fn new(bytes: usize, nesting_depth: usize, nodes: usize) -> Self {
+        Self {
+            bytes,
+            nesting_depth,
+            nodes,
+        }
+    }
+
+    pub const fn bytes(self) -> usize {
+        self.bytes
+    }
+
+    pub const fn nesting_depth(self) -> usize {
+        self.nesting_depth
+    }
+
+    pub const fn nodes(self) -> usize {
+        self.nodes
+    }
 }
 
 impl JsonPath {
@@ -76,15 +135,134 @@ impl AdapterMetadataSourceMap {
 
 pub(crate) fn parse_strict_json(
     source: &str,
+    limits: AdapterMetadataDecodeLimits,
 ) -> Result<(Value, AdapterMetadataSourceMap), StrictJsonError> {
+    check_lexical_limits(source, limits)?;
     let root = json_spanned_value::from_str::<Spanned<JsonValue>>(source).map_err(|error| {
         StrictJsonError::Syntax {
             message: error.to_string(),
         }
     })?;
     let mut source_map = AdapterMetadataSourceMap::default();
-    let value = lower_value(&root, &JsonPath::default(), None, &mut source_map)?;
+    let mut budget = JsonValueBudget::new(limits.nodes());
+    let value = lower_value(
+        &root,
+        &JsonPath::default(),
+        None,
+        &mut source_map,
+        &mut budget,
+    )?;
     Ok((value, source_map))
+}
+
+fn check_lexical_limits(
+    source: &str,
+    limits: AdapterMetadataDecodeLimits,
+) -> Result<(), StrictJsonError> {
+    if source.len() > limits.bytes() {
+        return Err(StrictJsonError::Limit {
+            kind: AdapterMetadataDecodeLimitKind::Bytes,
+            observed: source.len(),
+            maximum: limits.bytes(),
+            span: None,
+        });
+    }
+
+    let mut depth = 0usize;
+    let mut nodes = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut in_scalar = false;
+    for (offset, byte) in source.bytes().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else {
+                match byte {
+                    b'\\' => escaped = true,
+                    b'"' => in_string = false,
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        if in_scalar {
+            if byte.is_ascii_whitespace() || matches!(byte, b',' | b']' | b'}') {
+                in_scalar = false;
+            } else {
+                continue;
+            }
+        }
+        match byte {
+            b'"' => {
+                charge_lexical_node(&mut nodes, limits.nodes(), offset)?;
+                in_string = true;
+            }
+            b'[' | b'{' => {
+                charge_lexical_node(&mut nodes, limits.nodes(), offset)?;
+                depth = depth.saturating_add(1);
+                if depth > limits.nesting_depth() {
+                    return Err(StrictJsonError::Limit {
+                        kind: AdapterMetadataDecodeLimitKind::NestingDepth,
+                        observed: depth,
+                        maximum: limits.nesting_depth(),
+                        span: Some(offset..offset + 1),
+                    });
+                }
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            b'-' | b'0'..=b'9' | b't' | b'f' | b'n' => {
+                charge_lexical_node(&mut nodes, limits.nodes(), offset)?;
+                in_scalar = true;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn charge_lexical_node(
+    observed: &mut usize,
+    maximum: usize,
+    offset: usize,
+) -> Result<(), StrictJsonError> {
+    *observed = (*observed).saturating_add(1);
+    if *observed > maximum {
+        return Err(StrictJsonError::Limit {
+            kind: AdapterMetadataDecodeLimitKind::Nodes,
+            observed: *observed,
+            maximum,
+            span: Some(offset..offset + 1),
+        });
+    }
+    Ok(())
+}
+
+struct JsonValueBudget {
+    maximum: usize,
+    observed: usize,
+}
+
+impl JsonValueBudget {
+    const fn new(maximum: usize) -> Self {
+        Self {
+            maximum,
+            observed: 0,
+        }
+    }
+
+    fn charge(&mut self, span: Range<usize>) -> Result<(), StrictJsonError> {
+        self.observed = self.observed.saturating_add(1);
+        if self.observed > self.maximum {
+            return Err(StrictJsonError::Limit {
+                kind: AdapterMetadataDecodeLimitKind::Nodes,
+                observed: self.observed,
+                maximum: self.maximum,
+                span: Some(span),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -180,8 +358,10 @@ fn lower_value(
     path: &JsonPath,
     key_span: Option<Range<usize>>,
     source_map: &mut AdapterMetadataSourceMap,
+    budget: &mut JsonValueBudget,
 ) -> Result<Value, StrictJsonError> {
     let span = value.range();
+    budget.charge(span.clone())?;
     source_map.entries.insert(
         path.clone(),
         JsonToken {
@@ -204,7 +384,7 @@ fn lower_value(
         JsonValue::Array(values) => values
             .iter()
             .enumerate()
-            .map(|(index, value)| lower_value(value, &path.index(index), None, source_map))
+            .map(|(index, value)| lower_value(value, &path.index(index), None, source_map, budget))
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
         JsonValue::Object(values) => {
@@ -224,7 +404,7 @@ fn lower_value(
                 let child_path = path.field(key_text);
                 object.insert(
                     key_text.to_owned(),
-                    lower_value(value, &child_path, Some(key_range), source_map)?,
+                    lower_value(value, &child_path, Some(key_range), source_map, budget)?,
                 );
             }
             Ok(Value::Object(object))
@@ -234,12 +414,15 @@ fn lower_value(
 
 #[cfg(test)]
 mod tests {
-    use super::{JsonPathSegment, StrictJsonError, parse_strict_json};
+    use super::{
+        AdapterMetadataDecodeLimitKind, AdapterMetadataDecodeLimits, JsonPathSegment,
+        StrictJsonError, parse_strict_json,
+    };
 
     #[test]
     fn rejects_duplicate_keys_with_both_ranges() {
         let source = r#"{"package":1,"package":2}"#;
-        let error = parse_strict_json(source).unwrap_err();
+        let error = parse_strict_json(source, AdapterMetadataDecodeLimits::PRODUCTION).unwrap_err();
         let StrictJsonError::DuplicateKey {
             first, duplicate, ..
         } = error
@@ -253,7 +436,7 @@ mod tests {
     #[test]
     fn retains_array_element_value_spans() {
         let source = r#"{"values":[10,20]}"#;
-        let (_, map) = parse_strict_json(source).unwrap();
+        let (_, map) = parse_strict_json(source, AdapterMetadataDecodeLimits::PRODUCTION).unwrap();
         let (path, token) = map
             .entries()
             .iter()
@@ -267,5 +450,54 @@ mod tests {
             .unwrap();
         assert_eq!(path.segments().len(), 2);
         assert_eq!(&source[token.value_span.clone()], "20");
+    }
+
+    #[test]
+    fn enforces_byte_depth_and_node_limits_before_unbounded_lowering() {
+        let byte_error = parse_strict_json(
+            "{}",
+            AdapterMetadataDecodeLimits::new(1, usize::MAX, usize::MAX),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            byte_error,
+            StrictJsonError::Limit {
+                kind: AdapterMetadataDecodeLimitKind::Bytes,
+                observed: 2,
+                maximum: 1,
+                span: None,
+            }
+        ));
+
+        let nested = r#"{"brackets":"[[[","value":[[0]]]}"#;
+        let depth_error = parse_strict_json(
+            nested,
+            AdapterMetadataDecodeLimits::new(usize::MAX, 2, usize::MAX),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            depth_error,
+            StrictJsonError::Limit {
+                kind: AdapterMetadataDecodeLimitKind::NestingDepth,
+                observed: 3,
+                maximum: 2,
+                span: Some(_),
+            }
+        ));
+
+        let node_error = parse_strict_json(
+            "[0,1]",
+            AdapterMetadataDecodeLimits::new(usize::MAX, usize::MAX, 2),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            node_error,
+            StrictJsonError::Limit {
+                kind: AdapterMetadataDecodeLimitKind::Nodes,
+                observed: 3,
+                maximum: 2,
+                span: Some(_),
+            }
+        ));
     }
 }

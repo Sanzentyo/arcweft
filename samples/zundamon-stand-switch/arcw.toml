@@ -1,12 +1,14 @@
-default = "game.main"
+schema = 1
+default-profile = "game.main"
 
 [package]
-name = "zundamon-stand-switch"
+id = "org.arcweft.samples.zundamon-stand-switch"
+version = "0.1.0"
 
 [build]
 source-dir = "."
 
 [profiles."game.main"]
 kind = "game"
-entry = "entry.main"
+entry = "@entry.main"
 source = "main.arcw"

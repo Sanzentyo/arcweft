@@ -11,10 +11,8 @@ use arcweft_lang_sema::{
     types::TypeKind,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_project::{
-    manifest::ProjectManifest,
-    sources::{ProjectSourceFile, ProjectSources},
-};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
@@ -63,13 +61,26 @@ fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrat
         )
         .expect("document"),
     );
-    let manifest =
-        ProjectManifest::parse_toml(&format!("[package]\nname = \"compiler-cache-{profile}\"\n"))
-            .expect("manifest");
+    let package_id = format!("org.arcweft.compiler-cache-{profile}");
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
-        manifest,
+        PackageSpec {
+            id: PackageId::new(package_id.clone()).expect("package ID"),
+            version: PackageVersion::new("0.1.0").expect("package version"),
+        },
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(format!(
+                    "arcweft-project://compiler-cache-{profile}/arcw.toml"
+                ))
+                .expect("manifest document ID"),
+                SourceName::path("arcw.toml"),
+                format!("schema = 1\n[package]\nid = \"{package_id}\"\nversion = \"0.1.0\"\n"),
+            )
+            .expect("manifest document"),
+        ),
         [ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             PathBuf::from("src/main.arcw"),

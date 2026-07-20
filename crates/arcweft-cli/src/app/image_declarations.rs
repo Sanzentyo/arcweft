@@ -2,12 +2,16 @@ use arcweft_lang_syntax::{
     ast::items::{EntityDeclKind, ImageDeclBody, Item},
     parser::parse_source,
 };
+use arcweft_source::{
+    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceDocument, SourceRange,
+};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::app) struct DeclaredImageObject {
     id: String,
     args: Vec<String>,
+    declaration_anchor: SourceRange,
 }
 
 impl DeclaredImageObject {
@@ -18,12 +22,28 @@ impl DeclaredImageObject {
     pub(in crate::app) fn args(&self) -> &[String] {
         &self.args
     }
+
+    pub(in crate::app) fn missing_asset_diagnostic(&self, document: &SourceDocument) -> Diagnostic {
+        let diagnostic = Diagnostic::new(
+            DiagnosticSeverity::Error,
+            format!("image object `{}` is missing an asset reference", self.id),
+        )
+        .with_code("bundle.image.missing_asset_reference")
+        .with_note("add an `asset = @asset:.*` field to the image declaration");
+        match document.span(self.declaration_anchor) {
+            Ok(span) => diagnostic.with_label(DiagnosticLabel::primary(
+                span,
+                Some("this image declaration requires an `asset` field".to_owned()),
+            )),
+            Err(_) => diagnostic,
+        }
+    }
 }
 
 pub(in crate::app) fn parse_declared_image_objects(
-    source: &str,
+    document: &SourceDocument,
 ) -> BTreeMap<String, DeclaredImageObject> {
-    parse_source(source)
+    parse_source(document.text())
         .typed_tree()
         .items()
         .iter()
@@ -40,6 +60,10 @@ pub(in crate::app) fn parse_declared_image_objects(
                     id.clone(),
                     DeclaredImageObject {
                         args: image_decl_body_args(&id, body),
+                        declaration_anchor: SourceRange::new(
+                            item.id().range().start(),
+                            item.id().range().end(),
+                        ),
                         id,
                     },
                 )
@@ -130,10 +154,22 @@ pub(in crate::app) fn public_id_arg(arg: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::diagnostics::render_plain_diagnostic;
+    use arcweft_source::{SourceDocumentId, SourceName};
+
+    fn document(source: &str) -> SourceDocument {
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://image-declaration")
+                .expect("test source identity"),
+            SourceName::path("image-declaration.arcw"),
+            source,
+        )
+        .expect("test source document")
+    }
 
     #[test]
     fn parses_declared_image_object_args_and_default_id() {
-        let declarations = parse_declared_image_objects(
+        let document = document(
             r"
 pub image @image.sample.pulse {
     asset = @asset:.bg.pulse
@@ -144,6 +180,7 @@ pub image @image.sample.pulse {
 }
 ",
         );
+        let declarations = parse_declared_image_objects(&document);
         let declaration = declarations
             .get("image.sample.pulse")
             .expect("declared image object is indexed");
@@ -166,6 +203,41 @@ pub image @image.sample.pulse {
         );
     }
 
+    #[test]
+    fn missing_asset_diagnostic_retains_stable_code_and_declaration_span() {
+        let source = r"
+pub image @image.sample.missing {
+    x = 12px
+    y = 34px
+    width = 56px
+    height = 78px
+}
+";
+        let document = document(source);
+        let declarations = parse_declared_image_objects(&document);
+        let diagnostic = declarations["image.sample.missing"].missing_asset_diagnostic(&document);
+
+        assert_eq!(
+            diagnostic
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str),
+            Some("bundle.image.missing_asset_reference")
+        );
+        assert_eq!(diagnostic.labels().len(), 1);
+        assert_eq!(
+            diagnostic.labels()[0].span().range().as_range(),
+            source.find("@image.sample.missing").expect("image ID")
+                ..source.find("@image.sample.missing").expect("image ID")
+                    + "@image.sample.missing".len()
+        );
+        let rendered = render_plain_diagnostic(&document, &diagnostic);
+        assert!(rendered.contains(
+            "error[bundle.image.missing_asset_reference]: image object `image.sample.missing` is missing an asset reference"
+        ));
+        assert!(rendered.contains("pub image @image.sample.missing"));
+        assert!(rendered.contains("this image declaration requires an `asset` field"));
+    }
+
     #[cfg(feature = "native-capture")]
     #[test]
     fn merge_declared_image_args_lets_call_site_override_named_fields() {
@@ -177,6 +249,7 @@ pub image @image.sample.pulse {
                 "x = 12px".to_owned(),
                 "opacity = 0.5".to_owned(),
             ],
+            declaration_anchor: SourceRange::new(0, 0),
         };
 
         assert_eq!(

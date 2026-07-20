@@ -7,6 +7,6 @@ pub mod artifact;
 pub mod fingerprint;
 pub mod graph;
 pub mod incremental;
-pub mod manifest;
+pub mod layout;
 pub mod persistent_object;
 pub mod sources;

@@ -1,2 +1,5 @@
+schema = 1
+
 [package]
-name = "seq07_1_project_wide_diagnostics_fixture"
+id = "org.arcweft.fixtures.seq07-1-project-wide-diagnostics"
+version = "0.1.0"

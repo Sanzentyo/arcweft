@@ -1,5 +1,5 @@
 use super::bundle_view::view_sidecars;
-use super::diagnostics::emit_diagnostics;
+use super::diagnostics::{DiagnosticEmitter, DiagnosticSource, emit_diagnostics};
 use super::image_declarations::{
     DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
     parse_declared_image_objects, public_asset_ref_arg, public_id_arg,
@@ -61,7 +61,7 @@ use arcweft_core::{
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_sema::dialogue_view::DialogueViewModelRegistry;
 use arcweft_launch::LaunchKind;
-use arcweft_project::manifest::AuthoredResourceRoots;
+use arcweft_project::layout::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
@@ -275,7 +275,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
     include_spaces: Vec<BundleVirtualFileSpace>,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<CompiledBundleArtifact, ExitCode> {
-    let semantic = semantic_context_for_selection(selection, None, phases)?;
+    let semantic = semantic_context_for_selection(selection, None)?;
     let compiled = compile_profile_runtime_plan(selection, &semantic, phases)?;
     let verification = verify_module_with_env(
         &compiled.hir,
@@ -292,13 +292,6 @@ pub(in crate::app) fn compile_bundle_for_selection(
         .iter()
         .map(|entry| entry.kind.clone())
         .collect::<Vec<_>>();
-    let source = fs::read_to_string(selection.path()).map_err(|error| {
-        eprintln!(
-            "error: failed to read bundle source {}: {error}",
-            selection.path().display()
-        );
-        ExitCode::FAILURE
-    })?;
     let required_host_calls = bundle_required_host_calls(&compiled.plan);
     let adapter_manifest = adapter_manifest_for_selection(selection, None)?;
     let adapter_manifest_ids = bundle_adapter_manifest_ids(
@@ -309,15 +302,15 @@ pub(in crate::app) fn compile_bundle_for_selection(
         &adapter_manifest,
         required_host_calls.iter().map(String::as_str),
     )?;
-    let authored_resources = selection.authored_resource_roots()?;
+    let authored_resources = selection.authored_resource_roots();
     let virtual_files = collect_bundle_virtual_files(
         &authored_resources,
         &selection.local_state_root(),
         include_spaces,
     )?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
-    let image_declarations = parse_declared_image_objects(&source);
-    let mut image_objects = bundle_image_objects(&image_declarations)?;
+    let image_declarations = parse_declared_image_objects(&compiled.source_document);
+    let mut image_objects = bundle_image_objects(&image_declarations, &compiled.source_document)?;
     let package = selection.package_identity()?;
     let fx_definitions = lower_fx_definitions_for_package(&compiled.hir, &package)
         .map_err(|error| {
@@ -715,7 +708,7 @@ fn bundle_manifest(
         profile_kind: selection
             .profile()
             .map(|profile| bundle_launch_kind(profile.kind())),
-        entry: selection.entry().map(|entry| entry.as_str().to_owned()),
+        entry: selection.entry().map(str::to_owned),
         adapter: selection.adapter().map(str::to_owned),
         adapter_manifest_ids,
         required_host_calls,
@@ -725,7 +718,7 @@ fn bundle_manifest(
                     .plan
                     .entries
                     .iter()
-                    .find(|entry| entry.id.public_label().as_str() == selected.as_str())
+                    .find(|entry| entry.id.public_label().as_str() == selected)
                     .and_then(|entry| match &entry.target {
                         RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
                             Some(flow.public_label().into_string())
@@ -1088,14 +1081,18 @@ fn validate_referenced_bundle_image_assets(
 
 fn bundle_image_objects(
     image_declarations: &BTreeMap<String, DeclaredImageObject>,
+    document: &SourceDocument,
 ) -> Result<Vec<BundleImageObject>, ExitCode> {
     image_declarations
         .values()
-        .map(bundle_image_object)
+        .map(|declaration| bundle_image_object(declaration, document))
         .collect::<Result<Vec<_>, ExitCode>>()
 }
 
-fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageObject, ExitCode> {
+fn bundle_image_object(
+    declaration: &DeclaredImageObject,
+    document: &SourceDocument,
+) -> Result<BundleImageObject, ExitCode> {
     let asset = declaration
         .args()
         .iter()
@@ -1106,9 +1103,9 @@ fn bundle_image_object(declaration: &DeclaredImageObject) -> Result<BundleImageO
                 .and_then(public_asset_ref_arg)
         })
         .ok_or_else(|| {
-            eprintln!(
-                "error: image object `{}` is missing an asset reference",
-                declaration.id()
+            DiagnosticEmitter::stderr().emit(
+                &declaration.missing_asset_diagnostic(document),
+                &DiagnosticSource::new(document),
             );
             ExitCode::from(2)
         })?;

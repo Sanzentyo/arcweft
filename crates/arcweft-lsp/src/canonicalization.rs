@@ -63,7 +63,7 @@ pub(crate) fn checked_inventory_for_document(
     let mut identities = Vec::with_capacity(loaded.sources().modules().len());
     let mut modules = Vec::with_capacity(loaded.sources().modules().len());
     let mut additional_documents = Vec::new();
-    let package_name = loaded.sources().manifest().package().name().as_str();
+    let package_name = loaded.sources().package().id.as_str();
 
     for project_source in loaded.sources().modules() {
         let selected_source = project_source.module() == &selected_module;
@@ -134,7 +134,6 @@ pub(crate) fn checked_inventory_for_document(
     let previous = profile.accepted_environment();
     let request = arcweft_project_loader::environment::ProjectLoadRequest::new(
         &loaded,
-        profile.resolved_profile(),
         additional_documents,
         Vec::new(),
     )

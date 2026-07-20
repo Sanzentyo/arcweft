@@ -1,10 +1,11 @@
-default = "main"
+schema = 1
+default-profile = "main"
 
 [package]
-name = "reactive-view-style"
+id = "org.arcweft.samples.reactive-view-style"
 version = "0.1.0"
 
 [profiles.main]
 kind = "game"
-entry = "entry.reactive_view_style"
+entry = "@entry.reactive_view_style"
 source = "src/main.arcw"

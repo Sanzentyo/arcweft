@@ -661,201 +661,6 @@ fn plan_json_lists_runtime_task_graph() {
     assert_plan_style_contributions(&stdout, contributions);
 }
 
-#[test]
-fn plan_json_uses_profile_selected_dialogue_defaults() {
-    let dir = temp_dir("plan-profile-dialogue-defaults");
-    let source_path = dir.join("src/main.arcw");
-    fs::create_dir_all(source_path.parent().expect("source parent")).expect("create source dir");
-    fs::write(
-        &source_path,
-        r"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
-pub dialogue defaults @dialogue.mobile {
-    rich_text {
-        ruby {
-            size = 10px
-        }
-    }
-}
-
-pub character alice {
-}
-
-entry cli @entry.main { goto @flow.opening }
-
-flow opening {
-    alice: |[夢](ゆめ)[p]
-}
-",
-    )
-    .expect("write profile source");
-    let manifest = dir.join("arcw.toml");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "plan-profile-dialogue-defaults"
-
-[profiles.dev]
-kind = "cli"
-entry = "entry.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.mobile"
-"#,
-    )
-    .expect("write profile manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("plan")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("dev")
-        .arg("--json")
-        .output()
-        .expect("arcw plan --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(
-        output.status.success(),
-        "profile plan should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value =
-        serde_json::from_str(&stdout).expect("profile plan output is structured JSON");
-    let contributions = json["line_display_catalog"]
-        .as_array()
-        .and_then(|catalog| catalog.first())
-        .and_then(|display| display["style_contributions"].as_array())
-        .expect("profile plan includes line display style contributions");
-
-    assert_plan_style_contribution(
-        &stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "dialogue_defaults",
-            path: "rich_text.ruby.size",
-            value: "10px",
-            active: Some(true),
-            requires_range: true,
-            context: "profile-selected dialogue defaults",
-        },
-    );
-    assert!(
-        !contributions.iter().any(|contribution| {
-            contribution["layer"] == "dialogue_defaults"
-                && contribution["path"] == "rich_text.ruby.size"
-                && contribution["value"] == "14px"
-        }),
-        "profile plan should not use implicit defaults when dialogue_defaults selects mobile: {stdout}"
-    );
-}
-
-#[test]
-fn rich_text_profiled_sample_checks_profiles_and_plan_defaults() {
-    let manifest = workspace_root().join("samples/rich-text-profiled/arcw.toml");
-
-    for profile in ["desktop", "mobile"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-            .arg("check")
-            .arg("--manifest")
-            .arg(&manifest)
-            .arg("--profile")
-            .arg(profile)
-            .output()
-            .expect("arcw check --profile runs for rich-text-profiled sample");
-        assert!(
-            output.status.success(),
-            "rich-text-profiled {profile} check should succeed, stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("plan")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("mobile")
-        .arg("--json")
-        .output()
-        .expect("arcw plan --profile runs for rich-text-profiled sample");
-
-    assert!(
-        output.status.success(),
-        "rich-text-profiled mobile plan should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json: serde_json::Value =
-        serde_json::from_str(&stdout).expect("sample profile plan output is structured JSON");
-    let display = json["line_display_catalog"]
-        .as_array()
-        .and_then(|catalog| catalog.first())
-        .expect("sample profile plan includes a line display");
-    assert_eq!(
-        display["view"], "view.MobileDialogue",
-        "mobile profile should select the mobile dialogue View: {stdout}"
-    );
-    let contributions = display["style_contributions"]
-        .as_array()
-        .expect("sample profile line display includes style contributions");
-
-    assert_plan_style_contribution(
-        &stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "dialogue_defaults",
-            path: "view",
-            value: "@view.MobileDialogue",
-            active: Some(true),
-            requires_range: true,
-            context: "sample mobile dialogue View defaults",
-        },
-    );
-    assert_plan_style_contribution(
-        &stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "dialogue_defaults",
-            path: "rich_text.ruby.gap",
-            value: "1px",
-            active: Some(true),
-            requires_range: true,
-            context: "sample mobile ruby gap defaults",
-        },
-    );
-    assert_plan_style_contribution(
-        &stdout,
-        contributions,
-        PlanStyleContribution {
-            layer: "inline_span",
-            path: "rich_text.effect",
-            value: "shake",
-            active: Some(true),
-            requires_range: true,
-            context: "sample inferred inline effect",
-        },
-    );
-    assert!(
-        contributions.iter().all(|contribution| {
-            !(contribution["layer"] == "dialogue_defaults"
-                && contribution["source"]["item_id"].is_null()
-                && contribution["active"] == true)
-        }),
-        "mobile profile should not activate desktop dialogue defaults: {stdout}"
-    );
-}
-
 fn runtime_plan_fixture_path() -> PathBuf {
     temp_arcw(
         "runtime-plan",
@@ -1194,9 +999,11 @@ flow @flow.profile profile {
             .and_then(|phase| phase["name"].as_str()),
         Some("run")
     );
-    assert!(json["source"]
-        .as_str()
-        .is_some_and(|source| source.starts_with("arcweft-cli-profile-aot-")));
+    assert!(
+        json["source"]
+            .as_str()
+            .is_some_and(|source| source.starts_with("arcweft-cli-profile-aot-"))
+    );
     assert!(
         !String::from_utf8_lossy(&output.stdout)
             .contains(&std::env::temp_dir().display().to_string()),
@@ -2077,229 +1884,6 @@ fn assert_build_bundle_output(fixture: &BundleNativeFileFixture, build_stdout: &
         !build_stdout.contains(&fixture.dir.display().to_string()),
         "build bundle JSON must not record absolute temp paths: {build_stdout}"
     );
-}
-
-#[test]
-fn run_bundle_uses_embedding_registered_custom_adapter() {
-    let fixture = custom_adapter_bundle_fixture();
-    CUSTOM_BUNDLE_ADAPTER_CALLS.store(0, Ordering::SeqCst);
-    *CUSTOM_BUNDLE_ADAPTER_OUTPUT
-        .lock()
-        .expect("custom adapter output lock") = Some(fixture.marker_path.clone());
-
-    let build_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("bundle")
-        .arg("--manifest")
-        .arg(&fixture.manifest_path)
-        .arg("--profile")
-        .arg("game")
-        .arg("--output")
-        .arg(&fixture.bundle_path)
-        .arg("--json")
-        .output()
-        .expect("arcw build bundle packages custom adapter surface");
-
-    assert!(
-        build_output.status.success(),
-        "custom adapter bundle build should succeed, stderr: {}",
-        String::from_utf8_lossy(&build_output.stderr)
-    );
-    let bundle = arcweft_bundle::ArcweftBundle::from_format_slice(
-        arcweft_bundle::BundleFormat::Awfb,
-        &fs::read(&fixture.bundle_path).expect("bundle AWFB is written"),
-    )
-    .expect("bundle AWFB decodes");
-    let bundle_json =
-        serde_json::to_string_pretty(&bundle).expect("decoded bundle serializes for assertions");
-    assert!(
-        bundle_json.contains("\"adapter_manifests\"")
-            && bundle_json.contains("custom-file")
-            && bundle_json.contains("custom.read"),
-        "bundle should carry custom adapter manifest body and host call: {bundle_json}"
-    );
-    assert!(
-        !bundle_json.contains(&fixture.dir.display().to_string()),
-        "custom bundle artifact must not record absolute temp paths: {bundle_json}"
-    );
-
-    let runner_options = BundleRunnerOptions::default();
-    let registrars: [NativeAdapterRegistrar; 1] =
-        [|_, builder| builder.register(CustomBundleAdapter::new())];
-    let report =
-        run_bundle_file_with_native_adapters(&fixture.bundle_path, &runner_options, &registrars)
-            .expect("embedding runner executes custom adapter bundle");
-
-    assert_eq!(report.native_io.completed_tasks, 1);
-    assert!(
-        report
-            .phases
-            .iter()
-            .any(|phase| phase.name == "read_bundle")
-            && report
-                .phases
-                .iter()
-                .any(|phase| phase.name == "decode_bundle")
-            && report.phases.iter().any(|phase| phase.name == "run"),
-        "embedding runner report should include load and run phases: {report:?}"
-    );
-    assert_eq!(CUSTOM_BUNDLE_ADAPTER_CALLS.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        fs::read_to_string(&fixture.marker_path).expect("custom adapter marker is written"),
-        "custom-ok"
-    );
-}
-
-struct CustomAdapterBundleFixture {
-    dir: PathBuf,
-    manifest_path: PathBuf,
-    bundle_path: PathBuf,
-    marker_path: PathBuf,
-}
-
-fn custom_adapter_bundle_fixture() -> CustomAdapterBundleFixture {
-    let dir = temp_dir("bundle-custom-adapter");
-    let source_path = dir.join("src/main.arcw");
-    let manifest_path = dir.join("arcw.toml");
-    let adapter_manifest_path = dir.join("custom-adapter.toml");
-    let bundle_path = dir.join("custom.awfb");
-    let marker_path = dir.join("custom-marker.txt");
-    fs::write(
-        &source_path,
-        r#"
-extern capability custom {
-    type CustomError
-    fn read(path: String) -> Need<String, CustomError> effects { custom.read }
-}
-
-struct GameState {
-    ready: bool
-}
-
-enum GameEvent {
-    Start
-}
-
-fn initial_game_state() -> GameState
-effects {}
-{
-    initial_game_state()
-}
-
-fn reduce_game(state: &GameState, event: GameEvent)
-    -> Result<Reduction<GameState>, ReducerError>
-effects {}
-{
-    reduce_game(state, event)
-}
-
-entry game @entry.game.main {
-    state = GameState
-    initializer = initial_game_state
-    event = GameEvent
-    reducer = reduce_game
-    goto @flow.opening
-}
-
-flow @flow.opening opening(state: GameState) effects { custom.read } {
-    let body = try await custom.read(path = "opening.txt") with { error e => return "failed" }
-    return body
-}
-"#,
-    )
-    .expect("write custom adapter source");
-    fs::write(
-        &adapter_manifest_path,
-        r#"
-schema_version = 1
-id = "custom-file"
-display_name = "Custom File"
-effects = ["custom.read"]
-
-[[host_calls]]
-id = "custom.read"
-return_type = "String"
-effects = ["custom.read"]
-params = [{ name = "path", ty = "String" }]
-"#,
-    )
-    .expect("write custom adapter manifest");
-    fs::write(
-        &manifest_path,
-        r#"
-[package]
-name = "bundle-custom-adapter"
-
-[profiles.game]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-adapter = "custom-file"
-adapter_manifests = ["custom-adapter.toml"]
-"#,
-    )
-    .expect("write launch manifest");
-    CustomAdapterBundleFixture {
-        dir,
-        manifest_path,
-        bundle_path,
-        marker_path,
-    }
-}
-
-#[derive(Debug)]
-struct CustomBundleAdapter {
-    manifest: AdapterManifest,
-}
-
-impl CustomBundleAdapter {
-    fn new() -> Self {
-        Self {
-            manifest: AdapterManifest::new("custom-file", "Custom File")
-                .with_effect(AdapterEffectCapability::new("custom.read"))
-                .with_host_call(AdapterHostCall::new(
-                    "custom.read",
-                    [AdapterEffectCapability::new("custom.read")],
-                )),
-        }
-    }
-}
-
-impl HostAdapter for CustomBundleAdapter {
-    fn manifest(&self) -> &AdapterManifest {
-        &self.manifest
-    }
-
-    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
-        let HostTaskRequest::Custom {
-            capability,
-            operation,
-            args,
-            ..
-        } = &task.request
-        else {
-            return None;
-        };
-        if capability.0 != "custom" || operation != "read" {
-            return None;
-        }
-        CUSTOM_BUNDLE_ADAPTER_CALLS.fetch_add(1, Ordering::SeqCst);
-        let result = RuntimePayload::from(format!("custom-ok:{}", args.len()));
-        if let Some(path) = CUSTOM_BUNDLE_ADAPTER_OUTPUT
-            .lock()
-            .expect("custom adapter output lock")
-            .as_ref()
-        {
-            fs::write(path, "custom-ok").expect("write custom adapter marker");
-        }
-        Some(HostTaskOutcome {
-            result: Ok(result),
-            metrics: HostTaskMetrics::default(),
-        })
-    }
-
-    fn can_complete_in_parallel(&self, _request: &HostTaskRequest) -> bool {
-        false
-    }
 }
 
 #[test]
@@ -5534,12 +5118,15 @@ flow @flow.infer_matmul_bias_add_f32 infer_matmul_bias_add_f32(lhs: TensorF32, r
     fs::write(
         &manifest,
         r#"
+schema = 1
+
 [package]
-name = "bench-profile-inference"
+id = "org.arcweft.test.bench-profile-inference"
+version = "0.1.0"
 
 [profiles."bench.infer"]
 kind = "bench"
-entry = "entry.infer"
+entry = "@entry.infer"
 source = "src/main.arcw"
 adapter = "inference-tensor"
 "#,
@@ -7223,13 +6810,16 @@ flow @flow.hello hello(name: String) {
     fs::write(
         &manifest,
         r#"
+schema = 1
+
 [package]
-name = "profile-check-explicit-routes"
+id = "org.arcweft.test.profile-check-explicit-routes"
+version = "0.1.0"
 
 [profiles."server.dev"]
 kind = "server"
 source = "src/main.arcw"
-entry = "entry.http"
+entry = "@entry.http"
 adapter = "native-http"
 "#,
     )
@@ -7249,454 +6839,6 @@ adapter = "native-http"
         "profiled check should accept explicit route parameters, stdout: {}, stderr: {}",
         String::from_utf8_lossy(&profiled.stdout),
         String::from_utf8_lossy(&profiled.stderr)
-    );
-}
-
-#[test]
-fn profile_check_loads_project_adapter_manifest() {
-    let dir = temp_dir("profile-check-custom-adapter-manifest");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    let adapter_manifest = dir.join("custom-adapter.toml");
-    fs::write(
-        &source,
-        r#"
-entry cli @entry.main { goto @flow.opening }
-
-flow @flow.opening opening {
-    let body = custom.read(path = "opening.txt")
-    return body
-}
-"#,
-    )
-    .expect("write source using custom adapter manifest");
-    fs::write(
-        &adapter_manifest,
-        r#"
-schema_version = 1
-id = "custom-file"
-display_name = "Custom File"
-effects = ["custom.read"]
-
-[[functions]]
-name = "custom.read"
-return_type = "String"
-effects = ["custom.read"]
-params = [{ name = "path", ty = "String" }]
-
-[[host_calls]]
-id = "custom.read"
-return_type = "String"
-effects = ["custom.read"]
-params = [{ name = "path", ty = "String" }]
-"#,
-    )
-    .expect("write adapter manifest");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-check-custom-adapter"
-
-[profiles.game]
-kind = "cli"
-entry = "entry.main"
-source = "src/main.arcw"
-adapter = "custom-file"
-adapter_manifests = ["custom-adapter.toml"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let direct = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg(&source)
-        .output()
-        .expect("arcw direct check runs");
-    let profiled = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--json")
-        .output()
-        .expect("arcw check --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(
-        !direct.status.success(),
-        "direct check should not see project adapter manifest, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&direct.stdout),
-        String::from_utf8_lossy(&direct.stderr)
-    );
-    assert!(
-        profiled.status.success(),
-        "profiled check should load project adapter manifest, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&profiled.stdout),
-        String::from_utf8_lossy(&profiled.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&profiled.stdout);
-    assert!(
-        !stdout.contains(&std::env::temp_dir().display().to_string()),
-        "profile JSON must not record absolute temp paths: {stdout}"
-    );
-}
-
-#[test]
-fn profile_check_reports_adapter_manifest_read_error() {
-    let dir = temp_dir("profile-check-adapter-manifest-read-error");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    fs::write(&source, "flow @flow.opening opening { return \"ok\" }\n").expect("write source");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-check-adapter-read-error"
-
-[profiles.game]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-adapter = "missing"
-adapter_manifests = ["missing-adapter.toml"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--json")
-        .output()
-        .expect("arcw check --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("failed to load adapter manifest"));
-    assert!(stderr.contains("failed to read adapter manifest"));
-    assert!(stderr.contains("missing-adapter.toml"));
-}
-
-#[test]
-fn profile_check_reports_adapter_manifest_parse_error() {
-    let dir = temp_dir("profile-check-adapter-manifest-parse-error");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    let adapter_manifest = dir.join("bad-adapter.toml");
-    fs::write(&source, "flow @flow.opening opening { return \"ok\" }\n").expect("write source");
-    fs::write(&adapter_manifest, "schema_version = ").expect("write bad adapter manifest");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-check-adapter-parse-error"
-
-[profiles.game]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-adapter = "missing"
-adapter_manifests = ["bad-adapter.toml"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--json")
-        .output()
-        .expect("arcw check --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("failed to load adapter manifest"));
-    assert!(stderr.contains("failed to parse adapter manifest"));
-    assert!(stderr.contains("bad-adapter.toml"));
-}
-
-#[test]
-fn profile_check_loads_rust_metadata_for_extern_module() {
-    let dir = temp_dir("profile-check-rust-metadata");
-    let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    let metadata = metadata_dir.join("truck_game.json");
-    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
-    fs::write(
-        &source,
-        r#"
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub type Rank
-    pub fn score_to_rank(score: i32) -> Rank
-}
-
-entry cli @entry.main { goto @flow.opening }
-
-flow @flow.opening opening {
-    let rank = mini_games.truck.score_to_rank(score = 42i32)
-    return "ok"
-}
-"#,
-    )
-    .expect("write source using rust metadata");
-    fs::write(
-        &metadata,
-        truck_game_rust_manifest()
-            .to_json_pretty()
-            .expect("metadata encodes"),
-    )
-    .expect("write rust metadata");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-check-rust-metadata"
-
-[profiles.game]
-kind = "cli"
-entry = "entry.main"
-source = "src/main.arcw"
-rust_metadata = ["target/arcweft/truck_game.json"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let direct = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg(&source)
-        .output()
-        .expect("arcw direct check runs");
-    let profiled = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--json")
-        .output()
-        .expect("arcw check --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(
-        !direct.status.success(),
-        "direct check should not load profile metadata, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&direct.stdout),
-        String::from_utf8_lossy(&direct.stderr)
-    );
-    assert!(
-        profiled.status.success(),
-        "profiled check should load rust metadata, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&profiled.stdout),
-        String::from_utf8_lossy(&profiled.stderr)
-    );
-    let json: serde_json::Value =
-        serde_json::from_slice(&profiled.stdout).expect("profiled check output is JSON");
-    assert_eq!(json["status"], "ok", "profiled check should succeed: {json}");
-    assert_eq!(
-        json["package"], "profile-check-rust-metadata",
-        "profiled check should compile the selected project: {json}"
-    );
-}
-
-#[test]
-fn profile_check_reports_rust_metadata_read_error() {
-    let dir = temp_dir("profile-check-rust-metadata-read-error");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    fs::write(
-        &source,
-        r#"
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub fn score_to_rank(score: i32) -> i64
-}
-
-flow @flow.opening opening {
-    let rank = mini_games.truck.score_to_rank(score = 42i32)
-    return "ok"
-}
-"#,
-    )
-    .expect("write source using rust metadata");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-check-rust-read-error"
-
-[profiles.game]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-rust_metadata = ["target/arcweft/missing.json"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--json")
-        .output()
-        .expect("arcw check --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("failed to load Rust ABI metadata"));
-    assert!(stderr.contains("failed to read Rust ABI metadata"));
-    assert!(stderr.contains("missing.json"));
-}
-
-#[test]
-fn profile_check_reports_rust_metadata_parse_error() {
-    let dir = temp_dir("profile-check-rust-metadata-parse-error");
-    let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    let metadata = metadata_dir.join("bad.json");
-    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
-    fs::write(
-        &source,
-        r#"
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub fn score_to_rank(score: i32) -> i64
-}
-
-flow @flow.opening opening {
-    let rank = mini_games.truck.score_to_rank(score = 42i32)
-    return "ok"
-}
-"#,
-    )
-    .expect("write source using rust metadata");
-    fs::write(&metadata, "{ not json").expect("write bad rust metadata");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-check-rust-parse-error"
-
-[profiles.game]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-rust_metadata = ["target/arcweft/bad.json"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("check")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--json")
-        .output()
-        .expect("arcw check --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("failed to load Rust ABI metadata"));
-    assert!(stderr.contains("failed to parse Rust ABI metadata"));
-    assert!(stderr.contains("bad.json"));
-}
-
-#[test]
-fn profile_json_loads_rust_metadata_for_extern_module() {
-    let dir = temp_dir("profile-rust-metadata");
-    let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    let metadata = metadata_dir.join("truck_game.json");
-    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
-    fs::write(
-        &source,
-        r#"
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub type Rank
-    pub fn score_to_rank(score: i32) -> Rank
-}
-
-entry cli @entry.main { goto @flow.opening }
-
-flow @flow.opening opening {
-    return "ok"
-}
-"#,
-    )
-    .expect("write profile source using rust metadata");
-    fs::write(
-        &metadata,
-        truck_game_rust_manifest()
-            .to_json_pretty()
-            .expect("metadata encodes"),
-    )
-    .expect("write rust metadata");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "profile-rust-metadata"
-
-[profiles.game]
-kind = "cli"
-entry = "entry.main"
-source = "src/main.arcw"
-rust_metadata = ["target/arcweft/truck_game.json"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("profile")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("game")
-        .arg("--steps")
-        .arg("1")
-        .arg("--json")
-        .output()
-        .expect("arcw profile --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(
-        output.status.success(),
-        "profile should load rust metadata, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("profile output is JSON");
-    assert!(
-        json["phases"]
-            .as_array()
-            .expect("phases are reported")
-            .iter()
-            .any(|phase| phase["name"] == "profile_topology"),
-        "profile should report the unified profile_topology phase: {json}"
-    );
-    assert!(
-        !json
-            .to_string()
-            .contains(&std::env::temp_dir().display().to_string()),
-        "profile JSON must not record absolute temp paths: {json}"
     );
 }
 
@@ -7721,13 +6863,16 @@ flow @flow.hello hello {
     fs::write(
         &manifest,
         r#"
+schema = 1
+
 [package]
-name = "profile-check-route-params"
+id = "org.arcweft.test.profile-check-route-params"
+version = "0.1.0"
 
 [profiles."server.dev"]
 kind = "server"
 source = "src/main.arcw"
-entry = "entry.http"
+entry = "@entry.http"
 adapter = "native-http"
 "#,
     )
@@ -7774,13 +6919,16 @@ flow @flow.health health {
     fs::write(
         &manifest,
         r#"
+schema = 1
+
 [package]
-name = "serve-profile-routes"
+id = "org.arcweft.test.serve-profile-routes"
+version = "0.1.0"
 
 [profiles."server.plan"]
 kind = "server"
 source = "src/main.arcw"
-entry = "entry.http"
+entry = "@entry.http"
 adapter = "native-http"
 "#,
     )
@@ -7812,82 +6960,6 @@ adapter = "native-http"
 }
 
 #[test]
-fn serve_profile_preserves_rust_metadata_when_adapter_comes_from_profile() {
-    let dir = temp_dir("serve-profile-rust-metadata");
-    let metadata_dir = dir.join("target").join("arcweft");
-    let source = dir.join("src/main.arcw");
-    let manifest = dir.join("arcw.toml");
-    let metadata = metadata_dir.join("truck_game.json");
-    fs::create_dir_all(&metadata_dir).expect("create metadata dir");
-    fs::write(
-        &source,
-        r#"
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub type Rank
-    pub fn score_to_rank(score: i32) -> Rank
-}
-
-entry server @entry.http {
-    route GET "/rank" -> @flow.rank
-}
-
-flow @flow.rank rank {
-    let rank = mini_games.truck.score_to_rank(score = 42i32)
-    return "ok"
-}
-"#,
-    )
-    .expect("write server profile source using rust metadata");
-    fs::write(
-        &metadata,
-        truck_game_rust_manifest()
-            .to_json_pretty()
-            .expect("metadata encodes"),
-    )
-    .expect("write rust metadata");
-    fs::write(
-        &manifest,
-        r#"
-[package]
-name = "serve-profile-rust-metadata"
-
-[profiles."server.rust"]
-kind = "server"
-source = "src/main.arcw"
-entry = "entry.http"
-adapter = "native-http"
-rust_metadata = ["target/arcweft/truck_game.json"]
-"#,
-    )
-    .expect("write launch manifest");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("serve")
-        .arg("--manifest")
-        .arg(&manifest)
-        .arg("--profile")
-        .arg("server.rust")
-        .arg("--json")
-        .output()
-        .expect("arcw serve --profile runs");
-    fs::remove_dir_all(&dir).expect("remove temp profile project");
-
-    assert!(
-        output.status.success(),
-        "serve should load profile rust metadata when adapter is not a CLI override, stdout: {}, stderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"entry\": \"entry.http\"")
-            && stdout.contains("\"adapter\": \"native-http\"")
-            && stdout.contains("\"target\": \"flow.rank\""),
-        "serve profile JSON should list rust metadata-backed route: {stdout}"
-    );
-}
-
-#[test]
 fn profile_source_and_path_are_mutually_exclusive() {
     let dir = temp_dir("profile-mutual-exclusion");
     let source = dir.join("src/main.arcw");
@@ -7904,12 +6976,15 @@ flow @flow.main main {
     fs::write(
         &manifest,
         r#"
+schema = 1
+
 [package]
-name = "profile-mutual-exclusion"
+id = "org.arcweft.test.profile-mutual-exclusion"
+version = "0.1.0"
 
 [profiles.game]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
 "#,
     )
@@ -7954,13 +7029,16 @@ flow @flow.main main {
     fs::write(
         &manifest,
         r#"
+schema = 1
+
 [package]
-name = "profile-unknown-adapter"
+id = "org.arcweft.test.profile-unknown-adapter"
+version = "0.1.0"
 
 [profiles.bad]
 kind = "server"
 source = "src/main.arcw"
-entry = "entry.http"
+entry = "@entry.http"
 adapter = "custom-http"
 "#,
     )

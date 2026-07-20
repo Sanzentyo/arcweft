@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
+arcweft-adapter-metadata = { path = "../arcweft-adapter-metadata" }
 arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-character = { path = "../arcweft-character" }
 arcweft-core = { path = "../arcweft-core" }
@@ -16,9 +17,10 @@ arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-launch = { path = "../arcweft-launch" }
+arcweft-manifest-model = { path = "../arcweft-manifest-model" }
 arcweft-project = { path = "../arcweft-project" }
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
 arcweft-source = { path = "../arcweft-source" }
+blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

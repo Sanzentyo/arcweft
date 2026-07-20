@@ -1,2 +1,5 @@
+schema = 1
+
 [package]
-name = "seq04_8_4_conservative_cache"
+id = "org.arcweft.fixtures.seq04-8-4-conservative-cache"
+version = "0.1.0"

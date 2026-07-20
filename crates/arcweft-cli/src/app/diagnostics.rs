@@ -60,6 +60,19 @@ pub(in crate::app) fn emit_diagnostics(document: &SourceDocument, diagnostics: &
     emitter.emit_all(diagnostics, &source);
 }
 
+#[cfg(test)]
+pub(in crate::app) fn render_plain_diagnostic(
+    document: &SourceDocument,
+    diagnostic: &Diagnostic,
+) -> String {
+    Renderer::plain()
+        .render(&diagnostic_groups(
+            diagnostic,
+            &DiagnosticSource::new(document),
+        ))
+        .clone()
+}
+
 impl<'a> DiagnosticSource<'a> {
     pub(in crate::app) const fn new(document: &'a SourceDocument) -> Self {
         Self { document }
