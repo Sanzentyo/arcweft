@@ -1,5 +1,7 @@
 //! Production limits for first-class character dialogue values.
 
+use arcweft_id::dialogue::MAX_DIALOGUE_ID_BYTES;
+
 /// Maximum sizes accepted by the `CharacterDialogue` domain and runtime
 /// boundaries.
 ///
@@ -44,7 +46,7 @@ pub const PRODUCTION_CHARACTER_DIALOGUE_LIMITS: CharacterDialogueLimits = Charac
     max_values_per_sequence: 4_096,
     max_captured_values_per_function: 256,
     max_defaults_entries: 4_096,
-    max_line_id_bytes: 256,
+    max_line_id_bytes: MAX_DIALOGUE_ID_BYTES,
 };
 
 pub(super) const MAX_PUBLIC_ID_BYTES: usize =

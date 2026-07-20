@@ -8,7 +8,7 @@ const LINE_FAMILY: &str = "say";
 const TEXT_FAMILY: &str = "text";
 
 /// Maximum UTF-8 byte length of a durable dialogue line ID or text key.
-pub const MAX_DIALOGUE_ID_BYTES: usize = 256;
+pub const MAX_DIALOGUE_ID_BYTES: u16 = 256;
 
 /// Stable public identity of one authored dialogue line.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -200,11 +200,12 @@ fn validate_family(
     if tail.is_empty() {
         return Err(DialogueIdentityError::EmptyTail { kind, family });
     }
-    if value.len() > MAX_DIALOGUE_ID_BYTES {
+    let maximum = usize::from(MAX_DIALOGUE_ID_BYTES);
+    if value.len() > maximum {
         return Err(DialogueIdentityError::TooManyBytes {
             kind,
             bytes: value.len(),
-            maximum: MAX_DIALOGUE_ID_BYTES,
+            maximum,
         });
     }
     Ok(())
@@ -251,7 +252,7 @@ mod tests {
     #[test]
     fn dialogue_line_id_accepts_exact_256_utf8_bytes() {
         let value = format!("say.{}abc", "界".repeat(83));
-        assert_eq!(value.len(), MAX_DIALOGUE_ID_BYTES);
+        assert_eq!(value.len(), usize::from(MAX_DIALOGUE_ID_BYTES));
 
         assert_eq!(
             DialogueLineId::try_new(value.clone())
@@ -264,14 +265,15 @@ mod tests {
     #[test]
     fn dialogue_line_id_rejects_257_utf8_bytes() {
         let value = format!("say.{}abcd", "界".repeat(83));
-        assert_eq!(value.len(), MAX_DIALOGUE_ID_BYTES + 1);
+        let one_over = usize::from(MAX_DIALOGUE_ID_BYTES) + 1;
+        assert_eq!(value.len(), one_over);
 
         assert_eq!(
             DialogueLineId::try_new(value),
             Err(DialogueIdentityError::TooManyBytes {
                 kind: DialogueIdentityKind::Line,
-                bytes: MAX_DIALOGUE_ID_BYTES + 1,
-                maximum: MAX_DIALOGUE_ID_BYTES,
+                bytes: one_over,
+                maximum: usize::from(MAX_DIALOGUE_ID_BYTES),
             })
         );
     }

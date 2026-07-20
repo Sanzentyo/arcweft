@@ -634,7 +634,10 @@ fn production_limits_have_the_exact_typed_contract_values() {
     assert_eq!(limits.max_values_per_sequence, 4_096_u32);
     assert_eq!(limits.max_captured_values_per_function, 256_u16);
     assert_eq!(limits.max_defaults_entries, 4_096_u32);
-    assert_eq!(limits.max_line_id_bytes, 256_u16);
+    assert_eq!(
+        limits.max_line_id_bytes,
+        arcweft_id::dialogue::MAX_DIALOGUE_ID_BYTES
+    );
 }
 
 #[test]

@@ -172,12 +172,14 @@ sub-slice now adds:
   checked owned-base conversions; and
 - no `Serialize` or `Deserialize` implementation.
 
-This completes package matrix rows TM-001 through TM-005 and TM-007. TM-006,
-which sources the unchanged CharacterDialogue field from the lower constant,
-remains outside this sub-slice because the CharacterDialogue identity file is
-still owned by the active Character/localization reconciliation. The private
-HIR owner/candidate/diagnostic/transaction portion of Frontier 2 likewise waits
-for the active proof/resource HIR cut.
+This completes package matrix rows TM-001 through TM-007. After the
+Character/localization owner released its cut, TM-006 was closed without a
+second policy value: `CharacterDialogueLimits::max_line_id_bytes` now consumes
+the lower `MAX_DIALOGUE_ID_BYTES` constant directly. The lower constant uses
+the field's exact `u16` contract type, while byte-indexing validation converts
+it losslessly to `usize` at the comparison boundary. The private HIR
+owner/candidate/diagnostic/transaction portion of Frontier 2 still waits for
+the active Proof/resource HIR cut.
 
 The compile-fail cases directly prove that neither tuple field is externally
 constructible and that neither durable identity implements Serde. They are
@@ -200,6 +202,43 @@ three compile-fail cases. Strict Clippy produced no warnings. The structural
 audit scanned 3,411 files, 1,773 Rust files, and 814,836 Rust physical lines;
 it reported zero errors and 131 pre-existing size/ownership warnings. No
 changed `arcweft-id` file reaches a warning threshold.
+
+The shared-limit closure was validated with:
+
+```bash
+cargo fmt -p arcweft-id -p arcweft-dialogue -- --check
+cargo test -p arcweft-id -p arcweft-dialogue --all-features
+cargo check -p arcweft-id -p arcweft-dialogue --all-targets --all-features
+cargo clippy -p arcweft-id -p arcweft-dialogue \
+  --all-targets --all-features -- -D warnings
+git diff --check -- crates/arcweft-id crates/arcweft-dialogue
+```
+
+All commands passed. The focused run covered 40 unit tests, one three-case
+trybuild harness, and four dialogue compile-fail documentation tests.
+
+The reviewable shared-limit cut used Jujutsu change
+`rpsntxmtvqquqqnrqoxyykrnqxorytuq` and reran the canonical structural audit:
+
+```text
+files scanned: 3434
+Rust files: 1788
+Rust physical LOC: 822898
+package manifests: 93
+violations: 0 error(s), 131 warning(s)
+```
+
+Exact current measurements for the changed Rust files are:
+
+| Path | Role | Bytes | Physical LOC | Major responsibility |
+| --- | --- | ---: | ---: | --- |
+| `crates/arcweft-id/src/dialogue.rs` | lower identity production plus unit tests | 8,804 | 298 | Durable dialogue IDs and their one byte-limit owner |
+| `crates/arcweft-dialogue/src/character_dialogue/limits.rs` | runtime-domain production | 2,097 | 57 | CharacterDialogue aggregate limits consuming the lower owner |
+| `crates/arcweft-dialogue/src/tests/character_dialogue.rs` | unit-test module | 33,623 | 966 | CharacterDialogue domain and limit contract tests |
+
+No Cargo dependency, fan-in/fan-out, or crate boundary changed: dialogue
+already depended on the lower ID crate. No measured file crosses an applicable
+structural warning threshold.
 
 ### Structural measurements
 
@@ -250,10 +289,9 @@ This intake does not:
 After the CharacterDialogue and HIR owners publish their coherent cuts,
 complete the remaining Frontier 2 work:
 
-1. source the unchanged CharacterDialogue byte limit from the lower constant;
-2. add private HIR owner, scope, candidate, diagnostic, and transaction
+1. add private HIR owner, scope, candidate, diagnostic, and transaction
    substrate with no public successful line path;
-3. run focused changed-crate tests and strict Clippy;
-4. rerun the structural audit and update exact metrics; and
-5. commit and push that slice before beginning the atomic package-aware
+2. run focused changed-crate tests and strict Clippy;
+3. rerun the structural audit and update exact metrics; and
+4. commit and push that slice before beginning the atomic package-aware
    lowering migration.
