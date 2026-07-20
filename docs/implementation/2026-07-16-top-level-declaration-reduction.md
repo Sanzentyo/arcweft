@@ -94,6 +94,10 @@ they conflict with the earlier Lang-01.1 and Lang-01.3 requests or packages:
   remove source-visible `Source<T, E>` and represent host input as a typed
   external `Stream` origin while preserving policy and lifecycle behavior.
 
+The corresponding production inventory, owner-transfer matrix, known runtime
+defects, and corrected implementation order are preserved in
+[Lang-01.3.1 Source elimination Cut 0](2026-07-18-lang-01-3-1-external-stream-source-elimination-cut-0.md).
+
 The earlier requests remain historical sequence inputs, not implementation
 authority for the superseded decisions. Neither correction authorizes an
 implementation until its own implementation-ready final contract is returned.
