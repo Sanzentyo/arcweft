@@ -5,7 +5,8 @@ use crate::{
     CharacterDialogueRichTextValue, CharacterDialogueRuntimeCustomFieldCatalog,
     CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeSchema,
     CharacterDialogueStyleValue, CharacterDialogueTypedValue, CharacterDialogueValueError,
-    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueContent, DialogueLocaleId, LinePlan,
+    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueContent, DialogueLocaleId,
+    FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LinePlan,
     PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath, StructuredPatch,
 };
 use arcweft_character::{
@@ -194,6 +195,20 @@ fn character_ownership_and_patch_clear_are_immutable() {
         configured.config().voice(),
         Some(CharacterDialogueVoice::Auto)
     ));
+}
+
+#[test]
+fn dialogue_locale_is_a_domain_newtype_over_the_shared_canonical_owner() {
+    let locale = DialogueLocaleId::try_new("zh-hant-tw").unwrap();
+    assert_eq!(locale.as_str(), "zh-Hant-TW");
+    assert_eq!(locale.locale_id().as_str(), "zh-Hant-TW");
+    assert_eq!(
+        DialogueLocaleId::try_new("de-de").unwrap().as_str(),
+        "de-DE"
+    );
+    assert!(DialogueLocaleId::try_new("e").is_err());
+    assert!(DialogueLocaleId::try_new("en-abcdefghi").is_err());
+    assert!(DialogueLocaleId::try_new("é-JP").is_err());
 }
 
 #[test]
@@ -892,4 +907,57 @@ fn content_application_checks_complete_line_and_text_key_ids() {
             maximum: 256,
         })
     ));
+}
+
+#[test]
+fn inline_failure_policies_are_strict_manifest_values_at_the_dialogue_owner() {
+    let policies = [
+        InlineFailurePolicy::FailLine,
+        InlineFailurePolicy::Discard,
+        InlineFailurePolicy::Fallback {
+            fallback: InlineFallback::Text {
+                text: "[unavailable]".to_owned(),
+                style: FallbackStylePolicy::Plain,
+            },
+        },
+        InlineFailurePolicy::Fallback {
+            fallback: InlineFallback::ExprSource {
+                style: FallbackStylePolicy::InheritSurrounding,
+            },
+        },
+        InlineFailurePolicy::Fallback {
+            fallback: InlineFallback::CallSource {
+                style: FallbackStylePolicy::Apply {
+                    styles: vec![style(31)],
+                },
+            },
+        },
+        InlineFailurePolicy::Fallback {
+            fallback: InlineFallback::ValuePlain,
+        },
+    ];
+
+    for policy in policies {
+        let encoded = serde_json::to_value(&policy).expect("serialize policy");
+        let decoded =
+            serde_json::from_value::<InlineFailurePolicy>(encoded).expect("deserialize policy");
+        assert_eq!(decoded, policy);
+    }
+
+    assert_eq!(
+        InlineFailurePolicy::default(),
+        InlineFailurePolicy::FailLine
+    );
+
+    for malformed in [
+        r#"{"kind":"fail_line","unexpected":true}"#,
+        r#"{"kind":"fallback","fallback":{"kind":"value_plain","unexpected":true}}"#,
+        r#"{"kind":"fallback","fallback":{"kind":"text","text":"x","style":{"kind":"plain","unexpected":true}}}"#,
+        r#"{"kind":"unknown"}"#,
+    ] {
+        assert!(
+            serde_json::from_str::<InlineFailurePolicy>(malformed).is_err(),
+            "policy must reject {malformed}"
+        );
+    }
 }

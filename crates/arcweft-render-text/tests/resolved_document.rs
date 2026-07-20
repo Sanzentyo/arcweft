@@ -1,7 +1,7 @@
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_render_text::{
-    DialogueHostEvent, LineDisplaySpec, Milli, ResolvedTextDocument, ResolvedTextRun,
+    DialogueHostEvent, LanguageTag, LineDisplaySpec, Milli, ResolvedTextDocument, ResolvedTextRun,
     ResolvedTextRunSource, ResolvedTextStyle, RichTextControl, RichTextDocument,
     RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextPresentation,
     RichTextPresentationStyle, RichTextRange, RichTextRubyPosition, RichTextStyle,
@@ -9,6 +9,17 @@ use arcweft_render_text::{
     TextResolveError, TextStyleCascade, TextWeight,
 };
 use std::collections::BTreeMap;
+
+#[test]
+fn shaping_language_uses_the_shared_canonical_locale_owner() {
+    let language = LanguageTag::new("zh-hant-tw").unwrap();
+    assert_eq!(language.as_str(), "zh-Hant-TW");
+    assert_eq!(language.locale_id().as_str(), "zh-Hant-TW");
+    assert_eq!(LanguageTag::new("de-de").unwrap().as_str(), "de-DE");
+    assert!(LanguageTag::new("e").is_err());
+    assert!(LanguageTag::new("en-abcdefghi").is_err());
+    assert!(LanguageTag::new("é-JP").is_err());
+}
 
 fn style() -> ResolvedTextStyle {
     ResolvedTextStyle::new(vec![TextFontFamily::SansSerif], 20_000, 27_000)

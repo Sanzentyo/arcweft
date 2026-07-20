@@ -4,6 +4,7 @@ use super::{
     CharacterDialogueValueError, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, limits::MAX_PUBLIC_ID_BYTES,
 };
 use arcweft_core::entry::RuntimeValueDigest;
+use arcweft_core::locale::LocaleId;
 use arcweft_id::PublicId;
 use core::fmt;
 
@@ -29,7 +30,7 @@ pub struct CharacterDialogueVoiceId(PublicId);
 
 /// Canonical source-locale identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DialogueLocaleId(String);
+pub struct DialogueLocaleId(LocaleId);
 
 /// Stable custom-field identity in the `character_dialogue_field.*` family.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -144,80 +145,22 @@ impl CharacterDialogueCustomFieldId {
 impl DialogueLocaleId {
     /// Validates and canonicalizes an ASCII BCP-47 locale.
     pub fn try_new(value: impl Into<String>) -> Result<Self, CharacterDialogueValueError> {
-        let value = value.into();
-        let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_locale_bytes);
-        if value.is_empty() || value.len() > maximum {
-            return Err(CharacterDialogueValueError::Locale {
-                value,
-                reason: "locale must contain 1..=64 bytes",
-            });
-        }
-        if !value.is_ascii() || value.chars().any(char::is_control) {
-            return Err(CharacterDialogueValueError::Locale {
-                value,
-                reason: "locale must contain only non-control ASCII",
-            });
-        }
-
-        let source = value.split('-').collect::<Vec<_>>();
-        if source.iter().any(|part| {
-            part.is_empty()
-                || part.len() > 8
-                || !part.bytes().all(|byte| byte.is_ascii_alphanumeric())
-        }) {
-            return Err(CharacterDialogueValueError::Locale {
-                value,
-                reason: "locale contains an invalid subtag",
-            });
-        }
-        let Some(language) = source.first() else {
-            unreachable!("empty locale was rejected");
-        };
-        if !(2..=8).contains(&language.len())
-            || !language.bytes().all(|byte| byte.is_ascii_alphabetic())
-        {
-            return Err(CharacterDialogueValueError::Locale {
-                value,
-                reason: "language subtag must contain 2..=8 ASCII letters",
-            });
-        }
-
-        let mut canonical = Vec::with_capacity(source.len());
-        let mut seen = std::collections::BTreeSet::new();
-        for (index, part) in source.into_iter().enumerate() {
-            let lower = part.to_ascii_lowercase();
-            if !seen.insert(lower.clone()) {
-                return Err(CharacterDialogueValueError::Locale {
-                    value,
-                    reason: "locale contains a duplicate subtag",
-                });
+        LocaleId::try_new(value.into()).map(Self).map_err(|error| {
+            let reason = error.kind().reason();
+            CharacterDialogueValueError::Locale {
+                value: error.into_value(),
+                reason,
             }
-            let part = if index == 0 {
-                lower
-            } else if part.len() == 4 && part.bytes().all(|byte| byte.is_ascii_alphabetic()) {
-                let mut chars = lower.chars();
-                let Some(first) = chars.next() else {
-                    return Err(CharacterDialogueValueError::Locale {
-                        value,
-                        reason: "script subtag is empty",
-                    });
-                };
-                let first = first.to_ascii_uppercase();
-                format!("{first}{}", chars.as_str())
-            } else if (part.len() == 2 && part.bytes().all(|byte| byte.is_ascii_alphabetic()))
-                || (part.len() == 3 && part.bytes().all(|byte| byte.is_ascii_digit()))
-            {
-                part.to_ascii_uppercase()
-            } else {
-                lower
-            };
-            canonical.push(part);
-        }
-        Ok(Self(canonical.join("-")))
+        })
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    #[must_use]
+    pub const fn locale_id(&self) -> &LocaleId {
         &self.0
     }
 }

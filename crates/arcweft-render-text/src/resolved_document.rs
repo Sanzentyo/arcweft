@@ -6,6 +6,7 @@ use crate::{
     RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextStyle,
     RichTextWritingMode, presentation_from_styles,
 };
+use arcweft_core::locale::LocaleId;
 use arcweft_presentation::fx::FxColor;
 use arcweft_presentation::rich_text::canonical_tag_name;
 use serde::{Deserialize, Serialize};
@@ -49,28 +50,27 @@ impl Write for RevisionWriter {
 
 /// Validated BCP-47-style language identifier used during shaping.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct LanguageTag(String);
+pub struct LanguageTag(LocaleId);
 
 impl LanguageTag {
     /// Validates and stores an ASCII language tag.
     pub fn new(value: impl Into<String>) -> Result<Self, TextResolveError> {
         let value = value.into();
-        let valid = !value.is_empty()
-            && value.len() <= 63
-            && value.split('-').all(|part| {
-                !part.is_empty()
-                    && part.len() <= 8
-                    && part.bytes().all(|b| b.is_ascii_alphanumeric())
-            });
-        if !valid {
-            return Err(TextResolveError::InvalidLanguageTag { value });
-        }
-        Ok(Self(value))
+        LocaleId::try_new(value)
+            .map(Self)
+            .map_err(|error| TextResolveError::InvalidLanguageTag {
+                value: error.into_value(),
+            })
     }
 
     /// Returns the normalized source spelling.
     #[must_use]
     pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    #[must_use]
+    pub const fn locale_id(&self) -> &LocaleId {
         &self.0
     }
 }

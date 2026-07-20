@@ -145,12 +145,26 @@ workspace's largest Rust file remains the generated Unicode vertical
 orientation table at 357,456 bytes and 12,399 physical LOC; its header records
 the generator source and prohibits hand-editing the range data.
 
+Cut 2 now has one strict compact `LocaleCatalog` resource codec. Its focused
+decode, encode, tamper, ordering, and limit tests passed 21/21; strict
+all-target, all-feature Clippy passed for `arcweft-bundle`; formatting and
+`git diff --check` passed; and the structural audit reported 0 errors and 131
+existing warnings. The accepted product/build transaction remains deferred
+until the typed Character owner from AW-AH-009.4.3 and Proof is available.
+
+Locale parsing is also no longer duplicated between dialogue and text shaping.
+`DialogueLocaleId` and `LanguageTag` are narrow domain newtypes over the shared
+canonical `arcweft_core::locale::LocaleId`. The full `arcweft-dialogue` and
+`arcweft-render-text` test suites passed (24 + 9 + 11 + 13 tests plus four
+compile-fail doctests), as did strict all-target, all-feature Clippy for both
+crates.
+
 ## Remaining package work
 
 - Cut 1: complete; publish this coherent inert infrastructure cut before
   starting Cut 2.
-- Cut 2: implement the sole strict LocaleCatalog compact family and accepted
-  build transaction after Cut 1 is pushed.
+- Cut 2: strict `LocaleCatalog` compact family complete; accepted build
+  transaction remains gated by the typed Character owner.
 - Cut 3: wait for AW-AH-009.4.2, AW-AH-009.4.3, and Proof 01.1.1.2, then land
   the executable/AWBC/frame/View/save/prepared-text replacement atomically.
 - Cut 4: run the package's workspace, Tier 2, parity, tamper, metadata, and
