@@ -21,6 +21,7 @@ use taplo::dom::{Node, node::IntegerValue};
 
 mod content;
 mod external;
+mod localization;
 mod player;
 mod policy;
 mod pure;
@@ -138,6 +139,8 @@ fn decode_profile(
         source_entries,
         diagnostics,
     );
+    let localization =
+        localization::decode_localization(document, index, context, source_entries, diagnostics);
     let listen = decode_listen(index, context, source_entries, diagnostics);
     let pure = pure::decode_pure(index, context, source_entries, diagnostics);
     let content_policies =
@@ -152,6 +155,7 @@ fn decode_profile(
         external_modules,
         activity_bindings,
         dialogue,
+        localization,
         listen,
         pure,
         content: content_policies,

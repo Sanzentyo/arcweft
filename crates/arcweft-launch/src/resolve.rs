@@ -14,7 +14,7 @@ use arcweft_dialogue::DialoguePresentationProfile;
 use arcweft_manifest_model::{
     ActivityId, ActivityImplementationId, ActivityImplementationSpec, AdapterProfileId,
     ContentUnitId, ContentUnitSpec, EntityIdRef, ExternalModuleImportId, ExternalModuleImportSpec,
-    LaunchKind, NormalizedProjectPath, ProfileContentSpec, ProfileId,
+    LaunchKind, NormalizedProjectPath, ProfileContentSpec, ProfileId, ProfileLocalizationSpec,
 };
 use arcweft_source::SourceSpan;
 use arcweft_view::ViewId;
@@ -45,6 +45,7 @@ pub struct ResolvedLaunchProfile {
     external_modules: BTreeMap<ExternalModuleImportId, ExternalModuleImportSpec>,
     activity_bindings: BTreeMap<ActivityId, ResolvedActivityBinding>,
     dialogue: DialoguePresentationProfile,
+    localization: ProfileLocalizationSpec,
     listen: Option<LaunchListenAddress>,
     pure: Option<LaunchPureProfileSpec>,
     content: BTreeMap<ContentUnitId, ResolvedProfileContent>,
@@ -104,6 +105,10 @@ impl ResolvedLaunchProfile {
 
     pub const fn dialogue(&self) -> &DialoguePresentationProfile {
         &self.dialogue
+    }
+
+    pub const fn localization(&self) -> &ProfileLocalizationSpec {
+        &self.localization
     }
 
     pub const fn listen(&self) -> Option<LaunchListenAddress> {
@@ -175,6 +180,7 @@ pub(super) fn resolve_profile(
             profile.dialogue.style.clone(),
             profile.dialogue.inline_failure.clone().unwrap_or_default(),
         ),
+        localization: profile.localization.clone(),
         listen: profile.listen,
         pure: profile.pure.clone(),
         content,

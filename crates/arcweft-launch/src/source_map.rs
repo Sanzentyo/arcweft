@@ -13,6 +13,22 @@ pub(crate) struct ManifestSourceMap {
     entries: BTreeMap<ManifestSourceKey, SourceSpan>,
 }
 
+/// Revision-bound semantic coordinate in one accepted manifest document.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ManifestTokenPath {
+    ProfileCharacterNamesTable { profile: ProfileId },
+    ProfileCharacterNamesActive { profile: ProfileId },
+    ProfileCharacterNamesFallback { profile: ProfileId, ordinal: u16 },
+}
+
+/// Source-token role requested for a [`ManifestTokenPath`].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ManifestTokenSlot {
+    TableHeader,
+    FieldKey,
+    Value,
+}
+
 impl ManifestSourceMap {
     pub(crate) fn try_new(
         document: Arc<SourceDocument>,
@@ -31,6 +47,68 @@ impl ManifestSourceMap {
     pub(crate) fn get(&self, key: &ManifestSourceKey) -> Option<&SourceSpan> {
         self.entries.get(key)
     }
+}
+
+impl ManifestTokenPath {
+    pub(crate) fn source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
+        let (path, source_slot) = match self {
+            Self::ProfileCharacterNamesTable { profile } => (
+                character_names_path(profile, []),
+                match slot {
+                    ManifestTokenSlot::TableHeader => ManifestSourceSlot::TableHeader,
+                    ManifestTokenSlot::FieldKey | ManifestTokenSlot::Value => return None,
+                },
+            ),
+            Self::ProfileCharacterNamesActive { profile } => {
+                let path = character_names_path(
+                    profile,
+                    [ManifestPathSegment::CharacterNames(
+                        CharacterNamesField::Active,
+                    )],
+                );
+                let source_slot = match slot {
+                    ManifestTokenSlot::FieldKey => ManifestSourceSlot::FieldKey,
+                    ManifestTokenSlot::Value => ManifestSourceSlot::ScalarValue,
+                    ManifestTokenSlot::TableHeader => return None,
+                };
+                (path, source_slot)
+            }
+            Self::ProfileCharacterNamesFallback { profile, ordinal } => {
+                if slot != ManifestTokenSlot::Value {
+                    return None;
+                }
+                (
+                    character_names_path(
+                        profile,
+                        [ManifestPathSegment::CharacterNames(
+                            CharacterNamesField::Fallbacks,
+                        )],
+                    ),
+                    ManifestSourceSlot::ArrayElement {
+                        index: u32::from(*ordinal),
+                    },
+                )
+            }
+        };
+        Some(ManifestSourceKey {
+            path,
+            slot: source_slot,
+        })
+    }
+}
+
+fn character_names_path(
+    profile: &ProfileId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    let mut segments = vec![
+        ManifestPathSegment::Root(ManifestRootField::Profiles),
+        ManifestPathSegment::Profile(profile.clone()),
+        ManifestPathSegment::ProfileField(ProfileField::Localization),
+        ManifestPathSegment::Localization(LocalizationField::CharacterNames),
+    ];
+    segments.extend(tail);
+    ManifestPath::new(segments)
 }
 
 /// A typed location within one accepted manifest document.
@@ -79,6 +157,8 @@ pub(crate) enum ManifestPathSegment {
     ActivityImplementationField(ActivityImplementationField),
     Profile(ProfileId),
     ProfileField(ProfileField),
+    Localization(LocalizationField),
+    CharacterNames(CharacterNamesField),
     Dialogue(DialogueField),
     InlineFailure(InlineFailureField),
     InlineFallback(InlineFallbackField),
@@ -154,10 +234,22 @@ pub(crate) enum ProfileField {
     ExternalModules,
     ActivityBindings,
     Dialogue,
+    Localization,
     Listen,
     Pure,
     Content,
     Player,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum LocalizationField {
+    CharacterNames,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CharacterNamesField {
+    Active,
+    Fallbacks,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

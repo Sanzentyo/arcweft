@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-id = { path = "../arcweft-id" }
 blake3.workspace = true
 semver.workspace = true
 serde.workspace = true

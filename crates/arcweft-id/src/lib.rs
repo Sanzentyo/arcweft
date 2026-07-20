@@ -1,6 +1,10 @@
+mod locale;
+
 use core::fmt;
 use core::str::FromStr;
 use thiserror::Error;
+
+pub use locale::{LocaleTag, LocaleTagError};
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{kind}")]

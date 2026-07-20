@@ -8,7 +8,7 @@ use crate::{
     resolve,
     source_map::{
         ManifestPath, ManifestPathSegment, ManifestRootField, ManifestSourceKey, ManifestSourceMap,
-        ManifestSourceSlot, ProfileField,
+        ManifestSourceSlot, ManifestTokenPath, ManifestTokenSlot, ProfileField,
     },
 };
 use arcweft_manifest_model::{EntityIdRef, ProfileId};
@@ -88,6 +88,15 @@ impl SourceBackedManifest {
             })
     }
 
+    /// Returns one exact token span from this accepted manifest revision.
+    pub fn manifest_token_span(
+        &self,
+        path: &ManifestTokenPath,
+        slot: ManifestTokenSlot,
+    ) -> Option<&SourceSpan> {
+        self.source_map.get(&path.source_key(slot)?)
+    }
+
     pub(crate) const fn source_map(&self) -> &ManifestSourceMap {
         &self.source_map
     }
@@ -104,7 +113,8 @@ impl SourceBackedManifest {
 #[cfg(test)]
 mod tests {
     use super::{MANIFEST_DECODE_PASSES, SourceBackedManifest};
-    use crate::LaunchProfileSelection;
+    use crate::{LaunchProfileSelection, ManifestTokenPath, ManifestTokenSlot};
+    use arcweft_manifest_model::ProfileId;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::sync::Arc;
 
@@ -169,5 +179,66 @@ entry = "@entry.game"
             1,
             "accepted profile and source-map consumers must not reparse the manifest"
         );
+    }
+
+    #[test]
+    fn character_name_token_paths_are_bound_to_the_accepted_document_revision() {
+        let source = r#"schema = 1
+[package]
+id = "org.arcweft.test"
+version = "1.0.0"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+[profiles.dev.localization.character_names]
+active = "ja-JP"
+fallbacks = ["en", "fr"]
+"#;
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("localization-manifest").expect("document id"),
+                SourceName::Memory,
+                source,
+            )
+            .expect("source document"),
+        );
+        let accepted =
+            SourceBackedManifest::decode(Arc::clone(&document)).expect("accepted manifest");
+        let profile = ProfileId::new("dev").expect("profile id");
+
+        for (path, slot, expected) in [
+            (
+                ManifestTokenPath::ProfileCharacterNamesTable {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::TableHeader,
+                "[profiles.dev.localization.character_names]",
+            ),
+            (
+                ManifestTokenPath::ProfileCharacterNamesActive {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                "\"ja-JP\"",
+            ),
+            (
+                ManifestTokenPath::ProfileCharacterNamesFallback {
+                    profile,
+                    ordinal: 1,
+                },
+                ManifestTokenSlot::Value,
+                "\"fr\"",
+            ),
+        ] {
+            let span = accepted
+                .manifest_token_span(&path, slot)
+                .expect("manifest token span");
+            let start = source.find(expected).expect("fixture substring");
+            assert_eq!(
+                span.range(),
+                arcweft_source::SourceRange::new(start, start + expected.len())
+            );
+            assert_eq!(span.source(), document.identity());
+        }
     }
 }

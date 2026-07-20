@@ -232,6 +232,7 @@ fn field_path_allowed(path: &[String]) -> bool {
                 | "external-modules"
                 | "activity-bindings"
                 | "dialogue"
+                | "localization"
                 | "listen"
                 | "pure"
                 | "content"
@@ -279,8 +280,25 @@ fn field_path_allowed(path: &[String]) -> bool {
         {
             matches!(field.as_str(), "kind" | "styles")
         }
-        _ => false,
+        _ => localization_field_path_allowed(path),
     }
+}
+
+fn localization_field_path_allowed(path: &[String]) -> bool {
+    matches!(
+        path,
+        [root, _, localization, field]
+            if root == "profiles"
+                && localization == "localization"
+                && field == "character_names"
+    ) || matches!(
+        path,
+        [root, _, localization, character_names, field]
+            if root == "profiles"
+                && localization == "localization"
+                && character_names == "character_names"
+                && matches!(field.as_str(), "active" | "fallbacks")
+    )
 }
 
 fn table_path_allowed(path: &[String]) -> bool {
@@ -308,7 +326,17 @@ fn table_path_allowed(path: &[String]) -> bool {
         }
         [root, _, record]
             if root == "profiles"
-                && matches!(record.as_str(), "dialogue" | "pure" | "content" | "player") =>
+                && matches!(
+                    record.as_str(),
+                    "dialogue" | "localization" | "pure" | "content" | "player"
+                ) =>
+        {
+            true
+        }
+        [root, _, localization, character_names]
+            if root == "profiles"
+                && localization == "localization"
+                && character_names == "character_names" =>
         {
             true
         }
@@ -374,7 +402,7 @@ fn known_prefix_len(path: &[String]) -> usize {
         }
         Some("profiles") => match path.get(2).map(String::as_str) {
             None => path.len().min(2),
-            Some("dialogue" | "pure" | "content" | "player") => {
+            Some("dialogue" | "localization" | "pure" | "content" | "player") => {
                 match path.get(3).map(String::as_str) {
                     Some("inline-failure")
                         if path.get(2).is_some_and(|value| value == "dialogue") =>
@@ -388,6 +416,11 @@ fn known_prefix_len(path: &[String]) -> usize {
                         }
                     }
                     Some("viewport") if path.get(2).is_some_and(|value| value == "player") => 4,
+                    Some("character_names")
+                        if path.get(2).is_some_and(|value| value == "localization") =>
+                    {
+                        4
+                    }
                     Some(_) if path.get(2).is_some_and(|value| value == "content") => 4,
                     _ => 3,
                 }

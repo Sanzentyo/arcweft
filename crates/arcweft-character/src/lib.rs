@@ -9,6 +9,7 @@ pub mod diagnostic;
 pub mod id;
 pub mod manifest;
 pub mod package;
+pub mod presentation_name;
 pub mod registration_catalog;
 pub mod symbol;
 

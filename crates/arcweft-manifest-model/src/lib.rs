@@ -4,6 +4,7 @@
 mod canonical;
 mod digest;
 mod identity;
+mod localization;
 mod path;
 mod schema;
 
@@ -14,6 +15,10 @@ pub use identity::{
     CapabilityId, ContentUnitId, EntrySelectionId, ExternalModuleId, ExternalModuleImportId,
     FieldName, FunctionName, GeneratorName, IdentifierError, ModuleMountPath, PackageId,
     PackageVersion, ProfileId, TargetTriple, TypeReference, WitWorldId,
+};
+pub use localization::{
+    CharacterNameLocalePolicySpec, CharacterNameLocalePolicySpecError,
+    MAX_PROFILE_CHARACTER_NAME_FALLBACKS, ProfileLocalizationSpec,
 };
 pub use path::{NormalizedProjectPath, NormalizedProjectPathError};
 pub use schema::{

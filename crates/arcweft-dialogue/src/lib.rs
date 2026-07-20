@@ -2,6 +2,7 @@ use arcweft_id::PublicId;
 use core::time::Duration;
 
 mod character_dialogue;
+pub mod character_presentation;
 mod inline_failure;
 mod presentation_profile;
 

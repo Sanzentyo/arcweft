@@ -5,7 +5,7 @@ use arcweft_manifest_model::{
     ActivityBindingSpec, ActivityImplementationId, ActivityImplementationSpec, AdapterProfileId,
     BuildSpec, ContentUnitId, ContentUnitSpec, EntityIdRef, ExternalModuleImportId,
     ExternalModuleImportSpec, LaunchKind, ManifestSchemaVersion, NormalizedProjectPath,
-    PackageSpec, ProfileContentSpec, ProfileId,
+    PackageSpec, ProfileContentSpec, ProfileId, ProfileLocalizationSpec,
 };
 use arcweft_view::{ViewId, ViewStyleSheetId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -62,6 +62,8 @@ pub(crate) struct ProfileSpec {
     pub(crate) activity_bindings: Vec<ActivityBindingSpec>,
     #[serde(default)]
     pub(crate) dialogue: DialogueProfileSpec,
+    #[serde(default)]
+    pub(crate) localization: ProfileLocalizationSpec,
     #[serde(default)]
     pub(crate) listen: Option<LaunchListenAddress>,
     #[serde(default)]

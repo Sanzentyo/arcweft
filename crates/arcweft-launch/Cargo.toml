@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-dialogue = { path = "../arcweft-dialogue" }
+arcweft-id = { path = "../arcweft-id" }
 arcweft-manifest-model.workspace = true
 arcweft-source = { path = "../arcweft-source" }
 arcweft-view = { path = "../arcweft-view" }

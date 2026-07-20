@@ -19,3 +19,4 @@ pub use arcweft_manifest_model::{
 pub use model::{
     LaunchMathBackend, LaunchPlayerViewportFit, LaunchProfileSelection, LaunchPureBackend,
 };
+pub use source_map::{ManifestTokenPath, ManifestTokenSlot};

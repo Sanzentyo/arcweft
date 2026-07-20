@@ -868,6 +868,8 @@ dependencies = [
 name = "arcweft-id"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
  "thiserror 2.0.18",
 ]
 
@@ -948,6 +950,7 @@ name = "arcweft-launch"
 version = "0.1.0"
 dependencies = [
  "arcweft-dialogue",
+ "arcweft-id",
  "arcweft-manifest-model",
  "arcweft-source",
  "arcweft-view",
@@ -1005,6 +1008,7 @@ dependencies = [
 name = "arcweft-manifest-model"
 version = "0.1.0"
 dependencies = [
+ "arcweft-id",
  "blake3",
  "semver",
  "serde",
