@@ -46,6 +46,7 @@ pub mod dialogue;
 #[cfg(test)]
 mod dialogue_expression_tests;
 mod document;
+pub(crate) use document::parse_shadow_document;
 mod entry_grammar;
 #[cfg(test)]
 mod entry_grammar_tests;

@@ -4,6 +4,7 @@ mod database;
 pub mod limits;
 mod reconcile;
 mod shape;
+mod transaction;
 
 pub use database::{
     InvalidEditSet, ParseFailure, ParseStatus, ParsedSource, SyntaxDatabase, SyntaxIdentityKind,

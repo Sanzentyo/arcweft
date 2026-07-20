@@ -110,9 +110,6 @@ fn removed_top_level_families_and_statements_use_ordinary_error_items() {
     let built = parse(source);
     assert_eq!(count_kind(&built, SyntaxKind::ErrorItem), 9);
     assert_eq!(count_kind(&built, SyntaxKind::CharacterDeclarationItem), 1);
-    assert_eq!(count_kind(&built, SyntaxKind::ExternModuleItem), 0);
-    assert_eq!(count_kind(&built, SyntaxKind::DialogueDefaultsItem), 0);
-    assert_eq!(count_kind(&built, SyntaxKind::SourceItem), 0);
     assert_eq!(
         built
             .diagnostics()

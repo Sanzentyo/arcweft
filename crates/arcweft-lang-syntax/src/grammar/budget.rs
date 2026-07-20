@@ -311,11 +311,8 @@ impl SyntaxKind {
                 | Self::LayerDeclarationItem
                 | Self::EntryDeclarationItem
                 | Self::ExternCapabilityItem
-                | Self::ExternModuleItem
-                | Self::DialogueDefaultsItem
                 | Self::TestItem
                 | Self::BenchItem
-                | Self::SourceItem
                 | Self::StyleItem
                 | Self::ErrorItem
         )

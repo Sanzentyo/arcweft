@@ -9,11 +9,12 @@ use core::num::NonZeroU64;
 use thiserror::Error;
 
 use crate::ast::items::TypedSyntaxTree;
+use crate::attachment::SyntaxSnapshotData;
 use crate::cst::SyntaxNode;
 use crate::parser::recovery::{ParseError, ParseErrorKind};
 
 use super::limits::SyntaxLimit;
-use super::{reconcile, shape};
+use super::{reconcile, shape, transaction};
 
 /// Stable node identity within one in-memory syntax database lineage.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -53,6 +54,7 @@ pub struct ParsedSource {
     document: SourceDocument,
     parsed: crate::source::ParsedSource,
     identities: Arc<SyntaxIdentityMap>,
+    shadow: Arc<SyntaxSnapshotData>,
     status: ParseStatus,
 }
 
@@ -96,6 +98,11 @@ impl ParsedSource {
     pub const fn status(&self) -> ParseStatus {
         self.status
     }
+
+    #[cfg(test)]
+    pub(super) const fn attached(&self) -> &Arc<SyntaxSnapshotData> {
+        &self.shadow
+    }
 }
 
 /// Owner of source generations and never-reused CST identities for one session.
@@ -103,12 +110,14 @@ impl ParsedSource {
 pub struct SyntaxDatabase {
     lineages: BTreeMap<SourceName, SourceLineage>,
     limits: SyntaxTransactionLimits,
+    shadow: transaction::ShadowDatabaseState,
 }
 
 #[derive(Debug)]
 struct SourceLineage {
     current: Arc<ParsedSource>,
     allocator: NodeAllocator,
+    shadow: transaction::ShadowLineageState,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -204,6 +213,7 @@ impl SyntaxDatabase {
         Self {
             lineages: BTreeMap::new(),
             limits,
+            shadow: transaction::ShadowDatabaseState::default(),
         }
     }
 
@@ -212,14 +222,23 @@ impl SyntaxDatabase {
         clippy::needless_pass_by_value,
         reason = "the public transaction contract takes ownership of the snapshot and immutable source"
     )]
-    #[expect(
-        clippy::arc_with_non_send_sync,
-        reason = "the contract requires immutable Arc snapshots while rowan red nodes remain session-thread-affine"
-    )]
     pub fn parse_initial(
         &mut self,
         snapshot: SourceSnapshotId,
         document: SourceDocument,
+    ) -> Result<Arc<ParsedSource>, ParseFailure> {
+        self.parse_initial_with_shadow_fault(&snapshot, document, transaction::ShadowFault::None)
+    }
+
+    #[expect(
+        clippy::arc_with_non_send_sync,
+        reason = "the contract requires immutable Arc snapshots while Rowan red nodes remain session-thread-affine"
+    )]
+    fn parse_initial_with_shadow_fault(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: SourceDocument,
+        shadow_fault: transaction::ShadowFault,
     ) -> Result<Arc<ParsedSource>, ParseFailure> {
         if snapshot.generation() != SourceGeneration::INITIAL
             || snapshot.name() != document.display_name()
@@ -231,32 +250,47 @@ impl SyntaxDatabase {
         let shape = shape::ShapeNode::from_syntax(parsed.syntax().clone());
         let mut allocator = NodeAllocator::default();
         let identities = reconcile::allocate_initial(&shape, &mut || allocator.allocate())?;
+        let shadow = self
+            .shadow
+            .stage_initial(snapshot, &document, shadow_fault)?;
         let result = Arc::new(ParsedSource {
             snapshot: snapshot.clone(),
             document,
             status: parse_status(&parsed),
             parsed,
             identities: Arc::new(identities),
+            shadow: Arc::clone(shadow.current()),
         });
+        let shadow = self.shadow.commit_initial(shadow);
         self.lineages.insert(
             snapshot.name().clone(),
             SourceLineage {
                 current: Arc::clone(&result),
                 allocator,
+                shadow,
             },
         );
         Ok(result)
     }
 
     /// Applies simultaneous checked edits and reconciles stable CST identities.
-    #[expect(
-        clippy::arc_with_non_send_sync,
-        reason = "the contract requires immutable Arc snapshots while rowan red nodes remain session-thread-affine"
-    )]
     pub fn reparse(
         &mut self,
         previous: &ParsedSource,
         edits: &[SourceEdit],
+    ) -> Result<Arc<ParsedSource>, ParseFailure> {
+        self.reparse_with_shadow_fault(previous, edits, transaction::ShadowFault::None)
+    }
+
+    #[expect(
+        clippy::arc_with_non_send_sync,
+        reason = "the contract requires immutable Arc snapshots while Rowan red nodes remain session-thread-affine"
+    )]
+    fn reparse_with_shadow_fault(
+        &mut self,
+        previous: &ParsedSource,
+        edits: &[SourceEdit],
+        shadow_fault: transaction::ShadowFault,
     ) -> Result<Arc<ParsedSource>, ParseFailure> {
         let lineage = self
             .lineages
@@ -265,6 +299,7 @@ impl SyntaxDatabase {
         if lineage.current.snapshot() != previous.snapshot()
             || lineage.current.source() != previous.source()
             || !Arc::ptr_eq(lineage.current.identities(), previous.identities())
+            || !Arc::ptr_eq(lineage.shadow.current(), previous.attached_internal())
         {
             return Err(ParseFailure::SourceMismatch);
         }
@@ -300,12 +335,16 @@ impl SyntaxDatabase {
             reconcile::reconcile(&old_shape, &new_shape, previous.identities(), &mut || {
                 allocator.allocate()
             })?;
+        let shadow = lineage
+            .shadow
+            .stage_reparse(&snapshot, &document, shadow_fault)?;
         let result = Arc::new(ParsedSource {
             snapshot,
             document,
             status: parse_status(&parsed),
             parsed,
             identities: Arc::new(identities),
+            shadow: Arc::clone(shadow.current()),
         });
         let lineage = self
             .lineages
@@ -313,7 +352,36 @@ impl SyntaxDatabase {
             .ok_or(ParseFailure::InternalInvariant)?;
         lineage.current = Arc::clone(&result);
         lineage.allocator = allocator;
+        lineage.shadow = shadow.into_lineage();
         Ok(result)
+    }
+
+    #[cfg(test)]
+    fn parse_initial_with_attachment_failure(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: SourceDocument,
+    ) -> Result<Arc<ParsedSource>, ParseFailure> {
+        self.parse_initial_with_shadow_fault(
+            snapshot,
+            document,
+            transaction::ShadowFault::MissingAttachment,
+        )
+    }
+
+    #[cfg(test)]
+    fn reparse_with_attachment_failure(
+        &mut self,
+        previous: &ParsedSource,
+        edits: &[SourceEdit],
+    ) -> Result<Arc<ParsedSource>, ParseFailure> {
+        self.reparse_with_shadow_fault(previous, edits, transaction::ShadowFault::MissingAttachment)
+    }
+}
+
+impl ParsedSource {
+    const fn attached_internal(&self) -> &Arc<SyntaxSnapshotData> {
+        &self.shadow
     }
 }
 

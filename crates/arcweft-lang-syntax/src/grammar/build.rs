@@ -18,6 +18,10 @@ use crate::incremental::SyntaxLimit;
 pub(crate) struct GrammarEventPath(Box<[u32]>);
 
 impl GrammarEventPath {
+    pub(crate) const fn from_elements(elements: Box<[u32]>) -> Self {
+        Self(elements)
+    }
+
     pub(crate) fn elements(&self) -> &[u32] {
         &self.0
     }

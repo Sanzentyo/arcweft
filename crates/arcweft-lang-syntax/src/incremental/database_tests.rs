@@ -3,7 +3,11 @@ use crate::parser::{parse_source, recovery::ParseErrorKind};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 use core::num::NonZeroU64;
+use std::collections::HashSet;
 use std::sync::Arc;
+
+use crate::attachment::{PredicateItemKind, SyntaxLookupError, SyntaxNodeHandle};
+use crate::grammar::kinds::SyntaxKind as GrammarKind;
 
 fn source_document(name: &SourceName, text: impl Into<Arc<str>>) -> SourceDocument {
     SourceDocument::try_new(
@@ -839,6 +843,448 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &with_last_id));
     assert_eq!(current.current.snapshot().generation().get(), 2);
+}
+
+#[test]
+fn same_line_descendants_receive_distinct_private_grammar_ids() {
+    let name = SourceName::path("identity.arcw");
+    let source = "proof distinct((a, b): (Int, Int), c: Int) = a + b + c\n";
+    let mut database = SyntaxDatabase::default();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("same-line predicate attaches");
+
+    let nodes = parsed.attached().nodes().collect::<Vec<_>>();
+    let ids = nodes
+        .iter()
+        .map(SyntaxNodeHandle::id)
+        .collect::<HashSet<_>>();
+    assert_eq!(ids.len(), nodes.len());
+    assert!(
+        nodes
+            .iter()
+            .filter(|node| node.kind() == GrammarKind::Parameter)
+            .count()
+            >= 2
+    );
+    assert!(
+        nodes
+            .iter()
+            .filter(|node| node.kind() == GrammarKind::BindingPattern)
+            .count()
+            >= 3
+    );
+    assert!(
+        nodes
+            .iter()
+            .filter(|node| node.kind() == GrammarKind::PrimitiveType)
+            .count()
+            >= 3
+    );
+    assert!(
+        nodes
+            .iter()
+            .filter(|node| node.kind() == GrammarKind::PathExpression)
+            .count()
+            >= 2
+    );
+    assert!(nodes.iter().all(|node| node.range().end() <= source.len()));
+}
+
+#[test]
+fn independent_databases_cannot_resolve_equal_private_raw_slots() {
+    let name = SourceName::path("same.arcw");
+    let snapshot = SourceSnapshotId::initial(name.clone());
+    let mut first_database = SyntaxDatabase::default();
+    let mut second_database = SyntaxDatabase::default();
+    let first = first_database
+        .parse_initial(
+            snapshot.clone(),
+            source_document(&name, "proof valid() = ()\n"),
+        )
+        .expect("first database");
+    let second = second_database
+        .parse_initial(snapshot, source_document(&name, "proof valid() = ()\n"))
+        .expect("second database");
+    let first_root = first.attached().root_handle();
+    let second_root = second.attached().root_handle();
+
+    assert_eq!(first_root.id().slot(), second_root.id().slot());
+    assert_ne!(first_root.id(), second_root.id());
+    assert!(matches!(
+        first.attached().syntax_node(second_root.id()),
+        Err(SyntaxLookupError::WrongDatabase { .. })
+    ));
+}
+
+#[test]
+fn trivia_reparse_preserves_private_descendant_ids_and_old_snapshot_ranges() {
+    let name = SourceName::path("predicate.arcw");
+    let source = "predicate ready(value: Int) requires value > 0 = value == 1\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial predicate");
+    let old_nodes = initial.attached().nodes().collect::<Vec<_>>();
+    let old_item = old_nodes
+        .iter()
+        .find(|node| node.kind() == GrammarKind::PredicateItem)
+        .expect("predicate item")
+        .clone();
+    let old_typed = initial
+        .attached()
+        .typed_node::<PredicateItemKind>(old_item.id())
+        .unwrap();
+    let old_range = old_typed.range();
+
+    let reparsed = database
+        .reparse(
+            &initial,
+            &[source_edit(&initial, SourceRange::new(9, 9), "  ")],
+        )
+        .expect("trivia reparse");
+    let new_nodes = reparsed.attached().nodes().collect::<Vec<_>>();
+    assert_eq!(
+        old_nodes
+            .iter()
+            .map(SyntaxNodeHandle::id)
+            .collect::<Vec<_>>(),
+        new_nodes
+            .iter()
+            .map(SyntaxNodeHandle::id)
+            .collect::<Vec<_>>()
+    );
+    let new_item = new_nodes
+        .iter()
+        .find(|node| node.kind() == GrammarKind::PredicateItem)
+        .expect("reparsed predicate item")
+        .clone();
+    let new_typed = reparsed
+        .attached()
+        .typed_node::<PredicateItemKind>(new_item.id())
+        .unwrap();
+    assert!(old_typed.is_same_reconciled_node(&new_typed));
+    assert_eq!(old_typed.range(), old_range);
+    assert_eq!(new_typed.range().start(), old_range.start());
+    assert_eq!(new_typed.range().end(), old_range.end() + 2);
+    assert!(matches!(
+        reparsed.attached().resolve_exact(&old_item),
+        Err(SyntaxLookupError::WrongSnapshot { .. })
+    ));
+}
+
+#[test]
+fn unique_private_grammar_siblings_retain_ids_when_reordered() {
+    let name = SourceName::path("reordered-proofs.arcw");
+    let source = "proof first() = 1\nproof second() = 2\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial proofs");
+    let first = private_id_containing(&initial, GrammarKind::ProofItem, "proof first");
+    let second = private_id_containing(&initial, GrammarKind::ProofItem, "proof second");
+    let reordered_source = "proof second() = 2\nproof first() = 1\n";
+
+    let reordered = database
+        .reparse(
+            &initial,
+            &[source_edit(
+                &initial,
+                SourceRange::new(0, source.len()),
+                reordered_source,
+            )],
+        )
+        .expect("reordered proofs");
+
+    assert_eq!(
+        private_id_containing(&reordered, GrammarKind::ProofItem, "proof first"),
+        first
+    );
+    assert_eq!(
+        private_id_containing(&reordered, GrammarKind::ProofItem, "proof second"),
+        second
+    );
+}
+
+#[test]
+fn a_private_grammar_copy_is_fresh_while_the_original_retains_its_id() {
+    let name = SourceName::path("copied-proof.arcw");
+    let source = "proof same() = ()\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial proof");
+    let original = private_ids_containing(&initial, GrammarKind::ProofItem, "proof same");
+    assert_eq!(original.len(), 1);
+    let copied_source = "proof same() = ()\nproof same() = ()\n";
+
+    let copied = database
+        .reparse(
+            &initial,
+            &[source_edit(
+                &initial,
+                SourceRange::new(0, source.len()),
+                copied_source,
+            )],
+        )
+        .expect("copied proof");
+    let copied_ids = private_ids_containing(&copied, GrammarKind::ProofItem, "proof same");
+
+    assert_eq!(copied_ids.len(), 2);
+    assert_eq!(copied_ids[0], original[0]);
+    assert_ne!(copied_ids[1], original[0]);
+}
+
+#[test]
+fn moving_a_private_grammar_node_across_block_parents_allocates_a_fresh_id() {
+    let name = SourceName::path("moved-expression.arcw");
+    let source =
+        "proof relocate() -> Int { let first: Int = { target() }; let second: Int = { 0 }; 0 }\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial nested expression");
+    let target = private_id_containing(&initial, GrammarKind::CallExpression, "target()");
+    let moved_source =
+        "proof relocate() -> Int { let first: Int = { 0 }; let second: Int = { target() }; 0 }\n";
+
+    let moved = database
+        .reparse(
+            &initial,
+            &[source_edit(
+                &initial,
+                SourceRange::new(0, source.len()),
+                moved_source,
+            )],
+        )
+        .expect("moved nested expression");
+
+    assert_ne!(
+        private_id_containing(&moved, GrammarKind::CallExpression, "target()"),
+        target
+    );
+}
+
+#[test]
+fn changed_private_grammar_node_is_fresh_while_its_sibling_survives() {
+    let name = SourceName::path("changed-proof.arcw");
+    let source = "proof first() = ()\nproof second() = ()\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial proofs");
+    let first_name = private_id_containing(&initial, GrammarKind::NameDefinition, "first");
+    let second = private_id_containing(&initial, GrammarKind::ProofItem, "proof second");
+    let first_start = source.find("first").expect("first proof name");
+
+    let changed = database
+        .reparse(
+            &initial,
+            &[source_edit(
+                &initial,
+                SourceRange::new(first_start, first_start + "first".len()),
+                "changed",
+            )],
+        )
+        .expect("renamed proof");
+
+    assert_ne!(
+        private_id_containing(&changed, GrammarKind::NameDefinition, "changed"),
+        first_name
+    );
+    assert_eq!(
+        private_id_containing(&changed, GrammarKind::ProofItem, "proof second"),
+        second
+    );
+}
+
+#[test]
+fn missing_and_error_nodes_reconcile_by_recovery_role() {
+    let name = SourceName::path("recovery.arcw");
+    let source = "proof () = ()\nunknown surface\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("recovered source attaches");
+    let old_recovery = recovery_ids(&initial);
+    assert!(old_recovery.len() >= 2);
+    assert_eq!(
+        old_recovery.iter().copied().collect::<HashSet<_>>().len(),
+        old_recovery.len()
+    );
+
+    let reparsed = database
+        .reparse(
+            &initial,
+            &[source_edit(&initial, SourceRange::new(0, 0), " ")],
+        )
+        .expect("recovered trivia reparse");
+    assert_eq!(recovery_ids(&reparsed), old_recovery);
+}
+
+#[test]
+fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
+    let name = SourceName::path("attachment-failure.arcw");
+    let mut database = SyntaxDatabase::default();
+    let lineage_before = database.shadow.next_lineage_for_test();
+    let failed = database.parse_initial_with_attachment_failure(
+        &SourceSnapshotId::initial(name.clone()),
+        source_document(&name, "proof invalid() = ()\n"),
+    );
+
+    assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
+    assert!(database.lineages.is_empty());
+    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+
+    let accepted = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, "proof valid() = ()\n"),
+        )
+        .expect("next valid transaction uses the unconsumed lineage");
+    let control_name = SourceName::path("control.arcw");
+    let mut control = SyntaxDatabase::default();
+    let control = control
+        .parse_initial(
+            SourceSnapshotId::initial(control_name.clone()),
+            source_document(&control_name, "proof valid() = ()\n"),
+        )
+        .expect("control transaction");
+    assert_eq!(
+        accepted.attached().root_handle().id().slot(),
+        control.attached().root_handle().id().slot()
+    );
+}
+
+#[test]
+fn fatal_private_attachment_failure_rolls_back_reparse_transaction() {
+    let name = SourceName::path("reparse-attachment-failure.arcw");
+    let source = "proof first() = ()\n";
+    let addition = "proof second() = ()\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial source");
+    let edit = source_edit(
+        &initial,
+        SourceRange::new(source.len(), source.len()),
+        addition,
+    );
+    let next_before = database
+        .lineages
+        .get(&name)
+        .expect("lineage")
+        .shadow
+        .next_node_for_test();
+
+    let failed = database.reparse_with_attachment_failure(&initial, std::slice::from_ref(&edit));
+    assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
+    let current = database.lineages.get(&name).expect("lineage");
+    assert!(Arc::ptr_eq(&current.current, &initial));
+    assert!(Arc::ptr_eq(current.shadow.current(), initial.attached()));
+    assert_eq!(current.shadow.next_node_for_test(), next_before);
+
+    let accepted = database
+        .reparse(&initial, &[edit])
+        .expect("valid retry after failed attachment");
+    let mut control_database = SyntaxDatabase::default();
+    let control_initial = control_database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("control initial");
+    let control_edit = source_edit(
+        &control_initial,
+        SourceRange::new(source.len(), source.len()),
+        addition,
+    );
+    let control = control_database
+        .reparse(&control_initial, &[control_edit])
+        .expect("control reparse");
+    assert_eq!(private_slots(&accepted), private_slots(&control));
+}
+
+fn recovery_ids(source: &super::ParsedSource) -> Vec<crate::attachment::SyntaxNodeId> {
+    source
+        .attached()
+        .nodes()
+        .filter(|node| node.kind().is_missing_node() || node.kind().is_error_node())
+        .map(|node| node.id())
+        .collect()
+}
+
+fn private_slots(source: &super::ParsedSource) -> Vec<NonZeroU64> {
+    source
+        .attached()
+        .nodes()
+        .map(|node| node.id().slot())
+        .collect()
+}
+
+fn private_id_containing(
+    source: &super::ParsedSource,
+    kind: GrammarKind,
+    needle: &str,
+) -> crate::attachment::SyntaxNodeId {
+    private_ids_containing(source, kind, needle)
+        .into_iter()
+        .min_by_key(|id| {
+            let range = source
+                .attached()
+                .syntax_node(*id)
+                .expect("attached private grammar identity")
+                .range();
+            range.end() - range.start()
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "missing {kind:?} containing {needle:?}; containing nodes: {:?}",
+                source
+                    .attached()
+                    .nodes()
+                    .filter(|node| node.rowan().text().to_string().contains(needle))
+                    .map(|node| (node.kind(), node.rowan().text().to_string()))
+                    .collect::<Vec<_>>()
+            )
+        })
+}
+
+fn private_ids_containing(
+    source: &super::ParsedSource,
+    kind: GrammarKind,
+    needle: &str,
+) -> Vec<crate::attachment::SyntaxNodeId> {
+    source
+        .attached()
+        .nodes()
+        .filter(|node| node.kind() == kind && node.rowan().text().to_string().contains(needle))
+        .map(|node| node.id())
+        .collect()
 }
 
 fn line_id(source: &super::ParsedSource, needle: &str) -> SyntaxNodeId {

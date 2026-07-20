@@ -174,7 +174,7 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 }
 
 /// Builds the private lossless root tree without allocating syntax identity.
-pub(super) fn parse_shadow_document(
+pub(crate) fn parse_shadow_document(
     document: &SourceDocument,
 ) -> Result<GrammarBuild, GrammarBuildError> {
     let tokens = DocumentLexer::new(document.text()).lex();

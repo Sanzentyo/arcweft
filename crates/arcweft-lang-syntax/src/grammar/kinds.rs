@@ -48,11 +48,8 @@ pub(crate) enum SyntaxKind {
     LayerDeclarationItem,
     EntryDeclarationItem,
     ExternCapabilityItem,
-    ExternModuleItem,
-    DialogueDefaultsItem,
     TestItem,
     BenchItem,
-    SourceItem,
     StyleItem,
     ErrorItem,
     InnerAttribute,
@@ -330,6 +327,38 @@ impl SyntaxKind {
             _ => IdentityClass::IdentityBearing,
         }
     }
+
+    /// Whether this identity-bearing node represents a missing grammar value.
+    pub(crate) const fn is_missing_node(self) -> bool {
+        matches!(
+            self,
+            Self::MissingName
+                | Self::MissingBody
+                | Self::MissingTokenNode
+                | Self::MissingExpression
+                | Self::MissingPattern
+                | Self::MissingType
+        )
+    }
+
+    /// Whether this identity-bearing node owns ordinary current-grammar error recovery.
+    pub(crate) const fn is_error_node(self) -> bool {
+        matches!(
+            self,
+            Self::ErrorItem
+                | Self::ErrorDeclarationMember
+                | Self::ErrorStatement
+                | Self::ErrorExpression
+                | Self::ErrorPattern
+                | Self::ErrorType
+                | Self::ErrorNode
+        )
+    }
+
+    /// Whether this node is a deliberate zero-width omitted block tail.
+    pub(crate) const fn is_omitted_node(self) -> bool {
+        matches!(self, Self::OmittedBlockTail)
+    }
 }
 
 /// Semantic child role used when reconciling identity-bearing grammar nodes.
@@ -392,9 +421,125 @@ pub(crate) enum SyntaxRole {
     Recovery(u32),
 }
 
+/// Ordinal-free semantic child role used as reconciliation authority.
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum SyntaxRoleClass {
+    Root,
+    Attribute,
+    Documentation,
+    Visibility,
+    PublicId,
+    Alias,
+    Kind,
+    Name,
+    GenericGroup,
+    GenericParameter,
+    ParameterGroup,
+    Parameter,
+    ParameterPattern,
+    ParameterType,
+    WhereClause,
+    WherePredicate,
+    ReturnType,
+    RequiresClause,
+    EnsuresClause,
+    Body,
+    OpenDelimiter,
+    CloseDelimiter,
+    Statement,
+    Tail,
+    Condition,
+    Callee,
+    Argument,
+    Target,
+    Operand,
+    LeftOperand,
+    RightOperand,
+    Pattern,
+    Type,
+    Initializer,
+    Scrutinee,
+    Guard,
+    ThenBranch,
+    ElseBranch,
+    MatchArm,
+    Field,
+    Member,
+    InputPort,
+    OutputPort,
+    Export,
+    Label,
+    Bucket,
+    Policy,
+    Reference,
+    RelatedReference,
+    Element,
+    Recovery,
+}
+
+impl SyntaxRole {
+    /// Removes the deterministic sibling ordinal without weakening the role.
+    pub(crate) const fn class(self) -> SyntaxRoleClass {
+        match self {
+            Self::Root => SyntaxRoleClass::Root,
+            Self::Attribute(_) => SyntaxRoleClass::Attribute,
+            Self::Documentation => SyntaxRoleClass::Documentation,
+            Self::Visibility => SyntaxRoleClass::Visibility,
+            Self::PublicId => SyntaxRoleClass::PublicId,
+            Self::Alias => SyntaxRoleClass::Alias,
+            Self::Kind => SyntaxRoleClass::Kind,
+            Self::Name => SyntaxRoleClass::Name,
+            Self::GenericGroup => SyntaxRoleClass::GenericGroup,
+            Self::GenericParameter(_) => SyntaxRoleClass::GenericParameter,
+            Self::ParameterGroup => SyntaxRoleClass::ParameterGroup,
+            Self::Parameter(_) => SyntaxRoleClass::Parameter,
+            Self::ParameterPattern => SyntaxRoleClass::ParameterPattern,
+            Self::ParameterType => SyntaxRoleClass::ParameterType,
+            Self::WhereClause => SyntaxRoleClass::WhereClause,
+            Self::WherePredicate(_) => SyntaxRoleClass::WherePredicate,
+            Self::ReturnType => SyntaxRoleClass::ReturnType,
+            Self::RequiresClause(_) => SyntaxRoleClass::RequiresClause,
+            Self::EnsuresClause(_) => SyntaxRoleClass::EnsuresClause,
+            Self::Body => SyntaxRoleClass::Body,
+            Self::OpenDelimiter => SyntaxRoleClass::OpenDelimiter,
+            Self::CloseDelimiter => SyntaxRoleClass::CloseDelimiter,
+            Self::Statement(_) => SyntaxRoleClass::Statement,
+            Self::Tail => SyntaxRoleClass::Tail,
+            Self::Condition => SyntaxRoleClass::Condition,
+            Self::Callee => SyntaxRoleClass::Callee,
+            Self::Argument(_) => SyntaxRoleClass::Argument,
+            Self::Target => SyntaxRoleClass::Target,
+            Self::Operand => SyntaxRoleClass::Operand,
+            Self::LeftOperand => SyntaxRoleClass::LeftOperand,
+            Self::RightOperand => SyntaxRoleClass::RightOperand,
+            Self::Pattern => SyntaxRoleClass::Pattern,
+            Self::Type => SyntaxRoleClass::Type,
+            Self::Initializer => SyntaxRoleClass::Initializer,
+            Self::Scrutinee => SyntaxRoleClass::Scrutinee,
+            Self::Guard => SyntaxRoleClass::Guard,
+            Self::ThenBranch => SyntaxRoleClass::ThenBranch,
+            Self::ElseBranch => SyntaxRoleClass::ElseBranch,
+            Self::MatchArm(_) => SyntaxRoleClass::MatchArm,
+            Self::Field(_) => SyntaxRoleClass::Field,
+            Self::Member(_) => SyntaxRoleClass::Member,
+            Self::InputPort(_) => SyntaxRoleClass::InputPort,
+            Self::OutputPort(_) => SyntaxRoleClass::OutputPort,
+            Self::Export(_) => SyntaxRoleClass::Export,
+            Self::Label(_) => SyntaxRoleClass::Label,
+            Self::Bucket(_) => SyntaxRoleClass::Bucket,
+            Self::Policy(_) => SyntaxRoleClass::Policy,
+            Self::Reference(_) => SyntaxRoleClass::Reference,
+            Self::RelatedReference(_) => SyntaxRoleClass::RelatedReference,
+            Self::Element(_) => SyntaxRoleClass::Element,
+            Self::Recovery(_) => SyntaxRoleClass::Recovery,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{IdentityClass, SyntaxKind};
+    use super::{IdentityClass, SyntaxKind, SyntaxRole, SyntaxRoleClass};
 
     #[test]
     fn final_kind_inventory_owns_identity_classification() {
@@ -412,5 +557,18 @@ mod tests {
         );
         assert!(SyntaxKind::MissingToken.is_token());
         assert!(!SyntaxKind::MissingTokenNode.is_token());
+    }
+
+    #[test]
+    fn role_classes_discard_only_sibling_ordinals() {
+        assert_eq!(SyntaxRole::Statement(7).class(), SyntaxRoleClass::Statement);
+        assert_eq!(
+            SyntaxRole::Statement(99).class(),
+            SyntaxRoleClass::Statement
+        );
+        assert_ne!(
+            SyntaxRole::Parameter(0).class(),
+            SyntaxRole::ParameterType.class()
+        );
     }
 }
