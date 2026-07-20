@@ -213,15 +213,15 @@ fn project_signature(
     } else {
         schema.effects().declared().clone()
     };
+    let canonical_callee = record.map_or_else(|| authored_callee.to_owned(), canonical_callee);
     let documentation = match record {
         Some(record) => {
-            let canonical_callee = canonical_callee(record);
             if authored_callee == canonical_callee {
                 record.documentation().clone()
             } else {
                 record
                     .documentation()
-                    .with_canonical_owner_note(&canonical_callee)
+                    .with_canonical_owner_note(canonical_callee.as_str())
             }
         }
         None => crate::callable::CallableDocumentation::missing(),
@@ -234,7 +234,8 @@ fn project_signature(
             .map(|source| source.id().clone())
             .collect(),
         candidate.origin().clone(),
-        Arc::from(signature_label(authored_callee, schema, &result)),
+        Arc::from(authored_callee),
+        Arc::from(canonical_callee),
         groups,
         result,
         effects,
@@ -262,30 +263,16 @@ fn accepted_record<'a>(
     }
 }
 
-fn signature_label(
-    authored_callee: &str,
-    schema: &crate::callable::CallableSignatureSchema,
-    result: &crate::types::TypeKind,
-) -> String {
-    let mut groups = String::new();
-    for group in schema.groups() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(parameter_label)
-            .collect::<Vec<_>>()
-            .join(", ");
-        groups.push('(');
-        groups.push_str(&parameters);
-        groups.push(')');
-    }
-    format!("{authored_callee}{groups} -> {}", result.source_label())
-}
-
 fn canonical_callee(record: &CallableRecord) -> String {
     match record.key() {
         CallableLookupKey::Free(path) => path.dotted_name(),
-        CallableLookupKey::Method(key) => key.method().as_str().to_owned(),
+        CallableLookupKey::Method(key) => {
+            format!(
+                "{}.{}",
+                key.receiver().source_label(),
+                key.method().as_str()
+            )
+        }
     }
 }
 

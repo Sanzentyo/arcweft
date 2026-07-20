@@ -1,21 +1,25 @@
 use super::*;
 use crate::custom::ArcweftCustomRequest;
+use crate::requests::SignatureRequestRuntime;
 use arcweft_rust_abi::{
     ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
     ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
     ArcweftRustTypeRef,
 };
+use lsp_server::{Connection, Message};
 use lsp_types::{
     ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     GotoDefinitionResponse, InlayHint, InlayHintLabel, PartialResultParams, Position, Range,
-    ReferenceContext, SignatureHelp, TextDocumentContentChangeEvent, TextDocumentIdentifier,
-    TextDocumentItem, TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier,
-    WorkDoneProgressParams, WorkspaceClientCapabilities, WorkspaceEditClientCapabilities,
+    ReferenceContext, SignatureHelp, SignatureHelpParams, TextDocumentContentChangeEvent,
+    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Uri,
+    VersionedTextDocumentIdentifier, WorkDoneProgressParams, WorkspaceClientCapabilities,
+    WorkspaceEditClientCapabilities,
 };
 use std::{
     fs::{create_dir_all, write},
     path::{Path, PathBuf},
+    sync::{Arc, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -1848,46 +1852,103 @@ flow @flow.main main {}\n";
 }
 
 #[test]
-fn signature_help_uses_document_scoped_rust_metadata() {
-    let project = TestProject::new("lsp-session-signature-rust-metadata");
+fn signature_help_uses_native_registered_adapter_candidate() {
+    let project = TestProject::new("lsp-session-signature-adapter");
     project.write(
         "arcw.toml",
         r#"
+schema = 1
+
 [package]
-name = "lsp-session-signature-rust-metadata"
+id = "org.arcweft.tests.lsp.signature"
+version = "0.1.0"
 
 [profiles.dev]
 kind = "server"
-entry = "entry.server.main"
+entry = "@entry.server.main"
 source = "src/main.arcw"
-adapter = "quest"
-adapter_manifests = ["adapters/quest.toml"]
-rust_metadata = ["target/arcweft/quest.json"]
+adapter = "inference-tensor"
 "#,
     );
-    project.write(
-        "adapters/quest.toml",
-        adapter_manifest("quest", "quest.echo").as_str(),
-    );
-    project.write(
-        "target/arcweft/quest.json",
-        &quest_rust_manifest()
-            .to_json_pretty()
-            .expect("metadata json"),
-    );
-    let source = "fn evaluate_stats(stats: PlayerStats) -> String {\n    quest_evaluate(stats)\n}\n\
+    let source = "fn evaluate_tensor(value: TensorF32) -> TensorF32 {\n    infer.add_f32(value, value)\n}\n\
 entry server @entry.server.main { goto @flow.main }\n\
 flow @flow.main main {}\n";
     project.write("src/main.arcw", source);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), source);
+    let session = Arc::new(RwLock::new(session));
+    let (server, client) = Connection::memory();
+    let runtime =
+        SignatureRequestRuntime::new(&server, Arc::clone(&session)).expect("signature runtime");
 
-    let signature = signature_help(&mut session, uri, source, "quest_evaluate");
+    let response = native_signature_response(
+        &session,
+        &runtime,
+        &client,
+        3,
+        uri.clone(),
+        position_after(source, "infer.add_f32("),
+    );
+    let signature: SignatureHelp =
+        serde_json::from_value(response.result.expect("signature help response"))
+            .expect("signature help response decodes");
 
     let first = signature.signatures.first().expect("signature item");
-    assert_eq!(first.label, "quest_evaluate(stats: PlayerStats) -> String");
-    assert_eq!(first.parameters.as_ref().expect("parameters").len(), 1);
+    assert_eq!(
+        first.label,
+        "infer.add_f32(lhs: TensorF32, rhs: TensorF32) -> TensorF32"
+    );
+    assert!(matches!(
+        first.documentation.as_ref(),
+        Some(lsp_types::Documentation::MarkupContent(content))
+            if content.value.contains("Canonical owner: `InferApi.add_f32`.")
+    ));
+    assert_eq!(
+        first.parameters.as_ref().expect("parameters"),
+        &[
+            lsp_types::ParameterInformation {
+                label: lsp_types::ParameterLabel::LabelOffsets([14, 28]),
+                documentation: None,
+            },
+            lsp_types::ParameterInformation {
+                label: lsp_types::ParameterLabel::LabelOffsets([30, 44]),
+                documentation: None,
+            },
+        ]
+    );
+    assert_eq!(signature.active_signature, Some(0));
+    assert_eq!(signature.active_parameter, Some(0));
+
+    let outside = native_signature_response(
+        &session,
+        &runtime,
+        &client,
+        4,
+        uri.clone(),
+        position_of(source, "infer.add_f32"),
+    );
+    assert_eq!(outside.result, Some(serde_json::Value::Null));
+    assert!(outside.error.is_none());
+
+    let invalid = native_signature_response(
+        &session,
+        &runtime,
+        &client,
+        5,
+        uri,
+        Position::new(u32::MAX, 0),
+    );
+    let error = invalid.error.expect("invalid position error");
+    assert_eq!(error.code, ErrorCode::InvalidParams as i32);
+    assert_eq!(
+        error.data,
+        Some(serde_json::json!({
+            "code": "aw.signature.request.invalid_lsp_position"
+        }))
+    );
+
+    runtime.shutdown();
 }
 
 #[test]
@@ -2571,26 +2632,42 @@ fn hover_text(session: &mut ArcweftLspSession, uri: Uri, source: &str, needle: &
     }
 }
 
-fn signature_help(
-    session: &mut ArcweftLspSession,
+fn native_signature_response(
+    session: &Arc<RwLock<ArcweftLspSession>>,
+    runtime: &SignatureRequestRuntime,
+    client: &Connection,
+    request_id: i32,
     uri: Uri,
-    source: &str,
-    needle: &str,
-) -> SignatureHelp {
-    let response = session.handle_request(Request {
-        id: RequestId::from(3),
-        method: SignatureHelpRequest::METHOD.to_owned(),
-        params: serde_json::json!(SignatureHelpParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri },
-                position: position_of(source, needle),
+    position: Position,
+) -> Response {
+    let id = RequestId::from(request_id);
+    let prepared = session
+        .read()
+        .expect("session read")
+        .prepare_signature_request(
+            id.clone(),
+            SignatureHelpParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position,
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+                context: None,
             },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            context: None,
-        }),
-    });
-    serde_json::from_value(response.result.expect("signature help response"))
-        .expect("signature help response decodes")
+            runtime.registry(),
+        )
+        .expect("prepared signature request");
+    runtime
+        .submit(prepared)
+        .expect("submitted signature request");
+    match client
+        .receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("signature response")
+    {
+        Message::Response(response) => response,
+        other => panic!("unexpected signature message: {other:?}"),
+    }
 }
 
 fn inlay_hint_labels(session: &mut ArcweftLspSession, uri: Uri) -> Vec<String> {

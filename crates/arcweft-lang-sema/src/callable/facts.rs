@@ -507,7 +507,8 @@ pub struct SemanticSignature {
     candidate: CallableCandidateId,
     equivalent: Arc<[CallableCandidateId]>,
     origin: SignatureOrigin,
-    label: Arc<str>,
+    authored_callee: Arc<str>,
+    canonical_callee: Arc<str>,
     groups: Arc<[SemanticParameterGroup]>,
     result: TypeKind,
     effects: EffectRow,
@@ -523,7 +524,8 @@ impl SemanticSignature {
         candidate: CallableCandidateId,
         equivalent: Vec<CallableCandidateId>,
         origin: SignatureOrigin,
-        label: Arc<str>,
+        authored_callee: Arc<str>,
+        canonical_callee: Arc<str>,
         groups: Vec<SemanticParameterGroup>,
         result: TypeKind,
         effects: EffectRow,
@@ -555,7 +557,8 @@ impl SemanticSignature {
             candidate,
             equivalent: equivalent.into(),
             origin,
-            label,
+            authored_callee,
+            canonical_callee,
             groups: groups.into(),
             result,
             effects,
@@ -574,8 +577,11 @@ impl SemanticSignature {
     pub const fn origin(&self) -> &SignatureOrigin {
         &self.origin
     }
-    pub fn label(&self) -> &str {
-        &self.label
+    pub fn authored_callee(&self) -> &str {
+        &self.authored_callee
+    }
+    pub fn canonical_callee(&self) -> &str {
+        &self.canonical_callee
     }
     pub fn groups(&self) -> &[SemanticParameterGroup] {
         &self.groups

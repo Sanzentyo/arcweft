@@ -5,6 +5,7 @@ use std::{
     time::Instant,
 };
 
+use arcweft_lang_sema::signature::{SignatureQuery, SignatureQueryControl, query_signature};
 use lsp_server::{Message, RequestId, Response};
 use lsp_types::{SignatureHelp, SignatureHelpParams};
 
@@ -15,7 +16,7 @@ use crate::{
         RequestGateState, RequestRegistry, SignatureRequestBinding,
         signature::{
             AcceptedDocumentHirLease, PreparedSignatureRequest, SignatureAcquireError,
-            SignatureRequestStale, SignatureRequestStamp,
+            SignatureRequestError, SignatureRequestStale, SignatureRequestStamp,
         },
     },
     uri_key::LspUriKey,
@@ -139,7 +140,6 @@ impl ArcweftLspSession {
         let lease = AcceptedDocumentHirLease::new(
             Arc::clone(&accepted),
             Arc::clone(&accepted_document),
-            uri.clone(),
             module.clone(),
         );
         let stamp = SignatureRequestStamp::new(
@@ -183,41 +183,53 @@ impl ArcweftLspSession {
         self.validate_signature_stamp(prepared.stamp(), control, *gate)
     }
 
-    pub(crate) fn legacy_signature_help(
-        &self,
-        prepared: &PreparedSignatureRequest,
-    ) -> Option<SignatureHelp> {
-        let profile = self.profiles_by_uri.get(prepared.stamp().uri())?;
-        crate::features::signature::signature_help(
-            profile,
-            prepared.snapshot(),
-            prepared.position(),
-        )
-    }
-
     #[allow(
         clippy::result_large_err,
-        reason = "publication revalidates and retains exact stale request identity evidence"
+        reason = "the request preserves exact acquisition, semantic, and projection failure evidence"
     )]
-    pub(crate) fn publish_legacy_signature_result(
+    pub(crate) fn signature_help(
         &self,
         prepared: &PreparedSignatureRequest,
-        result: Option<SignatureHelp>,
+    ) -> Result<Option<SignatureHelp>, SignatureRequestError> {
+        self.validate_signature_request(prepared)?;
+        let byte_offset = prepared
+            .snapshot()
+            .line_index()
+            .try_byte_offset_from_position(prepared.position())?;
+        let lease = prepared.lease();
+        let query = SignatureQuery::production(
+            lease.world(),
+            lease.document(),
+            lease.hir()?,
+            byte_offset,
+            SignatureQueryControl::new(
+                prepared.control().cancellation_flag(),
+                Some(prepared.control().deadline()),
+            ),
+        )?;
+        crate::features::signature::signature_help(query_signature(query)?).map_err(Into::into)
+    }
+
+    pub(crate) fn publish_signature_result(
+        &self,
+        prepared: &PreparedSignatureRequest,
+        result: Result<Option<SignatureHelp>, SignatureRequestError>,
         responses: &crossbeam_channel::Sender<Message>,
-    ) -> Result<(), SignatureRequestStale> {
+    ) {
         let control = prepared.control();
         let mut gate = control.gate();
-        self.validate_signature_stamp(prepared.stamp(), control, *gate)?;
-        if responses
-            .send(Message::Response(Response::new_ok(
-                prepared.request_id().clone(),
-                result,
-            )))
-            .is_ok()
-        {
+        let response = match self.validate_signature_stamp(prepared.stamp(), control, *gate) {
+            Ok(()) => match result {
+                Ok(result) => Response::new_ok(prepared.request_id().clone(), result),
+                Err(error) => error.into_response(prepared.request_id().clone()),
+            },
+            Err(error) => {
+                SignatureRequestError::from(error).into_response(prepared.request_id().clone())
+            }
+        };
+        if responses.send(Message::Response(response)).is_ok() {
             *gate = RequestGateState::Finished;
         }
-        Ok(())
     }
 
     #[allow(

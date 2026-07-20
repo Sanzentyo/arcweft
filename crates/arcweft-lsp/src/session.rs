@@ -23,7 +23,7 @@ use lsp_types::notification::{
 use lsp_types::request::{
     CodeActionRequest, Completion, DocumentSymbolRequest, ExecuteCommand, GotoDefinition,
     HoverRequest, InlayHintRequest, PrepareRenameRequest, References, Rename,
-    Request as LspRequest, SignatureHelpRequest, WorkspaceSymbolRequest,
+    Request as LspRequest, WorkspaceSymbolRequest,
 };
 use lsp_types::{
     CodeActionOrCommand, CodeActionParams, CodeActionResponse, CompletionParams,
@@ -33,9 +33,8 @@ use lsp_types::{
     ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams, HoverParams,
     HoverProviderCapability, InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
     OptionalVersionedTextDocumentIdentifier, ReferenceParams, RenameOptions, RenameParams,
-    ServerCapabilities, SignatureHelpOptions, SignatureHelpParams, TextDocumentEdit,
-    TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
-    WorkspaceSymbolParams,
+    ServerCapabilities, SignatureHelpOptions, TextDocumentEdit, TextDocumentSyncCapability,
+    TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit, WorkspaceSymbolParams,
 };
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -433,21 +432,6 @@ impl ArcweftLspSession {
                             &params.text_document_position.text_document.uri,
                             document,
                             params.text_document_position.position,
-                        )
-                    });
-                Ok(Response::new_ok(id, result))
-            }
-            SignatureHelpRequest::METHOD => {
-                let (id, params) =
-                    extract::<SignatureHelpParams>(request, SignatureHelpRequest::METHOD)?;
-                let result = self
-                    .document_for_params(&params.text_document_position_params.text_document.uri)
-                    .and_then(|document| {
-                        let profile = self.profile_for_uri(document.uri());
-                        features::signature::signature_help(
-                            profile,
-                            document,
-                            params.text_document_position_params.position,
                         )
                     });
                 Ok(Response::new_ok(id, result))

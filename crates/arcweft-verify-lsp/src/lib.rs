@@ -23,8 +23,7 @@ use arcweft_verify::{
 };
 use lsp_types::{
     CodeAction, CodeActionKind, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity,
-    Hover, HoverContents, InlayHint, InlayHintKind, MarkedString, NumberOrString,
-    ParameterInformation, ParameterLabel, Position, Range, SignatureHelp, SignatureInformation,
+    Hover, HoverContents, InlayHint, InlayHintKind, MarkedString, NumberOrString, Position, Range,
     TextEdit, Uri, WorkspaceEdit,
 };
 use std::collections::HashMap;
@@ -535,46 +534,6 @@ pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Op
         return Some(string_hover(format!("host call {name}")));
     }
     rust_adapter_hover(context, name)
-}
-
-/// Builds signature help for one Rust adapter function name.
-pub fn rust_adapter_signature_help(
-    context: &ArcweftLspContext<'_>,
-    name: &str,
-) -> Option<SignatureHelp> {
-    let function = context
-        .adapter()
-        .rust_functions()
-        .iter()
-        .find(|function| callable_path_label(function.path()) == name)?;
-    Some(SignatureHelp {
-        signatures: vec![SignatureInformation {
-            label: signature_label(name, function.signature()),
-            documentation: Some(lsp_types::Documentation::String(format!(
-                "Rust export: {}",
-                function.rust_path()
-            ))),
-            parameters: Some(
-                function
-                    .signature()
-                    .groups()
-                    .iter()
-                    .flat_map(arcweft_adapter_context::callable::AdapterParameterGroup::parameters)
-                    .map(|param| ParameterInformation {
-                        label: ParameterLabel::Simple(
-                            param.name().map_or("_", |name| name.as_str()).to_owned(),
-                        ),
-                        documentation: Some(lsp_types::Documentation::String(type_kind_label(
-                            param.ty(),
-                        ))),
-                    })
-                    .collect(),
-            ),
-            active_parameter: None,
-        }],
-        active_signature: Some(0),
-        active_parameter: Some(0),
-    })
 }
 
 /// Converts verifier tool actions into LSP code actions.
@@ -1431,7 +1390,7 @@ mod tests {
     }
 
     #[test]
-    fn exposes_rust_adapter_completion_hover_and_signature_help() {
+    fn exposes_rust_adapter_completion_and_hover() {
         let manifest = ArcweftRustManifest::new(ArcweftRustPackage {
             name: "truck_game".to_owned(),
             version: "0.1.0".to_owned(),
@@ -1468,12 +1427,6 @@ mod tests {
         let hover = rust_adapter_hover(&context, "score_to_rank").expect("hover is available");
         assert!(
             matches!(hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("score: i32"))
-        );
-        let signature = rust_adapter_signature_help(&context, "score_to_rank")
-            .expect("signature help is available");
-        assert_eq!(
-            signature.signatures[0].label,
-            "score_to_rank(score: i32) -> Rank"
         );
     }
 
@@ -1513,13 +1466,6 @@ mod tests {
         let session_hover = rust_adapter_hover(&context, "SessionId").expect("newtype hover");
         assert!(
             matches!(session_hover.contents, HoverContents::Scalar(MarkedString::String(text)) if text.contains("newtype SessionId(u64)"))
-        );
-
-        let signature =
-            rust_adapter_signature_help(&context, "quest_evaluate").expect("signature help");
-        assert_eq!(
-            signature.signatures[0].label,
-            "quest_evaluate(stats: PlayerStats, seed: Result<(u32, u32), String>) -> Rank"
         );
     }
 

@@ -5,7 +5,7 @@ use crate::requests::{
 use crate::session::{ArcweftLspSession, SessionError};
 use lsp_server::{Connection, Message, ProtocolError};
 use lsp_types::request::{Request as LspRequest, SignatureHelpRequest};
-use lsp_types::{InitializeParams, SignatureHelp, SignatureHelpParams};
+use lsp_types::{InitializeParams, SignatureHelpParams};
 use std::sync::{Arc, PoisonError, RwLock};
 use thiserror::Error;
 
@@ -87,34 +87,15 @@ pub fn run_connection(connection: &Connection, config: &LspConfig) -> Result<(),
                             Ok(prepared) => {
                                 if let Err(error) = runtime.submit(prepared) {
                                     let error = SignatureAcquireError::from(error);
-                                    connection.sender.send(Message::Response(
-                                        lsp_server::Response::new_err(
-                                            id,
-                                            error.lsp_code().unwrap_or(
-                                                lsp_server::ErrorCode::RequestFailed as i32,
-                                            ),
-                                            error.to_string(),
-                                        ),
-                                    ))?;
+                                    connection
+                                        .sender
+                                        .send(Message::Response(error.into_response(id)))?;
                                 }
                             }
                             Err(error) => {
-                                let response = error.lsp_code().map_or_else(
-                                    || {
-                                        lsp_server::Response::new_ok(
-                                            id.clone(),
-                                            Option::<SignatureHelp>::None,
-                                        )
-                                    },
-                                    |code| {
-                                        lsp_server::Response::new_err(
-                                            id.clone(),
-                                            code,
-                                            error.to_string(),
-                                        )
-                                    },
-                                );
-                                connection.sender.send(Message::Response(response))?;
+                                connection
+                                    .sender
+                                    .send(Message::Response(error.into_response(id)))?;
                             }
                         }
                         continue;

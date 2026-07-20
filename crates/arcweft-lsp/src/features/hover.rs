@@ -591,10 +591,6 @@ fn document_value_label(
         .to_owned()
 }
 
-pub(crate) fn word_at_position(document: &DocumentSnapshot, position: Position) -> Option<String> {
-    word_at_position_range(document, position).map(|(word, _)| word)
-}
-
 fn word_at_position_range(
     document: &DocumentSnapshot,
     position: Position,

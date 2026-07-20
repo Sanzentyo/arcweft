@@ -195,26 +195,10 @@ impl SignatureExecutorShared {
     fn execute(&self, request: PreparedSignatureRequest) {
         let result = {
             let session = self.session.read().unwrap_or_else(PoisonError::into_inner);
-            if let Err(error) = session.validate_signature_request(&request) {
-                let _ = self.responses.send(Message::Response(Response::new_err(
-                    request.request_id().clone(),
-                    error.lsp_code(),
-                    error.to_string(),
-                )));
-                return;
-            }
-            session.legacy_signature_help(&request)
+            session.signature_help(&request)
         };
         let session = self.session.read().unwrap_or_else(PoisonError::into_inner);
-        if let Err(error) =
-            session.publish_legacy_signature_result(&request, result, &self.responses)
-        {
-            let _ = self.responses.send(Message::Response(Response::new_err(
-                request.request_id().clone(),
-                error.lsp_code(),
-                error.to_string(),
-            )));
-        }
+        session.publish_signature_result(&request, result, &self.responses);
     }
 
     fn close_queue(&self) {

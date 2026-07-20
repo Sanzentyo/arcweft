@@ -1759,7 +1759,8 @@ fn semantic_signature(source: Option<CallableSource>) -> SemanticSignature {
         SignatureOrigin::Language {
             family: LanguageCallableFamily::Builtin,
         },
-        Arc::from("panic(value: String) -> Never"),
+        Arc::from("panic"),
+        Arc::from("panic"),
         vec![semantic_group],
         TypeKind::Never,
         EffectRow::default(),

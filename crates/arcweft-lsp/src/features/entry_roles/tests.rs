@@ -47,9 +47,9 @@ controller = smoke
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "one end-to-end tooling scenario verifies the shared callable across every LSP surface"
+    reason = "one end-to-end tooling scenario verifies one shared callable across navigation and rename surfaces"
 )]
-fn role_rhs_uses_the_ordinary_callable_for_definition_signature_hover_and_rename() {
+fn role_rhs_uses_the_ordinary_callable_for_definition_hover_and_rename() {
     let project = TestProject::new("entry-role-tooling");
     project.write_manifest();
     project.write("src/main.arcw", SOURCE);
@@ -65,41 +65,6 @@ fn role_rhs_uses_the_ordinary_callable_for_definition_signature_hover_and_rename
     let offset = SOURCE.rfind("smoke").expect("controller role");
 
     assert!(definition(&profile, &document, offset).is_some());
-    let signature = signature_help(&profile, &document, offset).expect("signature help");
-    assert!(signature.signatures[0].label.contains("fn smoke"));
-    assert!(
-        signature.signatures[0]
-            .documentation
-            .as_ref()
-            .is_some_and(|documentation| match documentation {
-                Documentation::String(text)
-                | Documentation::MarkupContent(lsp_types::MarkupContent { value: text, .. }) =>
-                    text.contains("Entry role: `controller`"),
-            }),
-        "role RHS signature carries its expected entry-role context"
-    );
-    let declaration_offset = SOURCE.find("smoke").expect("declaration");
-    let call_offset = SOURCE
-        .match_indices("smoke()")
-        .nth(1)
-        .expect("ordinary call")
-        .0;
-    for ordinary_offset in [declaration_offset, call_offset] {
-        let ordinary =
-            signature_help(&profile, &document, ordinary_offset).expect("ordinary signature");
-        assert!(
-            ordinary.signatures[0]
-                .documentation
-                .as_ref()
-                .is_none_or(|documentation| match documentation {
-                    Documentation::String(text)
-                    | Documentation::MarkupContent(lsp_types::MarkupContent {
-                        value: text, ..
-                    }) => !text.contains("Entry role:"),
-                }),
-            "ordinary declaration and call do not acquire a synthetic role"
-        );
-    }
     let HoverContents::Scalar(MarkedString::String(hover_text)) =
         hover(&profile, &document, offset).expect("hover").contents
     else {
@@ -543,21 +508,8 @@ Ok(())
             .as_str()
             .ends_with("/src/helpers.arcw")
     );
-    let signature = signature_help(&profile, &document, alias_offset).expect("signature help");
-    assert!(signature.signatures[0].label.contains("fn smoke"));
     let role_offset = MAIN.rfind("inspect").expect("aliased controller role");
     assert!(definition(&profile, &document, role_offset).is_some());
-    let role_signature = signature_help(&profile, &document, role_offset).expect("role signature");
-    assert!(
-        role_signature.signatures[0]
-            .documentation
-            .as_ref()
-            .is_some_and(|documentation| match documentation {
-                Documentation::String(text)
-                | Documentation::MarkupContent(lsp_types::MarkupContent { value: text, .. }) =>
-                    text.contains("Entry role: `controller`"),
-            })
-    );
     let locations =
         references(&profile, &document, alias_offset).expect("typed callable references");
     assert_eq!(

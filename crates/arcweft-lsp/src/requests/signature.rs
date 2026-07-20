@@ -10,14 +10,19 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::registration::{
     CharacterInventoryDigest, CharacterInventoryRevision, RegisteredSemanticWorld,
 };
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_sema::{
+    callable::{CallableQueryLimitError, ResolveCallError, SemanticSignatureError},
+    signature::SignatureQueryError,
+};
 use arcweft_source::{SourceDocument, SourceDocumentIdentity};
-use lsp_server::{ErrorCode, RequestId};
-use lsp_types::Position;
+use lsp_server::{ErrorCode, RequestId, Response, ResponseError};
+use lsp_types::{Position, SignatureHelp};
 use thiserror::Error;
 
 use crate::{
     documents::DocumentSnapshot,
+    features::signature::SignatureProjectionError,
+    positions::CheckedPositionError,
     profiles::{
         accepted_project::{AcceptedHirLookupError, AcceptedModuleKey, AcceptedProjectSnapshot},
         state::{
@@ -32,14 +37,9 @@ use super::{ActiveRequest, RequestAdmissionError, RequestControl, SignatureCance
 
 /// Exact accepted source and canonical HIR module retained for one request.
 #[derive(Debug)]
-#[allow(
-    dead_code,
-    reason = "AW-AH-009.3.1 authored-call integration is the explicit Cut 6 gate"
-)]
 pub(crate) struct AcceptedDocumentHirLease {
     environment: Arc<AcceptedProfileEnvironment>,
     document: Arc<SourceDocument>,
-    uri: LspUriKey,
     module: AcceptedModuleKey,
 }
 
@@ -71,10 +71,6 @@ pub(crate) struct PreparedSignatureRequest {
     request_id: RequestId,
     position: Position,
     snapshot: DocumentSnapshot,
-    #[allow(
-        dead_code,
-        reason = "AW-AH-009.3.1 authored-call integration is the explicit Cut 6 gate"
-    )]
     lease: AcceptedDocumentHirLease,
     stamp: SignatureRequestStamp,
     active: ActiveRequest,
@@ -285,32 +281,37 @@ pub(crate) enum SignatureRequestStale {
     DeadlineExceeded { deadline: std::time::Instant },
 }
 
-#[allow(
-    dead_code,
-    clippy::result_large_err,
-    reason = "AW-AH-009.3.1 authored-call integration is the explicit Cut 6 gate"
-)]
+/// Typed failure from checked position conversion through final publication.
+#[derive(Debug, Error)]
+pub(crate) enum SignatureRequestError {
+    #[error(transparent)]
+    Acquire(#[from] SignatureAcquireError),
+    #[error(transparent)]
+    InvalidLspPosition(#[from] CheckedPositionError),
+    #[error(transparent)]
+    Query(#[from] SignatureQueryError),
+    #[error(transparent)]
+    Projection(#[from] SignatureProjectionError),
+    #[error(transparent)]
+    Stale(#[from] SignatureRequestStale),
+}
+
+#[allow(clippy::result_large_err)]
 impl AcceptedDocumentHirLease {
     pub(crate) fn new(
         environment: Arc<AcceptedProfileEnvironment>,
         document: Arc<SourceDocument>,
-        uri: LspUriKey,
         module: AcceptedModuleKey,
     ) -> Self {
         Self {
             environment,
             document,
-            uri,
             module,
         }
     }
 
     pub(crate) fn document(&self) -> &SourceDocument {
         self.document.as_ref()
-    }
-
-    pub(crate) const fn module(&self) -> &CanonicalModulePath {
-        self.module.module()
     }
 
     pub(crate) fn world(&self) -> &RegisteredSemanticWorld {
@@ -331,14 +332,6 @@ impl AcceptedDocumentHirLease {
                     SignatureAcquireError::HirIdentityMismatch { module: key }
                 }
             })
-    }
-
-    pub(crate) const fn uri(&self) -> &LspUriKey {
-        &self.uri
-    }
-
-    pub(crate) const fn module_key(&self) -> &AcceptedModuleKey {
-        &self.module
     }
 }
 
@@ -485,10 +478,6 @@ impl PreparedSignatureRequest {
         &self.snapshot
     }
 
-    #[allow(
-        dead_code,
-        reason = "AW-AH-009.3.1 authored-call integration is the explicit Cut 6 gate"
-    )]
     pub(crate) const fn lease(&self) -> &AcceptedDocumentHirLease {
         &self.lease
     }
@@ -511,7 +500,6 @@ impl SignatureAcquireError {
         matches!(
             self,
             Self::ProfileNotMapped { .. }
-                | Self::NoAcceptedEnvironment
                 | Self::UriNotAccepted { .. }
                 | Self::SourceHasNoHirModule { .. }
         )
@@ -528,7 +516,7 @@ impl SignatureAcquireError {
                 | RequestAdmissionError::QueueClosed,
             )
             | Self::ProfileClosing => ErrorCode::ServerCancelled as i32,
-            Self::Admission(_) => ErrorCode::RequestFailed as i32,
+            Self::Admission(_) | Self::NoAcceptedEnvironment => ErrorCode::RequestFailed as i32,
             Self::SourceDigestCollision { .. }
             | Self::MissingHirModule { .. }
             | Self::HirIdentityMismatch { .. } => ErrorCode::InternalError as i32,
@@ -538,15 +526,42 @@ impl SignatureAcquireError {
             | Self::OverlayVersionNotAccepted { .. }
             | Self::DocumentNotAccepted { .. } => ErrorCode::ContentModified as i32,
             Self::ProfileNotMapped { .. }
-            | Self::NoAcceptedEnvironment
             | Self::UriNotAccepted { .. }
             | Self::SourceHasNoHirModule { .. } => unreachable!("handled above"),
         })
     }
+
+    pub(crate) const fn stable_code(&self) -> &'static str {
+        match self {
+            Self::Admission(_) => "aw.signature.acquire.admission",
+            Self::DocumentNotOpen { .. } => "aw.signature.acquire.document_not_open",
+            Self::ProfileNotMapped { .. } => "aw.signature.acquire.profile_not_mapped",
+            Self::ProfileClosing => "aw.signature.acquire.profile_closing",
+            Self::NoAcceptedEnvironment => "aw.signature.acquire.no_accepted_environment",
+            Self::ProfileKeyMismatch => "aw.signature.acquire.profile_key_mismatch",
+            Self::UriNotAccepted { .. } => "aw.signature.acquire.uri_not_accepted",
+            Self::OverlayNotAccepted { .. } => "aw.signature.acquire.overlay_not_accepted",
+            Self::OverlayVersionNotAccepted { .. } => {
+                "aw.signature.acquire.overlay_version_not_accepted"
+            }
+            Self::DocumentNotAccepted { .. } => "aw.signature.acquire.document_not_accepted",
+            Self::SourceDigestCollision { .. } => "aw.signature.acquire.source_digest_collision",
+            Self::SourceHasNoHirModule { .. } => "aw.signature.acquire.source_has_no_hir_module",
+            Self::MissingHirModule { .. } => "aw.signature.acquire.missing_hir_module",
+            Self::HirIdentityMismatch { .. } => "aw.signature.acquire.hir_identity_mismatch",
+        }
+    }
+
+    pub(crate) fn into_response(self, id: RequestId) -> Response {
+        match self.lsp_code() {
+            None => Response::new_ok(id, Option::<SignatureHelp>::None),
+            Some(code) => error_response(id, code, self.to_string(), self.stable_code()),
+        }
+    }
 }
 
 impl SignatureRequestStale {
-    pub(crate) const fn lsp_code(&self) -> i32 {
+    pub(crate) fn lsp_code(&self) -> i32 {
         match self {
             Self::Cancelled {
                 reason: SignatureCancellationReason::ClientCancelled,
@@ -562,6 +577,227 @@ impl SignatureRequestStale {
                     | SignatureCancellationReason::SessionShutdown,
             } => ErrorCode::ServerCancelled as i32,
             _ => ErrorCode::ContentModified as i32,
+        }
+    }
+
+    pub(crate) const fn stable_code(&self) -> &'static str {
+        match self {
+            Self::SessionClosing => "aw.signature.stale.session_closing",
+            Self::ProfileClosing => "aw.signature.stale.profile_closing",
+            Self::DocumentClosed { .. } => "aw.signature.stale.document_closed",
+            Self::DocumentChanged { .. } => "aw.signature.stale.document_changed",
+            Self::DocumentVersionChanged { .. } => "aw.signature.stale.document_version_changed",
+            Self::ProfileRemapped { .. } => "aw.signature.stale.profile_remapped",
+            Self::ProfileStateReplaced => "aw.signature.stale.profile_state_replaced",
+            Self::AcceptedReplaced => "aw.signature.stale.accepted_replaced",
+            Self::GenerationChanged { .. } => "aw.signature.stale.generation_changed",
+            Self::ProfileKeyChanged { .. } => "aw.signature.stale.profile_key_changed",
+            Self::WorldArcChanged => "aw.signature.stale.world_arc_changed",
+            Self::WorldIdentityChanged { .. } => "aw.signature.stale.world_identity_changed",
+            Self::SymbolRevisionChanged { .. } => "aw.signature.stale.symbol_revision_changed",
+            Self::CharacterDigestChanged { .. } => "aw.signature.stale.character_digest_changed",
+            Self::CharacterRevisionChanged { .. } => {
+                "aw.signature.stale.character_revision_changed"
+            }
+            Self::ProjectArcChanged => "aw.signature.stale.project_arc_changed",
+            Self::UriRemapped { .. } => "aw.signature.stale.uri_remapped",
+            Self::AcceptedDocumentChanged { .. } => "aw.signature.stale.accepted_document_changed",
+            Self::ModuleChanged { .. } => "aw.signature.stale.module_changed",
+            Self::HirChanged { .. } => "aw.signature.stale.hir_changed",
+            Self::Cancelled { .. } => "aw.signature.stale.cancelled",
+            Self::DeadlineExceeded { .. } => "aw.signature.stale.deadline_exceeded",
+        }
+    }
+}
+
+impl SignatureRequestError {
+    pub(crate) fn lsp_code(&self) -> i32 {
+        match self {
+            Self::Acquire(error) => match error.lsp_code() {
+                Some(code) => code,
+                None => ErrorCode::RequestFailed as i32,
+            },
+            Self::InvalidLspPosition(_) => ErrorCode::InvalidParams as i32,
+            Self::Stale(error) => error.lsp_code(),
+            Self::Projection(_) => ErrorCode::RequestFailed as i32,
+            Self::Query(error) => query_lsp_code(error),
+        }
+    }
+
+    pub(crate) const fn stable_code(&self) -> &'static str {
+        match self {
+            Self::Acquire(error) => error.stable_code(),
+            Self::InvalidLspPosition(_) => "aw.signature.request.invalid_lsp_position",
+            Self::Stale(error) => error.stable_code(),
+            Self::Projection(SignatureProjectionError::LabelOffsetOverflow) => {
+                "aw.signature.projection.label_offset_overflow"
+            }
+            Self::Projection(SignatureProjectionError::ActiveSignatureOverflow) => {
+                "aw.signature.projection.active_signature_overflow"
+            }
+            Self::Projection(SignatureProjectionError::ActiveParameterOverflow) => {
+                "aw.signature.projection.active_parameter_overflow"
+            }
+            Self::Projection(SignatureProjectionError::ActiveParameterMissing) => {
+                "aw.signature.projection.active_parameter_missing"
+            }
+            Self::Query(error) => query_stable_code(error),
+        }
+    }
+
+    pub(crate) fn into_response(self, id: RequestId) -> Response {
+        error_response(id, self.lsp_code(), self.to_string(), self.stable_code())
+    }
+}
+
+const fn query_lsp_code(error: &SignatureQueryError) -> i32 {
+    match error {
+        SignatureQueryError::Stale(_) => ErrorCode::ContentModified as i32,
+        SignatureQueryError::InvalidPosition(_) => ErrorCode::InvalidParams as i32,
+        SignatureQueryError::LimitExceeded(CallableQueryLimitError::ArithmeticOverflow)
+        | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(
+            CallableQueryLimitError::ArithmeticOverflow,
+        ))
+        | SignatureQueryError::Resolve(ResolveCallError::Work(
+            CallableQueryLimitError::ArithmeticOverflow,
+        )) => ErrorCode::RequestFailed as i32,
+        SignatureQueryError::LimitExceeded(_)
+        | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(_))
+        | SignatureQueryError::Resolve(ResolveCallError::Work(_))
+        | SignatureQueryError::DeadlineExceeded => ErrorCode::ServerCancelled as i32,
+        SignatureQueryError::Cancelled
+        | SignatureQueryError::Resolve(ResolveCallError::Cancelled) => {
+            ErrorCode::RequestCanceled as i32
+        }
+        SignatureQueryError::SemanticUnavailable(_)
+        | SignatureQueryError::InvalidSignature(_)
+        | SignatureQueryError::Resolve(_) => ErrorCode::RequestFailed as i32,
+    }
+}
+
+const fn query_stable_code(error: &SignatureQueryError) -> &'static str {
+    match error {
+        SignatureQueryError::Stale(_) => "aw.signature.query.stale",
+        SignatureQueryError::InvalidPosition(_) => "aw.signature.query.invalid_position",
+        SignatureQueryError::SemanticUnavailable(_) => "aw.signature.query.semantic_unavailable",
+        SignatureQueryError::LimitExceeded(CallableQueryLimitError::ArithmeticOverflow)
+        | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(
+            CallableQueryLimitError::ArithmeticOverflow,
+        ))
+        | SignatureQueryError::Resolve(ResolveCallError::Work(
+            CallableQueryLimitError::ArithmeticOverflow,
+        )) => "aw.signature.query.arithmetic_overflow",
+        SignatureQueryError::LimitExceeded(_)
+        | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(_))
+        | SignatureQueryError::Resolve(ResolveCallError::Work(_)) => {
+            "aw.signature.query.limit_exceeded"
+        }
+        SignatureQueryError::InvalidSignature(_) => "aw.signature.query.invalid_signature",
+        SignatureQueryError::Resolve(_) => "aw.signature.query.resolve",
+        SignatureQueryError::Cancelled => "aw.signature.query.cancelled",
+        SignatureQueryError::DeadlineExceeded => "aw.signature.query.deadline_exceeded",
+    }
+}
+
+fn error_response(
+    id: RequestId,
+    code: i32,
+    message: String,
+    stable_code: &'static str,
+) -> Response {
+    Response {
+        id,
+        result: None,
+        error: Some(ResponseError {
+            code,
+            message,
+            data: Some(serde_json::json!({ "code": stable_code })),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_accepted_world_is_a_typed_request_failure() {
+        let response =
+            SignatureAcquireError::NoAcceptedEnvironment.into_response(RequestId::from(7));
+        let error = response.error.expect("request error");
+
+        assert_eq!(error.code, ErrorCode::RequestFailed as i32);
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!({
+                "code": "aw.signature.acquire.no_accepted_environment"
+            }))
+        );
+    }
+
+    #[test]
+    fn stale_failures_preserve_content_and_cancellation_semantics() {
+        for (request_error, expected_lsp_code, expected_stable_code) in [
+            (
+                SignatureRequestError::from(SignatureRequestStale::DocumentVersionChanged {
+                    expected: 1,
+                    actual: 2,
+                }),
+                ErrorCode::ContentModified as i32,
+                "aw.signature.stale.document_version_changed",
+            ),
+            (
+                SignatureRequestError::from(SignatureRequestStale::Cancelled {
+                    reason: SignatureCancellationReason::ClientCancelled,
+                }),
+                ErrorCode::RequestCanceled as i32,
+                "aw.signature.stale.cancelled",
+            ),
+            (
+                SignatureRequestError::from(SignatureRequestStale::DeadlineExceeded {
+                    deadline: std::time::Instant::now(),
+                }),
+                ErrorCode::ServerCancelled as i32,
+                "aw.signature.stale.deadline_exceeded",
+            ),
+        ] {
+            let response = request_error.into_response(RequestId::from(8));
+            let error = response.error.expect("typed stale request error");
+            assert_eq!(error.code, expected_lsp_code);
+            assert_eq!(
+                error.data,
+                Some(serde_json::json!({ "code": expected_stable_code }))
+            );
+        }
+    }
+
+    #[test]
+    fn query_resource_and_arithmetic_failures_remain_distinct() {
+        for (query_error, expected_lsp_code, expected_stable_code) in [
+            (
+                SignatureQueryError::Cancelled,
+                ErrorCode::RequestCanceled as i32,
+                "aw.signature.query.cancelled",
+            ),
+            (
+                SignatureQueryError::DeadlineExceeded,
+                ErrorCode::ServerCancelled as i32,
+                "aw.signature.query.deadline_exceeded",
+            ),
+            (
+                SignatureQueryError::LimitExceeded(CallableQueryLimitError::ArithmeticOverflow),
+                ErrorCode::RequestFailed as i32,
+                "aw.signature.query.arithmetic_overflow",
+            ),
+        ] {
+            let response =
+                SignatureRequestError::from(query_error).into_response(RequestId::from(9));
+            let error = response.error.expect("typed query request error");
+            assert_eq!(error.code, expected_lsp_code);
+            assert_eq!(
+                error.data,
+                Some(serde_json::json!({ "code": expected_stable_code }))
+            );
         }
     }
 }

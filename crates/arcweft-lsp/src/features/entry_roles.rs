@@ -11,15 +11,12 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::{
     entry::{BoundNominalTypeKey, CheckedEntryId, CheckedFlowId},
-    project_index::{ProjectEntryRoleKind, ProjectEntryRoleTarget, ProjectSemanticIndex},
+    project_index::{ProjectEntryRoleTarget, ProjectSemanticIndex},
 };
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_source::{SourceDocumentIdentity, SourceRange, SourceSpan};
 use arcweft_verify_lsp::LspPositionMapper;
-use lsp_types::{
-    Documentation, GotoDefinitionResponse, Hover, HoverContents, Location, MarkedString,
-    SignatureHelp, SignatureInformation,
-};
+use lsp_types::{GotoDefinitionResponse, Hover, HoverContents, Location, MarkedString};
 
 use crate::{documents::DocumentSnapshot, profiles::LspProfile};
 
@@ -47,7 +44,6 @@ struct CursorSymbol {
     symbol: EntryToolSymbol,
     source_range: std::ops::Range<usize>,
     placeholder: String,
-    role_context: Option<(ProjectEntryRoleKind, CheckedEntryId)>,
 }
 
 pub(crate) fn definition(
@@ -160,44 +156,6 @@ pub(crate) fn references(
     Some(locations)
 }
 
-pub(crate) fn signature_help(
-    profile: &LspProfile,
-    document: &DocumentSnapshot,
-    offset: usize,
-) -> Option<SignatureHelp> {
-    let accepted = profile.accepted_environment()?;
-    let project = accepted.project();
-    let cursor = symbol_at(profile, document, offset)?;
-    let EntryToolSymbol::Callable(declaration) = &cursor.symbol else {
-        return None;
-    };
-    let source = callable_source(project.hir_project(), declaration)?;
-    let mut documentation = source
-        .documentation()
-        .map(|documentation| documentation.text().to_owned());
-    if let Some((role, entry)) = cursor.role_context {
-        let role_context = format!(
-            "Entry role: `{}` for `@{}`.",
-            role.as_str(),
-            entry.public_id().as_str()
-        );
-        documentation = Some(match documentation {
-            Some(documentation) => format!("{documentation}\n\n{role_context}"),
-            None => role_context,
-        });
-    }
-    Some(SignatureHelp {
-        signatures: vec![SignatureInformation {
-            label: source_text(project, source.signature_span())?.to_owned(),
-            documentation: documentation.map(Documentation::String),
-            parameters: None,
-            active_parameter: None,
-        }],
-        active_signature: Some(0),
-        active_parameter: None,
-    })
-}
-
 pub(crate) fn hover(
     profile: &LspProfile,
     document: &DocumentSnapshot,
@@ -266,7 +224,6 @@ fn symbol_at(
                 symbol,
                 source_range,
                 placeholder,
-                role_context: Some((edge.role(), edge.entry().clone())),
             });
         }
     }
@@ -279,7 +236,6 @@ fn symbol_at(
                 symbol: EntryToolSymbol::Callable(reference.declaration().clone()),
                 source_range: reference.source().range().start()..reference.source().range().end(),
                 placeholder,
-                role_context: None,
             });
         }
     }
@@ -291,7 +247,6 @@ fn symbol_at(
                 symbol: EntryToolSymbol::Entry(reference.entry().clone()),
                 source_range: reference.source().range().start()..reference.source().range().end(),
                 placeholder: reference.entry().public_id().as_str().to_owned(),
-                role_context: None,
             });
         }
     }
@@ -304,7 +259,6 @@ fn symbol_at(
                 source_range: callable.name_span().range().start()
                     ..callable.name_span().range().end(),
                 placeholder: callable.declaration().name().to_owned(),
-                role_context: None,
             });
         }
     }
@@ -335,7 +289,6 @@ fn manifest_entry_at(
                 symbol: EntryToolSymbol::Entry(id),
                 source_range: range,
                 placeholder: entry.clone(),
-                role_context: None,
             });
         }
     }
@@ -365,7 +318,6 @@ fn declaration_symbol_at(
                     symbol: EntryToolSymbol::Flow(checked),
                     source_range: id.range().start()..id.range().end(),
                     placeholder: id.body().to_owned(),
-                    role_context: None,
                 });
             }
         }
@@ -383,7 +335,6 @@ fn declaration_symbol_at(
                         symbol: EntryToolSymbol::Entry(id),
                         source_range: name_range.start()..name_range.end(),
                         placeholder: entry.id().body().to_owned(),
-                        role_context: None,
                     });
                 }
                 HirTopLevelDecl::Struct(item) => {
@@ -393,7 +344,6 @@ fn declaration_symbol_at(
                             symbol: EntryToolSymbol::Nominal(key),
                             source_range: item.name_range().start()..item.name_range().end(),
                             placeholder: item.name().to_owned(),
-                            role_context: None,
                         });
                     }
                 }
@@ -403,7 +353,6 @@ fn declaration_symbol_at(
                         symbol: EntryToolSymbol::Nominal(key),
                         source_range: item.name_range().start()..item.name_range().end(),
                         placeholder: item.name().to_owned(),
-                        role_context: None,
                     });
                 }
                 _ => {}

@@ -283,7 +283,8 @@ fn main() -> Unit {
         .get(help.active_signature().get())
         .expect("project alias has one selected signature");
 
-    assert!(selected.label().starts_with("alias("));
+    assert_eq!(selected.authored_callee(), "alias");
+    assert_eq!(selected.canonical_callee(), "canonical");
     assert!(
         selected
             .documentation()
@@ -311,10 +312,9 @@ fn nested_cursor_selects_the_innermost_parenthesized_call() {
         source_text(&fixture.document, help.call_span()),
         "project_int(1i32)"
     );
-    assert!(
-        help.signatures()[active.get()]
-            .label()
-            .starts_with("project_int(")
+    assert_eq!(
+        help.signatures()[active.get()].authored_callee(),
+        "project_int"
     );
 }
 
@@ -366,7 +366,7 @@ fn main() -> Unit {
         .signatures()
         .get(unicode.active_signature().get())
         .expect("UTF-8 call has one selected signature");
-    assert!(selected.label().starts_with("project_string("));
+    assert_eq!(selected.authored_callee(), "project_string");
 }
 
 #[test]
