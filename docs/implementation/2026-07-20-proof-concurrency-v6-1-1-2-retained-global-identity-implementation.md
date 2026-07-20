@@ -51,8 +51,8 @@ diagnostic, CSS/Takumi route, or source gate is permitted.
 | 3 | private Signal and Metric grammar plus direct tests | complete |
 | 4 | private Activity grammar plus direct tests | complete |
 | 5 | private Layer grammar plus direct tests | complete |
-| 6 | private View grammar integration with typed common expression descendants | provisional implementation; complete typed-View matrix and focused tests pending |
-| 7 | complete reduced Stage 1 declaration inventory gate | core matrix passes; remaining mandatory Stage 1 rows pending |
+| 6 | private View grammar integration with typed common expression descendants | complete |
+| 7 | complete reduced Stage 1 declaration inventory gate | complete |
 | 8 | atomic attached public AST switch and generic entity deletion | pending |
 | 9 | typed HIR/project-symbol and downstream migration | pending |
 | 10 | docs/examples/fixtures and obsolete-path deletion | pending |
@@ -75,16 +75,26 @@ regular top-level statements to ordinary `ErrorItem` recovery.
 Direct tests cover canonical and malformed rows, all seven shared-header
 missing/wrong-family/relative-ID/keyword-name cases, sibling preservation,
 prefix attachment, LF/CRLF/Unicode losslessness, mixed documents, and every
-new narrow inclusive budget. `cargo test -p arcweft-id` passed 6 tests, and
-`cargo test -p arcweft-lang-syntax --lib` passed all 363 tests after correcting
-statement-boundary handling so comparison operators cannot close a surrounding
-brace and splitting adjacent angle closers for nested generic Type nodes. Some
-mandatory Stage 1 matrix rows still need directly attributable assertions
-before the gate can close. The current all-targets strict Clippy run compiled
-the complete `arcweft-id` and `arcweft-lang-syntax` cut with `-D warnings`.
-The repository structural audit scanned 3,402 files and reported 0 errors and
-131 warnings. No public syntax reader has been switched, preserving exactly
-one public reader until the Stage 1 gate closes.
+new narrow inclusive budget. The Stage 1 close-out also directly exercises the
+inclusive global limits for 16,384 top-level items, 1,048,576 identity-bearing
+nodes, and 1,024 diagnostics, including one-over exhaustion and fresh-budget
+recovery. Duplicate declarations and sections now retain exact first and
+duplicate ranges; malformed Action and View signatures retain exact recovery
+ranges; View values retain typed common-expression descendants or an
+`ErrorExpression`; and dotted namespace calls at the top level recover as
+ordinary `ErrorItem` nodes rather than being misclassified as declarations.
+
+`cargo test -p arcweft-id` passed 6 tests, and the latest
+`cargo test -p arcweft-lang-syntax --lib` passed all 373 tests. The final
+Activity header recovery uses the generic current-grammar
+`syntax.declaration.unexpected_header` diagnostic. The temporary
+concrete-origin spelling recognizer, its dedicated diagnostic code, and its
+spelling-specific test have been removed as required by the repository-wide
+removed-syntax policy. The Stage 1 close-out reran the all-targets strict
+Clippy gate for `arcweft-id` and `arcweft-lang-syntax` with `-D warnings`
+successfully. The repository structural audit scanned 3,404 files and reported
+0 errors and 131 warnings. No public syntax reader has been switched,
+preserving exactly one public reader until the atomic public AST cut.
 
 Validation results will be recorded here as cuts close. Passing compilation
 alone does not complete this package.

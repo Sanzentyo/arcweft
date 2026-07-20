@@ -63,6 +63,37 @@ fn canonical_mixed_document_dispatches_all_seven_retained_rows() {
 }
 
 #[test]
+fn comment_rich_mixed_document_remains_byte_exact() {
+    let source = concat!(
+        "/// character docs\n",
+        "character Alice {} // character tail\n",
+        "view Main() { Panel {} } // view tail\n",
+        "action Continue() // action tail\n",
+        "activity MiniGame {} // activity tail\n",
+        "signal Ready: Watch<bool> // signal tail\n",
+        "metric counter Frames: u64 {} // metric tail\n",
+        "layer Overlay: overlay {} // layer tail\n",
+        "res dialogue_resource: DialogueResource {} // resource tail\n",
+        "fn helper() { true } // function tail\n",
+        "proof invariant() { assert true } // proof tail\n",
+        "style @style.native { Button { opacity = 1.0 } } // style tail\n",
+    );
+    let built = parse(source);
+    for kind in [
+        SyntaxKind::CharacterDeclarationItem,
+        SyntaxKind::ViewDeclarationItem,
+        SyntaxKind::ActionDeclarationItem,
+        SyntaxKind::ActivityDeclarationItem,
+        SyntaxKind::SignalDeclarationItem,
+        SyntaxKind::MetricDeclarationItem,
+        SyntaxKind::LayerDeclarationItem,
+    ] {
+        assert_eq!(count_kind(&built, kind), 1, "missing {kind:?}");
+    }
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn removed_top_level_families_and_statements_use_ordinary_error_items() {
     let source = concat!(
         "asset room { file = \"room.png\" }\n",
@@ -82,11 +113,44 @@ fn removed_top_level_families_and_statements_use_ordinary_error_items() {
     assert_eq!(count_kind(&built, SyntaxKind::ExternModuleItem), 0);
     assert_eq!(count_kind(&built, SyntaxKind::DialogueDefaultsItem), 0);
     assert_eq!(count_kind(&built, SyntaxKind::SourceItem), 0);
+    assert_eq!(
+        built
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
+            .count(),
+        9
+    );
     assert!(built.diagnostics().iter().all(|diagnostic| {
         !diagnostic.code().contains("removed")
             && !diagnostic.code().contains("asset")
             && !diagnostic.code().contains("source")
     }));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn top_level_retained_namespace_calls_are_error_items_not_declarations() {
+    let source = concat!(
+        "action.invoke(@action.Continue)\n",
+        "view.mount(@view.Main)\n",
+        "activity.start(@activity.MiniGame)\n",
+        "character Alice {}\n",
+    );
+    let built = parse(source);
+    assert_eq!(count_kind(&built, SyntaxKind::ErrorItem), 3);
+    assert_eq!(count_kind(&built, SyntaxKind::ActionDeclarationItem), 0);
+    assert_eq!(count_kind(&built, SyntaxKind::ViewDeclarationItem), 0);
+    assert_eq!(count_kind(&built, SyntaxKind::ActivityDeclarationItem), 0);
+    assert_eq!(count_kind(&built, SyntaxKind::CharacterDeclarationItem), 1);
+    assert_eq!(
+        built
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
+            .count(),
+        3
+    );
     assert_eq!(built.green().to_string(), source);
 }
 

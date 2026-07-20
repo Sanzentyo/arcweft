@@ -209,8 +209,9 @@ fn emit_action_terminator_and_recovery(parser: &mut ShadowDocumentParser<'_, '_>
         )));
     } else {
         let return_type = parser.at("->");
+        let end = trimmed_end(parser, parser.cursor(), token_count(parser));
         parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
-        while parser.bump().is_some() {}
+        bump_until(parser, end);
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             if return_type {

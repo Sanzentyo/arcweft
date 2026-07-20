@@ -17,6 +17,15 @@ fn parse(source: &str) -> GrammarBuild {
     parse_shadow_document(&document(source)).expect("Character grammar builds")
 }
 
+fn nth_source_range(source: &str, fragment: &str, occurrence: usize) -> SourceRange {
+    let start = source
+        .match_indices(fragment)
+        .nth(occurrence)
+        .map(|(start, _)| start)
+        .expect("fixture occurrence");
+    SourceRange::new(start, start + fragment.len())
+}
+
 fn has_kind(built: &GrammarBuild, kind: SyntaxKind) -> bool {
     built
         .index()
@@ -126,7 +135,14 @@ fn character_member_failures_keep_typed_members_and_related_evidence() {
         .iter()
         .find(|diagnostic| diagnostic.code() == "syntax.character.duplicate_member")
         .expect("duplicate diagnostic");
-    assert!(duplicate.related_range().is_some());
+    assert_eq!(
+        duplicate.range(),
+        nth_source_range(source, "display_name", 1)
+    );
+    assert_eq!(
+        duplicate.related_range(),
+        Some(nth_source_range(source, "display_name", 0))
+    );
     assert!(
         built
             .diagnostics()

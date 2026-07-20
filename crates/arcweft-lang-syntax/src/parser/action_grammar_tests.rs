@@ -1,4 +1,4 @@
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
@@ -25,6 +25,11 @@ fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
         .map(UnattachedGrammarEntry::kind)
         .filter(|actual| *actual == kind)
         .count()
+}
+
+fn source_range(source: &str, fragment: &str) -> SourceRange {
+    let start = source.find(fragment).expect("fixture fragment");
+    SourceRange::new(start, start + fragment.len())
 }
 
 #[test]
@@ -78,6 +83,25 @@ fn action_defaults_return_types_and_bodies_are_rejected_without_raw_reparse() {
             .iter()
             .any(|diagnostic| diagnostic.code() == "syntax.action.body_not_allowed")
     );
+    let default = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.action.default_not_allowed")
+        .expect("default diagnostic");
+    assert_eq!(default.range(), source_range(source, "= \"x\""));
+    let return_type = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.action.return_not_allowed")
+        .expect("return diagnostic");
+    assert_eq!(return_type.range(), source_range(source, "-> String"));
+    let body = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.action.body_not_allowed")
+        .expect("body diagnostic");
+    assert_eq!(body.range(), source_range(source, "{ return }"));
+    assert!(count_kind(&built, SyntaxKind::ErrorNode) >= 3);
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -106,11 +130,14 @@ fn action_missing_group_and_non_binding_parameter_remain_typed_recovery() {
 fn action_trailing_syntax_uses_the_shared_declaration_diagnostic() {
     let source = "action Continue() effects { ui.write }\n";
     let built = parse(source);
-    assert!(
-        built
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.declaration.trailing_syntax")
+    let diagnostic = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.declaration.trailing_syntax")
+        .expect("trailing syntax diagnostic");
+    assert_eq!(
+        diagnostic.range(),
+        source_range(source, "effects { ui.write }")
     );
     assert_eq!(count_kind(&built, SyntaxKind::ErrorNode), 1);
     assert_eq!(built.green().to_string(), source);

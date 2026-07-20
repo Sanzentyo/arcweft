@@ -91,7 +91,16 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             SyntaxKind::ErrorItem,
         ]
     );
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        built
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
+            .count(),
+        6,
+        "{:?}",
+        built.diagnostics()
+    );
     assert_eq!(built.green().to_string(), source);
 
     for expected in [

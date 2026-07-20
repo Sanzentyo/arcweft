@@ -488,3 +488,75 @@ pub(crate) fn validate_events(events: &[SyntaxEvent]) -> Result<(), SyntaxLimit>
     }
     budget.failure().map_or(Ok(()), Err)
 }
+
+#[cfg(test)]
+mod tests {
+    use arcweft_source::SourceRange;
+
+    use super::{GrammarBudget, PendingSyntaxDiagnostic, SyntaxEvent, SyntaxKind, SyntaxRole};
+    use crate::incremental::SyntaxLimit;
+
+    #[test]
+    fn top_level_item_budget_accepts_exact_limit_and_rejects_one_over() {
+        let mut budget = document_budget();
+        for ordinal in 0..SyntaxLimit::TopLevelItems.maximum() {
+            assert!(budget.start(
+                SyntaxKind::ErrorItem,
+                SyntaxRole::Element(u32::try_from(ordinal).expect("budget fits u32")),
+            ));
+            assert!(budget.finish());
+        }
+        assert!(!budget.start(
+            SyntaxKind::ErrorItem,
+            SyntaxRole::Element(
+                u32::try_from(SyntaxLimit::TopLevelItems.maximum()).expect("budget fits u32"),
+            ),
+        ));
+        assert_eq!(budget.failure(), Some(SyntaxLimit::TopLevelItems));
+
+        let mut fresh = document_budget();
+        assert!(fresh.start(SyntaxKind::ErrorItem, SyntaxRole::Element(0)));
+    }
+
+    #[test]
+    fn identity_node_budget_accepts_exact_limit_and_rejects_one_over() {
+        let mut budget = GrammarBudget::default();
+        for _ in 0..SyntaxLimit::IdentityBearingNodes.maximum() {
+            assert!(budget.start(SyntaxKind::NameDefinition, SyntaxRole::Name));
+            assert!(budget.finish());
+        }
+        assert!(!budget.start(SyntaxKind::NameDefinition, SyntaxRole::Name));
+        assert_eq!(budget.failure(), Some(SyntaxLimit::IdentityBearingNodes));
+
+        let mut fresh = GrammarBudget::default();
+        assert!(fresh.start(SyntaxKind::NameDefinition, SyntaxRole::Name));
+    }
+
+    #[test]
+    fn diagnostic_budget_accepts_exact_limit_and_rejects_one_over() {
+        let mut budget = GrammarBudget::default();
+        for ordinal in 0..SyntaxLimit::Diagnostics.maximum() {
+            assert!(budget.event(&diagnostic_event(ordinal)));
+        }
+        assert!(!budget.event(&diagnostic_event(SyntaxLimit::Diagnostics.maximum())));
+        assert_eq!(budget.failure(), Some(SyntaxLimit::Diagnostics));
+
+        let mut fresh = GrammarBudget::default();
+        assert!(fresh.event(&diagnostic_event(0)));
+    }
+
+    fn document_budget() -> GrammarBudget {
+        let mut budget = GrammarBudget::default();
+        assert!(budget.start(SyntaxKind::SourceFile, SyntaxRole::Root));
+        assert!(budget.start(SyntaxKind::ItemList, SyntaxRole::Element(0)));
+        budget
+    }
+
+    fn diagnostic_event(ordinal: usize) -> SyntaxEvent {
+        SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.test.budget",
+            SourceRange::new(ordinal, ordinal),
+            ordinal.to_string(),
+        ))
+    }
+}

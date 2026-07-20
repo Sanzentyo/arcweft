@@ -1,4 +1,4 @@
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
@@ -25,6 +25,15 @@ fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
         .map(UnattachedGrammarEntry::kind)
         .filter(|actual| *actual == kind)
         .count()
+}
+
+fn nth_source_range(source: &str, fragment: &str, occurrence: usize) -> SourceRange {
+    let start = source
+        .match_indices(fragment)
+        .nth(occurrence)
+        .map(|(start, _)| start)
+        .expect("fixture occurrence");
+    SourceRange::new(start, start + fragment.len())
 }
 
 #[test]
@@ -79,6 +88,16 @@ fn layer_header_and_duplicate_member_errors_keep_typed_nodes() {
             built.diagnostics()
         );
     }
+    let duplicate = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.layer.duplicate_member")
+        .expect("duplicate layer member diagnostic");
+    assert_eq!(duplicate.range(), nth_source_range(source, "z", 1));
+    assert_eq!(
+        duplicate.related_range(),
+        Some(nth_source_range(source, "z", 0))
+    );
     assert_eq!(built.green().to_string(), source);
 }
 

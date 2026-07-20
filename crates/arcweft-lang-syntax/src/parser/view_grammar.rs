@@ -360,7 +360,16 @@ fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize
                 .checked_add(1)
                 .expect("View export budget is below the role index range");
         } else {
+            let value_start = parser.cursor();
+            let event_start = parser.event_position();
             emit_expression(parser, entry_end, SyntaxRole::Element(ordinal));
+            if parser.started_kind_since(event_start, SyntaxKind::ErrorExpression) {
+                parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                    "syntax.view.invalid_value",
+                    token_range(parser, value_start, entry_end),
+                    "View body values must use the typed View expression grammar",
+                )));
+            }
         }
         bump_until(parser, entry_end);
         if parser.at(";") || parser.current_kind() == Some(SyntaxKind::NewlineToken) {

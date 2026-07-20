@@ -29,14 +29,14 @@ pub(super) fn emit_declaration(
     parser.start(SyntaxKind::ActivityDeclarationItem, role);
     emit_retained_declaration_header(&mut parser, RetainedIdentityFamily::Activity, |_| {});
     parser.bump_trivia();
-    reject_concrete_origin_header(&mut parser);
+    reject_unexpected_header(&mut parser);
     parser.bump_trivia();
     emit_activity_body(&mut parser);
     emit_trailing_recovery(&mut parser);
     parser.finish();
 }
 
-fn reject_concrete_origin_header(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn reject_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) {
     if parser.at("{") || parser.is_at_end() {
         return;
     }
@@ -46,9 +46,9 @@ fn reject_concrete_origin_header(parser: &mut ShadowDocumentParser<'_, '_>) {
     bump_until(parser, body);
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        "syntax.activity.concrete_origin_not_allowed",
+        "syntax.declaration.unexpected_header",
         SourceRange::new(start, parser.current_offset()),
-        "Activity source declarations cannot name Rust, WASM, process, or adapter origins",
+        "Activity accepts no generics, origin clauses, where clause, or contracts in its header",
     )));
 }
 

@@ -9,10 +9,10 @@ use arcweft_source::{SourceDocument, SourceRange};
 
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar};
-use crate::grammar::event::SyntaxEvent;
+use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
-use super::item::{classify_top_level_item, declaration_kind, is_declaration_item_kind};
+use super::item::{classify_top_level_item, is_declaration_item_kind};
 use super::lexer::{DocumentLexer, LexToken};
 
 /// Shared cursor and event sink for every private shadow grammar parser.
@@ -86,6 +86,12 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 
     pub(super) fn event_position(&self) -> usize {
         self.events.len()
+    }
+
+    pub(super) fn started_kind_since(&self, position: usize, kind: SyntaxKind) -> bool {
+        self.events[position..].iter().any(
+            |event| matches!(event, SyntaxEvent::StartNode { kind: actual, .. } if *actual == kind),
+        )
     }
 
     pub(super) fn insert_start(&mut self, position: usize, kind: SyntaxKind, role: SyntaxRole) {
@@ -437,12 +443,7 @@ fn declaration_has_body(source: &str, tokens: &[LexToken], kind: SyntaxKind) -> 
 }
 
 fn declaration_header_angle_is_open(source: &str, tokens: &[LexToken]) -> bool {
-    let keywords = tokens
-        .iter()
-        .filter(|token| token.kind == SyntaxKind::KeywordToken)
-        .map(|token| &source[token.range.as_range()])
-        .collect::<Vec<_>>();
-    if declaration_kind(&keywords).is_none() {
+    if !classify_top_level_item(source, tokens).is_some_and(is_declaration_item_kind) {
         return false;
     }
 
@@ -758,6 +759,26 @@ fn emit_logical_line(
             start_event(events, budget, kind, SyntaxRole::Element(ordinal));
             for token in tokens {
                 push_event(events, budget, SyntaxEvent::token(token.kind, token.range));
+            }
+            if kind == SyntaxKind::ErrorItem {
+                let first = tokens
+                    .iter()
+                    .find(|token| !is_trivia_kind(token.kind))
+                    .expect("classified error item has a significant token");
+                let last = tokens
+                    .iter()
+                    .rev()
+                    .find(|token| !is_trivia_kind(token.kind))
+                    .expect("classified error item has a significant token");
+                push_event(
+                    events,
+                    budget,
+                    SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                        "syntax.item.expected_declaration",
+                        SourceRange::new(first.range.start(), last.range.end()),
+                        "regular Arcweft source accepts declarations at the top level",
+                    )),
+                );
             }
             finish_event(events, budget);
         }

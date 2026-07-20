@@ -1,4 +1,4 @@
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
@@ -25,6 +25,15 @@ fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
         .map(UnattachedGrammarEntry::kind)
         .filter(|actual| *actual == kind)
         .count()
+}
+
+fn nth_source_range(source: &str, fragment: &str, occurrence: usize) -> SourceRange {
+    let start = source
+        .match_indices(fragment)
+        .nth(occurrence)
+        .map(|(start, _)| start)
+        .expect("fixture occurrence");
+    SourceRange::new(start, start + fragment.len())
 }
 
 #[test]
@@ -68,9 +77,9 @@ fn minimal_activity_body_is_typed_and_uses_semantic_defaults_by_omission() {
 }
 
 #[test]
-fn activity_rejects_concrete_origins_and_preserves_the_next_sibling() {
+fn activity_rejects_an_unexpected_header_and_preserves_the_next_sibling() {
     let source = concat!(
-        "activity MiniGame from rust \"truck\" {\n",
+        "activity MiniGame where T: Game {\n",
         "    mode = deterministic\n",
         "}\n",
         "signal ready: Watch<bool>\n",
@@ -79,9 +88,10 @@ fn activity_rejects_concrete_origins_and_preserves_the_next_sibling() {
     assert_eq!(count_kind(&built, SyntaxKind::ActivityDeclarationItem), 1);
     assert_eq!(count_kind(&built, SyntaxKind::SignalDeclarationItem), 1);
     assert!(
-        built.diagnostics().iter().any(|diagnostic| {
-            diagnostic.code() == "syntax.activity.concrete_origin_not_allowed"
-        })
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code() == "syntax.declaration.unexpected_header" })
     );
     assert_eq!(built.green().to_string(), source);
 }
@@ -124,5 +134,29 @@ fn activity_section_port_and_contract_recovery_remains_typed() {
             built.diagnostics()
         );
     }
+    assert_eq!(count_kind(&built, SyntaxKind::ActivityPort), 2);
+    let duplicate_port = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.activity.duplicate_port")
+        .expect("duplicate port diagnostic");
+    assert_eq!(
+        duplicate_port.range(),
+        nth_source_range(source, "shared", 1)
+    );
+    assert_eq!(
+        duplicate_port.related_range(),
+        Some(nth_source_range(source, "shared", 0))
+    );
+    let duplicate_mode = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.activity.duplicate_member")
+        .expect("duplicate mode diagnostic");
+    assert_eq!(duplicate_mode.range(), nth_source_range(source, "mode", 1));
+    assert_eq!(
+        duplicate_mode.related_range(),
+        Some(nth_source_range(source, "mode", 0))
+    );
     assert_eq!(built.green().to_string(), source);
 }

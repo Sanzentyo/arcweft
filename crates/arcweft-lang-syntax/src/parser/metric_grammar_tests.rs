@@ -105,3 +105,37 @@ fn metric_missing_kind_type_and_body_have_zero_width_recovery() {
             .any(|diagnostic| diagnostic.code() == "syntax.metric.missing_kind")
     );
 }
+
+#[test]
+fn duplicate_unit_retains_both_typed_members_and_related_evidence() {
+    let source = concat!(
+        "metric gauge DuplicateUnit: f32 {\n",
+        "    unit = \"ms\"\n",
+        "    unit = \"s\"\n",
+        "}\n",
+    );
+    let built = parse(source);
+    let diagnostic = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.metric.duplicate_member")
+        .expect("duplicate unit diagnostic");
+    let first = source.find("unit").expect("first unit");
+    let second = source[first + "unit".len()..]
+        .find("unit")
+        .map(|relative| first + "unit".len() + relative)
+        .expect("second unit");
+    assert_eq!(
+        diagnostic.range(),
+        arcweft_source::SourceRange::new(second, second + "unit".len())
+    );
+    assert_eq!(
+        diagnostic.related_range(),
+        Some(arcweft_source::SourceRange::new(
+            first,
+            first + "unit".len()
+        ))
+    );
+    assert_eq!(count_kind(&built, SyntaxKind::MetricUnitMember), 2);
+    assert_eq!(built.green().to_string(), source);
+}

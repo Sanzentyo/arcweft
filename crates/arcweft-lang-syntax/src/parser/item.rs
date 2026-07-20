@@ -8,12 +8,6 @@ pub(super) fn classify_top_level_item(source: &str, tokens: &[LexToken]) -> Opti
         .iter()
         .filter(|token| !is_trivia_kind(token.kind))
         .collect::<Vec<_>>();
-    let spellings = significant
-        .iter()
-        .copied()
-        .filter(|token| token.kind == SyntaxKind::KeywordToken)
-        .map(|token| &source[token.range.as_range()])
-        .collect::<Vec<_>>();
     let first = *significant.first()?;
     let first_text = &source[first.range.as_range()];
     if first_text == "#" {
@@ -25,7 +19,13 @@ pub(super) fn classify_top_level_item(source: &str, tokens: &[LexToken]) -> Opti
                 .map_or(SyntaxKind::OuterAttribute, |_| SyntaxKind::InnerAttribute),
         );
     }
-    if let Some(kind) = declaration_kind(&spellings) {
+    if let Some((declaration_keyword, kind)) = declaration_kind_at_start(source, &significant) {
+        if significant
+            .get(declaration_keyword + 1)
+            .is_some_and(|token| matches!(&source[token.range.as_range()], "." | "::"))
+        {
+            return Some(SyntaxKind::ErrorItem);
+        }
         if matches!(kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem)
             && declaration_name_is_entity_reference(source, &significant)
         {
@@ -36,6 +36,39 @@ pub(super) fn classify_top_level_item(source: &str, tokens: &[LexToken]) -> Opti
     Some(SyntaxKind::ErrorItem)
 }
 
+fn declaration_kind_at_start(source: &str, tokens: &[&LexToken]) -> Option<(usize, SyntaxKind)> {
+    let mut keyword = 0_usize;
+    if token_text(source, tokens, keyword) == Some("pub") {
+        keyword += 1;
+        if token_text(source, tokens, keyword) == Some("(") {
+            if !matches!(
+                token_text(source, tokens, keyword + 1),
+                Some("crate" | "super")
+            ) || token_text(source, tokens, keyword + 2) != Some(")")
+            {
+                return None;
+            }
+            keyword += 3;
+        }
+    }
+
+    let spelling = token_text(source, tokens, keyword)?;
+    let kind = declaration_kind_from_head(
+        spelling,
+        token_text(source, tokens, keyword + 1) == Some("capability"),
+    )?;
+    Some((keyword, kind))
+}
+
+fn token_text<'source>(
+    source: &'source str,
+    tokens: &[&LexToken],
+    index: usize,
+) -> Option<&'source str> {
+    let token = tokens.get(index)?;
+    Some(&source[token.range.as_range()])
+}
+
 fn declaration_name_is_entity_reference(source: &str, tokens: &[&LexToken]) -> bool {
     tokens
         .iter()
@@ -44,11 +77,7 @@ fn declaration_name_is_entity_reference(source: &str, tokens: &[&LexToken]) -> b
         .is_some_and(|token| token.kind == SyntaxKind::EntityReferenceToken)
 }
 
-pub(super) fn declaration_kind(keywords: &[&str]) -> Option<SyntaxKind> {
-    let keyword = keywords
-        .iter()
-        .copied()
-        .find(|keyword| !matches!(*keyword, "pub" | "crate" | "super"))?;
+fn declaration_kind_from_head(keyword: &str, extern_capability: bool) -> Option<SyntaxKind> {
     Some(match keyword {
         "mod" => SyntaxKind::ModuleDeclaration,
         "use" => SyntaxKind::UseDeclaration,
@@ -70,7 +99,7 @@ pub(super) fn declaration_kind(keywords: &[&str]) -> Option<SyntaxKind> {
         "metric" => SyntaxKind::MetricDeclarationItem,
         "layer" => SyntaxKind::LayerDeclarationItem,
         "entry" => SyntaxKind::EntryDeclarationItem,
-        "extern" if keywords.contains(&"capability") => SyntaxKind::ExternCapabilityItem,
+        "extern" if extern_capability => SyntaxKind::ExternCapabilityItem,
         "test" => SyntaxKind::TestItem,
         "bench" => SyntaxKind::BenchItem,
         "style" => SyntaxKind::StyleItem,
