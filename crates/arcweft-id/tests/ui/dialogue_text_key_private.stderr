@@ -1,0 +1,11 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/dialogue_text_key_private.rs:5:25
+  |
+5 |     let _dialogue_key = DialogueTextKey(text_key);
+  |                         ^^^^^^^^^^^^^^^
+  |
+note: constructor is not visible here due to private fields
+ --> src/dialogue.rs
+  |
+  | pub struct DialogueTextKey(TextKey);
+  |                            ^^^^^^^ private field

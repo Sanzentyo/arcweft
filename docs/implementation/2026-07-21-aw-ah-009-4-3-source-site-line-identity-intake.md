@@ -154,6 +154,73 @@ No Rust file in these sets was edited during intake. A new
 `lib.rs` and Cargo/test integration, so it was not created as an orphaned
 partial slice.
 
+## Frontier 2 lower-ID sub-slice
+
+The Character/localization Cut 1 released `arcweft-id` at
+`b08d87a3e118e1b72160b536505359d4a2d4e282`. Starting from the subsequent
+intake commit `acd05f6c5c8d4be81ef050579dc02f320f8999d5`, the first Frontier 2
+sub-slice now adds:
+
+- public `arcweft_id::dialogue` ownership without a root compatibility
+  re-export;
+- checked `DialogueLineId(PublicId)` and `DialogueTextKey(TextKey)` newtypes;
+- one shared `MAX_DIALOGUE_ID_BYTES = 256` lower-layer constant;
+- exact `say.*` and `text.*` family/nonempty-tail validation after the existing
+  base-type validation;
+- inclusive UTF-8 byte validation with a typed `TooManyBytes` error;
+- read-only base-type and string access, owned extraction, `FromStr`, and
+  checked owned-base conversions; and
+- no `Serialize` or `Deserialize` implementation.
+
+This completes package matrix rows TM-001 through TM-005 and TM-007. TM-006,
+which sources the unchanged CharacterDialogue field from the lower constant,
+remains outside this sub-slice because the CharacterDialogue identity file is
+still owned by the active Character/localization reconciliation. The private
+HIR owner/candidate/diagnostic/transaction portion of Frontier 2 likewise waits
+for the active proof/resource HIR cut.
+
+The compile-fail cases directly prove that neither tuple field is externally
+constructible and that neither durable identity implements Serde. They are
+public API type checks, not repository source gates.
+
+### Validation
+
+The following commands passed against parent revision
+`acd05f6c5c8d4be81ef050579dc02f320f8999d5` and the isolated ID changes:
+
+```bash
+cargo fmt -p arcweft-id
+cargo test -p arcweft-id --all-features
+cargo clippy -p arcweft-id --all-targets --all-features -- -D warnings
+cargo +nightly -Zscript tools/structure-audit.rs --root .
+```
+
+The focused suite passed 16 unit tests and one trybuild harness containing
+three compile-fail cases. Strict Clippy produced no warnings. The structural
+audit scanned 3,411 files, 1,773 Rust files, and 814,836 Rust physical lines;
+it reported zero errors and 131 pre-existing size/ownership warnings. No
+changed `arcweft-id` file reaches a warning threshold.
+
+### Structural measurements
+
+The owning crate has 21 normal workspace dependents and two normal outbound
+dependencies (`serde` for the already accepted locale owner and `thiserror`).
+The dialogue module itself adds no higher-layer dependency.
+
+| Path | Role | Bytes | Physical LOC | Embedded test LOC | Responsibility |
+|---|---:|---:|---:|---:|---|
+| `crates/arcweft-id/src/lib.rs` | facade | 10,476 | 374 | 67 | Deliberate module publication plus existing lower identity facade. |
+| `crates/arcweft-id/src/dialogue.rs` | production + unit tests | 8,734 | 296 | 84 | Durable dialogue newtypes, checked family/byte rules, access and conversion APIs. |
+| `crates/arcweft-id/tests/public_api.rs` | integration compile-fail harness | 313 | 7 | n/a | Private-field and non-Serde API proof. |
+| `crates/arcweft-id/tests/ui/dialogue_identity_private.rs` | compile-fail fixture | 184 | 6 | n/a | `DialogueLineId` raw constructor rejection. |
+| `crates/arcweft-id/tests/ui/dialogue_text_key_private.rs` | compile-fail fixture | 191 | 6 | n/a | `DialogueTextKey` raw constructor rejection. |
+| `crates/arcweft-id/tests/ui/dialogue_identity_not_serde.rs` | compile-fail fixture | 390 | 12 | n/a | Both durable identities reject Serde bounds. |
+
+The largest current workspace Rust files remain unrelated: generated Unicode
+vertical-orientation data (12,399 LOC), CLI runtime-bench integration tests
+(7,062 LOC), and ignored Tier 2 native Agent-observe tests (6,717 LOC). This
+slice neither changes nor depends on those ownership hotspots.
+
 ## Existing requests and non-goals
 
 The following existing requests already own the relevant predecessor and
@@ -180,14 +247,13 @@ This intake does not:
 
 ## Next implementation action
 
-After the current `arcweft-id`, CharacterDialogue, and HIR owners publish their
-coherent cuts, implement Frontier 2 as one green package slice:
+After the CharacterDialogue and HIR owners publish their coherent cuts,
+complete the remaining Frontier 2 work:
 
-1. add the checked lower ID types and direct boundary/compile-fail tests;
-2. source the unchanged CharacterDialogue byte limit from the lower constant;
-3. add private HIR owner, scope, candidate, diagnostic, and transaction
+1. source the unchanged CharacterDialogue byte limit from the lower constant;
+2. add private HIR owner, scope, candidate, diagnostic, and transaction
    substrate with no public successful line path;
-4. run focused changed-crate tests and strict Clippy;
-5. run the structural audit and record exact file metrics; and
-6. commit and push that slice before beginning the atomic package-aware
+3. run focused changed-crate tests and strict Clippy;
+4. rerun the structural audit and update exact metrics; and
+5. commit and push that slice before beginning the atomic package-aware
    lowering migration.

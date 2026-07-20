@@ -1,3 +1,4 @@
+pub mod dialogue;
 mod locale;
 
 use core::fmt;
