@@ -2,9 +2,10 @@
 
 use thiserror::Error;
 
+use super::family::AstNodeFamily;
 use super::{SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotId};
 use crate::grammar::build::GrammarEventPath;
-use crate::grammar::kinds::{AstTag, SyntaxKind};
+use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole, SyntaxRoleClass};
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum AttachmentFailure {
@@ -64,5 +65,55 @@ pub(crate) enum SyntaxLookupError {
         id: SyntaxNodeId,
         expected: AstTag,
         actual: AstTag,
+    },
+}
+
+#[allow(
+    dead_code,
+    reason = "private child access errors precede the atomic ParsedSource syntax switch"
+)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum SyntaxAccessError {
+    #[error(transparent)]
+    Lookup(#[from] SyntaxLookupError),
+    #[error("syntax identity {parent:?} has no {expected:?} child at exact role {role:?}")]
+    MissingExactChild {
+        parent: SyntaxNodeId,
+        role: SyntaxRole,
+        expected: SyntaxKind,
+    },
+    #[error("syntax identity {parent:?} has no {expected:?} family child at exact role {role:?}")]
+    MissingFamilyChild {
+        parent: SyntaxNodeId,
+        role: SyntaxRole,
+        expected: AstNodeFamily,
+    },
+    #[error(
+        "syntax identity {parent:?} has {count} children at exact role {role:?}; unique access requires at most one"
+    )]
+    AmbiguousChild {
+        parent: SyntaxNodeId,
+        role: SyntaxRole,
+        count: usize,
+    },
+    #[error("role class {role:?} is not ordinal and cannot drive ordered child access")]
+    NonOrdinalRoleClass { role: SyntaxRoleClass },
+    #[error(
+        "syntax identity {parent:?} has non-contiguous {role:?} children: expected ordinal {expected}, found {actual}"
+    )]
+    NonContiguousRole {
+        parent: SyntaxNodeId,
+        role: SyntaxRoleClass,
+        expected: u32,
+        actual: u32,
+    },
+    #[error(
+        "syntax identity {id:?} has concrete kind {actual_kind:?} and tag {actual_tag:?}, which is not in {expected:?}"
+    )]
+    FamilyMismatch {
+        id: SyntaxNodeId,
+        expected: AstNodeFamily,
+        actual_kind: SyntaxKind,
+        actual_tag: AstTag,
     },
 }

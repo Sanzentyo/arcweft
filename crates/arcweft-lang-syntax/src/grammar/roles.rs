@@ -174,6 +174,67 @@ impl SyntaxRole {
             Self::Recovery(_) => SyntaxRoleClass::Recovery,
         }
     }
+
+    /// Returns the deterministic sibling ordinal carried by an ordered role.
+    #[allow(
+        dead_code,
+        reason = "private ordered attached-child access precedes the atomic ParsedSource syntax switch"
+    )]
+    pub(crate) const fn ordinal(self) -> Option<u32> {
+        match self {
+            Self::Attribute(ordinal)
+            | Self::GenericParameter(ordinal)
+            | Self::Parameter(ordinal)
+            | Self::WherePredicate(ordinal)
+            | Self::RequiresClause(ordinal)
+            | Self::EnsuresClause(ordinal)
+            | Self::Argument(ordinal)
+            | Self::MatchArm(ordinal)
+            | Self::Field(ordinal)
+            | Self::Member(ordinal)
+            | Self::InputPort(ordinal)
+            | Self::OutputPort(ordinal)
+            | Self::Export(ordinal)
+            | Self::Label(ordinal)
+            | Self::Bucket(ordinal)
+            | Self::Policy(ordinal)
+            | Self::Reference(ordinal)
+            | Self::RelatedReference(ordinal) => Some(ordinal as u32),
+            Self::Statement(ordinal) | Self::Element(ordinal) | Self::Recovery(ordinal) => {
+                Some(ordinal)
+            }
+            Self::Root
+            | Self::Documentation
+            | Self::Visibility
+            | Self::PublicId
+            | Self::Alias
+            | Self::Kind
+            | Self::Name
+            | Self::GenericGroup
+            | Self::ParameterGroup
+            | Self::ParameterPattern
+            | Self::ParameterType
+            | Self::WhereClause
+            | Self::ReturnType
+            | Self::Body
+            | Self::OpenDelimiter
+            | Self::CloseDelimiter
+            | Self::Tail
+            | Self::Condition
+            | Self::Callee
+            | Self::Target
+            | Self::Operand
+            | Self::LeftOperand
+            | Self::RightOperand
+            | Self::Pattern
+            | Self::Type
+            | Self::Initializer
+            | Self::Scrutinee
+            | Self::Guard
+            | Self::ThenBranch
+            | Self::ElseBranch => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,5 +252,8 @@ mod tests {
             SyntaxRole::Parameter(0).class(),
             SyntaxRole::ParameterType.class()
         );
+        assert_eq!(SyntaxRole::Argument(9).ordinal(), Some(9));
+        assert_eq!(SyntaxRole::Element(42).ordinal(), Some(42));
+        assert_eq!(SyntaxRole::Condition.ordinal(), None);
     }
 }

@@ -3,7 +3,9 @@
 //! This module deliberately exposes no public reader. The existing public CST
 //! remains the only source-backed compiler input until the atomic syntax switch.
 
+mod access;
 mod error;
+mod family;
 mod node;
 mod snapshot;
 
@@ -12,7 +14,7 @@ use std::sync::Arc;
 
 use arcweft_source::SourceDocument;
 
-pub(crate) use error::{AttachmentFailure, SyntaxLookupError};
+pub(crate) use error::{AttachmentFailure, SyntaxAccessError, SyntaxLookupError};
 pub(crate) use node::{AstKind, AstNode, SourceFileKind};
 #[cfg(test)]
 pub(crate) use node::{PredicateItemKind, ProofItemKind};
@@ -340,9 +342,18 @@ mod tests {
     use std::sync::Arc;
 
     use arcweft_source::identity::SourceSnapshotId;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
     use core::num::NonZeroU64;
 
+    use super::access::{BlockTailNode, DeclarationBodyNode};
+    use super::family::{DelimiterFamily, ExpressionFamily, FamilyNode, TypeFamily};
+    use super::node::{
+        AssertionStatementKind, BinaryExpressionKind, CallExpressionKind, CharacterBodyKind,
+        CharacterDeclarationItemKind, DialogueCallExpressionKind, ExpressionBodyKind,
+        FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind, LetStatementKind,
+        PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
+        RecordPatternKind, WholeBindingPatternKind,
+    };
     use super::{
         AstNode, GrammarIdentityMap, PredicateItemKind, ProofItemKind, SyntaxDatabaseId,
         SyntaxLineageId, SyntaxLookupError, SyntaxNodeId, SyntaxSnapshotId, attach_typed_tree,
@@ -362,10 +373,20 @@ mod tests {
     }
 
     fn attach(text: &str) -> Arc<super::SyntaxSnapshotData> {
+        attach_at(text, 1, 1)
+    }
+
+    fn attach_at(
+        text: &str,
+        database_ordinal: u64,
+        lineage_ordinal: u64,
+    ) -> Arc<super::SyntaxSnapshotData> {
         let document = document(text);
         let build = parse_shadow_document(&document).unwrap();
-        let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(1).unwrap());
-        let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
+        let database =
+            SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(database_ordinal).unwrap());
+        let lineage =
+            SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(lineage_ordinal).unwrap());
         let snapshot = SyntaxSnapshotId::new(
             lineage,
             SourceSnapshotId::initial(document.display_name().clone()),
@@ -425,6 +446,17 @@ mod tests {
         assert!(matches!(
             first.bind_rowan(foreign.rowan()),
             Err(SyntaxLookupError::ForeignRowanRoot { .. })
+        ));
+    }
+
+    #[test]
+    fn typed_handle_cannot_cross_an_immutable_snapshot_lineage() {
+        let first = attach_at("proof valid() = ()\n", 1, 1);
+        let second = attach_at("proof valid() = ()\n", 1, 2);
+        let first_item = first.typed_tree().unwrap().items().unwrap().remove(0);
+        assert!(matches!(
+            second.resolve_exact(&first_item.syntax()),
+            Err(SyntaxLookupError::WrongSnapshot { .. })
         ));
     }
 
@@ -498,5 +530,453 @@ mod tests {
             ["true", "false"]
         );
         assert_eq!(assertion.child(SyntaxRole::Condition), None);
+    }
+
+    #[test]
+    fn typed_tree_navigates_declaration_prefixes_parameters_and_expression_body() {
+        let source = concat!(
+            "/// externally reviewed\n",
+            "#[verify.trusted(reason = \"reviewed\")]\n",
+            "pub proof ordered<'a, T>((left, right): (T, T), cmp: Comparator<T>) ",
+            "-> Bool where T: Ord requires cmp.ready() ensures result = left == right\n",
+        );
+        let snapshot = attach(source);
+        let tree = snapshot.typed_tree().unwrap();
+        assert_eq!(tree.root().range(), SourceRange::new(0, source.len()));
+        let items = tree.items().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].role(), SyntaxRole::Element(0));
+
+        let proof = items[0].cast::<ProofItemKind>().unwrap();
+        assert_eq!(
+            items[0]
+                .documentation()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "/// externally reviewed\n"
+        );
+        assert_eq!(items[0].attributes().unwrap().len(), 1);
+        assert_eq!(
+            items[0]
+                .visibility()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "pub"
+        );
+        assert_eq!(
+            items[0]
+                .name()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "ordered"
+        );
+        assert!(items[0].declaration_header().unwrap().is_none());
+
+        let parameters = proof
+            .required_exact_child::<FixedParameterGroupKind>(SyntaxRole::ParameterGroup)
+            .unwrap()
+            .parameters()
+            .unwrap();
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(
+            parameters[0].pattern().unwrap().kind(),
+            SyntaxKind::TuplePattern
+        );
+        assert_eq!(parameters[0].ty().unwrap().kind(), SyntaxKind::TupleType);
+        assert_eq!(
+            parameters[1].ty().unwrap().kind(),
+            SyntaxKind::GenericApplicationType
+        );
+
+        let DeclarationBodyNode::Body(proof_body) = items[0].body().unwrap().unwrap() else {
+            panic!("proof has an authored body");
+        };
+        let proof_body = proof_body.cast::<ProofBodyKind>().unwrap();
+        let DeclarationBodyNode::Body(expression_body) = proof_body.content().unwrap() else {
+            panic!("proof has an expression body");
+        };
+        let expression_body = expression_body.cast::<ExpressionBodyKind>().unwrap();
+        let expression = expression_body.expression().unwrap();
+        let binary = expression.cast::<BinaryExpressionKind>().unwrap();
+        assert_eq!(
+            binary.left().unwrap().syntax().rowan().text().to_string(),
+            "left"
+        );
+        assert_eq!(
+            binary.right().unwrap().syntax().rowan().text().to_string(),
+            "right"
+        );
+    }
+
+    #[test]
+    fn ordinary_call_accessors_keep_named_and_positional_argument_order() {
+        let snapshot = attach("predicate next(value: Int) = outer(named = inner(value), value)\n");
+        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let DeclarationBodyNode::Body(predicate_body) = item.body().unwrap().unwrap() else {
+            panic!("predicate has an authored body");
+        };
+        let predicate_body = predicate_body.cast::<PredicateBodyKind>().unwrap();
+        let DeclarationBodyNode::Body(expression_body) = predicate_body.content().unwrap() else {
+            panic!("predicate has an expression body");
+        };
+        let call = expression_body
+            .cast::<ExpressionBodyKind>()
+            .unwrap()
+            .expression()
+            .unwrap()
+            .cast::<CallExpressionKind>()
+            .unwrap();
+        assert_eq!(
+            call.callee().unwrap().syntax().rowan().text().to_string(),
+            "outer"
+        );
+        let arguments = call.arguments().unwrap();
+        assert_eq!(arguments.len(), 2);
+        assert_eq!(arguments[0].role(), SyntaxRole::Argument(0));
+        assert_eq!(arguments[1].role(), SyntaxRole::Argument(1));
+        assert_eq!(
+            arguments[0]
+                .name()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "named"
+        );
+        assert_eq!(
+            arguments[0]
+                .operand()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "inner(value)"
+        );
+        assert_eq!(
+            arguments[1]
+                .operand()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "value"
+        );
+        assert!(arguments[0].range().end() <= arguments[1].range().start());
+    }
+
+    #[test]
+    fn retained_declaration_header_owns_prefixes_name_and_body() {
+        let source = concat!(
+            "/// authored character\n",
+            "#[authoring]\n",
+            "pub character @character.alice Alice as alice {\n",
+            "    display_name = \"Alice\"\n",
+            "}\n",
+        );
+        let snapshot = attach(source);
+        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let character = item.cast::<CharacterDeclarationItemKind>().unwrap();
+        let header = item
+            .declaration_header()
+            .unwrap()
+            .expect("retained declaration owns an exact header");
+        assert_eq!(
+            header
+                .documentation()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "/// authored character\n"
+        );
+        assert_eq!(header.attributes().unwrap().len(), 1);
+        assert_eq!(
+            header
+                .name()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "Alice"
+        );
+        assert!(header.visibility().unwrap().is_some());
+        assert_eq!(
+            character
+                .required_exact_child::<CharacterBodyKind>(SyntaxRole::Body)
+                .unwrap()
+                .kind(),
+            SyntaxKind::CharacterBody
+        );
+    }
+
+    #[test]
+    fn proof_block_accessors_preserve_statement_pattern_type_and_tail_identity() {
+        let source = concat!(
+            "proof verify(value: Result<Int>) {\n",
+            "    let current: Int = unwrap(value);\n",
+            "    assert.check(current > 0, is_valid(current));\n",
+            "    verify_nested(current);\n",
+            "}\n",
+        );
+        let snapshot = attach(source);
+        let proof = snapshot
+            .typed_tree()
+            .unwrap()
+            .items()
+            .unwrap()
+            .remove(0)
+            .cast::<ProofItemKind>()
+            .unwrap();
+        let proof_body = proof
+            .required_exact_child::<ProofBodyKind>(SyntaxRole::Body)
+            .unwrap();
+        let DeclarationBodyNode::Body(block) = proof_body.content().unwrap() else {
+            panic!("proof has a block body");
+        };
+        let block = block.cast::<ProofBlockKind>().unwrap();
+        assert_eq!(
+            block.open_delimiter().unwrap().kind(),
+            SyntaxKind::OpenBraceNode
+        );
+        assert_eq!(
+            block.close_delimiter().unwrap().kind(),
+            SyntaxKind::CloseBraceNode
+        );
+
+        let statements = block.statements().unwrap();
+        assert_eq!(statements.len(), 3);
+        assert_eq!(statements[0].role(), SyntaxRole::Statement(0));
+        assert_eq!(statements[1].role(), SyntaxRole::Statement(1));
+        assert_eq!(statements[2].role(), SyntaxRole::Statement(2));
+
+        let binding = statements[0].cast::<LetStatementKind>().unwrap();
+        assert_eq!(
+            binding.pattern().unwrap().kind(),
+            SyntaxKind::BindingPattern
+        );
+        assert_eq!(
+            binding.annotation().unwrap().unwrap().kind(),
+            SyntaxKind::PrimitiveType
+        );
+        assert_eq!(
+            binding.initializer().unwrap().unwrap().kind(),
+            SyntaxKind::CallExpression
+        );
+
+        let assertion = statements[1].cast::<AssertionStatementKind>().unwrap();
+        let conditions = assertion.conditions().unwrap();
+        assert_eq!(conditions.len(), 2);
+        assert_eq!(
+            conditions
+                .iter()
+                .map(|condition| condition.syntax().rowan().text().to_string())
+                .collect::<Vec<_>>(),
+            ["current > 0", "is_valid(current)"]
+        );
+        assert!(matches!(
+            assertion.required_family_child::<ExpressionFamily>(SyntaxRole::Condition),
+            Err(super::SyntaxAccessError::AmbiguousChild { count: 2, .. })
+        ));
+
+        let proof_call = statements[2].cast::<ProofCallStatementKind>().unwrap();
+        assert_eq!(
+            proof_call
+                .callee()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "verify_nested(current)"
+        );
+        let BlockTailNode::Omitted(tail) = block.tail().unwrap() else {
+            panic!("semicolon-terminated block has an omitted tail");
+        };
+        assert_eq!(tail.range().start(), tail.range().end());
+    }
+
+    #[test]
+    fn missing_and_wrong_kind_paths_fail_without_range_or_text_lookup() {
+        let snapshot = attach("proof ()() \n");
+        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let proof = item.cast::<ProofItemKind>().unwrap();
+        assert_eq!(
+            item.name().unwrap().unwrap().kind(),
+            SyntaxKind::MissingName
+        );
+        assert_eq!(item.recovery().unwrap().len(), 1);
+        assert_eq!(item.recovery().unwrap()[0].kind(), SyntaxKind::ErrorNode);
+
+        let proof_body = proof
+            .required_exact_child::<ProofBodyKind>(SyntaxRole::Body)
+            .unwrap();
+        let DeclarationBodyNode::Missing(missing) = proof_body.content().unwrap() else {
+            panic!("missing proof body remains an exact recovery node");
+        };
+        assert_eq!(missing.kind(), SyntaxKind::MissingBody);
+        assert_eq!(missing.range().start(), missing.range().end());
+        assert!(matches!(
+            item.cast::<PredicateItemKind>(),
+            Err(SyntaxLookupError::KindMismatch { .. })
+        ));
+        assert!(matches!(
+            proof.required_exact_child::<PredicateBodyKind>(SyntaxRole::Body),
+            Err(super::SyntaxAccessError::Lookup(
+                SyntaxLookupError::KindMismatch { .. }
+            ))
+        ));
+        assert!(matches!(
+            FamilyNode::<TypeFamily>::new(item.syntax()),
+            Err(super::SyntaxAccessError::FamilyMismatch { .. })
+        ));
+
+        let call_snapshot = attach("predicate broken() = outer(value\n");
+        let predicate = call_snapshot
+            .typed_tree()
+            .unwrap()
+            .items()
+            .unwrap()
+            .remove(0)
+            .cast::<PredicateItemKind>()
+            .unwrap();
+        let body = predicate
+            .required_exact_child::<PredicateBodyKind>(SyntaxRole::Body)
+            .unwrap();
+        let DeclarationBodyNode::Body(expression_body) = body.content().unwrap() else {
+            panic!("predicate retains expression body");
+        };
+        let call = expression_body
+            .cast::<ExpressionBodyKind>()
+            .unwrap()
+            .expression()
+            .unwrap()
+            .cast::<CallExpressionKind>()
+            .unwrap();
+        let close = call
+            .required_family_child::<DelimiterFamily>(SyntaxRole::CloseDelimiter)
+            .unwrap();
+        assert_eq!(close.kind(), SyntaxKind::CloseParenNode);
+        assert_eq!(close.range().start(), close.range().end());
+    }
+
+    #[test]
+    fn dialogue_rich_text_does_not_invent_detached_tag_argument_nodes() {
+        let source = concat!(
+            "flow @flow.opening opening {\n",
+            "    let line = alice[本文。[effect .wave amp=2px]]\n",
+            "}\n",
+        );
+        let snapshot = attach(source);
+        let dialogue = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::DialogueCallExpression)
+            .expect("dialogue expression")
+            .cast::<DialogueCallExpressionKind>()
+            .unwrap();
+        assert!(
+            dialogue.attached_arguments().unwrap().is_empty(),
+            "rich-text arguments join only with the bound shared-parser switch"
+        );
+        assert!(
+            dialogue
+                .syntax()
+                .children()
+                .iter()
+                .all(|child| child.role().class() != SyntaxRoleClass::Argument)
+        );
+        assert_eq!(dialogue.range(), SourceRange::new(44, 82));
+
+        assert!(matches!(
+            dialogue.required_family_child::<ExpressionFamily>(SyntaxRole::Argument(0)),
+            Err(super::SyntaxAccessError::MissingFamilyChild { .. })
+        ));
+    }
+
+    #[test]
+    fn nested_pattern_and_type_accessors_keep_exact_child_roles() {
+        let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
+        let snapshot = attach(source);
+
+        let whole = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::WholeBindingPattern)
+            .unwrap()
+            .cast::<WholeBindingPatternKind>()
+            .unwrap();
+        assert_eq!(whole.pattern().unwrap().kind(), SyntaxKind::VariantPattern);
+
+        let record = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::RecordPattern)
+            .unwrap()
+            .cast::<RecordPatternKind>()
+            .unwrap();
+        let fields = record.fields().unwrap();
+        assert_eq!(fields.len(), 3);
+        assert_eq!(fields[0].role(), SyntaxRole::Field(0));
+        assert_eq!(fields[1].role(), SyntaxRole::Field(1));
+        assert_eq!(fields[2].role(), SyntaxRole::Field(2));
+        let shorthand = fields[0]
+            .cast::<super::node::RecordPatternFieldKind>()
+            .unwrap();
+        let named = fields[1]
+            .cast::<super::node::RecordPatternFieldKind>()
+            .unwrap();
+        assert_eq!(
+            shorthand.pattern().unwrap().unwrap().kind(),
+            SyntaxKind::BindingPattern
+        );
+        assert_eq!(
+            named.pattern().unwrap().unwrap().kind(),
+            SyntaxKind::MutableBindingPattern
+        );
+        assert_eq!(fields[2].kind(), SyntaxKind::RestPattern);
+
+        let function = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::FunctionType)
+            .unwrap()
+            .cast::<FunctionTypeKind>()
+            .unwrap();
+        assert_eq!(function.parameters().unwrap().len(), 1);
+        assert_eq!(
+            function.parameters().unwrap()[0].kind(),
+            SyntaxKind::ReferenceType
+        );
+        assert_eq!(
+            function.result().unwrap().kind(),
+            SyntaxKind::GenericApplicationType
+        );
+
+        let generic = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::GenericApplicationType)
+            .unwrap()
+            .cast::<GenericApplicationTypeKind>()
+            .unwrap();
+        let arguments = generic.arguments().unwrap();
+        assert_eq!(arguments.len(), 1);
+        assert_eq!(arguments[0].role(), SyntaxRole::Argument(0));
+        assert_eq!(arguments[0].ty().unwrap().kind(), SyntaxKind::SumType);
     }
 }
