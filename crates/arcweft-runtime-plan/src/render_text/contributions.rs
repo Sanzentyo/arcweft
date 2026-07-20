@@ -161,7 +161,8 @@ fn selector_inline_assignments(
     let selector_range = tag
         .arguments()
         .first()
-        .and_then(|argument| dot_selector(argument.value().value(), argument.value().range()))
+        .and_then(DialogueTagArg::value)
+        .and_then(|value| dot_selector(value.value(), value.range()))
         .map_or_else(|| tag.attrs_range().as_range(), |(_, range)| range);
     let attrs_range = argument_span(
         tag.arguments()
@@ -220,26 +221,24 @@ fn inferred_inline_assignments(
 
 fn direct_inline_assignments(tag: &DialogueTag) -> Vec<InlineStyleAssignment> {
     let scalar = matches!(tag.name(), "color" | "font" | "size");
-    let (value, value_range) = if scalar && let Some(argument) = tag.arguments().first() {
-        (
-            argument.value().value().to_owned(),
-            argument.value().range().as_range(),
-        )
-    } else {
-        let value_range = if tag.attrs().is_empty() {
-            tag.name_range().as_range()
+    let (value, value_range) =
+        if scalar && let Some(value) = tag.arguments().first().and_then(DialogueTagArg::value) {
+            (value.value().to_owned(), value.range().as_range())
         } else {
-            tag.attrs_range().as_range()
+            let value_range = if tag.attrs().is_empty() {
+                tag.name_range().as_range()
+            } else {
+                tag.attrs_range().as_range()
+            };
+            let value = if tag.attrs().is_empty() {
+                tag.name()
+            } else {
+                tag.attrs()
+            }
+            .trim()
+            .to_owned();
+            (value, value_range)
         };
-        let value = if tag.attrs().is_empty() {
-            tag.name()
-        } else {
-            tag.attrs()
-        }
-        .trim()
-        .to_owned();
-        (value, value_range)
-    };
     let path = match tag.name() {
         "color" => "rich_text.text.color",
         "font" => "rich_text.text.font",
@@ -381,10 +380,11 @@ fn inline_attr_assignments(arguments: &[DialogueTagArg]) -> Vec<InlineAttrAssign
     arguments
         .iter()
         .filter_map(|argument| {
+            let value = argument.value()?;
             Some(InlineAttrAssignment {
                 name: argument.name()?.to_owned(),
-                value: argument.value().value().to_owned(),
-                value_range: argument.value().range().as_range(),
+                value: value.value().to_owned(),
+                value_range: value.range().as_range(),
             })
         })
         .collect()

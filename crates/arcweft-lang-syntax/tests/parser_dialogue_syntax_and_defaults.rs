@@ -358,13 +358,14 @@ fn assert_later_line_dialogue_ranges(source: &str, content: &DialogueContent) {
         .iter()
         .find(|argument| argument.name() == Some("mood"))
         .expect("mood argument");
+    let mood_value = mood.value().expect("mood value");
     assert_eq!(
-        &content.raw()[mood.value().range().as_range()],
+        &content.raw()[mood_value.range().as_range()],
         "\"very urgent\""
     );
     assert_eq!(
         &source[content
-            .source_range(mood.value().range())
+            .source_range(mood_value.range())
             .expect("projected tag value range")
             .as_range()],
         "\"very urgent\""

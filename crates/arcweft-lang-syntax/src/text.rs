@@ -1,8 +1,19 @@
+mod rich_text_tag;
+
+pub use rich_text_tag::{
+    DialogueTagBoundary, MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS,
+    MAX_RICH_TEXT_TAG_ARGUMENTS, MAX_RICH_TEXT_TAG_BODY_BYTES, MAX_RICH_TEXT_TAG_KEY_BYTES,
+    MAX_RICH_TEXT_TAG_VALUE_BYTES, find_dialogue_tag_boundary,
+};
+use rich_text_tag::{
+    parse_tag, parse_tag_arguments, split_tag_name_attrs, tag_arg_value, trim_rich_text_whitespace,
+};
+
 use crate::ast::{
     common::TextRange,
     dialogue::{
-        DialogueEndTag, DialogueExpr, DialogueTag, DialogueTagArg, DialogueTagArgValue,
-        DialogueToken, LineMark,
+        DialogueEndTag, DialogueExpr, DialogueTag, DialogueTagArg, DialogueTagArgValueSurface,
+        DialogueTagPayload, DialogueTagRanges, DialogueToken,
     },
 };
 use crate::expr::{CallArg, Expr, Literal, parse_expr};
@@ -14,37 +25,52 @@ pub struct DialogueTextParse {
     diagnostics: Vec<DialogueTextDiagnostic>,
 }
 
-/// Quote-aware closing boundary of one authored dialogue tag.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DialogueTagBoundary {
-    close: usize,
-    unterminated_quote_start: Option<usize>,
-}
-
-impl DialogueTagBoundary {
-    /// Byte offset of the closing `]`.
-    pub const fn close(&self) -> usize {
-        self.close
-    }
-
-    /// Exclusive byte offset immediately after the closing `]`.
-    pub const fn end(&self) -> usize {
-        self.close + ']'.len_utf8()
-    }
-
-    /// Opening quote offset when recovery selected a `]` inside an
-    /// unterminated quoted argument.
-    pub const fn unterminated_quote_start(&self) -> Option<usize> {
-        self.unterminated_quote_start
-    }
-}
-
 /// A recoverable diagnostic produced while tokenizing dialogue text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueTextDiagnostic {
+    code: DialogueTextDiagnosticCode,
     range: TextRange,
     message: String,
     recovery: String,
+}
+
+/// Stable syntax diagnostic identity for dialogue-text parsing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueTextDiagnosticCode {
+    DialogueText,
+    RichTextAttributeUnterminatedQuote,
+    RichTextAttributeInvalidEscape,
+    RichTextAttributeEmptyKey,
+    RichTextAttributeInvalidKey,
+    RichTextAttributeMissingValue,
+    RichTextTagBodyTooLong,
+    RichTextAttributeTooMany,
+    RichTextAttributeKeyTooLong,
+    RichTextAttributeValueTooLong,
+    RichTextContentTagLimit,
+    RichTextContentArgumentLimit,
+}
+
+impl DialogueTextDiagnosticCode {
+    /// Stable diagnostic code used by compiler and tooling layers.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DialogueText => "syntax.dialogue.text",
+            Self::RichTextAttributeUnterminatedQuote => {
+                "syntax.rich_text.attribute.unterminated_quote"
+            }
+            Self::RichTextAttributeInvalidEscape => "syntax.rich_text.attribute.invalid_escape",
+            Self::RichTextAttributeEmptyKey => "syntax.rich_text.attribute.empty_key",
+            Self::RichTextAttributeInvalidKey => "syntax.rich_text.attribute.invalid_key",
+            Self::RichTextAttributeMissingValue => "syntax.rich_text.attribute.missing_value",
+            Self::RichTextTagBodyTooLong => "syntax.rich_text.tag.body_too_long",
+            Self::RichTextAttributeTooMany => "syntax.rich_text.attribute.too_many",
+            Self::RichTextAttributeKeyTooLong => "syntax.rich_text.attribute.key_too_long",
+            Self::RichTextAttributeValueTooLong => "syntax.rich_text.attribute.value_too_long",
+            Self::RichTextContentTagLimit => "syntax.rich_text.content.tag_limit",
+            Self::RichTextContentArgumentLimit => "syntax.rich_text.content.argument_limit",
+        }
+    }
 }
 
 /// Parses dialogue-text mode into tokens.
@@ -63,106 +89,247 @@ pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
 /// source, which keeps localization extraction and editor tooling stable.
 #[must_use]
 pub fn parse_dialogue_text(source: &str) -> DialogueTextParse {
-    let mut tokens = Vec::new();
-    let mut diagnostics = Vec::new();
-    let mut text = String::new();
+    let mut output = DialogueTextAccumulator::default();
     let mut chars = source.char_indices().peekable();
 
     while let Some((index, ch)) = chars.next() {
         match ch {
             '\\' => {
                 if let Some((_, escaped)) = chars.next() {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(DialogueToken::Escape(escaped));
+                    output.flush_text();
+                    output.tokens.push(DialogueToken::Escape(escaped));
                 } else {
-                    text.push(ch);
+                    output.text.push(ch);
                 }
             }
             '|' => {
                 if let Some((ruby_token, consumed_to)) = parse_ascii_explicit_ruby(source, index)
                     .or_else(|| parse_ascii_compact_ruby(source, index))
                 {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(ruby_token);
+                    output.flush_text();
+                    output.tokens.push(ruby_token);
                     skip_to(&mut chars, consumed_to);
                 } else {
                     if let Some(diagnostic) = compact_ruby_diagnostic(source, index) {
-                        diagnostics.push(diagnostic);
+                        output.diagnostics.push(diagnostic);
                     }
-                    text.push(ch);
+                    output.text.push(ch);
                 }
             }
             '｜' => {
                 if let Some((ruby_token, consumed_to)) = parse_natural_ruby(source, index) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(ruby_token);
+                    output.flush_text();
+                    output.tokens.push(ruby_token);
                     skip_to(&mut chars, consumed_to);
                 } else {
-                    text.push(ch);
+                    output.text.push(ch);
                 }
             }
             '#' if chars.peek().is_some_and(|(_, next)| *next == '[') => {
                 let _ = chars.next();
                 if let Some((expr, consumed_to)) = take_balanced_bracket(source, index + 2) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(parse_dialogue_expr_token(&expr, index + 2));
+                    output.flush_text();
+                    output
+                        .tokens
+                        .push(parse_dialogue_expr_token(&expr, index + 2));
                     skip_to(&mut chars, consumed_to);
                 } else {
-                    text.push_str("#[");
+                    output.text.push_str("#[");
                 }
             }
             '$' if chars.peek().is_some_and(|(_, next)| *next == '(') => {
                 let _ = chars.next();
                 if let Some((expr, consumed_to)) = take_balanced_paren(source, index + 2) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(parse_dialogue_expr_token(&expr, index + 2));
+                    output.flush_text();
+                    output
+                        .tokens
+                        .push(parse_dialogue_expr_token(&expr, index + 2));
                     skip_to(&mut chars, consumed_to);
                 } else {
-                    text.push_str("$(");
+                    output.text.push_str("$(");
                 }
             }
             '[' => {
-                if let Some((ruby, consumed_to)) = parse_bracket_ruby(source, index) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(ruby);
+                if let Some(consumed_to) = output.parse_open_tag(source, index) {
                     skip_to(&mut chars, consumed_to);
-                    continue;
-                }
-                if let Some((raw, consumed_to)) = parse_raw_span(source, index) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(DialogueToken::Raw(raw));
-                    skip_to(&mut chars, consumed_to);
-                    continue;
-                }
-                if let Some((raw, consumed_to)) = parse_inline_raw_span(source, index) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.push(DialogueToken::Raw(raw));
-                    skip_to(&mut chars, consumed_to);
-                    continue;
-                }
-                if let Some((span_tokens, consumed_to)) = parse_inline_style_span(source, index) {
-                    flush_text(&mut text, &mut tokens);
-                    tokens.extend(span_tokens);
-                    skip_to(&mut chars, consumed_to);
-                    continue;
-                }
-                if let Some(parsed_tag) = parse_tag(source, index) {
-                    flush_text(&mut text, &mut tokens);
-                    if let Some(diagnostic) = parsed_tag.diagnostic {
-                        diagnostics.push(diagnostic);
-                    }
-                    tokens.push(parsed_tag.token);
-                    skip_to(&mut chars, parsed_tag.consumed_to);
                 } else {
-                    text.push(ch);
+                    output.text.push(ch);
                 }
             }
-            _ => text.push(ch),
+            _ => output.text.push(ch),
         }
     }
 
-    flush_text(&mut text, &mut tokens);
-    DialogueTextParse::new(tokens, diagnostics)
+    output.finish()
+}
+
+#[derive(Default)]
+struct DialogueTextAccumulator {
+    tokens: Vec<DialogueToken>,
+    diagnostics: Vec<DialogueTextDiagnostic>,
+    text: String,
+    rich_text_tag_count: usize,
+    rich_text_argument_count: usize,
+}
+
+#[derive(Clone, Copy)]
+enum RichTextContentLimit {
+    Tags,
+    Arguments,
+}
+
+impl DialogueTextAccumulator {
+    fn flush_text(&mut self) {
+        flush_text(&mut self.text, &mut self.tokens);
+    }
+
+    fn finish(mut self) -> DialogueTextParse {
+        self.flush_text();
+        DialogueTextParse::new(self.tokens, self.diagnostics)
+    }
+
+    fn parse_open_tag(&mut self, source: &str, index: usize) -> Option<usize> {
+        if self.rich_text_tag_count >= MAX_RICH_TEXT_CONTENT_TAGS {
+            let consumed_to = find_dialogue_tag_boundary(source, index)?.end();
+            return Some(self.retain_limited_markup(
+                source,
+                index,
+                consumed_to,
+                RichTextContentLimit::Tags,
+            ));
+        }
+        if let Some((ruby, consumed_to)) = parse_bracket_ruby(source, index) {
+            return Some(self.push_single_tag(ruby, consumed_to));
+        }
+        if let Some((raw, consumed_to)) = parse_raw_span(source, index) {
+            return Some(self.push_single_tag(DialogueToken::Raw(raw), consumed_to));
+        }
+        if let Some((raw, consumed_to)) = parse_inline_raw_span(source, index) {
+            return Some(self.push_single_tag(DialogueToken::Raw(raw), consumed_to));
+        }
+        if let Some((tokens, consumed_to)) = parse_inline_style_span(source, index) {
+            return Some(self.push_inline_span(source, index, tokens, consumed_to));
+        }
+
+        let remaining =
+            MAX_RICH_TEXT_CONTENT_ARGUMENTS.saturating_sub(self.rich_text_argument_count);
+        let parsed = parse_tag(source, index, remaining)?;
+        self.flush_text();
+        self.diagnostics.extend(parsed.diagnostics);
+        self.rich_text_tag_count += usize::from(is_rich_text_tag_token(&parsed.token));
+        self.rich_text_argument_count +=
+            dialogue_tag_argument_count(&parsed.token).unwrap_or_default();
+        self.tokens.push(parsed.token);
+        Some(parsed.consumed_to)
+    }
+
+    fn push_single_tag(&mut self, token: DialogueToken, consumed_to: usize) -> usize {
+        self.flush_text();
+        self.tokens.push(token);
+        self.rich_text_tag_count += 1;
+        consumed_to
+    }
+
+    fn push_inline_span(
+        &mut self,
+        source: &str,
+        index: usize,
+        tokens: Vec<DialogueToken>,
+        consumed_to: usize,
+    ) -> usize {
+        let added_tags = tokens
+            .iter()
+            .filter(|token| is_rich_text_tag_token(token))
+            .count();
+        let added_arguments = tokens
+            .iter()
+            .filter_map(dialogue_tag_argument_count)
+            .sum::<usize>();
+        if added_tags > MAX_RICH_TEXT_CONTENT_TAGS.saturating_sub(self.rich_text_tag_count) {
+            return self.retain_limited_markup(
+                source,
+                index,
+                consumed_to,
+                RichTextContentLimit::Tags,
+            );
+        }
+        if added_arguments
+            > MAX_RICH_TEXT_CONTENT_ARGUMENTS.saturating_sub(self.rich_text_argument_count)
+        {
+            return self.retain_limited_markup(
+                source,
+                index,
+                consumed_to,
+                RichTextContentLimit::Arguments,
+            );
+        }
+
+        self.flush_text();
+        self.rich_text_tag_count += added_tags;
+        self.rich_text_argument_count += added_arguments;
+        self.tokens.extend(tokens);
+        consumed_to
+    }
+
+    fn retain_limited_markup(
+        &mut self,
+        source: &str,
+        start: usize,
+        end: usize,
+        limit: RichTextContentLimit,
+    ) -> usize {
+        let (code, message, recovery) = match limit {
+            RichTextContentLimit::Tags => (
+                DialogueTextDiagnosticCode::RichTextContentTagLimit,
+                format!(
+                    "dialogue content has more than {MAX_RICH_TEXT_CONTENT_TAGS} RichText tags"
+                ),
+                "split the dialogue content or remove excess tags",
+            ),
+            RichTextContentLimit::Arguments => (
+                DialogueTextDiagnosticCode::RichTextContentArgumentLimit,
+                format!(
+                    "dialogue content has more than {MAX_RICH_TEXT_CONTENT_ARGUMENTS} RichText arguments"
+                ),
+                "split the dialogue content or remove excess arguments",
+            ),
+        };
+        self.flush_text();
+        self.diagnostics.push(DialogueTextDiagnostic::with_code(
+            code,
+            TextRange::new(start, end),
+            message,
+            recovery,
+        ));
+        self.tokens
+            .push(DialogueToken::Text(source[start..end].to_owned()));
+        end
+    }
+}
+
+fn is_rich_text_tag_token(token: &DialogueToken) -> bool {
+    matches!(
+        token,
+        DialogueToken::Tag(_)
+            | DialogueToken::InferredTag(_)
+            | DialogueToken::Mark(_)
+            | DialogueToken::EndTag(_)
+            | DialogueToken::InferredEndTag
+    )
+}
+
+fn dialogue_tag_argument_count(token: &DialogueToken) -> Option<usize> {
+    match token {
+        DialogueToken::Tag(tag) | DialogueToken::InferredTag(tag) => Some(tag.arguments().len()),
+        DialogueToken::Text(_)
+        | DialogueToken::Raw(_)
+        | DialogueToken::Mark(_)
+        | DialogueToken::EndTag(_)
+        | DialogueToken::InferredEndTag
+        | DialogueToken::Expr(_)
+        | DialogueToken::Ruby { .. }
+        | DialogueToken::Escape(_) => None,
+    }
 }
 
 impl DialogueTextParse {
@@ -196,11 +363,31 @@ impl DialogueTextParse {
 
 impl DialogueTextDiagnostic {
     fn new(range: TextRange, message: impl Into<String>, recovery: impl Into<String>) -> Self {
+        Self::with_code(
+            DialogueTextDiagnosticCode::DialogueText,
+            range,
+            message,
+            recovery,
+        )
+    }
+
+    fn with_code(
+        code: DialogueTextDiagnosticCode,
+        range: TextRange,
+        message: impl Into<String>,
+        recovery: impl Into<String>,
+    ) -> Self {
         Self {
+            code,
             range,
             message: message.into(),
             recovery: recovery.into(),
         }
+    }
+
+    /// Stable structured diagnostic identity.
+    pub const fn code(&self) -> DialogueTextDiagnosticCode {
+        self.code
     }
 
     /// Byte range relative to the dialogue source passed to the tokenizer.
@@ -346,26 +533,31 @@ fn parse_bracket_ruby(source: &str, start: usize) -> Option<(DialogueToken, usiz
         return None;
     }
     let after_open = boundary.end();
-    let inside = source.get(start + 1..boundary.close())?.trim();
+    let inside = trim_rich_text_whitespace(source.get(start + 1..boundary.close())?);
     let (tag_name, attrs) = split_tag_name_attrs(inside);
     if !matches!(tag_name, "ruby" | "rb") {
         return None;
     }
-    let (arguments, unterminated_quote) = parse_tag_arguments(attrs, slice_offset(source, attrs));
-    if unterminated_quote.is_some() {
+    let parsed_arguments = parse_tag_arguments(
+        attrs,
+        slice_offset(source, attrs),
+        MAX_RICH_TEXT_CONTENT_ARGUMENTS,
+    );
+    if !parsed_arguments.diagnostics.is_empty() {
         return None;
     }
-    let ruby = arguments
+    let ruby = parsed_arguments
+        .entries
         .iter()
         .find(|argument| argument.name() == Some("rt"))?
-        .value()
+        .value()?
         .value()
         .to_owned();
     let tail = source.get(after_open..)?;
     let close_tag = format!("[/{tag_name}]");
     let close_relative = tail.find(&close_tag)?;
     let base_end = after_open + close_relative;
-    let base = source.get(after_open..base_end)?.trim();
+    let base = trim_rich_text_whitespace(source.get(after_open..base_end)?);
     if base.is_empty() {
         return None;
     }
@@ -403,47 +595,49 @@ fn parse_inline_style_span(source: &str, start: usize) -> Option<(Vec<DialogueTo
         return None;
     }
     let consumed_to = boundary.end();
-    let inside = source.get(start + 1..boundary.close())?.trim();
+    let inside = trim_rich_text_whitespace(source.get(start + 1..boundary.close())?);
     let (tag_source, body) = split_once_top_level(inside, ':')?;
     if body.is_empty() {
         return None;
     }
-    let (name, attrs, authored_value) = parse_inline_style_head(tag_source.trim())?;
+    let tag_source = trim_rich_text_whitespace(tag_source);
+    let (name, attrs, authored_value) = parse_inline_style_head(tag_source)?;
     let range = TextRange::new(start, consumed_to);
-    let (arguments, attrs_range) = authored_value.map_or_else(
-        || {
-            let end = start + 1 + tag_source.len();
-            (Vec::new(), TextRange::new(end, end))
-        },
-        |value| {
-            let value_start = slice_offset(source, value);
-            let value_range = TextRange::new(value_start, value_start + value.len());
-            (
-                vec![DialogueTagArg::Named {
-                    name: "value".to_owned(),
-                    name_range: None,
-                    value: DialogueTagArgValue::new(
-                        value.to_owned(),
-                        unquote_tag_arg(value),
-                        value_range,
-                    ),
-                }],
-                value_range,
-            )
-        },
-    );
+    let (arguments, attrs_range) = if let Some(value) = authored_value {
+        let value_start = slice_offset(source, value);
+        let value_range = TextRange::new(value_start, value_start + value.len());
+        let value_surface = tag_arg_value(value, value_start).ok()?;
+        (
+            vec![DialogueTagArg::Positional {
+                value: DialogueTagArgValueSurface::Present(value_surface),
+                range: value_range,
+            }],
+            value_range,
+        )
+    } else {
+        let end = start + 1 + tag_source.len();
+        (Vec::new(), TextRange::new(end, end))
+    };
     Some((
         vec![
             DialogueToken::Tag(DialogueTag::new(
                 name.clone(),
-                TextRange::new(
-                    slice_offset(source, tag_source.trim()),
-                    slice_offset(source, tag_source.trim()) + name.len(),
-                ),
+                name.clone(),
                 attrs,
+                if arguments.is_empty() {
+                    DialogueTagPayload::None
+                } else {
+                    DialogueTagPayload::Arguments
+                },
                 arguments,
-                range,
-                attrs_range,
+                DialogueTagRanges::new(
+                    TextRange::new(
+                        slice_offset(source, tag_source),
+                        slice_offset(source, tag_source) + name.len(),
+                    ),
+                    range,
+                    attrs_range,
+                ),
             )),
             DialogueToken::Text(body.to_owned()),
             DialogueToken::EndTag(DialogueEndTag::synthetic(name, boundary.close())),
@@ -456,7 +650,7 @@ fn parse_inline_style_head(source: &str) -> Option<(String, String, Option<&str>
     if matches!(source, "em" | "strong") {
         return Some((source.to_owned(), String::new(), None));
     }
-    let value = source.strip_prefix("color ")?.trim();
+    let value = trim_rich_text_whitespace(source.strip_prefix("color ")?);
     (!value.is_empty()).then(|| {
         let attrs = if (value.starts_with('"') && value.ends_with('"'))
             || (value.starts_with('\'') && value.ends_with('\''))
@@ -505,306 +699,8 @@ fn take_balanced_paren(source: &str, start: usize) -> Option<(String, usize)> {
     None
 }
 
-struct ParsedTag {
-    token: DialogueToken,
-    consumed_to: usize,
-    diagnostic: Option<DialogueTextDiagnostic>,
-}
-
-struct OpenTagContext {
-    inside_start: usize,
-    consumed_to: usize,
-    range: TextRange,
-    diagnostic: Option<DialogueTextDiagnostic>,
-}
-
-fn parse_tag(source: &str, open: usize) -> Option<ParsedTag> {
-    let boundary = find_dialogue_tag_boundary(source, open)?;
-    let close = boundary.close();
-    let unterminated_quote = boundary.unterminated_quote_start();
-    let inside_source = &source[open + '['.len_utf8()..close];
-    let inside = inside_source.trim();
-    let inside_leading = inside_source.len() - inside_source.trim_start().len();
-    let inside_start = open + '['.len_utf8() + inside_leading;
-    let consumed_to = close + ']'.len_utf8();
-    let range = TextRange::new(open, consumed_to);
-    let diagnostic = unterminated_quote.map(|quote_start| {
-        DialogueTextDiagnostic::new(
-            TextRange::new(quote_start, consumed_to),
-            "unterminated quote in dialogue tag arguments",
-            "close the quoted tag argument before `]`",
-        )
-    });
-    if let Some(name) = inside.strip_prefix('/') {
-        let name = name.trim();
-        return Some(ParsedTag {
-            token: if name.is_empty() {
-                DialogueToken::InferredEndTag
-            } else {
-                DialogueToken::EndTag(DialogueEndTag::new(name.to_owned(), range))
-            },
-            consumed_to,
-            diagnostic,
-        });
-    }
-
-    (!inside.is_empty()).then_some(())?;
-    Some(parse_open_tag(
-        inside,
-        OpenTagContext {
-            inside_start,
-            consumed_to,
-            range,
-            diagnostic,
-        },
-    ))
-}
-
-fn parse_open_tag(inside: &str, context: OpenTagContext) -> ParsedTag {
-    if inside.starts_with('.') {
-        let (selector, attrs) = split_tag_name_attrs(inside);
-        return parsed_dialogue_tag(selector, attrs, attrs.to_owned(), true, inside, context);
-    }
-    if let Some(attrs) = inside.strip_prefix('!') {
-        let attrs = attrs.trim();
-        return parsed_dialogue_tag("call", attrs, attrs.to_owned(), false, inside, context);
-    }
-    let (name, attrs) = split_tag_name_attrs(inside);
-    if name == "mark" && !attrs.is_empty() {
-        return ParsedTag {
-            token: DialogueToken::Mark(LineMark::new(attrs.to_owned())),
-            consumed_to: context.consumed_to,
-            diagnostic: context.diagnostic,
-        };
-    }
-    if name == "w" && !attrs.is_empty() && !attrs.contains('=') {
-        return parsed_dialogue_tag(name, attrs, format!("time={attrs}"), false, inside, context);
-    }
-    let (name, attrs) = normalize_tag_alias(name, attrs);
-    parsed_dialogue_tag(name, attrs, attrs.to_owned(), false, inside, context)
-}
-
-fn parsed_dialogue_tag(
-    name: &str,
-    authored_attrs: &str,
-    stored_attrs: String,
-    inferred: bool,
-    inside: &str,
-    context: OpenTagContext,
-) -> ParsedTag {
-    let attrs_start = context.inside_start + tag_attrs_offset(inside, authored_attrs);
-    let attrs_range = TextRange::new(attrs_start, attrs_start + authored_attrs.len());
-    let (arguments, argument_quote) = parse_tag_arguments(authored_attrs, attrs_start);
-    let tag = DialogueTag::new(
-        name.to_owned(),
-        TextRange::new(
-            context.inside_start,
-            context.inside_start + split_tag_name_attrs(inside).0.len(),
-        ),
-        stored_attrs,
-        arguments,
-        context.range,
-        attrs_range,
-    );
-    ParsedTag {
-        token: if inferred {
-            DialogueToken::InferredTag(tag)
-        } else {
-            DialogueToken::Tag(tag)
-        },
-        consumed_to: context.consumed_to,
-        diagnostic: context
-            .diagnostic
-            .or_else(|| argument_quote.map(tag_quote_diagnostic)),
-    }
-}
-
-/// Finds the quote-aware closing boundary for the tag beginning at `open`.
-///
-/// A `]` inside a matching single- or double-quoted argument does not close
-/// the tag. If a quote remains unterminated, the first `]` inside that quote is
-/// returned as a recovery boundary together with the quote's byte offset.
-#[must_use]
-pub fn find_dialogue_tag_boundary(source: &str, open: usize) -> Option<DialogueTagBoundary> {
-    source.get(open..)?.starts_with('[').then_some(())?;
-    let start = open + '['.len_utf8();
-    let mut quote = None;
-    let mut quote_start = None;
-    let mut escaped = false;
-    let mut quoted_close = None;
-    for (relative, ch) in source.get(start..)?.char_indices() {
-        let index = start + relative;
-        if let Some(active) = quote {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == active {
-                quote = None;
-                quote_start = None;
-                quoted_close = None;
-            } else if ch == ']' && quoted_close.is_none() {
-                quoted_close = Some(index);
-            }
-            continue;
-        }
-        if matches!(ch, '"' | '\'') {
-            quote = Some(ch);
-            quote_start = Some(index);
-            quoted_close = None;
-        } else if ch == ']' {
-            return Some(DialogueTagBoundary {
-                close: index,
-                unterminated_quote_start: None,
-            });
-        }
-    }
-    quoted_close.map(|close| DialogueTagBoundary {
-        close,
-        unterminated_quote_start: quote_start,
-    })
-}
-
-fn parse_tag_arguments(source: &str, base: usize) -> (Vec<DialogueTagArg>, Option<TextRange>) {
-    let mut arguments = Vec::new();
-    let mut cursor = 0;
-    let mut unterminated_quote = None;
-    while cursor < source.len() {
-        cursor += source[cursor..]
-            .chars()
-            .take_while(|ch| ch.is_whitespace())
-            .map(char::len_utf8)
-            .sum::<usize>();
-        if cursor >= source.len() {
-            break;
-        }
-        let start = cursor;
-        let mut quote = None;
-        let mut quote_start = None;
-        let mut escaped = false;
-        for (relative, ch) in source[start..].char_indices() {
-            let index = start + relative;
-            if let Some(active) = quote {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == active {
-                    quote = None;
-                    quote_start = None;
-                }
-            } else if matches!(ch, '"' | '\'') {
-                quote = Some(ch);
-                quote_start = Some(index);
-            } else if ch.is_whitespace() {
-                cursor = index;
-                break;
-            }
-            cursor = index + ch.len_utf8();
-        }
-        if let Some(quote_start) = quote_start {
-            unterminated_quote = Some(TextRange::new(base + quote_start, base + source.len()));
-        }
-        let argument_source = &source[start..cursor];
-        if argument_source.is_empty() {
-            continue;
-        }
-        let assignment = unquoted_assignment(argument_source);
-        let argument = if let Some(equal) = assignment {
-            let name_head = &argument_source[..equal];
-            let name_source = name_head.trim();
-            let name_offset = name_head.len() - name_head.trim_start().len();
-            let value_start = equal + '='.len_utf8();
-            let value_tail = &argument_source[value_start..];
-            let value_source = value_tail.trim();
-            let value_offset = value_start + value_tail.len() - value_tail.trim_start().len();
-            DialogueTagArg::Named {
-                name: name_source.to_owned(),
-                name_range: Some(TextRange::new(
-                    base + start + name_offset,
-                    base + start + name_offset + name_source.len(),
-                )),
-                value: tag_arg_value(value_source, base + start + value_offset),
-            }
-        } else {
-            DialogueTagArg::Positional {
-                value: tag_arg_value(argument_source, base + start),
-            }
-        };
-        arguments.push(argument);
-    }
-    (arguments, unterminated_quote)
-}
-
-fn unquoted_assignment(source: &str) -> Option<usize> {
-    let mut quote = None;
-    let mut escaped = false;
-    source.char_indices().find_map(|(index, ch)| {
-        if let Some(active) = quote {
-            if escaped {
-                escaped = false;
-            } else if ch == '\\' {
-                escaped = true;
-            } else if ch == active {
-                quote = None;
-            }
-            return None;
-        }
-        if matches!(ch, '"' | '\'') {
-            quote = Some(ch);
-            None
-        } else {
-            (ch == '=').then_some(index)
-        }
-    })
-}
-
-fn tag_arg_value(source: &str, start: usize) -> DialogueTagArgValue {
-    DialogueTagArgValue::new(
-        source.to_owned(),
-        unquote_tag_arg(source),
-        TextRange::new(start, start + source.len()),
-    )
-}
-
-fn unquote_tag_arg(source: &str) -> String {
-    source
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .or_else(|| {
-            source
-                .strip_prefix('\'')
-                .and_then(|value| value.strip_suffix('\''))
-        })
-        .unwrap_or(source)
-        .to_owned()
-}
-
-fn tag_quote_diagnostic(range: TextRange) -> DialogueTextDiagnostic {
-    DialogueTextDiagnostic::new(
-        range,
-        "unterminated quote in dialogue tag arguments",
-        "close the quoted tag argument before `]`",
-    )
-}
-
 fn slice_offset(source: &str, slice: &str) -> usize {
     (slice.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
-}
-
-fn tag_attrs_offset(source: &str, attrs: &str) -> usize {
-    if attrs.is_empty() {
-        source.len()
-    } else {
-        slice_offset(source, attrs)
-    }
-}
-
-fn split_tag_name_attrs(source: &str) -> (&str, &str) {
-    let mut parts = source.splitn(2, char::is_whitespace);
-    let name = parts.next().unwrap_or_default();
-    let attrs = parts.next().unwrap_or_default().trim();
-    (name, attrs)
 }
 
 fn split_once_top_level(source: &str, needle: char) -> Option<(&str, &str)> {
@@ -839,15 +735,6 @@ fn split_once_top_level(source: &str, needle: char) -> Option<(&str, &str)> {
         }
     }
     None
-}
-
-fn normalize_tag_alias<'a>(name: &'a str, attrs: &'a str) -> (&'a str, &'a str) {
-    match name {
-        "page" => ("p", attrs),
-        "wait" => ("l", attrs),
-        "nl" => ("r", attrs),
-        _ => (name, attrs),
-    }
 }
 
 fn parse_dialogue_expr_lossy(source: &str) -> Expr {
@@ -964,13 +851,25 @@ mod tests {
         );
         assert_eq!(tag.arguments().len(), 3);
         assert_eq!(tag.arguments()[0].name(), None);
-        assert_eq!(tag.arguments()[0].value().value(), ".warning");
+        assert_eq!(
+            tag.arguments()[0].value().expect("selector value").value(),
+            ".warning"
+        );
         assert_eq!(tag.arguments()[1].name(), Some("amplitude"));
-        assert_eq!(tag.arguments()[1].value().value(), "4px");
+        assert_eq!(
+            tag.arguments()[1].value().expect("amplitude value").value(),
+            "4px"
+        );
         assert_eq!(tag.arguments()[2].name(), Some("mood"));
-        assert_eq!(tag.arguments()[2].value().source(), "\"very urgent\"");
-        assert_eq!(tag.arguments()[2].value().value(), "very urgent");
-        let value_range = tag.arguments()[2].value().range();
+        assert_eq!(
+            tag.arguments()[2].value().expect("mood value").source(),
+            "\"very urgent\""
+        );
+        assert_eq!(
+            tag.arguments()[2].value().expect("mood value").value(),
+            "very urgent"
+        );
+        let value_range = tag.arguments()[2].value().expect("mood value").range();
         assert_eq!(&source[value_range.as_range()], "\"very urgent\"");
 
         let end = parsed
@@ -997,7 +896,7 @@ mod tests {
         };
         let argument = &tag.arguments()[1];
         let name_range = argument.name_range().expect("authored name range");
-        let value_range = argument.value().range();
+        let value_range = argument.value().expect("named value").range();
         assert_eq!(&source[name_range.as_range()], "accent");
         assert_eq!(&source[value_range.as_range()], "accent");
         assert!(name_range.end() < value_range.start());
@@ -1040,7 +939,10 @@ mod tests {
             panic!("effect tag");
         };
         assert_eq!(&source[tag.name_range().as_range()], "effect");
-        assert_eq!(tag.arguments()[1].value().value(), "contains ] safely");
+        assert_eq!(
+            tag.arguments()[1].value().expect("note value").value(),
+            "contains ] safely"
+        );
     }
 
     #[test]
@@ -1068,8 +970,14 @@ mod tests {
             panic!("color tag");
         };
         assert_eq!(tag.attrs(), "value=\"a]b:c\"");
-        assert_eq!(tag.arguments()[0].value().source(), "\"a]b:c\"");
-        assert_eq!(tag.arguments()[0].value().value(), "a]b:c");
+        assert_eq!(
+            tag.arguments()[0].value().expect("color value").source(),
+            "\"a]b:c\""
+        );
+        assert_eq!(
+            tag.arguments()[0].value().expect("color value").value(),
+            "a]b:c"
+        );
         assert!(matches!(
             parsed.tokens().get(1),
             Some(DialogueToken::Text(text)) if text == "text"
@@ -1094,8 +1002,11 @@ mod tests {
         let Some(DialogueToken::Tag(tag)) = parsed.tokens().first() else {
             panic!("recovered effect tag");
         };
-        assert_eq!(tag.arguments()[1].value().value(), "safe ] here");
-        assert_eq!(tag.arguments()[2].value().value(), "\"unterminated");
+        assert_eq!(
+            tag.arguments()[1].value().expect("safe note value").value(),
+            "safe ] here"
+        );
+        assert!(tag.arguments()[2].value().is_none());
         assert!(
             matches!(parsed.tokens().get(1), Some(DialogueToken::Text(text)) if text == "text")
         );
@@ -1111,9 +1022,9 @@ mod tests {
             panic!("color tag");
         };
         assert_eq!(tag.attrs(), "value=\"#a8b5ff\"");
-        assert_eq!(tag.arguments()[0].name(), Some("value"));
+        assert_eq!(tag.arguments()[0].name(), None);
         assert_eq!(tag.arguments()[0].name_range(), None);
-        let value = tag.arguments()[0].value();
+        let value = tag.arguments()[0].value().expect("short color value");
         assert_eq!(value.source(), "#a8b5ff");
         assert_eq!(&source[value.range().as_range()], "#a8b5ff");
         let Some(DialogueToken::EndTag(end)) = parsed.tokens().get(2) else {

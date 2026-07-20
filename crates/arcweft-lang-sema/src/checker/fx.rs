@@ -220,9 +220,10 @@ impl FxCatalog {
             || tag.arguments().iter().any(|argument| {
                 argument.name().is_some_and(|name| {
                     matches!(name, "type" | "struct" | "proxy")
-                        && self
-                            .text_proxy_types
-                            .contains(argument.value().value().trim_start_matches('.'))
+                        && argument.value().is_some_and(|value| {
+                            self.text_proxy_types
+                                .contains(value.value().trim_start_matches('.'))
+                        })
                 })
             })
     }

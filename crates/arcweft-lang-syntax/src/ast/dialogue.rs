@@ -5,8 +5,13 @@ use super::line_plan::LinePlan;
 use crate::{expr::Expr, text::DialogueTextDiagnostic};
 use thiserror::Error;
 
+mod rich_text;
 mod source_map;
 
+pub use rich_text::{
+    DialogueCallSurface, DialogueExprSurface, DialogueTagArg, DialogueTagArgSyntaxIssue,
+    DialogueTagArgValue, DialogueTagArgValueSurface, DialogueTagPayload, QuoteStyle,
+};
 pub use source_map::{
     DialogueContentSourceMap, DialogueContentSourceSegment, DialogueContentSourceSegmentKind,
 };
@@ -48,11 +53,21 @@ pub struct DialogueExpr {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueTag {
     name: String,
+    source_name: String,
+    canonical_name: Option<String>,
     name_range: TextRange,
     attrs: String,
+    payload: DialogueTagPayload,
     arguments: Vec<DialogueTagArg>,
     range: TextRange,
     attrs_range: TextRange,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct DialogueTagRanges {
+    name: TextRange,
+    tag: TextRange,
+    attrs: TextRange,
 }
 
 /// Language-owned semantic family of an authored dialogue tag.
@@ -100,27 +115,6 @@ impl DialogueTagKind {
     pub const fn is_point(self) -> bool {
         matches!(self, Self::Point | Self::Reset)
     }
-}
-
-/// One positional or named argument in a dialogue tag.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DialogueTagArg {
-    Positional {
-        value: DialogueTagArgValue,
-    },
-    Named {
-        name: String,
-        name_range: Option<TextRange>,
-        value: DialogueTagArgValue,
-    },
-}
-
-/// Authored value and source range of a dialogue-tag argument.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueTagArgValue {
-    source: String,
-    value: String,
-    range: TextRange,
 }
 
 /// Authored dialogue end tag or a typed synthetic end from inline span sugar.
@@ -394,26 +388,44 @@ impl DialogueExpr {
 }
 
 impl DialogueTag {
-    pub(crate) const fn new(
+    pub(crate) fn new(
         name: String,
-        name_range: TextRange,
+        source_name: String,
         attrs: String,
+        payload: DialogueTagPayload,
         arguments: Vec<DialogueTagArg>,
-        range: TextRange,
-        attrs_range: TextRange,
+        ranges: DialogueTagRanges,
     ) -> Self {
+        let canonical_name = if source_name == name {
+            None
+        } else {
+            Some(name.clone())
+        };
         Self {
             name,
-            name_range,
+            source_name,
+            canonical_name,
+            name_range: ranges.name,
             attrs,
+            payload,
             arguments,
-            range,
-            attrs_range,
+            range: ranges.tag,
+            attrs_range: ranges.attrs,
         }
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Exact authored tag-head spelling.
+    pub fn source_name(&self) -> &str {
+        &self.source_name
+    }
+
+    /// Canonical spelling when syntax normalized an alias.
+    pub fn canonical_name(&self) -> Option<&str> {
+        self.canonical_name.as_deref()
     }
 
     /// Typed semantic family of this tag.
@@ -431,6 +443,11 @@ impl DialogueTag {
 
     pub fn attrs(&self) -> &str {
         &self.attrs
+    }
+
+    /// Syntax-owned payload classification.
+    pub const fn payload(&self) -> &DialogueTagPayload {
+        &self.payload
     }
 
     /// Parsed positional and named arguments in authored order.
@@ -508,70 +525,9 @@ impl DialogueTag {
     }
 }
 
-impl DialogueTagArg {
-    /// Named argument key, or `None` for a positional argument.
-    pub fn name(&self) -> Option<&str> {
-        match self {
-            Self::Positional { .. } => None,
-            Self::Named { name, .. } => Some(name),
-        }
-    }
-
-    /// Authored argument value.
-    pub const fn value(&self) -> &DialogueTagArgValue {
-        match self {
-            Self::Positional { value } | Self::Named { value, .. } => value,
-        }
-    }
-
-    /// Authored named-key range. Synthetic sugar arguments and positional
-    /// arguments have no key range.
-    pub const fn name_range(&self) -> Option<TextRange> {
-        match self {
-            Self::Positional { .. } => None,
-            Self::Named { name_range, .. } => *name_range,
-        }
-    }
-
-    /// Full argument range from key/value start through the value end.
-    pub const fn range(&self) -> TextRange {
-        match self {
-            Self::Positional { value } => value.range,
-            Self::Named {
-                name_range, value, ..
-            } => {
-                let start = match name_range {
-                    Some(range) => range.start(),
-                    None => value.range.start(),
-                };
-                TextRange::new(start, value.range.end())
-            }
-        }
-    }
-}
-
-impl DialogueTagArgValue {
-    pub(crate) fn new(source: String, value: String, range: TextRange) -> Self {
-        Self {
-            source,
-            value,
-            range,
-        }
-    }
-
-    /// Exact authored value source, including quotes when present.
-    pub fn source(&self) -> &str {
-        &self.source
-    }
-
-    /// Value with one matching outer quote pair removed.
-    pub fn value(&self) -> &str {
-        &self.value
-    }
-
-    /// Exact authored value range in the owning tag's coordinate space.
-    pub const fn range(&self) -> TextRange {
-        self.range
+impl DialogueTagRanges {
+    pub(crate) const fn new(name: TextRange, tag: TextRange, attrs: TextRange) -> Self {
+        Self { name, tag, attrs }
     }
 }
 

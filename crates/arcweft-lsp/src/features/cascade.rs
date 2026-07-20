@@ -385,11 +385,11 @@ fn selected_inline_style_path(
     offset: usize,
 ) -> Option<String> {
     let selector = tag.arguments().first().and_then(|argument| {
-        argument
-            .name()
-            .is_none()
-            .then(|| dot_selector(argument.value().value(), argument.value().range()))
-            .flatten()
+        if argument.name().is_some() {
+            return None;
+        }
+        let value = argument.value()?;
+        dot_selector(value.value(), value.range())
     });
     selector_or_attr_path(
         selector.as_ref().map_or("", |(name, _)| *name),
@@ -430,8 +430,9 @@ fn selector_or_attr_path(
     }
     arguments.iter().find_map(|argument| {
         let name = argument.name()?;
-        range_contains(&argument.value().range(), offset)
-            .then(|| path_for(selector, name, argument.value().value()))
+        let value = argument.value()?;
+        range_contains(&value.range(), offset)
+            .then(|| path_for(selector, name, value.value()))
             .flatten()
     })
 }
