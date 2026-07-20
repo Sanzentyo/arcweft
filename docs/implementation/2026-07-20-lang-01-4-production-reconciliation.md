@@ -51,6 +51,23 @@ The required correction is isolated in:
 
 - [Lang-01.4.1 resource-reference and retained-identity schema contract
   correction](../reviews/requests/2026-07-20-lang-01.4.1-resource-reference-and-retained-identity-schema-contract-correction.md).
+- [Lang-01.4.2 resource extension-manifest wire contract
+  correction](../reviews/requests/2026-07-20-lang-01.4.2-resource-extension-manifest-wire-contract-correction.md).
+
+Lang-01.4 names `ResourceTypeManifestFileV1` and requires tagged structural
+records, but neither the package nor current repository documentation freezes
+the exact wire tags, scalar encodings, duplicate and unknown-field rules,
+canonical serialization, or nested diagnostic ranges. The public decoder and
+encoder therefore remain outside the safe implementation boundary until
+Lang-01.4.2 returns. This does not block the generic semantic registry.
+- [Lang-01.4.2 resource extension manifest wire-contract
+  correction](../reviews/requests/2026-07-20-lang-01.4.2-resource-extension-manifest-wire-contract-correction.md).
+
+Lang-01.4 names the neutral extension manifest and requires tagged structural
+records, but does not fix an exact independently decodable file shape. The
+generic in-memory registry can proceed; strict extension decode waits for
+Lang-01.4.2 rather than inventing tag names, scalar encodings, package
+coordinates, or a second manifest reader.
 
 The TTS-specific Character/provider portion must consume
 AW-AH-009.4.1.2 rather than independently selecting a competing speaker
@@ -75,4 +92,3 @@ identity.
 No Rust, schema, codec, fixture, parser recognizer, compatibility layer,
 removed-spelling diagnostic, source gate, CSS route, or Takumi route is added
 by this note.
-
