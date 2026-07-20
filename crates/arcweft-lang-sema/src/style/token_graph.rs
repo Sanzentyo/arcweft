@@ -195,10 +195,10 @@ fn collect_token_references(expr: &Expr, references: &mut BTreeSet<String>) {
             collect_token_references(len, references);
         }
         Expr::Select(select) => collect_token_references(select.target(), references),
-        Expr::Try { expr }
-        | Expr::Await { expr, .. }
-        | Expr::Unary { expr, .. }
-        | Expr::Closure { body: expr, .. } => collect_token_references(expr, references),
+        Expr::Try { expr } | Expr::Unary { expr, .. } | Expr::Closure { body: expr, .. } => {
+            collect_token_references(expr, references);
+        }
+        Expr::Await(awaited) => collect_token_references(awaited.operand(), references),
         Expr::Borrow(borrow) => collect_token_references(borrow.operand(), references),
         Expr::Deref(deref) => collect_token_references(deref.operand(), references),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {

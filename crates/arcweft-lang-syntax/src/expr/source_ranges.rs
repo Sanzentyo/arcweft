@@ -491,13 +491,15 @@ fn collect_operator_expr_source_ranges<'a>(
             }
             true
         }
-        Expr::Await { expr, applies_try } => {
-            if let Some(rest) = source.strip_prefix("try await") {
-                collect_expr_source_ranges_inner(expr, rest, base + "try await".len(), ranges);
-            } else if *applies_try && let Some(rest) = source.strip_prefix("await?") {
-                collect_expr_source_ranges_inner(expr, rest, base + "await?".len(), ranges);
-            } else if let Some(rest) = source.strip_prefix("await") {
-                collect_expr_source_ranges_inner(expr, rest, base + "await".len(), ranges);
+        Expr::Await(awaited) => {
+            let operand_range = awaited.source().operand();
+            if let Some(operand_source) = absolute_source_slice(source, base, operand_range) {
+                collect_expr_source_ranges_inner(
+                    awaited.operand(),
+                    operand_source,
+                    operand_range.start(),
+                    ranges,
+                );
             }
             true
         }

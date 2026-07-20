@@ -833,14 +833,11 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
         "fn load_opening_assets() -> ArcResult<OpeningAssets>"
     );
     assert!(matches!(
-        function.body_statements()[0],
+        &function.body_statements()[0],
         Stmt::Let {
-            expr: Expr::Await {
-                applies_try: true,
-                ..
-            },
+            expr: Expr::Await(awaited),
             ..
-        }
+        } if awaited.propagation() == AwaitPropagation::PropagateError
     ));
     assert!(matches!(
         function.body_value().map(AuthoredExpr::expr),

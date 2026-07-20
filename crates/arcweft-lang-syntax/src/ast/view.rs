@@ -1452,10 +1452,11 @@ fn collect_expr_action_invokes(
             collect_two_expr_action_invokes(value, len, range, invokes);
         }
         Expr::Select(select) => collect_expr_action_invokes(select.target(), range, invokes),
-        Expr::Try { expr: target }
-        | Expr::Await { expr: target, .. }
-        | Expr::Unary { expr: target, .. } => {
+        Expr::Try { expr: target } | Expr::Unary { expr: target, .. } => {
             collect_expr_action_invokes(target, range, invokes);
+        }
+        Expr::Await(awaited) => {
+            collect_expr_action_invokes(awaited.operand(), range, invokes);
         }
         Expr::Borrow(borrow) => collect_expr_action_invokes(borrow.operand(), range, invokes),
         Expr::Deref(deref) => collect_expr_action_invokes(deref.operand(), range, invokes),

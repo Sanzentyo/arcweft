@@ -15,7 +15,7 @@ use arcweft_lang_syntax::{
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
-    expr::{Expr, MatchExprArm},
+    expr::{CallExpr, Expr, MatchExprArm},
 };
 
 /// Kind of symbol-like syntax discovered in lowered HIR.
@@ -828,23 +828,7 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(value, uses);
             collect_expr(len, uses);
         }
-        Expr::Call(call) => {
-            if let Expr::Path(path) = call.callee() {
-                uses.push(SymbolUse::new(
-                    SymbolUseKind::Call,
-                    path.as_label().to_owned(),
-                ));
-            } else if let Expr::Select(select) = call.callee() {
-                uses.push(SymbolUse::new(
-                    SymbolUseKind::Method,
-                    select.member().as_str().to_owned(),
-                ));
-            }
-            collect_expr(call.callee(), uses);
-            for arg in call.args() {
-                collect_expr(arg.value(), uses);
-            }
-        }
+        Expr::Call(call) => collect_call_expr(call, uses),
         Expr::Select(select) => collect_expr(select.target(), uses),
         Expr::DialogueCall { callee, plan, .. } => {
             collect_dialogue_call_expr(callee, plan.as_ref(), uses);
@@ -858,9 +842,10 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(rhs, uses);
         }
         Expr::Closure { body, .. } => collect_expr(body, uses),
-        Expr::Unary { expr, .. } | Expr::Try { expr } | Expr::Await { expr, .. } => {
+        Expr::Unary { expr, .. } | Expr::Try { expr } => {
             collect_expr(expr, uses);
         }
+        Expr::Await(awaited) => collect_expr(awaited.operand(), uses),
         Expr::Borrow(borrow) => collect_expr(borrow.operand(), uses),
         Expr::Deref(deref) => collect_expr(deref.operand(), uses),
         Expr::Thread { block } => collect_syntax_flow_block(block.body(), uses),
@@ -905,6 +890,24 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         ),
         Expr::Match { scrutinee, arms } => collect_match_expr(scrutinee, arms, uses),
         Expr::Raw(raw) => uses.push(SymbolUse::new(SymbolUseKind::RawExpr, raw.clone())),
+    }
+}
+
+fn collect_call_expr(call: &CallExpr, uses: &mut Vec<SymbolUse>) {
+    if let Expr::Path(path) = call.callee() {
+        uses.push(SymbolUse::new(
+            SymbolUseKind::Call,
+            path.as_label().to_owned(),
+        ));
+    } else if let Expr::Select(select) = call.callee() {
+        uses.push(SymbolUse::new(
+            SymbolUseKind::Method,
+            select.member().as_str().to_owned(),
+        ));
+    }
+    collect_expr(call.callee(), uses);
+    for arg in call.args() {
+        collect_expr(arg.value(), uses);
     }
 }
 

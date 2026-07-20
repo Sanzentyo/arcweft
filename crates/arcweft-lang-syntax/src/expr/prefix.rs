@@ -1,6 +1,6 @@
 use super::{
-    DottedPath, Expr, ExprOp, ExprParseError, ExprParser, LexedToken, Name, Placeholder, Token,
-    UnaryOp,
+    AwaitExpr, AwaitExprSource, AwaitPropagation, AwaitPropagationSource, DottedPath, Expr, ExprOp,
+    ExprParseError, ExprParser, LexedToken, Name, Placeholder, Token, UnaryOp,
 };
 use crate::ast::common::TextRange;
 use crate::reference::{BorrowExpr, BorrowKind, DerefExpr};
@@ -23,24 +23,9 @@ impl ExprParser {
         let prefix_range = self.absolute_range(&prefix)?;
         match prefix.token {
             Token::Ident(keyword) if keyword == "try" && self.peek_ident("await") => {
-                self.bump();
-                Ok(Expr::Await {
-                    expr: Box::new(self.parse_expr_bp(90)?),
-                    applies_try: true,
-                })
+                self.parse_try_await_expr(prefix_range)
             }
-            Token::Ident(keyword) if keyword == "await" => {
-                let applies_try = if self.peek() == &Token::Question {
-                    self.bump();
-                    true
-                } else {
-                    false
-                };
-                Ok(Expr::Await {
-                    expr: Box::new(self.parse_expr_bp(90)?),
-                    applies_try,
-                })
-            }
+            Token::Ident(keyword) if keyword == "await" => self.parse_await_expr(prefix_range),
             Token::Ident(keyword) if keyword == "try" => Ok(Expr::Try {
                 expr: Box::new(self.parse_expr_bp(90)?),
             }),
@@ -91,10 +76,54 @@ impl ExprParser {
             Token::LParen => self.parse_tuple_or_group(),
             Token::LBracket => self.parse_bracket_seq(),
             Token::LBrace => Ok(Expr::RecordLiteral(self.parse_record_fields()?)),
-            token => Err(ExprParseError::new(&format!(
-                "expected expression, found {token:?}"
-            ))),
+            token => Err(ExprParseError::at(
+                "syntax.expr.parse",
+                &format!("expected expression, found {token:?}"),
+                prefix_range,
+            )),
         }
+    }
+
+    fn parse_try_await_expr(&mut self, try_keyword: TextRange) -> Result<Expr, ExprParseError> {
+        let await_keyword = self.bump_lexed();
+        let await_keyword = self.absolute_range(&await_keyword)?;
+        let operand = self.parse_expr_bp_spanned(90)?;
+        Ok(Expr::Await(AwaitExpr::new(
+            Box::new(operand.expr),
+            AwaitPropagation::PropagateError,
+            AwaitExprSource::new(
+                TextRange::new(try_keyword.start(), operand.range.end()),
+                await_keyword,
+                operand.range,
+                Some(AwaitPropagationSource::PrefixTry { try_keyword }),
+            ),
+        )))
+    }
+
+    fn parse_await_expr(&mut self, await_keyword: TextRange) -> Result<Expr, ExprParseError> {
+        let propagation_source = if self.peek() == &Token::Question {
+            let question = self.bump_lexed();
+            Some(AwaitPropagationSource::AttachedQuestion {
+                question: self.absolute_range(&question)?,
+            })
+        } else {
+            None
+        };
+        let operand = self.parse_expr_bp_spanned(90)?;
+        Ok(Expr::Await(AwaitExpr::new(
+            Box::new(operand.expr),
+            if propagation_source.is_some() {
+                AwaitPropagation::PropagateError
+            } else {
+                AwaitPropagation::PreserveResult
+            },
+            AwaitExprSource::new(
+                TextRange::new(await_keyword.start(), operand.range.end()),
+                await_keyword,
+                operand.range,
+                propagation_source,
+            ),
+        )))
     }
 
     fn parse_prefix_chain(&mut self, first: LexedToken) -> Result<Expr, ExprParseError> {

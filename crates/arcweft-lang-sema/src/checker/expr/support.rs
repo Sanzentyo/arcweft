@@ -248,7 +248,7 @@ pub(super) fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::Index { .. } => "index",
         Expr::Pipe { .. } => "pipe",
         Expr::Try { .. } => "try",
-        Expr::Await { .. } => "await",
+        Expr::Await(_) => "await",
         Expr::Thread { .. } => "thread",
         Expr::Range { .. } => "range",
         Expr::Record { .. } => "record",

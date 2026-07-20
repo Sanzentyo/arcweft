@@ -281,6 +281,116 @@ impl SelectExpr {
     }
 }
 
+/// Error-propagation behavior attached directly to an `await` expression.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AwaitPropagation {
+    /// Preserve the awaited `Need<T, E>` result as `Result<T, E>`.
+    PreserveResult,
+    /// Propagate `Err(E)` through the enclosing result boundary and yield `T`.
+    PropagateError,
+}
+
+/// Authored operator spelling that requests await error propagation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum AwaitPropagationSource {
+    /// `try await operand`.
+    PrefixTry { try_keyword: TextRange },
+    /// `await? operand`.
+    AttachedQuestion { question: TextRange },
+}
+
+impl AwaitPropagationSource {
+    /// Returns the exact authored propagation-operator range.
+    pub const fn range(self) -> TextRange {
+        match self {
+            Self::PrefixTry { try_keyword } => try_keyword,
+            Self::AttachedQuestion { question } => question,
+        }
+    }
+}
+
+/// Exact source ownership for one authored `await` expression.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AwaitExprSource {
+    whole: TextRange,
+    await_keyword: TextRange,
+    operand: TextRange,
+    propagation: Option<AwaitPropagationSource>,
+}
+
+impl AwaitExprSource {
+    pub(crate) const fn new(
+        whole: TextRange,
+        await_keyword: TextRange,
+        operand: TextRange,
+        propagation: Option<AwaitPropagationSource>,
+    ) -> Self {
+        Self {
+            whole,
+            await_keyword,
+            operand,
+            propagation,
+        }
+    }
+
+    /// Returns the complete authored await-expression range.
+    pub const fn whole(self) -> TextRange {
+        self.whole
+    }
+
+    /// Returns the exact `await` keyword range.
+    pub const fn await_keyword(self) -> TextRange {
+        self.await_keyword
+    }
+
+    /// Returns the exact operand range.
+    pub const fn operand(self) -> TextRange {
+        self.operand
+    }
+
+    /// Returns the authored propagation spelling, when propagation was requested.
+    pub const fn propagation(self) -> Option<AwaitPropagationSource> {
+        self.propagation
+    }
+}
+
+/// Typed surface representation of direct-style suspension.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitExpr {
+    operand: Box<Expr>,
+    propagation: AwaitPropagation,
+    source: AwaitExprSource,
+}
+
+impl AwaitExpr {
+    pub(crate) const fn new(
+        operand: Box<Expr>,
+        propagation: AwaitPropagation,
+        source: AwaitExprSource,
+    ) -> Self {
+        Self {
+            operand,
+            propagation,
+            source,
+        }
+    }
+
+    /// Returns the awaited `Need<T, E>` expression.
+    pub const fn operand(&self) -> &Expr {
+        &self.operand
+    }
+
+    /// Returns whether the result is preserved or its error is propagated.
+    pub const fn propagation(&self) -> AwaitPropagation {
+        self.propagation
+    }
+
+    /// Returns exact source ranges owned by this await expression.
+    pub const fn source(&self) -> AwaitExprSource {
+        self.source
+    }
+}
+
 /// Expression syntax preserved for type checking and HIR lowering.
 ///
 /// This parser records expression shape without name resolution, generic
@@ -324,10 +434,7 @@ pub enum Expr {
     Try {
         expr: Box<Expr>,
     },
-    Await {
-        expr: Box<Expr>,
-        applies_try: bool,
-    },
+    Await(AwaitExpr),
     Thread {
         block: Box<ThreadBlock>,
     },

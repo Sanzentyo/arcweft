@@ -35,10 +35,8 @@ task fn load_bg_result() -> Result<Image, AssetError> {
     let hir = lower_to_hir(&tree).expect("task function lowers");
     assert!(matches!(
         hir.functions()[0].value().map(AuthoredExpr::expr),
-        Some(Expr::Await {
-            applies_try: false,
-            ..
-        })
+        Some(Expr::Await(awaited))
+            if awaited.propagation() == AwaitPropagation::PreserveResult
     ));
 
     let env = TypeCheckEnv::new().with_function(
@@ -380,12 +378,9 @@ flow @flow.loading loading {
     assert!(matches!(
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Let {
-            expr: Expr::Await {
-                applies_try: true,
-                ..
-            },
+            expr: Expr::Await(awaited),
             ..
-        })
+        }) if awaited.propagation() == AwaitPropagation::PropagateError
     ));
 }
 

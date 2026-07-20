@@ -34,8 +34,8 @@ pub(super) use arcweft_lang_syntax::{
         },
     },
     expr::{
-        BinaryOp, CallArg, ComputationBlockKind, Expr, LifetimeScopeKind, Literal, Placeholder,
-        UnaryOp, parse_expr,
+        AwaitPropagation, BinaryOp, CallArg, ComputationBlockKind, Expr, LifetimeScopeKind,
+        Literal, Placeholder, UnaryOp, parse_expr,
     },
     lint::{SyntaxLintCode, lint_id_policy},
     parser::{parse_source, recovery::ParseError},

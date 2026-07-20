@@ -293,9 +293,10 @@ fn collect_mounted_view_ids_from_expr(expr: &Expr, ids: &mut BTreeSet<String>) {
             collect_mounted_view_ids_from_expr(lhs, ids);
             collect_mounted_view_ids_from_expr(rhs, ids);
         }
-        Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Unary { expr, .. } => {
+        Expr::Try { expr } | Expr::Unary { expr, .. } => {
             collect_mounted_view_ids_from_expr(expr, ids);
         }
+        Expr::Await(awaited) => collect_mounted_view_ids_from_expr(awaited.operand(), ids),
         Expr::Borrow(borrow) => collect_mounted_view_ids_from_expr(borrow.operand(), ids),
         Expr::Deref(deref) => collect_mounted_view_ids_from_expr(deref.operand(), ids),
         Expr::Thread { block } => {

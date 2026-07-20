@@ -212,7 +212,8 @@ fn serialized_numeric_bracket_seq_source(
 
 fn snapshot_expr_kind(expr: &Expr) -> Option<ReplBindingSnapshotKind> {
     match expr {
-        Expr::Try { expr } | Expr::Await { expr, .. } => snapshot_expr_kind(expr),
+        Expr::Try { expr } => snapshot_expr_kind(expr),
+        Expr::Await(awaited) => snapshot_expr_kind(awaited.operand()),
         Expr::Call(call) if snapshot_call_args_are_self_contained(call.args()) => {
             call_snapshot_kind(call.callee())
         }

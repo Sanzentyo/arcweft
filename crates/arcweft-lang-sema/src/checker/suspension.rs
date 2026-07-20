@@ -6,7 +6,7 @@ use super::{
     TypeChecker, TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
     type_contains_borrow_ref, unify_loop_break_types,
 };
-use arcweft_lang_syntax::ast::flow::AuthoredExpr;
+use arcweft_lang_syntax::{ast::flow::AuthoredExpr, expr::AwaitPropagation};
 
 impl TypeChecker<'_> {
     pub(super) fn check_yield_stmt(&mut self, expr: &AuthoredExpr) {
@@ -62,10 +62,18 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_await_expr(&mut self, expr: &Expr, applies_try: bool) -> Option<TypeKind> {
+    pub(super) fn check_await_expr(
+        &mut self,
+        expr: &Expr,
+        propagation: AwaitPropagation,
+    ) -> Option<TypeKind> {
         self.reject_active_borrows(SuspensionBoundary::Await);
         match self.check_expr(expr) {
-            Some(TypeKind::Need { ready, .. }) if applies_try => Some(*ready),
+            Some(TypeKind::Need { ready, .. })
+                if propagation == AwaitPropagation::PropagateError =>
+            {
+                Some(*ready)
+            }
             Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
             Some(other) => {
                 self.errors.push(TypeCheckError::new(format!(

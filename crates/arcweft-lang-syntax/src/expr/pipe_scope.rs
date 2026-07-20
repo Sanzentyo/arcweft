@@ -38,10 +38,10 @@ impl Expr {
             Self::Select(select) => select.target().contains_pipe_left(),
             Self::DialogueCall { callee, .. } => callee.contains_pipe_left(),
             Self::Pipe { lhs, .. } => lhs.contains_pipe_left(),
-            Self::Try { expr }
-            | Self::Await { expr, .. }
-            | Self::Unary { expr, .. }
-            | Self::Closure { body: expr, .. } => expr.contains_pipe_left(),
+            Self::Try { expr } | Self::Unary { expr, .. } | Self::Closure { body: expr, .. } => {
+                expr.contains_pipe_left()
+            }
+            Self::Await(awaited) => awaited.operand().contains_pipe_left(),
             Self::Borrow(borrow) => borrow.operand().contains_pipe_left(),
             Self::Deref(deref) => deref.operand().contains_pipe_left(),
             Self::Thread { block } => block.body().iter().any(flow_item_contains_pipe_left),

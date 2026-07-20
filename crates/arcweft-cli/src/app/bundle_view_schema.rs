@@ -284,7 +284,7 @@ impl ViewValueProgramCompiler {
         &mut self,
         source: &Expr,
     ) -> Result<ViewValueProgramId, ViewValueCompileError> {
-        if matches!(source, Expr::Call(_) | Expr::Await { .. }) {
+        if matches!(source, Expr::Call(_) | Expr::Await(_)) {
             let discriminant = symbol_discriminant(&format!("{source:?}"));
             let label = u32::from_le_bytes(discriminant.to_le_bytes());
             let mut instructions = Vec::new();

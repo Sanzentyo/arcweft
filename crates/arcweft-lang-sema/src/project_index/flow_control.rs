@@ -257,10 +257,10 @@ fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
         }
         Expr::Select(select) => summary.merge(summarize_expr_control(select.target())),
         Expr::Try { expr: target }
-        | Expr::Await { expr: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::DialogueCall { callee: target, .. }
         | Expr::Closure { body: target, .. } => summary.merge(summarize_expr_control(target)),
+        Expr::Await(awaited) => summary.merge(summarize_expr_control(awaited.operand())),
         Expr::Borrow(borrow) => summary.merge(summarize_expr_control(borrow.operand())),
         Expr::Deref(deref) => summary.merge(summarize_expr_control(deref.operand())),
         Expr::Index {

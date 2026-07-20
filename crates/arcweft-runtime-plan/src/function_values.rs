@@ -460,7 +460,7 @@ fn runtime_function_value_expr_supported(
         | Expr::Placeholder(arcweft_lang_hir::syntax::expr::Placeholder::Partial)
         | Expr::DialogueCall { .. }
         | Expr::Try { .. }
-        | Expr::Await { .. }
+        | Expr::Await(_)
         | Expr::Thread { .. }
         | Expr::Raw(_) => false,
         Expr::Closure { params, body, .. } => {

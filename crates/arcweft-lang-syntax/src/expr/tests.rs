@@ -1,12 +1,85 @@
 use super::{
-    BinaryOp, CallRecoveryBoundarySyntax, Expr, ExprParseError, ExprParseErrorKind, Placeholder,
-    parse_expr, parse_expr_fragment_recovering_at,
+    AwaitPropagation, AwaitPropagationSource, BinaryOp, CallRecoveryBoundarySyntax, Expr,
+    ExprParseError, ExprParseErrorKind, Placeholder, parse_expr, parse_expr_fragment_recovering_at,
 };
 use crate::ast::common::TextRange;
 use crate::reference::BorrowKind;
 
 fn strict_error(source: &str) -> ExprParseError {
     parse_expr(source).expect_err("fixture must fail strict expression parsing")
+}
+
+#[test]
+fn await_expression_preserves_semantics_and_exact_source_ranges() {
+    let Expr::Await(plain) = parse_expr("await load()").expect("plain await parses") else {
+        panic!("expected await expression");
+    };
+    assert_eq!(plain.propagation(), AwaitPropagation::PreserveResult);
+    assert_eq!(plain.source().whole(), TextRange::new(0, 12));
+    assert_eq!(plain.source().await_keyword(), TextRange::new(0, 5));
+    assert_eq!(plain.source().operand(), TextRange::new(6, 12));
+    assert_eq!(plain.source().propagation(), None);
+    assert!(matches!(plain.operand(), Expr::Call(_)));
+
+    let Expr::Await(prefixed) =
+        parse_expr("try await load()").expect("prefix propagation await parses")
+    else {
+        panic!("expected await expression");
+    };
+    assert_eq!(prefixed.propagation(), AwaitPropagation::PropagateError);
+    assert_eq!(prefixed.source().whole(), TextRange::new(0, 16));
+    assert_eq!(prefixed.source().await_keyword(), TextRange::new(4, 9));
+    assert_eq!(prefixed.source().operand(), TextRange::new(10, 16));
+    assert_eq!(
+        prefixed.source().propagation(),
+        Some(AwaitPropagationSource::PrefixTry {
+            try_keyword: TextRange::new(0, 3),
+        })
+    );
+
+    let Expr::Await(attached) =
+        parse_expr("await? load()").expect("attached propagation await parses")
+    else {
+        panic!("expected await expression");
+    };
+    assert_eq!(attached.propagation(), AwaitPropagation::PropagateError);
+    assert_eq!(attached.source().whole(), TextRange::new(0, 13));
+    assert_eq!(attached.source().await_keyword(), TextRange::new(0, 5));
+    assert_eq!(attached.source().operand(), TextRange::new(7, 13));
+    assert_eq!(
+        attached.source().propagation(),
+        Some(AwaitPropagationSource::AttachedQuestion {
+            question: TextRange::new(5, 6),
+        })
+    );
+}
+
+#[test]
+fn await_question_grouping_keeps_attached_and_postfix_try_distinct() {
+    let Expr::Await(awaited) = parse_expr("await need?").expect("await operand try parses") else {
+        panic!("expected outer await expression");
+    };
+    assert_eq!(awaited.propagation(), AwaitPropagation::PreserveResult);
+    assert!(matches!(awaited.operand(), Expr::Try { .. }));
+    assert_eq!(awaited.source().whole(), TextRange::new(0, 11));
+    assert_eq!(awaited.source().operand(), TextRange::new(6, 11));
+
+    let Expr::Try { expr } = parse_expr("(await need)?").expect("outer postfix try parses") else {
+        panic!("expected outer try expression");
+    };
+    let Expr::Await(awaited) = expr.as_ref() else {
+        panic!("expected postfix try to wrap await");
+    };
+    assert_eq!(awaited.propagation(), AwaitPropagation::PreserveResult);
+    assert_eq!(awaited.source().whole(), TextRange::new(1, 11));
+    assert_eq!(awaited.source().operand(), TextRange::new(7, 11));
+}
+
+#[test]
+fn missing_await_operand_reports_the_eof_insertion_point() {
+    let error = strict_error("await");
+    assert_eq!(error.code(), "syntax.expr.parse");
+    assert_eq!(error.range(), TextRange::new(5, 5));
 }
 
 #[test]

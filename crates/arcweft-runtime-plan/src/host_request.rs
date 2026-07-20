@@ -210,7 +210,8 @@ fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 args: call.args(),
             })
         }
-        Expr::Await { expr, .. } | Expr::Try { expr } => call_parts(expr),
+        Expr::Await(awaited) => call_parts(awaited.operand()),
+        Expr::Try { expr } => call_parts(expr),
         _ => None,
     }
 }
@@ -241,7 +242,8 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
                 args: call.args(),
             })
         }
-        Expr::Await { expr, .. } | Expr::Try { expr } => agent_call_parts(expr),
+        Expr::Await(awaited) => agent_call_parts(awaited.operand()),
+        Expr::Try { expr } => agent_call_parts(expr),
         _ => None,
     }
 }

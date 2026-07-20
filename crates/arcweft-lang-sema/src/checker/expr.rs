@@ -18,8 +18,8 @@ use arcweft_lang_syntax::ast::dialogue::DialogueContent;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
-    BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder, SelectExpr,
-    UnaryOp,
+    AwaitExpr, BinaryOp, CallArg, ComputationBlockKind, Literal, MatchExprArm, Placeholder,
+    SelectExpr, UnaryOp,
 };
 use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
 
@@ -202,7 +202,7 @@ impl TypeChecker<'_> {
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs, expression_id),
             Expr::Try { expr } => self.check_try_expr(expr),
-            Expr::Await { expr, applies_try } => self.check_await_expr_node(expr, *applies_try),
+            Expr::Await(awaited) => self.check_await_expr_node(awaited),
             Expr::Thread { block } => Some(self.check_thread_expr(block)),
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref(), expected))
@@ -293,14 +293,14 @@ impl TypeChecker<'_> {
             .is_some_and(|context| matches!(context, YieldContext::Seq { .. }))
     }
 
-    fn check_await_expr_node(&mut self, expr: &Expr, applies_try: bool) -> Option<TypeKind> {
+    fn check_await_expr_node(&mut self, awaited: &AwaitExpr) -> Option<TypeKind> {
         self.record_static_effect("control.suspend", "await");
         if self.in_seq_context() {
             self.errors.push(TypeCheckError::new(
                 "`seq` blocks are pure and cannot await".to_owned(),
             ));
         }
-        self.check_await_expr(expr, applies_try)
+        self.check_await_expr(awaited.operand(), awaited.propagation())
     }
 
     fn check_thread_expr(&mut self, block: &ThreadBlock) -> TypeKind {

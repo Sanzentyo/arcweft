@@ -1364,9 +1364,10 @@ impl ObligationCollector {
                 self.collect_expr(lhs);
                 self.collect_expr(rhs);
             }
-            Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Unary { expr, .. } => {
+            Expr::Try { expr } | Expr::Unary { expr, .. } => {
                 self.collect_expr(expr);
             }
+            Expr::Await(awaited) => self.collect_expr(awaited.operand()),
             Expr::Borrow(borrow) => self.collect_expr(borrow.operand()),
             Expr::Deref(deref) => self.collect_expr(deref.operand()),
             Expr::Thread { block } => self.collect_thread(block),

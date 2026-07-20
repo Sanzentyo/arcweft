@@ -553,10 +553,7 @@ fn strict_runtime_rejects_try_and_await_without_control_boundaries() {
     let try_expr = Expr::Try {
         expr: Box::new(method_call.clone()),
     };
-    let await_expr = Expr::Await {
-        expr: Box::new(method_call),
-        applies_try: false,
-    };
+    let await_expr = parsed_expr("await frame.objects.require_role(\"dialogue_view\")");
 
     let try_error =
         lower_runtime_expr_strict(&try_expr).expect_err("try requires control lowering");

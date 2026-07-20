@@ -1296,9 +1296,10 @@ impl<'a> SemanticAnalyzer<'a> {
                 self.collect_expr(lhs, state);
                 self.collect_expr(rhs, state);
             }
-            Expr::Try { expr } | Expr::Await { expr, .. } | Expr::Unary { expr, .. } => {
+            Expr::Try { expr } | Expr::Unary { expr, .. } => {
                 self.collect_expr(expr, state);
             }
+            Expr::Await(awaited) => self.collect_expr(awaited.operand(), state),
             Expr::Borrow(borrow) => self.collect_expr(borrow.operand(), state),
             Expr::Deref(deref) => self.collect_expr(deref.operand(), state),
             Expr::Thread { block } => self.collect_thread(block),

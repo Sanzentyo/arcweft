@@ -24,9 +24,8 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
         Expr::Index { target, index } => {
             expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(index)
         }
-        Expr::Unary { expr, .. } | Expr::Await { expr, .. } => {
-            expr_contains_partial_placeholder(expr)
-        }
+        Expr::Unary { expr, .. } => expr_contains_partial_placeholder(expr),
+        Expr::Await(awaited) => expr_contains_partial_placeholder(awaited.operand()),
         Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
             .iter()
             .any(|(_, value)| expr_contains_partial_placeholder(value)),

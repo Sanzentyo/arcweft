@@ -255,9 +255,10 @@ fn collect_resource_accesses_from_expr(expr: &Expr, accesses: &mut BTreeSet<Reso
             collect_resource_accesses_from_expr(len, accesses);
         }
         Expr::Select(select) => collect_resource_accesses_from_expr(select.target(), accesses),
-        Expr::Try { expr: value }
-        | Expr::Await { expr: value, .. }
-        | Expr::Unary { expr: value, .. } => collect_resource_accesses_from_expr(value, accesses),
+        Expr::Try { expr: value } | Expr::Unary { expr: value, .. } => {
+            collect_resource_accesses_from_expr(value, accesses);
+        }
+        Expr::Await(awaited) => collect_resource_accesses_from_expr(awaited.operand(), accesses),
         Expr::Binary { lhs, rhs, .. }
         | Expr::Pipe { lhs, rhs }
         | Expr::Index {
