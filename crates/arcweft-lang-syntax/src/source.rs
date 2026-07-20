@@ -3,7 +3,7 @@
 use crate::ast::common::TextRange;
 use crate::ast::items::TypedSyntaxTree;
 use crate::cst::{SyntaxNode, SyntaxParseStats};
-use crate::parser::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
+use crate::parser::recovery::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion};
 use arcweft_source::{
     SourceDocument, SourceDocumentIdentity, SourceRange, SourceSpan, SourceSpanError,
 };
@@ -51,9 +51,14 @@ impl ParsedSource {
         syntax: SyntaxNode,
         typed_tree: TypedSyntaxTree,
         mut errors: Vec<ParseError>,
-        syntax_stats: SyntaxParseStats,
+        mut syntax_stats: SyntaxParseStats,
     ) -> Self {
         normalize_parse_errors(&mut errors);
+        let prefix_depth_failures = errors
+            .iter()
+            .filter(|error| error.kind() == ParseErrorKind::ExpressionPrefixDepthLimit)
+            .count();
+        syntax_stats.checked_add_prefix_depth_limit_failures(prefix_depth_failures);
         let source_hash = SourceHash::new(document.text());
         let line_index = LineIndex::new(document.text());
         Self {

@@ -297,18 +297,10 @@ impl<'a> Parser<'a> {
                 parsed.stmt
             }
             Err(error) => {
-                let mut diagnostic = ParseError::new(
-                    error.range(),
+                self.errors.push(ParseError::from_expression(
+                    &error,
                     vec!["expression".to_owned()],
-                    None,
-                    error.to_string(),
-                    Vec::new(),
-                );
-                for related in error.related_ranges() {
-                    diagnostic = diagnostic
-                        .with_related(*related, Some("related expression syntax".to_owned()));
-                }
-                self.errors.push(diagnostic);
+                ));
                 let range = base
                     .checked_add(source.len())
                     .map(|end| TextRange::new(base, end));

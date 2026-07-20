@@ -383,7 +383,7 @@ impl ExprParser {
             return Err(error);
         }
 
-        let diagnostic = ExprParseError::recovered_call_argument(&error.to_string(), value_range);
+        let diagnostic = ExprParseError::recovered_call_argument(&error, value_range);
         self.retain_recovery_diagnostic(diagnostic)?;
         self.cursor = end;
 

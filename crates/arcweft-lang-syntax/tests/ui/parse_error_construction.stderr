@@ -73,3 +73,13 @@ help: you might have meant to use an associated function to build this type
 29 -     };
 22 +     let _literal = ParseError::new_with_kind(_, _, _, _, _, _);
    |
+22 -     let _literal = ParseError {
+23 -         kind: ParseErrorKind::Generic,
+24 -         range: TextRange::new(0, 0),
+25 -         expected: Vec::new(),
+26 -         found: None,
+27 -         message: String::new(),
+28 -         recovery: Vec::new(),
+29 -     };
+22 +     let _literal = ParseError::from_expression(_, _);
+   |

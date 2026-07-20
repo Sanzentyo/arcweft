@@ -1215,17 +1215,10 @@ fn parse_view_callback_body(source: &str, range: TextRange, errors: &mut Vec<Par
             parsed.expr
         }
         Err(error) => {
-            let mut parsed = ParseError::new(
-                error.range(),
+            errors.push(ParseError::from_expression(
+                &error,
                 vec!["View callback expression".to_owned()],
-                None,
-                error.to_string(),
-                Vec::new(),
-            );
-            for related in error.related_ranges() {
-                parsed = parsed.with_related(*related, Some("related callback syntax".to_owned()));
-            }
-            errors.push(parsed);
+            ));
             Expr::Raw(source.to_owned())
         }
     }

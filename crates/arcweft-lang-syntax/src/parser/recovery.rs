@@ -5,6 +5,7 @@ use arcweft_source::{
 use thiserror::Error;
 
 use crate::ast::common::TextRange;
+use crate::expr::{ExprParseError, ExprParseErrorKind};
 
 /// Closed discriminator for diagnostics emitted by the repository-owned parser.
 ///
@@ -29,6 +30,8 @@ use crate::ast::common::TextRange;
 pub enum ParseErrorKind {
     /// Ordinary parser recovery without a dedicated diagnostic family.
     Generic,
+    /// Expression prefix operators exceed the inclusive parser depth limit.
+    ExpressionPrefixDepthLimit,
     /// The assertion mode is not one of the accepted closed modes.
     AssertionUnknownMode,
     /// An assertion argument or its surrounding syntax is malformed.
@@ -120,8 +123,9 @@ pub enum ParseErrorKind {
 }
 
 impl ParseErrorKind {
-    pub(crate) const ALL: [Self; 45] = [
+    pub(crate) const ALL: [Self; 46] = [
         Self::Generic,
+        Self::ExpressionPrefixDepthLimit,
         Self::AssertionUnknownMode,
         Self::AssertionInvalidArgument,
         Self::AssertionUnclosedArguments,
@@ -173,6 +177,7 @@ impl ParseErrorKind {
     pub const fn code(self) -> &'static str {
         match self {
             Self::Generic => "syntax.parse",
+            Self::ExpressionPrefixDepthLimit => "syntax.expr.prefix_depth_limit",
             Self::AssertionUnknownMode => "syntax.assert.unknown_mode",
             Self::AssertionInvalidArgument => "syntax.assert.invalid_argument",
             Self::AssertionUnclosedArguments => "syntax.assert.unclosed_arguments",
@@ -239,6 +244,7 @@ impl ParseErrorKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Generic => "Parse error",
+            Self::ExpressionPrefixDepthLimit => "Expression prefix depth limit exceeded",
             Self::AssertionUnknownMode => "Unknown assertion mode",
             Self::AssertionInvalidArgument => "Invalid assertion argument",
             Self::AssertionUnclosedArguments => "Unclosed assertion argument list",
@@ -287,9 +293,17 @@ impl ParseErrorKind {
             Self::ViewPartInvalidLocalName => "Invalid View part modifier name",
         }
     }
+
+    pub(crate) fn from_expression(error: &ExprParseError) -> Self {
+        if error.contains_kind(ExprParseErrorKind::PrefixDepthLimit) {
+            Self::ExpressionPrefixDepthLimit
+        } else {
+            Self::Generic
+        }
+    }
 }
 
-const _: [(); ParseErrorKind::ALL.len()] = [(); 45];
+const _: [(); ParseErrorKind::ALL.len()] = [(); 46];
 
 /// Syntax-level parse error with expected tokens and recovery suggestions.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -327,6 +341,21 @@ pub struct RecoveryEdit {
 }
 
 impl ParseError {
+    pub(crate) fn from_expression(error: &ExprParseError, expected: Vec<String>) -> Self {
+        let mut parsed = Self::new_with_kind(
+            ParseErrorKind::from_expression(error),
+            error.range(),
+            expected,
+            None,
+            error.to_string(),
+            Vec::new(),
+        );
+        for related in error.related_ranges() {
+            parsed = parsed.with_related(*related, Some("related expression syntax".to_owned()));
+        }
+        parsed
+    }
+
     pub(crate) fn new(
         range: TextRange,
         expected: Vec<String>,
@@ -554,8 +583,13 @@ mod tests {
 
     use super::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion, TextRange};
 
-    const EXPECTED_PARSE_ERROR_KINDS: [(ParseErrorKind, &str, &str); 45] = [
+    const EXPECTED_PARSE_ERROR_KINDS: [(ParseErrorKind, &str, &str); 46] = [
         (ParseErrorKind::Generic, "syntax.parse", "Parse error"),
+        (
+            ParseErrorKind::ExpressionPrefixDepthLimit,
+            "syntax.expr.prefix_depth_limit",
+            "Expression prefix depth limit exceeded",
+        ),
         (
             ParseErrorKind::AssertionUnknownMode,
             "syntax.assert.unknown_mode",
@@ -782,7 +816,7 @@ mod tests {
     fn parse_error_kind_inventory_is_complete_unique_and_stable() {
         let expected = EXPECTED_PARSE_ERROR_KINDS;
         assert_eq!(ParseErrorKind::ALL, expected.map(|entry| entry.0));
-        assert_eq!(ParseErrorKind::ALL.len(), 45);
+        assert_eq!(ParseErrorKind::ALL.len(), 46);
         assert_eq!(
             ParseErrorKind::ALL
                 .iter()

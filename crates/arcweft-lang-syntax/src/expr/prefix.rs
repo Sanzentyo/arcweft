@@ -103,18 +103,10 @@ impl ExprParser {
         loop {
             let operator_range = self.absolute_range(&current)?;
             let Some(next_depth) = self.prefix_depth.checked_add(operators.len()) else {
-                return Err(ExprParseError::at(
-                    "syntax.expr.prefix_depth_limit",
-                    "expression prefix nesting exceeds the inclusive limit of 64",
-                    operator_range,
-                ));
+                return Err(ExprParseError::prefix_depth_limit(operator_range));
             };
             if next_depth >= 64 {
-                return Err(ExprParseError::at(
-                    "syntax.expr.prefix_depth_limit",
-                    "expression prefix nesting exceeds the inclusive limit of 64",
-                    operator_range,
-                ));
+                return Err(ExprParseError::prefix_depth_limit(operator_range));
             }
             let operator = self.parse_prefix_operator(&current, operator_range)?;
             operators.push(operator);
@@ -135,11 +127,7 @@ impl ExprParser {
             .prefix_depth
             .checked_add(operators.len())
             .ok_or_else(|| {
-                ExprParseError::at(
-                    "syntax.expr.prefix_depth_limit",
-                    "expression prefix nesting exceeds the inclusive limit of 64",
-                    TextRange::new(self.base, self.base),
-                )
+                ExprParseError::prefix_depth_limit(TextRange::new(self.base, self.base))
             })?;
         let operand = self.parse_expr_bp(90);
         self.prefix_depth = prior_depth;

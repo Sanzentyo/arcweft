@@ -1,4 +1,7 @@
-use super::{BinaryOp, Expr, ExprParseError, Placeholder, parse_expr};
+use super::{
+    BinaryOp, CallRecoveryBoundarySyntax, Expr, ExprParseError, ExprParseErrorKind, Placeholder,
+    parse_expr, parse_expr_fragment_recovering_at,
+};
 use crate::ast::common::TextRange;
 use crate::reference::BorrowKind;
 
@@ -239,12 +242,33 @@ fn prefix_depth_limit_is_inclusive_and_typed() {
 
     let over_limit = format!("{}value", "& ".repeat(65));
     let error: ExprParseError = strict_error(&over_limit);
+    assert_eq!(error.kind(), ExprParseErrorKind::PrefixDepthLimit);
+    assert_eq!(error.cause_kind(), None);
     assert_eq!(error.code(), "syntax.expr.prefix_depth_limit");
     assert_eq!(error.range(), TextRange::new(128, 129));
     assert_eq!(
         error.to_string(),
         "expression prefix nesting exceeds the inclusive limit of 64"
     );
+}
+
+#[test]
+fn call_argument_recovery_retains_the_typed_prefix_depth_cause() {
+    let source = format!("consume({}value, fallback)", "& ".repeat(65));
+    let parsed =
+        parse_expr_fragment_recovering_at(&source, 0, CallRecoveryBoundarySyntax::EndOfExpression)
+            .expect("call argument recovery retains the typed call");
+    let diagnostic = parsed
+        .diagnostics
+        .first()
+        .expect("prefix overflow diagnostic");
+
+    assert_eq!(diagnostic.kind(), ExprParseErrorKind::RecoveredCallArgument);
+    assert_eq!(
+        diagnostic.cause_kind(),
+        Some(ExprParseErrorKind::PrefixDepthLimit)
+    );
+    assert!(diagnostic.contains_kind(ExprParseErrorKind::PrefixDepthLimit));
 }
 
 #[test]

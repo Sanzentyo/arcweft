@@ -8,7 +8,7 @@ use super::headers::{
 };
 use super::line_plan::parse_line_plan_body;
 use super::line_plan::parse_line_plan_body_with_body_base;
-use super::recovery::{ParseError, RecoveryEdit, RecoverySuggestion};
+use super::recovery::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion};
 use super::statements::parse_label_ref;
 use super::{Parser, parse_dialogue_content};
 use crate::ast::{
@@ -657,33 +657,10 @@ pub(super) fn parse_owned_expr_recovering(
             parsed.expr
         }
         Err(error) => {
-            if error.code() == "syntax.expr.prefix_depth_limit"
-                && let Some(stats) = stats
-            {
-                let Some(total) = stats.prefix_depth_limit_failures.checked_add(1) else {
-                    errors.push(ParseError::new(
-                        error.range(),
-                        Vec::new(),
-                        None,
-                        "expression prefix-depth statistic overflowed".to_owned(),
-                        Vec::new(),
-                    ));
-                    return crate::expr::Expr::Raw(trimmed.to_owned());
-                };
-                stats.prefix_depth_limit_failures = total;
-            }
-            let mut parse_error = ParseError::new(
-                error.range(),
+            errors.push(ParseError::from_expression(
+                &error,
                 vec!["expression".to_owned()],
-                None,
-                error.to_string(),
-                Vec::new(),
-            );
-            for related in error.related_ranges() {
-                parse_error = parse_error
-                    .with_related(*related, Some("related expression syntax".to_owned()));
-            }
-            errors.push(parse_error);
+            ));
             crate::expr::Expr::Raw(trimmed.to_owned())
         }
     }
@@ -697,7 +674,8 @@ pub(super) fn retain_expr_recovery_diagnostic(
         return;
     };
     let error = match recovery {
-        ExprRecoveryDiagnostic::MissingCallClose { open_paren } => ParseError::new(
+        ExprRecoveryDiagnostic::MissingCallClose { open_paren } => ParseError::new_with_kind(
+            ParseErrorKind::from_expression(diagnostic),
             diagnostic.range(),
             vec![")".to_owned()],
             None,
@@ -708,7 +686,8 @@ pub(super) fn retain_expr_recovery_diagnostic(
             ],
         )
         .with_related(open_paren, Some("argument list opens here".to_owned())),
-        ExprRecoveryDiagnostic::RecoveredCallArgument => ParseError::new(
+        ExprRecoveryDiagnostic::RecoveredCallArgument => ParseError::new_with_kind(
+            ParseErrorKind::from_expression(diagnostic),
             diagnostic.range(),
             vec!["expression".to_owned()],
             None,
@@ -740,10 +719,10 @@ pub(super) fn parse_expr_lossy_with_stats(
             parsed.expr
         }
         Err(error) => {
-            if error.code() == "syntax.expr.prefix_depth_limit"
+            if error.contains_kind(crate::expr::ExprParseErrorKind::PrefixDepthLimit)
                 && let Some(stats) = stats
             {
-                stats.prefix_depth_limit_failures += 1;
+                stats.checked_add_prefix_depth_limit_failures(1);
             }
             crate::expr::Expr::Raw(source.to_owned())
         }

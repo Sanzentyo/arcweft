@@ -1,4 +1,5 @@
 use super::{ParseFailure, ParsedSource, SyntaxDatabase, SyntaxIdentityKind, SyntaxNodeId};
+use crate::parser::{parse_source, recovery::ParseErrorKind};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 use core::num::NonZeroU64;
@@ -671,6 +672,39 @@ fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
     assert!(Arc::ptr_eq(&current.current, &initial));
     assert_eq!(current.allocator.next, allocator_next);
     assert_eq!(current.current.snapshot().generation().get(), 1);
+}
+
+#[test]
+fn prefix_depth_diagnostics_are_typed_and_counted_across_recovery_modes() {
+    let maximum = format!(
+        "flow story {{\n    let value = {}input\n}}\n",
+        "& ".repeat(64)
+    );
+    let accepted = parse_source(maximum);
+    assert!(accepted.errors().is_empty());
+    assert_eq!(accepted.syntax_stats().prefix_depth_limit_failures, 0);
+
+    for source in [
+        format!(
+            "flow story {{\n    let value = {}input\n}}\n",
+            "& ".repeat(65)
+        ),
+        format!(
+            "flow story {{\n    let value = consume({}input, fallback)\n}}\n",
+            "& ".repeat(65)
+        ),
+    ] {
+        let parsed = parse_source(source);
+        assert_eq!(
+            parsed
+                .errors()
+                .iter()
+                .filter(|error| { error.kind() == ParseErrorKind::ExpressionPrefixDepthLimit })
+                .count(),
+            1
+        );
+        assert_eq!(parsed.syntax_stats().prefix_depth_limit_failures, 1);
+    }
 }
 
 #[test]

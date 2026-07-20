@@ -770,11 +770,30 @@ pub enum ComputationBlockKind {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{message}")]
 pub struct ExprParseError {
+    kind: ExprParseErrorKind,
+    cause: Option<ExprParseErrorKind>,
     code: &'static str,
     range: TextRange,
     related: Vec<TextRange>,
     recovery: Option<ExprRecoveryDiagnostic>,
     message: String,
+}
+
+/// Stable typed discriminator for expression parser failures.
+///
+/// Recovery may wrap an underlying failure. In that case [`ExprParseError::kind`]
+/// identifies the recovery and [`ExprParseError::cause_kind`] retains the
+/// original typed cause.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ExprParseErrorKind {
+    /// Ordinary expression syntax failure without a dedicated family.
+    Generic,
+    /// Prefix operators exceed the inclusive parser depth limit.
+    PrefixDepthLimit,
+    /// A parenthesized call is missing its closing delimiter.
+    MissingCallClose,
+    /// A malformed call argument was retained through expression recovery.
+    RecoveredCallArgument,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1357,6 +1376,8 @@ impl ExprParseError {
 
     pub(crate) fn at(code: &'static str, message: &str, range: TextRange) -> Self {
         Self {
+            kind: ExprParseErrorKind::Generic,
+            cause: None,
             code,
             range,
             related: Vec::new(),
@@ -1365,8 +1386,22 @@ impl ExprParseError {
         }
     }
 
+    pub(crate) fn prefix_depth_limit(range: TextRange) -> Self {
+        Self {
+            kind: ExprParseErrorKind::PrefixDepthLimit,
+            cause: None,
+            code: "syntax.expr.prefix_depth_limit",
+            range,
+            related: Vec::new(),
+            recovery: None,
+            message: "expression prefix nesting exceeds the inclusive limit of 64".to_owned(),
+        }
+    }
+
     pub(crate) fn missing_call_close(insertion: usize, open_paren: TextRange) -> Self {
         Self {
+            kind: ExprParseErrorKind::MissingCallClose,
+            cause: None,
             code: "syntax.expr.missing_call_close",
             range: TextRange::new(insertion, insertion),
             related: vec![open_paren],
@@ -1375,14 +1410,31 @@ impl ExprParseError {
         }
     }
 
-    pub(crate) fn recovered_call_argument(message: &str, range: TextRange) -> Self {
+    pub(crate) fn recovered_call_argument(error: &Self, range: TextRange) -> Self {
         Self {
+            kind: ExprParseErrorKind::RecoveredCallArgument,
+            cause: Some(error.cause.unwrap_or(error.kind)),
             code: "syntax.expr.recovered_call_argument",
             range,
             related: Vec::new(),
             recovery: Some(ExprRecoveryDiagnostic::RecoveredCallArgument),
-            message: message.to_owned(),
+            message: error.to_string(),
         }
+    }
+
+    /// Stable typed discriminator for this expression parse failure.
+    pub const fn kind(&self) -> ExprParseErrorKind {
+        self.kind
+    }
+
+    /// Typed cause retained when parser recovery wraps another failure.
+    pub const fn cause_kind(&self) -> Option<ExprParseErrorKind> {
+        self.cause
+    }
+
+    /// Whether this failure is, or wraps, the requested typed kind.
+    pub fn contains_kind(&self, kind: ExprParseErrorKind) -> bool {
+        self.kind == kind || matches!(self.cause, Some(cause) if cause == kind)
     }
 
     /// Stable diagnostic code for this expression parse failure.
@@ -1405,16 +1457,17 @@ impl ExprParseError {
     }
 
     pub(crate) fn permits_call_argument_recovery(&self) -> bool {
-        matches!(
-            self.code,
-            "syntax.expr.parse"
-                | "syntax.expr.unexpected_token"
-                | "syntax.expr.missing_prefix_operand"
-                | "syntax.expr.empty_call_argument"
-                | "syntax.expr.invalid_named_spread"
-                | "syntax.expr.missing_call_argument_separator"
-                | "syntax.expr.unbalanced_call_argument"
-        )
+        self.contains_kind(ExprParseErrorKind::PrefixDepthLimit)
+            || matches!(
+                self.code,
+                "syntax.expr.parse"
+                    | "syntax.expr.unexpected_token"
+                    | "syntax.expr.missing_prefix_operand"
+                    | "syntax.expr.empty_call_argument"
+                    | "syntax.expr.invalid_named_spread"
+                    | "syntax.expr.missing_call_argument_separator"
+                    | "syntax.expr.unbalanced_call_argument"
+            )
     }
 }
 

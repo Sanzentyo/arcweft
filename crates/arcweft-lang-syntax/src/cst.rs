@@ -96,6 +96,17 @@ pub struct SyntaxParseStats {
     pub prefix_depth_limit_failures: usize,
 }
 
+impl SyntaxParseStats {
+    pub(crate) fn checked_add_prefix_depth_limit_failures(&mut self, additional: usize) -> bool {
+        let Some(total) = self.prefix_depth_limit_failures.checked_add(additional) else {
+            self.prefix_depth_limit_failures = usize::MAX;
+            return false;
+        };
+        self.prefix_depth_limit_failures = total;
+        true
+    }
+}
+
 /// Per-line punctuation depth summary computed once while projecting CST lines.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct CstLinePunctuationSummary {

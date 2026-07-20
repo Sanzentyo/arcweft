@@ -397,17 +397,10 @@ fn recovered_semicolon_statement_prefix(
 }
 
 fn retain_fatal_expression_error(error: &ExprParseError, errors: &mut Vec<ParseError>) {
-    let mut parsed = ParseError::new(
-        error.range(),
+    errors.push(ParseError::from_expression(
+        error,
         vec!["expression".to_owned()],
-        None,
-        error.to_string(),
-        Vec::new(),
-    );
-    for related in error.related_ranges() {
-        parsed = parsed.with_related(*related, Some("related expression syntax".to_owned()));
-    }
-    errors.push(parsed);
+    ));
 }
 
 fn authored_block_value_checked(
