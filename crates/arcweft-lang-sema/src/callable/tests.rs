@@ -18,7 +18,7 @@ use arcweft_lang_syntax::{
     },
     parser::parse_source,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
 use crate::{
     canonicalization::SemanticScopeId, checker::TypeExpressionId, effect_row::EffectRow,
@@ -46,9 +46,9 @@ use super::{
     ReductionConstructorKind, RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable,
     ResolvedCharacterOwner, ResolvedFunctionValue, RustItemPath, SemanticParameter,
     SemanticParameterGroup, SemanticSignature, SemanticSignatureError, SemanticSignatureHelp,
-    SemanticSignatureIndex, SignatureOrigin, SignatureWorkReport, SpreadArgumentPolicy,
-    StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitImplementationIndex,
-    UnknownNamedArgumentPolicy,
+    SemanticSignatureIndex, SemanticSignatureRecovery, SignatureOrigin, SignatureWorkReport,
+    SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation,
+    TraitImplementationIndex, UnknownNamedArgumentPolicy,
 };
 
 fn name(value: &str) -> CallableName {
@@ -1758,6 +1758,48 @@ fn semantic_signature(source: Option<CallableSource>) -> SemanticSignature {
 }
 
 #[test]
+fn semantic_parameter_group_reports_parameter_limit_at_exact_boundary() {
+    let make_parameter = |parameter: usize| {
+        SemanticParameter::try_new(
+            CallableParameterCoordinate::new(group(0), index(parameter)),
+            format!("value{parameter}: i32"),
+            Some(name(&format!("value{parameter}"))),
+            CallableParameterType::Exact(TypeKind::I32),
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("semantic parameter")
+    };
+    let exact_limits = limits(1, 2, 20);
+    SemanticParameterGroup::try_new(
+        group(0),
+        CallableGroupKind::Initial,
+        vec![make_parameter(0), make_parameter(1)],
+        &exact_limits,
+    )
+    .expect("exact semantic parameter limit succeeds");
+    assert_eq!(
+        SemanticParameterGroup::try_new(
+            group(0),
+            CallableGroupKind::Initial,
+            vec![make_parameter(0), make_parameter(1), make_parameter(2)],
+            &exact_limits,
+        ),
+        Err(CallableQueryLimitError::Parameters {
+            actual: 3,
+            limit: 2,
+        }
+        .into())
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one invariant test exercises the complete public signature-help constructor boundary"
+)]
 fn semantic_signature_help_enforces_active_indices_and_source_identity() {
     let document = SourceDocument::try_new(
         SourceDocumentId::try_new("signature-test").expect("document id"),
@@ -1771,14 +1813,20 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
     let report =
         SignatureWorkReport::try_new(1, 1, 1, 0, 0, &limits(2, 4, 20)).expect("work report");
     let zero = SemanticSignatureIndex::try_from_usize(0).expect("signature index");
+    let expression = TypeExpressionId::from_index(7);
 
     assert_eq!(
         SemanticSignatureHelp::try_new(
             document.identity().clone(),
             call_span.clone(),
+            call_span.clone(),
+            expression,
             Vec::new(),
             zero,
             None,
+            group(0),
+            None,
+            SemanticSignatureRecovery::Complete,
             Vec::new(),
             report,
             &limits(2, 4, 20),
@@ -1789,9 +1837,14 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
         SemanticSignatureHelp::try_new(
             document.identity().clone(),
             call_span.clone(),
+            call_span.clone(),
+            expression,
             vec![semantic_signature(None)],
             SemanticSignatureIndex::try_from_usize(1).expect("representable index"),
             None,
+            group(0),
+            None,
+            SemanticSignatureRecovery::Complete,
             Vec::new(),
             report,
             &limits(2, 4, 20),
@@ -1802,9 +1855,14 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
         SemanticSignatureHelp::try_new(
             document.identity().clone(),
             call_span.clone(),
+            call_span.clone(),
+            expression,
             vec![semantic_signature(None)],
             zero,
             Some(CallableParameterCoordinate::new(group(0), index(1))),
+            group(0),
+            None,
+            SemanticSignatureRecovery::Complete,
             Vec::new(),
             report,
             &limits(2, 4, 20),
@@ -1823,26 +1881,41 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
         .expect("other signature span");
     let source = CallableSource::try_new(None, Some(other_signature), None, None, Vec::new())
         .expect("callable source");
+    let cross_document = SemanticSignatureHelp::try_new(
+        document.identity().clone(),
+        call_span.clone(),
+        call_span.clone(),
+        expression,
+        vec![semantic_signature(Some(source))],
+        zero,
+        None,
+        group(0),
+        None,
+        SemanticSignatureRecovery::Complete,
+        Vec::new(),
+        report,
+        &limits(2, 4, 20),
+    )
+    .expect("accepted project signatures may originate in another document");
     assert_eq!(
-        SemanticSignatureHelp::try_new(
-            document.identity().clone(),
-            call_span.clone(),
-            vec![semantic_signature(Some(source))],
-            zero,
-            None,
-            Vec::new(),
-            report,
-            &limits(2, 4, 20),
-        ),
-        Err(SemanticSignatureError::SourceIdentityMismatch)
+        cross_document.signatures()[0]
+            .source()
+            .and_then(CallableSource::signature)
+            .map(SourceSpan::source),
+        Some(other.identity())
     );
 
     let help = SemanticSignatureHelp::try_new(
         document.identity().clone(),
+        call_span.clone(),
         call_span,
+        expression,
         vec![semantic_signature(None)],
         zero,
         Some(CallableParameterCoordinate::new(group(0), index(0))),
+        group(0),
+        None,
+        SemanticSignatureRecovery::Complete,
         Vec::new(),
         report,
         &limits(2, 4, 20),

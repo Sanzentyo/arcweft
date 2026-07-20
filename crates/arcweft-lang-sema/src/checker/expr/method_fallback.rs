@@ -100,6 +100,7 @@ impl TypeChecker<'_> {
                 group_arg_offset: stage.group_arg_offset,
                 current_group_params: None,
                 pending_higher_order_args,
+                resolved: None,
             });
         }
         if final_group_timing && shape.applies_returned_function {
@@ -515,10 +516,7 @@ impl DataLastMethodFallbackCandidate {
         signature: FunctionSignature,
         shape: DataLastFallbackShape,
     ) -> Self {
-        let label = format!(
-            "{source} fn `{method_name}` {}",
-            function_signature_label(&signature)
-        );
+        let label = format!("{source} fn `{method_name}` {}", signature.source_label());
         Self {
             callable_name: callable_name.into(),
             signature,
@@ -620,21 +618,6 @@ fn spread_is_followed_by_fixed_fallback_arg(args: &[CallArg]) -> bool {
         .any(|arg| !arg.is_spread())
 }
 
-fn function_signature_label(signature: &FunctionSignature) -> String {
-    let params = signature
-        .params()
-        .iter()
-        .map(|param| {
-            param.name().map_or_else(
-                || param.ty().source_label(),
-                |name| format!("{name}: {}", param.ty().source_label()),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("fn({params}) -> {}", signature.return_type().source_label())
-}
-
 fn selected_method_label(
     source: &str,
     receiver_type: &TypeKind,
@@ -644,6 +627,6 @@ fn selected_method_label(
     format!(
         "{source} method `{}.{method_name}` {}",
         receiver_type.source_label(),
-        function_signature_label(signature)
+        signature.source_label()
     )
 }

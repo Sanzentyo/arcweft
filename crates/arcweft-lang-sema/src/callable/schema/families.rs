@@ -1,10 +1,12 @@
 //! Closed family schemas used by the shared callable resolver.
 
 use arcweft_character::id::CharacterId;
+use arcweft_lang_syntax::types::{TypeRef, parse_type_ref};
 
 use crate::{
     effect_row::EffectRow,
     effects::EffectSet,
+    env::EnumVariantPayload,
     types::{EntityKind, MapKind, TypeKind},
 };
 
@@ -14,12 +16,16 @@ use super::{
     CallableParameterType, CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy,
     UnknownNamedArgumentPolicy,
 };
+use crate::callable::PromotionCallableId;
 use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
-    CallableSchemaError, CapabilityCallableId, DialogueCallableId, DialogueCalleeIdentity,
-    FloatWidth, FxCallableSignatureId, MathCallableId, PRODUCTION_CALLABLE_LIMITS,
-    PresentationArgumentValuePolicy, PresentationCallableId, ReductionConstructorKind,
-    ResolvedCharacterOwner, StdFloatCallableId, StdFloatOperation, VectorDimensions,
+    CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
+    DialogueCallableId, DialogueCalleeIdentity, DomainMethodId, DropCallableId,
+    EnumVariantSignatureId, FloatWidth, FxCallableSignatureId, IntegerMethodId, MathCallableId,
+    OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
+    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
+    ResolvedCharacterOwner, ResultConstructorKind, SpeakerCallableId, StdFloatCallableId,
+    StdFloatOperation, VectorDimensions,
 };
 
 impl BuiltinCallableId {
@@ -81,7 +87,7 @@ impl BuiltinCallableId {
             }
             Self::StdFloat(id) => std_float_schema(*id, validator),
             Self::Capability(CapabilityCallableId::EventEmit) => {
-                variadic_unchecked(TypeKind::Unit, validator, &["event.emit"])
+                variadic_unchecked(TypeKind::Unit, validator, &[])
             }
             Self::Reduction(kind) => kind.signature_schema(),
         }
@@ -133,6 +139,13 @@ fn std_float_schema(
 
 impl ReductionConstructorKind {
     pub fn signature_schema(self) -> CallableSignatureSchema {
+        self.instantiated_signature_schema(None)
+    }
+
+    pub(crate) fn instantiated_signature_schema(
+        self,
+        expected: Option<&TypeKind>,
+    ) -> CallableSignatureSchema {
         match self {
             Self::Unchanged => schema(
                 vec![parameter(
@@ -142,12 +155,324 @@ impl ReductionConstructorKind {
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,
                 )],
-                TypeKind::Named("Reduction<_>".to_owned()),
+                expected
+                    .filter(|expected| self.state_type(expected).is_some())
+                    .cloned()
+                    .unwrap_or_else(|| TypeKind::Named("Reduction<_>".to_owned())),
                 &[],
                 closed(),
                 CallableValidator::ReductionConstructor(self),
             ),
         }
+    }
+
+    pub(crate) fn state_type(self, ty: &TypeKind) -> Option<TypeKind> {
+        match self {
+            Self::Unchanged => {
+                let TypeKind::Named(label) = ty else {
+                    return None;
+                };
+                let TypeRef::Generic { base, args } = parse_type_ref(label).ok()? else {
+                    return None;
+                };
+                (base == "Reduction" && args.len() == 1).then(|| TypeKind::from(&args[0]))
+            }
+        }
+    }
+}
+
+impl EnumVariantSignatureId {
+    pub(crate) fn signature_schema(
+        &self,
+        payload: &EnumVariantPayload,
+        expected: TypeKind,
+    ) -> CallableSignatureSchema {
+        let parameters = match payload {
+            EnumVariantPayload::Unit | EnumVariantPayload::Record(_) => Vec::new(),
+            EnumVariantPayload::Tuple(items) => items
+                .iter()
+                .enumerate()
+                .map(|(index, ty)| {
+                    parameter(
+                        index,
+                        None,
+                        CallableParameterType::Exact(ty.clone()),
+                        CallableParameterPassing::PositionalOnly,
+                        CallableParameterPresence::Required,
+                    )
+                })
+                .collect(),
+        };
+        schema(
+            parameters,
+            expected,
+            &[],
+            closed(),
+            CallableValidator::EnumConstructor(self.clone()),
+        )
+    }
+}
+
+impl ResultConstructorKind {
+    pub(crate) fn instantiated_signature_schema(
+        self,
+        expected: Option<&TypeKind>,
+    ) -> CallableSignatureSchema {
+        let expected_result = expected.and_then(|expected| match expected {
+            TypeKind::Result { ok, error } => Some((expected.clone(), ok.as_ref(), error.as_ref())),
+            _ => None,
+        });
+        let payload = expected_result.as_ref().map(|(_, ok, error)| match self {
+            Self::Ok => (*ok).clone(),
+            Self::Err => (*error).clone(),
+        });
+        let result = expected_result.map_or_else(
+            || TypeKind::Result {
+                ok: Box::new(named("_")),
+                error: Box::new(named("_")),
+            },
+            |(expected, _, _)| expected,
+        );
+        schema(
+            vec![parameter(
+                0,
+                Some("payload"),
+                payload.map_or(
+                    CallableParameterType::Unchecked,
+                    CallableParameterType::Exact,
+                ),
+                CallableParameterPassing::PositionalOnly,
+                CallableParameterPresence::Required,
+            )],
+            result,
+            &[],
+            closed(),
+            CallableValidator::ResultConstructor(self),
+        )
+    }
+}
+
+impl OptionConstructorKind {
+    pub(crate) fn instantiated_signature_schema(
+        self,
+        expected: Option<&TypeKind>,
+    ) -> CallableSignatureSchema {
+        let expected_option = expected.and_then(|expected| match expected {
+            TypeKind::Option(item) => Some((expected.clone(), item.as_ref().clone())),
+            _ => None,
+        });
+        let result = expected_option.as_ref().map_or_else(
+            || TypeKind::Option(Box::new(named("_"))),
+            |(ty, _)| ty.clone(),
+        );
+        schema(
+            vec![parameter(
+                0,
+                Some("payload"),
+                expected_option.map_or(CallableParameterType::Unchecked, |(_, item)| {
+                    CallableParameterType::Exact(item)
+                }),
+                CallableParameterPassing::PositionalOnly,
+                CallableParameterPresence::Required,
+            )],
+            result,
+            &[],
+            closed(),
+            CallableValidator::OptionConstructor(self),
+        )
+    }
+}
+
+impl CollectionMethodId {
+    pub(crate) fn signature_schema(self, receiver: &TypeKind) -> CallableSignatureSchema {
+        let item = sequence_item(receiver).unwrap_or_else(|| named("_"));
+        let validator = CallableValidator::Collection(self);
+        match self {
+            Self::Len => empty(TypeKind::USize, &[], validator),
+            Self::Map => one_positional(
+                "mapping",
+                TypeKind::function([item], named("_")),
+                collection_with_item(receiver, named("_")),
+                &[],
+                validator,
+            ),
+            Self::Filter => one_positional(
+                "predicate",
+                TypeKind::function([item], TypeKind::Bool),
+                receiver.clone(),
+                &[],
+                validator,
+            ),
+            Self::Sum => empty(TypeKind::I64, &[], validator),
+            Self::Contains => one_positional("item", item, TypeKind::Bool, &[], validator),
+        }
+    }
+}
+
+impl PresentationHandleMethodId {
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        empty(
+            TypeKind::Unit,
+            &[],
+            CallableValidator::PresentationHandle(self),
+        )
+    }
+}
+
+impl IntegerMethodId {
+    pub(crate) fn signature_schema(self, receiver: &TypeKind) -> CallableSignatureSchema {
+        let arity = if self == Self::Clamp { 2 } else { 1 };
+        homogeneous(
+            arity,
+            receiver,
+            receiver.clone(),
+            CallableValidator::Integer(self),
+        )
+    }
+}
+
+impl DomainMethodId {
+    pub(crate) fn signature_schema(&self, receiver: &TypeKind) -> CallableSignatureSchema {
+        let validator = CallableValidator::Domain(self.clone());
+        match self {
+            Self::Traverse => schema(
+                vec![parameter(
+                    0,
+                    Some("task"),
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOnly,
+                    CallableParameterPresence::Required,
+                )],
+                named("_"),
+                &[],
+                closed(),
+                validator,
+            ),
+            Self::Parallel => schema(
+                vec![required_named(0, "limit", TypeKind::I64)],
+                receiver.clone(),
+                &[],
+                closed(),
+                validator,
+            ),
+            Self::FxSampleOrdinalPhase => empty(TypeKind::F32, &[], validator),
+            Self::ObservedObjectRequireRole => one_positional(
+                "role",
+                TypeKind::String,
+                agent_result(TypeKind::ObservedObject),
+                &[],
+                validator,
+            ),
+            Self::MapGet { key, value } => {
+                one_positional("key", key.clone(), value.clone(), &[], validator)
+            }
+            Self::ProbeCompare { value, .. } => one_positional(
+                "expected",
+                value.clone(),
+                TypeKind::Predicate,
+                &[],
+                validator,
+            ),
+            Self::DiagnosticsHasError => empty(TypeKind::Predicate, &[], validator),
+            Self::RagContextPackSummary => empty(TypeKind::DisplayText, &[], validator),
+            Self::Context | Self::WithContext => {
+                variadic_unchecked(context_result(receiver), validator, &[])
+            }
+            Self::CharacterFace { .. } => variadic_unchecked(
+                TypeKind::CharacterPatch(EntityKind::Character),
+                validator,
+                &[],
+            ),
+            Self::CharacterSay { .. } => variadic_unchecked(
+                TypeKind::SpeakerPreset(EntityKind::Character),
+                validator,
+                &[],
+            ),
+        }
+    }
+}
+
+impl CapacityMethodId {
+    pub(crate) fn signature_schema(&self, result: TypeKind) -> CallableSignatureSchema {
+        homogeneous(
+            self.arity(),
+            &named("_"),
+            result,
+            CallableValidator::Capacity(self.clone()),
+        )
+    }
+}
+
+impl DropCallableId {
+    #[allow(
+        clippy::unused_self,
+        reason = "schema construction remains discoverable on every resolved callable identity"
+    )]
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        variadic_unchecked(TypeKind::Unit, CallableValidator::Drop, &[])
+    }
+}
+
+impl PromotionCallableId {
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        let result = match self {
+            Self::Promote | Self::PromoteUnchecked => named("Promoted"),
+            Self::Assume => TypeKind::Unit,
+        };
+        variadic_unchecked(result, CallableValidator::Promotion(self), &[])
+    }
+}
+
+impl SpeakerCallableId {
+    #[allow(
+        clippy::unused_self,
+        reason = "schema construction remains discoverable on every resolved callable identity"
+    )]
+    pub(crate) fn signature_schema(&self) -> CallableSignatureSchema {
+        variadic_unchecked(
+            TypeKind::SpeakerPreset(EntityKind::Character),
+            CallableValidator::Speaker,
+            &[],
+        )
+    }
+}
+
+fn sequence_item(receiver: &TypeKind) -> Option<TypeKind> {
+    match receiver {
+        TypeKind::Vec(item)
+        | TypeKind::Seq(item)
+        | TypeKind::Slice(item)
+        | TypeKind::Array { item, .. } => Some(item.as_ref().clone()),
+        TypeKind::String => Some(TypeKind::TextCluster),
+        _ => None,
+    }
+}
+
+fn collection_with_item(receiver: &TypeKind, item: TypeKind) -> TypeKind {
+    match receiver {
+        TypeKind::Vec(_) => TypeKind::Vec(Box::new(item)),
+        TypeKind::Seq(_) => TypeKind::Seq(Box::new(item)),
+        TypeKind::Slice(_) => TypeKind::Slice(Box::new(item)),
+        TypeKind::Array { len, .. } => TypeKind::Array {
+            item: Box::new(item),
+            len: len.clone(),
+        },
+        _ => named("_"),
+    }
+}
+
+fn context_result(receiver: &TypeKind) -> TypeKind {
+    match receiver {
+        TypeKind::Need { .. } => receiver.clone(),
+        TypeKind::Option(inner) => TypeKind::Result {
+            ok: inner.clone(),
+            error: Box::new(named("ArcError")),
+        },
+        TypeKind::Result { ok, .. } => TypeKind::Result {
+            ok: ok.clone(),
+            error: Box::new(named("ArcError")),
+        },
+        _ => named("_"),
     }
 }
 

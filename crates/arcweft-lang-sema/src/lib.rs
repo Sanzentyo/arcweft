@@ -29,6 +29,7 @@ pub mod project_index;
 pub mod registration;
 pub mod resolve;
 pub mod semantic;
+pub mod signature;
 pub mod style;
 pub mod symbols;
 pub mod traits;

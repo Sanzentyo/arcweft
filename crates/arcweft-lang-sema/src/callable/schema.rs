@@ -14,11 +14,11 @@ use crate::{
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
     CallableGroupIndex, CallableLimits, CallableName, CallableParameterIndex, CallableSchemaError,
-    CallableSourceError, CapacityMethodId, CollectionMethodId, DataLastCallableId,
-    DialogueCallableId, DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId,
-    IntegerMethodId, LanguageDocumentationFamily, OptionConstructorKind, PresentationCallableId,
-    PresentationHandleMethodId, PromotionCallableId, ReductionConstructorKind,
-    ResultConstructorKind, RustItemPath, RustProvenanceError, RustProvenanceField, TraitCallableId,
+    CallableSourceError, CapacityMethodId, CollectionMethodId, DialogueCallableId, DomainMethodId,
+    EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId, LanguageDocumentationFamily,
+    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
+    ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
+    RustProvenanceField, TraitCallableId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -148,6 +148,23 @@ impl CallableDocumentation {
             .iter()
             .find(|entry| entry.group == group && entry.parameter == parameter)
             .map(CallableParameterDocumentation::text)
+    }
+
+    /// Retains the accepted documentation and identifies a canonical callable
+    /// owner when the authored callee is an alias or another accepted spelling.
+    #[must_use]
+    pub fn with_canonical_owner_note(&self, canonical_owner: &str) -> Self {
+        let note = format!("Canonical owner: `{canonical_owner}`.");
+        let details = self.details.as_deref().map_or_else(
+            || Arc::<str>::from(note.as_str()),
+            |details| Arc::<str>::from(format!("{details}\n\n{note}")),
+        );
+        Self {
+            summary: self.summary.clone(),
+            details: Some(details),
+            parameters: Arc::clone(&self.parameters),
+            provenance: self.provenance.clone(),
+        }
     }
 }
 
@@ -465,7 +482,6 @@ pub enum CallableValidator {
     Integer(IntegerMethodId),
     Domain(DomainMethodId),
     Trait(TraitCallableId),
-    DataLast(DataLastCallableId),
     Capacity(CapacityMethodId),
     Drop,
     Promotion(PromotionCallableId),
@@ -556,6 +572,32 @@ impl CallableSignatureSchema {
     pub fn total_parameters(&self) -> usize {
         self.groups.iter().map(|group| group.parameters.len()).sum()
     }
+
+    /// Returns the canonical semantic schema label used in diagnostics.
+    pub(crate) fn source_label(&self) -> String {
+        let mut groups = String::new();
+        for group in self.groups() {
+            let parameters = group
+                .parameters()
+                .iter()
+                .map(|parameter| {
+                    let ty = match parameter.ty() {
+                        CallableParameterType::Exact(ty) => ty.source_label(),
+                        CallableParameterType::Unchecked => "_".to_owned(),
+                    };
+                    parameter
+                        .name()
+                        .map_or(ty.clone(), |name| format!("{}: {ty}", name.as_str()))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            groups.push('(');
+            groups.push_str(&parameters);
+            groups.push(')');
+        }
+        format!("fn{groups} -> {}", self.result().source_label())
+    }
+
     pub fn semantic_eq(&self, other: &Self) -> bool {
         self.result == other.result
             && self.effects == other.effects
@@ -567,6 +609,61 @@ impl CallableSignatureSchema {
                 .iter()
                 .zip(other.groups.iter())
                 .all(|(left, right)| left.semantic_eq(right))
+    }
+
+    /// Builds the strict positional schema for an evaluated function value.
+    pub(crate) fn for_function_value(
+        ty: &TypeKind,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        let TypeKind::Function {
+            params,
+            return_type,
+            effects,
+        } = ty
+        else {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::FunctionValue,
+                code: super::CallableFamilyInvariantCode::InvalidParameterType,
+            });
+        };
+        let parameters = params
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| {
+                CallableParameter::try_new(
+                    CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                        CallableSchemaError::ParameterLimit {
+                            actual: params.len(),
+                            limit: limits.max_parameters_per_callable(),
+                        }
+                    })?,
+                    None,
+                    CallableParameterType::Exact(parameter.clone()),
+                    CallableParameterPassing::PositionalOnly,
+                    CallableParameterPresence::Required,
+                    None,
+                    None,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let group = CallableParameterGroup::try_new(
+            CallableGroupIndex::ZERO,
+            CallableGroupKind::Initial,
+            parameters,
+            limits,
+        )?;
+        Self::try_new(
+            vec![group],
+            return_type.as_ref().clone(),
+            CallableEffectSchema::fixed(effects.clone()),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            limits,
+        )
     }
 
     /// Whether this catalog schema exactly represents one source-level semantic signature.
@@ -589,6 +686,144 @@ impl CallableSignatureSchema {
                         .all(|(catalog, source)| parameter_matches(catalog, source))
             })
     }
+}
+
+impl FunctionSignature {
+    /// Projects one accepted semantic function signature into the canonical
+    /// callable schema used by lexical and function-value resolution.
+    pub(crate) fn callable_schema(
+        &self,
+        effects: EffectRow,
+        validator: CallableValidator,
+        limits: &CallableLimits,
+    ) -> Result<CallableSignatureSchema, CallableSchemaError> {
+        let (groups, argument_policy) = if self.checks_args() {
+            let mut groups = Vec::with_capacity(self.remaining_call_groups().saturating_add(1));
+            groups.push(function_parameter_group(0, self.params(), limits)?);
+            for index in 0..self.remaining_call_groups() {
+                groups.push(function_parameter_group(
+                    index + 1,
+                    self.remaining_param_group(index).unwrap_or_default(),
+                    limits,
+                )?);
+            }
+            let spread = if self
+                .params()
+                .iter()
+                .chain(
+                    (0..self.remaining_call_groups())
+                        .flat_map(|index| self.remaining_param_group(index).unwrap_or_default()),
+                )
+                .any(FunctionParam::is_rest)
+            {
+                SpreadArgumentPolicy::TypedRest
+            } else {
+                SpreadArgumentPolicy::FixedLiteralOnly
+            };
+            (
+                groups,
+                CallableArgumentPolicy::new(UnknownNamedArgumentPolicy::Reject, spread),
+            )
+        } else {
+            (
+                vec![unchecked_function_parameter_group(limits)?],
+                CallableArgumentPolicy::new(
+                    UnknownNamedArgumentPolicy::OpenUnchecked,
+                    SpreadArgumentPolicy::Unchecked,
+                ),
+            )
+        };
+        CallableSignatureSchema::try_new(
+            groups,
+            self.body_return_type().clone(),
+            CallableEffectSchema::fixed(effects),
+            argument_policy,
+            validator,
+            limits,
+        )
+    }
+}
+
+fn function_parameter_group(
+    index: usize,
+    params: &[FunctionParam],
+    limits: &CallableLimits,
+) -> Result<CallableParameterGroup, CallableSchemaError> {
+    let group =
+        CallableGroupIndex::try_from_usize(index).map_err(|_| CallableSchemaError::GroupLimit {
+            actual: index.saturating_add(1),
+            limit: limits.max_groups_per_callable(),
+        })?;
+    let parameters = params
+        .iter()
+        .enumerate()
+        .map(|(index, parameter)| {
+            CallableParameter::try_new(
+                CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                    CallableSchemaError::ParameterLimit {
+                        actual: params.len(),
+                        limit: limits.max_parameters_per_callable(),
+                    }
+                })?,
+                parameter
+                    .name()
+                    .map(CallableName::try_new)
+                    .transpose()
+                    .map_err(|_| CallableSchemaError::MissingParameterName {
+                        group,
+                        parameter: CallableParameterIndex::try_from_usize(index).unwrap_or(
+                            CallableParameterIndex::try_from_usize(0)
+                                .expect("zero parameter index is representable"),
+                        ),
+                    })?,
+                CallableParameterType::Exact(parameter.ty().clone()),
+                if parameter.is_rest() {
+                    CallableParameterPassing::RestPositional
+                } else if parameter.name().is_some() {
+                    CallableParameterPassing::PositionalOrNamed
+                } else {
+                    CallableParameterPassing::PositionalOnly
+                },
+                if parameter.has_default() {
+                    CallableParameterPresence::Defaulted
+                } else {
+                    CallableParameterPresence::Required
+                },
+                None,
+                None,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    CallableParameterGroup::try_new(
+        group,
+        if index == 0 {
+            CallableGroupKind::Initial
+        } else {
+            CallableGroupKind::Curried
+        },
+        parameters,
+        limits,
+    )
+}
+
+fn unchecked_function_parameter_group(
+    limits: &CallableLimits,
+) -> Result<CallableParameterGroup, CallableSchemaError> {
+    let parameter = CallableParameter::try_new(
+        CallableParameterIndex::try_from_usize(0).expect("zero parameter index is representable"),
+        Some(CallableName::try_new("args").expect("static callable name is valid")),
+        CallableParameterType::Unchecked,
+        CallableParameterPassing::RestPositional,
+        CallableParameterPresence::Optional,
+        None,
+        None,
+    )?;
+    CallableParameterGroup::try_new(
+        CallableGroupIndex::ZERO,
+        CallableGroupKind::Initial,
+        vec![parameter],
+        limits,
+    )
 }
 
 fn parameter_matches(catalog: &CallableParameter, source: &FunctionParam) -> bool {

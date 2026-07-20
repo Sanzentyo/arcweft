@@ -25,7 +25,6 @@ use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
 
 mod agent;
 mod binary;
-mod builtin;
 mod callable;
 mod closure;
 mod enum_variant;
@@ -41,7 +40,6 @@ mod signature_call;
 mod support;
 
 use super::line_plan::DialogueContentRangeMode;
-use builtin::BuiltinCallSpec;
 use partial::expr_contains_partial_placeholder;
 use support::{
     BuiltinCollectionMethodCallOutcome, ChoicePatternCoverage, TraitMethodCallOutcome,
@@ -51,8 +49,7 @@ use support::{
     agent_result, choice_pattern_coverage, collection_index_key_type, expr_kind_name,
     has_multiple_numeric_choice_alternatives, inline_failure_builtin_variant_type,
     is_character_speaker_type, is_unit_number_type, join_branch_types, looks_like_os_absolute_path,
-    spread_item_type, std_float_constant_type, trait_method_call_signature,
-    unique_numeric_choice_alternative,
+    spread_item_type, std_float_constant_type, unique_numeric_choice_alternative,
 };
 
 enum InherentMethodCallOutcome {
@@ -196,7 +193,13 @@ impl TypeChecker<'_> {
                 callee,
                 content,
                 plan,
-            } => Some(self.check_dialogue_call_expr(callee, content, plan.as_ref())),
+            } => Some(self.check_dialogue_call_expr(
+                expr,
+                callee,
+                content,
+                plan.as_ref(),
+                expression_id,
+            )),
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs, expression_id),
             Expr::Try { expr } => self.check_try_expr(expr),
@@ -394,11 +397,14 @@ impl TypeChecker<'_> {
 
     fn check_dialogue_call_expr(
         &mut self,
+        dialogue: &Expr,
         callee: &Expr,
         content: &DialogueContent,
         plan: Option<&LinePlan>,
+        expression: TypeExpressionId,
     ) -> TypeKind {
-        self.check_expr(callee);
+        let callee_ty = self.check_expr(callee);
+        self.resolve_registered_dialogue_call(dialogue, callee, callee_ty.as_ref(), expression);
         let marks = self.check_dialogue_content(
             content,
             false,
@@ -716,12 +722,19 @@ impl TypeChecker<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the expression checker preserves source-order dispatch across distinct call syntax"
+    )]
     fn check_call_expr(
         &mut self,
         call: &CallExpr,
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        if let Some(document) = self.source_document_for_current_module().cloned() {
+            self.call_target_fact_recorder.observe_call(call, &document);
+        }
         let callee = call.callee();
         let args = call.args();
         if let Some(name) = expr_path_label(callee)
@@ -729,21 +742,59 @@ impl TypeChecker<'_> {
         {
             self.errors.extend(self.fx.call_errors(&name, args));
         }
-        if let Some(ty) = self.check_fx_constructor_call(callee, args) {
+        if self.registered_world.is_none() {
+            if let Some(ty) = self.check_fx_constructor_call(callee, args) {
+                return Some(ty);
+            }
+        } else if let Some(path) = registered_call::callable_path(callee) {
+            match crate::callable::FxCallableSignatureId::resolve(&path) {
+                crate::callable::FxResolution::UnknownMember { member } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "unknown Fx constructor `Fx.{}`",
+                        member.as_str()
+                    )));
+                    self.check_untyped_function_args(args);
+                    return Some(TypeKind::Named("Fx".to_owned()));
+                }
+                crate::callable::FxResolution::InvalidNestedPath { path } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "invalid nested Fx constructor `{}`",
+                        path.dotted_name()
+                    )));
+                    self.check_untyped_function_args(args);
+                    return Some(TypeKind::Named("Fx".to_owned()));
+                }
+                crate::callable::FxResolution::Known(_) | crate::callable::FxResolution::NotFx => {}
+            }
+        }
+        if self.registered_world.is_none()
+            && let Some(ty) = self.check_enum_variant_call_expr(callee, args, expected)
+        {
             return Some(ty);
         }
-        if let Some(ty) = self.check_enum_variant_call_expr(callee, args, expected) {
-            return Some(ty);
+        if self.registered_world.is_none()
+            && let Some(path) = registered_call::callable_path(callee)
+            && let Some(id) = crate::callable::BuiltinCallableId::resolve(&path)
+        {
+            return Some(match id {
+                crate::callable::BuiltinCallableId::Reduction(kind) => {
+                    self.check_reduction_constructor_call(kind, args, expected)
+                }
+                _ => self.check_standalone_language_call(
+                    &path.dotted_name(),
+                    &id.signature_schema(),
+                    call,
+                ),
+            });
         }
-        if let Some(ty) = self.check_builtin_call_expr(callee, args, expected) {
-            return Some(ty);
-        }
-        if let Some(name) = expr_path_label(callee)
+        if self.registered_world.is_none()
+            && let Some(name) = expr_path_label(callee)
             && let Some(ty) = self.check_agent_intrinsic_call_name(&name, args)
         {
             return Some(ty);
         }
-        if let Some(name) = expr_path_label(callee)
+        if self.registered_world.is_none()
+            && let Some(name) = expr_path_label(callee)
             && let Some(ty) = self.check_presentation_call(&name, args)
         {
             return Some(ty);
@@ -803,14 +854,28 @@ impl TypeChecker<'_> {
                 Some(TypeKind::SpeakerPreset(entity))
             }
             Some(callee_ty @ TypeKind::Function { .. }) => {
-                Some(self.check_known_function_value_call(
+                let callee_label = expr_path_label(callee);
+                match self.check_registered_function_value_call(
+                    call,
                     expression_id,
-                    expr_path_label(callee).as_deref(),
-                    callee_effect_callable,
+                    callee_label.as_deref(),
+                    &callee_ty,
+                    callee_effect_callable.clone(),
                     callee_curried_signature_call.as_ref(),
-                    args,
-                    callee_ty,
-                ))
+                ) {
+                    registered_call::RegisteredFreeCallOutcome::Checked(result) => result,
+                    registered_call::RegisteredFreeCallOutcome::NotHandled => {
+                        Some(self.check_known_function_value_call(
+                            expression_id,
+                            callee_label.as_deref(),
+                            callee_effect_callable,
+                            callee_curried_signature_call.as_ref(),
+                            Some(call),
+                            args,
+                            callee_ty,
+                        ))
+                    }
+                }
             }
             other => {
                 for arg in args {
@@ -892,150 +957,6 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_builtin_call_expr(
-        &mut self,
-        callee: &Expr,
-        args: &[CallArg],
-        expected: Option<&TypeKind>,
-    ) -> Option<TypeKind> {
-        let name = expr_path_label(callee)?;
-        self.check_builtin_call_name(&name, args, expected)
-    }
-
-    fn check_builtin_call_name(
-        &mut self,
-        name: &str,
-        args: &[CallArg],
-        expected: Option<&TypeKind>,
-    ) -> Option<TypeKind> {
-        match BuiltinCallSpec::resolve(name)? {
-            BuiltinCallSpec::InlineFailureFallback => {
-                Some(TypeKind::Named("InlineFailure".to_owned()))
-            }
-            BuiltinCallSpec::Color => {
-                self.check_homogeneous_builtin_args(name, args, &TypeKind::String, 1);
-                Some(TypeKind::Named("Color".to_owned()))
-            }
-            BuiltinCallSpec::FloatUnary => {
-                self.check_homogeneous_builtin_args(name, args, &TypeKind::F32, 1);
-                Some(TypeKind::F32)
-            }
-            BuiltinCallSpec::Never => {
-                for arg in args {
-                    self.check_expr(arg.value());
-                }
-                Some(TypeKind::Never)
-            }
-            BuiltinCallSpec::Reduction(kind) => {
-                Some(self.check_reduction_constructor_call(kind, args, expected))
-            }
-            BuiltinCallSpec::Ensure => {
-                self.check_assert_like_args(args, "ensure");
-                Some(TypeKind::Unit)
-            }
-            BuiltinCallSpec::AssertLike => {
-                self.check_assert_like_args(args, name);
-                Some(TypeKind::Unit)
-            }
-            BuiltinCallSpec::Math(intrinsic) => {
-                self.check_math_binary_args(args, intrinsic.operand_type());
-                Some(intrinsic.return_type())
-            }
-            BuiltinCallSpec::StdFloat(intrinsic) => {
-                let input = intrinsic.input_type();
-                self.check_homogeneous_builtin_args(name, args, &input, intrinsic.arity());
-                Some(intrinsic.output_type())
-            }
-            BuiltinCallSpec::Vector(arity) => {
-                self.check_homogeneous_builtin_args(name, args, &TypeKind::F32, arity);
-                Some(TypeKind::Named(format!("Vec{arity}")))
-            }
-        }
-    }
-
-    fn check_homogeneous_builtin_args(
-        &mut self,
-        name: &str,
-        args: &[CallArg],
-        expected: &TypeKind,
-        arity: usize,
-    ) {
-        if args.len() != arity {
-            self.errors.push(TypeCheckError::new(format!(
-                "`{name}` expected {arity} positional argument(s), got {}",
-                args.len()
-            )));
-        }
-        for arg in args {
-            match arg {
-                CallArg::Positional(value) => {
-                    self.check_expr_with_expected(value, Some(expected));
-                }
-                CallArg::Named {
-                    name: arg_name,
-                    value,
-                } => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "`{name}` arguments must be positional, got named `{arg_name}`"
-                    )));
-                    self.check_expr(value);
-                }
-                CallArg::Spread { value } => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "`{name}` arguments cannot be spread"
-                    )));
-                    self.check_expr(value);
-                }
-            }
-        }
-    }
-
-    fn check_math_binary_args(&mut self, args: &[CallArg], type_name: &str) {
-        if args.len() != 2 {
-            self.errors.push(TypeCheckError::new(format!(
-                "math kernel expected 2 positional arguments, got {}",
-                args.len()
-            )));
-        }
-        let expected = TypeKind::Named(type_name.to_owned());
-        for arg in args {
-            match arg {
-                CallArg::Positional(value) => {
-                    self.check_expr_with_expected(value, Some(&expected));
-                }
-                CallArg::Named { name, value } => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "math kernel arguments must be positional, got named `{name}`"
-                    )));
-                    self.check_expr(value);
-                }
-                CallArg::Spread { value } => {
-                    self.errors.push(TypeCheckError::new(
-                        "math kernel arguments cannot be spread".to_owned(),
-                    ));
-                    self.check_expr(value);
-                }
-            }
-        }
-    }
-
-    fn check_assert_like_args(&mut self, args: &[CallArg], name: &str) {
-        if let Some(condition) = args.first() {
-            self.expect_expr_type(
-                condition.value(),
-                &TypeKind::Bool,
-                &format!("{name} condition"),
-            );
-        } else {
-            self.errors.push(TypeCheckError::new(format!(
-                "{name} requires a condition argument"
-            )));
-        }
-        for arg in args.iter().skip(1) {
-            self.check_expr(arg.value());
-        }
-    }
-
     fn check_unary_expr(
         &mut self,
         op: UnaryOp,
@@ -1078,7 +999,7 @@ impl TypeChecker<'_> {
         let method_name = method.split_once('<').map_or(method, |(name, _)| name);
         let receiver_expression = TypeExpressionId::from_index(self.stats.expressions);
         let receiver_type = self.check_expr(select.target());
-        if is_drop_name(method_name) {
+        if self.registered_world.is_none() && is_drop_name(method_name) {
             for arg in args {
                 self.check_expr(arg.value());
             }
@@ -1107,6 +1028,7 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         let args = call.args();
         match self.check_inherent_method_call(
+            receiver,
             receiver_type,
             method_name,
             args,
@@ -1117,19 +1039,21 @@ impl TypeChecker<'_> {
             InherentMethodCallOutcome::Missing => {}
             InherentMethodCallOutcome::Checked(return_type) => return return_type,
         }
-        match self.check_trait_method_call(receiver_type, method_name, args) {
-            TraitMethodCallOutcome::Missing => {}
-            TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
-            TraitMethodCallOutcome::Rejected => return None,
-        }
-        if let Some(return_type) = self.check_data_last_method_fallback(
-            receiver,
-            receiver_type,
-            method_name,
-            args,
-            expression_id,
-        ) {
-            return Some(return_type);
+        if self.registered_world.is_none() {
+            match self.check_trait_method_call(receiver_type, method_name, args) {
+                TraitMethodCallOutcome::Missing => {}
+                TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
+                TraitMethodCallOutcome::Rejected => return None,
+            }
+            if let Some(return_type) = self.check_data_last_method_fallback(
+                receiver,
+                receiver_type,
+                method_name,
+                args,
+                expression_id,
+            ) {
+                return Some(return_type);
+            }
         }
         self.check_untyped_method_args(args);
         if self.registered_world.is_none()
@@ -1148,8 +1072,13 @@ impl TypeChecker<'_> {
     ///
     /// This phase deliberately precedes visible trait methods and data-last
     /// callable fallback, preserving ordinary inherent-method shadowing.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the method boundary carries exact receiver, call, and fact identities"
+    )]
     fn check_inherent_method_call(
         &mut self,
+        receiver: &Expr,
         receiver_type: &TypeKind,
         method_name: &str,
         args: &[CallArg],
@@ -1157,17 +1086,18 @@ impl TypeChecker<'_> {
         receiver_expression: TypeExpressionId,
         expression_id: TypeExpressionId,
     ) -> InherentMethodCallOutcome {
-        if method_name == "traverse" {
+        if self.registered_world.is_none() && method_name == "traverse" {
             return InherentMethodCallOutcome::Checked(
                 self.check_traverse_method_call(receiver_type, args),
             );
         }
-        if method_name == "parallel" {
+        if self.registered_world.is_none() && method_name == "parallel" {
             return InherentMethodCallOutcome::Checked(
                 self.check_parallel_method_call(receiver_type, args),
             );
         }
         match self.check_registered_catalog_method_call(
+            receiver,
             receiver_type,
             method_name,
             call,
@@ -1184,39 +1114,41 @@ impl TypeChecker<'_> {
         {
             return InherentMethodCallOutcome::Checked(Some(return_type));
         }
-        match self.check_builtin_collection_method_call(receiver_type, method_name, args) {
-            BuiltinCollectionMethodCallOutcome::Missing => {}
-            BuiltinCollectionMethodCallOutcome::Checked(return_type) => {
-                return InherentMethodCallOutcome::Checked(return_type);
+        if self.registered_world.is_none() {
+            match self.check_builtin_collection_method_call(receiver_type, method_name, args) {
+                BuiltinCollectionMethodCallOutcome::Missing => {}
+                BuiltinCollectionMethodCallOutcome::Checked(return_type) => {
+                    return InherentMethodCallOutcome::Checked(return_type);
+                }
             }
-        }
-        if let Some(return_type) =
-            self.check_presentation_handle_lifecycle_method(receiver_type, method_name, args)
-        {
-            return InherentMethodCallOutcome::Checked(Some(return_type));
-        }
-        if matches!(method_name, "clamp" | "min" | "max") && receiver_type.is_integer() {
-            return InherentMethodCallOutcome::Checked(Some(
-                self.check_integer_scalar_method_call(receiver_type.clone(), method_name, args),
-            ));
-        }
-        match self.check_builtin_domain_method_call(receiver_type, method_name, args) {
-            InherentMethodCallOutcome::Missing => {}
-            checked @ InherentMethodCallOutcome::Checked(_) => return checked,
-        }
-        if let Some(return_type) =
-            well_known_capacity_method_type(receiver_type, method_name, args.len())
-        {
-            let signature = FunctionSignature::return_only(return_type.clone());
-            self.warn_if_data_last_method_fallback_shadowed(
-                receiver_type,
-                method_name,
-                args,
-                "inherent",
-                &signature,
-            );
-            self.check_untyped_method_args(args);
-            return InherentMethodCallOutcome::Checked(Some(return_type));
+            if let Some(return_type) =
+                self.check_presentation_handle_lifecycle_method(receiver_type, method_name, args)
+            {
+                return InherentMethodCallOutcome::Checked(Some(return_type));
+            }
+            if matches!(method_name, "clamp" | "min" | "max") && receiver_type.is_integer() {
+                return InherentMethodCallOutcome::Checked(Some(
+                    self.check_integer_scalar_method_call(receiver_type.clone(), method_name, args),
+                ));
+            }
+            match self.check_builtin_domain_method_call(receiver_type, method_name, args) {
+                InherentMethodCallOutcome::Missing => {}
+                checked @ InherentMethodCallOutcome::Checked(_) => return checked,
+            }
+            if let Some(return_type) =
+                well_known_capacity_method_type(receiver_type, method_name, args.len())
+            {
+                let signature = FunctionSignature::return_only(return_type.clone());
+                self.warn_if_data_last_method_fallback_shadowed(
+                    receiver_type,
+                    method_name,
+                    args,
+                    "inherent",
+                    &signature,
+                );
+                self.check_untyped_method_args(args);
+                return InherentMethodCallOutcome::Checked(Some(return_type));
+            }
         }
         InherentMethodCallOutcome::Missing
     }
@@ -1401,9 +1333,9 @@ impl TypeChecker<'_> {
             &self.active_trait_predicates(),
         ) {
             TraitMethodResolution::Missing => TraitMethodCallOutcome::Missing,
-            TraitMethodResolution::Inherent(method) => {
+            TraitMethodResolution::Inherent { method, .. } => {
                 let return_type = self.resolve_type_projection(method.return_type().clone());
-                let signature = trait_method_call_signature(method.signature(), return_type);
+                let signature = method.call_signature(return_type);
                 self.warn_if_data_last_method_fallback_shadowed(
                     receiver_type,
                     method_name,
@@ -1418,7 +1350,7 @@ impl TypeChecker<'_> {
                 trait_id, method, ..
             } => {
                 let return_type = self.resolve_type_projection(method.return_type().clone());
-                let signature = trait_method_call_signature(method.signature(), return_type);
+                let signature = method.call_signature(return_type);
                 let source = self.trait_catalog.trait_name(trait_id).map_or_else(
                     || "trait `<unknown-trait>`".to_owned(),
                     |name| format!("trait `{name}`"),
@@ -1979,7 +1911,7 @@ impl TypeChecker<'_> {
             &self.active_trait_predicates(),
         ) {
             TraitMethodResolution::Missing => false,
-            TraitMethodResolution::Inherent(_) | TraitMethodResolution::Unique { .. } => {
+            TraitMethodResolution::Inherent { .. } | TraitMethodResolution::Unique { .. } => {
                 self.errors
                     .push(TypeCheckError::unsupported_method_value_reference(
                         receiver_type.clone(),

@@ -210,7 +210,7 @@ impl TypeChecker<'_> {
             .map(CallableSymbol::declaration)
     }
 
-    fn resolve_project_character_in(
+    pub(super) fn resolve_project_character_in(
         &self,
         module: &CanonicalModulePath,
         reference: &str,

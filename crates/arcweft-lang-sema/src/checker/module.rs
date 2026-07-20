@@ -1,22 +1,21 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
-use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallTargetFactReport};
+use super::call_target_facts::{
+    CallResolverControl, CallTargetFactRecorder, CallTargetFactReport, FocusedCallSite,
+};
 use super::line_plan::DialogueContentRangeMode;
 use super::{
     ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
-    FunctionSignature, FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
-    NominalTypeContext, Pattern, Stmt, TypeCheckEnv, TypeCheckError, TypeCheckReport,
-    TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind, TypedLoweringEvidenceKind,
-    YieldContext, choice_output_type, entity_kind_for_decl, entity_syntax_kind,
-    function_callable_id, function_param_local_type, function_param_local_type_with_generics,
-    function_signature_type, function_signature_type_with_nominal_types, ident_pattern_name,
-    normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
-    type_ref_kind_with_generics, validate_typecheck_ready,
+    FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, NominalTypeContext,
+    Pattern, Stmt, TypeCheckEnv, TypeCheckError, TypeCheckReport, TypeCheckWarning, TypeChecker,
+    TypeExpressionId, TypeKind, TypedLoweringEvidenceKind, YieldContext, choice_output_type,
+    entity_kind_for_decl, entity_syntax_kind, function_callable_id, function_param_local_type,
+    function_param_local_type_with_generics, function_signature_type,
+    function_signature_type_with_nominal_types, ident_pattern_name, normalize_choice_type,
+    signature_generic_names, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
+    validate_typecheck_ready,
 };
-use crate::callable::{
-    CallTargetFactError, CallTargetFactMode, CallTargetFacts, CallableParameterType,
-    CallableSignatureSchema, ResolverWork,
-};
+use crate::callable::{CallTargetFactError, CallTargetFactMode, CallTargetFacts, ResolverWork};
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
 };
@@ -108,24 +107,19 @@ impl TypeCheckReport {
     }
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by the following native semantic signature-query cut"
-)]
 pub(crate) struct FocusedCallTypeCheckReport {
+    #[cfg(test)]
     report: TypeCheckReport,
     call_targets: CallTargetFactReport,
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by the following native semantic signature-query cut"
-)]
 impl FocusedCallTypeCheckReport {
+    #[cfg(test)]
     pub(crate) const fn report(&self) -> &TypeCheckReport {
         &self.report
     }
 
+    #[cfg(test)]
     pub(crate) fn focused_call_target_facts(
         &self,
     ) -> Result<&CallTargetFacts, CallTargetFactError> {
@@ -139,6 +133,30 @@ impl FocusedCallTypeCheckReport {
             .fact
             .as_ref()
             .ok_or_else(|| CallTargetFactError::FocusedTargetMissing { call: call.clone() })
+    }
+
+    pub(crate) fn signature_call_site(
+        &self,
+    ) -> Result<Option<&FocusedCallSite>, CallTargetFactError> {
+        let CallTargetFactMode::Cursor { .. } = &self.call_targets.mode else {
+            return Err(CallTargetFactError::FocusedModeRequired);
+        };
+        if let Some(error) = &self.call_targets.error {
+            return Err(error.clone());
+        }
+        Ok(self.call_targets.site.as_ref())
+    }
+
+    pub(crate) fn signature_call_target_facts(
+        &self,
+    ) -> Result<Option<&CallTargetFacts>, CallTargetFactError> {
+        self.signature_call_site()?;
+        Ok(self.call_targets.fact.as_ref())
+    }
+
+    pub(crate) fn unsupported_signature_surface(&self) -> Result<bool, CallTargetFactError> {
+        self.signature_call_site()?;
+        Ok(self.call_targets.unsupported_surface)
     }
 }
 
@@ -183,10 +201,7 @@ pub fn analyze_registered_project_types(
     )
 }
 
-#[allow(
-    dead_code,
-    reason = "consumed by the following native semantic signature-query cut"
-)]
+#[cfg(test)]
 pub(crate) fn analyze_registered_project_types_for_call_facts(
     module: &HirModule,
     registered: &crate::registration::RegisteredSemanticWorld,
@@ -223,6 +238,48 @@ pub(crate) fn analyze_registered_project_types_for_call_facts(
         &mut checker,
     );
     Ok(FocusedCallTypeCheckReport {
+        report,
+        call_targets,
+    })
+}
+
+pub(crate) fn analyze_registered_project_types_for_signature_cursor(
+    module: &HirModule,
+    registered: &crate::registration::RegisteredSemanticWorld,
+    document: SourceDocumentIdentity,
+    byte_offset: usize,
+    cancellation: &AtomicBool,
+    work: &mut ResolverWork,
+) -> Result<FocusedCallTypeCheckReport, CallTargetFactError> {
+    if registered.symbols().source_identity(module.module_path()) != Some(&document) {
+        return Err(CallTargetFactError::FocusedSourceUnavailable { document });
+    }
+    let (style_catalog, style_diagnostics) = check_view_styles(module);
+    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
+    let mut checker = TypeChecker::new_with_project(
+        registered.environment().typecheck_env(),
+        module,
+        None,
+        Some(registered.symbols()),
+        Some(registered),
+        CallTargetFactMode::Cursor {
+            document,
+            byte_offset,
+        },
+        CallResolverControl::caller_owned(cancellation, work),
+    );
+    let (report, call_targets) = finish_type_check_with_call_facts(
+        module,
+        style_catalog,
+        style_diagnostics,
+        view_part_catalog,
+        view_part_diagnostics,
+        &mut checker,
+    );
+    #[cfg(not(test))]
+    drop(report);
+    Ok(FocusedCallTypeCheckReport {
+        #[cfg(test)]
         report,
         call_targets,
     })
@@ -1317,8 +1374,8 @@ impl TypeChecker<'_> {
                             .push(TypeCheckError::rust_export_signature_mismatch(
                                 package,
                                 export_name,
-                                function_signature_label(&expected),
-                                callable_schema_label(candidates[0].schema()),
+                                expected.source_label(),
+                                candidates[0].schema().source_label(),
                             ));
                     }
                 }
@@ -2423,46 +2480,4 @@ fn type_ref_kind_for_impl(
         },
         _ => type_ref_kind_with_generics(ty, generic_names),
     }
-}
-
-fn function_signature_label(signature: &FunctionSignature) -> String {
-    let params = signature
-        .params()
-        .iter()
-        .map(|param| {
-            param.name().map_or_else(
-                || type_kind_label(param.ty()),
-                |name| format!("{name}: {}", type_kind_label(param.ty())),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "fn({params}) -> {}",
-        type_kind_label(signature.return_type())
-    )
-}
-
-fn callable_schema_label(schema: &CallableSignatureSchema) -> String {
-    let mut groups = String::new();
-    for group in schema.groups() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| {
-                let ty = match parameter.ty() {
-                    CallableParameterType::Exact(ty) => type_kind_label(ty),
-                    CallableParameterType::Unchecked => "_".to_owned(),
-                };
-                parameter
-                    .name()
-                    .map_or(ty.clone(), |name| format!("{}: {ty}", name.as_str()))
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        groups.push('(');
-        groups.push_str(&parameters);
-        groups.push(')');
-    }
-    format!("fn{groups} -> {}", type_kind_label(schema.result()))
 }

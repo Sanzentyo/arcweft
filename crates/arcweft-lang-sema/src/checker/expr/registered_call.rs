@@ -3,20 +3,30 @@
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath,
     expr::{CallArg, CallExpr, Expr},
+    reference::BorrowKind,
 };
 
 use super::{TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
 use crate::{
     callable::{
         CallCallee, CallPoison, CallResolverRequest, CallSourceContext, CallableArgumentIndex,
-        CallableCandidateId, CallableGroupIndex, CallableName, CallableParameter,
-        CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
-        CallableSignatureSchema, CallableValidator, CheckedCallArgumentFact,
-        CheckedCallArgumentSlotFact, CheckedCallTarget, LexicalCallableScope,
-        NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS, ResolveCallOutcome,
-        ResolvedCallTarget, ResolvedCallable, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        CallableCandidateId, CallableDiagnosticCode, CallableDiagnosticSubject, CallableGroupIndex,
+        CallableName, CallableParameter, CallableParameterPassing, CallableParameterPresence,
+        CallableParameterType, CallablePath, CallableSignatureSchema, CallableValidator,
+        CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallTarget,
+        DataLastCallableId, DialogueCallableId, DialogueCalleeIdentity, FunctionValueOrdinal,
+        FunctionValueSignatureId, LexicalBindingIndex, LexicalCallBinding, LexicalCallableScope,
+        LocalCallableId, NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS,
+        ProjectNominalTypeId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
+        ResolvedEnumSeed, ResolvedFunctionValueSeed, SpeakerCallableId, SpreadArgumentPolicy,
+        UnknownNamedArgumentPolicy, call_shape_is_viable, data_last_unsupported_spread_reason,
+    },
+    checker::{
+        CurriedSignatureCallValue, DataLastMethodFallbackArg, TypedLoweringEvidence,
+        TypedLoweringEvidenceKind,
     },
     effect_model::EffectSite,
+    effect_row::EffectRow,
 };
 
 use super::support::{FixedLiteralSpreadSlot, fixed_literal_spread_slots, spread_item_type};
@@ -53,6 +63,54 @@ struct RegisteredSpreadResult {
     shape_rejected: bool,
 }
 
+struct RegisteredSlotCheck {
+    poison: CallPoison,
+    inferred: Option<TypeKind>,
+}
+
+struct RegisteredCandidateCheck {
+    arguments: RegisteredArgumentCheck,
+    result: TypeKind,
+}
+
+#[derive(Clone, Copy)]
+enum RegisteredSumConstructor {
+    Result(crate::callable::ResultConstructorKind),
+    Option(crate::callable::OptionConstructorKind),
+}
+
+impl RegisteredSumConstructor {
+    fn has_instantiated_result(self, result: &TypeKind) -> bool {
+        match (self, result) {
+            (Self::Result(_), TypeKind::Result { ok, error }) => {
+                !is_placeholder(ok) || !is_placeholder(error)
+            }
+            (Self::Option(_), TypeKind::Option(item)) => !is_placeholder(item),
+            _ => false,
+        }
+    }
+
+    fn result_with_payload(self, payload: TypeKind) -> TypeKind {
+        match self {
+            Self::Result(crate::callable::ResultConstructorKind::Ok) => TypeKind::Result {
+                ok: Box::new(payload),
+                error: Box::new(TypeKind::Named("_".to_owned())),
+            },
+            Self::Result(crate::callable::ResultConstructorKind::Err) => TypeKind::Result {
+                ok: Box::new(TypeKind::Named("_".to_owned())),
+                error: Box::new(payload),
+            },
+            Self::Option(crate::callable::OptionConstructorKind::Some) => {
+                TypeKind::Option(Box::new(payload))
+            }
+        }
+    }
+}
+
+fn is_placeholder(ty: &TypeKind) -> bool {
+    matches!(ty, TypeKind::Named(name) if name == "_")
+}
+
 struct RegisteredCallSite<'a> {
     label: &'a str,
     call: &'a CallExpr,
@@ -60,6 +118,9 @@ struct RegisteredCallSite<'a> {
     callee_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     expression: TypeExpressionId,
     document: &'a arcweft_source::SourceDocumentIdentity,
+    group: CallableGroupIndex,
+    receiver: Option<(&'a Expr, &'a TypeKind)>,
+    function_value_type: Option<TypeKind>,
 }
 
 struct RegisteredFreeResolutionSite<'a> {
@@ -74,6 +135,7 @@ struct RegisteredFreeResolutionSite<'a> {
 struct RegisteredArgumentContext<'a> {
     label: &'a str,
     schema: &'a CallableSignatureSchema,
+    group: CallableGroupIndex,
     parameters: &'a [CallableParameter],
 }
 
@@ -108,12 +170,33 @@ struct RegisteredArgumentSlot<'a> {
     argument_index: usize,
     expression: TypeExpressionId,
     source: Option<arcweft_source::SourceSpan>,
+    group: CallableGroupIndex,
     parameter: Option<&'a CallableParameter>,
     inferred: Option<TypeKind>,
     poison: CallPoison,
 }
 
 impl TypeChecker<'_> {
+    pub(super) fn check_standalone_language_call(
+        &mut self,
+        label: &str,
+        schema: &CallableSignatureSchema,
+        call: &CallExpr,
+    ) -> TypeKind {
+        let argument_check =
+            self.check_registered_schema_args(label, schema, CallableGroupIndex::ZERO, call, false);
+        debug_assert!(
+            argument_check.facts.is_empty(),
+            "standalone calls do not retain focused registered facts"
+        );
+        self.effect_collector.record_named_call(
+            label,
+            Some(schema.effects().declared().concrete().clone()),
+            EffectSite::new(format!("call `{label}`")),
+        );
+        schema_result_type(schema, CallableGroupIndex::ZERO)
+    }
+
     pub(super) fn check_registered_catalog_free_call(
         &mut self,
         call: &CallExpr,
@@ -133,11 +216,7 @@ impl TypeChecker<'_> {
             return RegisteredFreeCallOutcome::NotHandled;
         }
 
-        if self.registered_free_path_is_deferred(&path) {
-            return RegisteredFreeCallOutcome::NotHandled;
-        }
-
-        let lexical = self.registered_free_lexical_scope();
+        let lexical = self.registered_free_lexical_scope(expression);
         let module = self
             .current_module
             .clone()
@@ -154,15 +233,21 @@ impl TypeChecker<'_> {
         };
         let call_span = self.source_span_for_current_range(call.range());
         let callee_span = self.source_span_for_current_range(call.callee_range());
-        let (cancellation, work) = self.call_resolver_control.parts();
+        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
+        let enum_variant = self.registered_enum_seed(expected, &path, &module, symbols);
+        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
         let request = match CallResolverRequest::try_new(
-            CallCallee::Free { path: &path },
+            CallCallee::Free {
+                path: &path,
+                enum_variant: enum_variant.as_ref(),
+            },
             &lexical,
             expected,
             &module,
             symbols,
             world,
             &self.trait_catalog,
+            &[],
             CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
             CallableGroupIndex::ZERO,
             expression,
@@ -194,6 +279,26 @@ impl TypeChecker<'_> {
         )
     }
 
+    fn registered_enum_seed(
+        &self,
+        expected: Option<&TypeKind>,
+        path: &CallablePath,
+        module: &CanonicalModulePath,
+        symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
+    ) -> Option<ResolvedEnumSeed> {
+        let expected = expected?;
+        let payload = self.enum_variant_payload_for_path(expected, &path.dotted_name())?;
+        let owner = super::enum_variant::nominal_type_name(expected)?;
+        let owner = ProjectNominalTypeId::new(
+            symbols.world().package().clone(),
+            module.clone(),
+            CallableName::try_new(owner).ok()?,
+        );
+        let id = crate::callable::EnumVariantSignatureId::new(owner, path.leaf().clone());
+        let schema = id.signature_schema(&payload, expected.clone());
+        Some(ResolvedEnumSeed::new(id, expected.clone(), schema))
+    }
+
     fn finish_registered_free_resolution(
         &mut self,
         site: RegisteredFreeResolutionSite<'_>,
@@ -220,6 +325,9 @@ impl TypeChecker<'_> {
                         callee_range,
                         expression: site.expression,
                         document: site.document,
+                        group: CallableGroupIndex::ZERO,
+                        receiver: None,
+                        function_value_type: None,
                     },
                     &candidates,
                 )))
@@ -247,12 +355,34 @@ impl TypeChecker<'_> {
                             arguments,
                             CallableGroupIndex::ZERO,
                         ),
+                        Some((
+                            CallableDiagnosticCode::NonCallableTarget,
+                            CallableDiagnosticSubject::None,
+                        )),
                     );
                 }
                 RegisteredFreeCallOutcome::Checked(None)
             }
-            ResolveCallOutcome::Resolved(ResolvedCallTarget::FunctionValue(_))
-            | ResolveCallOutcome::Missing(_) => RegisteredFreeCallOutcome::NotHandled,
+            ResolveCallOutcome::Resolved(ResolvedCallTarget::FunctionValue(value)) => {
+                let label = site.path.dotted_name();
+                let candidate = value.callable();
+                RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidate(
+                    RegisteredCallSite {
+                        label: &label,
+                        call: site.call,
+                        call_span: site.call_span,
+                        callee_range: None,
+                        expression: site.expression,
+                        document: site.document,
+                        group: value.current_group(),
+                        receiver: None,
+                        function_value_type: Some(value.function_type().clone()),
+                    },
+                    candidate,
+                    std::slice::from_ref(candidate),
+                )))
+            }
+            ResolveCallOutcome::Missing(_) => RegisteredFreeCallOutcome::NotHandled,
             ResolveCallOutcome::Rejected(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
                 self.call_target_fact_recorder
@@ -265,35 +395,126 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn registered_free_path_is_deferred(&self, path: &CallablePath) -> bool {
-        let [name] = path.segments() else {
-            return false;
-        };
-        let name = name.as_str();
-        self.locals
-            .get(name)
-            .is_some_and(is_deferred_callable_value)
-            || (self
-                .global_symbols
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one scope builder preserves precedence across every lexical callable carrier"
+    )]
+    fn registered_free_lexical_scope(&self, expression: TypeExpressionId) -> LexicalCallableScope {
+        let mut scope = LexicalCallableScope::default();
+        let names = self
+            .global_symbols
+            .keys()
+            .chain(self.locals.keys())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut function_value_ordinal = 0usize;
+        for name in names {
+            let Some(ty) = self
+                .locals
                 .get(name)
-                .is_some_and(is_deferred_callable_value)
-                && self.resolve_project_callable(name).is_none())
+                .or_else(|| self.global_symbols.get(name))
+            else {
+                continue;
+            };
+            let Ok(callable_name) = CallableName::try_new(name.as_str()) else {
+                continue;
+            };
+            if let Some(id) = SpeakerCallableId::resolve_value(ty, None) {
+                scope.insert(
+                    callable_name,
+                    LexicalCallBinding::Speaker {
+                        schema: std::sync::Arc::new(id.signature_schema()),
+                        id,
+                    },
+                );
+            } else if let Some(signature) = self.local_callable_signatures.get(name)
+                && let Some(id) = self.registered_local_callable_id(name)
+            {
+                let effects = function_value_effects(ty);
+                let Ok(schema) = signature.signature.callable_schema(
+                    effects.clone(),
+                    CallableValidator::Ordinary,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                ) else {
+                    continue;
+                };
+                scope.insert(
+                    callable_name,
+                    LexicalCallBinding::Callable {
+                        id,
+                        schema: std::sync::Arc::new(schema),
+                        effects,
+                    },
+                );
+            } else if matches!(ty, TypeKind::Function { .. }) {
+                let ordinal = FunctionValueOrdinal::try_from_usize(function_value_ordinal)
+                    .unwrap_or_else(|_| {
+                        FunctionValueOrdinal::try_from_usize(0)
+                            .expect("zero function-value ordinal is representable")
+                    });
+                function_value_ordinal = function_value_ordinal.saturating_add(1);
+                let id_expression = self
+                    .local_symbol_identities
+                    .get(name)
+                    .and_then(local_binding_expression)
+                    .unwrap_or(expression);
+                let id = FunctionValueSignatureId::new(id_expression, ordinal);
+                let curried = self.local_curried_signature_calls.get(name);
+                let schema = curried
+                    .and_then(|value| value.resolved.as_ref())
+                    .map(|candidate| candidate.schema().clone())
+                    .or_else(|| {
+                        self.local_callable_signatures.get(name).and_then(|source| {
+                            source
+                                .signature
+                                .callable_schema(
+                                    function_value_effects(ty),
+                                    CallableValidator::Ordinary,
+                                    &PRODUCTION_CALLABLE_LIMITS,
+                                )
+                                .ok()
+                        })
+                    })
+                    .or_else(|| {
+                        CallableSignatureSchema::for_function_value(ty, &PRODUCTION_CALLABLE_LIMITS)
+                            .ok()
+                    });
+                let Some(schema) = schema else {
+                    continue;
+                };
+                let next_group = curried
+                    .and_then(|value| {
+                        CallableGroupIndex::try_from_usize(value.remaining_group_index).ok()
+                    })
+                    .unwrap_or(CallableGroupIndex::ZERO);
+                let seed = ResolvedFunctionValueSeed::new(
+                    id,
+                    ty.clone(),
+                    schema,
+                    self.local_function_effects.get(name).cloned(),
+                    curried
+                        .and_then(|value| value.resolved.as_ref())
+                        .map(|candidate| candidate.id().clone()),
+                    next_group,
+                );
+                scope.insert(callable_name, LexicalCallBinding::FunctionValue(seed));
+            } else {
+                scope.insert(
+                    callable_name,
+                    LexicalCallBinding::NonCallable { ty: ty.clone() },
+                );
+            }
+        }
+        scope
     }
 
-    fn registered_free_lexical_scope(&self) -> LexicalCallableScope {
-        LexicalCallableScope::from_non_callable_bindings(
-            self.locals
-                .iter()
-                .chain(self.global_symbols.iter())
-                .filter_map(|(name, ty)| {
-                    if is_deferred_callable_value(ty) {
-                        return None;
-                    }
-                    CallableName::try_new(name.as_str())
-                        .ok()
-                        .map(|name| (name, ty.clone()))
-                }),
-        )
+    fn registered_local_callable_id(&self, name: &str) -> Option<LocalCallableId> {
+        let crate::canonicalization::SemanticSymbolIdentity::Local { scope, binding, .. } =
+            self.local_symbol_identities.get(name)?
+        else {
+            return None;
+        };
+        let binding = LexicalBindingIndex::try_from_usize(binding.0 as usize).ok()?;
+        Some(LocalCallableId::new(*scope, binding))
     }
 
     fn registered_free_path_has_value_receiver(&self, callee: &Expr, path: &CallablePath) -> bool {
@@ -305,8 +526,13 @@ impl TypeChecker<'_> {
                 .is_some_and(|root| self.symbol_type(root.as_str()).is_some())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the method entry point owns one resolver request and every typed terminal outcome"
+    )]
     pub(super) fn check_registered_catalog_method_call(
         &mut self,
+        receiver: &Expr,
         receiver_type: &TypeKind,
         method_name: &str,
         call: &CallExpr,
@@ -333,15 +559,18 @@ impl TypeChecker<'_> {
             }
             return RegisteredMethodCallOutcome::Checked(None);
         };
-        let lexical = LexicalCallableScope::default();
+        let lexical = self.registered_free_lexical_scope(expression);
         let call_span = self.source_span_for_current_range(call.range());
         let callee_span = self.source_span_for_current_range(call.callee_range());
-        let (cancellation, work) = self.call_resolver_control.parts();
+        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
+        let active_trait_predicates = self.active_trait_predicates();
+        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
         let request = match CallResolverRequest::try_new(
             CallCallee::Selected {
                 receiver_expression,
                 receiver_type,
                 method: &method,
+                arguments: args,
             },
             &lexical,
             None,
@@ -349,6 +578,7 @@ impl TypeChecker<'_> {
             symbols,
             world,
             &self.trait_catalog,
+            &active_trait_predicates,
             CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
             CallableGroupIndex::ZERO,
             expression,
@@ -377,13 +607,40 @@ impl TypeChecker<'_> {
                         callee_range: None,
                         expression,
                         document,
+                        group: CallableGroupIndex::ZERO,
+                        receiver: Some((receiver, receiver_type)),
+                        function_value_type: None,
                     },
                     &candidates,
                 )))
             }
             ResolveCallOutcome::Missing(_) => RegisteredMethodCallOutcome::NotHandled,
             ResolveCallOutcome::Rejected(error) => {
-                self.errors.push(TypeCheckError::new(error.to_string()));
+                match &error {
+                    crate::callable::ResolveCallError::AmbiguousTraitMethod { candidates } => {
+                        let traits = candidates
+                            .iter()
+                            .map(|candidate| candidate.trait_name().dotted_name())
+                            .collect::<Vec<_>>();
+                        self.errors.push(TypeCheckError::trait_diagnostic(
+                            crate::diagnostics::TraitDiagnostic::ambiguous_method(
+                                method_name,
+                                traits.iter().map(String::as_str),
+                            ),
+                        ));
+                    }
+                    crate::callable::ResolveCallError::DataLastAmbiguity { candidates } => {
+                        self.errors
+                            .push(TypeCheckError::ambiguous_data_last_method_fallback(
+                                method_name,
+                                receiver_type.clone(),
+                                candidates
+                                    .iter()
+                                    .map(|candidate| format!("{:?}", candidate.callable())),
+                            ));
+                    }
+                    _ => self.errors.push(TypeCheckError::new(error.to_string())),
+                }
                 self.call_target_fact_recorder
                     .record_resolve_error(call_span.as_ref(), error);
                 for arg in args {
@@ -405,6 +662,239 @@ impl TypeChecker<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "function-value checking retains one resolver product, facts, and curried state"
+    )]
+    pub(super) fn check_registered_function_value_call(
+        &mut self,
+        call: &CallExpr,
+        expression: TypeExpressionId,
+        callee: Option<&str>,
+        callee_ty: &TypeKind,
+        effect_callable: Option<crate::effect_model::CallableId>,
+        curried: Option<&CurriedSignatureCallValue>,
+    ) -> RegisteredFreeCallOutcome {
+        let (Some(world), Some(symbols)) = (self.registered_world, self.project_symbols) else {
+            return RegisteredFreeCallOutcome::NotHandled;
+        };
+        let module = self
+            .current_module
+            .clone()
+            .unwrap_or_else(CanonicalModulePath::crate_root);
+        let Some(document) = symbols.source_identity(&module) else {
+            return RegisteredFreeCallOutcome::NotHandled;
+        };
+        let schema = curried
+            .and_then(|value| value.resolved.as_ref())
+            .map(|candidate| candidate.schema().clone())
+            .or_else(|| {
+                CallableSignatureSchema::for_function_value(callee_ty, &PRODUCTION_CALLABLE_LIMITS)
+                    .ok()
+            });
+        let Some(schema) = schema else {
+            self.errors.push(TypeCheckError::new(
+                "function value has no canonical callable schema".to_owned(),
+            ));
+            for argument in call.args() {
+                self.check_expr(argument.value());
+            }
+            return RegisteredFreeCallOutcome::Checked(None);
+        };
+        let current_group = curried
+            .and_then(|value| CallableGroupIndex::try_from_usize(value.remaining_group_index).ok())
+            .unwrap_or(CallableGroupIndex::ZERO);
+        let seed = ResolvedFunctionValueSeed::new(
+            FunctionValueSignatureId::new(
+                expression,
+                FunctionValueOrdinal::try_from_usize(0)
+                    .expect("zero function-value ordinal is representable"),
+            ),
+            callee_ty.clone(),
+            schema,
+            effect_callable,
+            curried
+                .and_then(|value| value.resolved.as_ref())
+                .map(|candidate| candidate.id().clone()),
+            current_group,
+        );
+        let lexical = LexicalCallableScope::default();
+        let call_span = self.source_span_for_current_range(call.range());
+        let callee_span = self.source_span_for_current_range(call.callee_range());
+        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
+        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
+        let request = match CallResolverRequest::try_new(
+            CallCallee::FunctionValue { value: &seed },
+            &lexical,
+            None,
+            &module,
+            symbols,
+            world,
+            &self.trait_catalog,
+            &[],
+            CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
+            current_group,
+            expression,
+            cancellation,
+            work,
+            &PRODUCTION_CALLABLE_LIMITS,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                self.call_target_fact_recorder
+                    .record_resolve_error(call_span.as_ref(), error);
+                for argument in call.args() {
+                    self.check_expr(argument.value());
+                }
+                return RegisteredFreeCallOutcome::Checked(None);
+            }
+        };
+        match crate::callable::resolve_call_target(request) {
+            ResolveCallOutcome::Resolved(ResolvedCallTarget::FunctionValue(value)) => {
+                let label = callee.unwrap_or("<function value>");
+                let candidate = value.callable();
+                RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidate(
+                    RegisteredCallSite {
+                        label,
+                        call,
+                        call_span,
+                        callee_range: None,
+                        expression,
+                        document,
+                        group: value.current_group(),
+                        receiver: None,
+                        function_value_type: Some(value.function_type().clone()),
+                    },
+                    candidate,
+                    std::slice::from_ref(candidate),
+                )))
+            }
+            ResolveCallOutcome::Rejected(error) => {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                self.call_target_fact_recorder
+                    .record_resolve_error(call_span.as_ref(), error);
+                for argument in call.args() {
+                    self.check_expr(argument.value());
+                }
+                RegisteredFreeCallOutcome::Checked(None)
+            }
+            ResolveCallOutcome::Missing(_)
+            | ResolveCallOutcome::Resolved(
+                ResolvedCallTarget::Candidates(_) | ResolvedCallTarget::NonCallable(_),
+            ) => {
+                self.errors.push(TypeCheckError::new(
+                    "function-value resolver returned a non-function target".to_owned(),
+                ));
+                for argument in call.args() {
+                    self.check_expr(argument.value());
+                }
+                RegisteredFreeCallOutcome::Checked(None)
+            }
+        }
+    }
+
+    pub(super) fn resolve_registered_dialogue_call(
+        &mut self,
+        dialogue: &Expr,
+        callee: &Expr,
+        callee_ty: Option<&TypeKind>,
+        expression: TypeExpressionId,
+    ) {
+        let (Some(world), Some(symbols), Some(module)) = (
+            self.registered_world,
+            self.project_symbols,
+            self.current_module.clone(),
+        ) else {
+            return;
+        };
+        let Some(path) = callable_path(callee) else {
+            return;
+        };
+        let callee_identity = self
+            .resolve_project_character_in(&module, &path.dotted_name())
+            .map_or_else(
+                || DialogueCalleeIdentity::Content { path: path.clone() },
+                |character| {
+                    if matches!(callee_ty, Some(TypeKind::SpeakerPreset(_))) {
+                        DialogueCalleeIdentity::SpeakerPreset { character }
+                    } else {
+                        DialogueCalleeIdentity::Speaker { character }
+                    }
+                },
+            );
+        let id = DialogueCallableId::resolve(&callee_identity);
+        let Some(document) = symbols.source_identity(&module) else {
+            return;
+        };
+        let lexical = LexicalCallableScope::default();
+        let call_span = self.source_span_for_expr(dialogue);
+        let callee_span = self.source_span_for_expr(callee);
+        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
+        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
+        let request = match CallResolverRequest::try_new(
+            CallCallee::Dialogue {
+                id,
+                callee: &callee_identity,
+            },
+            &lexical,
+            None,
+            &module,
+            symbols,
+            world,
+            &self.trait_catalog,
+            &[],
+            CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
+            CallableGroupIndex::ZERO,
+            expression,
+            cancellation,
+            work,
+            &PRODUCTION_CALLABLE_LIMITS,
+        ) {
+            Ok(request) => request,
+            Err(error) => {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                self.call_target_fact_recorder
+                    .record_resolve_error(call_span.as_ref(), error);
+                return;
+            }
+        };
+        match crate::callable::resolve_call_target(request) {
+            ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
+                let selected = candidates.first();
+                if records_facts && let Some(call_span) = call_span {
+                    self.record_call_target_facts(
+                        expression,
+                        document,
+                        &call_span,
+                        CheckedCallTarget::selected(
+                            selected,
+                            candidates.as_slice(),
+                            Vec::new(),
+                            selected.schema().result().clone(),
+                            CallableGroupIndex::ZERO,
+                            CallPoison::Clean,
+                        ),
+                        None,
+                    );
+                }
+            }
+            ResolveCallOutcome::Rejected(error) => {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                self.call_target_fact_recorder
+                    .record_resolve_error(call_span.as_ref(), error);
+            }
+            ResolveCallOutcome::Missing(_)
+            | ResolveCallOutcome::Resolved(
+                ResolvedCallTarget::FunctionValue(_) | ResolvedCallTarget::NonCallable(_),
+            ) => {
+                self.errors.push(TypeCheckError::new(
+                    "dialogue resolver returned a non-dialogue target".to_owned(),
+                ));
+            }
+        }
+    }
+
     fn check_registered_candidates(
         &mut self,
         site: RegisteredCallSite<'_>,
@@ -414,7 +904,7 @@ impl TypeChecker<'_> {
         let viable = candidates
             .as_slice()
             .iter()
-            .filter(|candidate| call_shape_is_viable(candidate.schema(), args))
+            .filter(|candidate| call_shape_is_viable(candidate.schema(), site.group, args))
             .collect::<Vec<_>>();
         let selected = match viable.as_slice() {
             [selected] => *selected,
@@ -443,11 +933,13 @@ impl TypeChecker<'_> {
                         site.expression,
                         site.document,
                         &call_span,
-                        CheckedCallTarget::ambiguous(
-                            &candidate_products,
-                            arguments,
-                            CallableGroupIndex::ZERO,
-                        ),
+                        CheckedCallTarget::ambiguous(&candidate_products, arguments, site.group),
+                        Some((
+                            CallableDiagnosticCode::AmbiguousOverload,
+                            CallableDiagnosticSubject::Candidate(
+                                candidate_products[0].id().clone(),
+                            ),
+                        )),
                     );
                 }
                 return TypeKind::Named("_".to_owned());
@@ -456,6 +948,10 @@ impl TypeChecker<'_> {
         self.check_registered_candidate(site, selected, candidates.as_slice())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the selected candidate is checked once and atomically projected into facts"
+    )]
     fn check_registered_candidate(
         &mut self,
         site: RegisteredCallSite<'_>,
@@ -469,30 +965,113 @@ impl TypeChecker<'_> {
             callee_range,
             expression,
             document,
+            group,
+            receiver,
+            function_value_type,
         } = site;
         let args = call.args();
         let schema = candidate.schema();
         self.check_virtual_path_call(label, args);
         let records_facts = self.records_call_target_facts(call_span.as_ref());
-        let argument_check = match schema.validator() {
-            CallableValidator::Ordinary | CallableValidator::Untyped => {
-                self.check_registered_schema_args(label, schema, call, records_facts)
-            }
-            validator => {
+        let checked = if let CallableCandidateId::DataLast(id) = candidate.id() {
+            let Some((receiver, receiver_type)) = receiver else {
                 self.errors.push(TypeCheckError::new(format!(
-                    "registered callable `{label}` has unsupported validator {validator:?}"
+                    "data-last callable `{label}` has no selected receiver"
                 )));
-                RegisteredArgumentCheck {
-                    facts: self.check_unmapped_registered_arguments(
+                return schema_result_type(schema, group);
+            };
+            self.check_registered_data_last_candidate(
+                label,
+                id,
+                schema,
+                call,
+                receiver,
+                receiver_type,
+                group,
+                expression,
+                records_facts,
+            )
+        } else {
+            match schema.validator() {
+                CallableValidator::Ordinary
+                | CallableValidator::Untyped
+                | CallableValidator::Builtin(_)
+                | CallableValidator::Agent(_)
+                | CallableValidator::Fx(_)
+                | CallableValidator::EnumConstructor(_)
+                | CallableValidator::Presentation(_)
+                | CallableValidator::Collection(_)
+                | CallableValidator::PresentationHandle(_)
+                | CallableValidator::Integer(_)
+                | CallableValidator::Domain(_)
+                | CallableValidator::Capacity(_)
+                | CallableValidator::Trait(_)
+                | CallableValidator::Drop
+                | CallableValidator::Promotion(_)
+                | CallableValidator::Speaker => RegisteredCandidateCheck {
+                    arguments: self.check_registered_schema_args(
+                        label,
+                        schema,
+                        group,
                         call,
-                        CallPoison::Rejected,
                         records_facts,
                     ),
-                    poison: CallPoison::Rejected,
+                    result: schema_result_type(schema, group),
+                },
+                CallableValidator::ReductionConstructor(kind) => self
+                    .check_registered_reduction_constructor(
+                        *kind,
+                        label,
+                        schema,
+                        call,
+                        records_facts,
+                    ),
+                CallableValidator::ResultConstructor(kind) => self
+                    .check_registered_sum_constructor(
+                        RegisteredSumConstructor::Result(*kind),
+                        label,
+                        schema,
+                        call,
+                        records_facts,
+                    ),
+                CallableValidator::OptionConstructor(kind) => self
+                    .check_registered_sum_constructor(
+                        RegisteredSumConstructor::Option(*kind),
+                        label,
+                        schema,
+                        call,
+                        records_facts,
+                    ),
+                validator => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "registered callable `{label}` has unsupported validator {validator:?}"
+                    )));
+                    RegisteredCandidateCheck {
+                        arguments: RegisteredArgumentCheck {
+                            facts: self.check_unmapped_registered_arguments(
+                                call,
+                                CallPoison::Rejected,
+                                records_facts,
+                            ),
+                            poison: CallPoison::Rejected,
+                        },
+                        result: schema_result_type(schema, group),
+                    }
                 }
             }
         };
         let site = EffectSite::new(format!("call `{label}`"));
+        if let CallableCandidateId::Presentation(id) = candidate.id() {
+            match id {
+                crate::callable::PresentationCallableId::ClearBackground => {
+                    self.active_presentation_defaults.remove("background");
+                }
+                crate::callable::PresentationCallableId::Hide => {
+                    self.active_presentation_defaults.remove("character");
+                }
+                _ => {}
+            }
+        }
         if let Some(declaration) = schema.effects().project_declaration() {
             self.effect_collector.record_local_call(
                 crate::effect_model::CallableId::project_function(declaration),
@@ -515,7 +1094,332 @@ impl TypeChecker<'_> {
                     range,
                 });
         }
-        let result = schema_result_type(schema, CallableGroupIndex::ZERO);
+        let result = checked.result;
+        if records_facts && let Some(call_span) = call_span {
+            let checked_target = CheckedCallTarget::selected(
+                candidate,
+                considered,
+                checked.arguments.facts,
+                result.clone(),
+                group,
+                checked.arguments.poison,
+            );
+            let checked_target = match function_value_type {
+                Some(function_value_type) => {
+                    checked_target.with_function_value_type(function_value_type)
+                }
+                None => checked_target,
+            };
+            self.record_call_target_facts(expression, document, &call_span, checked_target, None);
+        }
+        let completed_group = match candidate.instantiation() {
+            crate::callable::CallableInstantiation::DataLast { group, .. } => *group,
+            _ => group,
+        };
+        self.retain_registered_curried_result(label, candidate, completed_group, &result);
+        result
+    }
+
+    fn check_registered_reduction_constructor(
+        &mut self,
+        kind: crate::callable::ReductionConstructorKind,
+        label: &str,
+        schema: &CallableSignatureSchema,
+        call: &CallExpr,
+        records_facts: bool,
+    ) -> RegisteredCandidateCheck {
+        match kind {
+            crate::callable::ReductionConstructorKind::Unchanged => {
+                let expected_state = kind.state_type(schema.result());
+                let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
+                let mut poison = CallPoison::Clean;
+                let mut inferred_state = None;
+                if call.args().len() != 1 {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`Reduction.unchanged` requires exactly one positional state borrow, got {}",
+                        call.args().len()
+                    )));
+                    poison = CallPoison::Rejected;
+                }
+                let parameter = schema
+                    .group(CallableGroupIndex::ZERO)
+                    .and_then(|group| group.parameters().first());
+                let context = RegisteredArgumentContext {
+                    label,
+                    schema,
+                    group: CallableGroupIndex::ZERO,
+                    parameters: schema
+                        .group(CallableGroupIndex::ZERO)
+                        .map_or(&[], |group| group.parameters()),
+                };
+                for (argument_index, arg) in call.args().iter().enumerate() {
+                    let (value, mapped, shape_poison) = match arg {
+                        CallArg::Positional(value) => (value, parameter, CallPoison::Clean),
+                        CallArg::Named { name, value } => {
+                            self.errors.push(TypeCheckError::new(format!(
+                                "`Reduction.unchanged` state must be positional, got named `{name}`"
+                            )));
+                            (value.as_ref(), None, CallPoison::Rejected)
+                        }
+                        CallArg::Spread { value } => {
+                            self.errors.push(TypeCheckError::new(
+                                "`Reduction.unchanged` state cannot be spread".to_owned(),
+                            ));
+                            (value.as_ref(), None, CallPoison::Rejected)
+                        }
+                    };
+                    let checked = self.check_registered_argument_slot_with_inferred(
+                        context,
+                        mapped,
+                        FixedLiteralSpreadSlot::Expr(value),
+                        argument_index,
+                        &mut fact_builders,
+                        shape_poison,
+                    );
+                    poison = poison.merge(checked.poison);
+                    if mapped.is_none() {
+                        continue;
+                    }
+                    let Some(TypeKind::BorrowRef { kind, inner, .. }) = checked.inferred else {
+                        self.errors.push(TypeCheckError::new(
+                            "`Reduction.unchanged` state must be a shared borrow".to_owned(),
+                        ));
+                        poison = CallPoison::Rejected;
+                        continue;
+                    };
+                    if kind != BorrowKind::Shared {
+                        self.errors.push(TypeCheckError::new(
+                            "`Reduction.unchanged` state must be a shared borrow".to_owned(),
+                        ));
+                        poison = CallPoison::Rejected;
+                        continue;
+                    }
+                    if let Some(expected_state) = expected_state.as_ref()
+                        && !self.types_compatible(expected_state, &inner)
+                    {
+                        self.errors.push(TypeCheckError::new(format!(
+                            "`Reduction.unchanged` state must borrow {}, found {}",
+                            super::super::helpers::type_kind_label(expected_state),
+                            super::super::helpers::type_kind_label(&inner)
+                        )));
+                        poison = CallPoison::Rejected;
+                    }
+                    inferred_state.get_or_insert(*inner);
+                }
+                let facts = fact_builders.map_or_else(Vec::new, |builders| {
+                    builders
+                        .into_iter()
+                        .map(ArgumentFactBuilder::finish)
+                        .collect()
+                });
+                RegisteredCandidateCheck {
+                    arguments: RegisteredArgumentCheck { facts, poison },
+                    result: expected_state.map_or_else(
+                        || {
+                            inferred_state.map_or_else(
+                                || TypeKind::Named("Reduction<_>".to_owned()),
+                                |state| {
+                                    TypeKind::Named(format!("Reduction<{}>", state.source_label()))
+                                },
+                            )
+                        },
+                        |_| schema.result().clone(),
+                    ),
+                }
+            }
+        }
+    }
+
+    fn check_registered_sum_constructor(
+        &mut self,
+        constructor: RegisteredSumConstructor,
+        label: &str,
+        schema: &CallableSignatureSchema,
+        call: &CallExpr,
+        records_facts: bool,
+    ) -> RegisteredCandidateCheck {
+        let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
+        let mut poison = CallPoison::Clean;
+        let mut inferred_payload = None;
+        if call.args().len() != 1 {
+            self.errors.push(TypeCheckError::new(format!(
+                "`{label}` requires exactly one positional payload"
+            )));
+            poison = CallPoison::Rejected;
+        }
+        let parameters: &[CallableParameter] = schema
+            .group(CallableGroupIndex::ZERO)
+            .map_or(&[], |group| group.parameters());
+        let parameter = parameters.first();
+        let context = RegisteredArgumentContext {
+            label,
+            schema,
+            group: CallableGroupIndex::ZERO,
+            parameters,
+        };
+        for (argument_index, arg) in call.args().iter().enumerate() {
+            let (value, mapped, shape_poison) = match arg {
+                CallArg::Positional(value) => (value, parameter, CallPoison::Clean),
+                CallArg::Named { name, value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{label}` payload must be positional, got named `{name}`"
+                    )));
+                    (value.as_ref(), None, CallPoison::Rejected)
+                }
+                CallArg::Spread { value } => {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "`{label}` payload cannot be spread"
+                    )));
+                    (value.as_ref(), None, CallPoison::Rejected)
+                }
+            };
+            let checked = self.check_registered_argument_slot_with_inferred(
+                context,
+                mapped,
+                FixedLiteralSpreadSlot::Expr(value),
+                argument_index,
+                &mut fact_builders,
+                shape_poison,
+            );
+            poison = poison.merge(checked.poison);
+            if mapped.is_some() {
+                inferred_payload = inferred_payload.or(checked.inferred);
+            }
+        }
+        let facts = fact_builders.map_or_else(Vec::new, |builders| {
+            builders
+                .into_iter()
+                .map(ArgumentFactBuilder::finish)
+                .collect()
+        });
+        let result = if constructor.has_instantiated_result(schema.result()) {
+            schema.result().clone()
+        } else {
+            constructor.result_with_payload(inferred_payload.unwrap_or(TypeKind::Unit))
+        };
+        RegisteredCandidateCheck {
+            arguments: RegisteredArgumentCheck { facts, poison },
+            result,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_registered_data_last_candidate(
+        &mut self,
+        label: &str,
+        id: &DataLastCallableId,
+        schema: &CallableSignatureSchema,
+        call: &CallExpr,
+        _receiver: &Expr,
+        _receiver_type: &TypeKind,
+        current_group: CallableGroupIndex,
+        expression: TypeExpressionId,
+        records_facts: bool,
+    ) -> RegisteredCandidateCheck {
+        let receiver_group = id.receiver_group();
+        let result = schema_result_type(schema, receiver_group);
+        if let Some(reason) = data_last_unsupported_spread_reason(call.args()) {
+            for argument in call.args() {
+                self.check_expr(argument.value());
+            }
+            self.errors
+                .push(TypeCheckError::unsupported_data_last_method_fallback(
+                    label, reason,
+                ));
+            return RegisteredCandidateCheck {
+                arguments: RegisteredArgumentCheck {
+                    facts: self.check_unmapped_registered_arguments(
+                        call,
+                        CallPoison::Rejected,
+                        records_facts,
+                    ),
+                    poison: CallPoison::Rejected,
+                },
+                result,
+            };
+        }
+        let implicit = (receiver_group == current_group).then_some(id.receiver_parameter());
+        let arguments = self.check_registered_schema_args_with_implicit(
+            label,
+            schema,
+            current_group,
+            call,
+            true,
+            implicit,
+        );
+        let mut mapped = arguments
+            .facts
+            .iter()
+            .filter_map(|argument| {
+                let parameter = argument
+                    .slots()
+                    .iter()
+                    .filter_map(CheckedCallArgumentSlotFact::mapped)
+                    .filter(|coordinate| coordinate.group() == current_group)
+                    .map(|coordinate| coordinate.parameter().get())
+                    .min()?;
+                Some((parameter, argument.index().get()))
+            })
+            .collect::<Vec<_>>();
+        mapped.sort_unstable();
+        mapped.dedup_by_key(|(_, argument)| *argument);
+        let arg_order = mapped
+            .into_iter()
+            .map(|(_, index)| DataLastMethodFallbackArg::CallArg { index })
+            .chain(std::iter::once(DataLastMethodFallbackArg::Receiver))
+            .collect();
+        self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
+            expression,
+            TypedLoweringEvidenceKind::DataLastMethodFallback {
+                method: label.to_owned(),
+                arg_count: call.args().len(),
+                arg_order,
+            },
+        ));
+        RegisteredCandidateCheck {
+            arguments: RegisteredArgumentCheck {
+                facts: if records_facts {
+                    arguments.facts
+                } else {
+                    Vec::new()
+                },
+                poison: arguments.poison,
+            },
+            result,
+        }
+    }
+
+    pub(super) fn check_registered_curried_candidate(
+        &mut self,
+        call: &CallExpr,
+        expression: TypeExpressionId,
+        value: &CurriedSignatureCallValue,
+    ) -> TypeKind {
+        let candidate = value
+            .resolved
+            .as_ref()
+            .expect("registered curried calls retain their typed resolver product");
+        let current_group = CallableGroupIndex::try_from_usize(value.remaining_group_index)
+            .expect("registered curried group was validated by its candidate");
+        let Some(module) = self.current_module.as_ref() else {
+            return TypeKind::Named("_".to_owned());
+        };
+        let Some(document) = self
+            .project_symbols
+            .and_then(|symbols| symbols.source_identity(module))
+        else {
+            return TypeKind::Named("_".to_owned());
+        };
+        let call_span = self.source_span_for_current_range(call.range());
+        let records_facts = self.records_call_target_facts(call_span.as_ref());
+        let argument_check = self.check_registered_schema_args(
+            &value.function_name,
+            candidate.schema(),
+            current_group,
+            call,
+            records_facts,
+        );
+        let result = schema_result_type(candidate.schema(), current_group);
         if records_facts && let Some(call_span) = call_span {
             self.record_call_target_facts(
                 expression,
@@ -523,28 +1427,87 @@ impl TypeChecker<'_> {
                 &call_span,
                 CheckedCallTarget::selected(
                     candidate,
-                    considered,
+                    std::slice::from_ref(candidate),
                     argument_check.facts,
                     result.clone(),
-                    CallableGroupIndex::ZERO,
+                    current_group,
                     argument_check.poison,
                 ),
+                None,
             );
         }
+        self.retain_registered_curried_result(
+            &value.function_name,
+            candidate,
+            current_group,
+            &result,
+        );
         result
+    }
+
+    fn retain_registered_curried_result(
+        &mut self,
+        label: &str,
+        candidate: &ResolvedCallable,
+        current_group: CallableGroupIndex,
+        result: &TypeKind,
+    ) {
+        let next = CallableGroupIndex::try_from_usize(current_group.get() + 1)
+            .ok()
+            .filter(|next| candidate.schema().group(*next).is_some());
+        self.last_checked_curried_signature_call = match (next, result) {
+            (Some(next), TypeKind::Function { .. }) => {
+                match candidate.try_curried(next, &PRODUCTION_CALLABLE_LIMITS) {
+                    Ok(resolved) => Some(CurriedSignatureCallValue {
+                        function_name: label.to_owned(),
+                        remaining_group_index: next.get(),
+                        group_arg_offset: 0,
+                        current_group_params: None,
+                        pending_higher_order_args: Vec::new(),
+                        resolved: Some(resolved),
+                    }),
+                    Err(error) => {
+                        self.errors.push(TypeCheckError::new(error.to_string()));
+                        None
+                    }
+                }
+            }
+            _ => None,
+        };
     }
 
     fn check_registered_schema_args(
         &mut self,
         label: &str,
         schema: &CallableSignatureSchema,
+        current_group: CallableGroupIndex,
         call: &CallExpr,
         records_facts: bool,
     ) -> RegisteredArgumentCheck {
+        self.check_registered_schema_args_with_implicit(
+            label,
+            schema,
+            current_group,
+            call,
+            records_facts,
+            None,
+        )
+    }
+
+    fn check_registered_schema_args_with_implicit(
+        &mut self,
+        label: &str,
+        schema: &CallableSignatureSchema,
+        current_group: CallableGroupIndex,
+        call: &CallExpr,
+        records_facts: bool,
+        implicit: Option<crate::callable::CallableParameterIndex>,
+    ) -> RegisteredArgumentCheck {
         let args = call.args();
-        let Some(group) = schema.group(CallableGroupIndex::ZERO) else {
+        let Some(group) = schema.group(current_group) else {
             self.errors.push(TypeCheckError::new(format!(
-                "registered callable `{label}` has no initial parameter group"
+                "registered callable `{label}` has no parameter group {}",
+                current_group.get()
             )));
             return RegisteredArgumentCheck {
                 facts: self.check_unmapped_registered_arguments(
@@ -558,10 +1521,16 @@ impl TypeChecker<'_> {
         let context = RegisteredArgumentContext {
             label,
             schema,
+            group: current_group,
             parameters: group.parameters(),
         };
         let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
         let mut provided = vec![false; context.parameters.len()];
+        if let Some(implicit) = implicit
+            && let Some(slot) = provided.get_mut(implicit.get())
+        {
+            *slot = true;
+        }
         let mut positional = 0usize;
         let mut poison = CallPoison::Clean;
         let mut spread_shape_rejected = false;
@@ -646,7 +1615,7 @@ impl TypeChecker<'_> {
                 context.label
             )));
             return self.check_registered_argument_slot(
-                context.label,
+                context,
                 None,
                 value,
                 argument_index,
@@ -660,7 +1629,7 @@ impl TypeChecker<'_> {
             *positional = index + 1;
         }
         self.check_registered_argument_slot(
-            context.label,
+            context,
             Some(parameter),
             value,
             argument_index,
@@ -692,7 +1661,7 @@ impl TypeChecker<'_> {
                 CallPoison::Clean
             };
             return self.check_registered_argument_slot(
-                context.label,
+                context,
                 None,
                 FixedLiteralSpreadSlot::Expr(value),
                 argument_index,
@@ -711,7 +1680,7 @@ impl TypeChecker<'_> {
         }
         provided[index] = true;
         self.check_registered_argument_slot(
-            context.label,
+            context,
             Some(parameter),
             FixedLiteralSpreadSlot::Expr(value),
             argument_index,
@@ -735,7 +1704,7 @@ impl TypeChecker<'_> {
         match context.schema.argument_policy().spread() {
             SpreadArgumentPolicy::Unchecked => RegisteredSpreadResult {
                 poison: self.check_registered_argument_slot(
-                    context.label,
+                    context,
                     None,
                     FixedLiteralSpreadSlot::Expr(value),
                     argument_index,
@@ -751,7 +1720,7 @@ impl TypeChecker<'_> {
                 )));
                 RegisteredSpreadResult {
                     poison: self.check_registered_argument_slot(
-                        context.label,
+                        context,
                         None,
                         FixedLiteralSpreadSlot::Expr(value),
                         argument_index,
@@ -769,7 +1738,7 @@ impl TypeChecker<'_> {
                     )));
                     return RegisteredSpreadResult {
                         poison: self.check_registered_argument_slot(
-                            context.label,
+                            context,
                             None,
                             FixedLiteralSpreadSlot::Expr(value),
                             argument_index,
@@ -870,7 +1839,7 @@ impl TypeChecker<'_> {
             )));
             return RegisteredSpreadResult {
                 poison: self.check_registered_argument_slot(
-                    context.label,
+                    context,
                     None,
                     FixedLiteralSpreadSlot::Expr(value),
                     argument_index,
@@ -891,7 +1860,7 @@ impl TypeChecker<'_> {
             )));
             return RegisteredSpreadResult {
                 poison: self.check_registered_argument_slot(
-                    context.label,
+                    context,
                     None,
                     FixedLiteralSpreadSlot::Expr(value),
                     argument_index,
@@ -914,6 +1883,7 @@ impl TypeChecker<'_> {
                     argument_index,
                     expression,
                     source,
+                    group: context.group,
                     parameter: Some(rest),
                     inferred: actual,
                     poison: CallPoison::Rejected,
@@ -942,6 +1912,7 @@ impl TypeChecker<'_> {
                 argument_index,
                 expression,
                 source,
+                group: context.group,
                 parameter: Some(rest),
                 inferred: actual,
                 poison,
@@ -956,13 +1927,33 @@ impl TypeChecker<'_> {
 
     fn check_registered_argument_slot(
         &mut self,
-        label: &str,
+        context: RegisteredArgumentContext<'_>,
+        parameter: Option<&CallableParameter>,
+        value: FixedLiteralSpreadSlot<'_>,
+        argument_index: usize,
+        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
+        poison: CallPoison,
+    ) -> CallPoison {
+        self.check_registered_argument_slot_with_inferred(
+            context,
+            parameter,
+            value,
+            argument_index,
+            fact_builders,
+            poison,
+        )
+        .poison
+    }
+
+    fn check_registered_argument_slot_with_inferred(
+        &mut self,
+        context: RegisteredArgumentContext<'_>,
         parameter: Option<&CallableParameter>,
         value: FixedLiteralSpreadSlot<'_>,
         argument_index: usize,
         fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
         mut poison: CallPoison,
-    ) -> CallPoison {
+    ) -> RegisteredSlotCheck {
         let expected = match parameter.map(CallableParameter::ty) {
             Some(CallableParameterType::Exact(expected)) => Some(expected),
             Some(CallableParameterType::Unchecked) | None => None,
@@ -979,7 +1970,7 @@ impl TypeChecker<'_> {
             && !self.types_compatible(expected, actual)
         {
             self.errors.push(TypeCheckError::argument_type_mismatch(
-                label,
+                context.label,
                 parameter.map_or_else(|| "<unmapped>".to_owned(), parameter_label),
                 expected.clone(),
                 actual.clone(),
@@ -991,17 +1982,21 @@ impl TypeChecker<'_> {
                 argument_index,
                 expression,
                 source,
+                group: context.group,
                 parameter,
-                inferred: actual,
+                inferred: actual.clone(),
                 poison,
             },
             fact_builders,
         );
-        poison
+        RegisteredSlotCheck {
+            poison,
+            inferred: actual,
+        }
     }
 }
 
-fn callable_path(callee: &Expr) -> Option<CallablePath> {
+pub(super) fn callable_path(callee: &Expr) -> Option<CallablePath> {
     let mut segments = Vec::new();
     collect_callable_path_segments(callee, &mut segments)?;
     CallablePath::try_new(segments).ok()
@@ -1028,94 +2023,22 @@ fn collect_callable_path_segments(callee: &Expr, segments: &mut Vec<CallableName
     }
 }
 
-fn is_deferred_callable_value(ty: &TypeKind) -> bool {
+fn local_binding_expression(
+    identity: &crate::canonicalization::SemanticSymbolIdentity,
+) -> Option<TypeExpressionId> {
+    let crate::canonicalization::SemanticSymbolIdentity::Local { binding, .. } = identity else {
+        return None;
+    };
+    Some(TypeExpressionId::from_index(
+        usize::try_from(binding.0).ok()?,
+    ))
+}
+
+fn function_value_effects(ty: &TypeKind) -> EffectRow {
     match ty {
-        TypeKind::Function { .. } | TypeKind::Speaker(_) | TypeKind::SpeakerPreset(_) => true,
-        TypeKind::Ref(entity) => entity.kind() == &crate::types::EntityKind::Character,
-        _ => false,
+        TypeKind::Function { effects, .. } => effects.clone(),
+        _ => EffectRow::unknown(),
     }
-}
-
-fn call_shape_is_viable(schema: &CallableSignatureSchema, args: &[CallArg]) -> bool {
-    let Some(group) = schema.group(CallableGroupIndex::ZERO) else {
-        return false;
-    };
-    let parameters = group.parameters();
-    let mut provided = vec![false; parameters.len()];
-    let mut positional = 0usize;
-    for argument in args {
-        match argument {
-            CallArg::Positional(_) => {
-                if !mark_viable_positional(parameters, &mut provided, &mut positional) {
-                    return false;
-                }
-            }
-            CallArg::Named { name, .. } => {
-                let parameter = registered_named_parameter(parameters, name);
-                let Some(parameter) = parameter else {
-                    if schema.argument_policy().unknown_named()
-                        == UnknownNamedArgumentPolicy::Reject
-                    {
-                        return false;
-                    }
-                    continue;
-                };
-                if parameter.passing() != CallableParameterPassing::RestNamed {
-                    let index = parameter.index().get();
-                    if provided[index] {
-                        return false;
-                    }
-                    provided[index] = true;
-                }
-            }
-            CallArg::Spread { value } => match schema.argument_policy().spread() {
-                SpreadArgumentPolicy::Reject => return false,
-                SpreadArgumentPolicy::Unchecked => {}
-                SpreadArgumentPolicy::FixedLiteralOnly => {
-                    let Some(slots) = fixed_literal_spread_slots(value) else {
-                        return false;
-                    };
-                    if slots.into_iter().any(|_| {
-                        !mark_viable_positional(parameters, &mut provided, &mut positional)
-                    }) {
-                        return false;
-                    }
-                }
-                SpreadArgumentPolicy::TypedRest => {
-                    if let Some(slots) = fixed_literal_spread_slots(value) {
-                        if slots.into_iter().any(|_| {
-                            !mark_viable_positional(parameters, &mut provided, &mut positional)
-                        }) {
-                            return false;
-                        }
-                    } else if !parameters.iter().any(|parameter| {
-                        parameter.passing() == CallableParameterPassing::RestPositional
-                    }) || required_fixed_parameter_is_missing(parameters, &provided)
-                    {
-                        return false;
-                    }
-                }
-            },
-        }
-    }
-    !required_fixed_parameter_is_missing(parameters, &provided)
-}
-
-fn mark_viable_positional(
-    parameters: &[CallableParameter],
-    provided: &mut [bool],
-    positional: &mut usize,
-) -> bool {
-    let Some(parameter) = next_registered_positional_parameter(parameters, provided, positional)
-    else {
-        return false;
-    };
-    if parameter.passing() != CallableParameterPassing::RestPositional {
-        let index = parameter.index().get();
-        provided[index] = true;
-        *positional = index + 1;
-    }
-    true
 }
 
 fn next_registered_positional_parameter<'a>(
@@ -1163,20 +2086,6 @@ fn registered_named_parameter<'a>(
                 .iter()
                 .find(|parameter| parameter.passing() == CallableParameterPassing::RestNamed)
         })
-}
-
-fn required_fixed_parameter_is_missing(
-    parameters: &[CallableParameter],
-    provided: &[bool],
-) -> bool {
-    parameters.iter().any(|parameter| {
-        parameter.presence() == CallableParameterPresence::Required
-            && !matches!(
-                parameter.passing(),
-                CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
-            )
-            && !provided[parameter.index().get()]
-    })
 }
 
 fn parameter_label(parameter: &CallableParameter) -> String {

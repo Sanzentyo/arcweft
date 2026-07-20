@@ -19,6 +19,7 @@ mod resolver;
 mod schema;
 
 pub use arguments::CallableParameterCoordinate;
+pub(crate) use arguments::{call_shape_is_viable, data_last_unsupported_spread_reason};
 pub(crate) use builder::RegisteredCallableCatalogBuilder;
 pub use catalog::{
     CallableRecord, CatalogCallableEntry, EnvironmentCallableCatalog,
@@ -38,11 +39,11 @@ pub use error::{
 pub use facts::{
     CallPoison, CallableDiagnostic, CallableDiagnosticRelated, CallableDiagnosticSeverity,
     CallableDiagnosticSubject, SemanticParameter, SemanticParameterGroup, SemanticSignature,
-    SemanticSignatureHelp, SemanticSignatureIndex,
+    SemanticSignatureHelp, SemanticSignatureIndex, SemanticSignatureRecovery,
 };
 pub(crate) use facts::{
-    CallTargetFactMode, CallTargetFacts, CheckedCallArgumentFact, CheckedCallArgumentSlotFact,
-    CheckedCallArgumentSlotInput, CheckedCallTarget,
+    CallTargetFact, CallTargetFactMode, CallTargetFacts, CheckedCallArgumentFact,
+    CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput, CheckedCallTarget,
 };
 pub use identity::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentIndex,
@@ -66,7 +67,8 @@ pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamed
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
-    CallCallee, CallResolverRequest, CallSourceContext, LexicalCallableScope, resolve_call_target,
+    CallCallee, CallResolverRequest, CallSourceContext, LexicalCallBinding, LexicalCallableScope,
+    ResolvedEnumSeed, ResolvedFunctionValueSeed, resolve_call_target,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerResolution, CharacterOwnerSource, NonCallableSource,

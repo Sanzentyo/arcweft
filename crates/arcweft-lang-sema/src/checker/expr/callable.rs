@@ -1,6 +1,6 @@
 use super::support::FixedLiteralSpreadSlot;
 use super::{
-    CallArg, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
+    CallArg, CallExpr, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use crate::checker::helpers::first_arg_type;
@@ -17,7 +17,7 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
-        if matches!(name, "promote" | "promote_unchecked") {
+        if self.registered_world.is_none() && matches!(name, "promote" | "promote_unchecked") {
             for arg in args.iter().filter_map(|arg| match arg {
                 CallArg::Named { value, .. } => Some(value.as_ref()),
                 CallArg::Positional(_) | CallArg::Spread { .. } => None,
@@ -26,17 +26,21 @@ impl TypeChecker<'_> {
             }
             return Some(TypeKind::Named("Promoted".to_owned()));
         }
-        if name == "assume" {
+        if self.registered_world.is_none() && name == "assume" {
             return Some(TypeKind::Unit);
         }
         let symbol_ty = self.symbol_type_with_capture(name);
-        if symbol_ty.as_ref() == Some(&TypeKind::entity_ref(EntityKind::Character)) {
+        if self.registered_world.is_none()
+            && symbol_ty.as_ref() == Some(&TypeKind::entity_ref(EntityKind::Character))
+        {
             for arg in args {
                 self.check_expr(arg.value());
             }
             return Some(TypeKind::SpeakerPreset(EntityKind::Character));
         }
-        if symbol_ty.as_ref() == Some(&TypeKind::SpeakerPreset(EntityKind::Character)) {
+        if self.registered_world.is_none()
+            && symbol_ty.as_ref() == Some(&TypeKind::SpeakerPreset(EntityKind::Character))
+        {
             for arg in args {
                 self.check_expr(arg.value());
             }
@@ -65,6 +69,7 @@ impl TypeChecker<'_> {
                 Some(name),
                 None,
                 curried_signature_call.as_ref(),
+                None,
                 args,
                 callee_ty,
             ));
@@ -81,15 +86,25 @@ impl TypeChecker<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the checker preserves the complete typed function-value call carrier"
+    )]
     pub(super) fn check_known_function_value_call(
         &mut self,
         expression_id: TypeExpressionId,
         callee: Option<&str>,
         effect_callable: Option<CallableId>,
         curried_signature_call: Option<&CurriedSignatureCallValue>,
+        call: Option<&CallExpr>,
         args: &[CallArg],
         callee_ty: TypeKind,
     ) -> TypeKind {
+        if let (Some(call), Some(curried)) = (call, curried_signature_call)
+            && curried.resolved.is_some()
+        {
+            return self.check_registered_curried_candidate(call, expression_id, curried);
+        }
         let TypeKind::Function {
             params,
             return_type,
@@ -227,6 +242,7 @@ impl TypeChecker<'_> {
                 group_arg_offset: value.group_arg_offset + supplied_arg_count,
                 current_group_params: value.current_group_params.clone(),
                 pending_higher_order_args: pending,
+                resolved: value.resolved.clone(),
             });
         } else {
             self.last_checked_curried_signature_call = None;

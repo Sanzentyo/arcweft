@@ -174,6 +174,22 @@ impl FunctionSignature {
         &self.return_type
     }
 
+    /// Returns the canonical semantic signature label used in diagnostics.
+    pub(crate) fn source_label(&self) -> String {
+        let params = self
+            .params()
+            .iter()
+            .map(|param| {
+                param.name().map_or_else(
+                    || param.ty().source_label(),
+                    |name| format!("{name}: {}", param.ty().source_label()),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("fn({params}) -> {}", self.return_type().source_label())
+    }
+
     /// Return type produced after every declared parameter group has been
     /// applied. Function wrappers introduced by currying are not included.
     pub fn body_return_type(&self) -> &TypeKind {

@@ -1,10 +1,9 @@
 use super::super::helpers::{named_type_label, type_ref_kind};
 use crate::diagnostics::TypeCheckError;
-use crate::env::{FunctionParam, FunctionSignature};
+use crate::env::FunctionParam;
 use crate::types::{EntityKind, MapKind, TypeKind};
 use arcweft_lang_syntax::ast::pattern::Pattern;
 use arcweft_lang_syntax::expr::{BinaryOp, CallArg, Expr};
-use arcweft_lang_syntax::types::FnParam;
 pub(super) enum ChoicePatternCoverage {
     All,
     Type(TypeKind),
@@ -72,80 +71,6 @@ pub(super) enum TraitMethodCallOutcome {
 pub(super) enum BuiltinCollectionMethodCallOutcome {
     Missing,
     Checked(Option<TypeKind>),
-}
-
-pub(super) fn trait_method_call_signature(
-    signature: &arcweft_lang_syntax::types::FnSignature,
-    return_type: TypeKind,
-) -> FunctionSignature {
-    let return_type = curried_trait_method_return_type(signature, return_type);
-    let params = signature
-        .param_groups()
-        .first()
-        .into_iter()
-        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .filter(|param| !is_trait_receiver_param(param))
-        .map(trait_method_param)
-        .collect::<Vec<_>>();
-    let remaining_param_groups = signature
-        .param_groups()
-        .iter()
-        .skip(1)
-        .map(|group| {
-            group
-                .params()
-                .iter()
-                .filter(|param| !is_trait_receiver_param(param))
-                .map(trait_method_param)
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
-}
-
-fn trait_method_param(param: &FnParam) -> FunctionParam {
-    let name = match param.pattern() {
-        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
-            name.as_str()
-        }
-        _ => "_",
-    };
-    if param.is_rest() {
-        FunctionParam::rest(name, type_ref_kind(param.ty()))
-    } else if param.default().is_some() {
-        FunctionParam::defaulted(name, type_ref_kind(param.ty()))
-    } else {
-        FunctionParam::required(name, type_ref_kind(param.ty()))
-    }
-}
-
-fn curried_trait_method_return_type(
-    signature: &arcweft_lang_syntax::types::FnSignature,
-    return_type: TypeKind,
-) -> TypeKind {
-    signature
-        .param_groups()
-        .iter()
-        .skip(1)
-        .rev()
-        .fold(return_type, |return_type, group| {
-            TypeKind::function(
-                group
-                    .params()
-                    .iter()
-                    .filter(|param| !is_trait_receiver_param(param))
-                    .map(|param| type_ref_kind(param.ty())),
-                return_type,
-            )
-        })
-}
-
-fn is_trait_receiver_param(param: &FnParam) -> bool {
-    param.receiver_kind().is_some()
-        || matches!(
-            param.ty(),
-            arcweft_lang_syntax::types::TypeRef::Path(path) if path == "Self"
-        )
 }
 
 pub(super) fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {

@@ -11,6 +11,7 @@ use arcweft_lang_syntax::{
 use core::fmt::{self, Write as _};
 
 mod character_nominal;
+mod compatibility;
 mod mismatch;
 mod order;
 

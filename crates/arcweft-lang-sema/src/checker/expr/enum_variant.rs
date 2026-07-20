@@ -172,7 +172,7 @@ impl TypeChecker<'_> {
     }
 }
 
-fn nominal_type_name(ty: &TypeKind) -> Option<&str> {
+pub(super) fn nominal_type_name(ty: &TypeKind) -> Option<&str> {
     match ty {
         TypeKind::Named(name) => Some(name),
         TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => nominal_type_name(inner),

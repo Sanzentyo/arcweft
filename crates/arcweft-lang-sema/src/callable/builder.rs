@@ -28,7 +28,7 @@ use crate::{
     },
     effect_row::EffectRow,
     effects::EffectSet,
-    env::{FunctionParam, FunctionSignature, TypeCheckEnv},
+    env::{FunctionSignature, TypeCheckEnv},
     types::TypeKind,
 };
 
@@ -926,43 +926,10 @@ fn environment_record_from_signature(
     ordinal: usize,
     limits: &CallableLimits,
 ) -> Result<EnvironmentCallablePublicationRecord, super::CallablePublicationError> {
-    let (groups, argument_policy, validator) = if signature.checks_args() {
-        let mut groups = Vec::new();
-        groups.push(environment_group(0, signature.params(), limits)?);
-        for index in 0..signature.remaining_call_groups() {
-            groups.push(environment_group(
-                index + 1,
-                signature.remaining_param_group(index).unwrap_or_default(),
-                limits,
-            )?);
-        }
-        let spread = if signature
-            .params()
-            .iter()
-            .chain(
-                (0..signature.remaining_call_groups())
-                    .flat_map(|index| signature.remaining_param_group(index).unwrap_or_default()),
-            )
-            .any(FunctionParam::is_rest)
-        {
-            SpreadArgumentPolicy::TypedRest
-        } else {
-            SpreadArgumentPolicy::Reject
-        };
-        (
-            groups,
-            CallableArgumentPolicy::new(UnknownNamedArgumentPolicy::Reject, spread),
-            CallableValidator::Ordinary,
-        )
+    let validator = if signature.checks_args() {
+        CallableValidator::Ordinary
     } else {
-        (
-            vec![unchecked_environment_group(limits)?],
-            CallableArgumentPolicy::new(
-                UnknownNamedArgumentPolicy::OpenUnchecked,
-                SpreadArgumentPolicy::Unchecked,
-            ),
-            CallableValidator::Untyped,
-        )
+        CallableValidator::Untyped
     };
     let effects = EffectSet::from_labels(
         effects
@@ -971,14 +938,7 @@ fn environment_record_from_signature(
             .map(crate::env::EffectCapability::as_str),
     )
     .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
-    let schema = CallableSignatureSchema::try_new(
-        groups,
-        signature.body_return_type().clone(),
-        CallableEffectSchema::fixed(EffectRow::closed(effects)),
-        argument_policy,
-        validator,
-        limits,
-    )?;
+    let schema = signature.callable_schema(EffectRow::closed(effects), validator, limits)?;
     EnvironmentCallablePublicationRecord::try_new(
         kind,
         key,
@@ -991,81 +951,4 @@ fn environment_record_from_signature(
         EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
             .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
     )
-}
-
-fn environment_group(
-    index: usize,
-    params: &[FunctionParam],
-    limits: &CallableLimits,
-) -> Result<CallableParameterGroup, super::CallablePublicationError> {
-    let group = CallableGroupIndex::try_from_usize(index)
-        .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
-    let parameters = params
-        .iter()
-        .enumerate()
-        .map(|(index, parameter)| {
-            CallableParameter::try_new(
-                CallableParameterIndex::try_from_usize(index)
-                    .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
-                parameter
-                    .name()
-                    .map(CallableName::try_new)
-                    .transpose()
-                    .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
-                CallableParameterType::Exact(parameter.ty().clone()),
-                if parameter.is_rest() {
-                    CallableParameterPassing::RestPositional
-                } else if parameter.name().is_some() {
-                    CallableParameterPassing::PositionalOrNamed
-                } else {
-                    CallableParameterPassing::PositionalOnly
-                },
-                if parameter.has_default() {
-                    CallableParameterPresence::Defaulted
-                } else {
-                    CallableParameterPresence::Required
-                },
-                None,
-                None,
-            )
-            .map_err(super::CallablePublicationError::InvalidSchema)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    CallableParameterGroup::try_new(
-        group,
-        if index == 0 {
-            CallableGroupKind::Initial
-        } else {
-            CallableGroupKind::Curried
-        },
-        parameters,
-        limits,
-    )
-    .map_err(super::CallablePublicationError::InvalidSchema)
-}
-
-fn unchecked_environment_group(
-    limits: &CallableLimits,
-) -> Result<CallableParameterGroup, super::CallablePublicationError> {
-    let parameter = CallableParameter::try_new(
-        CallableParameterIndex::try_from_usize(0)
-            .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
-        Some(
-            CallableName::try_new("args")
-                .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
-        ),
-        CallableParameterType::Unchecked,
-        CallableParameterPassing::RestPositional,
-        CallableParameterPresence::Optional,
-        None,
-        None,
-    )
-    .map_err(super::CallablePublicationError::InvalidSchema)?;
-    CallableParameterGroup::try_new(
-        CallableGroupIndex::ZERO,
-        CallableGroupKind::Initial,
-        vec![parameter],
-        limits,
-    )
-    .map_err(super::CallablePublicationError::InvalidSchema)
 }

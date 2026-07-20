@@ -286,6 +286,7 @@ impl TypeChecker<'_> {
                 missing.iter().map(|index| params[*index].clone()).collect(),
             ),
             pending_higher_order_args,
+            resolved: None,
         });
         self.last_checked_closure_effect_callable = self.source_function_effect_callable(name);
         Some(result_ty)

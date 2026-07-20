@@ -14,7 +14,11 @@ use arcweft_character::id::CharacterId;
 use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
-use crate::{canonicalization::SemanticScopeId, checker::TypeExpressionId, types::TypeKind};
+use crate::{
+    canonicalization::SemanticScopeId,
+    checker::TypeExpressionId,
+    types::{EntityKind, TypeKind},
+};
 
 use super::{
     BuiltinIdentityError, CallableIdentityError, CallableIndexKind, CallableLimits,
@@ -736,9 +740,28 @@ pub enum ResultConstructorKind {
     Ok,
     Err,
 }
+
+impl ResultConstructorKind {
+    pub fn resolve(path: &CallablePath) -> Option<Self> {
+        if path.matches(&["Ok"]) {
+            Some(Self::Ok)
+        } else if path.matches(&["Err"]) {
+            Some(Self::Err)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum OptionConstructorKind {
     Some,
+}
+
+impl OptionConstructorKind {
+    pub fn resolve(path: &CallablePath) -> Option<Self> {
+        path.matches(&["Some"]).then_some(Self::Some)
+    }
 }
 
 /// Core `Reduction` constructor selected by a source callable path.
@@ -973,6 +996,20 @@ pub enum CollectionMethodId {
     Sum,
     Contains,
 }
+
+impl CollectionMethodId {
+    pub fn resolve(method: &CallableName) -> Option<Self> {
+        match method.as_str() {
+            "len" => Some(Self::Len),
+            "map" => Some(Self::Map),
+            "filter" => Some(Self::Filter),
+            "sum" => Some(Self::Sum),
+            "contains" => Some(Self::Contains),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PresentationHandleMethodId {
     Show,
@@ -982,12 +1019,45 @@ pub enum PresentationHandleMethodId {
     Destroy,
     OverlayPop,
 }
+
+impl PresentationHandleMethodId {
+    pub fn resolve(receiver: &TypeKind, method: &CallableName) -> Option<Self> {
+        let TypeKind::Handle { name, .. } = receiver else {
+            return None;
+        };
+        match method.as_str() {
+            "show" => Some(Self::Show),
+            "hide" => Some(Self::Hide),
+            "unmount" => Some(Self::Unmount),
+            "release" => Some(Self::Release),
+            "destroy" => Some(Self::Destroy),
+            "pop" if name == "Overlay" => Some(Self::OverlayPop),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IntegerMethodId {
     Clamp,
     Min,
     Max,
 }
+
+impl IntegerMethodId {
+    pub fn resolve(receiver: &TypeKind, method: &CallableName) -> Option<Self> {
+        if !receiver.is_integer() {
+            return None;
+        }
+        match method.as_str() {
+            "clamp" => Some(Self::Clamp),
+            "min" => Some(Self::Min),
+            "max" => Some(Self::Max),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProbeComparisonId {
     Eq,
@@ -1001,6 +1071,25 @@ pub enum ProbeComparisonId {
     Less,
     Le,
     LessOrEqual,
+}
+
+impl ProbeComparisonId {
+    pub fn resolve(method: &CallableName) -> Option<Self> {
+        match method.as_str() {
+            "eq" => Some(Self::Eq),
+            "ne" => Some(Self::Ne),
+            "not_eq" => Some(Self::NotEq),
+            "gt" => Some(Self::Gt),
+            "greater" => Some(Self::Greater),
+            "ge" => Some(Self::Ge),
+            "greater_or_equal" => Some(Self::GreaterOrEqual),
+            "lt" => Some(Self::Lt),
+            "less" => Some(Self::Less),
+            "le" => Some(Self::Le),
+            "less_or_equal" => Some(Self::LessOrEqual),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DomainMethodId {
@@ -1026,6 +1115,82 @@ pub enum DomainMethodId {
     CharacterSay {
         character: Option<CharacterId>,
     },
+}
+
+impl DomainMethodId {
+    pub fn resolve(receiver: &TypeKind, method: &CallableName) -> Option<Self> {
+        let name = method.as_str();
+        if name == "traverse" {
+            return Some(Self::Traverse);
+        }
+        if name == "parallel" {
+            return Some(Self::Parallel);
+        }
+        if matches!(receiver, TypeKind::Named(name) if name == "FxSampleContext")
+            && name == "ordinal_phase"
+        {
+            return Some(Self::FxSampleOrdinalPhase);
+        }
+        if matches!(receiver, TypeKind::Vec(item) if item.as_ref() == &TypeKind::ObservedObject)
+            && name == "require_role"
+        {
+            return Some(Self::ObservedObjectRequireRole);
+        }
+        if let TypeKind::Map { key, value, .. } = receiver
+            && name == "get"
+        {
+            return Some(Self::MapGet {
+                key: key.as_ref().clone(),
+                value: value.as_ref().clone(),
+            });
+        }
+        if let TypeKind::Probe(value) = receiver
+            && let Some(operation) = ProbeComparisonId::resolve(method)
+        {
+            return Some(Self::ProbeCompare {
+                value: value.as_ref().clone(),
+                operation,
+            });
+        }
+        if receiver == &TypeKind::Named("Diagnostics".to_owned()) && name == "has_error" {
+            return Some(Self::DiagnosticsHasError);
+        }
+        if receiver == &TypeKind::RagContextPack && name == "summary" {
+            return Some(Self::RagContextPackSummary);
+        }
+        if matches!(
+            receiver,
+            TypeKind::Need { .. } | TypeKind::Option(_) | TypeKind::Result { .. }
+        ) {
+            match name {
+                "context" => return Some(Self::Context),
+                "with_context" => return Some(Self::WithContext),
+                _ => {}
+            }
+        }
+        if is_character_speaker(receiver) {
+            match name {
+                "face" => {
+                    return Some(Self::CharacterFace { character: None });
+                }
+                "say" => {
+                    return Some(Self::CharacterSay { character: None });
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+}
+
+fn is_character_speaker(receiver: &TypeKind) -> bool {
+    matches!(
+        receiver,
+        TypeKind::Speaker(EntityKind::Character) | TypeKind::SpeakerPreset(EntityKind::Character)
+    ) || matches!(
+        receiver,
+        TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character
+    )
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1058,6 +1223,51 @@ impl CapacityMethodId {
     }
     pub const fn arity(&self) -> usize {
         self.arity as usize
+    }
+
+    pub fn resolve(
+        receiver: &TypeKind,
+        method: &CallableName,
+        arity: usize,
+    ) -> Option<(Self, TypeKind)> {
+        let result = if receiver == &TypeKind::String
+            && matches!((method.as_str(), arity), ("trim" | "to_string", 0))
+        {
+            TypeKind::String
+        } else if matches!(receiver, TypeKind::Named(name) if name == "LineContext")
+            && matches!((method.as_str(), arity), ("voice_handle", 0))
+        {
+            TypeKind::Named("VoiceHandle".to_owned())
+        } else if matches!(receiver, TypeKind::Named(name) if name == "StageApi")
+            && matches!((method.as_str(), arity), ("acquire", 1))
+        {
+            TypeKind::Named("StageActorHandle".to_owned())
+        } else if matches!(receiver, TypeKind::Named(name) if name == "StageActorHandle")
+            && matches!((method.as_str(), arity), ("look", 1 | 2))
+        {
+            TypeKind::Named("CueHandle".to_owned())
+        } else if let TypeKind::Vec(item) = receiver
+            && matches!((method.as_str(), arity), ("pop" | "pop_front", 0))
+        {
+            TypeKind::Option(item.clone())
+        } else if let TypeKind::Vec(item) = receiver
+            && matches!((method.as_str(), arity), ("collect", 0))
+        {
+            TypeKind::Vec(item.clone())
+        } else if matches!(
+            receiver,
+            TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes
+        ) {
+            match (method.as_str(), arity) {
+                ("push" | "reserve" | "shrink_to", 1) | ("shrink", 0) => TypeKind::Unit,
+                _ => return None,
+            }
+        } else {
+            return None;
+        };
+        Self::try_new(receiver.clone(), method.clone(), arity)
+            .ok()
+            .map(|id| (id, result))
     }
 }
 
@@ -1191,11 +1401,30 @@ impl DataLastCallableId {
 pub enum DropCallableId {
     Drop,
 }
+
+impl DropCallableId {
+    pub fn resolve(method: &CallableName) -> Option<Self> {
+        matches!(method.as_str(), "drop" | "drop_optional" | "on_drop").then_some(Self::Drop)
+    }
+}
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PromotionCallableId {
     Promote,
     PromoteUnchecked,
     Assume,
+}
+impl PromotionCallableId {
+    pub fn resolve(path: &CallablePath) -> Option<Self> {
+        if path.matches(&["promote"]) {
+            Some(Self::Promote)
+        } else if path.matches(&["promote_unchecked"]) {
+            Some(Self::PromoteUnchecked)
+        } else if path.matches(&["assume"]) {
+            Some(Self::Assume)
+        } else {
+            None
+        }
+    }
 }
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SpeakerCallableId {
@@ -1211,6 +1440,17 @@ impl SpeakerCallableId {
     }
     pub const fn is_preset(&self) -> bool {
         self.preset
+    }
+
+    pub fn resolve_value(ty: &TypeKind, character: Option<CharacterId>) -> Option<Self> {
+        match ty {
+            TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character => {
+                Some(Self::new(character, false))
+            }
+            TypeKind::Speaker(EntityKind::Character) => Some(Self::new(character, false)),
+            TypeKind::SpeakerPreset(EntityKind::Character) => Some(Self::new(character, true)),
+            _ => None,
+        }
     }
 }
 
@@ -1265,6 +1505,34 @@ pub enum CallableFamily {
     Drop,
     Promotion,
     Speaker,
+}
+
+impl CallableFamily {
+    /// Every production callable family in stable semantic-audit order.
+    pub const ALL: [Self; 22] = [
+        Self::Fx,
+        Self::EnumConstructor,
+        Self::ResultConstructor,
+        Self::OptionConstructor,
+        Self::Builtin,
+        Self::Agent,
+        Self::Presentation,
+        Self::Dialogue,
+        Self::Project,
+        Self::Environment,
+        Self::Lexical,
+        Self::FunctionValue,
+        Self::CollectionMethod,
+        Self::PresentationHandleMethod,
+        Self::IntegerMethod,
+        Self::DomainMethod,
+        Self::TraitMethod,
+        Self::DataLast,
+        Self::CapacityMethod,
+        Self::Drop,
+        Self::Promotion,
+        Self::Speaker,
+    ];
 }
 
 impl CallableCandidateId {

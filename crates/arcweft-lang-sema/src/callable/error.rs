@@ -268,6 +268,8 @@ pub enum CallableBuildLimitError {
 pub enum CallableQueryLimitError {
     #[error("call produced {actual} candidates; maximum is {limit}")]
     Candidates { actual: usize, limit: usize },
+    #[error("signature produced {actual} parameters; maximum is {limit}")]
+    Parameters { actual: usize, limit: usize },
     #[error("call depth {actual} exceeds maximum {limit}")]
     NestedCalls { actual: usize, limit: usize },
     #[error("query produced {actual} recovery nodes; maximum is {limit}")]
@@ -336,19 +338,22 @@ pub enum ResolveCallError {
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "the full focused error surface is consumed by the following native query cut"
-)]
 pub(crate) enum CallTargetFactError {
     #[error("focused call-target facts require focused checker mode")]
     FocusedModeRequired,
     #[error("focused call source is not part of the accepted project: {document:?}")]
     FocusedSourceUnavailable { document: SourceDocumentIdentity },
+    #[cfg(test)]
     #[error("focused call target {call:?} was not recorded")]
     FocusedTargetMissing { call: SourceSpan },
+    #[cfg(test)]
     #[error("focused call target {call:?} was recorded more than once")]
     FocusedTargetDuplicate { call: SourceSpan },
+    #[error("cursor {byte_offset} selects more than one equally specific call in {document:?}")]
+    AmbiguousCallRange {
+        document: SourceDocumentIdentity,
+        byte_offset: usize,
+    },
     #[error("focused call target {call:?} could not retain checked facts: {reason}")]
     Unavailable {
         call: SourceSpan,

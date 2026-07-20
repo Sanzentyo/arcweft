@@ -509,11 +509,17 @@ flow @flow.validate validate {
     )
     .expect_err("non-bool ensure condition is rejected");
 
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("ensure condition"))
-    );
+    assert!(errors.iter().any(|error| {
+        matches!(
+            error.kind(),
+            crate::diagnostics::TypeCheckErrorKind::ArgumentTypeMismatch {
+                function,
+                argument,
+                expected: TypeKind::Bool,
+                ..
+            } if function == "ensure" && argument == "condition"
+        )
+    }));
 }
 
 #[test]

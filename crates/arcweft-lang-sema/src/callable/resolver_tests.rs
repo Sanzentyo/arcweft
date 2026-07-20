@@ -28,18 +28,19 @@ use crate::{
 
 use super::facts::CallTargetFact;
 use super::{
-    AdapterPackageId, CallCallee, CallPoison, CallResolverRequest, CallSourceContext,
-    CallTargetFactError, CallableArgumentPolicy, CallableCandidateId, CallableDocumentation,
-    CallableEffectSchema, CallableGroupIndex, CallableGroupKind, CallableLookupKey, CallableName,
+    AdapterPackageId, BuiltinCallableId, CallCallee, CallPoison, CallResolverRequest,
+    CallSourceContext, CallTargetFactError, CallableArgumentPolicy, CallableCandidateId,
+    CallableDocumentation, CallableEffectSchema, CallableFamily, CallableGroupIndex,
+    CallableGroupKind, CallableInstantiation, CallableLookupKey, CallableName,
     CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
     CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
-    CallableQueryLimitError, CallableSignatureSchema, CallableValidator, EnvironmentCallableKind,
-    EnvironmentCallableOwner, EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
-    EnvironmentDeclarationOrdinal, LexicalCallableScope, PRODUCTION_CALLABLE_LIMITS,
-    ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedCallTarget, ResolverWork,
-    RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
-    SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
-    resolve_call_target,
+    CallableQueryLimitError, CallableSignatureSchema, CallableValidator, CapabilityCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
+    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, LexicalCallableScope,
+    PRODUCTION_CALLABLE_LIMITS, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
+    ResolvedCallTarget, ResolverWork, RustCallableProvenance, RustCallablePurity, RustItemPath,
+    RustPackageProvenance, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
+    UnknownNamedArgumentPolicy, resolve_call_target,
 };
 
 const SOURCE: &str = r#"
@@ -113,13 +114,17 @@ impl ResolverFixture {
         let traits = TraitCatalog::default();
         let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
         let request = CallResolverRequest::try_new(
-            CallCallee::Free { path: &path },
+            CallCallee::Free {
+                path: &path,
+                enum_variant: None,
+            },
             &lexical,
             None,
             &module,
             self.world.symbols(),
             &self.world,
             &traits,
+            &[],
             CallSourceContext::new(self.document.identity(), None, None),
             CallableGroupIndex::ZERO,
             TypeExpressionId::from_index(0),
@@ -143,6 +148,7 @@ impl ResolverFixture {
                 receiver_expression: TypeExpressionId::from_index(0),
                 receiver_type,
                 method: &method,
+                arguments: &[],
             },
             &lexical,
             None,
@@ -150,6 +156,7 @@ impl ResolverFixture {
             self.world.symbols(),
             &self.world,
             &traits,
+            &[],
             CallSourceContext::new(self.document.identity(), None, None),
             CallableGroupIndex::ZERO,
             TypeExpressionId::from_index(1),
@@ -271,6 +278,252 @@ fn focused_registered_call_facts_retain_exact_source_and_checked_mapping() {
 }
 
 #[test]
+fn focused_registered_function_value_facts_retain_the_exact_callable_type() {
+    const SOURCE: &str = r"
+fn apply_once(f: i64 -> i64, value: i64) -> i64 {
+    return f(value)
+}
+
+flow @flow.main main {
+    let result: i64 = apply_once(|value: i64| -> i64 { value }, 2i64)
+}
+";
+    let (document, project, symbol_world) =
+        root_project_source("registered-function-value", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let function_type = TypeKind::function([TypeKind::I64], TypeKind::I64);
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("registered function-value fixture");
+    let call = exact_span(&document, "f(value)");
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &project.linked_module(),
+        &world,
+        call,
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted function-value call source");
+    assert!(
+        report.report().diagnostics.is_empty(),
+        "registered function-value checking must use the shared resolver: {:?}",
+        report.report().diagnostics
+    );
+    let target = report
+        .focused_call_target_facts()
+        .expect("focused function-value facts");
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = target.target()
+    else {
+        panic!("function-value call must retain its selected callable")
+    };
+    assert_eq!(selected.id().family(), CallableFamily::FunctionValue);
+    assert_eq!(considered.as_ref(), std::slice::from_ref(selected.as_ref()));
+    assert_eq!(target.function_value_type(), Some(&function_type));
+    assert_eq!(target.result(), Some(&TypeKind::I64));
+}
+
+#[test]
+fn registered_data_last_uses_the_shared_candidate_and_exact_checked_facts() {
+    const SOURCE: &str = r"
+fn above(min: i64, value: i64) -> bool {
+    value > min
+}
+
+flow @flow.main main {
+    let score: i64 = 90i64
+    let accepted: bool = score.above(80i64)
+}
+";
+    let (document, project, symbol_world) = root_project_source("registered-data-last", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("registered data-last fixture");
+    let call = exact_span(&document, "score.above(80i64)");
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &project.linked_module(),
+        &world,
+        call,
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted data-last call source");
+    assert!(
+        report.report().diagnostics.is_empty(),
+        "registered data-last checking must use the shared resolver: {:?}",
+        report.report().diagnostics
+    );
+    let target = report
+        .focused_call_target_facts()
+        .expect("focused data-last facts");
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = target.target()
+    else {
+        panic!("data-last fallback must retain one selected candidate")
+    };
+    assert_eq!(selected.id().family(), CallableFamily::DataLast);
+    assert_eq!(considered.as_ref(), std::slice::from_ref(selected.as_ref()));
+    assert!(matches!(
+        selected.instantiation(),
+        CallableInstantiation::DataLast {
+            receiver: TypeKind::I64,
+            group,
+            parameter,
+        } if group.get() == 0 && parameter.get() == 1
+    ));
+    assert_eq!(target.result(), Some(&TypeKind::Bool));
+    let [argument] = target.arguments() else {
+        panic!("data-last call must retain its one authored argument")
+    };
+    let [slot] = argument.slots() else {
+        panic!("data-last argument must retain one checked slot")
+    };
+    let mapped = slot.mapped().expect("mapped data-last argument");
+    assert_eq!(mapped.group().get(), 0);
+    assert_eq!(mapped.parameter().get(), 0);
+}
+
+#[test]
+fn registered_data_last_can_continue_into_the_next_curried_group() {
+    const SOURCE: &str = r#"
+fn surround(prefix: String)(value: i64)(suffix: String) -> String {
+    return prefix
+}
+
+flow @flow.main main {
+    let score: i64 = 90i64
+    let suffixer: String -> String = score.surround("prefix")
+    let result: String = suffixer("suffix")
+}
+"#;
+    let (document, project, symbol_world) =
+        root_project_source("registered-data-last-curried", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("registered curried data-last fixture");
+    let call = exact_span(&document, "score.surround(\"prefix\")");
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &project.linked_module(),
+        &world,
+        call,
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted curried data-last call source");
+    assert!(
+        report.report().diagnostics.is_empty(),
+        "registered data-last checking must retain the next curried group: {:?}",
+        report.report().diagnostics
+    );
+    let target = report
+        .focused_call_target_facts()
+        .expect("focused curried data-last facts");
+    let CallTargetFact::Selected { selected, .. } = target.target() else {
+        panic!("curried data-last fallback must retain its selected candidate")
+    };
+    assert_eq!(selected.id().family(), CallableFamily::DataLast);
+    assert_eq!(
+        target.result().and_then(TypeKind::function_arity),
+        Some(1),
+        "the receiver completes its own group and leaves the suffix group callable"
+    );
+}
+
+#[test]
+fn registered_trait_method_precedes_data_last_and_retains_shared_facts() {
+    const SOURCE: &str = r#"
+struct Score {}
+
+trait Threshold {
+    fn above(self, min: i64) -> String
+}
+
+impl Threshold for Score {
+    fn above(self, min: i64) -> String {
+        "trait"
+    }
+}
+
+flow @flow.main main {
+    let accepted: String = score.above(80i64)
+}
+"#;
+    let (document, project, symbol_world) = root_project_source("registered-trait-method", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let base = TypeCheckEnv::standard()
+        .with_symbol("score", TypeKind::Named("Score".to_owned()))
+        .with_function_signature(
+            "above",
+            FunctionSignature::new(
+                TypeKind::Bool,
+                [
+                    FunctionParam::required("min", TypeKind::I64),
+                    FunctionParam::required("value", TypeKind::Named("Score".to_owned())),
+                ],
+            ),
+        );
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(base),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("registered trait-method fixture");
+    let call = exact_span(&document, "score.above(80i64)");
+    let cancellation = AtomicBool::new(false);
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+
+    let report = analyze_registered_project_types_for_call_facts(
+        &project.linked_module(),
+        &world,
+        call,
+        &cancellation,
+        &mut work,
+    )
+    .expect("accepted trait-method call source");
+    assert!(
+        report.report().diagnostics.is_empty(),
+        "registered trait checking must use the shared resolver: {:?}",
+        report.report().diagnostics
+    );
+    let target = report
+        .focused_call_target_facts()
+        .expect("focused trait-method facts");
+    let CallTargetFact::Selected { selected, .. } = target.target() else {
+        panic!("trait method must retain one selected candidate")
+    };
+    assert_eq!(selected.id().family(), CallableFamily::TraitMethod);
+    assert_eq!(target.result(), Some(&TypeKind::String));
+}
+
+#[test]
 fn focused_registered_call_requires_the_exact_complete_call_span() {
     let fixture = ResolverFixture::new();
     let callee_only = exact_span(&fixture.document, "standard_value");
@@ -380,6 +633,10 @@ fn focused_registered_call_rejects_a_nonaccepted_source_identity() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one fixture proves parity across capability, standard, and standalone checking"
+)]
 fn capability_and_standard_calls_share_registered_and_standalone_checking() {
     const SOURCE: &str = r#"
 extern capability fs {
@@ -463,7 +720,19 @@ flow @flow.main main effects { fs.read } {
     );
     assert_generic_untyped_schema(untyped_standard.schema());
     let event_emit = resolved_candidate(fixture.resolve_path(&["event", "emit"]));
-    assert_generic_untyped_schema(event_emit.schema());
+    assert_eq!(
+        event_emit.id(),
+        &CallableCandidateId::Builtin(BuiltinCallableId::Capability(
+            CapabilityCallableId::EventEmit
+        ))
+    );
+    assert_eq!(
+        event_emit.schema().validator(),
+        &CallableValidator::Builtin(BuiltinCallableId::Capability(
+            CapabilityCallableId::EventEmit
+        ))
+    );
+    assert_eq!(event_emit.schema().result(), &TypeKind::Unit);
 
     let registered =
         analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world);
@@ -872,13 +1141,17 @@ fn resolver_request_rejects_wrong_source_and_span() {
     let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
 
     let wrong_document = CallResolverRequest::try_new(
-        CallCallee::Free { path: &path },
+        CallCallee::Free {
+            path: &path,
+            enum_variant: None,
+        },
         &lexical,
         None,
         &module,
         fixture.world.symbols(),
         &fixture.world,
         &traits,
+        &[],
         CallSourceContext::new(wrong.identity(), None, None),
         CallableGroupIndex::ZERO,
         TypeExpressionId::from_index(0),
@@ -893,13 +1166,17 @@ fn resolver_request_rejects_wrong_source_and_span() {
 
     let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
     let wrong_span = CallResolverRequest::try_new(
-        CallCallee::Free { path: &path },
+        CallCallee::Free {
+            path: &path,
+            enum_variant: None,
+        },
         &lexical,
         None,
         &module,
         fixture.world.symbols(),
         &fixture.world,
         &traits,
+        &[],
         CallSourceContext::new(fixture.document.identity(), Some(&wrong_span), None),
         CallableGroupIndex::ZERO,
         TypeExpressionId::from_index(0),
@@ -923,13 +1200,17 @@ fn resolver_cancellation_is_fail_closed() {
     let traits = TraitCatalog::default();
     let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
     let request = CallResolverRequest::try_new(
-        CallCallee::Free { path: &path },
+        CallCallee::Free {
+            path: &path,
+            enum_variant: None,
+        },
         &lexical,
         None,
         &module,
         fixture.world.symbols(),
         &fixture.world,
         &traits,
+        &[],
         CallSourceContext::new(fixture.document.identity(), None, None),
         CallableGroupIndex::ZERO,
         TypeExpressionId::from_index(0),
@@ -954,13 +1235,17 @@ fn resolver_request_rejects_symbols_from_another_accepted_world() {
     let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
 
     let request = CallResolverRequest::try_new(
-        CallCallee::Free { path: &path },
+        CallCallee::Free {
+            path: &path,
+            enum_variant: None,
+        },
         &lexical,
         None,
         &module,
         other.world.symbols(),
         &fixture.world,
         &traits,
+        &[],
         CallSourceContext::new(fixture.document.identity(), None, None),
         CallableGroupIndex::ZERO,
         TypeExpressionId::from_index(0),
@@ -981,13 +1266,17 @@ fn resolver_zero_work_limit_rejects_before_returning_candidates() {
     let traits = TraitCatalog::default();
     let mut work = ResolverWork::new(0);
     let request = CallResolverRequest::try_new(
-        CallCallee::Free { path: &path },
+        CallCallee::Free {
+            path: &path,
+            enum_variant: None,
+        },
         &lexical,
         None,
         &module,
         fixture.world.symbols(),
         &fixture.world,
         &traits,
+        &[],
         CallSourceContext::new(fixture.document.identity(), None, None),
         CallableGroupIndex::ZERO,
         TypeExpressionId::from_index(0),

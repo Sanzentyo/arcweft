@@ -8,10 +8,12 @@ mod format;
 mod standard_iter;
 
 use crate::diagnostics::{TraitDiagnostic, TypeCheckError};
+use crate::env::{FunctionParam, FunctionSignature};
 use crate::types::TypeKind;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, Stmt};
 use arcweft_lang_syntax::ast::items::{ImplItem, ImplMember, TraitItem, TraitMember};
+use arcweft_lang_syntax::ast::pattern::Pattern;
 use arcweft_lang_syntax::types::{
     AssocTypeBinding, FnParam, FnSignature, GenericParam, TypeRef, parse_type_ref,
 };
@@ -103,7 +105,7 @@ pub struct TraitCatalog {
     witnesses: Vec<TraitWitness>,
     by_name: BTreeMap<String, TraitId>,
     exact_impls: HashMap<(TraitId, TypeKind), ImplId>,
-    inherent_methods: HashMap<(TypeKind, String), TraitMethodImpl>,
+    inherent_methods: HashMap<(TypeKind, String), (ImplId, TraitMethodImpl)>,
 }
 
 /// Trait declaration after member normalization.
@@ -204,7 +206,10 @@ pub struct TraitMethodForWitness<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TraitMethodResolution {
     Missing,
-    Inherent(TraitMethodImpl),
+    Inherent {
+        implementation: ImplId,
+        method: TraitMethodImpl,
+    },
     Unique {
         witness: Option<TraitWitnessId>,
         trait_id: TraitId,
@@ -509,7 +514,10 @@ impl TraitCatalog {
             .get(&(receiver.clone(), method_name.to_owned()))
             .cloned()
         {
-            return TraitMethodResolution::Inherent(method);
+            return TraitMethodResolution::Inherent {
+                implementation: method.0,
+                method: method.1,
+            };
         }
 
         let mut candidates = Vec::new();
@@ -629,6 +637,47 @@ impl TraitCatalog {
                 subject: subject.clone(),
                 assoc: assoc.to_owned(),
             }),
+        }
+    }
+
+    /// Resolves every associated-type projection carried by a method result.
+    ///
+    /// Trait selection and projection are catalog-owned semantic operations.
+    /// Call resolvers and the checker consume this one result instead of
+    /// recursively reinterpreting projection-bearing types independently.
+    pub fn resolve_type_projections(
+        &self,
+        ty: TypeKind,
+        predicates: &[TraitPredicate],
+    ) -> Result<TypeKind, ProjectionError> {
+        match ty {
+            TypeKind::Projection { subject, assoc, .. } => {
+                match self.resolve_projection(&subject, &assoc, predicates)? {
+                    ProjectionResolution::Resolved(ty) | ProjectionResolution::Deferred(ty) => {
+                        Ok(ty)
+                    }
+                }
+            }
+            TypeKind::Vec(inner) => self
+                .resolve_type_projections(*inner, predicates)
+                .map(|inner| TypeKind::Vec(Box::new(inner))),
+            TypeKind::Seq(inner) => self
+                .resolve_type_projections(*inner, predicates)
+                .map(|inner| TypeKind::Seq(Box::new(inner))),
+            TypeKind::Range(inner) => self
+                .resolve_type_projections(*inner, predicates)
+                .map(|inner| TypeKind::Range(Box::new(inner))),
+            TypeKind::Slice(inner) => self
+                .resolve_type_projections(*inner, predicates)
+                .map(|inner| TypeKind::Slice(Box::new(inner))),
+            TypeKind::Option(inner) => self
+                .resolve_type_projections(*inner, predicates)
+                .map(|inner| TypeKind::Option(Box::new(inner))),
+            TypeKind::Result { ok, error } => Ok(TypeKind::Result {
+                ok: Box::new(self.resolve_type_projections(*ok, predicates)?),
+                error: Box::new(self.resolve_type_projections(*error, predicates)?),
+            }),
+            other => Ok(other),
         }
     }
 
@@ -776,6 +825,49 @@ impl TraitMethodImpl {
     pub const fn body(&self) -> Option<&TraitMethodBody> {
         self.body.as_ref()
     }
+
+    /// Projects this selected method into the semantic function signature used
+    /// by the shared callable schema.
+    pub(crate) fn call_signature(&self, return_type: TypeKind) -> FunctionSignature {
+        let return_type = self.signature.param_groups().iter().skip(1).rev().fold(
+            return_type,
+            |return_type, group| {
+                TypeKind::function(
+                    group
+                        .params()
+                        .iter()
+                        .filter(|param| !is_trait_receiver_param(param))
+                        .map(|param| crate::checker::helpers::type_ref_kind(param.ty())),
+                    return_type,
+                )
+            },
+        );
+        let params = self
+            .signature
+            .param_groups()
+            .first()
+            .into_iter()
+            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+            .filter(|param| !is_trait_receiver_param(param))
+            .map(trait_method_param)
+            .collect::<Vec<_>>();
+        let remaining_param_groups = self
+            .signature
+            .param_groups()
+            .iter()
+            .skip(1)
+            .map(|group| {
+                group
+                    .params()
+                    .iter()
+                    .filter(|param| !is_trait_receiver_param(param))
+                    .map(trait_method_param)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        FunctionSignature::new(return_type, params)
+            .with_remaining_param_groups(remaining_param_groups)
+    }
 }
 
 impl<'a> TraitMethodForWitness<'a> {
@@ -805,6 +897,16 @@ impl<'a> TraitMethodForWitness<'a> {
 
     pub const fn body(&self) -> Option<&'a TraitMethodBody> {
         self.method.body()
+    }
+}
+
+impl TraitWitness {
+    pub const fn impl_id(&self) -> ImplId {
+        self.impl_id
+    }
+
+    pub const fn trait_id(&self) -> TraitId {
+        self.trait_id
     }
 }
 
@@ -1271,9 +1373,10 @@ impl TraitCatalogBuilder {
 
     fn register_inherent_methods(&mut self, impl_decl: &TraitImpl) {
         for (name, method) in &impl_decl.methods {
-            self.catalog
-                .inherent_methods
-                .insert((impl_decl.target.clone(), name.clone()), method.clone());
+            self.catalog.inherent_methods.insert(
+                (impl_decl.target.clone(), name.clone()),
+                (impl_decl.id, method.clone()),
+            );
         }
     }
 
@@ -1848,6 +1951,26 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
             TypeKind::Slice(Box::new(trait_type_ref_kind(inner, generic_params)))
         }
     }
+}
+
+fn trait_method_param(param: &FnParam) -> FunctionParam {
+    let name = match param.pattern() {
+        Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
+            name.as_str()
+        }
+        _ => "_",
+    };
+    if param.is_rest() {
+        FunctionParam::rest(name, crate::checker::helpers::type_ref_kind(param.ty()))
+    } else if param.default().is_some() {
+        FunctionParam::defaulted(name, crate::checker::helpers::type_ref_kind(param.ty()))
+    } else {
+        FunctionParam::required(name, crate::checker::helpers::type_ref_kind(param.ty()))
+    }
+}
+
+fn is_trait_receiver_param(param: &FnParam) -> bool {
+    param.receiver_kind().is_some() || matches!(param.ty(), TypeRef::Path(path) if path == "Self")
 }
 
 fn generic_type_kind(base: &str, args: &[TypeKind]) -> TypeKind {

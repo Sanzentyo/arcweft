@@ -76,9 +76,9 @@ impl TypeChecker<'_> {
             builder.poison = CallPoison::Rejected;
             return;
         };
-        let mapped = slot.parameter.map(|parameter| {
-            CallableParameterCoordinate::new(CallableGroupIndex::ZERO, parameter.index())
-        });
+        let mapped = slot
+            .parameter
+            .map(|parameter| CallableParameterCoordinate::new(slot.group, parameter.index()));
         let expected = slot.parameter.and_then(|parameter| match parameter.ty() {
             CallableParameterType::Exact(expected) => Some(expected.clone()),
             CallableParameterType::Unchecked => None,
@@ -121,6 +121,7 @@ impl TypeChecker<'_> {
                     argument_index,
                     expression,
                     source,
+                    group: CallableGroupIndex::ZERO,
                     parameter: None,
                     inferred,
                     poison,

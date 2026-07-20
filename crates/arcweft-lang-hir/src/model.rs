@@ -358,6 +358,19 @@ impl HirModule {
         self.source_map.as_ref().map(|source| &source.document)
     }
 
+    /// Exact source document retained for one canonical module in linked HIR.
+    ///
+    /// A standalone module exposes its own document through its canonical
+    /// module path. Linked projects expose every merged project document
+    /// without requiring a semantic query to parse or lower source again.
+    pub fn project_source_document(&self, module: &CanonicalModulePath) -> Option<&SourceDocument> {
+        let source_map = self.source_map.as_ref()?;
+        source_map
+            .project_documents
+            .get(module)
+            .or_else(|| (module == &self.module_path).then_some(&source_map.document))
+    }
+
     /// Canonical module represented by this HIR module.
     pub const fn module_path(&self) -> &CanonicalModulePath {
         &self.module_path

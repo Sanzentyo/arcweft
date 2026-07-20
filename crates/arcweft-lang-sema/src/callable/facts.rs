@@ -1,8 +1,4 @@
 //! Checker-owned callable facts and public semantic signature results.
-#![allow(
-    dead_code,
-    reason = "focused fact accessors are consumed by the following native signature-query cut"
-)]
 
 use std::{collections::HashSet, sync::Arc};
 
@@ -22,7 +18,14 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CallTargetFactMode {
     Disabled,
-    Focused { call: SourceSpan },
+    #[cfg(test)]
+    Focused {
+        call: SourceSpan,
+    },
+    Cursor {
+        document: SourceDocumentIdentity,
+        byte_offset: usize,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -217,6 +220,7 @@ impl CallTargetFacts {
     pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
         self.next_group
     }
+    #[cfg(test)]
     pub(crate) const fn function_value_type(&self) -> Option<&TypeKind> {
         self.function_value_type.as_ref()
     }
@@ -250,9 +254,6 @@ impl CheckedCallArgumentFact {
     pub(crate) const fn index(&self) -> CallableArgumentIndex {
         self.index
     }
-    pub(crate) const fn source(&self) -> Option<&SourceSpan> {
-        self.source.as_ref()
-    }
     pub(crate) const fn authored_name(&self) -> Option<&CallableName> {
         self.authored_name.as_ref()
     }
@@ -262,6 +263,7 @@ impl CheckedCallArgumentFact {
     pub(crate) fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
         &self.slots
     }
+    #[cfg(test)]
     pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
     }
@@ -280,24 +282,26 @@ impl CheckedCallArgumentSlotFact {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn slot(&self) -> CallableArgumentSlotIndex {
         self.slot
     }
-    pub(crate) const fn expression(&self) -> TypeExpressionId {
-        self.expression
-    }
+    #[cfg(test)]
     pub(crate) const fn source(&self) -> Option<&SourceSpan> {
         self.source.as_ref()
     }
     pub(crate) const fn mapped(&self) -> Option<CallableParameterCoordinate> {
         self.mapped
     }
+    #[cfg(test)]
     pub(crate) const fn inferred(&self) -> Option<&TypeKind> {
         self.inferred.as_ref()
     }
+    #[cfg(test)]
     pub(crate) const fn expected(&self) -> Option<&TypeKind> {
         self.expected.as_ref()
     }
+    #[cfg(test)]
     pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
     }
@@ -328,6 +332,12 @@ impl CheckedCallTarget {
             function_value_type: None,
             poison,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_function_value_type(mut self, function_value_type: TypeKind) -> Self {
+        self.function_value_type = Some(function_value_type);
+        self
     }
 
     pub(crate) fn ambiguous(
@@ -461,7 +471,7 @@ impl SemanticParameterGroup {
         limits: &CallableLimits,
     ) -> Result<Self, SemanticSignatureError> {
         if parameters.len() > limits.max_parameters_per_callable() {
-            return Err(CallableQueryLimitError::Candidates {
+            return Err(CallableQueryLimitError::Parameters {
                 actual: parameters.len(),
                 limit: limits.max_parameters_per_callable(),
             }
@@ -594,21 +604,44 @@ impl SemanticSignature {
 pub struct SemanticSignatureHelp {
     document: SourceDocumentIdentity,
     call_span: SourceSpan,
+    argument_span: SourceSpan,
+    expression: TypeExpressionId,
     signatures: Arc<[SemanticSignature]>,
     active_signature: SemanticSignatureIndex,
     active_parameter: Option<CallableParameterCoordinate>,
+    current_group: CallableGroupIndex,
+    next_group: Option<CallableGroupIndex>,
+    recovery: SemanticSignatureRecovery,
     diagnostics: Arc<[CallableDiagnostic]>,
     work: SignatureWorkReport,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticSignatureRecovery {
+    Complete,
+    Recovered {
+        missing_close_delimiter: bool,
+        nodes: usize,
+    },
+}
+
 impl SemanticSignatureHelp {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "the constructor validates the complete public signature-help invariant atomically"
+    )]
     pub fn try_new(
         document: SourceDocumentIdentity,
         call_span: SourceSpan,
+        argument_span: SourceSpan,
+        expression: TypeExpressionId,
         signatures: Vec<SemanticSignature>,
         active_signature: SemanticSignatureIndex,
         active_parameter: Option<CallableParameterCoordinate>,
+        current_group: CallableGroupIndex,
+        next_group: Option<CallableGroupIndex>,
+        recovery: SemanticSignatureRecovery,
         diagnostics: Vec<CallableDiagnostic>,
         work: SignatureWorkReport,
         limits: &CallableLimits,
@@ -633,29 +666,61 @@ impl SemanticSignatureHelp {
         {
             return Err(SemanticSignatureError::DuplicateCandidate);
         }
+        if signatures
+            .iter()
+            .any(|signature| signature.current_group() != current_group)
+        {
+            return Err(SemanticSignatureError::CurrentGroupMissing);
+        }
+        if let Some(next_group) = next_group
+            && signatures
+                .iter()
+                .all(|signature| signature.groups().get(next_group.get()).is_none())
+        {
+            return Err(SemanticSignatureError::CurrentGroupMissing);
+        }
+        if let SemanticSignatureRecovery::Recovered { nodes, .. } = recovery {
+            if nodes == 0 {
+                return Err(SemanticSignatureError::InvalidSpan);
+            }
+            if nodes > limits.max_recovery_nodes() {
+                return Err(CallableQueryLimitError::RecoveryNodes {
+                    actual: nodes,
+                    limit: limits.max_recovery_nodes(),
+                }
+                .into());
+            }
+        }
         validate_span(&document, &call_span)?;
+        validate_span(&document, &argument_span)?;
+        if argument_span.range().start() < call_span.range().start()
+            || argument_span.range().end() > call_span.range().end()
+        {
+            return Err(SemanticSignatureError::InvalidSpan);
+        }
         for signature in &signatures {
             if let Some(source) = signature.source() {
-                validate_callable_source(&document, source)?;
+                validate_callable_source(source)?;
             }
             for group in signature.groups() {
                 for parameter in group.parameters() {
                     if let Some(source) = parameter.source() {
-                        validate_parameter_source(&document, source)?;
+                        validate_parameter_source(source)?;
                     }
                 }
             }
         }
         if let Some(active) = active_parameter {
-            let signature = &signatures[active_signature.get()];
-            let Some(group) = signature.groups.get(signature.current_group.get()) else {
-                return Err(SemanticSignatureError::CurrentGroupMissing);
-            };
-            if group
-                .parameters
-                .iter()
-                .all(|parameter| parameter.coordinate != active)
-            {
+            let parameter_exists = signatures
+                .get(active_signature.get())
+                .and_then(|signature| signature.groups.get(signature.current_group.get()))
+                .is_some_and(|group| {
+                    group
+                        .parameters
+                        .iter()
+                        .any(|parameter| parameter.coordinate == active)
+                });
+            if !parameter_exists {
                 return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
             }
         }
@@ -679,9 +744,14 @@ impl SemanticSignatureHelp {
         Ok(Self {
             document,
             call_span,
+            argument_span,
+            expression,
             signatures: signatures.into(),
             active_signature,
             active_parameter,
+            current_group,
+            next_group,
+            recovery,
             diagnostics: diagnostics.into(),
             work,
         })
@@ -692,6 +762,12 @@ impl SemanticSignatureHelp {
     pub const fn call_span(&self) -> &SourceSpan {
         &self.call_span
     }
+    pub const fn argument_span(&self) -> &SourceSpan {
+        &self.argument_span
+    }
+    pub const fn expression(&self) -> TypeExpressionId {
+        self.expression
+    }
     pub fn signatures(&self) -> &[SemanticSignature] {
         &self.signatures
     }
@@ -700,6 +776,15 @@ impl SemanticSignatureHelp {
     }
     pub const fn active_parameter(&self) -> Option<CallableParameterCoordinate> {
         self.active_parameter
+    }
+    pub const fn current_group(&self) -> CallableGroupIndex {
+        self.current_group
+    }
+    pub const fn next_group(&self) -> Option<CallableGroupIndex> {
+        self.next_group
+    }
+    pub const fn recovery(&self) -> SemanticSignatureRecovery {
+        self.recovery
     }
     pub fn diagnostics(&self) -> &[CallableDiagnostic] {
         &self.diagnostics
@@ -817,36 +902,39 @@ fn validate_span(
     Ok(())
 }
 
-fn validate_callable_source(
-    document: &SourceDocumentIdentity,
-    source: &CallableSource,
-) -> Result<(), SemanticSignatureError> {
+fn validate_callable_source(source: &CallableSource) -> Result<(), SemanticSignatureError> {
     for span in source
         .signature()
         .into_iter()
         .chain(source.name())
         .chain(source.result())
     {
-        validate_span(document, span)?;
+        validate_self_span(span)?;
     }
     for parameter in source.parameters() {
-        validate_parameter_source(document, parameter)?;
+        validate_parameter_source(parameter)?;
     }
     Ok(())
 }
 
 fn validate_parameter_source(
-    document: &SourceDocumentIdentity,
     source: &CallableParameterSource,
 ) -> Result<(), SemanticSignatureError> {
-    validate_span(document, source.whole())?;
+    validate_self_span(source.whole())?;
     for span in source
         .name()
         .into_iter()
         .chain(source.ty())
         .chain(source.default())
     {
-        validate_span(document, span)?;
+        validate_self_span(span)?;
+    }
+    Ok(())
+}
+
+fn validate_self_span(span: &SourceSpan) -> Result<(), SemanticSignatureError> {
+    if u64::try_from(span.range().end()).map_or(true, |end| end > span.source().source_len()) {
+        return Err(SemanticSignatureError::InvalidSpan);
     }
     Ok(())
 }

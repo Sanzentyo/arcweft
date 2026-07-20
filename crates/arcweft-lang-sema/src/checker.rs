@@ -3,7 +3,9 @@ use crate::borrow::{
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
 use crate::callable::{
-    CallTargetFactMode, CallTargetFacts, CheckedCallTarget, PRODUCTION_CALLABLE_LIMITS,
+    CallTargetFactMode, CallTargetFacts, CallableDiagnostic, CallableDiagnosticCode,
+    CallableDiagnosticSeverity, CallableDiagnosticSubject, CheckedCallTarget,
+    PRODUCTION_CALLABLE_LIMITS, ResolvedCallable,
 };
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, CheckedSpeakerLine,
@@ -28,9 +30,7 @@ use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,
 };
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
-use crate::traits::{
-    ProjectionError, ProjectionResolution, TraitCatalog, TraitPredicate, collect_trait_catalog,
-};
+use crate::traits::{ProjectionError, TraitCatalog, TraitPredicate, collect_trait_catalog};
 use crate::types::{EntityKind, MapKind, TypeKind};
 use arcweft_lang_hir::{
     model::{HirFlowItem, HirModule, HirTopLevelDecl},
@@ -77,13 +77,13 @@ pub mod source;
 pub mod source_ranges;
 pub mod stmt;
 pub mod suspension;
-mod type_compatibility;
 
 pub use module::{
     analyze_project_types_for_canonicalization, analyze_registered_project_types,
     analyze_registered_project_types_for_canonicalization, analyze_types,
 };
 
+pub(crate) use call_target_facts::FocusedCallSite;
 use call_target_facts::{CallResolverControl, CallTargetFactRecorder};
 use fx::FxCatalog;
 use helpers::{
@@ -101,7 +101,6 @@ use signature::{
     function_signature_type, function_signature_type_with_nominal_types,
     selected_higher_order_argument,
 };
-use type_compatibility::types_compatible;
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
 ///
@@ -741,6 +740,7 @@ struct CurriedSignatureCallValue {
     group_arg_offset: usize,
     current_group_params: Option<Vec<FunctionParam>>,
     pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
+    resolved: Option<ResolvedCallable>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -926,16 +926,36 @@ impl<'a> TypeChecker<'a> {
         document: &arcweft_source::SourceDocumentIdentity,
         call_span: &arcweft_source::SourceSpan,
         checked: CheckedCallTarget,
+        diagnostic: Option<(CallableDiagnosticCode, CallableDiagnosticSubject)>,
     ) {
         if !self.records_call_target_facts(Some(call_span)) {
             return;
         }
+        let diagnostics = match diagnostic {
+            Some((code, subject)) => match CallableDiagnostic::try_new(
+                code,
+                CallableDiagnosticSeverity::Error,
+                Some(call_span.clone()),
+                subject,
+                Vec::new(),
+                Some(document),
+                &PRODUCTION_CALLABLE_LIMITS,
+            ) {
+                Ok(diagnostic) => vec![diagnostic],
+                Err(reason) => {
+                    self.call_target_fact_recorder
+                        .record_unavailable(call_span, reason);
+                    return;
+                }
+            },
+            None => Vec::new(),
+        };
         match CallTargetFacts::try_new(
             expression,
             document.clone(),
             call_span.clone(),
             checked,
-            Vec::new(),
+            diagnostics,
             &PRODUCTION_CALLABLE_LIMITS,
         ) {
             Ok(facts) => self.call_target_fact_recorder.record(facts),
@@ -1430,6 +1450,7 @@ impl<'a> TypeChecker<'a> {
             group_arg_offset: 0,
             current_group_params: None,
             pending_higher_order_args,
+            resolved: None,
         });
     }
 
@@ -1657,6 +1678,7 @@ impl<'a> TypeChecker<'a> {
                         group_arg_offset: 0,
                         current_group_params: None,
                         pending_higher_order_args: Vec::new(),
+                        resolved: None,
                     })
                 }),
             _ => None,
@@ -1722,7 +1744,7 @@ impl<'a> TypeChecker<'a> {
 
     fn types_compatible(&mut self, expected: &TypeKind, actual: &TypeKind) -> bool {
         self.stats.type_compatibility_checks += 1;
-        types_compatible(expected, actual)
+        expected.accepts(actual)
     }
 
     fn collect_and_store_trait_catalog(&mut self, module: &HirModule) {
@@ -1739,46 +1761,23 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn resolve_type_projection(&mut self, ty: TypeKind) -> TypeKind {
-        match ty {
-            TypeKind::Projection { subject, assoc, .. } => {
-                match self.trait_catalog.resolve_projection(
-                    &subject,
-                    &assoc,
-                    &self.active_trait_predicates(),
-                ) {
-                    Ok(ProjectionResolution::Resolved(ty) | ProjectionResolution::Deferred(ty)) => {
-                        ty
-                    }
-                    Err(ProjectionError::UnknownAssociatedType { subject, assoc }) => {
-                        self.errors.push(TypeCheckError::trait_diagnostic(
-                            TraitDiagnostic::unknown_associated_type(format!("{subject:?}"), assoc),
-                        ));
-                        TypeKind::Named("_".to_owned())
-                    }
-                    Err(ProjectionError::Ambiguous { subject, assoc }) => {
-                        self.errors.push(TypeCheckError::trait_diagnostic(
-                            TraitDiagnostic::ambiguous_projection(format!("{subject:?}"), assoc),
-                        ));
-                        TypeKind::Named("_".to_owned())
-                    }
-                }
+        match self
+            .trait_catalog
+            .resolve_type_projections(ty, &self.active_trait_predicates())
+        {
+            Ok(ty) => ty,
+            Err(ProjectionError::UnknownAssociatedType { subject, assoc }) => {
+                self.errors.push(TypeCheckError::trait_diagnostic(
+                    TraitDiagnostic::unknown_associated_type(format!("{subject:?}"), assoc),
+                ));
+                TypeKind::Named("_".to_owned())
             }
-            TypeKind::Vec(inner) => TypeKind::Vec(Box::new(self.resolve_type_projection(*inner))),
-            TypeKind::Seq(inner) => TypeKind::Seq(Box::new(self.resolve_type_projection(*inner))),
-            TypeKind::Range(inner) => {
-                TypeKind::Range(Box::new(self.resolve_type_projection(*inner)))
+            Err(ProjectionError::Ambiguous { subject, assoc }) => {
+                self.errors.push(TypeCheckError::trait_diagnostic(
+                    TraitDiagnostic::ambiguous_projection(format!("{subject:?}"), assoc),
+                ));
+                TypeKind::Named("_".to_owned())
             }
-            TypeKind::Slice(inner) => {
-                TypeKind::Slice(Box::new(self.resolve_type_projection(*inner)))
-            }
-            TypeKind::Option(inner) => {
-                TypeKind::Option(Box::new(self.resolve_type_projection(*inner)))
-            }
-            TypeKind::Result { ok, error } => TypeKind::Result {
-                ok: Box::new(self.resolve_type_projection(*ok)),
-                error: Box::new(self.resolve_type_projection(*error)),
-            },
-            other => other,
         }
     }
 
