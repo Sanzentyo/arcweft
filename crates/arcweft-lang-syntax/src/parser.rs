@@ -28,8 +28,17 @@ use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::Arc;
 
+mod action_grammar;
+#[cfg(test)]
+mod action_grammar_tests;
+mod activity_grammar;
+#[cfg(test)]
+mod activity_grammar_tests;
 pub mod assertion;
 pub mod await_;
+mod character_grammar;
+#[cfg(test)]
+mod character_grammar_tests;
 pub mod choice;
 pub mod control_flow;
 mod declaration;
@@ -55,8 +64,14 @@ mod item;
 #[cfg(test)]
 mod item_tests;
 pub mod items;
+mod layer_grammar;
+#[cfg(test)]
+mod layer_grammar_tests;
 mod lexer;
 pub mod line_plan;
+mod metric_grammar;
+#[cfg(test)]
+mod metric_grammar_tests;
 mod module_use_grammar;
 #[cfg(test)]
 mod module_use_grammar_tests;
@@ -70,10 +85,17 @@ pub mod recovery;
 mod resource_grammar;
 #[cfg(test)]
 mod resource_grammar_tests;
+#[cfg(test)]
+mod retained_grammar_tests;
+#[cfg(test)]
+mod retained_header_tests;
 mod shadow_flow;
 #[cfg(test)]
 mod shadow_flow_tests;
 mod shadow_recovery;
+mod signal_grammar;
+#[cfg(test)]
+mod signal_grammar_tests;
 pub mod source;
 mod statement;
 pub mod statements;
@@ -93,6 +115,9 @@ mod type_declaration_grammar;
 mod type_declaration_grammar_tests;
 mod type_ref;
 pub mod view;
+mod view_grammar;
+#[cfg(test)]
+mod view_grammar_tests;
 use await_::{is_await_with_head, parse_await_with};
 use control_flow::{
     parse_block_expr, parse_named_block_expr, parse_scope_authored_expr_body,

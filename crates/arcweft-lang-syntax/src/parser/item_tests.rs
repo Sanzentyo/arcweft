@@ -28,6 +28,13 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         "struct Point {}\n",
         "type Count = Int\n",
         "res actor: Character {}\n",
+        "character Alice {}\n",
+        "view Main() {}\n",
+        "action Ping()\n",
+        "activity Game {}\n",
+        "signal Current: Watch<Int>\n",
+        "metric gauge Frame: f32 {}\n",
+        "layer World: world_2d {}\n",
         "entry cli @entry.cli.main { goto @flow.main }\n",
         "extern capability audio {}\n",
         "extern mod native\n",
@@ -36,6 +43,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         "bench @bench.speed {}\n",
         "source data {}\n",
         "style theme {}\n",
+        "asset bg_room {}\n",
         "let top = true\n",
         "???\n",
     );
@@ -63,14 +71,22 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             SyntaxKind::StructItem,
             SyntaxKind::TypeAliasItem,
             SyntaxKind::ResourceDeclarationItem,
+            SyntaxKind::CharacterDeclarationItem,
+            SyntaxKind::ViewDeclarationItem,
+            SyntaxKind::ActionDeclarationItem,
+            SyntaxKind::ActivityDeclarationItem,
+            SyntaxKind::SignalDeclarationItem,
+            SyntaxKind::MetricDeclarationItem,
+            SyntaxKind::LayerDeclarationItem,
             SyntaxKind::EntryDeclarationItem,
             SyntaxKind::ExternCapabilityItem,
-            SyntaxKind::ExternModuleItem,
-            SyntaxKind::DialogueDefaultsItem,
+            SyntaxKind::ErrorItem,
+            SyntaxKind::ErrorItem,
             SyntaxKind::TestItem,
             SyntaxKind::BenchItem,
-            SyntaxKind::SourceItem,
+            SyntaxKind::ErrorItem,
             SyntaxKind::StyleItem,
+            SyntaxKind::ErrorItem,
             SyntaxKind::ErrorItem,
             SyntaxKind::ErrorItem,
         ]
@@ -109,13 +125,17 @@ const fn is_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::StructItem
             | SyntaxKind::TypeAliasItem
             | SyntaxKind::ResourceDeclarationItem
+            | SyntaxKind::CharacterDeclarationItem
+            | SyntaxKind::ViewDeclarationItem
+            | SyntaxKind::ActionDeclarationItem
+            | SyntaxKind::ActivityDeclarationItem
+            | SyntaxKind::SignalDeclarationItem
+            | SyntaxKind::MetricDeclarationItem
+            | SyntaxKind::LayerDeclarationItem
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
-            | SyntaxKind::ExternModuleItem
-            | SyntaxKind::DialogueDefaultsItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
-            | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
             | SyntaxKind::ErrorItem
     )

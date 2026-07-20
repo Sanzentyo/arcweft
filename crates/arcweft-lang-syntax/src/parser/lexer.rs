@@ -352,7 +352,7 @@ fn number_len(source: &str) -> usize {
 fn punctuation_len(source: &str) -> Option<usize> {
     const MULTI: &[&str] = &[
         "..=", "===", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "??", "?.", "..", "+=",
-        "-=", "*=", "/=", "%=", "<<", ">>", "**", "|>", "<-",
+        "-=", "*=", "/=", "%=", "**", "|>", "<-",
     ];
     MULTI
         .iter()
@@ -378,6 +378,8 @@ fn is_keyword(spelling: &str) -> bool {
     matches!(
         spelling,
         "agent"
+            | "action"
+            | "activity"
             | "as"
             | "assert"
             | "await"
@@ -386,6 +388,7 @@ fn is_keyword(spelling: &str) -> bool {
             | "callable"
             | "capability"
             | "choice"
+            | "character"
             | "close"
             | "continue"
             | "crate"
@@ -408,8 +411,10 @@ fn is_keyword(spelling: &str) -> bool {
             | "in"
             | "let"
             | "lifetime"
+            | "layer"
             | "loop"
             | "match"
+            | "metric"
             | "mod"
             | "move"
             | "mut"
@@ -437,6 +442,7 @@ fn is_keyword(spelling: &str) -> bool {
             | "type"
             | "unsafe"
             | "use"
+            | "view"
             | "wait"
             | "where"
             | "while"

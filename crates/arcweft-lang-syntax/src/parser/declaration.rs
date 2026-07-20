@@ -1,9 +1,11 @@
 //! Shared declaration-header grammar over the private document cursor.
 
+use arcweft_id::{PublicId, RetainedIdentityFamily};
 use arcweft_source::SourceRange;
 
 use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
+use super::lexer::LexToken;
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
@@ -122,6 +124,236 @@ pub(super) fn emit_visibility(parser: &mut ShadowDocumentParser<'_, '_>) {
         }
     }
     parser.finish();
+}
+
+pub(super) fn emit_retained_declaration_header(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    family: RetainedIdentityFamily,
+    emit_family_tail: impl FnOnce(&mut ShadowDocumentParser<'_, '_>),
+) {
+    parser.start(SyntaxKind::DeclarationHeader, SyntaxRole::Element(0));
+    emit_outer_prefixes(parser);
+    parser.bump_trivia();
+    emit_visibility(parser);
+    parser.bump_trivia();
+
+    let keyword_range = parser
+        .current()
+        .filter(|token| parser.text_of(*token) == family.prefix())
+        .map_or_else(
+            || SourceRange::new(parser.current_offset(), parser.current_offset()),
+            LexToken::range,
+        );
+    if parser.at(family.prefix()) {
+        parser.bump();
+    }
+    parser.bump_trivia();
+    emit_retained_declaration_public_id(parser, family, keyword_range);
+    parser.bump_trivia();
+    emit_retained_declaration_name(parser);
+    parser.bump_trivia();
+    emit_family_tail(parser);
+    parser.finish();
+}
+
+pub(super) fn emit_metric_declaration_header(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    emit_kind: impl FnOnce(&mut ShadowDocumentParser<'_, '_>),
+    emit_family_tail: impl FnOnce(&mut ShadowDocumentParser<'_, '_>),
+) {
+    parser.start(SyntaxKind::DeclarationHeader, SyntaxRole::Element(0));
+    emit_outer_prefixes(parser);
+    parser.bump_trivia();
+    emit_visibility(parser);
+    parser.bump_trivia();
+
+    let keyword_range = parser
+        .current()
+        .filter(|token| parser.text_of(*token) == RetainedIdentityFamily::Metric.prefix())
+        .map_or_else(
+            || SourceRange::new(parser.current_offset(), parser.current_offset()),
+            LexToken::range,
+        );
+    if parser.at(RetainedIdentityFamily::Metric.prefix()) {
+        parser.bump();
+    }
+    parser.bump_trivia();
+    emit_kind(parser);
+    parser.bump_trivia();
+    emit_retained_declaration_public_id(parser, RetainedIdentityFamily::Metric, keyword_range);
+    parser.bump_trivia();
+    emit_retained_declaration_name(parser);
+    parser.bump_trivia();
+    emit_family_tail(parser);
+    parser.finish();
+}
+
+fn emit_retained_declaration_public_id(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    family: RetainedIdentityFamily,
+    keyword_range: SourceRange,
+) {
+    if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
+        let token = parser.current().expect("checked declaration ID token");
+        let token_text = parser.text_of(token);
+        let value = token_text
+            .strip_prefix('@')
+            .expect("entity-reference token begins with @");
+
+        parser.start(SyntaxKind::DeclarationPublicId, SyntaxRole::PublicId);
+        if value.starts_with('.') || value.contains(":.") {
+            parser.bump();
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.declaration.relative_id",
+                token.range(),
+                "retained declaration IDs must be plain absolute references",
+            )));
+        } else if value.starts_with('{') || value.contains(':') || value.contains('/') {
+            parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+            parser.bump();
+            parser.finish();
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.declaration.malformed_id",
+                token.range(),
+                "retained declaration ID is not a plain absolute public-ID reference",
+            )));
+        } else {
+            match PublicId::try_new(value) {
+                Ok(public_id) if family.validate_public_id(&public_id).is_ok() => {
+                    parser.bump();
+                }
+                Ok(_) => {
+                    parser.start(SyntaxKind::WrongFamilyReference, SyntaxRole::Reference(0));
+                    parser.bump();
+                    parser.finish();
+                    parser.push(SyntaxEvent::Diagnostic(
+                        PendingSyntaxDiagnostic::new(
+                            "syntax.declaration.wrong_family_id",
+                            token.range(),
+                            format!(
+                                "declaration ID must belong to the `{}` family",
+                                family.prefix()
+                            ),
+                        )
+                        .with_related_range(keyword_range),
+                    ));
+                }
+                Err(_) => {
+                    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+                    parser.bump();
+                    parser.finish();
+                    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                        "syntax.declaration.malformed_id",
+                        token.range(),
+                        "retained declaration ID is malformed",
+                    )));
+                }
+            }
+        }
+        parser.finish();
+        return;
+    }
+
+    if !parser.at("@") {
+        return;
+    }
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::DeclarationPublicId, SyntaxRole::PublicId);
+    parser.start(SyntaxKind::MissingDeclarationId, SyntaxRole::Recovery(0));
+    bump_contiguous_declaration_spelling(parser);
+    parser.finish();
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.declaration.malformed_id",
+        SourceRange::new(start, parser.current_offset()),
+        "retained declaration ID is malformed",
+    )));
+}
+
+fn emit_retained_declaration_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) && !current_name_is_dotted(parser)
+    {
+        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
+        parser.bump();
+        parser.finish();
+        return;
+    }
+
+    let at = parser.current_offset();
+    parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
+    parser.push(SyntaxEvent::MissingToken {
+        expected: expected(SyntaxKind::IdentifierToken),
+        at,
+    });
+    parser.finish();
+
+    if parser.is_at_end()
+        || matches!(
+            parser.current_text(),
+            Some("(" | ":" | "{" | ";" | "\r" | "\n")
+        )
+    {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.declaration.missing_name",
+            SourceRange::new(at, at),
+            "retained declaration requires one ordinary local name",
+        )));
+        return;
+    }
+
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    bump_invalid_declaration_name(parser);
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.declaration.invalid_name",
+        SourceRange::new(at, parser.current_offset()),
+        "retained declaration name must be one non-keyword identifier",
+    )));
+}
+
+fn current_name_is_dotted(parser: &ShadowDocumentParser<'_, '_>) -> bool {
+    let Some(current) = parser.current() else {
+        return false;
+    };
+    parser.token_at(parser.cursor() + 1).is_some_and(|next| {
+        next.range().start() == current.range().end() && parser.text_of(next) == "."
+    })
+}
+
+fn bump_invalid_declaration_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let Some(first) = parser.bump() else {
+        return;
+    };
+    let mut end = first.range().end();
+    while parser.current().is_some_and(|token| {
+        token.range().start() == end
+            && (parser.text_of(token) == "." || token.kind() == SyntaxKind::IdentifierToken)
+    }) {
+        end = parser
+            .bump()
+            .expect("checked invalid-name continuation token")
+            .range()
+            .end();
+    }
+}
+
+fn bump_contiguous_declaration_spelling(parser: &mut ShadowDocumentParser<'_, '_>) {
+    let mut end = parser.current_offset();
+    while let Some(token) = parser.current() {
+        if token.range().start() != end
+            || matches!(
+                token.kind(),
+                SyntaxKind::WhitespaceToken
+                    | SyntaxKind::NewlineToken
+                    | SyntaxKind::CommentToken
+                    | SyntaxKind::DocCommentToken
+            )
+        {
+            break;
+        }
+        end = token.range().end();
+        parser.bump();
+    }
 }
 
 pub(super) fn emit_name(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &str) {

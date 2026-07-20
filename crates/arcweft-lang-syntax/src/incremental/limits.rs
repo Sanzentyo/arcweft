@@ -10,6 +10,13 @@ pub enum SyntaxLimit {
     ContractClauses,
     GenericParameters,
     WherePredicates,
+    FixedParameters,
+    DeclarationMembers,
+    ActivityPorts,
+    MetricLabels,
+    MetricBuckets,
+    ViewExports,
+    LayerMembers,
     TopLevelItems,
     Statements,
     Expressions,
@@ -27,14 +34,20 @@ impl SyntaxLimit {
             | Self::AssertionConditions
             | Self::PredicateParameters
             | Self::ProofParameters
-            | Self::ContractClauses => 64,
-            Self::GenericParameters | Self::WherePredicates => 256,
+            | Self::ContractClauses
+            | Self::MetricLabels
+            | Self::LayerMembers => 64,
+            Self::GenericParameters
+            | Self::WherePredicates
+            | Self::FixedParameters
+            | Self::ActivityPorts
+            | Self::ViewExports => 256,
+            Self::DeclarationMembers | Self::MetricBuckets | Self::Diagnostics => 1_024,
             Self::TopLevelItems => 16_384,
             Self::Statements => 65_536,
             Self::Expressions => 262_144,
             Self::TypeNodes | Self::PatternNodes => 131_072,
             Self::IdentityBearingNodes => 1_048_576,
-            Self::Diagnostics => 1_024,
         }
     }
 }
@@ -52,6 +65,13 @@ mod tests {
         assert_eq!(SyntaxLimit::ContractClauses.maximum(), 64);
         assert_eq!(SyntaxLimit::GenericParameters.maximum(), 256);
         assert_eq!(SyntaxLimit::WherePredicates.maximum(), 256);
+        assert_eq!(SyntaxLimit::FixedParameters.maximum(), 256);
+        assert_eq!(SyntaxLimit::DeclarationMembers.maximum(), 1_024);
+        assert_eq!(SyntaxLimit::ActivityPorts.maximum(), 256);
+        assert_eq!(SyntaxLimit::MetricLabels.maximum(), 64);
+        assert_eq!(SyntaxLimit::MetricBuckets.maximum(), 1_024);
+        assert_eq!(SyntaxLimit::ViewExports.maximum(), 256);
+        assert_eq!(SyntaxLimit::LayerMembers.maximum(), 64);
         assert_eq!(SyntaxLimit::TopLevelItems.maximum(), 16_384);
         assert_eq!(SyntaxLimit::Statements.maximum(), 65_536);
         assert_eq!(SyntaxLimit::Expressions.maximum(), 262_144);

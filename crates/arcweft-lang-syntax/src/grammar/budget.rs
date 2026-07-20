@@ -7,6 +7,8 @@
 
 use std::collections::BTreeSet;
 
+use arcweft_source::SourceRange;
+
 use super::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use super::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
 use crate::incremental::SyntaxLimit;
@@ -39,6 +41,13 @@ struct BudgetFrame {
     predicate_parameters: usize,
     proof_parameters: usize,
     assertion_conditions: usize,
+    fixed_parameters: usize,
+    declaration_members: usize,
+    activity_ports: usize,
+    metric_labels: usize,
+    metric_buckets: usize,
+    view_exports: usize,
+    layer_members: usize,
 }
 
 impl BudgetFrame {
@@ -51,6 +60,13 @@ impl BudgetFrame {
             predicate_parameters: 0,
             proof_parameters: 0,
             assertion_conditions: 0,
+            fixed_parameters: 0,
+            declaration_members: 0,
+            activity_ports: 0,
+            metric_labels: 0,
+            metric_buckets: 0,
+            view_exports: 0,
+            layer_members: 0,
         }
     }
 }
@@ -60,6 +76,8 @@ struct DiagnosticKey {
     code: &'static str,
     start: usize,
     end: usize,
+    related_start: Option<usize>,
+    related_end: Option<usize>,
     message: String,
 }
 
@@ -132,7 +150,7 @@ impl GrammarBudget {
         self.failure
     }
 
-    fn charge_start(&mut self, kind: SyntaxKind, _role: SyntaxRole) -> Result<(), SyntaxLimit> {
+    fn charge_start(&mut self, kind: SyntaxKind, role: SyntaxRole) -> Result<(), SyntaxLimit> {
         if kind.identity_class() == IdentityClass::IdentityBearing {
             charge(&mut self.identity_nodes, SyntaxLimit::IdentityBearingNodes)?;
         }
@@ -150,6 +168,37 @@ impl GrammarBudget {
         }
         if kind.is_item() && !self.stack.iter().any(|frame| frame.kind.is_item()) {
             charge(&mut self.top_level_items, SyntaxLimit::TopLevelItems)?;
+        }
+
+        if kind.is_retained_declaration_member() {
+            let frame = self.declaration_frame_mut()?;
+            charge(
+                &mut frame.declaration_members,
+                SyntaxLimit::DeclarationMembers,
+            )?;
+        }
+        match kind {
+            SyntaxKind::ActivityPort => {
+                let frame = self.declaration_frame_mut()?;
+                charge(&mut frame.activity_ports, SyntaxLimit::ActivityPorts)?;
+            }
+            SyntaxKind::MetricLabel => {
+                let frame = self.declaration_frame_mut()?;
+                charge(&mut frame.metric_labels, SyntaxLimit::MetricLabels)?;
+            }
+            SyntaxKind::ViewExportDeclaration => {
+                let frame = self.declaration_frame_mut()?;
+                charge(&mut frame.view_exports, SyntaxLimit::ViewExports)?;
+            }
+            SyntaxKind::LayerMember => {
+                let frame = self.declaration_frame_mut()?;
+                charge(&mut frame.layer_members, SyntaxLimit::LayerMembers)?;
+            }
+            _ => {}
+        }
+        if matches!(role, SyntaxRole::Bucket(_)) && kind.is_expression() {
+            let frame = self.declaration_frame_mut()?;
+            charge(&mut frame.metric_buckets, SyntaxLimit::MetricBuckets)?;
         }
 
         match kind {
@@ -171,6 +220,9 @@ impl GrammarBudget {
             SyntaxKind::Parameter => {
                 let frame = self.declaration_frame_mut()?;
                 match frame.kind {
+                    SyntaxKind::ViewDeclarationItem | SyntaxKind::ActionDeclarationItem => {
+                        charge(&mut frame.fixed_parameters, SyntaxLimit::FixedParameters)?;
+                    }
                     SyntaxKind::PredicateItem => charge(
                         &mut frame.predicate_parameters,
                         SyntaxLimit::PredicateParameters,
@@ -219,6 +271,8 @@ impl From<&PendingSyntaxDiagnostic> for DiagnosticKey {
             code: diagnostic.code(),
             start: range.start(),
             end: range.end(),
+            related_start: diagnostic.related_range().map(SourceRange::start),
+            related_end: diagnostic.related_range().map(SourceRange::end),
             message: diagnostic.message().to_owned(),
         }
     }
@@ -248,6 +302,13 @@ impl SyntaxKind {
                 | Self::StructItem
                 | Self::TypeAliasItem
                 | Self::ResourceDeclarationItem
+                | Self::CharacterDeclarationItem
+                | Self::ViewDeclarationItem
+                | Self::ActionDeclarationItem
+                | Self::ActivityDeclarationItem
+                | Self::SignalDeclarationItem
+                | Self::MetricDeclarationItem
+                | Self::LayerDeclarationItem
                 | Self::EntryDeclarationItem
                 | Self::ExternCapabilityItem
                 | Self::ExternModuleItem
@@ -377,6 +438,22 @@ impl SyntaxKind {
                 | Self::ElidedRegionType
                 | Self::MissingType
                 | Self::ErrorType
+        )
+    }
+
+    const fn is_retained_declaration_member(self) -> bool {
+        matches!(
+            self,
+            Self::CharacterDisplayNameMember
+                | Self::ActivityModeMember
+                | Self::ActivityLifecycleMember
+                | Self::ActivityInputBlock
+                | Self::ActivityOutputBlock
+                | Self::ActivityContractBlock
+                | Self::MetricUnitMember
+                | Self::MetricLabelsBlock
+                | Self::MetricBucketsMember
+                | Self::LayerMember
         )
     }
 }

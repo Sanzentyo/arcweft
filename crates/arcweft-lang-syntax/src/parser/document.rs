@@ -123,6 +123,10 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         self.budget.assertion_condition();
     }
 
+    pub(super) const fn budget_failed(&self) -> bool {
+        self.budget.failure().is_some()
+    }
+
     pub(super) fn bump_trivia(&mut self) {
         while self.current_kind().is_some_and(is_trivia_kind) {
             self.bump();
@@ -256,6 +260,13 @@ fn structured_declaration_after_outer_prefixes(
             | SyntaxKind::TraitItem
             | SyntaxKind::ImplItem
             | SyntaxKind::ResourceDeclarationItem
+            | SyntaxKind::CharacterDeclarationItem
+            | SyntaxKind::ViewDeclarationItem
+            | SyntaxKind::ActionDeclarationItem
+            | SyntaxKind::ActivityDeclarationItem
+            | SyntaxKind::SignalDeclarationItem
+            | SyntaxKind::MetricDeclarationItem
+            | SyntaxKind::LayerDeclarationItem
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::TestItem
@@ -537,6 +548,15 @@ fn emit_declaration_item(
             events,
             budget,
         ),
+        SyntaxKind::CharacterDeclarationItem
+        | SyntaxKind::ViewDeclarationItem
+        | SyntaxKind::ActionDeclarationItem
+        | SyntaxKind::ActivityDeclarationItem
+        | SyntaxKind::SignalDeclarationItem
+        | SyntaxKind::MetricDeclarationItem
+        | SyntaxKind::LayerDeclarationItem => {
+            emit_retained_declaration_item(source, tokens, kind, ordinal, events, budget);
+        }
         SyntaxKind::EntryDeclarationItem => super::entry_grammar::emit_declaration(
             source,
             tokens,
@@ -573,6 +593,41 @@ fn emit_declaration_item(
     budget_failure(budget)?;
     wrap_declaration_logical_lines(source, item_start, events);
     Ok(())
+}
+
+fn emit_retained_declaration_item(
+    source: &str,
+    tokens: &[LexToken],
+    kind: SyntaxKind,
+    ordinal: u32,
+    events: &mut Vec<SyntaxEvent>,
+    budget: &mut GrammarBudget,
+) {
+    let role = SyntaxRole::Element(ordinal);
+    match kind {
+        SyntaxKind::CharacterDeclarationItem => {
+            super::character_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::ViewDeclarationItem => {
+            super::view_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::ActionDeclarationItem => {
+            super::action_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::ActivityDeclarationItem => {
+            super::activity_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::SignalDeclarationItem => {
+            super::signal_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::MetricDeclarationItem => {
+            super::metric_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::LayerDeclarationItem => {
+            super::layer_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        _ => unreachable!("retained declaration dispatcher receives a retained item kind"),
+    }
 }
 
 fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut Vec<SyntaxEvent>) {

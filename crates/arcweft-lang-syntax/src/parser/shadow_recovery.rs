@@ -131,16 +131,24 @@ pub(super) fn find_statement_terminator(
     start: usize,
     end: usize,
 ) -> Option<(usize, bool)> {
-    let mut depth = 0_usize;
+    let mut delimiters = Vec::<&str>::new();
     for index in start..end {
         let token = parser.token_at(index)?;
         let text = parser.text_of(token);
-        if depth == 0 && (text == ";" || token.kind() == SyntaxKind::NewlineToken) {
+        if delimiters.is_empty() && (text == ";" || token.kind() == SyntaxKind::NewlineToken) {
             return Some((index, text == ";"));
         }
         match text {
-            "(" | "[" | "{" | "<" => depth += 1,
-            ")" | "]" | "}" | ">" => depth = depth.saturating_sub(1),
+            "(" | "[" | "{" => delimiters.push(text),
+            ")" if delimiters.last() == Some(&"(") => {
+                delimiters.pop();
+            }
+            "]" if delimiters.last() == Some(&"[") => {
+                delimiters.pop();
+            }
+            "}" if delimiters.last() == Some(&"{") => {
+                delimiters.pop();
+            }
             _ => {}
         }
     }

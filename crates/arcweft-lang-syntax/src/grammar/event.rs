@@ -31,6 +31,7 @@ impl ExpectedToken {
 pub(crate) struct PendingSyntaxDiagnostic {
     code: &'static str,
     range: SourceRange,
+    related_range: Option<SourceRange>,
     message: String,
 }
 
@@ -39,8 +40,14 @@ impl PendingSyntaxDiagnostic {
         Self {
             code,
             range,
+            related_range: None,
             message: message.into(),
         }
+    }
+
+    pub(crate) const fn with_related_range(mut self, related_range: SourceRange) -> Self {
+        self.related_range = Some(related_range);
+        self
     }
 
     pub(crate) const fn code(&self) -> &'static str {
@@ -49,6 +56,10 @@ impl PendingSyntaxDiagnostic {
 
     pub(crate) const fn range(&self) -> SourceRange {
         self.range
+    }
+
+    pub(crate) const fn related_range(&self) -> Option<SourceRange> {
+        self.related_range
     }
 
     pub(crate) fn message(&self) -> &str {

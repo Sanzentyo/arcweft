@@ -62,13 +62,17 @@ pub(super) fn declaration_kind(keywords: &[&str]) -> Option<SyntaxKind> {
         "struct" => SyntaxKind::StructItem,
         "type" => SyntaxKind::TypeAliasItem,
         "res" => SyntaxKind::ResourceDeclarationItem,
+        "character" => SyntaxKind::CharacterDeclarationItem,
+        "view" => SyntaxKind::ViewDeclarationItem,
+        "action" => SyntaxKind::ActionDeclarationItem,
+        "activity" => SyntaxKind::ActivityDeclarationItem,
+        "signal" => SyntaxKind::SignalDeclarationItem,
+        "metric" => SyntaxKind::MetricDeclarationItem,
+        "layer" => SyntaxKind::LayerDeclarationItem,
         "entry" => SyntaxKind::EntryDeclarationItem,
         "extern" if keywords.contains(&"capability") => SyntaxKind::ExternCapabilityItem,
-        "extern" if keywords.contains(&"mod") => SyntaxKind::ExternModuleItem,
-        "dialogue" if keywords.contains(&"defaults") => SyntaxKind::DialogueDefaultsItem,
         "test" => SyntaxKind::TestItem,
         "bench" => SyntaxKind::BenchItem,
-        "source" => SyntaxKind::SourceItem,
         "style" => SyntaxKind::StyleItem,
         _ => return None,
     })
@@ -89,13 +93,17 @@ pub(super) const fn is_declaration_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::StructItem
             | SyntaxKind::TypeAliasItem
             | SyntaxKind::ResourceDeclarationItem
+            | SyntaxKind::CharacterDeclarationItem
+            | SyntaxKind::ViewDeclarationItem
+            | SyntaxKind::ActionDeclarationItem
+            | SyntaxKind::ActivityDeclarationItem
+            | SyntaxKind::SignalDeclarationItem
+            | SyntaxKind::MetricDeclarationItem
+            | SyntaxKind::LayerDeclarationItem
             | SyntaxKind::EntryDeclarationItem
             | SyntaxKind::ExternCapabilityItem
-            | SyntaxKind::ExternModuleItem
-            | SyntaxKind::DialogueDefaultsItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
-            | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
     )
 }
