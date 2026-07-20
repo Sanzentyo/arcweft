@@ -148,8 +148,7 @@ where
                     self.visit_stmts(handler.body());
                 }
             }
-            Item::Callable(_)
-            | Item::Enum(_)
+            Item::Enum(_)
             | Item::Struct(_)
             | Item::TypeAlias(_)
             | Item::EntityDecl(_)

@@ -1038,25 +1038,6 @@ fn index_top_level_declaration(
     module: &CanonicalModulePath,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match declaration {
-        HirTopLevelDecl::Callable(item) => {
-            if let Some(package) = package {
-                let callable = CallableDeclarationId::try_new(
-                    package.clone(),
-                    module.clone(),
-                    CallableDeclarationOwner::View,
-                    item.name(),
-                )
-                .map_err(|error| {
-                    ProjectSemanticIndexError::InvalidCallableIdentity {
-                        name: item.name().to_owned(),
-                        message: error.to_string(),
-                    }
-                })?;
-                index = index.with_project_callable(entities::project_view_callable_symbol(
-                    callable, item, document,
-                )?);
-            }
-        }
         HirTopLevelDecl::Source(source) => {
             if let Some(id) = source.item().id() {
                 index = index.with_entity(entities::entity_symbol(
@@ -1069,6 +1050,7 @@ fn index_top_level_declaration(
             }
         }
         HirTopLevelDecl::EntityDecl(item) => {
+            index = index_view_callable(index, item, document, package, module)?;
             let value = if item.kind() == EntityDeclKind::Signal {
                 entities::signal_value_type(item.id().body(), item.signature_tail())?
             } else {
@@ -1132,6 +1114,42 @@ fn index_top_level_declaration(
         | HirTopLevelDecl::Proof(_) => {}
     }
     Ok(index)
+}
+
+fn index_view_callable(
+    index: ProjectSemanticIndex,
+    item: &EntityDeclItem,
+    document: &SourceDocument,
+    package: Option<&CallablePackageId>,
+    module: &CanonicalModulePath,
+) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
+    if item.kind() != EntityDeclKind::View {
+        return Ok(index);
+    }
+    let Some(package) = package else {
+        return Ok(index);
+    };
+    let name = item.local_binding_name().ok_or_else(|| {
+        ProjectSemanticIndexError::InvalidCallableIdentity {
+            name: item.id().body().to_owned(),
+            message: "View declaration has no local binding name".to_owned(),
+        }
+    })?;
+    let callable = CallableDeclarationId::try_new(
+        package.clone(),
+        module.clone(),
+        CallableDeclarationOwner::View,
+        name,
+    )
+    .map_err(|error| ProjectSemanticIndexError::InvalidCallableIdentity {
+        name: name.to_owned(),
+        message: error.to_string(),
+    })?;
+    Ok(
+        index.with_project_callable(entities::project_view_callable_symbol(
+            callable, item, document,
+        )?),
+    )
 }
 
 fn index_view_style_entity(

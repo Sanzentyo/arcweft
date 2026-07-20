@@ -6,7 +6,7 @@ use super::{
     SyntaxFnSignature, TypeKind, TypeRef, parse_type_ref, type_ref_kind,
 };
 use arcweft_lang_hir::model::HirFunction;
-use arcweft_lang_syntax::{ast::items::CallableItem, types::parse_fn_signature};
+use arcweft_lang_syntax::{ast::items::EntityDeclItem, types::parse_fn_signature};
 
 pub(super) fn index_flow_items(
     items: &[HirFlowItem],
@@ -636,13 +636,20 @@ pub(super) fn project_function_symbol(
 
 pub(super) fn project_view_callable_symbol(
     declaration: CallableDeclarationId,
-    item: &CallableItem,
+    item: &EntityDeclItem,
     source_name: &SourceName,
 ) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
-    let signature_source = format!("fn {}{}", item.name(), item.signature_tail());
+    debug_assert_eq!(item.kind(), EntityDeclKind::View);
+    let name = item.local_binding_name().ok_or_else(|| {
+        ProjectSemanticIndexError::InvalidCallableIdentity {
+            name: item.id().body().to_owned(),
+            message: "View declaration has no local binding name".to_owned(),
+        }
+    })?;
+    let signature_source = format!("fn {name}{}", item.signature_tail());
     let signature = parse_fn_signature(&signature_source).map_err(|error| {
         ProjectSemanticIndexError::InvalidCallableSignature {
-            name: item.name().to_owned(),
+            name: name.to_owned(),
             message: error.to_string(),
         }
     })?;

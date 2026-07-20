@@ -96,5 +96,22 @@ successfully. The repository structural audit scanned 3,404 files and reported
 0 errors and 131 warnings. No public syntax reader has been switched,
 preserving exactly one public reader until the atomic public AST cut.
 
-Validation results will be recorded here as cuts close. Passing compilation
-alone does not complete this package.
+As a prerequisite to Cut 8, the duplicate public View callable projection has
+been removed. A View declaration now contributes its callable symbol directly
+from the same `EntityDeclItem` that owns the structured View body; syntax no
+longer exposes `CallableItem`/`CallableKind`, HIR no longer clones a second
+`HirTopLevelDecl::Callable`, and project indexing registers the View callable
+facet from that single declaration. This is not the attached-AST switch:
+`EntityDeclItem` and its raw signature tail still remain, so Cut 8 stays
+pending. The change closes the package's single-owner invariant without
+introducing another parser or compatibility carrier.
+
+The single-owner prerequisite passed the syntax public-API and View-callable
+tests, including compile-fail coverage for the removed projection; the HIR
+View-callable test; and all 15 project-index tests. Strict all-target,
+all-feature Clippy passed for syntax, HIR, sema, LSP, and tooling. Formatting
+and `git diff --check` passed. The review-cut structural audit scanned 3,414
+files and reported 0 errors and 131 existing warnings.
+
+Further validation results will be recorded here as later cuts close. Passing
+this prerequisite does not complete the package.

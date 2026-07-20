@@ -324,15 +324,13 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         {
             Some(*flow.range())
         }
-        Item::Callable(_)
-        | Item::Flow(_)
+        Item::Flow(_)
         | Item::Function(_)
         | Item::Trait(_)
         | Item::Impl(_)
         | Item::Enum(_)
         | Item::Struct(_)
         | Item::TypeAlias(_)
-        | Item::Resource(_)
         | Item::EntityDecl(_)
         | Item::Entry(_)
         | Item::ExternCapability(_)

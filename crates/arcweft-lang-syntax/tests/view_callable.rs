@@ -1,10 +1,10 @@
 use arcweft_lang_syntax::{
-    ast::items::{CallableItem, CallableKind, EntityDeclKind, Item},
+    ast::items::{EntityDeclKind, Item},
     parser::parse_source,
 };
 
 #[test]
-fn typed_view_declaration_preserves_the_view_callable_projection() {
+fn typed_view_declaration_is_the_only_view_callable_owner() {
     let parsed = parse_source("pub view Card() {\n    Panel()\n}\n");
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let view = parsed
@@ -17,9 +17,7 @@ fn typed_view_declaration_preserves_the_view_callable_projection() {
         })
         .expect("typed View declaration");
 
-    let callable = CallableItem::from_view_declaration(view).expect("View callable projection");
-    assert_eq!(callable.kind(), CallableKind::View);
-    assert_eq!(callable.name(), "Card");
-    assert_eq!(callable.signature_tail(), "()");
-    assert!(callable.body().is_empty());
+    assert_eq!(view.local_binding_name(), Some("Card"));
+    assert_eq!(view.signature_tail(), "()");
+    assert!(view.view_body().and_then(|body| body.view()).is_some());
 }

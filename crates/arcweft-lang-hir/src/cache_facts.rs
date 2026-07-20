@@ -4,7 +4,6 @@ impl HirTopLevelDecl {
     /// Stable compiler-cache spelling used by HIR body fact evidence.
     pub const fn cache_fact_tag(&self) -> &'static str {
         match self {
-            Self::Callable(_) => "callable",
             Self::Trait(_) => "trait",
             Self::Impl(_) => "impl",
             Self::Enum(_) => "enum",

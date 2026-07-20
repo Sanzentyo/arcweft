@@ -7,8 +7,8 @@ use arcweft_lang_syntax::{
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
-            Attribute, CallableItem, EntityDeclItem, EnumItem, ExternCapabilityItem, ExternModItem,
-            FunctionKind, FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
+            Attribute, EntityDeclItem, EnumItem, ExternCapabilityItem, ExternModItem, FunctionKind,
+            FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -88,7 +88,6 @@ pub struct HirFunction {
 /// HIR-facing top-level declaration preserved for later semantic passes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirTopLevelDecl {
-    Callable(CallableItem),
     Trait(TraitItem),
     Impl(ImplItem),
     Enum(EnumItem),

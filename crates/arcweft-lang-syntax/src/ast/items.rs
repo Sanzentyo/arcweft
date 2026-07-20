@@ -27,7 +27,6 @@ pub struct TypedSyntaxTree {
 pub enum Item {
     Flow(Flow),
     Function(FunctionItem),
-    Callable(CallableItem),
     Trait(TraitItem),
     Impl(ImplItem),
     Enum(EnumItem),
@@ -142,7 +141,6 @@ impl Item {
         match self {
             Self::Flow(item) => Some(*item.range()),
             Self::Function(item) => Some(*item.range()),
-            Self::Callable(item) => Some(*item.range()),
             Self::Trait(item) => Some(*item.range()),
             Self::Impl(item) => Some(*item.range()),
             Self::Enum(item) => Some(*item.range()),
@@ -295,27 +293,6 @@ pub enum FunctionKind {
     Dialogue,
     /// Generator-like function that yields a stream/source of values.
     Stream,
-}
-
-/// View callable retained as a distinct function-like source family.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallableItem {
-    kind: CallableKind,
-    visibility: Option<Visibility>,
-    name: String,
-    signature_tail: String,
-    contracts: Vec<ContractClause>,
-    body: String,
-    body_statements: Vec<Stmt>,
-    body_value: Option<Expr>,
-    range: TextRange,
-}
-
-/// Function-like callable category not represented by an ordinary function.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CallableKind {
-    /// Retained View callable family.
-    View,
 }
 
 /// Top-level entity declaration family with runtime-specific body preserved.
@@ -797,70 +774,6 @@ impl FunctionItem {
     }
 }
 
-impl CallableItem {
-    /// Projects a typed View declaration onto the retained callable family.
-    ///
-    /// View keeps its dedicated body grammar and structured entity declaration.
-    /// This projection exposes only its callable signature and source ownership
-    /// to HIR and semantic indexing.
-    pub fn from_view_declaration(item: &EntityDeclItem) -> Option<Self> {
-        if item.kind() != EntityDeclKind::View {
-            return None;
-        }
-        let name = item
-            .surface_alias()
-            .or_else(|| item.name())
-            .or_else(|| item.id().body().rsplit('.').next())?;
-        Some(Self {
-            kind: CallableKind::View,
-            visibility: item.visibility(),
-            name: name.to_owned(),
-            signature_tail: item.signature_tail().to_owned(),
-            contracts: Vec::new(),
-            body: item.body().unwrap_or_default().to_owned(),
-            body_statements: Vec::new(),
-            body_value: None,
-            range: *item.range(),
-        })
-    }
-
-    pub const fn kind(&self) -> CallableKind {
-        self.kind
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn signature_tail(&self) -> &str {
-        &self.signature_tail
-    }
-
-    pub fn contracts(&self) -> &[ContractClause] {
-        &self.contracts
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub fn body_statements(&self) -> &[Stmt] {
-        &self.body_statements
-    }
-
-    pub const fn body_value(&self) -> Option<&Expr> {
-        self.body_value.as_ref()
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
 impl FunctionSignatureSource {
     pub(crate) fn new(
         signature: TextRange,
@@ -993,6 +906,17 @@ impl EntityDeclItem {
 
     pub fn surface_alias(&self) -> Option<&str> {
         self.surface_alias.as_deref()
+    }
+
+    /// Canonical local binding owned by this declaration.
+    ///
+    /// An explicit surface alias wins, followed by the authored declaration
+    /// name and finally the final segment of the absolute public ID.
+    pub fn local_binding_name(&self) -> Option<&str> {
+        self.surface_alias
+            .as_deref()
+            .or(self.name.as_deref())
+            .or_else(|| self.id.body().rsplit('.').next())
     }
 
     pub fn signature_tail(&self) -> &str {

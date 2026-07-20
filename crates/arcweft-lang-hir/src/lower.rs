@@ -5,8 +5,7 @@ use crate::style::{HirStyleDecl, HirStylePatch};
 use crate::view_part::HirViewPartOwner;
 use arcweft_lang_syntax::ast::{
     items::{
-        Attribute, CallableItem, EntityDeclItem, EntryDeclItem, EntryItem, FunctionItem, Item,
-        TypedSyntaxTree,
+        Attribute, EntityDeclItem, EntryDeclItem, EntryItem, FunctionItem, Item, TypedSyntaxTree,
     },
     module_path::CanonicalModulePath,
 };
@@ -104,10 +103,6 @@ impl HirLoweringState {
 
     fn lower_declaration_item(&mut self, item: &Item) {
         match item {
-            Item::Callable(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::Callable(item.clone()));
-            }
             Item::Enum(item) => {
                 self.declarations.push(HirTopLevelDecl::Enum(item.clone()));
             }
@@ -174,9 +169,6 @@ impl HirLoweringState {
     }
 
     fn lower_entity_declaration(&mut self, item: &EntityDeclItem) {
-        if let Some(callable) = CallableItem::from_view_declaration(item) {
-            self.declarations.push(HirTopLevelDecl::Callable(callable));
-        }
         if let Some(view) = item.view_body().and_then(|body| body.view()) {
             self.view_parts.extend(HirViewPartOwner::from_syntax(
                 self.module_path.clone(),
