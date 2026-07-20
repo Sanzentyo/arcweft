@@ -77,6 +77,21 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
     );
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
+
+    for expected in [
+        SyntaxKind::StyleBody,
+        SyntaxKind::OpenBraceNode,
+        SyntaxKind::CloseBraceNode,
+    ] {
+        assert!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .any(|entry| entry.kind() == expected),
+            "style item must be structurally dispatched as {expected:?}"
+        );
+    }
 }
 
 const fn is_item_kind(kind: SyntaxKind) -> bool {

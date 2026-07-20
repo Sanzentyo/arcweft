@@ -78,6 +78,9 @@ pub mod source;
 mod statement;
 pub mod statements;
 pub mod style;
+mod style_grammar;
+#[cfg(test)]
+mod style_grammar_tests;
 mod test_bench_grammar;
 #[cfg(test)]
 mod test_bench_grammar_tests;
