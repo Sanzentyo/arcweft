@@ -6,6 +6,7 @@
 
 pub mod assertion;
 pub mod cache_facts;
+mod dialogue_application;
 mod dialogue_identity;
 pub mod entry;
 pub mod fx;

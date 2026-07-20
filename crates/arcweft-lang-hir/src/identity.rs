@@ -196,6 +196,8 @@ pub enum SyntheticRole {
     WhileLetScrutinee,
     MatchScrutinee,
     PatternRest,
+    PostfixIndexCandidateExpression,
+    DialogueContentCandidateExpression,
 }
 
 impl SyntheticRole {
@@ -221,6 +223,8 @@ impl SyntheticRole {
             Self::WhileLetScrutinee => "while_let_scrutinee",
             Self::MatchScrutinee => "match_scrutinee",
             Self::PatternRest => "pattern_rest",
+            Self::PostfixIndexCandidateExpression => "postfix_index_candidate_expression",
+            Self::DialogueContentCandidateExpression => "dialogue_content_candidate_expression",
         }
     }
 }
@@ -339,6 +343,14 @@ mod tests {
         assert_eq!(
             SyntheticRole::ContractEnsuresScope.as_str(),
             "contract_ensures_scope"
+        );
+        assert_eq!(
+            SyntheticRole::PostfixIndexCandidateExpression.as_str(),
+            "postfix_index_candidate_expression"
+        );
+        assert_eq!(
+            SyntheticRole::DialogueContentCandidateExpression.as_str(),
+            "dialogue_content_candidate_expression"
         );
     }
 }

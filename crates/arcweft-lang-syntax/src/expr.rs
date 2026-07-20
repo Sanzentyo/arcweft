@@ -19,6 +19,7 @@ mod char_literal;
 mod closure_parse;
 mod closure_source;
 mod control_parse;
+mod dialogue_application;
 mod numeric;
 mod pipe_scope;
 mod source_ranges;
