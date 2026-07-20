@@ -22,11 +22,12 @@ pub enum ProductSectionCodecKind {
     ViewText,
     ViewInput,
     ViewTheme,
+    LocaleCatalog,
 }
 
 impl ProductSectionCodecKind {
     /// Complete inventory of implemented compact product resource codecs.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::RuntimeTypes,
         Self::Entrypoints,
         Self::AdapterRequirements,
@@ -40,6 +41,7 @@ impl ProductSectionCodecKind {
         Self::ViewText,
         Self::ViewInput,
         Self::ViewTheme,
+        Self::LocaleCatalog,
     ];
 
     /// Stable numeric tag written into compact resource section headers.
@@ -58,6 +60,7 @@ impl ProductSectionCodecKind {
             Self::ViewText => 11,
             Self::ViewInput => 12,
             Self::ViewTheme => 13,
+            Self::LocaleCatalog => 14,
         }
     }
 
@@ -77,6 +80,7 @@ impl ProductSectionCodecKind {
             11 => Some(Self::ViewText),
             12 => Some(Self::ViewInput),
             13 => Some(Self::ViewTheme),
+            14 => Some(Self::LocaleCatalog),
             _ => None,
         }
     }
@@ -97,6 +101,7 @@ impl ProductSectionCodecKind {
             Self::ViewText => "view_text",
             Self::ViewInput => "view_input",
             Self::ViewTheme => "view_theme",
+            Self::LocaleCatalog => "locale_catalog",
         }
     }
 
@@ -116,6 +121,7 @@ impl ProductSectionCodecKind {
             Self::ViewText => *b"AWVT\r\n\x1a\n",
             Self::ViewInput => *b"AWVI\r\n\x1a\n",
             Self::ViewTheme => *b"AWVH\r\n\x1a\n",
+            Self::LocaleCatalog => *b"AWLC\r\n\x1a\n",
         }
     }
 
@@ -135,6 +141,7 @@ impl ProductSectionCodecKind {
             Self::ViewText => BundleSectionKind::ViewText,
             Self::ViewInput => BundleSectionKind::ViewInput,
             Self::ViewTheme => BundleSectionKind::ViewTheme,
+            Self::LocaleCatalog => BundleSectionKind::LocaleCatalog,
         }
     }
 
@@ -155,9 +162,9 @@ impl ProductSectionCodecKind {
             BundleSectionKind::ViewText => Some(Self::ViewText),
             BundleSectionKind::ViewInput => Some(Self::ViewInput),
             BundleSectionKind::ViewTheme => Some(Self::ViewTheme),
+            BundleSectionKind::LocaleCatalog => Some(Self::LocaleCatalog),
             BundleSectionKind::ProgramBytecode
             | BundleSectionKind::AssetBlob
-            | BundleSectionKind::LocaleCatalog
             | BundleSectionKind::DebugSymbols
             | BundleSectionKind::NormalizedSource
             | BundleSectionKind::HotSwapMap
@@ -191,7 +198,8 @@ impl ProductSectionCodecKind {
             | Self::ViewProgram
             | Self::ViewStyle
             | Self::ViewText
-            | Self::ViewTheme => PatchCompatibility::ContentOnly,
+            | Self::ViewTheme
+            | Self::LocaleCatalog => PatchCompatibility::ContentOnly,
         }
     }
 }

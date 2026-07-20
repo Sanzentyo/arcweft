@@ -46,13 +46,25 @@ fn resource_codec_inventory_is_complete_and_bijective() {
     );
     assert_eq!(
         ProductSectionCodecKind::from_section_kind(BundleSectionKind::LocaleCatalog),
-        None
+        Some(ProductSectionCodecKind::LocaleCatalog)
     );
     assert_eq!(
         ProductSectionCodecKind::from_section_kind(BundleSectionKind::DebugSymbols),
         None
     );
-    assert_eq!(ProductSectionCodecKind::from_encoded(14), None);
+    assert_eq!(
+        ProductSectionCodecKind::from_encoded(14),
+        Some(ProductSectionCodecKind::LocaleCatalog)
+    );
+    assert_eq!(
+        ProductSectionCodecKind::LocaleCatalog.magic(),
+        *b"AWLC\r\n\x1a\n"
+    );
+    assert!(!ProductSectionCodecKind::LocaleCatalog.affects_code_compatibility());
+    assert_eq!(
+        ProductSectionCodecKind::LocaleCatalog.patch_compatibility(),
+        arcweft_bundle::patch::PatchCompatibility::ContentOnly
+    );
 }
 
 #[test]
@@ -251,6 +263,71 @@ fn unknown_optional_fields_skip_and_unknown_required_fields_reject() {
             SectionCodecBudget::default(),
         ),
         Err(SectionCodecError::UnknownRequiredField(FieldId(100)))
+    );
+}
+
+#[test]
+fn common_decoder_rejects_noncanonical_input_field_order_before_reconstruction() {
+    let envelope = tiny_fixture_envelope(
+        ["flow.main".to_owned(), "title".to_owned()],
+        ["flow.main".to_owned()],
+        tiny_fields(),
+    );
+    let field_offset = encoded_field_offset(&envelope);
+    let mut bytes = envelope.encode_canonical().expect("fixture encodes");
+    let first = bytes[field_offset..field_offset + 16].to_vec();
+    let second = bytes[field_offset + 16..field_offset + 32].to_vec();
+    bytes[field_offset..field_offset + 16].copy_from_slice(&second);
+    bytes[field_offset + 16..field_offset + 32].copy_from_slice(&first);
+
+    assert_eq!(
+        ProductResourceEnvelope::decode_with_registry(
+            &bytes,
+            ProductSectionCodecKind::RuntimeTypes,
+            &tiny_registry(),
+            SectionCodecBudget::default(),
+        ),
+        Err(SectionCodecError::NonCanonicalFieldOrder {
+            previous: TINY_PUBLIC_ID,
+            current: TINY_TITLE,
+        })
+    );
+    assert_eq!(
+        ProductResourceEnvelope::decode_all_fields(
+            &bytes,
+            ProductSectionCodecKind::RuntimeTypes,
+            SectionCodecBudget::default(),
+        ),
+        Err(SectionCodecError::NonCanonicalFieldOrder {
+            previous: TINY_PUBLIC_ID,
+            current: TINY_TITLE,
+        })
+    );
+}
+
+#[test]
+fn common_decoder_requires_the_registry_field_requirement_flag() {
+    let envelope = tiny_fixture_envelope(
+        ["flow.main".to_owned(), "title".to_owned()],
+        ["flow.main".to_owned()],
+        tiny_fields(),
+    );
+    let field_offset = encoded_field_offset(&envelope);
+    let mut bytes = envelope.encode_canonical().expect("fixture encodes");
+    bytes[field_offset + 3] = 0;
+
+    assert_eq!(
+        ProductResourceEnvelope::decode_with_registry(
+            &bytes,
+            ProductSectionCodecKind::RuntimeTypes,
+            &tiny_registry(),
+            SectionCodecBudget::default(),
+        ),
+        Err(SectionCodecError::FieldRequirementMismatch {
+            field: TINY_TITLE,
+            expected: FieldRequirement::Required,
+            actual: FieldRequirement::Optional,
+        })
     );
 }
 
@@ -526,4 +603,21 @@ fn tiny_registry() -> FieldRegistry {
         FieldSpec::required(TINY_PUBLIC_ID, ResourceWireType::PublicIdRef),
     ])
     .expect("registry")
+}
+
+fn encoded_field_offset(envelope: &ProductResourceEnvelope) -> usize {
+    PRODUCT_SECTION_HEADER_LEN
+        + envelope
+            .strings
+            .values()
+            .iter()
+            .map(|value| 4 + value.len())
+            .sum::<usize>()
+        + envelope
+            .public_ids
+            .values()
+            .iter()
+            .map(|value| 4 + value.len())
+            .sum::<usize>()
+        + envelope.enums.len() * 8
 }

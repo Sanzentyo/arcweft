@@ -17,6 +17,7 @@ use super::budget::{SectionCodecBudget, check_budget};
 use super::error::SectionCodecError;
 use super::field::{FieldId, FieldRegistry, FieldSpec, ResourceField, ResourceWireType};
 use super::kind::ProductSectionCodecKind;
+use super::locale_catalog::CharacterPresentationCatalogSection;
 use super::source_map::SourceMapSection;
 use super::table::{EnumRegistry, EnumSymbol, PublicIdTable, StringTable};
 use super::wire::ProductResourceEnvelope;
@@ -348,6 +349,13 @@ pub fn migrated_product_catalog_section_compatibility(
         ProductSectionCodecKind::AudioGraph => {
             let _old = AudioGraphSection::decode_canonical_section(old_bytes)?;
             let _new = AudioGraphSection::decode_canonical_section(new_bytes)?;
+            Ok(Some(PatchCompatibility::ContentOnly))
+        }
+        ProductSectionCodecKind::LocaleCatalog => {
+            let _old = CharacterPresentationCatalogSection::decode_canonical(old_bytes)
+                .map_err(|_| SectionCodecError::NonCanonicalTable("locale_catalog"))?;
+            let _new = CharacterPresentationCatalogSection::decode_canonical(new_bytes)
+                .map_err(|_| SectionCodecError::NonCanonicalTable("locale_catalog"))?;
             Ok(Some(PatchCompatibility::ContentOnly))
         }
         _ => Ok(None),

@@ -1,7 +1,7 @@
 use super::budget::{SectionCodecBudget, check_budget};
 use super::codec_io::{Cursor, u32_from_usize, u64_from_usize, usize_from_u32, usize_from_u64};
 use super::error::SectionCodecError;
-use super::field::{FIELD_HEADER_LEN, validate_field_budgets};
+use super::field::{FIELD_HEADER_LEN, validate_field_budgets, validate_strict_field_order};
 use super::field::{FieldRegistry, ResourceField};
 use super::header::PRODUCT_SECTION_HEADER_LEN;
 use super::header::ProductSectionHeader;
@@ -129,8 +129,7 @@ impl ProductResourceEnvelope {
             PublicIdTable::decode_entries(&mut cursor, header.public_id_table_len, budget)?;
         let enums =
             EnumRegistry::decode_entries(&mut cursor, header.enum_registry_len, &strings, budget)?;
-        let mut fields = Vec::with_capacity(usize_from_u32(header.field_count)?);
-        let mut skipped_unknown_optional_fields = 0_usize;
+        let mut raw_fields = Vec::with_capacity(usize_from_u32(header.field_count)?);
         for _ in 0..header.field_count {
             let field = ResourceField::decode_from(&mut cursor)?;
             if field.nesting_depth as usize > budget.depth {
@@ -139,6 +138,17 @@ impl ProductResourceEnvelope {
             if field.reference_count as usize > budget.references {
                 return Err(SectionCodecError::BudgetExceeded("references"));
             }
+            raw_fields.push(field);
+        }
+        if cursor.remaining() != 0 {
+            return Err(SectionCodecError::TrailingBytes);
+        }
+        validate_strict_field_order(&raw_fields)?;
+        validate_field_budgets(&raw_fields, budget)?;
+
+        let mut fields = Vec::with_capacity(raw_fields.len());
+        let mut skipped_unknown_optional_fields = 0_usize;
+        for field in raw_fields {
             if registry.validate_known_field(&field)? {
                 fields.push(field);
             } else if field.is_required() {
@@ -147,11 +157,7 @@ impl ProductResourceEnvelope {
                 skipped_unknown_optional_fields += 1;
             }
         }
-        if cursor.remaining() != 0 {
-            return Err(SectionCodecError::TrailingBytes);
-        }
         registry.validate_required_presence(&fields)?;
-        validate_field_budgets(&fields, budget)?;
         let envelope = ProductResourceEnvelope::with_budget(
             header.codec,
             strings,
@@ -198,6 +204,7 @@ impl ProductResourceEnvelope {
         if cursor.remaining() != 0 {
             return Err(SectionCodecError::TrailingBytes);
         }
+        validate_strict_field_order(&fields)?;
         validate_field_budgets(&fields, budget)?;
         ProductResourceEnvelope::with_budget(
             header.codec,

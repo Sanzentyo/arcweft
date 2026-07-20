@@ -118,6 +118,13 @@ impl FieldRegistry {
         let Some(spec) = self.spec(field.id) else {
             return Ok(false);
         };
+        if spec.requirement != field.requirement {
+            return Err(SectionCodecError::FieldRequirementMismatch {
+                field: field.id,
+                expected: spec.requirement,
+                actual: field.requirement,
+            });
+        }
         if spec.wire_type != field.wire_type {
             return Err(SectionCodecError::FieldWireTypeMismatch {
                 field: field.id,
@@ -283,4 +290,19 @@ pub(crate) fn validate_field_budgets(
         .map(|field| field.reference_count as usize)
         .sum::<usize>();
     check_budget(references, budget.references, "references")
+}
+
+pub(crate) fn validate_strict_field_order(
+    fields: &[ResourceField],
+) -> Result<(), SectionCodecError> {
+    if let Some(pair) = fields
+        .windows(2)
+        .find(|pair| pair[0].canonical_key() >= pair[1].canonical_key())
+    {
+        return Err(SectionCodecError::NonCanonicalFieldOrder {
+            previous: pair[0].id,
+            current: pair[1].id,
+        });
+    }
+    Ok(())
 }

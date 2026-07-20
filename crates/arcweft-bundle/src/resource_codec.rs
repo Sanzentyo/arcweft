@@ -12,6 +12,7 @@ pub mod field;
 pub mod header;
 pub mod inspection;
 pub mod kind;
+pub mod locale_catalog;
 pub mod product_catalog;
 pub mod runtime;
 pub mod source_map;
@@ -32,6 +33,9 @@ pub use header::{
 };
 pub use inspection::{EnumSymbolInspection, ResourceFieldInspection, ResourceInspection};
 pub use kind::ProductSectionCodecKind;
+pub use locale_catalog::{
+    CharacterPresentationCatalogCodecError, CharacterPresentationCatalogSection,
+};
 pub use product_catalog::{
     AssetCatalogSection as CompactAssetCatalogSection,
     AudioGraphSection as CompactAudioGraphSection,

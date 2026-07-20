@@ -1,4 +1,4 @@
-use super::field::{FieldId, ResourceWireType};
+use super::field::{FieldId, FieldRequirement, ResourceWireType};
 use super::kind::ProductSectionCodecKind;
 use super::table::{PublicIdRef, StringId};
 use thiserror::Error;
@@ -49,12 +49,22 @@ pub enum SectionCodecError {
     UnknownRequiredField(FieldId),
     #[error("section codec required field {0:?} is missing")]
     MissingRequiredField(FieldId),
+    #[error("section codec field {field:?} has requirement {actual:?}; expected {expected:?}")]
+    FieldRequirementMismatch {
+        field: FieldId,
+        expected: FieldRequirement,
+        actual: FieldRequirement,
+    },
     #[error("section codec field {field:?} has wire type {actual:?}; expected {expected:?}")]
     FieldWireTypeMismatch {
         field: FieldId,
         expected: ResourceWireType,
         actual: ResourceWireType,
     },
+    #[error(
+        "section codec fields are not in strict canonical order between {previous:?} and {current:?}"
+    )]
+    NonCanonicalFieldOrder { previous: FieldId, current: FieldId },
     #[error("section codec invalid field flags {0:#04x}")]
     InvalidFieldFlags(u8),
     #[error("section codec unsupported wire type {0}")]
