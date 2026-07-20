@@ -10,8 +10,8 @@ use crate::ast::view::{
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode,
 };
 use crate::cst::{
-    ArcweftPunctuation, split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
-    split_top_level_punctuation, split_top_level_punctuation_once,
+    ArcweftPunctuation, CstPunctuationScan, split_top_level_arcweft_punctuation_once,
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::expr::{CallArg, Expr, Literal};
 use crate::pattern::parse_pattern;
@@ -247,22 +247,30 @@ fn expand_else_line(line: ViewSourceLine) -> Vec<ViewSourceLine> {
 }
 
 fn expand_inline_view_chain_line(line: ViewSourceLine) -> Vec<ViewSourceLine> {
-    let Some(index) = line.text.find(").") else {
+    let boundaries =
+        CstPunctuationScan::new(&line.text).parenthesized_postfix_separator_offsets('.');
+    if boundaries.is_empty() {
         return vec![line];
-    };
-    let split = index + 1;
-    vec![
-        ViewSourceLine {
-            text: line.text[..split].to_owned(),
-            start: line.start,
-            end: line.start + split,
-        },
-        ViewSourceLine {
-            text: line.text[split..].to_owned(),
-            start: line.start + split,
-            end: line.end,
-        },
-    ]
+    }
+
+    let mut fragments = Vec::with_capacity(boundaries.len() + 1);
+    let mut fragment_start = 0usize;
+    for fragment_end in boundaries
+        .into_iter()
+        .chain(std::iter::once(line.text.len()))
+    {
+        fragments.push(ViewSourceLine {
+            text: line.text[fragment_start..fragment_end].to_owned(),
+            start: line.start + fragment_start,
+            end: if fragment_end == line.text.len() {
+                line.end
+            } else {
+                line.start + fragment_end
+            },
+        });
+        fragment_start = fragment_end;
+    }
+    fragments
 }
 
 fn parse_view_exprs(

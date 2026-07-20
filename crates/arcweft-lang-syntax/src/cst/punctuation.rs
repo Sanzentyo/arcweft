@@ -110,6 +110,71 @@ impl<'a> CstPunctuationScan<'a> {
         Some((open_offset, close_offset))
     }
 
+    /// Returns separators that immediately follow a completed top-level
+    /// parenthesized group.
+    ///
+    /// Surface grammars use these offsets to normalize same-line postfix
+    /// chains without treating delimiter-like text inside strings, comments,
+    /// nested calls, indexed values, or blocks as structure.
+    pub(crate) fn parenthesized_postfix_separator_offsets(&self, separator: char) -> Vec<usize> {
+        let mut paren = 0usize;
+        let mut square = 0usize;
+        let mut brace = 0usize;
+        let mut completed_group = false;
+        let mut offsets = Vec::new();
+
+        for token in &self.tokens {
+            if matches!(
+                token.kind(),
+                SyntaxKind::Whitespace
+                    | SyntaxKind::Newline
+                    | SyntaxKind::Comment
+                    | SyntaxKind::DocComment
+            ) {
+                continue;
+            }
+
+            if token.kind() != SyntaxKind::Punctuation {
+                completed_group = false;
+                continue;
+            }
+
+            match token.text() {
+                "(" => {
+                    paren += 1;
+                    completed_group = false;
+                }
+                ")" if paren > 0 => {
+                    paren -= 1;
+                    completed_group = paren == 0 && square == 0 && brace == 0;
+                }
+                "[" => {
+                    square += 1;
+                    completed_group = false;
+                }
+                "]" if square > 0 => {
+                    square -= 1;
+                    completed_group = false;
+                }
+                "{" => {
+                    brace += 1;
+                    completed_group = false;
+                }
+                "}" if brace > 0 => {
+                    brace -= 1;
+                    completed_group = false;
+                }
+                text if token_text_is(text, separator) && completed_group => {
+                    offsets.push(token.start());
+                    completed_group = false;
+                }
+                _ => completed_group = false,
+            }
+        }
+
+        offsets
+    }
+
     pub(crate) fn deltas(&self) -> CstPunctuationDeltas {
         self.punctuation_tokens()
             .fold(CstPunctuationDeltas::default(), |mut deltas, token| {

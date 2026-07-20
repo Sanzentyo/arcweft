@@ -400,6 +400,137 @@ fn inline_style_ranges_survive_same_line_view_chain_expansion() {
 }
 
 #[test]
+fn same_line_view_modifier_chains_preserve_every_production_property() {
+    let source = r"pub view StoryPanel(line: StoryDialogue) {
+    Text(line.speaker).x(48px).y(416px).width(860px).height(32px)
+    RichText(line.content).x(48px).y(456px).width(860px).height(140px)
+}
+";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("StoryPanel View body");
+    let ViewExpr::Fragment(items) = view.value() else {
+        panic!("two authored text nodes remain a View fragment");
+    };
+
+    for item in items {
+        let ViewExpr::Text(text) = item else {
+            panic!("both View values remain typed text nodes");
+        };
+        assert_eq!(
+            text.modifiers()
+                .iter()
+                .filter_map(|modifier| match modifier {
+                    ViewModifier::Property { name, .. } => Some(name.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            ["x", "y", "width", "height"]
+        );
+    }
+}
+
+#[test]
+fn same_line_view_chain_ignores_nested_call_selection_boundaries() {
+    let source = r"pub view NestedChain(line: StoryDialogue) {
+    Text(resolve(line).speaker).x(48px).y(416px).width(860px).height(32px)
+}
+";
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let view = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => item.view_body()?.view(),
+            _ => None,
+        })
+        .expect("NestedChain View body");
+    let ViewExpr::Text(text) = view.value() else {
+        panic!("View value remains a typed text node");
+    };
+    let Expr::Select(speaker) = text.source() else {
+        panic!("Text source remains the authored selection");
+    };
+    let Expr::Call(resolve) = speaker.target() else {
+        panic!("selection target remains the authored call");
+    };
+    assert_eq!(&source[resolve.range().as_range()], "resolve(line)");
+
+    let properties = text
+        .modifiers()
+        .iter()
+        .filter_map(|modifier| match modifier {
+            ViewModifier::Property { name, value } => Some((name.as_str(), value)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        properties.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+        ["x", "y", "width", "height"]
+    );
+    for ((_, value), expected) in properties
+        .into_iter()
+        .zip(["48px", "416px", "860px", "32px"])
+    {
+        assert!(matches!(
+            value,
+            Expr::Literal(Literal::UnitNumber {
+                raw,
+                suffix: UnitNumberSuffix::Px,
+            }) if raw == expected
+        ));
+    }
+}
+
+#[test]
+fn same_line_view_chain_ignores_modifier_like_text_inside_strings() {
+    let source = r#"pub view LiteralChain() {
+    Text(").not_modifier(").x(48px)
+}
+"#;
+    let parsed = parse_source(source);
+    assert_eq!(parsed.errors(), &[]);
+    let text = parsed
+        .typed_tree()
+        .items()
+        .iter()
+        .find_map(|item| match item {
+            Item::EntityDecl(item) => match item.view_body()?.view()?.value() {
+                ViewExpr::Text(text) => Some(text),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("literal remains one typed Text source");
+    assert!(matches!(
+        text.source(),
+        Expr::Literal(Literal::String(value)) if value == ").not_modifier("
+    ));
+    assert!(matches!(
+        text.modifiers(),
+        [ViewModifier::Property { name, value }]
+            if name == "x"
+                && matches!(
+                    value,
+                    Expr::Literal(Literal::UnitNumber {
+                        raw,
+                        suffix: UnitNumberSuffix::Px,
+                    }) if raw == "48px"
+                )
+    ));
+}
+
+#[test]
 fn inline_native_style_diagnostic_starts_at_the_original_repeated_modifier() {
     let source = r#"pub view ExactDiagnostic() {
     Button("One")

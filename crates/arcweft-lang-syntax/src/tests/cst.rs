@@ -322,6 +322,27 @@ fn cst_punctuation_scan_deltas_ignore_strings_and_comments() {
 }
 
 #[test]
+fn cst_parenthesized_postfix_offsets_ignore_nested_text_and_non_call_groups() {
+    let source = r#"Text(").string(") /* ).comment( */ .x(48px).y(32px)"#;
+    let expected =
+        [".x(", ".y("].map(|needle| source.find(needle).expect("authored postfix separator"));
+    assert_eq!(
+        CstPunctuationScan::new(source).parenthesized_postfix_separator_offsets('.'),
+        expected
+    );
+    assert!(
+        CstPunctuationScan::new("values[0].label")
+            .parenthesized_postfix_separator_offsets('.')
+            .is_empty()
+    );
+    assert!(
+        CstPunctuationScan::new("record { field = value }.label")
+            .parenthesized_postfix_separator_offsets('.')
+            .is_empty()
+    );
+}
+
+#[test]
 fn cst_punctuation_scan_reports_block_parent_transitions() {
     let else_head = CstPunctuationScan::new("} else {");
     assert_eq!(else_head.leading_brace_closes(), 1);
