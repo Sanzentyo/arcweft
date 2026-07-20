@@ -463,7 +463,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     }
                     let trust = match proof.trust() {
                         ProofTrust::Verified => SemanticProofTrust::Verified,
-                        ProofTrust::Trusted { reason } => SemanticProofTrust::Trusted {
+                        ProofTrust::Trusted { reason, .. } => SemanticProofTrust::Trusted {
                             reason: reason.clone(),
                         },
                     };

@@ -119,7 +119,7 @@ use helpers::{
 use line_plan::{
     parse_defer_outcome, parse_thread_block, parse_thread_block_items, parse_trigger_pattern,
 };
-use recovery::{ParseError, RecoverySuggestion};
+use recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use statements::{
     binding_value_start_in_line, braced_expr_source, parse_scope_head, parse_stmt,
     parse_stmt_recovering_with_base, parse_stmt_with_base, parse_unsafe_lifetime_block,
@@ -635,15 +635,41 @@ impl<'a> Parser<'a> {
 
     fn reject_pending_attrs(&mut self, fallback_range: TextRange) {
         for attr in self.take_pending_attrs() {
-            self.push_error(
-                *attr.range(),
-                "attribute is not attached to an attribute-aware item",
-                ["flow", "fn", "character", "dialogue defaults", "source"],
-                Some(attr.name()),
-                ["move the attribute directly before a supported declaration"],
-            );
+            if attr.name() == "verify.trusted" {
+                self.reject_trusted_attr(&attr);
+            } else {
+                self.push_error(
+                    *attr.range(),
+                    "attribute is not attached to an attribute-aware item",
+                    ["flow", "fn", "character", "dialogue defaults", "source"],
+                    Some(attr.name()),
+                    ["move the attribute directly before a supported declaration"],
+                );
+            }
         }
         let _ = fallback_range;
+    }
+
+    fn reject_pending_trusted_attrs(&mut self) {
+        let attrs = self.take_pending_attrs();
+        for attr in attrs {
+            if attr.name() == "verify.trusted" {
+                self.reject_trusted_attr(&attr);
+            } else {
+                self.push_pending_attr(attr);
+            }
+        }
+    }
+
+    fn reject_trusted_attr(&mut self, attr: &Attribute) {
+        self.push_error_with_kind(
+            ParseErrorKind::ProofTrustedNotProof,
+            *attr.range(),
+            "`verify.trusted` can only be attached to a proof",
+            ["proof declaration"],
+            Some(attr.name()),
+            ["move the attribute directly before a proof declaration"],
+        );
     }
 
     fn reject_pending_doc(&mut self, fallback_range: TextRange) {
@@ -669,6 +695,25 @@ impl<'a> Parser<'a> {
         recovery: [&str; R],
     ) {
         self.errors.push(ParseError::new(
+            range,
+            expected.into_iter().map(str::to_owned).collect(),
+            found.map(str::to_owned),
+            message.to_owned(),
+            recovery.into_iter().map(RecoverySuggestion::new).collect(),
+        ));
+    }
+
+    fn push_error_with_kind<const E: usize, const R: usize>(
+        &mut self,
+        kind: ParseErrorKind,
+        range: TextRange,
+        message: &str,
+        expected: [&str; E],
+        found: Option<&str>,
+        recovery: [&str; R],
+    ) {
+        self.errors.push(ParseError::new_with_kind(
+            kind,
             range,
             expected.into_iter().map(str::to_owned).collect(),
             found.map(str::to_owned),

@@ -22,6 +22,7 @@ mod control_parse;
 mod numeric;
 mod pipe_scope;
 mod source_ranges;
+mod string_literal;
 
 pub use call_syntax::{
     ArgumentListSyntax, ArgumentListTerminatorSyntax, CallArgumentFormSyntax,
@@ -40,6 +41,7 @@ use numeric::{digit_matches_radix, split_number_suffix};
 pub use source_ranges::{
     ExprSourceRange, collect_dialogue_call_content_ranges, collect_expr_source_ranges,
 };
+pub use string_literal::DecodedStringLiteral;
 
 /// Inclusive production limit for arguments retained by one source call.
 pub const MAX_CALL_ARGUMENTS: usize = 128;

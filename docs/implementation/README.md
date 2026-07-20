@@ -1562,14 +1562,16 @@ Current high-confidence state:
   current Sans I/O runtime slice. The implemented slice executes
   `let name = scope { ... }` value bindings and `let name = loop { break expr }`
   result binding in the headless runtime.
-- `pro_review14.md` / `pro_review15.md`: adopted proof-aware
-  lifetime/thread/drop direction and Agent-friendly tooling diagnostics.
-  Formal `proof @proof.*` items, `trusted axiom @axiom.*` declarations,
-  explicit proof references such as `proof = @proof.id`, and audited
-  `unsafe lifetime @unsafe.*` regions with required `reason` and `SAFETY`
-  documentation are the accepted design. The syntax crate preserves proof and
-  trusted-axiom items as HIR metadata and parses `unsafe lifetime` audit blocks
-  as structured statements. `arcweft-lang-hir` is now the public HIR facade.
+- The proof-aware lifetime/thread/drop direction and Agent-friendly tooling
+  diagnostics originated in `pro_review14.md` / `pro_review15.md`. The current
+  accepted model consists of ordinary `proof @proof.*` items, proof-only
+  `#[verify.trusted(reason = "...")]` metadata, explicit references such as
+  `proof = @proof.id`, and audited `unsafe lifetime @unsafe.*` regions with
+  required `reason` and `SAFETY` documentation. A trusted proof is one ordinary
+  proof carrying trust metadata; no separate axiom declaration or typed axiom
+  item exists. The syntax crate retains that trust on the proof and parses
+  `unsafe lifetime` audit blocks as structured statements.
+  `arcweft-lang-hir` is the public HIR facade.
   `arcweft-lang-sema` now owns the first `SemanticReport` pass for CFG-aware
   lifetime/drop/thread/write analysis. The pass carries path-sensitive
   `FlowFacts`, applies `defer` cleanup by completed/cancelled/failed outcome,
@@ -1674,7 +1676,7 @@ Current high-confidence state:
 - Remaining P2 semantic work is now refinement rather than missing surface
   coverage: fixed-point loop analysis is bounded and syntactic, proof discharge
   is target-aware and checks structured proof-body `ensures`/`check` targets,
-  unjustified `assume` clauses, and unknown trusted axiom references; unsafe
+  unjustified `assume` clauses, and unknown proof dependencies; unsafe
   audits validate shape but not memory
   semantics, and thread result inference is based on current syntactic result
   labels. Effect capabilities are now represented as typed semantic facts:

@@ -72,6 +72,22 @@ pub enum ParseErrorKind {
     EntryRolePath,
     /// A nominal declaration contains an invalid generic parameter list.
     NominalInvalidGenericParameters,
+    /// The proof-only `verify.trusted` attribute is attached to another item.
+    ProofTrustedNotProof,
+    /// A proof carries more than one `verify.trusted` attribute.
+    ProofTrustedDuplicate,
+    /// A trusted proof does not declare its required `reason` argument.
+    ProofTrustedReasonMissing,
+    /// A trusted proof declares its `reason` argument more than once.
+    ProofTrustedReasonDuplicate,
+    /// A trusted proof reason is not a string literal.
+    ProofTrustedReasonNotString,
+    /// A decoded trusted proof reason is empty or Unicode whitespace only.
+    ProofTrustedReasonEmpty,
+    /// A trusted proof attribute contains an unknown named argument.
+    ProofTrustedUnknownArgument,
+    /// A trusted proof attribute contains a positional argument.
+    ProofTrustedPositionalArgument,
     /// An inline Style patch contains a selector rule.
     StyleInlineSelectorNotSupported,
     /// A named Style rule contains a malformed nested selector.
@@ -123,7 +139,7 @@ pub enum ParseErrorKind {
 }
 
 impl ParseErrorKind {
-    pub(crate) const ALL: [Self; 46] = [
+    pub(crate) const ALL: [Self; 54] = [
         Self::Generic,
         Self::ExpressionPrefixDepthLimit,
         Self::AssertionUnknownMode,
@@ -146,6 +162,14 @@ impl ParseErrorKind {
         Self::EntryRoleValue,
         Self::EntryRolePath,
         Self::NominalInvalidGenericParameters,
+        Self::ProofTrustedNotProof,
+        Self::ProofTrustedDuplicate,
+        Self::ProofTrustedReasonMissing,
+        Self::ProofTrustedReasonDuplicate,
+        Self::ProofTrustedReasonNotString,
+        Self::ProofTrustedReasonEmpty,
+        Self::ProofTrustedUnknownArgument,
+        Self::ProofTrustedPositionalArgument,
         Self::StyleInlineSelectorNotSupported,
         Self::StyleMalformedSelector,
         Self::StyleEnvironmentExpectedOpenParen,
@@ -198,6 +222,14 @@ impl ParseErrorKind {
             Self::EntryRoleValue => "syntax.entry.role_value",
             Self::EntryRolePath => "syntax.entry.role_path",
             Self::NominalInvalidGenericParameters => "syntax.nominal.invalid_generic_parameters",
+            Self::ProofTrustedNotProof => "syntax.proof.trusted.not_proof",
+            Self::ProofTrustedDuplicate => "syntax.proof.trusted.duplicate",
+            Self::ProofTrustedReasonMissing => "syntax.proof.trusted.reason_missing",
+            Self::ProofTrustedReasonDuplicate => "syntax.proof.trusted.reason_duplicate",
+            Self::ProofTrustedReasonNotString => "syntax.proof.trusted.reason_not_string",
+            Self::ProofTrustedReasonEmpty => "syntax.proof.trusted.reason_empty",
+            Self::ProofTrustedUnknownArgument => "syntax.proof.trusted.unknown_argument",
+            Self::ProofTrustedPositionalArgument => "syntax.proof.trusted.positional_argument",
             Self::StyleInlineSelectorNotSupported => "style::inline_selector_not_supported",
             Self::StyleMalformedSelector => "style::malformed_selector",
             Self::StyleEnvironmentExpectedOpenParen => {
@@ -265,6 +297,14 @@ impl ParseErrorKind {
             Self::EntryRoleValue => "Missing entry role value",
             Self::EntryRolePath => "Invalid entry role symbol path",
             Self::NominalInvalidGenericParameters => "Invalid nominal generic parameter list",
+            Self::ProofTrustedNotProof => "Trusted proof attribute on a non-proof item",
+            Self::ProofTrustedDuplicate => "Duplicate trusted proof attribute",
+            Self::ProofTrustedReasonMissing => "Missing trusted proof reason",
+            Self::ProofTrustedReasonDuplicate => "Duplicate trusted proof reason",
+            Self::ProofTrustedReasonNotString => "Trusted proof reason is not a string",
+            Self::ProofTrustedReasonEmpty => "Trusted proof reason is empty",
+            Self::ProofTrustedUnknownArgument => "Unknown trusted proof argument",
+            Self::ProofTrustedPositionalArgument => "Positional trusted proof argument",
             Self::StyleInlineSelectorNotSupported => "Selector rule in inline Style",
             Self::StyleMalformedSelector => "Malformed Style selector",
             Self::StyleEnvironmentExpectedOpenParen => "Expected environment opening parenthesis",
@@ -303,7 +343,7 @@ impl ParseErrorKind {
     }
 }
 
-const _: [(); ParseErrorKind::ALL.len()] = [(); 46];
+const _: [(); ParseErrorKind::ALL.len()] = [(); 54];
 
 /// Syntax-level parse error with expected tokens and recovery suggestions.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -583,7 +623,7 @@ mod tests {
 
     use super::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion, TextRange};
 
-    const EXPECTED_PARSE_ERROR_KINDS: [(ParseErrorKind, &str, &str); 46] = [
+    const EXPECTED_PARSE_ERROR_KINDS: [(ParseErrorKind, &str, &str); 54] = [
         (ParseErrorKind::Generic, "syntax.parse", "Parse error"),
         (
             ParseErrorKind::ExpressionPrefixDepthLimit,
@@ -689,6 +729,46 @@ mod tests {
             ParseErrorKind::NominalInvalidGenericParameters,
             "syntax.nominal.invalid_generic_parameters",
             "Invalid nominal generic parameter list",
+        ),
+        (
+            ParseErrorKind::ProofTrustedNotProof,
+            "syntax.proof.trusted.not_proof",
+            "Trusted proof attribute on a non-proof item",
+        ),
+        (
+            ParseErrorKind::ProofTrustedDuplicate,
+            "syntax.proof.trusted.duplicate",
+            "Duplicate trusted proof attribute",
+        ),
+        (
+            ParseErrorKind::ProofTrustedReasonMissing,
+            "syntax.proof.trusted.reason_missing",
+            "Missing trusted proof reason",
+        ),
+        (
+            ParseErrorKind::ProofTrustedReasonDuplicate,
+            "syntax.proof.trusted.reason_duplicate",
+            "Duplicate trusted proof reason",
+        ),
+        (
+            ParseErrorKind::ProofTrustedReasonNotString,
+            "syntax.proof.trusted.reason_not_string",
+            "Trusted proof reason is not a string",
+        ),
+        (
+            ParseErrorKind::ProofTrustedReasonEmpty,
+            "syntax.proof.trusted.reason_empty",
+            "Trusted proof reason is empty",
+        ),
+        (
+            ParseErrorKind::ProofTrustedUnknownArgument,
+            "syntax.proof.trusted.unknown_argument",
+            "Unknown trusted proof argument",
+        ),
+        (
+            ParseErrorKind::ProofTrustedPositionalArgument,
+            "syntax.proof.trusted.positional_argument",
+            "Positional trusted proof argument",
         ),
         (
             ParseErrorKind::StyleInlineSelectorNotSupported,
@@ -816,7 +896,7 @@ mod tests {
     fn parse_error_kind_inventory_is_complete_unique_and_stable() {
         let expected = EXPECTED_PARSE_ERROR_KINDS;
         assert_eq!(ParseErrorKind::ALL, expected.map(|entry| entry.0));
-        assert_eq!(ParseErrorKind::ALL.len(), 46);
+        assert_eq!(ParseErrorKind::ALL.len(), 54);
         assert_eq!(
             ParseErrorKind::ALL
                 .iter()

@@ -60,6 +60,19 @@ fn strict_runtime_value_lowering_preserves_calls() {
 }
 
 #[test]
+fn runtime_string_lowering_uses_the_shared_syntax_decoder() {
+    let expr = parsed_expr(r#""line\nreview \u{732b}""#);
+
+    let lowered = lower_runtime_expr_strict(&expr).expect("string literal lowers");
+
+    assert!(matches!(
+        lowered,
+        RuntimeExpr::Value(RuntimeValue::String(value))
+            if value == "line\nreview 猫"
+    ));
+}
+
+#[test]
 fn strict_runtime_value_lowering_can_emit_pure_calls() {
     let expr = parsed_expr("add(3i64, 4i64)");
     let helpers = vec![add_i64_helper()];

@@ -90,8 +90,12 @@ proof @proof.resource_manifest_hashes {
 }
 ```
 
-The `reason` argument is mandatory, must be a nonempty string, and is retained
-in verifier reports and release-review manifests. Proofs depend on proofs:
+The `reason` argument is mandatory and must be one non-interpolated string
+literal whose decoded value contains non-whitespace text. Escape sequences are
+decoded once, then the exact decoded value—including leading and trailing
+whitespace—is retained in verifier reports and release-review manifests.
+`verify.trusted` is rejected on every non-proof declaration. Proofs depend on
+proofs:
 
 ```arcw
 proof @proof.voice_manifest_safe {

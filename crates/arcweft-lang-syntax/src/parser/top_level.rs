@@ -32,7 +32,10 @@ impl Parser<'_> {
                     *sinks.source_attrs_open = false;
                     self.push_pending_attr(attribute);
                 } else if let Some(attribute) = parse_inner_attribute(trimmed, range) {
-                    if *sinks.source_attrs_open
+                    if attribute.name() == "verify.trusted" {
+                        self.reject_trusted_attr(&attribute);
+                        *sinks.source_attrs_open = false;
+                    } else if *sinks.source_attrs_open
                         && self.pending_doc.is_none()
                         && self.pending_attrs.is_empty()
                     {
@@ -181,6 +184,9 @@ impl Parser<'_> {
         range: TextRange,
         items: &mut Vec<Item>,
     ) {
+        if !matches!(kind, CstTopLevelItemKind::Proof) {
+            self.reject_pending_trusted_attrs();
+        }
         match kind {
             CstTopLevelItemKind::Flow => {
                 if let Some(flow) = self.parse_flow() {

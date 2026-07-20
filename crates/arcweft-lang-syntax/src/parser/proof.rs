@@ -4,10 +4,13 @@ use crate::ast::proof::{BenchItem, ProofClause, ProofItem, ProofTrust, TestItem,
 use crate::cst::{
     split_leading_ident, split_top_level_punctuation, split_top_level_punctuation_once,
 };
-use crate::expr::{Expr, Literal, parse_expr};
+use crate::expr::{DecodedStringLiteral, Expr, Literal, parse_expr};
 
 use super::headers::{parse_required_id_ref, simple_error};
-use super::{Parser, recovery::ParseError};
+use super::{
+    Parser,
+    recovery::{ParseError, ParseErrorKind, RecoverySuggestion},
+};
 
 impl Parser<'_> {
     pub(super) fn parse_proof_item(&mut self) -> Option<ProofItem> {
@@ -35,7 +38,7 @@ impl Parser<'_> {
                 ["move proof clauses into the proof body"],
             );
         }
-        let trust = parse_proof_trust(attrs, &mut self.errors)?;
+        let trust = parse_proof_trust(&attrs, &mut self.errors)?;
         let clauses = parse_proof_clauses(&body);
         Some(ProofItem::new(
             id,
@@ -170,59 +173,172 @@ fn find_proof_ref(source: &str) -> Option<String> {
     Some(rest[..end].to_owned()).filter(|id| id != "proof.")
 }
 
-fn parse_proof_trust(attrs: Vec<Attribute>, errors: &mut Vec<ParseError>) -> Option<ProofTrust> {
+fn parse_proof_trust(attrs: &[Attribute], errors: &mut Vec<ParseError>) -> Option<ProofTrust> {
     if attrs.is_empty() {
         return Some(ProofTrust::Verified);
     }
-    if attrs.len() != 1 || attrs[0].name() != "verify.trusted" {
-        for attr in attrs {
+
+    let trusted_attrs = attrs
+        .iter()
+        .filter(|attr| attr.name() == "verify.trusted")
+        .collect::<Vec<_>>();
+    let unsupported = report_unsupported_proof_attributes(attrs, errors);
+    let duplicated = report_duplicate_trusted_attributes(&trusted_attrs, errors);
+    let attr = *trusted_attrs.first()?;
+    let reason = parse_trusted_reason(attr, errors);
+
+    (!unsupported && !duplicated)
+        .then_some(reason)
+        .flatten()
+        .map(|reason| ProofTrust::Trusted {
+            reason,
+            attribute_range: *attr.range(),
+        })
+}
+
+fn report_unsupported_proof_attributes(attrs: &[Attribute], errors: &mut Vec<ParseError>) -> bool {
+    let mut unsupported = false;
+    for attr in attrs {
+        if attr.name() != "verify.trusted" {
             errors.push(simple_error(
                 attr.range().start(),
                 attr.range().end() - attr.range().start(),
                 "proof attributes only support `verify.trusted`",
                 "#[verify.trusted(reason = \"external review\")]",
             ));
+            unsupported = true;
         }
-        return None;
     }
-    let attr = &attrs[0];
-    let Some(args) = attr.args() else {
-        return invalid_proof_trust(attr, errors, "trusted proof requires a reason");
-    };
-    let parts = split_top_level_punctuation(args, ',');
-    let Some((name, value)) = parts
-        .as_slice()
-        .first()
-        .filter(|_| parts.len() == 1)
-        .and_then(|arg| split_top_level_punctuation_once(arg, '='))
-    else {
-        return invalid_proof_trust(attr, errors, "trusted proof accepts exactly one reason");
-    };
-    let Ok(Expr::Literal(Literal::String(reason))) = parse_expr(value.trim()) else {
-        return invalid_proof_trust(
-            attr,
-            errors,
-            "trusted proof reason must be a string literal",
-        );
-    };
-    if name.trim() != "reason" || reason.trim().is_empty() {
-        return invalid_proof_trust(attr, errors, "trusted proof requires a nonempty reason");
-    }
-    Some(ProofTrust::Trusted { reason })
+    unsupported
 }
 
-fn invalid_proof_trust(
-    attr: &Attribute,
+fn report_duplicate_trusted_attributes(
+    trusted_attrs: &[&Attribute],
     errors: &mut Vec<ParseError>,
+) -> bool {
+    let Some(first) = trusted_attrs.first() else {
+        return false;
+    };
+    for duplicate in &trusted_attrs[1..] {
+        errors.push(
+            proof_trust_error(
+                ParseErrorKind::ProofTrustedDuplicate,
+                duplicate,
+                "a proof can carry only one `verify.trusted` attribute",
+                Some(duplicate.name()),
+            )
+            .with_related(
+                *first.range(),
+                Some("the first `verify.trusted` attribute is here".to_owned()),
+            ),
+        );
+    }
+    trusted_attrs.len() > 1
+}
+
+fn parse_trusted_reason(attr: &Attribute, errors: &mut Vec<ParseError>) -> Option<String> {
+    let Some(args) = attr.args() else {
+        errors.push(proof_trust_error(
+            ParseErrorKind::ProofTrustedReasonMissing,
+            attr,
+            "trusted proof requires a `reason` argument",
+            None,
+        ));
+        return None;
+    };
+
+    let mut valid = true;
+    let parts = split_top_level_punctuation(args, ',');
+    let mut reason = None;
+    let mut reason_seen = false;
+    for part in parts {
+        let part = part.trim();
+        let Some((name, value)) = split_top_level_punctuation_once(part, '=') else {
+            errors.push(proof_trust_error(
+                ParseErrorKind::ProofTrustedPositionalArgument,
+                attr,
+                "trusted proof arguments must be named",
+                (!part.is_empty()).then_some(part),
+            ));
+            valid = false;
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty() {
+            errors.push(proof_trust_error(
+                ParseErrorKind::ProofTrustedPositionalArgument,
+                attr,
+                "trusted proof arguments must be named",
+                Some(part),
+            ));
+            valid = false;
+            continue;
+        }
+        if name != "reason" {
+            errors.push(proof_trust_error(
+                ParseErrorKind::ProofTrustedUnknownArgument,
+                attr,
+                "trusted proof accepts only the `reason` argument",
+                Some(name),
+            ));
+            valid = false;
+            continue;
+        }
+        if reason_seen {
+            errors.push(proof_trust_error(
+                ParseErrorKind::ProofTrustedReasonDuplicate,
+                attr,
+                "trusted proof declares `reason` more than once",
+                Some(name),
+            ));
+            valid = false;
+            continue;
+        }
+        reason_seen = true;
+
+        let Ok(Expr::Literal(Literal::String(value))) = parse_expr(value.trim()) else {
+            errors.push(proof_trust_error(
+                ParseErrorKind::ProofTrustedReasonNotString,
+                attr,
+                "trusted proof reason must be a string literal",
+                Some(value.trim()),
+            ));
+            valid = false;
+            continue;
+        };
+        let value = DecodedStringLiteral::from_raw_body(&value);
+        if value.as_str().trim().is_empty() {
+            errors.push(proof_trust_error(
+                ParseErrorKind::ProofTrustedReasonEmpty,
+                attr,
+                "trusted proof reason must contain non-whitespace text",
+                Some(value.as_str()),
+            ));
+            valid = false;
+            continue;
+        }
+        reason = Some(value.into_string());
+    }
+
+    valid.then_some(reason).flatten()
+}
+
+fn proof_trust_error(
+    kind: ParseErrorKind,
+    attr: &Attribute,
     message: &str,
-) -> Option<ProofTrust> {
-    errors.push(simple_error(
-        attr.range().start(),
-        attr.range().end() - attr.range().start(),
-        message,
-        "#[verify.trusted(reason = \"external review\")]",
-    ));
-    None
+    found: Option<&str>,
+) -> ParseError {
+    ParseError::new_with_kind(
+        kind,
+        *attr.range(),
+        vec!["#[verify.trusted(reason = \"external review\")]".to_owned()],
+        found.map(str::to_owned),
+        message.to_owned(),
+        vec![RecoverySuggestion::new(
+            "use one proof attribute with exactly one nonempty string reason",
+        )],
+    )
 }
 
 fn collect_lifetime_targets(source: &str) -> Vec<String> {

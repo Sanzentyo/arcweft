@@ -42,7 +42,10 @@ pub enum ProofClause {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofTrust {
     Verified,
-    Trusted { reason: String },
+    Trusted {
+        reason: String,
+        attribute_range: TextRange,
+    },
 }
 
 /// Top-level `test @test.id kind { ... }` declaration.

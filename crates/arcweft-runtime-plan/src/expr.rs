@@ -19,8 +19,8 @@ use arcweft_core::value::{
 use arcweft_lang_hir::syntax::{
     ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
     expr::{
-        BinaryOp, CallArg, ClosureParam, Expr, FloatSuffix, IntLiteral, Literal, MatchExprArm,
-        NumericBracketSeq, Placeholder, UnaryOp,
+        BinaryOp, CallArg, ClosureParam, DecodedStringLiteral, Expr, FloatSuffix, IntLiteral,
+        Literal, MatchExprArm, NumericBracketSeq, Placeholder, UnaryOp,
     },
     types::TypeRef,
 };
@@ -2130,7 +2130,9 @@ fn lower_runtime_literal(
     resolved_type: Option<RuntimeNumericType>,
 ) -> Result<RuntimeValue, String> {
     Ok(match literal {
-        Literal::String(value) => RuntimeValue::String(decode_string_literal_value(value)),
+        Literal::String(value) => {
+            RuntimeValue::String(DecodedStringLiteral::from_raw_body(value).into_string())
+        }
         Literal::Char { value, .. } => RuntimeValue::Char(*value),
         Literal::Int(literal) => lower_runtime_int_literal(literal, resolved_type)?,
         Literal::Float { raw, suffix } => match resolved_type.unwrap_or_else(|| {
@@ -2215,56 +2217,6 @@ fn lower_runtime_int_literal(
             literal.raw()
         )),
     }
-}
-
-fn decode_string_literal_value(value: &str) -> String {
-    let mut decoded = String::with_capacity(value.len());
-    let mut chars = value.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            decoded.push(ch);
-            continue;
-        }
-        match chars.next() {
-            Some('"') => decoded.push('"'),
-            Some('\\') | None => decoded.push('\\'),
-            Some('n') => decoded.push('\n'),
-            Some('r') => decoded.push('\r'),
-            Some('t') => decoded.push('\t'),
-            Some('u') => decode_unicode_string_escape(&mut chars, &mut decoded),
-            Some(other) => {
-                decoded.push('\\');
-                decoded.push(other);
-            }
-        }
-    }
-    decoded
-}
-
-fn decode_unicode_string_escape(chars: &mut std::str::Chars<'_>, decoded: &mut String) {
-    if chars.next() != Some('{') {
-        decoded.push_str("\\u");
-        return;
-    }
-    let mut digits = String::new();
-    for ch in chars.by_ref() {
-        if ch == '}' {
-            if let Some(ch) = u32::from_str_radix(&digits, 16)
-                .ok()
-                .and_then(char::from_u32)
-            {
-                decoded.push(ch);
-            } else {
-                decoded.push_str("\\u{");
-                decoded.push_str(&digits);
-                decoded.push('}');
-            }
-            return;
-        }
-        digits.push(ch);
-    }
-    decoded.push_str("\\u{");
-    decoded.push_str(&digits);
 }
 
 fn lower_std_float_constant(expr: &Expr) -> Option<RuntimeValue> {

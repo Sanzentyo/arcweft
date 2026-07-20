@@ -183,8 +183,13 @@ ProofRef    := EntityRef
 
 `ProofRef` must resolve to the `proof` family. The optional
 `#[verify.trusted(reason = String)]` attribute marks external evidence; its
-reason must be a nonempty string literal. Trust is attached to `ProofDecl`
-rather than represented by a separate declaration family.
+reason must be a nonempty, non-interpolated string literal. Escape sequences
+are decoded once by the syntax-owned string-literal value contract, and the
+exact decoded value is retained without whitespace normalization. The
+attribute is reserved for proofs and rejects missing, duplicate, positional,
+unknown, non-string, and decoded-empty arguments through structured syntax
+diagnostics. Trust is attached to `ProofDecl` rather than represented by a
+separate declaration family.
 
 Entity declarations share one closed header grammar. The entity family selects
 the declaration kind, but it does not make otherwise free-form header words
