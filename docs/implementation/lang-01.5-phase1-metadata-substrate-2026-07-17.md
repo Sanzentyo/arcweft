@@ -126,3 +126,11 @@ neutral enum owner only when the AWFB codec dependency direction is preserved.
   tooling deletion until that integration cut is explicitly authorized;
 - add loader-side path containment, metadata/artifact pins, immutable artifact
   handles, and transaction publication in the later package phases.
+
+The returned Lang-01.5.1 package leaves one later-authority conflict in its
+dialogue row: it deletes source `dialogue defaults` while continuing to select
+an `@dialogue.*` entity without defining a replacement owner for that entity.
+All decoder, source-map, layout, topology, module, Activity, content, and
+consumer work that does not depend on that choice may continue. Final dialogue
+publication and deletion must use the result of
+[Lang-01.5.1.1](../reviews/requests/2026-07-20-lang-01.5.1.1-dialogue-profile-presentation-owner-contract-correction.md).
