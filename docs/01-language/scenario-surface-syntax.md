@@ -1,5 +1,10 @@
 # Flow-Integrated Scenario Syntax / Dialogue Sugar
 
+> **Surface update:** Dialogue now targets the direct
+> [CharacterDialogue authoring](character-dialogue.md) model. Canonical output
+> uses `character(options)[content]`, and colon sugar lowers directly to that
+> content application. It never expands to `.say(...)`.
+
 Arcweft does not define a separate `script` item. Ordinary visual-novel writing is part of the `flow` grammar itself.
 
 A `flow` body may mix:

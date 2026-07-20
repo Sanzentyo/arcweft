@@ -2,6 +2,7 @@
 
 - [構文概要](syntax.md)
 - [Flow-Integrated Scenario Syntax / Dialogue Sugar](scenario-surface-syntax.md)
+- [CharacterDialogue authoring](character-dialogue.md)
 - [Dialogue Character Methods, Dialogue Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)

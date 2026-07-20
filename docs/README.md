@@ -39,6 +39,7 @@
 - [Device I/O / USB / HID / Serial / Gamepad](03-presentation/device-io-usb.md)
 - [Virtual Touch Controller](03-presentation/virtual-controller.md)
 - [Flow-Integrated Scenario Syntax / Dialogue Sugar](01-language/scenario-surface-syntax.md)
+- [CharacterDialogue authoring](01-language/character-dialogue.md)
 - [Block Scopes and `{ ... }`](01-language/block-scopes.md)
 - [mod / use / pub](01-language/modules.md)
 - [ID と参照](01-language/ids-and-references.md)

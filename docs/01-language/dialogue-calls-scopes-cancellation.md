@@ -1,5 +1,12 @@
 # Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks
 
+> **Surface update:** Use the direct `CharacterDialogue` forms specified in
+> [CharacterDialogue authoring](character-dialogue.md). Read every
+> `character.say(options)[content]` example below as
+> `character(options)[content]`. The line-plan, cancellation, and scoped-content
+> rules remain the subject of this chapter; `.say` is not part of the final
+> language.
+
 Arcweft keeps ordinary dialogue concise, but the canonical form is explicit and composable:
 
 ```arcw

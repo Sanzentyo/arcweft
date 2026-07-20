@@ -1,5 +1,13 @@
 # Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload
 
+> **Superseded dialogue-call surface:** The canonical final model is
+> [CharacterDialogue authoring](character-dialogue.md). In particular,
+> `.say(...)`, `Speaker`, and `SpeakerPreset` are removed rather than retained
+> as aliases. Examples below that use those spellings are migration inventory,
+> not current authoring syntax; their non-dialogue Character, View,
+> interpolation, and preload material remains applicable unless the new
+> contract says otherwise.
+
 Arcweft dialogue is written through character objects. The concise `alice:` form remains available, but it is syntax sugar over `alice.say()[ ... ]`. This keeps ordinary conversation compact while giving complex lines a typed, composable form.
 
 Related:

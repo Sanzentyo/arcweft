@@ -1,5 +1,11 @@
 # Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles
 
+> **Surface update:** The final content-application syntax is defined by
+> [CharacterDialogue authoring](character-dialogue.md). Examples below that use
+> `.say(...)` are migration inventory and map directly to configured
+> `CharacterDialogue(...)` followed by `[content]`; the handle, `with`, return,
+> and scope contracts remain applicable.
+
 Arcweft supports concise dialogue while preserving typed control over voice, BGM, stage objects, hooks, and cancellation.
 
 Related:
