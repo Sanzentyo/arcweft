@@ -4,6 +4,7 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 use core::num::NonZeroU64;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::attachment::{PredicateItemKind, SyntaxLookupError, SyntaxNodeHandle};
@@ -895,6 +896,128 @@ fn same_line_descendants_receive_distinct_private_grammar_ids() {
 }
 
 #[test]
+fn private_bound_product_retains_the_attached_snapshot_and_grammar_diagnostics() {
+    let name = SourceName::path("bound-recovery.arcw");
+    let source = "proof () = ()\n";
+    let mut database = SyntaxDatabase::default();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("recovered proof commits one private bound product");
+    let bound = parsed.bound();
+
+    assert_eq!(bound.snapshot_id().source(), parsed.snapshot());
+    assert_eq!(bound.document().identity(), parsed.document().identity());
+    assert_eq!(bound.document().text(), source);
+    assert_eq!(bound.status(), super::ParseStatus::Recovered);
+    let missing_name = bound
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.proof.missing_name")
+        .unwrap_or_else(|| panic!("missing bound diagnostic: {:?}", bound.diagnostics()));
+    assert_eq!(
+        missing_name.primary().source(),
+        parsed.document().identity()
+    );
+    assert_eq!(
+        missing_name.primary().range(),
+        SourceRange::new("proof ".len(), "proof ".len())
+    );
+    assert!(missing_name.related().is_none());
+    assert!(!missing_name.message().is_empty());
+    assert!(Arc::ptr_eq(bound.syntax(), parsed.attached()));
+}
+
+#[test]
+fn private_bound_diagnostic_spans_share_the_exact_committed_source_revision() {
+    let name = SourceName::path("bound-related-diagnostic.arcw");
+    let source = concat!(
+        "character Alice {\n",
+        "    display_name = \"Alice\"\n",
+        "    display_name = \"Other\"\n",
+        "}\n",
+    );
+    let display_name_offsets = source
+        .match_indices("display_name")
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    let mut database = SyntaxDatabase::default();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("duplicate member commits one private bound product");
+    let duplicate = parsed
+        .bound()
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.character.duplicate_member")
+        .unwrap_or_else(|| {
+            panic!(
+                "missing duplicate-member diagnostic: {:?}",
+                parsed.bound().diagnostics()
+            )
+        });
+    let related = duplicate
+        .related()
+        .expect("duplicate member retains its first declaration");
+
+    assert_eq!(duplicate.primary().source(), parsed.document().identity());
+    assert_eq!(related.source(), parsed.document().identity());
+    assert_eq!(
+        duplicate.primary().range(),
+        SourceRange::new(
+            display_name_offsets[1],
+            display_name_offsets[1] + "display_name".len()
+        )
+    );
+    assert_eq!(
+        related.range(),
+        SourceRange::new(
+            display_name_offsets[0],
+            display_name_offsets[0] + "display_name".len()
+        )
+    );
+}
+
+#[test]
+fn private_bound_reparse_replaces_diagnostics_without_mutating_the_old_snapshot() {
+    let name = SourceName::path("bound-reparse.arcw");
+    let source = "proof () = ()\n";
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("recovered initial proof");
+    let old_bound = Rc::clone(initial.bound());
+    assert_eq!(old_bound.status(), super::ParseStatus::Recovered);
+
+    let repaired = database
+        .reparse(
+            &initial,
+            &[source_edit(
+                &initial,
+                SourceRange::new("proof ".len(), "proof ".len()),
+                "fixed",
+            )],
+        )
+        .expect("repair commits a fresh private bound product");
+
+    assert!(!Rc::ptr_eq(&old_bound, repaired.bound()));
+    assert_eq!(old_bound.document().text(), source);
+    assert_eq!(old_bound.status(), super::ParseStatus::Recovered);
+    assert_eq!(repaired.bound().document().text(), "proof fixed() = ()\n");
+    assert_eq!(repaired.bound().status(), super::ParseStatus::Clean);
+    assert!(repaired.bound().diagnostics().is_empty());
+    assert_eq!(repaired.bound().snapshot_id().source(), repaired.snapshot());
+}
+
+#[test]
 fn independent_databases_cannot_resolve_equal_private_raw_slots() {
     let name = SourceName::path("same.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());
@@ -1205,7 +1328,7 @@ fn fatal_private_attachment_failure_rolls_back_reparse_transaction() {
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
     let current = database.lineages.get(&name).expect("lineage");
     assert!(Arc::ptr_eq(&current.current, &initial));
-    assert!(Arc::ptr_eq(current.shadow.current(), initial.attached()));
+    assert!(Rc::ptr_eq(current.shadow.current(), initial.bound()));
     assert_eq!(current.shadow.next_node_for_test(), next_before);
 
     let accepted = database

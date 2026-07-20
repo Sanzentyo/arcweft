@@ -108,6 +108,17 @@ impl GrammarBuild {
     pub(crate) fn diagnostics(&self) -> &[PendingSyntaxDiagnostic] {
         &self.diagnostics
     }
+
+    /// Whether this complete grammar transaction contains recoverable syntax.
+    pub(crate) fn has_recovery(&self) -> bool {
+        !self.missing_tokens.is_empty()
+            || !self.diagnostics.is_empty()
+            || self
+                .index
+                .entries()
+                .iter()
+                .any(|entry| entry.kind().is_missing_node() || entry.kind().is_error_node())
+    }
 }
 
 /// Structural reason an event stream cannot produce a lossless grammar tree.
@@ -391,11 +402,15 @@ impl<'a> EventValidator<'a> {
         diagnostic: &PendingSyntaxDiagnostic,
     ) -> Result<(), GrammarBuildError> {
         self.require_open_root(event)?;
-        let range = diagnostic.range();
-        if range.start() > range.end()
-            || range.end() > self.source.len()
-            || !self.source.is_char_boundary(range.start())
-            || !self.source.is_char_boundary(range.end())
+        if [Some(diagnostic.range()), diagnostic.related_range()]
+            .into_iter()
+            .flatten()
+            .any(|range| {
+                range.start() > range.end()
+                    || range.end() > self.source.len()
+                    || !self.source.is_char_boundary(range.start())
+                    || !self.source.is_char_boundary(range.end())
+            })
         {
             return Err(GrammarBuildError::InvalidDiagnosticRange {
                 event,
@@ -519,6 +534,51 @@ mod tests {
         );
         assert_eq!(built.diagnostics()[0].range(), SourceRange::new(8, 8));
         assert_eq!(built.diagnostics()[0].message(), "missing `)`");
+    }
+
+    #[test]
+    fn missing_token_alone_marks_the_complete_transaction_as_recovered() {
+        let document = document("x");
+        let expected = ExpectedToken::try_new(SyntaxKind::PunctuationToken).unwrap();
+        let events = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::start(SyntaxKind::ParameterList, SyntaxRole::Element(0)),
+            SyntaxEvent::token(SyntaxKind::IdentifierToken, SourceRange::new(0, 1)),
+            SyntaxEvent::MissingToken { expected, at: 1 },
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+
+        let built = build_grammar(&document, &events).unwrap();
+        assert!(built.diagnostics().is_empty());
+        assert_eq!(built.missing_tokens().len(), 1);
+        assert!(built.has_recovery());
+    }
+
+    #[test]
+    fn diagnostic_validation_rejects_an_invalid_related_range() {
+        let document = document("x");
+        let events = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::token(SyntaxKind::IdentifierToken, SourceRange::new(0, 1)),
+            SyntaxEvent::Diagnostic(
+                PendingSyntaxDiagnostic::new(
+                    "syntax.test.related_range",
+                    SourceRange::new(0, 1),
+                    "related range is invalid",
+                )
+                .with_related_range(SourceRange::new(2, 2)),
+            ),
+            SyntaxEvent::FinishNode,
+        ];
+
+        assert_eq!(
+            build_grammar(&document, &events).unwrap_err(),
+            GrammarBuildError::InvalidDiagnosticRange {
+                event: 2,
+                source_len: 1,
+            }
+        );
     }
 
     #[test]

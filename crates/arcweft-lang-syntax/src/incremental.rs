@@ -1,5 +1,6 @@
 //! Session-local syntax identities and transaction limits.
 
+mod bound;
 mod database;
 pub mod limits;
 mod reconcile;

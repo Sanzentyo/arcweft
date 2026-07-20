@@ -1,0 +1,124 @@
+//! Crate-private bound parse product staged before the atomic public switch.
+//!
+//! This type is deliberately not exported from `incremental`. It lets the
+//! grammar transaction retain one immutable document/snapshot/diagnostic
+//! product without adapting the attached grammar back into the detached AST
+//! that still feeds HIR. The public replacement must delete that detached
+//! authority instead of wrapping it.
+
+#![cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "the bound product remains crate-private until the atomic syntax/HIR public switch"
+    )
+)]
+
+use std::sync::Arc;
+
+use arcweft_source::{SourceDocument, SourceSpan, SourceSpanError};
+
+use crate::attachment::{SyntaxSnapshotData, SyntaxSnapshotId};
+use crate::grammar::build::GrammarBuild;
+use crate::grammar::event::PendingSyntaxDiagnostic;
+
+use super::ParseStatus;
+
+/// One immutable, source-bound result of the accepted private grammar.
+#[derive(Clone, Debug)]
+pub(crate) struct BoundParsedSource {
+    syntax: Arc<SyntaxSnapshotData>,
+    diagnostics: Arc<[SyntaxDiagnostic]>,
+    status: ParseStatus,
+}
+
+/// Recoverable grammar diagnostic bound to one immutable source revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SyntaxDiagnostic {
+    code: &'static str,
+    primary: SourceSpan,
+    related: Option<SourceSpan>,
+    message: String,
+}
+
+impl BoundParsedSource {
+    /// Binds a successfully attached snapshot to the diagnostics produced by
+    /// the same grammar event transaction.
+    pub(crate) fn try_new(
+        syntax: Arc<SyntaxSnapshotData>,
+        build: &GrammarBuild,
+    ) -> Result<Self, SourceSpanError> {
+        let diagnostics = build
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| SyntaxDiagnostic::bind(syntax.document(), diagnostic))
+            .collect::<Result<Arc<[_]>, _>>()?;
+        Ok(Self {
+            syntax,
+            diagnostics,
+            status: if build.has_recovery() {
+                ParseStatus::Recovered
+            } else {
+                ParseStatus::Clean
+            },
+        })
+    }
+
+    /// Qualified grammar snapshot committed by this parse transaction.
+    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+        self.syntax.snapshot_id()
+    }
+
+    /// Exact immutable source document owned by the grammar snapshot.
+    pub(crate) fn document(&self) -> &Arc<SourceDocument> {
+        self.syntax.document()
+    }
+
+    /// Attached grammar and syntax identity inventory.
+    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
+        &self.syntax
+    }
+
+    /// Recoverable diagnostics emitted by this exact grammar transaction.
+    pub(crate) fn diagnostics(&self) -> &[SyntaxDiagnostic] {
+        &self.diagnostics
+    }
+
+    /// Whether the attached tree contains recovery evidence.
+    pub(crate) const fn status(&self) -> ParseStatus {
+        self.status
+    }
+}
+
+impl SyntaxDiagnostic {
+    fn bind(
+        document: &SourceDocument,
+        diagnostic: &PendingSyntaxDiagnostic,
+    ) -> Result<Self, SourceSpanError> {
+        Ok(Self {
+            code: diagnostic.code(),
+            primary: document.span(diagnostic.range())?,
+            related: diagnostic
+                .related_range()
+                .map(|range| document.span(range))
+                .transpose()?,
+            message: diagnostic.message().to_owned(),
+        })
+    }
+
+    pub(crate) const fn code(&self) -> &'static str {
+        self.code
+    }
+
+    pub(crate) const fn primary(&self) -> &SourceSpan {
+        &self.primary
+    }
+
+    pub(crate) const fn related(&self) -> Option<&SourceSpan> {
+        self.related.as_ref()
+    }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+}

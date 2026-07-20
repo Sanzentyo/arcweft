@@ -1,6 +1,7 @@
 //! Incremental parse database, snapshot transactions, and syntax identities.
 
 use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
@@ -8,7 +9,9 @@ use arcweft_source::{SourceDocument, SourceEdit, SourceName};
 use core::num::NonZeroU64;
 use thiserror::Error;
 
+use super::bound::BoundParsedSource;
 use crate::ast::items::TypedSyntaxTree;
+#[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
 use crate::cst::SyntaxNode;
 use crate::parser::recovery::{ParseError, ParseErrorKind};
@@ -54,7 +57,7 @@ pub struct ParsedSource {
     document: SourceDocument,
     parsed: crate::source::ParsedSource,
     identities: Arc<SyntaxIdentityMap>,
-    shadow: Arc<SyntaxSnapshotData>,
+    shadow: Rc<BoundParsedSource>,
     status: ParseStatus,
 }
 
@@ -100,7 +103,12 @@ impl ParsedSource {
     }
 
     #[cfg(test)]
-    pub(super) const fn attached(&self) -> &Arc<SyntaxSnapshotData> {
+    pub(super) fn attached(&self) -> &Arc<SyntaxSnapshotData> {
+        self.shadow.syntax()
+    }
+
+    #[cfg(test)]
+    pub(super) const fn bound(&self) -> &Rc<BoundParsedSource> {
         &self.shadow
     }
 }
@@ -259,7 +267,7 @@ impl SyntaxDatabase {
             status: parse_status(&parsed),
             parsed,
             identities: Arc::new(identities),
-            shadow: Arc::clone(shadow.current()),
+            shadow: Rc::clone(shadow.current()),
         });
         let shadow = self.shadow.commit_initial(shadow);
         self.lineages.insert(
@@ -299,7 +307,7 @@ impl SyntaxDatabase {
         if lineage.current.snapshot() != previous.snapshot()
             || lineage.current.source() != previous.source()
             || !Arc::ptr_eq(lineage.current.identities(), previous.identities())
-            || !Arc::ptr_eq(lineage.shadow.current(), previous.attached_internal())
+            || !Rc::ptr_eq(lineage.shadow.current(), previous.bound_internal())
         {
             return Err(ParseFailure::SourceMismatch);
         }
@@ -344,7 +352,7 @@ impl SyntaxDatabase {
             status: parse_status(&parsed),
             parsed,
             identities: Arc::new(identities),
-            shadow: Arc::clone(shadow.current()),
+            shadow: Rc::clone(shadow.current()),
         });
         let lineage = self
             .lineages
@@ -380,7 +388,7 @@ impl SyntaxDatabase {
 }
 
 impl ParsedSource {
-    const fn attached_internal(&self) -> &Arc<SyntaxSnapshotData> {
+    const fn bound_internal(&self) -> &Rc<BoundParsedSource> {
         &self.shadow
     }
 }

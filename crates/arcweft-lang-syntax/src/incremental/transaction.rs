@@ -1,19 +1,21 @@
 //! Private staging for grammar identity and typed attachment.
 
 use core::num::NonZeroU64;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::SourceDocument;
 use arcweft_source::identity::SourceSnapshotId;
 
 use crate::attachment::{
-    GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData,
-    SyntaxSnapshotId, attach_typed_tree,
+    GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotId,
+    attach_typed_tree,
 };
 use crate::grammar::build::GrammarBuildError;
 use crate::incremental::shape::{GrammarShapeError, GrammarShapeNode};
 use crate::parser::parse_shadow_document;
 
+use super::bound::BoundParsedSource;
 use super::{ParseFailure, SyntaxIdentityKind, reconcile};
 
 #[derive(Debug)]
@@ -33,7 +35,7 @@ impl Default for ShadowDatabaseState {
 
 #[derive(Clone, Debug)]
 pub(super) struct ShadowLineageState {
-    current: Arc<SyntaxSnapshotData>,
+    current: Rc<BoundParsedSource>,
     shape: Arc<GrammarShapeNode>,
     identities: GrammarIdentityMap,
     allocator: GrammarNodeAllocator,
@@ -76,9 +78,13 @@ impl ShadowDatabaseState {
             reconcile::allocate_initial_grammar(&shape, &mut || allocator.allocate())?;
         apply_fault(fault, &build, &mut identities);
         let snapshot_id = SyntaxSnapshotId::new(lineage_id, source.clone());
-        let current =
+        let syntax =
             attach_typed_tree(&build, &identities, snapshot_id, Arc::new(document.clone()))
                 .map_err(|_| ParseFailure::InternalInvariant)?;
+        let current = Rc::new(
+            BoundParsedSource::try_new(syntax, &build)
+                .map_err(|_| ParseFailure::InternalInvariant)?,
+        );
         Ok(StagedInitial {
             lineage: ShadowLineageState {
                 current,
@@ -123,9 +129,13 @@ impl ShadowLineageState {
             })?;
         apply_fault(fault, &build, &mut identities);
         let snapshot_id = SyntaxSnapshotId::new(self.allocator.lineage, source.clone());
-        let current =
+        let syntax =
             attach_typed_tree(&build, &identities, snapshot_id, Arc::new(document.clone()))
                 .map_err(|_| ParseFailure::InternalInvariant)?;
+        let current = Rc::new(
+            BoundParsedSource::try_new(syntax, &build)
+                .map_err(|_| ParseFailure::InternalInvariant)?,
+        );
         Ok(StagedReparse {
             lineage: Self {
                 current,
@@ -136,7 +146,7 @@ impl ShadowLineageState {
         })
     }
 
-    pub(super) const fn current(&self) -> &Arc<SyntaxSnapshotData> {
+    pub(super) const fn current(&self) -> &Rc<BoundParsedSource> {
         &self.current
     }
 
@@ -147,7 +157,7 @@ impl ShadowLineageState {
 }
 
 impl StagedInitial {
-    pub(super) const fn current(&self) -> &Arc<SyntaxSnapshotData> {
+    pub(super) const fn current(&self) -> &Rc<BoundParsedSource> {
         self.lineage.current()
     }
 }
@@ -157,7 +167,7 @@ impl StagedReparse {
         self.lineage
     }
 
-    pub(super) const fn current(&self) -> &Arc<SyntaxSnapshotData> {
+    pub(super) const fn current(&self) -> &Rc<BoundParsedSource> {
         self.lineage.current()
     }
 }
