@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use super::{SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotId};
 use crate::grammar::build::GrammarEventPath;
-use crate::grammar::kinds::SyntaxKind;
+use crate::grammar::kinds::{AstTag, SyntaxKind};
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum AttachmentFailure {
@@ -24,6 +24,8 @@ pub(crate) enum AttachmentFailure {
         expected: SyntaxKind,
         actual: rowan::SyntaxKind,
     },
+    #[error("identity-bearing grammar node {id:?} with kind {kind:?} has no typed AST tag")]
+    MissingAstTag { id: SyntaxNodeId, kind: SyntaxKind },
     #[error("grammar identity map has {actual} entries, expected {expected}")]
     IdentityMapMismatch { expected: usize, actual: usize },
     #[error("immutable grammar attachment failed its bidirectional snapshot invariant")]
@@ -56,5 +58,11 @@ pub(crate) enum SyntaxLookupError {
         id: SyntaxNodeId,
         expected: SyntaxKind,
         actual: SyntaxKind,
+    },
+    #[error("syntax identity {id:?} has AST tag {actual:?}, expected {expected:?}")]
+    AstTagMismatch {
+        id: SyntaxNodeId,
+        expected: AstTag,
+        actual: AstTag,
     },
 }

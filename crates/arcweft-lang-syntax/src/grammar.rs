@@ -10,3 +10,4 @@ pub(crate) mod budget;
 pub(crate) mod build;
 pub(crate) mod event;
 pub(crate) mod kinds;
+pub(crate) mod roles;

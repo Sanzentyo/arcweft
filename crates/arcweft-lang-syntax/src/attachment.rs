@@ -4,22 +4,25 @@
 //! remains the only source-backed compiler input until the atomic syntax switch.
 
 mod error;
+mod node;
 mod snapshot;
 
-use core::marker::PhantomData;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
-use arcweft_source::{SourceDocument, SourceRange};
+use arcweft_source::SourceDocument;
 
 pub(crate) use error::{AttachmentFailure, SyntaxLookupError};
+pub(crate) use node::{AstKind, AstNode, SourceFileKind};
+#[cfg(test)]
+pub(crate) use node::{PredicateItemKind, ProofItemKind};
 pub(crate) use snapshot::{
     GrammarSyntaxNode, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeHandle, SyntaxNodeId,
     SyntaxSnapshotData, SyntaxSnapshotId,
 };
 
-use crate::grammar::build::{GrammarBuild, GrammarEventPath};
-use crate::grammar::kinds::SyntaxKind;
+use crate::grammar::build::{GrammarBuild, GrammarEventPath, UnattachedGrammarEntry};
+use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole};
 
 /// Stable grammar identities indexed by exact event path.
 #[derive(Clone, Debug, Default)]
@@ -46,106 +49,6 @@ impl GrammarIdentityMap {
     }
 }
 
-/// Syntax-owned exact-kind marker for an attached grammar node.
-pub(crate) trait AstKind: Copy + 'static {
-    const KIND: SyntaxKind;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct SourceFileKind;
-
-impl AstKind for SourceFileKind {
-    const KIND: SyntaxKind = SyntaxKind::SourceFile;
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct PredicateItemKind;
-
-#[cfg(test)]
-impl AstKind for PredicateItemKind {
-    const KIND: SyntaxKind = SyntaxKind::PredicateItem;
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ProofItemKind;
-
-#[cfg(test)]
-impl AstKind for ProofItemKind {
-    const KIND: SyntaxKind = SyntaxKind::ProofItem;
-}
-
-/// Typed handle that cannot detach from its immutable grammar snapshot.
-pub(crate) struct AstNode<K: AstKind> {
-    syntax: SyntaxNodeHandle,
-    marker: PhantomData<fn() -> K>,
-}
-
-impl<K: AstKind> Clone for AstNode<K> {
-    fn clone(&self) -> Self {
-        Self {
-            syntax: self.syntax.clone(),
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<K: AstKind> core::fmt::Debug for AstNode<K> {
-    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter
-            .debug_struct("AstNode")
-            .field("kind", &K::KIND)
-            .field("id", &self.id())
-            .field("snapshot", self.snapshot_id())
-            .finish()
-    }
-}
-
-impl<K: AstKind> PartialEq for AstNode<K> {
-    fn eq(&self, other: &Self) -> bool {
-        self.syntax == other.syntax
-    }
-}
-
-impl<K: AstKind> Eq for AstNode<K> {}
-
-impl<K: AstKind> AstNode<K> {
-    fn new(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxLookupError> {
-        if syntax.kind() != K::KIND {
-            return Err(SyntaxLookupError::KindMismatch {
-                id: syntax.id(),
-                expected: K::KIND,
-                actual: syntax.kind(),
-            });
-        }
-        Ok(Self {
-            syntax,
-            marker: PhantomData,
-        })
-    }
-
-    pub(crate) fn id(&self) -> SyntaxNodeId {
-        self.syntax.id()
-    }
-
-    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
-        self.syntax.snapshot_id()
-    }
-
-    pub(crate) fn syntax(&self) -> SyntaxNodeHandle {
-        self.syntax.clone()
-    }
-
-    pub(crate) fn range(&self) -> SourceRange {
-        self.syntax.range()
-    }
-
-    pub(crate) fn is_same_reconciled_node(&self, other: &Self) -> bool {
-        self.id() == other.id()
-    }
-}
-
 /// Builds the immutable node/path/ID attachment for one staged snapshot.
 pub(crate) fn attach_typed_tree(
     build: &GrammarBuild,
@@ -154,48 +57,9 @@ pub(crate) fn attach_typed_tree(
     document: Arc<SourceDocument>,
 ) -> Result<Arc<SyntaxSnapshotData>, AttachmentFailure> {
     let root = GrammarSyntaxNode::new_root(build.green().clone());
-    let mut records = HashMap::with_capacity(build.index().entries().len());
-    let mut by_path = BTreeMap::new();
-    let mut by_node = HashMap::with_capacity(build.index().entries().len());
-
-    for entry in build.index().entries() {
-        let id = identities.id_for_path(entry.path()).ok_or_else(|| {
-            AttachmentFailure::MissingIdentity {
-                path: entry.path().clone(),
-            }
-        })?;
-        let node = grammar_node_at_path(&root, entry.path())
-            .ok_or(AttachmentFailure::MissingAttachment { id })?;
-        let actual = node.kind();
-        let expected = rowan::SyntaxKind(entry.kind() as u16);
-        if actual != expected {
-            return Err(AttachmentFailure::GrammarKindMismatch {
-                id,
-                expected: entry.kind(),
-                actual,
-            });
-        }
-        let record = snapshot::AttachedNodeRecord::new(
-            id,
-            entry.kind(),
-            entry.role(),
-            entry.path().clone(),
-            node.clone(),
-        );
-        if records.insert(id, record).is_some()
-            || by_path.insert(entry.path().clone(), id).is_some()
-            || by_node.insert(node, id).is_some()
-        {
-            return Err(AttachmentFailure::DuplicateAttachment { id });
-        }
-    }
-
-    if records.len() != identities.len() {
-        return Err(AttachmentFailure::IdentityMapMismatch {
-            expected: build.index().entries().len(),
-            actual: identities.len(),
-        });
-    }
+    let inventory =
+        AttachmentInventoryBuilder::new(&root, identities, build.index().entries().len())
+            .collect(build.index().entries())?;
 
     let root_id = identities
         .id_for_path(
@@ -207,7 +71,8 @@ pub(crate) fn attach_typed_tree(
                 .path(),
         )
         .ok_or(AttachmentFailure::MissingRoot)?;
-    if records
+    if inventory
+        .records
         .get(&root_id)
         .is_none_or(|record| record.kind() != SyntaxKind::SourceFile)
     {
@@ -219,10 +84,182 @@ pub(crate) fn attach_typed_tree(
         reason = "immutable snapshot ownership is shared while Rowan red nodes remain session-thread-affine"
     )]
     let attached = Arc::new(SyntaxSnapshotData::new(
-        snapshot, document, root, root_id, records, by_path, by_node,
+        snapshot,
+        document,
+        root,
+        root_id,
+        inventory.records,
+        inventory.by_path,
+        inventory.by_node,
     ));
     validate_snapshot(&attached)?;
     Ok(attached)
+}
+
+#[derive(Debug)]
+struct AttachmentInventory {
+    records: HashMap<SyntaxNodeId, snapshot::AttachedNodeRecord>,
+    by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
+    by_node: HashMap<GrammarSyntaxNode, SyntaxNodeId>,
+}
+
+#[derive(Debug)]
+struct AttachmentInventoryBuilder<'a> {
+    root: &'a GrammarSyntaxNode,
+    identities: &'a GrammarIdentityMap,
+    expected_count: usize,
+    by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
+    by_node: HashMap<GrammarSyntaxNode, SyntaxNodeId>,
+    seen_ids: HashSet<SyntaxNodeId>,
+    ancestry: Vec<(GrammarEventPath, SyntaxNodeId)>,
+    pending: Vec<PendingAttachment>,
+    children: HashMap<SyntaxNodeId, Vec<SyntaxNodeId>>,
+    children_by_role: HashMap<SyntaxNodeId, BTreeMap<SyntaxRole, Vec<SyntaxNodeId>>>,
+}
+
+impl<'a> AttachmentInventoryBuilder<'a> {
+    fn new(
+        root: &'a GrammarSyntaxNode,
+        identities: &'a GrammarIdentityMap,
+        expected_count: usize,
+    ) -> Self {
+        Self {
+            root,
+            identities,
+            expected_count,
+            by_path: BTreeMap::new(),
+            by_node: HashMap::with_capacity(expected_count),
+            seen_ids: HashSet::with_capacity(expected_count),
+            ancestry: Vec::new(),
+            pending: Vec::with_capacity(expected_count),
+            children: HashMap::new(),
+            children_by_role: HashMap::new(),
+        }
+    }
+
+    fn collect(
+        mut self,
+        entries: &[UnattachedGrammarEntry],
+    ) -> Result<AttachmentInventory, AttachmentFailure> {
+        for entry in entries {
+            self.attach(entry)?;
+        }
+        self.finish()
+    }
+
+    fn attach(&mut self, entry: &UnattachedGrammarEntry) -> Result<(), AttachmentFailure> {
+        let id = self.identities.id_for_path(entry.path()).ok_or_else(|| {
+            AttachmentFailure::MissingIdentity {
+                path: entry.path().clone(),
+            }
+        })?;
+        let node = grammar_node_at_path(self.root, entry.path())
+            .ok_or(AttachmentFailure::MissingAttachment { id })?;
+        let actual = node.kind();
+        let expected = rowan::SyntaxKind(entry.kind() as u16);
+        if actual != expected {
+            return Err(AttachmentFailure::GrammarKindMismatch {
+                id,
+                expected: entry.kind(),
+                actual,
+            });
+        }
+        let tag = entry
+            .kind()
+            .ast_tag()
+            .ok_or(AttachmentFailure::MissingAstTag {
+                id,
+                kind: entry.kind(),
+            })?;
+        while self.ancestry.last().is_some_and(|(candidate, _)| {
+            !strict_path_prefix(candidate.elements(), entry.path().elements())
+        }) {
+            self.ancestry.pop();
+        }
+        let parent = self.ancestry.last().map(|(_, id)| *id);
+        if let Some(parent) = parent {
+            self.children.entry(parent).or_default().push(id);
+            self.children_by_role
+                .entry(parent)
+                .or_default()
+                .entry(entry.role())
+                .or_default()
+                .push(id);
+        }
+        if !self.seen_ids.insert(id)
+            || self.by_path.insert(entry.path().clone(), id).is_some()
+            || self.by_node.insert(node.clone(), id).is_some()
+        {
+            return Err(AttachmentFailure::DuplicateAttachment { id });
+        }
+        self.pending.push(PendingAttachment {
+            id,
+            kind: entry.kind(),
+            tag,
+            role: entry.role(),
+            path: entry.path().clone(),
+            node,
+            parent,
+        });
+        self.ancestry.push((entry.path().clone(), id));
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<AttachmentInventory, AttachmentFailure> {
+        let mut records = HashMap::with_capacity(self.expected_count);
+        for node in self.pending {
+            let record =
+                snapshot::AttachedNodeRecord::from_parts(snapshot::AttachedNodeRecordParts {
+                    kind: node.kind,
+                    tag: node.tag,
+                    role: node.role,
+                    path: node.path,
+                    node: node.node,
+                    parent: node.parent,
+                    children: self
+                        .children
+                        .remove(&node.id)
+                        .unwrap_or_default()
+                        .into_boxed_slice(),
+                    children_by_role: self
+                        .children_by_role
+                        .remove(&node.id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|(role, children)| (role, children.into_boxed_slice()))
+                        .collect(),
+                });
+            if records.insert(node.id, record).is_some() {
+                return Err(AttachmentFailure::DuplicateAttachment { id: node.id });
+            }
+        }
+        if records.len() != self.identities.len() {
+            return Err(AttachmentFailure::IdentityMapMismatch {
+                expected: self.expected_count,
+                actual: self.identities.len(),
+            });
+        }
+        Ok(AttachmentInventory {
+            records,
+            by_path: self.by_path,
+            by_node: self.by_node,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct PendingAttachment {
+    id: SyntaxNodeId,
+    kind: SyntaxKind,
+    tag: AstTag,
+    role: SyntaxRole,
+    path: GrammarEventPath,
+    node: GrammarSyntaxNode,
+    parent: Option<SyntaxNodeId>,
+}
+
+fn strict_path_prefix(parent: &[u32], child: &[u32]) -> bool {
+    parent.len() < child.len() && child.starts_with(parent)
 }
 
 pub(crate) fn grammar_node_at_path(
@@ -247,6 +284,8 @@ fn validate_snapshot(snapshot: &Arc<SyntaxSnapshotData>) -> Result<(), Attachmen
         || typed_root.syntax() != root
         || typed_root.range() != root.range()
         || !typed_root.is_same_reconciled_node(&typed_root.clone())
+        || root.parent().is_some()
+        || root.tag() != AstTag::SourceFile
         || root
             .cast::<SourceFileKind>()
             .map_err(|_| AttachmentFailure::SnapshotInvariant)?
@@ -272,9 +311,23 @@ fn validate_snapshot(snapshot: &Arc<SyntaxSnapshotData>) -> Result<(), Attachmen
                 .resolve_exact(&node)
                 .map_err(|_| AttachmentFailure::SnapshotInvariant)?
                 != node
+            || node.kind().ast_tag() != Some(node.tag())
             || node.range().end() > snapshot.document().text().len()
         {
             return Err(AttachmentFailure::SnapshotInvariant);
+        }
+        if node.id() != root.id() && node.parent().is_none() {
+            return Err(AttachmentFailure::SnapshotInvariant);
+        }
+        for child in node.children() {
+            let same_role = node.children_with_role(child.role());
+            if child.parent().as_ref() != Some(&node)
+                || !same_role.contains(&child)
+                || (same_role.len() == 1 && node.child(child.role()).as_ref() != Some(&child))
+                || !strict_path_prefix(node.path().elements(), child.path().elements())
+            {
+                return Err(AttachmentFailure::SnapshotInvariant);
+            }
         }
         let _ = node.role().class();
     }
@@ -294,6 +347,7 @@ mod tests {
         AstNode, GrammarIdentityMap, PredicateItemKind, ProofItemKind, SyntaxDatabaseId,
         SyntaxLineageId, SyntaxLookupError, SyntaxNodeId, SyntaxSnapshotId, attach_typed_tree,
     };
+    use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole, SyntaxRoleClass};
     use crate::parser::parse_shadow_document;
 
     fn document(text: &str) -> Arc<SourceDocument> {
@@ -372,5 +426,77 @@ mod tests {
             first.bind_rowan(foreign.rowan()),
             Err(SyntaxLookupError::ForeignRowanRoot { .. })
         ));
+    }
+
+    #[test]
+    fn exact_roles_index_nearest_identity_parent_without_structural_wrappers() {
+        let snapshot = attach("predicate ready(value: Bool) = check(value)\n");
+        let root = snapshot.root_handle();
+        let predicate = root
+            .child(SyntaxRole::Element(0))
+            .expect("item-list wrapper does not become semantic parent");
+        assert_eq!(predicate.kind(), SyntaxKind::PredicateItem);
+        assert_eq!(predicate.tag(), AstTag::Item);
+        assert_eq!(predicate.parent(), Some(root.clone()));
+        let element_children = root
+            .children()
+            .into_iter()
+            .filter(|child| child.role().class() == SyntaxRoleClass::Element)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            element_children.as_slice(),
+            std::slice::from_ref(&predicate)
+        );
+
+        let name = predicate
+            .child(SyntaxRole::Name)
+            .expect("declaration name is indexed by exact role");
+        assert_eq!(name.kind(), SyntaxKind::NameDefinition);
+        assert_eq!(name.tag(), AstTag::Name);
+        assert_eq!(name.parent(), Some(predicate.clone()));
+
+        let body = predicate
+            .child(SyntaxRole::Body)
+            .expect("predicate body is indexed by exact role");
+        assert_eq!(body.kind(), SyntaxKind::PredicateBody);
+        assert_eq!(body.tag(), AstTag::Body);
+        let expression_body = body
+            .child(SyntaxRole::Body)
+            .expect("expression body remains a distinct identity owner");
+        let call = expression_body
+            .child(SyntaxRole::Body)
+            .expect("ordinary expression is attached below its authored body");
+        assert_eq!(call.kind(), SyntaxKind::CallExpression);
+        assert_eq!(call.tag(), AstTag::Expression);
+        assert_eq!(
+            call.child(SyntaxRole::Callee)
+                .expect("call callee role")
+                .kind(),
+            SyntaxKind::PathExpression
+        );
+    }
+
+    #[test]
+    fn repeated_exact_roles_remain_ordered_without_claiming_unique_child_access() {
+        let snapshot = attach("flow checks {\n    assert.check(true, false)\n}\n");
+        let assertion = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::AssertionStatement)
+            .expect("assertion node");
+        let conditions = assertion.children_with_role(SyntaxRole::Condition);
+        assert_eq!(conditions.len(), 2);
+        assert!(
+            conditions
+                .iter()
+                .all(|condition| condition.tag() == AstTag::Expression)
+        );
+        assert_eq!(
+            conditions
+                .iter()
+                .map(|condition| condition.rowan().text().to_string())
+                .collect::<Vec<_>>(),
+            ["true", "false"]
+        );
+        assert_eq!(assertion.child(SyntaxRole::Condition), None);
     }
 }

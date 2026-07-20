@@ -11,7 +11,7 @@ use arcweft_source::{SourceDocument, SourceRange};
 use super::error::SyntaxLookupError;
 use super::{AstKind, AstNode};
 use crate::grammar::build::GrammarEventPath;
-use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole};
 
 static NEXT_DATABASE_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -116,24 +116,38 @@ pub(crate) type GrammarSyntaxNode = rowan::SyntaxNode<GrammarLanguage>;
 #[derive(Clone, Debug)]
 pub(crate) struct AttachedNodeRecord {
     kind: SyntaxKind,
+    tag: AstTag,
     role: SyntaxRole,
     path: GrammarEventPath,
     node: GrammarSyntaxNode,
+    parent: Option<SyntaxNodeId>,
+    children: Box<[SyntaxNodeId]>,
+    children_by_role: BTreeMap<SyntaxRole, Box<[SyntaxNodeId]>>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct AttachedNodeRecordParts {
+    pub(super) kind: SyntaxKind,
+    pub(super) tag: AstTag,
+    pub(super) role: SyntaxRole,
+    pub(super) path: GrammarEventPath,
+    pub(super) node: GrammarSyntaxNode,
+    pub(super) parent: Option<SyntaxNodeId>,
+    pub(super) children: Box<[SyntaxNodeId]>,
+    pub(super) children_by_role: BTreeMap<SyntaxRole, Box<[SyntaxNodeId]>>,
 }
 
 impl AttachedNodeRecord {
-    pub(crate) const fn new(
-        _id: SyntaxNodeId,
-        kind: SyntaxKind,
-        role: SyntaxRole,
-        path: GrammarEventPath,
-        node: GrammarSyntaxNode,
-    ) -> Self {
+    pub(super) fn from_parts(parts: AttachedNodeRecordParts) -> Self {
         Self {
-            kind,
-            role,
-            path,
-            node,
+            kind: parts.kind,
+            tag: parts.tag,
+            role: parts.role,
+            path: parts.path,
+            node: parts.node,
+            parent: parts.parent,
+            children: parts.children,
+            children_by_role: parts.children_by_role,
         }
     }
 
@@ -298,6 +312,10 @@ impl SyntaxNodeHandle {
         self.snapshot.record(self.id).kind
     }
 
+    pub(crate) fn tag(&self) -> AstTag {
+        self.snapshot.record(self.id).tag
+    }
+
     pub(crate) fn role(&self) -> SyntaxRole {
         self.snapshot.record(self.id).role
     }
@@ -313,6 +331,43 @@ impl SyntaxNodeHandle {
     pub(crate) fn range(&self) -> SourceRange {
         let range = self.rowan().text_range();
         SourceRange::new(usize::from(range.start()), usize::from(range.end()))
+    }
+
+    pub(crate) fn parent(&self) -> Option<Self> {
+        self.snapshot
+            .record(self.id)
+            .parent
+            .map(|id| Self::new(Arc::clone(&self.snapshot), id))
+    }
+
+    pub(crate) fn children(&self) -> Vec<Self> {
+        self.snapshot
+            .record(self.id)
+            .children
+            .iter()
+            .copied()
+            .map(|id| Self::new(Arc::clone(&self.snapshot), id))
+            .collect()
+    }
+
+    pub(crate) fn child(&self, role: SyntaxRole) -> Option<Self> {
+        let ids = self.snapshot.record(self.id).children_by_role.get(&role)?;
+        let [id] = ids.as_ref() else {
+            return None;
+        };
+        Some(Self::new(Arc::clone(&self.snapshot), *id))
+    }
+
+    pub(crate) fn children_with_role(&self, role: SyntaxRole) -> Vec<Self> {
+        self.snapshot
+            .record(self.id)
+            .children_by_role
+            .get(&role)
+            .into_iter()
+            .flatten()
+            .copied()
+            .map(|id| Self::new(Arc::clone(&self.snapshot), id))
+            .collect()
     }
 
     pub(crate) fn cast<K: AstKind>(&self) -> Result<AstNode<K>, SyntaxLookupError> {

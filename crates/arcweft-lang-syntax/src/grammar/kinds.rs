@@ -1,17 +1,37 @@
 //! Final grammar-node and token vocabulary for the staged lossless parser.
+//!
+//! The identity and typed-family classifiers intentionally enumerate every
+//! grammar kind in one exhaustive match. Their size is the audit surface that
+//! prevents a new kind from silently inheriting identity or attachment policy.
 
-/// Grammar node and token kinds produced by the final event parser.
-///
-/// Raw Rowan conversion remains private until the public syntax switch. Tokens
-/// never receive syntax identity; structural wrappers retain layout without
-/// becoming a second semantic-parent authority.
-#[allow(
-    dead_code,
-    reason = "consumed by the staged shadow grammar in the next cut"
-)]
-#[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum SyntaxKind {
+pub(crate) use super::roles::{SyntaxRole, SyntaxRoleClass};
+
+macro_rules! define_syntax_kinds {
+    ($($kind:ident),+ $(,)?) => {
+        /// Grammar node and token kinds produced by the final event parser.
+        ///
+        /// Raw Rowan conversion remains private until the public syntax switch.
+        /// Tokens never receive syntax identity; structural wrappers retain
+        /// layout without becoming a second semantic-parent authority.
+        #[allow(
+            dead_code,
+            reason = "consumed by the staged shadow grammar in the next cut"
+        )]
+        #[repr(u16)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub(crate) enum SyntaxKind {
+            $($kind),+
+        }
+
+        impl SyntaxKind {
+            /// Exhaustive grammar vocabulary in discriminant order.
+            #[cfg(test)]
+            pub(crate) const ALL: &'static [Self] = &[$(Self::$kind),+];
+        }
+    };
+}
+
+define_syntax_kinds! {
     SourceFile,
     ItemList,
     StatementList,
@@ -275,6 +295,29 @@ pub(crate) enum IdentityClass {
     Token,
 }
 
+/// Typed attachment family owned by one identity-bearing grammar node.
+///
+/// This is deliberately coarser than [`SyntaxKind`]. Exact marker casts still
+/// validate the concrete kind, while family tags let the attachment layer
+/// build item/expression/statement/pattern/type inventories without retaining
+/// or reparsing the detached surface AST.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum AstTag {
+    SourceFile,
+    Item,
+    Statement,
+    Expression,
+    Pattern,
+    Type,
+    Attribute,
+    Name,
+    Path,
+    DeclarationPart,
+    Body,
+    Delimiter,
+    Recovery,
+}
+
 impl SyntaxKind {
     /// Returns whether this kind is a token rather than a Rowan node.
     #[allow(
@@ -289,6 +332,10 @@ impl SyntaxKind {
     #[allow(
         dead_code,
         reason = "consumed by the staged shadow grammar in the next cut"
+    )]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the wildcard-free identity table must enumerate every grammar kind explicitly"
     )]
     pub(crate) const fn identity_class(self) -> IdentityClass {
         match self {
@@ -324,8 +371,648 @@ impl SyntaxKind {
             | Self::ErrorToken
             | Self::MissingToken
             | Self::EofToken => IdentityClass::Token,
-            _ => IdentityClass::IdentityBearing,
+            Self::SourceFile
+            | Self::ModuleDeclaration
+            | Self::UseDeclaration
+            | Self::FlowItem
+            | Self::FunctionItem
+            | Self::PredicateItem
+            | Self::ProofItem
+            | Self::TraitItem
+            | Self::ImplItem
+            | Self::EnumItem
+            | Self::StructItem
+            | Self::TypeAliasItem
+            | Self::ResourceDeclarationItem
+            | Self::CharacterDeclarationItem
+            | Self::ViewDeclarationItem
+            | Self::ActionDeclarationItem
+            | Self::ActivityDeclarationItem
+            | Self::SignalDeclarationItem
+            | Self::MetricDeclarationItem
+            | Self::LayerDeclarationItem
+            | Self::EntryDeclarationItem
+            | Self::ExternCapabilityItem
+            | Self::TestItem
+            | Self::BenchItem
+            | Self::StyleItem
+            | Self::ErrorItem
+            | Self::InnerAttribute
+            | Self::OuterAttribute
+            | Self::DocBlock
+            | Self::Visibility
+            | Self::DeclarationHeader
+            | Self::DeclarationPublicId
+            | Self::SurfaceAlias
+            | Self::NameDefinition
+            | Self::NameReference
+            | Self::Path
+            | Self::GenericParameterGroup
+            | Self::GenericParameter
+            | Self::LifetimeParameter
+            | Self::TypeParameter
+            | Self::FixedParameterGroup
+            | Self::Parameter
+            | Self::WhereClause
+            | Self::WherePredicate
+            | Self::ReturnType
+            | Self::RequiresClause
+            | Self::EnsuresClause
+            | Self::ExpressionBody
+            | Self::PredicateBody
+            | Self::ProofBody
+            | Self::FunctionBody
+            | Self::FlowBody
+            | Self::ResourceBody
+            | Self::ResourceFieldInitializer
+            | Self::CharacterBody
+            | Self::CharacterDisplayNameMember
+            | Self::ViewDeclarationBody
+            | Self::ViewExportBlock
+            | Self::ViewExportDeclaration
+            | Self::ViewFragment
+            | Self::ActionSignature
+            | Self::ActivityBody
+            | Self::ActivityModeMember
+            | Self::ActivityLifecycleMember
+            | Self::ActivityInputBlock
+            | Self::ActivityOutputBlock
+            | Self::ActivityPort
+            | Self::ActivityContractBlock
+            | Self::SignalObservableType
+            | Self::MetricKind
+            | Self::MetricBody
+            | Self::MetricUnitMember
+            | Self::MetricLabelsBlock
+            | Self::MetricLabel
+            | Self::MetricBucketsMember
+            | Self::LayerKindNode
+            | Self::LayerBody
+            | Self::LayerMember
+            | Self::LayerPolicyValue
+            | Self::RetainedReference
+            | Self::WrongFamilyReference
+            | Self::MissingDeclarationId
+            | Self::MissingMemberValue
+            | Self::ErrorDeclarationMember
+            | Self::StyleBody
+            | Self::StyleTokenDeclaration
+            | Self::StyleRule
+            | Self::StyleSelector
+            | Self::StyleSelectorSequence
+            | Self::StylePropertyDeclaration
+            | Self::StyleEnvironmentBlock
+            | Self::StyleEnvironmentCondition
+            | Self::StyleEnvironmentClause
+            | Self::EntryBody
+            | Self::EntryRoleBinding
+            | Self::EntryGoto
+            | Self::EntryRoute
+            | Self::EntryRouteBinding
+            | Self::EntryOption
+            | Self::Block
+            | Self::PredicateBlock
+            | Self::ProofBlock
+            | Self::OpenBraceNode
+            | Self::CloseBraceNode
+            | Self::OpenParenNode
+            | Self::CloseParenNode
+            | Self::OpenBracketNode
+            | Self::CloseBracketNode
+            | Self::OpenAngleNode
+            | Self::CloseAngleNode
+            | Self::AssertionStatement
+            | Self::LetStatement
+            | Self::AssignmentStatement
+            | Self::LetElseStatement
+            | Self::LetChoiceStatement
+            | Self::LetScopeStatement
+            | Self::LetLoopStatement
+            | Self::LetAwaitStatement
+            | Self::LetActionReceiveStatement
+            | Self::ReturnStatement
+            | Self::OutStatement
+            | Self::GotoStatement
+            | Self::ThreadStatement
+            | Self::DeferBlockStatement
+            | Self::DeferStatement
+            | Self::YieldStatement
+            | Self::SignalStatement
+            | Self::LifetimeSetStatement
+            | Self::WaitStatement
+            | Self::OnStatement
+            | Self::UnsafeLifetimeStatement
+            | Self::IfStatement
+            | Self::LoopStatement
+            | Self::WhileStatement
+            | Self::WhileLetStatement
+            | Self::ForStatement
+            | Self::MatchStatement
+            | Self::CloseStatement
+            | Self::SelectStatement
+            | Self::BreakStatement
+            | Self::ContinueStatement
+            | Self::ExpressionStatement
+            | Self::ProofCallStatement
+            | Self::ErrorStatement
+            | Self::LiteralExpression
+            | Self::EntityReferenceExpression
+            | Self::LifetimePathExpression
+            | Self::PathExpression
+            | Self::ShortVariantExpression
+            | Self::PlaceholderExpression
+            | Self::TupleExpression
+            | Self::BracketSequenceExpression
+            | Self::NumericBracketSequenceExpression
+            | Self::ArrayRepeatExpression
+            | Self::CallExpression
+            | Self::SelectExpression
+            | Self::DialogueCallExpression
+            | Self::IndexExpression
+            | Self::PipeExpression
+            | Self::TryExpression
+            | Self::AwaitExpression
+            | Self::ThreadExpression
+            | Self::RangeExpression
+            | Self::RecordExpression
+            | Self::RecordLiteralExpression
+            | Self::BinaryExpression
+            | Self::BorrowExpression
+            | Self::DereferenceExpression
+            | Self::ClosureExpression
+            | Self::UnaryExpression
+            | Self::BlockExpression
+            | Self::ComputationBlockExpression
+            | Self::NamedBlockExpression
+            | Self::IfExpression
+            | Self::IfLetExpression
+            | Self::MatchExpression
+            | Self::MatchArm
+            | Self::CallArgument
+            | Self::RecordField
+            | Self::ClosureParameter
+            | Self::OmittedBlockTail
+            | Self::MissingExpression
+            | Self::ErrorExpression
+            | Self::WildcardPattern
+            | Self::BindingPattern
+            | Self::MutableBindingPattern
+            | Self::LiteralPattern
+            | Self::EntityReferencePattern
+            | Self::TuplePattern
+            | Self::RecordPattern
+            | Self::RecordPatternField
+            | Self::VariantPattern
+            | Self::SequencePattern
+            | Self::RestPattern
+            | Self::WholeBindingPattern
+            | Self::OrPattern
+            | Self::MissingPattern
+            | Self::ErrorPattern
+            | Self::PrimitiveType
+            | Self::PathType
+            | Self::GenericApplicationType
+            | Self::TupleType
+            | Self::ReferenceType
+            | Self::SliceType
+            | Self::ArrayType
+            | Self::FunctionType
+            | Self::SumType
+            | Self::InferType
+            | Self::LifetimeType
+            | Self::ElidedRegionType
+            | Self::TypeArgument
+            | Self::MissingType
+            | Self::ErrorType
+            | Self::MissingName
+            | Self::MissingBody
+            | Self::MissingTokenNode
+            | Self::ErrorNode => IdentityClass::IdentityBearing,
         }
+    }
+
+    /// Returns the typed attachment family for an identity-bearing node.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the wildcard-free typed-family table must enumerate every grammar kind explicitly"
+    )]
+    pub(crate) const fn ast_tag(self) -> Option<AstTag> {
+        match self {
+            Self::SourceFile => Some(AstTag::SourceFile),
+            Self::ModuleDeclaration
+            | Self::UseDeclaration
+            | Self::FlowItem
+            | Self::FunctionItem
+            | Self::PredicateItem
+            | Self::ProofItem
+            | Self::TraitItem
+            | Self::ImplItem
+            | Self::EnumItem
+            | Self::StructItem
+            | Self::TypeAliasItem
+            | Self::ResourceDeclarationItem
+            | Self::CharacterDeclarationItem
+            | Self::ViewDeclarationItem
+            | Self::ActionDeclarationItem
+            | Self::ActivityDeclarationItem
+            | Self::SignalDeclarationItem
+            | Self::MetricDeclarationItem
+            | Self::LayerDeclarationItem
+            | Self::EntryDeclarationItem
+            | Self::ExternCapabilityItem
+            | Self::TestItem
+            | Self::BenchItem
+            | Self::StyleItem
+            | Self::ErrorItem => Some(AstTag::Item),
+            Self::AssertionStatement
+            | Self::LetStatement
+            | Self::AssignmentStatement
+            | Self::LetElseStatement
+            | Self::LetChoiceStatement
+            | Self::LetScopeStatement
+            | Self::LetLoopStatement
+            | Self::LetAwaitStatement
+            | Self::LetActionReceiveStatement
+            | Self::ReturnStatement
+            | Self::OutStatement
+            | Self::GotoStatement
+            | Self::ThreadStatement
+            | Self::DeferBlockStatement
+            | Self::DeferStatement
+            | Self::YieldStatement
+            | Self::SignalStatement
+            | Self::LifetimeSetStatement
+            | Self::WaitStatement
+            | Self::OnStatement
+            | Self::UnsafeLifetimeStatement
+            | Self::IfStatement
+            | Self::LoopStatement
+            | Self::WhileStatement
+            | Self::WhileLetStatement
+            | Self::ForStatement
+            | Self::MatchStatement
+            | Self::CloseStatement
+            | Self::SelectStatement
+            | Self::BreakStatement
+            | Self::ContinueStatement
+            | Self::ExpressionStatement
+            | Self::ProofCallStatement
+            | Self::ErrorStatement => Some(AstTag::Statement),
+            Self::LiteralExpression
+            | Self::EntityReferenceExpression
+            | Self::LifetimePathExpression
+            | Self::PathExpression
+            | Self::ShortVariantExpression
+            | Self::PlaceholderExpression
+            | Self::TupleExpression
+            | Self::BracketSequenceExpression
+            | Self::NumericBracketSequenceExpression
+            | Self::ArrayRepeatExpression
+            | Self::CallExpression
+            | Self::SelectExpression
+            | Self::DialogueCallExpression
+            | Self::IndexExpression
+            | Self::PipeExpression
+            | Self::TryExpression
+            | Self::AwaitExpression
+            | Self::ThreadExpression
+            | Self::RangeExpression
+            | Self::RecordExpression
+            | Self::RecordLiteralExpression
+            | Self::BinaryExpression
+            | Self::BorrowExpression
+            | Self::DereferenceExpression
+            | Self::ClosureExpression
+            | Self::UnaryExpression
+            | Self::BlockExpression
+            | Self::ComputationBlockExpression
+            | Self::NamedBlockExpression
+            | Self::IfExpression
+            | Self::IfLetExpression
+            | Self::MatchExpression
+            | Self::MatchArm
+            | Self::CallArgument
+            | Self::RecordField
+            | Self::ClosureParameter
+            | Self::OmittedBlockTail
+            | Self::MissingExpression
+            | Self::ErrorExpression => Some(AstTag::Expression),
+            Self::WildcardPattern
+            | Self::BindingPattern
+            | Self::MutableBindingPattern
+            | Self::LiteralPattern
+            | Self::EntityReferencePattern
+            | Self::TuplePattern
+            | Self::RecordPattern
+            | Self::RecordPatternField
+            | Self::VariantPattern
+            | Self::SequencePattern
+            | Self::RestPattern
+            | Self::WholeBindingPattern
+            | Self::OrPattern
+            | Self::MissingPattern
+            | Self::ErrorPattern => Some(AstTag::Pattern),
+            Self::PrimitiveType
+            | Self::PathType
+            | Self::GenericApplicationType
+            | Self::TupleType
+            | Self::ReferenceType
+            | Self::SliceType
+            | Self::ArrayType
+            | Self::FunctionType
+            | Self::SumType
+            | Self::InferType
+            | Self::LifetimeType
+            | Self::ElidedRegionType
+            | Self::TypeArgument
+            | Self::MissingType
+            | Self::ErrorType => Some(AstTag::Type),
+            Self::InnerAttribute | Self::OuterAttribute | Self::DocBlock => Some(AstTag::Attribute),
+            Self::NameDefinition | Self::NameReference | Self::MissingName => Some(AstTag::Name),
+            Self::Path => Some(AstTag::Path),
+            Self::ExpressionBody
+            | Self::PredicateBody
+            | Self::ProofBody
+            | Self::FunctionBody
+            | Self::FlowBody
+            | Self::ResourceBody
+            | Self::CharacterBody
+            | Self::ViewDeclarationBody
+            | Self::ActivityBody
+            | Self::MetricBody
+            | Self::LayerBody
+            | Self::StyleBody
+            | Self::EntryBody
+            | Self::Block
+            | Self::PredicateBlock
+            | Self::ProofBlock => Some(AstTag::Body),
+            Self::OpenBraceNode
+            | Self::CloseBraceNode
+            | Self::OpenParenNode
+            | Self::CloseParenNode
+            | Self::OpenBracketNode
+            | Self::CloseBracketNode
+            | Self::OpenAngleNode
+            | Self::CloseAngleNode => Some(AstTag::Delimiter),
+            Self::MissingBody
+            | Self::MissingTokenNode
+            | Self::ErrorDeclarationMember
+            | Self::WrongFamilyReference
+            | Self::MissingDeclarationId
+            | Self::MissingMemberValue
+            | Self::ErrorNode => Some(AstTag::Recovery),
+            Self::Visibility
+            | Self::DeclarationHeader
+            | Self::DeclarationPublicId
+            | Self::SurfaceAlias
+            | Self::GenericParameterGroup
+            | Self::GenericParameter
+            | Self::LifetimeParameter
+            | Self::TypeParameter
+            | Self::FixedParameterGroup
+            | Self::Parameter
+            | Self::WhereClause
+            | Self::WherePredicate
+            | Self::ReturnType
+            | Self::RequiresClause
+            | Self::EnsuresClause
+            | Self::ResourceFieldInitializer
+            | Self::CharacterDisplayNameMember
+            | Self::ViewExportBlock
+            | Self::ViewExportDeclaration
+            | Self::ViewFragment
+            | Self::ActionSignature
+            | Self::ActivityModeMember
+            | Self::ActivityLifecycleMember
+            | Self::ActivityInputBlock
+            | Self::ActivityOutputBlock
+            | Self::ActivityPort
+            | Self::ActivityContractBlock
+            | Self::SignalObservableType
+            | Self::MetricKind
+            | Self::MetricUnitMember
+            | Self::MetricLabelsBlock
+            | Self::MetricLabel
+            | Self::MetricBucketsMember
+            | Self::LayerKindNode
+            | Self::LayerMember
+            | Self::LayerPolicyValue
+            | Self::RetainedReference
+            | Self::StyleTokenDeclaration
+            | Self::StyleRule
+            | Self::StyleSelector
+            | Self::StyleSelectorSequence
+            | Self::StylePropertyDeclaration
+            | Self::StyleEnvironmentBlock
+            | Self::StyleEnvironmentCondition
+            | Self::StyleEnvironmentClause
+            | Self::EntryRoleBinding
+            | Self::EntryGoto
+            | Self::EntryRoute
+            | Self::EntryRouteBinding
+            | Self::EntryOption => Some(AstTag::DeclarationPart),
+            Self::ItemList
+            | Self::StatementList
+            | Self::ExpressionList
+            | Self::ParameterList
+            | Self::GenericParameterList
+            | Self::WherePredicateList
+            | Self::AttributeList
+            | Self::FieldList
+            | Self::ArgumentList
+            | Self::MatchArmList
+            | Self::LogicalLine
+            | Self::IndentedSuite
+            | Self::FenceBody
+            | Self::DelimitedGroup
+            | Self::PathSegment
+            | Self::WhitespaceToken
+            | Self::NewlineToken
+            | Self::CommentToken
+            | Self::DocCommentToken
+            | Self::IdentifierToken
+            | Self::LifetimeToken
+            | Self::NumberToken
+            | Self::StringToken
+            | Self::RawStringToken
+            | Self::CharacterToken
+            | Self::EntityReferenceToken
+            | Self::KeywordToken
+            | Self::PunctuationToken
+            | Self::TextToken
+            | Self::ErrorToken
+            | Self::MissingToken
+            | Self::EofToken => None,
+        }
+    }
+
+    pub(crate) const fn is_item(self) -> bool {
+        matches!(
+            self,
+            Self::ModuleDeclaration
+                | Self::UseDeclaration
+                | Self::FlowItem
+                | Self::FunctionItem
+                | Self::PredicateItem
+                | Self::ProofItem
+                | Self::TraitItem
+                | Self::ImplItem
+                | Self::EnumItem
+                | Self::StructItem
+                | Self::TypeAliasItem
+                | Self::ResourceDeclarationItem
+                | Self::CharacterDeclarationItem
+                | Self::ViewDeclarationItem
+                | Self::ActionDeclarationItem
+                | Self::ActivityDeclarationItem
+                | Self::SignalDeclarationItem
+                | Self::MetricDeclarationItem
+                | Self::LayerDeclarationItem
+                | Self::EntryDeclarationItem
+                | Self::ExternCapabilityItem
+                | Self::TestItem
+                | Self::BenchItem
+                | Self::StyleItem
+                | Self::ErrorItem
+        )
+    }
+
+    pub(crate) const fn is_statement(self) -> bool {
+        matches!(
+            self,
+            Self::AssertionStatement
+                | Self::LetStatement
+                | Self::AssignmentStatement
+                | Self::LetElseStatement
+                | Self::LetChoiceStatement
+                | Self::LetScopeStatement
+                | Self::LetLoopStatement
+                | Self::LetAwaitStatement
+                | Self::LetActionReceiveStatement
+                | Self::ReturnStatement
+                | Self::OutStatement
+                | Self::GotoStatement
+                | Self::ThreadStatement
+                | Self::DeferBlockStatement
+                | Self::DeferStatement
+                | Self::YieldStatement
+                | Self::SignalStatement
+                | Self::LifetimeSetStatement
+                | Self::WaitStatement
+                | Self::OnStatement
+                | Self::UnsafeLifetimeStatement
+                | Self::IfStatement
+                | Self::LoopStatement
+                | Self::WhileStatement
+                | Self::WhileLetStatement
+                | Self::ForStatement
+                | Self::MatchStatement
+                | Self::CloseStatement
+                | Self::SelectStatement
+                | Self::BreakStatement
+                | Self::ContinueStatement
+                | Self::ExpressionStatement
+                | Self::ProofCallStatement
+                | Self::ErrorStatement
+        )
+    }
+
+    pub(crate) const fn is_expression(self) -> bool {
+        matches!(
+            self,
+            Self::LiteralExpression
+                | Self::EntityReferenceExpression
+                | Self::LifetimePathExpression
+                | Self::PathExpression
+                | Self::ShortVariantExpression
+                | Self::PlaceholderExpression
+                | Self::TupleExpression
+                | Self::BracketSequenceExpression
+                | Self::NumericBracketSequenceExpression
+                | Self::ArrayRepeatExpression
+                | Self::CallExpression
+                | Self::SelectExpression
+                | Self::DialogueCallExpression
+                | Self::IndexExpression
+                | Self::PipeExpression
+                | Self::TryExpression
+                | Self::AwaitExpression
+                | Self::ThreadExpression
+                | Self::RangeExpression
+                | Self::RecordExpression
+                | Self::RecordLiteralExpression
+                | Self::BinaryExpression
+                | Self::BorrowExpression
+                | Self::DereferenceExpression
+                | Self::ClosureExpression
+                | Self::UnaryExpression
+                | Self::BlockExpression
+                | Self::ComputationBlockExpression
+                | Self::NamedBlockExpression
+                | Self::IfExpression
+                | Self::IfLetExpression
+                | Self::MatchExpression
+                | Self::MissingExpression
+                | Self::ErrorExpression
+        )
+    }
+
+    pub(crate) const fn is_pattern_node(self) -> bool {
+        matches!(
+            self,
+            Self::WildcardPattern
+                | Self::BindingPattern
+                | Self::MutableBindingPattern
+                | Self::LiteralPattern
+                | Self::EntityReferencePattern
+                | Self::TuplePattern
+                | Self::RecordPattern
+                | Self::RecordPatternField
+                | Self::VariantPattern
+                | Self::SequencePattern
+                | Self::RestPattern
+                | Self::WholeBindingPattern
+                | Self::OrPattern
+                | Self::MissingPattern
+                | Self::ErrorPattern
+        )
+    }
+
+    pub(crate) const fn is_type_node(self) -> bool {
+        matches!(
+            self,
+            Self::PrimitiveType
+                | Self::PathType
+                | Self::GenericApplicationType
+                | Self::TupleType
+                | Self::ReferenceType
+                | Self::SliceType
+                | Self::ArrayType
+                | Self::FunctionType
+                | Self::SumType
+                | Self::InferType
+                | Self::LifetimeType
+                | Self::ElidedRegionType
+                | Self::TypeArgument
+                | Self::MissingType
+                | Self::ErrorType
+        )
+    }
+
+    pub(crate) const fn is_retained_declaration_member(self) -> bool {
+        matches!(
+            self,
+            Self::CharacterDisplayNameMember
+                | Self::ActivityModeMember
+                | Self::ActivityLifecycleMember
+                | Self::ActivityInputBlock
+                | Self::ActivityOutputBlock
+                | Self::ActivityContractBlock
+                | Self::MetricUnitMember
+                | Self::MetricLabelsBlock
+                | Self::MetricBucketsMember
+                | Self::LayerMember
+        )
     }
 
     /// Whether this identity-bearing node represents a missing grammar value.
@@ -361,185 +1048,9 @@ impl SyntaxKind {
     }
 }
 
-/// Semantic child role used when reconciling identity-bearing grammar nodes.
-#[allow(
-    dead_code,
-    reason = "consumed by the staged shadow grammar in the next cut"
-)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum SyntaxRole {
-    Root,
-    Attribute(u16),
-    Documentation,
-    Visibility,
-    PublicId,
-    Alias,
-    Kind,
-    Name,
-    GenericGroup,
-    GenericParameter(u16),
-    ParameterGroup,
-    Parameter(u16),
-    ParameterPattern,
-    ParameterType,
-    WhereClause,
-    WherePredicate(u16),
-    ReturnType,
-    RequiresClause(u16),
-    EnsuresClause(u16),
-    Body,
-    OpenDelimiter,
-    CloseDelimiter,
-    Statement(u32),
-    Tail,
-    Condition,
-    Callee,
-    Argument(u16),
-    Target,
-    Operand,
-    LeftOperand,
-    RightOperand,
-    Pattern,
-    Type,
-    Initializer,
-    Scrutinee,
-    Guard,
-    ThenBranch,
-    ElseBranch,
-    MatchArm(u16),
-    Field(u16),
-    Member(u16),
-    InputPort(u16),
-    OutputPort(u16),
-    Export(u16),
-    Label(u16),
-    Bucket(u16),
-    Policy(u16),
-    Reference(u16),
-    RelatedReference(u16),
-    Element(u32),
-    Recovery(u32),
-}
-
-/// Ordinal-free semantic child role used as reconciliation authority.
-#[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum SyntaxRoleClass {
-    Root,
-    Attribute,
-    Documentation,
-    Visibility,
-    PublicId,
-    Alias,
-    Kind,
-    Name,
-    GenericGroup,
-    GenericParameter,
-    ParameterGroup,
-    Parameter,
-    ParameterPattern,
-    ParameterType,
-    WhereClause,
-    WherePredicate,
-    ReturnType,
-    RequiresClause,
-    EnsuresClause,
-    Body,
-    OpenDelimiter,
-    CloseDelimiter,
-    Statement,
-    Tail,
-    Condition,
-    Callee,
-    Argument,
-    Target,
-    Operand,
-    LeftOperand,
-    RightOperand,
-    Pattern,
-    Type,
-    Initializer,
-    Scrutinee,
-    Guard,
-    ThenBranch,
-    ElseBranch,
-    MatchArm,
-    Field,
-    Member,
-    InputPort,
-    OutputPort,
-    Export,
-    Label,
-    Bucket,
-    Policy,
-    Reference,
-    RelatedReference,
-    Element,
-    Recovery,
-}
-
-impl SyntaxRole {
-    /// Removes the deterministic sibling ordinal without weakening the role.
-    pub(crate) const fn class(self) -> SyntaxRoleClass {
-        match self {
-            Self::Root => SyntaxRoleClass::Root,
-            Self::Attribute(_) => SyntaxRoleClass::Attribute,
-            Self::Documentation => SyntaxRoleClass::Documentation,
-            Self::Visibility => SyntaxRoleClass::Visibility,
-            Self::PublicId => SyntaxRoleClass::PublicId,
-            Self::Alias => SyntaxRoleClass::Alias,
-            Self::Kind => SyntaxRoleClass::Kind,
-            Self::Name => SyntaxRoleClass::Name,
-            Self::GenericGroup => SyntaxRoleClass::GenericGroup,
-            Self::GenericParameter(_) => SyntaxRoleClass::GenericParameter,
-            Self::ParameterGroup => SyntaxRoleClass::ParameterGroup,
-            Self::Parameter(_) => SyntaxRoleClass::Parameter,
-            Self::ParameterPattern => SyntaxRoleClass::ParameterPattern,
-            Self::ParameterType => SyntaxRoleClass::ParameterType,
-            Self::WhereClause => SyntaxRoleClass::WhereClause,
-            Self::WherePredicate(_) => SyntaxRoleClass::WherePredicate,
-            Self::ReturnType => SyntaxRoleClass::ReturnType,
-            Self::RequiresClause(_) => SyntaxRoleClass::RequiresClause,
-            Self::EnsuresClause(_) => SyntaxRoleClass::EnsuresClause,
-            Self::Body => SyntaxRoleClass::Body,
-            Self::OpenDelimiter => SyntaxRoleClass::OpenDelimiter,
-            Self::CloseDelimiter => SyntaxRoleClass::CloseDelimiter,
-            Self::Statement(_) => SyntaxRoleClass::Statement,
-            Self::Tail => SyntaxRoleClass::Tail,
-            Self::Condition => SyntaxRoleClass::Condition,
-            Self::Callee => SyntaxRoleClass::Callee,
-            Self::Argument(_) => SyntaxRoleClass::Argument,
-            Self::Target => SyntaxRoleClass::Target,
-            Self::Operand => SyntaxRoleClass::Operand,
-            Self::LeftOperand => SyntaxRoleClass::LeftOperand,
-            Self::RightOperand => SyntaxRoleClass::RightOperand,
-            Self::Pattern => SyntaxRoleClass::Pattern,
-            Self::Type => SyntaxRoleClass::Type,
-            Self::Initializer => SyntaxRoleClass::Initializer,
-            Self::Scrutinee => SyntaxRoleClass::Scrutinee,
-            Self::Guard => SyntaxRoleClass::Guard,
-            Self::ThenBranch => SyntaxRoleClass::ThenBranch,
-            Self::ElseBranch => SyntaxRoleClass::ElseBranch,
-            Self::MatchArm(_) => SyntaxRoleClass::MatchArm,
-            Self::Field(_) => SyntaxRoleClass::Field,
-            Self::Member(_) => SyntaxRoleClass::Member,
-            Self::InputPort(_) => SyntaxRoleClass::InputPort,
-            Self::OutputPort(_) => SyntaxRoleClass::OutputPort,
-            Self::Export(_) => SyntaxRoleClass::Export,
-            Self::Label(_) => SyntaxRoleClass::Label,
-            Self::Bucket(_) => SyntaxRoleClass::Bucket,
-            Self::Policy(_) => SyntaxRoleClass::Policy,
-            Self::Reference(_) => SyntaxRoleClass::Reference,
-            Self::RelatedReference(_) => SyntaxRoleClass::RelatedReference,
-            Self::Element(_) => SyntaxRoleClass::Element,
-            Self::Recovery(_) => SyntaxRoleClass::Recovery,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{IdentityClass, SyntaxKind, SyntaxRole, SyntaxRoleClass};
+    use super::{AstTag, IdentityClass, SyntaxKind};
 
     #[test]
     fn final_kind_inventory_owns_identity_classification() {
@@ -560,15 +1071,40 @@ mod tests {
     }
 
     #[test]
-    fn role_classes_discard_only_sibling_ordinals() {
-        assert_eq!(SyntaxRole::Statement(7).class(), SyntaxRoleClass::Statement);
+    fn typed_attachment_tags_cover_semantic_families_only() {
+        assert_eq!(SyntaxKind::SourceFile.ast_tag(), Some(AstTag::SourceFile));
+        assert_eq!(SyntaxKind::ProofItem.ast_tag(), Some(AstTag::Item));
         assert_eq!(
-            SyntaxRole::Statement(99).class(),
-            SyntaxRoleClass::Statement
+            SyntaxKind::DialogueCallExpression.ast_tag(),
+            Some(AstTag::Expression)
         );
-        assert_ne!(
-            SyntaxRole::Parameter(0).class(),
-            SyntaxRole::ParameterType.class()
+        assert_eq!(
+            SyntaxKind::RecordPatternField.ast_tag(),
+            Some(AstTag::Pattern)
         );
+        assert_eq!(SyntaxKind::TypeArgument.ast_tag(), Some(AstTag::Type));
+        assert_eq!(
+            SyntaxKind::MissingTokenNode.ast_tag(),
+            Some(AstTag::Recovery)
+        );
+        assert_eq!(SyntaxKind::ItemList.ast_tag(), None);
+        assert_eq!(SyntaxKind::IdentifierToken.ast_tag(), None);
+    }
+
+    #[test]
+    fn complete_kind_inventory_aligns_identity_and_typed_attachment() {
+        assert_eq!(
+            SyntaxKind::ALL.len(),
+            SyntaxKind::EofToken as usize + 1,
+            "the macro-owned inventory must contain every discriminant"
+        );
+        for (ordinal, &kind) in SyntaxKind::ALL.iter().enumerate() {
+            assert_eq!(kind as usize, ordinal, "inventory order for {kind:?}");
+            assert_eq!(
+                kind.ast_tag().is_some(),
+                kind.identity_class() == IdentityClass::IdentityBearing,
+                "typed attachment ownership for {kind:?}"
+            );
+        }
     }
 }
