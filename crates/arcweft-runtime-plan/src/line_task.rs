@@ -67,7 +67,6 @@ pub fn lower_line_task_groups(
     for flow in module.flows() {
         lowerer.lower_flow_items(flow.id(), flow.body());
     }
-    lowerer.lower_flow_items(None, module.top_level_items());
     if lowerer.errors.is_empty() {
         Ok(lowerer.groups)
     } else {

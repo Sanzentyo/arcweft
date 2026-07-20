@@ -192,8 +192,8 @@ impl Parser<'_> {
                     items.push(Item::Function(function));
                 }
             }
-            CstTopLevelItemKind::FlowBodyItemOrRaw => {
-                self.parse_top_level_flow_item_or_raw(trimmed, range, items);
+            CstTopLevelItemKind::Unrecognized => {
+                self.recover_unrecognized_top_level_item(trimmed, range, items);
             }
             kind => {
                 self.reject_pending_doc(range);
@@ -245,11 +245,11 @@ impl Parser<'_> {
             CstTopLevelItemKind::Style => self.parse_style().map(Item::Style),
             CstTopLevelItemKind::Flow
             | CstTopLevelItemKind::Function
-            | CstTopLevelItemKind::FlowBodyItemOrRaw => None,
+            | CstTopLevelItemKind::Unrecognized => None,
         }
     }
 
-    pub(super) fn parse_top_level_flow_item_or_raw(
+    fn recover_unrecognized_top_level_item(
         &mut self,
         trimmed: &str,
         range: TextRange,
@@ -257,22 +257,18 @@ impl Parser<'_> {
     ) {
         self.reject_pending_doc(range);
         self.reject_pending_attrs(range);
-        if let Some(flow_item) = self.parse_flow_item_until_indent(0) {
-            items.push(Item::FlowItem(Box::new(flow_item)));
+        self.push_error(
+            range,
+            "unexpected top-level item",
+            ["a declaration"],
+            Some(trimmed),
+            ["use a current Arcweft declaration form"],
+        );
+        items.push(Item::Raw(RawItem::new(trimmed.to_owned(), range)));
+        if self.current().has_top_level_brace_open() || self.next_nonblank_line_is_brace() {
+            let _ = self.take_flow_block_event();
         } else {
-            self.push_error(
-                range,
-                "unexpected top-level item",
-                ["a declaration", "a flow item"],
-                Some(trimmed),
-                ["use a current Arcweft declaration or flow-item form"],
-            );
-            items.push(Item::Raw(RawItem::new(trimmed.to_owned(), None, range)));
-            if self.current().text.contains('{') || self.next_nonblank_line_is_brace() {
-                let _ = self.take_flow_block_event();
-            } else {
-                self.index += 1;
-            }
+            self.index += 1;
         }
     }
 }

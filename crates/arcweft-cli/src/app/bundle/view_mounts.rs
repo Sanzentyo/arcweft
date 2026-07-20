@@ -23,7 +23,6 @@ pub(super) fn mounted_view_ids(module: &HirModule) -> BTreeSet<String> {
     for flow in module.flows() {
         collect_mounted_view_ids(flow.body(), &mut ids);
     }
-    collect_mounted_view_ids(module.top_level_items(), &mut ids);
     include_nested_view_dependencies(module, &mut ids);
     ids
 }

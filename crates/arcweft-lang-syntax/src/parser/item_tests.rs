@@ -14,7 +14,7 @@ fn document(source: &str) -> SourceDocument {
 }
 
 #[test]
-fn every_current_top_level_item_family_has_one_lossless_root() {
+fn every_current_top_level_declaration_family_has_one_lossless_root() {
     let source = concat!(
         "mod story\n",
         "use story::Thing\n",
@@ -71,7 +71,7 @@ fn every_current_top_level_item_family_has_one_lossless_root() {
             SyntaxKind::BenchItem,
             SyntaxKind::SourceItem,
             SyntaxKind::StyleItem,
-            SyntaxKind::TopLevelFlowItem,
+            SyntaxKind::ErrorItem,
             SyntaxKind::ErrorItem,
         ]
     );
@@ -117,7 +117,6 @@ const fn is_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::BenchItem
             | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
-            | SyntaxKind::TopLevelFlowItem
             | SyntaxKind::ErrorItem
     )
 }

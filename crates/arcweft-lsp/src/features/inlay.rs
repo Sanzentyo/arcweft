@@ -266,12 +266,6 @@ fn function_let_sites(tree: &TypedSyntaxTree, source: &str) -> Vec<LetTypeInlayS
             collect_stmt_sites(function.body_statements(), source, &mut sites);
         }
     }
-    for item in tree.items() {
-        if let Item::FlowItem(item) = item {
-            collect_flow_item_sites(std::slice::from_ref(item.as_ref()), source, &mut sites);
-        }
-    }
-
     sites
 }
 

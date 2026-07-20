@@ -100,7 +100,7 @@ fn numeric_ranges_raw_strings_and_character_escapes_keep_exact_boundaries() {
 }
 
 #[test]
-fn shadow_root_assigns_current_item_families_without_public_identity() {
+fn shadow_root_keeps_non_declarations_as_generic_errors() {
     let source = concat!(
         "pub predicate positive(x: Int) = x > 0\n",
         "proof unit() {}\n",
@@ -121,7 +121,6 @@ fn shadow_root_assigns_current_item_families_without_public_identity() {
                     | SyntaxKind::PredicateItem
                     | SyntaxKind::ProofItem
                     | SyntaxKind::FunctionItem
-                    | SyntaxKind::TopLevelFlowItem
                     | SyntaxKind::ErrorItem
             )
         })
@@ -133,7 +132,7 @@ fn shadow_root_assigns_current_item_families_without_public_identity() {
             SyntaxKind::PredicateItem,
             SyntaxKind::ProofItem,
             SyntaxKind::FunctionItem,
-            SyntaxKind::TopLevelFlowItem,
+            SyntaxKind::ErrorItem,
             SyntaxKind::ErrorItem,
         ]
     );

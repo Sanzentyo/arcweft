@@ -837,3 +837,21 @@ fn replace_dialogue_call_content_source_map(expr: &mut Expr, source_map: Dialogu
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unclosed_brace_line_plan_reports_the_line_plan_owner() {
+        let mut parser = Parser::new("with {\n    at(0.42s) { alice.stage.face(worried)\n");
+
+        assert!(parser.take_optional_line_plan().is_none());
+        let [error] = parser.errors.as_slice() else {
+            panic!("expected one line-plan recovery diagnostic");
+        };
+        assert_eq!(error.message(), "unclosed block while parsing line plan");
+        assert_eq!(error.expected(), &["}"]);
+        assert!(!error.recovery().is_empty());
+    }
+}

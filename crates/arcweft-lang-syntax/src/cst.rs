@@ -220,7 +220,7 @@ pub(crate) enum CstTopLevelItemKind {
     Bench,
     Source,
     Style,
-    FlowBodyItemOrRaw,
+    Unrecognized,
 }
 
 /// Flow-body line classification before typed AST construction.

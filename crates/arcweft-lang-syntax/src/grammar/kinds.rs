@@ -47,7 +47,6 @@ pub(crate) enum SyntaxKind {
     BenchItem,
     SourceItem,
     StyleItem,
-    TopLevelFlowItem,
     ErrorItem,
     InnerAttribute,
     OuterAttribute,

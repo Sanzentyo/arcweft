@@ -893,8 +893,8 @@ flow @flow.opening start {
     }
 
     #[test]
-    fn policy_shaped_top_level_text_uses_generic_syntax_diagnostics() {
-        let source = "policy capability host {\n    allow = fs.read\n}\npub character bob {}\n";
+    fn bare_flow_item_uses_generic_declaration_only_syntax_diagnostics() {
+        let source = "alice: hello\npub character bob {}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
         let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
@@ -908,11 +908,11 @@ flow @flow.opening start {
         assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
         assert_eq!(diagnostic.message, "unexpected top-level item");
         assert_eq!(diagnostic.range.start, Position::new(0, 0));
-        assert_eq!(diagnostic.range.end, Position::new(0, 24));
+        assert_eq!(diagnostic.range.end, Position::new(0, 12));
         let data = diagnostic.data.as_ref().expect("generic recovery data");
         assert_eq!(
             data["suggestions"][0]["message"],
-            "use a current Arcweft declaration or flow-item form"
+            "use a current Arcweft declaration form"
         );
         assert!(
             !diagnostic.message.to_ascii_lowercase().contains("removed")

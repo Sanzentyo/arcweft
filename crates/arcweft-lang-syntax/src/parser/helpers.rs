@@ -373,9 +373,14 @@ pub(super) fn collect_logical_block_items_with_base(
     let line_deltas = CstPunctuationScan::new(body).line_deltas(body);
     let mut line_base = body_base;
 
-    for (line_index, raw_line) in body.lines().enumerate() {
+    for (line_index, line_with_ending) in body.split_inclusive('\n').enumerate() {
+        let raw_line = if let Some(without_lf) = line_with_ending.strip_suffix('\n') {
+            without_lf.strip_suffix('\r').unwrap_or(without_lf)
+        } else {
+            line_with_ending
+        };
         let raw_line_base = line_base;
-        line_base += raw_line.len() + '\n'.len_utf8();
+        line_base += line_with_ending.len();
         if raw_line.trim().is_empty() {
             continue;
         }

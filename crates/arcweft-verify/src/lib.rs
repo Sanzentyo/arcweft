@@ -983,7 +983,6 @@ impl ObligationCollector {
         for function in module.functions() {
             self.collect_function(function);
         }
-        self.collect_flow_items(module.top_level_items());
         self.collect_must_drop_obligations();
         self.collect_runtime_plan_obligations(module);
     }

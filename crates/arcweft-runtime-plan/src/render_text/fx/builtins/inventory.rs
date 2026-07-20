@@ -17,7 +17,6 @@ pub(crate) fn builtin_rich_text_fx_definitions(
     module: &HirModule,
 ) -> Result<Vec<FxDefinition>, RuntimePlanLowerError> {
     let mut definitions = BTreeMap::<FxId, FxDefinition>::new();
-    visit_items(module.top_level_items(), &mut definitions)?;
     for flow in module.flows() {
         visit_items(flow.body(), &mut definitions)?;
     }

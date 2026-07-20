@@ -597,6 +597,24 @@ fn callback_block_zero_params_has_exact_braces_and_body() {
 }
 
 #[test]
+fn callback_block_crlf_body_retains_its_value_expression() {
+    let call = parsed_callback("items.tap {\r\nx\r\n}");
+    let Expr::Closure { body, .. } = call.args()[0].value() else {
+        panic!("callback call must carry exactly one closure argument");
+    };
+    let Expr::Block {
+        statements,
+        value: Some(value),
+    } = body.as_ref()
+    else {
+        panic!("callback braces must retain a semantic block body");
+    };
+
+    assert!(statements.is_empty());
+    assert!(matches!(value.as_ref(), Expr::Path(path) if path.as_label() == "x"));
+}
+
+#[test]
 fn callback_block_one_param_has_exact_header() {
     let call = parsed_callback("items.map { item => item.label }");
     let callback = call

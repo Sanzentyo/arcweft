@@ -28,12 +28,9 @@ pub flow @flow.alice_enters alice_enters {
 
 #[test]
 fn parses_colon_form_with_inline_bracket_content() {
-    let tree = parse_ok("alice(voice=auto):[今日は少しだけ。[p]]");
+    let tree = parse_flow_body_ok("alice(voice=auto):[今日は少しだけ。[p]]");
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected speaker line");
-    };
-    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+    let [FlowItem::SpeakerLine(line)] = flow_body(&tree) else {
         panic!("expected speaker line");
     };
     assert_eq!(line.speaker(), "alice");
@@ -43,14 +40,11 @@ fn parses_colon_form_with_inline_bracket_content() {
 
 #[test]
 fn parses_positional_look_and_extended_line_options() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         "alice(smile, voice=auto, stage=.main, portrait=.bust, focus=.soft, cleanup=.line):[おはよう。[p]]",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected speaker line");
-    };
-    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+    let [FlowItem::SpeakerLine(line)] = flow_body(&tree) else {
         panic!("expected speaker line");
     };
     assert!(matches!(line.options().look(), Some(Expr::Path(path)) if path == "smile"));
@@ -62,11 +56,8 @@ fn parses_positional_look_and_extended_line_options() {
 
 #[test]
 fn unreserved_line_options_remain_extension_arguments_without_builtin_meaning() {
-    let tree = parse_ok("alice(project_option=soft):[おはよう。[p]]");
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected speaker line");
-    };
-    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+    let tree = parse_flow_body_ok("alice(project_option=soft):[おはよう。[p]]");
+    let [FlowItem::SpeakerLine(line)] = flow_body(&tree) else {
         panic!("expected speaker line");
     };
 
@@ -305,7 +296,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parses_character_content_call_with_brace_plan() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r##"
 alice.say(id=@say.opening.dream_hint, voice=auto)[
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"))]を見たんだ。[p]
@@ -316,10 +307,7 @@ with {
 "##,
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected content call");
-    };
-    let FlowItem::ContentCall(call) = item.as_ref() else {
+    let [FlowItem::ContentCall(call)] = flow_body(&tree) else {
         panic!("expected content call");
     };
     assert_eq!(call.callee(), "alice.say");
@@ -554,7 +542,7 @@ flow @flow.main main {
 
 #[test]
 fn parser_surfaces_dialogue_text_diagnostics() {
-    let errors = parse_errors("alice: 今日は|変 な夢{へんなゆめ}を見た。[p]");
+    let errors = parse_errors(flow_source("alice: 今日は|変 な夢{へんなゆめ}を見た。[p]"));
 
     assert!(
         errors
@@ -724,7 +712,7 @@ fn dialogue_tokenizer_preserves_raw_spans_without_inner_parsing() {
 
 #[test]
 fn reports_unclosed_dialogue_content_block() {
-    let errors = parse_errors("alice[おはよう。[p]");
+    let errors = parse_errors(flow_source("alice[おはよう。[p]"));
     assert_eq!(errors.len(), 1);
     assert!(errors[0].message().contains("dialogue content"));
     assert_eq!(errors[0].expected(), &["]"]);

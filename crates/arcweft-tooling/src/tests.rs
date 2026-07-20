@@ -950,26 +950,6 @@ fn canonical_rich_text_projects_multiline_dialogue_call_expressions_across_crlf(
 }
 
 #[test]
-fn canonical_rich_text_visits_statement_bodies_outside_flows() {
-    let source = "fn render_notice() {\n    if ready {\n        let handles = alice.say()[[.shake]notice[/][p]]\n    }\n}\n";
-    let report = format_source(
-        source,
-        FormatOptions {
-            canonical_rich_text: true,
-        },
-    )
-    .expect("format report");
-
-    assert!(
-        report
-            .output
-            .contains("[[effect .shake]notice[/effect][p]]"),
-        "{}",
-        report.output
-    );
-}
-
-#[test]
 fn canonical_rich_text_expands_inferred_text_proxy_objects() {
     let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=choice]proxy[/][.KeywordHit]typed[/][.sparkle amp=2px]effect[/][p]\n}\n";
     let report = format_source(

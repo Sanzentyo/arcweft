@@ -48,7 +48,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parses_choice_option_with_condition() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 choice @choice.opening.first {
     @choice.opening.listen "聞いてみる" if state.affection[@character.alice] >= 3 -> @flow.alice_intro
@@ -56,10 +56,7 @@ choice @choice.opening.first {
 "#,
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected choice");
-    };
-    let FlowItem::Choice(choice) = item.as_ref() else {
+    let [FlowItem::Choice(choice)] = flow_body(&tree) else {
         panic!("expected choice");
     };
     let option = &choice.options()[0];
@@ -76,7 +73,7 @@ choice @choice.opening.first {
 
 #[test]
 fn parses_choice_option_block_and_value_output() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 choice @choice.opening.first {
     let can_enter_alice = state.affection[@character.alice] >= 3
@@ -100,10 +97,7 @@ choice @choice.opening.first {
 "#,
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected choice");
-    };
-    let FlowItem::Choice(choice) = item.as_ref() else {
+    let [FlowItem::Choice(choice)] = flow_body(&tree) else {
         panic!("expected choice");
     };
     assert_eq!(choice.items().len(), 3);
@@ -126,7 +120,7 @@ choice @choice.opening.first {
 
 #[test]
 fn parses_dynamic_choice_options_from_for_loop() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 choice @choice.opening.routes {
     for route in opening_routes(state) {
@@ -140,10 +134,7 @@ choice @choice.opening.routes {
 ",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected choice");
-    };
-    let FlowItem::Choice(choice) = item.as_ref() else {
+    let [FlowItem::Choice(choice)] = flow_body(&tree) else {
         panic!("expected choice");
     };
     assert!(matches!(&choice.items()[0], ChoiceItem::For { .. }));
@@ -153,7 +144,7 @@ choice @choice.opening.routes {
 
 #[test]
 fn parses_choice_match_items_and_collects_arm_options() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 choice @choice.opening.first {
     match state.route_override {
@@ -168,10 +159,7 @@ choice @choice.opening.first {
 "#,
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected choice");
-    };
-    let FlowItem::Choice(choice) = item.as_ref() else {
+    let [FlowItem::Choice(choice)] = flow_body(&tree) else {
         panic!("expected choice");
     };
     let ChoiceItem::Match { expr, arms } = &choice.items()[0] else {
@@ -229,7 +217,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parses_choice_plan_option_in_sugar_label_key_and_value() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 choice @choice.opening.routes {
     option route in opening_routes(state) {
@@ -251,10 +239,7 @@ with {
 "#,
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected choice");
-    };
-    let FlowItem::Choice(choice) = item.as_ref() else {
+    let [FlowItem::Choice(choice)] = flow_body(&tree) else {
         panic!("expected choice");
     };
     let plan = choice.plan().expect("choice plan");
@@ -286,7 +271,7 @@ with {
 
 #[test]
 fn parses_indented_choice_plan_from_cst_lines() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 choice @choice.opening.first {
     @choice.opening.listen "聞いてみる" -> @flow.alice_intro
@@ -299,10 +284,7 @@ with:
 "#,
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected choice");
-    };
-    let FlowItem::Choice(choice) = item.as_ref() else {
+    let [FlowItem::Choice(choice)] = flow_body(&tree) else {
         panic!("expected choice");
     };
     let plan = choice.plan().expect("choice plan");
@@ -317,7 +299,7 @@ with:
 
 #[test]
 fn typechecks_dynamic_choice_option_fields_in_for_sugar() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 choice @choice.opening.routes {
     option route in opening_routes(state) {
@@ -352,7 +334,7 @@ choice @choice.opening.routes {
 
 #[test]
 fn rejects_dynamic_id_in_compact_choice_arm() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 choice @choice.opening.routes {
     route.choice_id "Dynamic label" -> @flow.alice_intro

@@ -109,7 +109,7 @@ fn cst_line_events_classify_top_level_dispatch() {
     );
     assert_eq!(
         lines.get(6).map(CstLine::top_level_item_kind),
-        Some(CstTopLevelItemKind::FlowBodyItemOrRaw)
+        Some(CstTopLevelItemKind::Unrecognized)
     );
 }
 
@@ -274,7 +274,7 @@ fn cst_flow_block_event_reuses_complete_body_line_events_only() {
 
 #[test]
 fn successful_parse_exposes_typed_tree_and_hash() {
-    let parsed = parse_source("alice: おはよう。[p]");
+    let parsed = parse_source("flow opening {\n    alice: おはよう。[p]\n}\n");
 
     assert!(parsed.is_ok());
     assert_eq!(parsed.source_hash().as_bytes().len(), 32);
@@ -283,7 +283,47 @@ fn successful_parse_exposes_typed_tree_and_hash() {
         parsed.source_hash().to_hex(),
         parsed.source_hash().to_string()
     );
-    assert!(matches!(parsed.typed_tree().items(), [Item::FlowItem(_)]));
+    assert!(matches!(parsed.typed_tree().items(), [Item::Flow(_)]));
+}
+
+#[test]
+fn project_source_rejects_bare_flow_items_and_recovers_to_the_next_declaration() {
+    let parsed = parse_source("alice: おはよう。[p]\npub character bob {}\n");
+
+    assert_eq!(parsed.errors().len(), 1);
+    let error = &parsed.errors()[0];
+    assert_eq!(error.code(), "syntax.parse");
+    assert_eq!(error.message(), "unexpected top-level item");
+    assert_eq!(error.expected(), ["a declaration".to_owned()]);
+    assert_eq!(error.found(), Some("alice: おはよう。[p]"));
+    assert_eq!(
+        error.recovery()[0].message(),
+        "use a current Arcweft declaration form"
+    );
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::Raw(_), Item::EntityDecl(item)]
+            if item.kind() == crate::ast::items::EntityDeclKind::Character
+                && item.id().body() == "character.bob"
+    ));
+    assert!(parsed.errors().iter().all(|error| {
+        let message = error.message().to_ascii_lowercase();
+        !message.contains("removed") && !message.contains("deprecated")
+    }));
+}
+
+#[test]
+fn project_recovery_ignores_braces_inside_strings_and_retains_the_next_declaration() {
+    let parsed = parse_source("let text = \"{\"\npub character bob {}\n");
+
+    assert_eq!(parsed.errors().len(), 1);
+    assert_eq!(parsed.errors()[0].code(), "syntax.parse");
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::Raw(_), Item::EntityDecl(item)]
+            if item.kind() == crate::ast::items::EntityDeclKind::Character
+                && item.id().body() == "character.bob"
+    ));
 }
 
 #[test]

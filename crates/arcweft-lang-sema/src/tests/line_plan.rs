@@ -2,7 +2,7 @@ use super::support::*;
 
 #[test]
 fn parses_colon_speaker_with_indented_line_plan() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 alice(voice=auto, look=smile):
     今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
@@ -13,11 +13,8 @@ with:
 ",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected top-level speaker flow item");
-    };
-    let FlowItem::SpeakerLine(line) = item.as_ref() else {
-        panic!("expected top-level speaker flow item");
+    let [FlowItem::SpeakerLine(line)] = flow_body(&tree) else {
+        panic!("expected speaker flow item");
     };
     assert_eq!(line.speaker(), "alice");
     assert_eq!(line.content().tokens().len(), 4);
@@ -34,7 +31,7 @@ with:
 
 #[test]
 fn parses_bracket_speaker_call_with_with_colon_plan() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 alice[
     おはよう。[p]
@@ -44,10 +41,7 @@ with:
 ",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected content call");
-    };
-    let FlowItem::ContentCall(call) = item.as_ref() else {
+    let [FlowItem::ContentCall(call)] = flow_body(&tree) else {
         panic!("expected content call");
     };
     assert_eq!(call.callee(), "alice");
@@ -246,7 +240,8 @@ with:
     together cue_move()
 ",
     ] {
-        let parsed = parse_source(source);
+        let source = flow_source(source);
+        let parsed = parse_source(&source);
         let [error] = parsed.errors() else {
             panic!(
                 "inline line-plan group head should produce one ordinary parse error: {:?}",
@@ -263,23 +258,8 @@ with:
 }
 
 #[test]
-fn reports_unclosed_line_plan_block_after_cue() {
-    let errors = parse_errors(
-        r"
-alice[おはよう。[p]]
-with {
-    at(0.42s) { alice.stage.face(worried)
-",
-    );
-
-    assert_eq!(errors.len(), 1);
-    assert!(errors[0].message().contains("line plan"));
-    assert!(!errors[0].recovery().is_empty());
-}
-
-#[test]
 fn line_plan_items_keep_typed_expressions() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 alice:
     聞いて。[p]
@@ -290,10 +270,7 @@ with:
 ",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected speaker line");
-    };
-    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+    let [FlowItem::SpeakerLine(line)] = flow_body(&tree) else {
         panic!("expected speaker line");
     };
     let plan = line.plan().expect("line plan");
@@ -932,7 +909,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parses_multiline_timed_cue_body_as_expression() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 alice[
     おはよう。[p]
@@ -943,10 +920,7 @@ with:
 ",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected content call");
-    };
-    let FlowItem::ContentCall(call) = item.as_ref() else {
+    let [FlowItem::ContentCall(call)] = flow_body(&tree) else {
         panic!("expected content call");
     };
     let plan = call.plan().expect("line plan");

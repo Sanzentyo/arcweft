@@ -216,7 +216,6 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut 
         Item::Source(source_item) => {
             lint_source_identity(source_item, source, source_attrs, lints);
         }
-        Item::FlowItem(item) => lint_flow_item_ids(item, lints),
         _ => {}
     }
 }

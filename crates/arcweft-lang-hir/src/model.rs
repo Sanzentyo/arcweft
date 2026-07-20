@@ -46,7 +46,6 @@ pub struct HirModule {
     pub(crate) declarations: Vec<HirTopLevelDecl>,
     pub(crate) style_patches: Vec<HirStylePatch>,
     pub(crate) view_parts: Vec<HirViewPartOwner>,
-    pub(crate) top_level_items: Vec<HirFlowItem>,
     pub(crate) source_map: Option<HirSourceMap>,
 }
 
@@ -460,10 +459,6 @@ impl HirModule {
     /// Owner-qualified private/public View-part declarations.
     pub fn view_parts(&self) -> &[HirViewPartOwner] {
         &self.view_parts
-    }
-
-    pub fn top_level_items(&self) -> &[HirFlowItem] {
-        &self.top_level_items
     }
 }
 

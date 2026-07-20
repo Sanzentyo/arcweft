@@ -33,18 +33,7 @@ pub(super) fn classify_top_level_item(source: &str, tokens: &[LexToken]) -> Opti
         }
         return Some(kind);
     }
-    Some(
-        if is_flow_statement_head(first_text)
-            || matches!(
-                first.kind,
-                SyntaxKind::IdentifierToken | SyntaxKind::EntityReferenceToken
-            )
-        {
-            SyntaxKind::TopLevelFlowItem
-        } else {
-            SyntaxKind::ErrorItem
-        },
-    )
+    Some(SyntaxKind::ErrorItem)
 }
 
 fn declaration_name_is_entity_reference(source: &str, tokens: &[&LexToken]) -> bool {
@@ -118,34 +107,5 @@ const fn is_trivia_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::NewlineToken
             | SyntaxKind::CommentToken
             | SyntaxKind::DocCommentToken
-    )
-}
-
-fn is_flow_statement_head(spelling: &str) -> bool {
-    matches!(
-        spelling,
-        "assert"
-            | "await"
-            | "break"
-            | "choice"
-            | "close"
-            | "continue"
-            | "defer"
-            | "for"
-            | "goto"
-            | "if"
-            | "let"
-            | "loop"
-            | "match"
-            | "on"
-            | "out"
-            | "return"
-            | "select"
-            | "signal"
-            | "thread"
-            | "unsafe"
-            | "wait"
-            | "while"
-            | "yield"
     )
 }

@@ -106,7 +106,6 @@ where
     fn visit_item(&mut self, item: &'a Item) {
         match item {
             Item::Flow(flow) => self.visit_flow_items(flow.body()),
-            Item::FlowItem(item) => self.visit_flow_item(item),
             Item::Function(function) => {
                 self.visit_stmts(function.body_statements());
                 if let Some(value) = function.body_value() {

@@ -338,12 +338,8 @@ fn collect_dialogue_line(
 fn dialogue_start_offsets(tree: &TypedSyntaxTree) -> BTreeSet<usize> {
     let mut starts = BTreeSet::new();
     for item in tree.items() {
-        match item {
-            Item::Flow(flow) => collect_dialogue_starts(flow.body(), &mut starts),
-            Item::FlowItem(item) => {
-                collect_dialogue_starts(std::slice::from_ref(item.as_ref()), &mut starts);
-            }
-            _ => {}
+        if let Item::Flow(flow) = item {
+            collect_dialogue_starts(flow.body(), &mut starts);
         }
     }
     starts

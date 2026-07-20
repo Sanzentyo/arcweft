@@ -3212,7 +3212,7 @@ flow @flow.branching branching {
 
 #[test]
 fn typecheck_readiness_rejects_raw_dialogue_expressions() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r#"
 alice[
     #[fmt("夢", color=)]を見た。[p]

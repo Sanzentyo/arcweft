@@ -151,14 +151,16 @@ fn multiline_let_dialogue_call_expr_range_slices_lf_and_crlf_source() {
 #[test]
 fn dialogue_line_options_are_structured_not_raw_args() {
     let source = r#"
-alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, view=@view.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
+flow @flow.opening opening {
+    alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, view=@view.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
+}
 "#;
     let tree = parse_ok(source);
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected speaker line");
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
     };
-    let FlowItem::SpeakerLine(line) = item.as_ref() else {
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
         panic!("expected speaker line");
     };
     let options = line.options();

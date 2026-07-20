@@ -128,14 +128,11 @@ fn policy_shaped_top_level_text_uses_ordinary_context_recovery() {
     let error = &parsed.errors()[0];
     assert_eq!(error.code(), "syntax.parse");
     assert_eq!(error.message(), "unexpected top-level item");
-    assert_eq!(
-        error.expected(),
-        ["a declaration".to_owned(), "a flow item".to_owned()]
-    );
+    assert_eq!(error.expected(), ["a declaration".to_owned()]);
     assert_eq!(error.found(), Some("policy capability host {"));
     assert_eq!(
         error.recovery()[0].message(),
-        "use a current Arcweft declaration or flow-item form"
+        "use a current Arcweft declaration form"
     );
     assert!(matches!(
         parsed.typed_tree().items(),
@@ -409,6 +406,33 @@ pub fn open_route(
         function.signature().return_type(),
         Some(TypeRef::Never)
     ));
+}
+
+#[test]
+fn function_body_comments_remain_trivia_without_expression_diagnostics() {
+    let source = r"
+fn documented_body() -> Unit {
+    // A line comment is lossless source trivia; it is not an executable statement.
+    let value = compute()
+    /*
+     * A multiline comment; remains in the lossless document too.
+     */
+    consume(value)
+}
+";
+    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    assert!(
+        parsed.errors().is_empty(),
+        "comments must not produce expression diagnostics: {:?}",
+        parsed.errors()
+    );
+    assert_eq!(parsed.syntax().to_string(), source);
+
+    let Item::Function(function) = &parsed.typed_tree().items()[0] else {
+        panic!("expected function");
+    };
+    assert_eq!(function.body_statements().len(), 1);
+    assert!(function.body_value().is_some());
 }
 
 #[test]

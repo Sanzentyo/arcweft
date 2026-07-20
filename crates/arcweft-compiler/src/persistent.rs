@@ -657,16 +657,11 @@ fn hir_body_facts(
         counts.declarations += 1;
     }
 
-    put_len(&mut shape, "top level items", hir.top_level_items().len())?;
-    counts.top_level_items = to_u64("top level items", hir.top_level_items().len())?;
-    record_hir_flow_items(hir.top_level_items(), &mut counts, &mut shape)?;
-
     Ok(HirBodyFactsObject {
         attribute_count: to_u64("hir attributes", hir.attributes().len())?,
         flow_count: counts.flows,
         function_count: counts.functions,
         declaration_count: counts.declarations,
-        top_level_item_count: counts.top_level_items,
         flow_item_count: counts.flow_items,
         statement_count: counts.statements,
         dialogue_count: counts.dialogues,
@@ -1083,7 +1078,6 @@ struct HirBodyCounts {
     flows: u64,
     functions: u64,
     declarations: u64,
-    top_level_items: u64,
     flow_items: u64,
     statements: u64,
     dialogues: u64,

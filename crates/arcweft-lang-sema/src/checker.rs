@@ -127,7 +127,6 @@ pub struct TypeCheckStats {
     pub flows: usize,
     pub functions: usize,
     pub declarations: usize,
-    pub top_level_items: usize,
     pub statements: usize,
     pub expressions: usize,
     pub judgments: usize,

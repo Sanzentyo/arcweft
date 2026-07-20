@@ -2,12 +2,9 @@ use super::support::*;
 
 #[test]
 fn stub_is_now_real_source_parser() {
-    let tree = parse_ok("alice: おはよう。[p]");
+    let tree = parse_flow_body_ok("alice: おはよう。[p]");
     assert_eq!(tree.items().len(), 1);
-    assert!(matches!(
-        &tree.items()[0],
-        Item::FlowItem(item) if matches!(item.as_ref(), FlowItem::SpeakerLine(_))
-    ));
+    assert!(matches!(flow_body(&tree), [FlowItem::SpeakerLine(_)]));
 }
 
 #[test]
@@ -217,7 +214,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parses_source_locale_block() {
-    let tree = parse_ok(
+    let tree = parse_flow_body_ok(
         r"
 source locale en-US {
     alice(id=@say.opening.alice.english_quote):
@@ -226,10 +223,7 @@ source locale en-US {
 ",
     );
 
-    let Item::FlowItem(item) = &tree.items()[0] else {
-        panic!("expected source locale block");
-    };
-    let FlowItem::SourceLocale(block) = item.as_ref() else {
+    let [FlowItem::SourceLocale(block)] = flow_body(&tree) else {
         panic!("expected source locale block");
     };
     assert_eq!(block.locale(), "en-US");

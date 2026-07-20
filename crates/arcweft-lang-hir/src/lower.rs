@@ -1,5 +1,5 @@
 use crate::entry::{HirEntryDecl, HirEntryItem};
-use crate::lower_flow::{lower_flow, lower_flow_item};
+use crate::lower_flow::lower_flow;
 use crate::model::{HirFunction, HirLowerError, HirModule, HirSource, HirTopLevelDecl};
 use crate::style::{HirStyleDecl, HirStylePatch};
 use crate::view_part::HirViewPartOwner;
@@ -75,7 +75,6 @@ struct HirLoweringState {
     declarations: Vec<HirTopLevelDecl>,
     style_patches: Vec<HirStylePatch>,
     view_parts: Vec<HirViewPartOwner>,
-    top_level_items: Vec<crate::model::HirFlowItem>,
     errors: Vec<HirLowerError>,
 }
 
@@ -93,12 +92,6 @@ impl HirLoweringState {
                 self.functions
                     .push(lower_function(function, self.module_path.clone()));
             }
-            Item::FlowItem(item) => match lower_flow_item(item) {
-                Ok(item) => {
-                    self.top_level_items.push(item);
-                }
-                Err(err) => self.errors.push(err),
-            },
             Item::Raw(raw) => {
                 self.errors.push(HirLowerError::new(
                     format!("raw top-level item cannot be lowered: {}", raw.head()),
@@ -176,7 +169,7 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::TypeAlias(item.clone()));
             }
-            Item::Flow(_) | Item::Function(_) | Item::FlowItem(_) | Item::Raw(_) => {}
+            Item::Flow(_) | Item::Function(_) | Item::Raw(_) => {}
         }
     }
 
@@ -221,7 +214,6 @@ impl HirLoweringState {
                 declarations: self.declarations,
                 style_patches: self.style_patches,
                 view_parts: self.view_parts,
-                top_level_items: self.top_level_items,
                 source_map: None,
             })
         } else {
@@ -374,6 +366,38 @@ flow @flow.opening opening {
         assert_eq!(hir.attributes()[0].name(), "generated");
         assert_eq!(hir.attributes()[0].args(), Some("tool"));
         assert!(hir.has_attribute("generated"));
+    }
+
+    #[test]
+    fn lowering_rejects_recovery_only_project_root_items() {
+        let parsed = parse_source(
+            r"
+alice: Hello[p]
+
+flow @flow.opening opening {
+    return
+}
+",
+        );
+
+        assert_eq!(parsed.errors().len(), 1);
+        assert_eq!(parsed.errors()[0].code(), "syntax.parse");
+        assert_eq!(parsed.errors()[0].message(), "unexpected top-level item");
+        assert!(matches!(
+            parsed.typed_tree().items(),
+            [
+                arcweft_lang_syntax::ast::items::Item::Raw(_),
+                arcweft_lang_syntax::ast::items::Item::Flow(_)
+            ]
+        ));
+
+        let errors =
+            lower_to_hir(parsed.typed_tree()).expect_err("recovery-only root item must not lower");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(
+            errors[0].message(),
+            "raw top-level item cannot be lowered: alice: Hello[p]"
+        );
     }
 
     #[test]

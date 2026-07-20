@@ -347,7 +347,6 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         | Item::Bench(_)
         | Item::Source(_)
         | Item::Style(_)
-        | Item::FlowItem(_)
         | Item::Raw(_) => None,
     })
 }
@@ -512,9 +511,6 @@ fn item_dialogue_option_insertion(
 ) -> Option<DialogueOptionInsertion> {
     match item {
         Item::Flow(flow) => flow_item_dialogue_option_insertion(source, flow.body(), offset),
-        Item::FlowItem(item) => {
-            flow_item_dialogue_option_insertion(source, std::slice::from_ref(item.as_ref()), offset)
-        }
         _ => None,
     }
 }
@@ -870,12 +866,6 @@ fn speaker_preset_edit_from_item(
         Item::Flow(flow) => {
             speaker_preset_edit_from_flow_items(source, flow.body(), preset_name, option)
         }
-        Item::FlowItem(item) => speaker_preset_edit_from_flow_items(
-            source,
-            std::slice::from_ref(item.as_ref()),
-            preset_name,
-            option,
-        ),
         _ => None,
     }
 }

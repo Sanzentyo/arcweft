@@ -121,7 +121,7 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
     } else if looks_like_style_item(trimmed) {
         CstTopLevelItemKind::Style
     } else {
-        CstTopLevelItemKind::FlowBodyItemOrRaw
+        CstTopLevelItemKind::Unrecognized
     }
 }
 

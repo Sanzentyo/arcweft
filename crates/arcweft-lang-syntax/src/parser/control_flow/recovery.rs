@@ -4,10 +4,12 @@ use crate::expr::{
     ExprRecoveryDiagnostic, MAX_EXPR_DIAGNOSTICS, ParsedExpr, expression_semicolon_ranges_at,
     parse_expr_fragment_recovering_at, parse_expr_fragment_recovering_with_owner_at,
 };
+use crate::grammar::kinds::SyntaxKind;
 use crate::parser::{
     AuthoredExpr, CstStmtKind, ParseError, Stmt, classify_stmt,
     collect_logical_block_items_with_base,
     helpers::{LogicalBlockItem, retain_expr_recovery_diagnostic},
+    lexer::DocumentLexer,
     raw_stmt,
     statements::parse_value_scope_stmt_recovering_with_base,
 };
@@ -23,9 +25,7 @@ pub(in crate::parser) fn parse_block_expr_recovering_with_base(
             TextRange::new(base, base),
         )
     })?;
-    let lines = collect_logical_block_items_with_base(body, base)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let lines = executable_logical_block_items(body, base)?;
     let Some((last, statements)) = lines.split_last() else {
         return Ok(ParsedExpr {
             expr: Expr::Block {
@@ -159,9 +159,13 @@ pub(in crate::parser) fn parse_scope_authored_expr_body_recovering_with_base(
             return (Vec::new(), None);
         }
     }
-    let lines = collect_logical_block_items_with_base(body, body_base)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let lines = match executable_logical_block_items(body, body_base) {
+        Ok(lines) => lines,
+        Err(error) => {
+            retain_fatal_expression_error(&error, errors);
+            return (Vec::new(), None);
+        }
+    };
     let Some((last, statements)) = lines.split_last() else {
         return (Vec::new(), None);
     };
@@ -212,6 +216,73 @@ pub(in crate::parser) fn parse_scope_authored_expr_body_recovering_with_base(
 }
 
 type RecoveredScopeBody = (Vec<Stmt>, Option<AuthoredExpr>);
+
+fn executable_logical_block_items(
+    body: &str,
+    body_base: usize,
+) -> Result<Vec<LogicalBlockItem<'_>>, ExprParseError> {
+    let tokens = DocumentLexer::new(body).lex();
+    let items = collect_logical_block_items_with_base(body, body_base);
+    let mut executable = Vec::with_capacity(items.len());
+    let mut token_cursor = 0;
+    for item in items {
+        let start = item.base.checked_sub(body_base).ok_or_else(|| {
+            ExprParseError::at(
+                "syntax.expr.invalid_scope",
+                "logical statement starts before its owner body",
+                TextRange::new(body_base, body_base),
+            )
+        })?;
+        let end = start.checked_add(item.source.len()).ok_or_else(|| {
+            ExprParseError::at(
+                "syntax.expr.offset_overflow",
+                "logical statement range overflowed",
+                TextRange::new(item.base, item.base),
+            )
+        })?;
+        if end > body.len() {
+            return Err(ExprParseError::at(
+                "syntax.expr.invalid_scope",
+                "logical statement ends outside its owner body",
+                TextRange::new(item.base, item.base),
+            ));
+        }
+        while tokens
+            .get(token_cursor)
+            .is_some_and(|token| token.range().end() <= start)
+        {
+            token_cursor += 1;
+        }
+        let mut scan = token_cursor;
+        let mut has_executable_token = false;
+        while let Some(token) = tokens.get(scan) {
+            let range = token.range();
+            if range.start() >= end {
+                break;
+            }
+            if range.end() > start
+                && !matches!(
+                    token.kind(),
+                    SyntaxKind::WhitespaceToken
+                        | SyntaxKind::NewlineToken
+                        | SyntaxKind::CommentToken
+                        | SyntaxKind::DocCommentToken
+                )
+            {
+                has_executable_token = true;
+            }
+            if range.end() > end {
+                break;
+            }
+            scan += 1;
+        }
+        token_cursor = scan;
+        if has_executable_token {
+            executable.push(item);
+        }
+    }
+    Ok(executable)
+}
 
 fn retain_semicolon_statement_prefix(
     body: &str,

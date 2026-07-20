@@ -256,7 +256,6 @@ impl SyntaxKind {
                 | Self::BenchItem
                 | Self::SourceItem
                 | Self::StyleItem
-                | Self::TopLevelFlowItem
                 | Self::ErrorItem
         )
     }

@@ -34,10 +34,6 @@ pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
     })
 }
 
-pub(crate) fn lower_flow_item(item: &FlowItem) -> Result<HirFlowItem, HirLowerError> {
-    lower_flow_item_with_context(item, &mut LowerContext::default())
-}
-
 pub(crate) fn lower_flow_item_with_context(
     item: &FlowItem,
     context: &mut LowerContext,

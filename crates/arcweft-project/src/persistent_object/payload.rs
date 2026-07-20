@@ -87,7 +87,6 @@ pub struct HirBodyFactsObject {
     pub flow_count: u64,
     pub function_count: u64,
     pub declaration_count: u64,
-    pub top_level_item_count: u64,
     pub flow_item_count: u64,
     pub statement_count: u64,
     pub dialogue_count: u64,

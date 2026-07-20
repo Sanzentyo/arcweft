@@ -403,9 +403,6 @@ impl<'a> SemanticAnalyzer<'a> {
         for function in module.functions() {
             self.collect_function(function);
         }
-        let top_level =
-            self.analyze_flow_items(module.top_level_items(), vec![FlowFacts::default()]);
-        self.finish_block_flow(top_level, ExitReason::Completed);
     }
 
     fn collect_declarations(&mut self, module: &HirModule) {

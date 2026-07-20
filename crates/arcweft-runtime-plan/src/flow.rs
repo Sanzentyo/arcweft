@@ -601,11 +601,6 @@ pub(crate) fn lower_runtime_flows(
         .enumerate()
         .map(|(index, flow)| lowerer.lower_flow(index, flow))
         .collect::<Vec<_>>();
-    if !module.top_level_items().is_empty() {
-        lowerer.errors.push(RuntimePlanLowerError::new(
-            "top-level flow items are not executable by the flow runtime yet",
-        ));
-    }
     if lowerer.errors.is_empty() {
         Ok(LoweredRuntimeFlows {
             flows,

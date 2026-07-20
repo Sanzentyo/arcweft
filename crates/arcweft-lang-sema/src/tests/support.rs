@@ -65,6 +65,30 @@ pub(super) fn parse_errors(source: impl Into<String>) -> Vec<ParseError> {
     parsed.errors().to_vec()
 }
 
+pub(super) fn flow_source(body: &str) -> String {
+    let mut source = String::from("flow fixture {\n");
+    for line in body.lines() {
+        source.push_str("    ");
+        source.push_str(line);
+        source.push('\n');
+    }
+    source.push_str("}\n");
+    source
+}
+
+pub(super) fn parse_flow_body_ok(
+    body: impl AsRef<str>,
+) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+    parse_ok(flow_source(body.as_ref()))
+}
+
+pub(super) fn flow_body(tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree) -> &[FlowItem] {
+    let [Item::Flow(flow)] = tree.items() else {
+        panic!("expected one flow declaration");
+    };
+    flow.body()
+}
+
 pub(super) fn variant_tuple_binding(pattern: &Pattern, variant: &str, binding: &str) -> bool {
     matches!(
         pattern,

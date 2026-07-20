@@ -106,7 +106,7 @@ impl ContractClause {
     }
 }
 
-/// Syntax allowed in a `flow` body and in top-level scenario snippets.
+/// Syntax allowed in an authored `flow` body and nested flow-bearing constructs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FlowItem {
     Stmt(Stmt),

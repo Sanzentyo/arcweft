@@ -64,9 +64,6 @@ pub fn collect_symbol_uses(module: &HirModule) -> Vec<SymbolUse> {
     for declaration in module.declarations() {
         collect_top_level_decl(declaration, &mut uses);
     }
-    for item in module.top_level_items() {
-        collect_flow_item(item, &mut uses);
-    }
     uses
 }
 

@@ -3,7 +3,7 @@ use crate::types::{FnSignature, GenericParam, TypeRef, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
 use super::dialogue::DialogueDefaultsItem;
-use super::flow::{AuthoredExpr, ContractClause, Flow, FlowItem, Stmt};
+use super::flow::{AuthoredExpr, ContractClause, Flow, Stmt};
 use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem};
 use super::source::SourceItem;
@@ -43,15 +43,13 @@ pub enum Item {
     Bench(BenchItem),
     Source(SourceItem),
     Style(StyleDecl),
-    FlowItem(Box<FlowItem>),
     Raw(RawItem),
 }
 
-/// Raw top-level item preserved for grammar families not lowered yet.
+/// Generic recovery-only top-level item that is never executable or lowered.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RawItem {
     head: String,
-    body: Option<String>,
     range: TextRange,
 }
 
@@ -161,7 +159,6 @@ impl Item {
             Self::Source(item) => Some(*item.range()),
             Self::Style(item) => Some(*item.range()),
             Self::Raw(item) => Some(*item.range()),
-            Self::FlowItem(_) => None,
         }
     }
 }
@@ -185,16 +182,12 @@ impl Attribute {
 }
 
 impl RawItem {
-    pub(crate) const fn new(head: String, body: Option<String>, range: TextRange) -> Self {
-        Self { head, body, range }
+    pub(crate) const fn new(head: String, range: TextRange) -> Self {
+        Self { head, range }
     }
 
     pub fn head(&self) -> &str {
         &self.head
-    }
-
-    pub fn body(&self) -> Option<&str> {
-        self.body.as_deref()
     }
 
     pub const fn range(&self) -> &TextRange {

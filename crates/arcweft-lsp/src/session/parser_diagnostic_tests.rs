@@ -52,6 +52,41 @@ fn editless_missing_as_parser_suggestion_does_not_create_a_workspace_edit() {
     );
 }
 
+#[test]
+fn project_root_recovery_diagnostic_has_no_executable_code_action() {
+    let uri = "file:///bare-flow-item.arcw".parse::<Uri>().expect("uri");
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    let open = Notification::new(
+        DidOpenTextDocument::METHOD.to_owned(),
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "arcweft".to_owned(),
+                version: 1,
+                text: "alice: hello\npub character bob {}\n".to_owned(),
+            },
+        },
+    );
+    session
+        .handle_notification(open)
+        .expect("open bare flow item source");
+
+    let actions = session
+        .code_actions(&CodeActionParams {
+            text_document: TextDocumentIdentifier { uri },
+            range: Range::new(Position::new(0, 0), Position::new(0, 12)),
+            context: CodeActionContext::default(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        })
+        .expect("bare flow item code actions");
+
+    assert!(
+        actions.is_empty(),
+        "project-root recovery received an executable action: {actions:?}"
+    );
+}
+
 fn workspace_edit_replacements(action: &lsp_types::CodeAction) -> Vec<String> {
     let Some(edit) = action.edit.as_ref() else {
         return Vec::new();

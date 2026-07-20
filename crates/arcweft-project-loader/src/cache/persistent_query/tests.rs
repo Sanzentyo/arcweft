@@ -200,7 +200,6 @@ fn hir_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
             flow_count: 1,
             function_count: 0,
             declaration_count: 0,
-            top_level_item_count: 1,
             flow_item_count: 1,
             statement_count: 0,
             dialogue_count: 0,

@@ -86,13 +86,8 @@ pub(crate) fn effective_dialogue_cascade_at(
 fn collect_syntax_dialogue_ranges(items: &[Item]) -> Vec<TextRange> {
     let mut ranges = Vec::new();
     for item in items {
-        match item {
-            Item::Flow(flow) => collect_syntax_dialogue_ranges_from_flow(flow.body(), &mut ranges),
-            Item::FlowItem(item) => collect_syntax_dialogue_ranges_from_flow(
-                std::slice::from_ref(item.as_ref()),
-                &mut ranges,
-            ),
-            _ => {}
+        if let Item::Flow(flow) = item {
+            collect_syntax_dialogue_ranges_from_flow(flow.body(), &mut ranges);
         }
     }
     ranges
@@ -147,7 +142,6 @@ fn collect_dialogues(module: &HirModule) -> Vec<&HirDialogue> {
     for flow in module.flows() {
         collect_flow_item_dialogues(flow.body(), &mut dialogues);
     }
-    collect_flow_item_dialogues(module.top_level_items(), &mut dialogues);
     dialogues
 }
 
@@ -170,9 +164,6 @@ pub(crate) fn style_path_at(items: &[Item], offset: usize) -> Option<String> {
             .find(|assignment| range_contains(assignment.range(), offset))
             .map(|assignment| assignment.path().dotted()),
         Item::Flow(flow) => style_path_from_flow_items(flow.body(), offset),
-        Item::FlowItem(item) => {
-            style_path_from_flow_items(std::slice::from_ref(item.as_ref()), offset)
-        }
         _ => None,
     })
 }

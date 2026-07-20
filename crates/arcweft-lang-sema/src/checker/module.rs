@@ -329,7 +329,6 @@ impl TypeChecker<'_> {
         self.stats.flows += module.flows().len();
         self.stats.functions += module.functions().len();
         self.stats.declarations += module.declarations().len();
-        self.stats.top_level_items += module.top_level_items().len();
 
         if let Err(errors) = validate_typecheck_ready(module) {
             self.errors.extend(
@@ -361,7 +360,6 @@ impl TypeChecker<'_> {
         }
         self.locals.clear();
         self.reset_semantic_root_scope(None);
-        self.check_flow_items(module.top_level_items());
     }
 
     fn check_module_flows(&mut self, flows: &[HirFlow]) {

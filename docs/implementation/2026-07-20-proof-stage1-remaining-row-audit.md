@@ -26,8 +26,12 @@ opposite problem: they require a final typed private grammar without being
 collapsed into `res`. That missing contract is now isolated as
 [Proof 01.1.1.2 retained global-identity declaration grammar reconciliation](../reviews/requests/2026-07-20-seq-proof-01.1.1.2-retained-global-identity-declaration-grammar-reconciliation.md).
 
-This is an evidence audit only.  It changes no parser, CST, public AST, HIR,
-or runtime contract.
+This document began as an evidence-only audit. The regular-project
+top-level-statement row was subsequently implemented; its source changes,
+fixture migration, interactive boundary, and validation evidence are recorded
+in
+[Regular-project top-level statement removal](2026-07-20-regular-project-top-level-statement-removal.md).
+The other rows remain audit findings rather than implementation claims.
 
 ## Row matrix
 
@@ -38,7 +42,7 @@ or runtime contract.
 | live `source` | `item.rs` recognizes `SourceItem`; the accepted private document grammar does not model it as a typed descendant. | Lang 01.3.1 fixes the destination as ordinary `fn -> Stream<T, E>` and removes both the keyword and `Source<T, E>`.  Lang 01.3.1.2.1 records unresolved mutually inconsistent callable, instance, replay, policy, save/AWBC, and adapter-wire shapes. | Do not add a private `SourceItem` shadow node.  It would commit an obsolete surface just before its removal.  Wait for the corrected typed Stream runtime/wire contract. |
 | configured resource families | Lang 01.4 Cut 1a already provides the sole private `res` grammar: typed nominal head, explicit ref, fields, diagnostics, and recovery. | Lang 01.4 replaces only `image`, `voice`, `voice profile`, `se`, `bgm`, `audio bus`, `mixer snapshot`, `ducking`, `motion`, and `rig`. Its public AST/HIR/registry/runtime migration remains open. | The private `res` Stage 1 row is complete. Do not add parallel shadow nodes for those configured-resource family keywords. |
 | retained global identity declarations | The public AST still accepts `EntityDeclKind::{Asset, Character, View, Action, Activity, Signal, Metric, Layer}`. The private `item.rs` has no declaration classifier for those heads, so they fall through the generic top-level path rather than owning typed declaration descendants. | The top-level reduction keeps dedicated declarations when they own stable global identity, an execution/host boundary, or a dedicated body. Lang 01.4 says `res` is not an owner for assets, actions, or other unrelated identity-bearing declarations. | Stage 1 is not complete for these rows. Do not force them into `res` and do not freeze the current stringly `EntityDeclItem` as the final grammar. A final typed grammar/ownership reconciliation is still required. |
-| regular-project top-level statements | The private inventory still exposes `TopLevelFlowItem`, and the public AST still exposes `Item::FlowItem`. | The top-level reduction requires ordinary project source to contain declarations only; REPL/script execution is a separate dialect/owner. | This is deletion work, not a new grammar row. Remove it end to end with fixture migration and ordinary current-grammar recovery; do not retain a removed-spelling diagnostic or compatibility dialect in the project parser. |
+| regular-project top-level statements | **Implemented.** `TopLevelFlowItem`, public `Item::FlowItem`, HIR root executable items, downstream consumers, and persistent counts are removed. Bare flow text uses generic recovery and fixtures have explicit owners. | Ordinary project source is declaration-only. REPL statement fragments remain separately owned and no script dialect was added. See [the implementation note](2026-07-20-regular-project-top-level-statement-removal.md). | Complete. No removed-spelling diagnostic, compatibility dialect, dual reader, or source gate remains. |
 
 ## Why no Stage 2 implementation can start independently
 
@@ -72,14 +76,14 @@ Rust implementation cut:
 | Proof v6.1.1 stage | Status at this audit | Direct repository evidence |
 | --- | --- | --- |
 | Stage 0 — baseline and final enum/event substrate | **Implemented** | `grammar/{kinds,event,build,budget}.rs`, syntax/HIR limit enums, `SyntheticRole`, `AssertionMode::is_runtime_capable`, and callable-owner policy methods; completion evidence is in `2026-07-16-proof-concurrency-v6-1-1-stage-0-event-builder.md`. Later View and extern-capability work legitimately extends the callable-owner enum and must not be deleted to recreate the package-era inventory. |
-| Stage 1 — private one-pass lossless grammar | **Partial; gate not met** | Structured private descendants exist for module/use, flow, ordinary function, predicate/proof, nominal types, trait/impl, `res`, entry, extern capability, test/bench, and Style, plus shared statement/expression/type/pattern families. The obsolete wrappers and retained-identity rows above remain unresolved. |
+| Stage 1 — private one-pass lossless grammar | **Partial; gate not met** | Structured private descendants exist for module/use, flow, ordinary function, predicate/proof, nominal types, trait/impl, `res`, entry, extern capability, test/bench, and Style, plus shared statement/expression/type/pattern families. Regular-project top-level statements are removed. The remaining obsolete wrappers and retained-identity rows above remain unresolved. |
 | Stage 2 — private grammar reconciliation and typed attachment | **Not started** | `GrammarBuild` still exposes an `UnattachedGrammarIndex`. The production incremental database still assigns `SyntaxNodeId(NonZeroU64)` to the old CST and has no `SyntaxDatabaseId`, `SyntaxLineageId`, snapshot-owned `AstNode<K>`, attachment table, or typed round trip. |
 | Stage 3 — atomic public syntax switch | **Not started** | Public `TypedSyntaxTree` owns a source `String` and `Vec<Item>`; public `ParsedSource` still separately owns the old Rowan tree and detached typed tree. Compiler/HIR callers consume `typed_tree()`. |
 | Stage 4 — final predicate/proof surface and exact `ProofBlock` | **Private shadow only** | The private parser covers ordinary-name predicate/proof headers, bodies, recovery, and limits. Public `ProofItem` still owns `IdRef`, raw `body: String`, and `Vec<ProofClause>` and stable proof documentation still shows the provisional entity-ID form. Trusted-proof policy is implemented, but it remains attached to the provisional public proof representation until this switch. |
 | Stage 5 — private `HirDatabase`, arenas, scopes, locals, captures | **Identity vocabulary only** | Module-qualified typed ID, limit, and synthetic-role enums exist. There is no `HirDatabase`, immutable paged arena/module snapshot implementation, liveness ledger, final scope/local/capture arenas, or direct attached-node lowering. |
 | Stage 6 — atomic HIR/project/symbol switch | **Not started beyond reusable symbol substrate** | `HirModule` remains a `Vec`/clone model that stores syntax values. `lower_to_hir(&TypedSyntaxTree)`, `HirProject::linked_module`, and `HirModule::append_module_body` remain. `ProjectSymbolTable` exists and owns later View/extern-capability callables, but current registration iterates ordinary functions only; predicate/proof registration and `ProofArtifactId` are absent. |
 | Stage 7 — runtime assertion identity/persistence boundary | **Policy substrate only** | Check/Debug/Prove disposition and release omission exist. Core `RuntimeAssertion` still has only public `condition`, `message`, and `profile` fields; guard/fingerprint newtypes, condition index, session inventory/fault identity, execution diagnostic context, and the atomic codec migration are absent. |
-| Stage 8 — migration, deletion, docs, tests, structural closure | **Partial cleanup only** | Borrow-block, hook, memo, parser, separate trusted-axiom, state, reducer, and Agent declaration removals are complete or supersede package-era rows. Provisional proof, detached AST, clone/linked HIR, obsolete metadata/source/function/resource paths, public callers, final direct/compile-fail suites, and final structural evidence remain. |
+| Stage 8 — migration, deletion, docs, tests, structural closure | **Partial cleanup only** | Borrow-block, hook, memo, parser, separate trusted-axiom, state, reducer, Agent declaration, and regular-project top-level-statement removals are complete or supersede package-era rows. Provisional proof, detached AST, clone/linked HIR, obsolete metadata/source/function/resource paths, public callers, final direct/compile-fail suites, and final structural evidence remain. |
 
 On a stage-gate basis, the original package is approximately **25–30%**
 complete. After removing rows that later user decisions deliberately
@@ -127,8 +131,8 @@ boundary work.
    Stage 2.
 4. Complete
    [Proof 01.1.1.2 retained global-identity declaration grammar reconciliation](../reviews/requests/2026-07-20-seq-proof-01.1.1.2-retained-global-identity-declaration-grammar-reconciliation.md),
-   implement its private rows, and remove regular-project top-level
-   statements.
+   and implement its private rows. Regular-project top-level statements were
+   removed independently in the completed deletion cut.
 5. Re-run the complete reduced Stage 1 inventory gate. Only then begin private
    Stage 2 grammar-node reconciliation and snapshot-owned typed attachment.
 

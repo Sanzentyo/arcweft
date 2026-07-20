@@ -31,6 +31,13 @@ attribute opener; it is not a comment introducer and not an entity-ref sigil.
 the next documentable declaration or field. Scenario operations such as
 background changes are ordinary effectful function calls, not `@` commands.
 
+Regular `.arcw` and `.awfagent` project documents contain declarations at the
+top level. Dialogue, choice, control-flow, and ordinary statements belong
+inside an owning declaration such as `flow` or `fn`. Unrecognized top-level
+text is generic recovery only and never lowers or executes. Interactive REPL
+statement fragments are a separate parser entrypoint; Arcweft does not define
+a second project-file script dialect.
+
 `RelativeId` is accepted only in ID-bearing contexts such as dialogue line IDs,
 choice IDs, option IDs, and text-key overrides. ID-bearing contexts may also
 accept family-relative spelling such as `@say:.greeting` or `@choice:.first`,
