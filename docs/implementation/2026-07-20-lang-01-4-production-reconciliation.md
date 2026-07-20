@@ -5,9 +5,12 @@
 Lang-01.4 is partially implemented. The final private `res` shadow grammar is
 complete and recorded in
 [`2026-07-17-lang-01-4-typed-resource-shadow-grammar-cut-1a.md`](2026-07-17-lang-01-4-typed-resource-shadow-grammar-cut-1a.md).
-The public AST/HIR/sema/tooling switch, descriptor registry, bundle/resource
-directory, family lowering, source migration, and old-family deletion remain
-open.
+The generic semantic identity, typed constant, descriptor, deterministic
+digest, and immutable registry substrate is complete and recorded in
+[`2026-07-20-lang-01-4-generic-resource-registry-substrate-cut-2a.md`](2026-07-20-lang-01-4-generic-resource-registry-substrate-cut-2a.md).
+Built-in descriptors, strict extension-manifest decode, accepted-world
+attachment, the public AST/HIR/sema/tooling switch, bundle/resource directory,
+family lowering, source migration, and old-family deletion remain open.
 
 This audit compares the implementation-ready package
 `arcweft-lang-01.4-typed-resource-final-contract-a8403dcb.zip` with current
@@ -47,7 +50,10 @@ silently weaken `ResourceRef<T>` into a generic entity reference. Neither
 outcome is compatible with the package's own identity, directory, save, and
 exact-type rules.
 
-The required correction is isolated in:
+The retained-reference correction has returned and its production work is
+tracked in
+[`2026-07-20-lang-01-4-1-retained-identity-wip.md`](2026-07-20-lang-01-4-1-retained-identity-wip.md).
+The original independently throwable requests remain:
 
 - [Lang-01.4.1 resource-reference and retained-identity schema contract
   correction](../reviews/requests/2026-07-20-lang-01.4.1-resource-reference-and-retained-identity-schema-contract-correction.md).
@@ -60,14 +66,6 @@ the exact wire tags, scalar encodings, duplicate and unknown-field rules,
 canonical serialization, or nested diagnostic ranges. The public decoder and
 encoder therefore remain outside the safe implementation boundary until
 Lang-01.4.2 returns. This does not block the generic semantic registry.
-- [Lang-01.4.2 resource extension manifest wire-contract
-  correction](../reviews/requests/2026-07-20-lang-01.4.2-resource-extension-manifest-wire-contract-correction.md).
-
-Lang-01.4 names the neutral extension manifest and requires tagged structural
-records, but does not fix an exact independently decodable file shape. The
-generic in-memory registry can proceed; strict extension decode waits for
-Lang-01.4.2 rather than inventing tag names, scalar encodings, package
-coordinates, or a second manifest reader.
 
 The TTS-specific Character/provider portion must consume
 AW-AH-009.4.1.2 rather than independently selecting a competing speaker

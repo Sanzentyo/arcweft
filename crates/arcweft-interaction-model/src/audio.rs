@@ -121,7 +121,7 @@ impl AudioDispatchId {
 }
 
 /// Signed gain in thousandths of one decibel.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(try_from = "i32", into = "i32")]
 pub struct GainDbMilli(i32);
 
@@ -175,7 +175,7 @@ impl From<GainDbMilli> for i32 {
 }
 
 /// Stereo pan in thousandths: `-1000` is left, `0` center, `1000` right.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(try_from = "i16", into = "i16")]
 pub struct PanMilli(i16);
 

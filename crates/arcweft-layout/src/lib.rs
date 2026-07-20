@@ -126,7 +126,7 @@ pub struct HitTestMapping {
 }
 
 /// Unit accepted by shared layout length expressions.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LayoutUnit {
     Px,

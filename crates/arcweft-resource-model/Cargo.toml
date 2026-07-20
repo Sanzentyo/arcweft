@@ -1,0 +1,22 @@
+[package]
+name = "arcweft-resource-model"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-core = { path = "../arcweft-core" }
+arcweft-id = { path = "../arcweft-id" }
+arcweft-interaction-model.workspace = true
+arcweft-layout.workspace = true
+arcweft-manifest-model.workspace = true
+arcweft-source = { path = "../arcweft-source" }
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

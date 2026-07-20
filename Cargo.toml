@@ -22,6 +22,7 @@ members = [
     "crates/arcweft-host-adapter",
     "crates/arcweft-dialogue",
     "crates/arcweft-id",
+    "crates/arcweft-resource-model",
     "crates/arcweft-character",
     "crates/arcweft-character-psd",
     "crates/arcweft-character-view",
@@ -131,6 +132,7 @@ arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
 arcweft-content-policy = { path = "crates/arcweft-content-policy" }
 arcweft-agent-policy = { path = "crates/arcweft-agent-policy" }
 arcweft-manifest-model = { path = "crates/arcweft-manifest-model" }
+arcweft-resource-model = { path = "crates/arcweft-resource-model" }
 arcweft-adapter-metadata = { path = "crates/arcweft-adapter-metadata" }
 anstream = "1.0.0"
 anstyle = "1.0.14"
