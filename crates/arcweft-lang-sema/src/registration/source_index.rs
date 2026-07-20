@@ -18,9 +18,12 @@ use arcweft_character::{
 };
 use arcweft_lang_hir::symbol::{ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId};
 use arcweft_source::{
-    SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceRange, SourceSetRevision,
-    SourceSpan,
+    SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceRange, SourceRevision,
+    SourceSetRevision, SourceSetRevisionError, SourceSpan,
 };
+
+#[cfg(test)]
+mod tests;
 
 /// Inclusive production bounds for character definition indexing and queries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -354,15 +357,17 @@ impl CharacterDefinitionIndex {
         symbols: &ProjectSymbolTable,
         environment: &RegisteredTypeCheckEnv,
     ) -> Result<Self, CharacterDefinitionIndexBuildReport> {
-        Self::try_build_with_limits(
+        IndexBuilder::new(
             facts,
             symbols,
             environment,
             CharacterDefinitionLimits::PRODUCTION,
         )
+        .build()
     }
 
-    fn try_build_with_limits(
+    #[cfg(test)]
+    pub(super) fn try_build_with_limits(
         facts: &ProjectRegistrationFacts,
         symbols: &ProjectSymbolTable,
         environment: &RegisteredTypeCheckEnv,
@@ -390,6 +395,13 @@ pub enum CharacterDefinitionIndexBuildError {
         id: SourceDocumentId,
         first: SourceDocumentIdentity,
         conflicting: SourceDocumentIdentity,
+    },
+    ConflictingSourceRevision {
+        id: SourceDocumentId,
+        first_revision: SourceRevision,
+        first_len: u64,
+        conflicting_revision: SourceRevision,
+        conflicting_len: u64,
     },
     Projection {
         descriptor: CharacterSymbolDescriptor,
@@ -453,7 +465,9 @@ impl CharacterDefinitionIndexBuildError {
             Self::StaleWorld { .. } => CharacterDefinitionIndexCode::StaleWorld,
             Self::StaleSymbolRevision { .. } => CharacterDefinitionIndexCode::StaleSymbolRevision,
             Self::MissingDocument { .. } => CharacterDefinitionIndexCode::MissingDocument,
-            Self::ConflictingDocument { .. } => CharacterDefinitionIndexCode::ConflictingDocument,
+            Self::ConflictingDocument { .. } | Self::ConflictingSourceRevision { .. } => {
+                CharacterDefinitionIndexCode::ConflictingDocument
+            }
             Self::Projection { error, .. } => match error {
                 CharacterManifestDeclarationError::MissingToken { .. } => {
                     CharacterDefinitionIndexCode::MissingToken
@@ -500,13 +514,42 @@ impl CharacterDefinitionIndexBuildReport {
     fn new(mut errors: Vec<CharacterDefinitionIndexBuildError>, maximum: u64) -> Self {
         errors.sort();
         errors.dedup();
-        let maximum = usize::try_from(maximum).unwrap_or(usize::MAX);
-        let omitted_errors =
-            u64::try_from(errors.len().saturating_sub(maximum)).unwrap_or(u64::MAX);
-        errors.truncate(maximum);
+        let Ok(error_count) = u64::try_from(errors.len()) else {
+            return Self::arithmetic_overflow(maximum);
+        };
+        let omitted_errors = if error_count > maximum {
+            let Some(omitted_errors) = error_count.checked_sub(maximum) else {
+                return Self::arithmetic_overflow(maximum);
+            };
+            omitted_errors
+        } else {
+            0
+        };
+        if omitted_errors != 0 {
+            let Ok(maximum) = usize::try_from(maximum) else {
+                return Self::arithmetic_overflow(maximum);
+            };
+            errors.truncate(maximum);
+        }
         Self {
             errors,
             omitted_errors,
+        }
+    }
+
+    fn arithmetic_overflow(maximum: u64) -> Self {
+        if maximum == 0 {
+            Self {
+                errors: Vec::new(),
+                omitted_errors: 1,
+            }
+        } else {
+            Self {
+                errors: vec![CharacterDefinitionIndexBuildError::ArithmeticOverflow {
+                    counter: CharacterDefinitionLimitKind::Diagnostics,
+                }],
+                omitted_errors: 0,
+            }
         }
     }
 
@@ -574,21 +617,7 @@ impl<'a> IndexBuilder<'a> {
             }
         }
 
-        if !self.build_exhausted {
-            let expected = descriptors_from_environment(self.environment);
-            let actual = self.declarations.keys().cloned().collect::<BTreeSet<_>>();
-            for _ in &actual {
-                if !self.charge_work(1) {
-                    break;
-                }
-            }
-            if !self.build_exhausted && expected != actual {
-                self.record_error(CharacterDefinitionIndexBuildError::DescriptorSetMismatch {
-                    missing: expected.difference(&actual).cloned().collect(),
-                    unexpected: actual.difference(&expected).cloned().collect(),
-                });
-            }
-        }
+        self.audit_descriptor_inventory();
 
         if !self.errors.is_empty() {
             return Err(CharacterDefinitionIndexBuildReport::new(
@@ -623,10 +652,12 @@ impl<'a> IndexBuilder<'a> {
             ));
         }
 
-        let source_revision = SourceSetRevision::try_for_identities(
-            self.documents.values().map(|document| document.identity()),
-        )
-        .expect("admitted source documents have unique exact identities");
+        let Some(source_revision) = self.source_revision() else {
+            return Err(CharacterDefinitionIndexBuildReport::new(
+                self.errors,
+                self.limits.diagnostics,
+            ));
+        };
         let declarations = self
             .declarations
             .into_iter()
@@ -645,6 +676,63 @@ impl<'a> IndexBuilder<'a> {
             declarations,
             members,
         })
+    }
+
+    fn audit_descriptor_inventory(&mut self) {
+        if self.build_exhausted {
+            return;
+        }
+        let expected = descriptors_from_environment(self.environment);
+        let actual = self.declarations.keys().cloned().collect::<BTreeSet<_>>();
+        for _ in &actual {
+            if !self.charge_work(1) {
+                return;
+            }
+        }
+        if expected != actual {
+            self.record_error(CharacterDefinitionIndexBuildError::DescriptorSetMismatch {
+                missing: expected.difference(&actual).cloned().collect(),
+                unexpected: actual.difference(&expected).cloned().collect(),
+            });
+        }
+    }
+
+    fn record_source_revision_error(&mut self, error: SourceSetRevisionError) {
+        let error = match error {
+            SourceSetRevisionError::ConflictingDocument {
+                id,
+                first_revision,
+                first_len,
+                conflicting_revision,
+                conflicting_len,
+            } => CharacterDefinitionIndexBuildError::ConflictingSourceRevision {
+                id,
+                first_revision,
+                first_len,
+                conflicting_revision,
+                conflicting_len,
+            },
+            SourceSetRevisionError::DocumentCountOverflow
+            | SourceSetRevisionError::DocumentIdLengthOverflow { .. } => {
+                CharacterDefinitionIndexBuildError::ArithmeticOverflow {
+                    counter: CharacterDefinitionLimitKind::Documents,
+                }
+            }
+        };
+        self.record_error(error);
+    }
+
+    fn source_revision(&mut self) -> Option<SourceSetRevision> {
+        let revision = SourceSetRevision::try_for_identities(
+            self.documents.values().map(|document| document.identity()),
+        );
+        match revision {
+            Ok(revision) => Some(revision),
+            Err(error) => {
+                self.record_source_revision_error(error);
+                None
+            }
+        }
     }
 
     fn audit_world(&mut self) {
@@ -737,58 +825,86 @@ impl<'a> IndexBuilder<'a> {
         if !self.charge_work(1) {
             return;
         }
-        let is_new = !self.declarations.contains_key(&descriptor);
-        if is_new {
-            let observed = u64::try_from(self.declarations.len())
-                .ok()
-                .and_then(|count| count.checked_add(1));
-            let Some(observed) = observed else {
-                self.record_error(CharacterDefinitionIndexBuildError::ArithmeticOverflow {
-                    counter: CharacterDefinitionLimitKind::Descriptors,
-                });
-                return;
-            };
-            if observed > self.limits.descriptors {
-                self.record_error(CharacterDefinitionIndexBuildError::Limit {
-                    kind: CharacterDefinitionLimitKind::Descriptors,
-                    observed,
-                    maximum: self.limits.descriptors,
-                });
-                return;
-            }
+        if !self.can_admit_descriptor(&descriptor) {
+            return;
         }
-
-        let (token_path, token) = match manifest.declaration_token(&descriptor) {
-            Ok(projected) => projected,
-            Err(error) => {
-                self.record_error(CharacterDefinitionIndexBuildError::Projection {
-                    descriptor,
-                    source: manifest.source_map().document().clone(),
-                    error,
-                });
-                return;
-            }
+        let Some(source) = self.project_declaration_source(manifest, &descriptor) else {
+            return;
         };
-        let source = CharacterDeclarationSource {
-            token_path,
-            value_span: token.value().clone(),
-            selection_span: token
-                .string_content()
-                .expect("declaration_token requires a JSON string")
-                .clone(),
+        let identity = manifest.source_map().document();
+        let Some(document) = self.documents.get(identity.id()) else {
+            self.record_error(CharacterDefinitionIndexBuildError::MissingDocument {
+                identity: identity.clone(),
+            });
+            return;
         };
-        if let Err(error) = validate_declaration_source(
-            &descriptor,
-            manifest.source_map().document(),
-            self.documents
-                .get(manifest.source_map().document().id())
-                .expect("manifest document was admitted"),
-            &source,
-        ) {
+        if let Err(error) = validate_declaration_source(&descriptor, identity, document, &source) {
             self.record_error(*error);
             return;
         }
+        self.store_declaration_source(descriptor, source);
+    }
 
+    fn can_admit_descriptor(&mut self, descriptor: &CharacterSymbolDescriptor) -> bool {
+        if self.declarations.contains_key(descriptor) {
+            return true;
+        }
+        let observed = u64::try_from(self.declarations.len())
+            .ok()
+            .and_then(|count| count.checked_add(1));
+        let Some(observed) = observed else {
+            self.record_error(CharacterDefinitionIndexBuildError::ArithmeticOverflow {
+                counter: CharacterDefinitionLimitKind::Descriptors,
+            });
+            return false;
+        };
+        if observed > self.limits.descriptors {
+            self.record_error(CharacterDefinitionIndexBuildError::Limit {
+                kind: CharacterDefinitionLimitKind::Descriptors,
+                observed,
+                maximum: self.limits.descriptors,
+            });
+            return false;
+        }
+        true
+    }
+
+    fn project_declaration_source(
+        &mut self,
+        manifest: &SourceBackedCharacterManifest,
+        descriptor: &CharacterSymbolDescriptor,
+    ) -> Option<CharacterDeclarationSource> {
+        let (token_path, token) = match manifest.declaration_token(descriptor) {
+            Ok(projected) => projected,
+            Err(error) => {
+                self.record_error(CharacterDefinitionIndexBuildError::Projection {
+                    descriptor: descriptor.clone(),
+                    source: manifest.source_map().document().clone(),
+                    error,
+                });
+                return None;
+            }
+        };
+        let Some(selection_span) = token.string_content().cloned() else {
+            self.record_error(CharacterDefinitionIndexBuildError::NonStringDeclaration {
+                descriptor: descriptor.clone(),
+                path: token_path,
+                source: manifest.source_map().document().clone(),
+            });
+            return None;
+        };
+        Some(CharacterDeclarationSource {
+            token_path,
+            value_span: token.value().clone(),
+            selection_span,
+        })
+    }
+
+    fn store_declaration_source(
+        &mut self,
+        descriptor: CharacterSymbolDescriptor,
+        source: CharacterDeclarationSource,
+    ) {
         let existing = self.declarations.get(&descriptor);
         if let Some(first) = existing.into_iter().flatten().find(|first| {
             first.token_path == source.token_path
@@ -981,14 +1097,33 @@ fn validate_declaration_source(
             reason: CharacterDefinitionSpanError::SelectionOutsideValue,
         }));
     }
-    if value.end().saturating_sub(value.start()) < 2
-        || selection != SourceRange::new(value.start() + 1, value.end() - 1)
-    {
+    let Some(value_width) = value.end().checked_sub(value.start()) else {
         return Err(Box::new(CharacterDefinitionIndexBuildError::InvalidSpan {
+            descriptor: descriptor.clone(),
+            span: source.value_span().clone(),
+            reason: CharacterDefinitionSpanError::Reversed,
+        }));
+    };
+    let expected_selection = value
+        .start()
+        .checked_add(1)
+        .zip(value.end().checked_sub(1))
+        .map(|(start, end)| SourceRange::new(start, end));
+    let invalid_selection = || {
+        Box::new(CharacterDefinitionIndexBuildError::InvalidSpan {
             descriptor: descriptor.clone(),
             span: source.selection_span().clone(),
             reason: CharacterDefinitionSpanError::SelectionIncludesQuote,
-        }));
+        })
+    };
+    if value_width < 2 {
+        return Err(invalid_selection());
+    }
+    let Some(expected_selection) = expected_selection else {
+        return Err(invalid_selection());
+    };
+    if selection != expected_selection {
+        return Err(invalid_selection());
     }
     Ok(())
 }
