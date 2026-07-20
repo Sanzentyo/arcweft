@@ -430,8 +430,10 @@ Current focused evidence:
   now discovers the containing manifest for its canonical project-owned
   asset/content/local-state roots and reuses the matching automatic game
   profile. It compiles, encodes, and writes the bundle without the former
-  missing-image-asset or missing-entry failure. The later native View-handler
-  `submit` rejection is an independent retained-View contract mismatch;
+  missing-image-asset or missing-entry failure. The independent duplicate
+  native View-handler `submit` projection was subsequently removed at its
+  owner; the exact command now reaches and keeps the native player window
+  alive without a diagnostic;
 - missing authored Image assets now produce
   `bundle.image.missing_asset_reference` through the shared structured
   diagnostic emitter with the parser-owned declaration-ID span and a primary
@@ -441,8 +443,7 @@ Current focused evidence:
 - the structural audit completed over 3,383 files / 1,747 Rust files /
   807,340 physical Rust LOC with zero errors and 129 ownership warnings.
 
-`just test-workspace`, the complete `just test-tier2` recipe beyond the
-22-case MCP stdio set, a final workspace format check, and `git diff --check`
-remain final milestone gates. The implementation is being committed as one
-reviewable manifest-decoder/consumer slice with those broader gates recorded
-rather than mixed with the independent retained-View handler reconciliation.
+The 22-case MCP stdio group was rerun after the native View-handler correction
+and passed again. `just test-workspace`, the remaining Tier 2 Agent-observe,
+auxiliary-capture, and visual-golden groups, a final workspace format check,
+and `git diff --check` remain final milestone gates.
