@@ -15,7 +15,7 @@ use crate::{
         CallableParameterPresence, CallableParameterType, CallablePath, CallableSignatureSchema,
         CallableValidator, LexicalCallableScope, NonEmptyResolvedCandidates,
         PRODUCTION_CALLABLE_LIMITS, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
-        ResolverWork, SpreadArgumentPolicy,
+        ResolverWork, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     effect_model::EffectSite,
 };
@@ -305,8 +305,9 @@ impl TypeChecker<'_> {
         let schema = candidate.schema();
         self.check_virtual_path_call(label, args);
         match schema.validator() {
-            CallableValidator::Ordinary => self.check_registered_schema_args(label, schema, args),
-            CallableValidator::Untyped => self.check_untyped_function_args(label, args),
+            CallableValidator::Ordinary | CallableValidator::Untyped => {
+                self.check_registered_schema_args(label, schema, args);
+            }
             validator => {
                 self.errors.push(TypeCheckError::new(format!(
                     "registered callable `{label}` has unsupported validator {validator:?}"
@@ -360,6 +361,7 @@ impl TypeChecker<'_> {
         let parameters = group.parameters();
         let mut provided = vec![false; parameters.len()];
         let mut positional = 0usize;
+        let mut spread_shape_rejected = false;
         for arg in args {
             match arg {
                 CallArg::Positional(value) => {
@@ -372,28 +374,30 @@ impl TypeChecker<'_> {
                     );
                 }
                 CallArg::Named { name, value } => {
-                    self.check_registered_named(label, name, value, parameters, &mut provided);
+                    self.check_registered_named(
+                        label,
+                        name,
+                        value,
+                        parameters,
+                        schema.argument_policy().unknown_named(),
+                        &mut provided,
+                    );
                 }
                 CallArg::Spread { value } => {
-                    if let Some(slots) = fixed_literal_spread_slots(value) {
-                        self.reserve_fixed_literal_spread_container_expr(value);
-                        for slot in slots {
-                            self.check_registered_positional(
-                                label,
-                                slot,
-                                parameters,
-                                &mut provided,
-                                &mut positional,
-                            );
-                        }
-                    } else {
-                        self.check_registered_spread(label, value, schema, parameters, &provided);
-                    }
+                    spread_shape_rejected |= self.check_registered_spread(
+                        label,
+                        value,
+                        schema.argument_policy().spread(),
+                        parameters,
+                        &mut provided,
+                        &mut positional,
+                    );
                 }
             }
         }
         for parameter in parameters {
-            if !provided[parameter.index().get()]
+            if !spread_shape_rejected
+                && !provided[parameter.index().get()]
                 && parameter.presence() == CallableParameterPresence::Required
                 && !matches!(
                     parameter.passing(),
@@ -416,18 +420,9 @@ impl TypeChecker<'_> {
         provided: &mut [bool],
         positional: &mut usize,
     ) {
-        while let Some(parameter) = parameters.get(*positional) {
-            if provided[*positional] || parameter.passing() == CallableParameterPassing::NamedOnly {
-                *positional += 1;
-            } else {
-                break;
-            }
-        }
-        let Some(parameter) = parameters.get(*positional).or_else(|| {
-            parameters
-                .iter()
-                .find(|parameter| parameter.passing() == CallableParameterPassing::RestPositional)
-        }) else {
+        let Some(parameter) =
+            next_registered_positional_parameter(parameters, provided, positional)
+        else {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{label}` received too many positional arguments"
             )));
@@ -448,22 +443,16 @@ impl TypeChecker<'_> {
         name: &str,
         value: &Expr,
         parameters: &[CallableParameter],
+        unknown_named: UnknownNamedArgumentPolicy,
         provided: &mut [bool],
     ) {
-        let Some(parameter) = parameters.iter().find(|parameter| {
-            parameter
-                .name()
-                .is_some_and(|candidate| candidate.as_str() == name)
-                && matches!(
-                    parameter.passing(),
-                    CallableParameterPassing::PositionalOrNamed
-                        | CallableParameterPassing::NamedOnly
-                        | CallableParameterPassing::RestNamed
-                )
-        }) else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{label}` has no named parameter `{name}`"
-            )));
+        let parameter = registered_named_parameter(parameters, name);
+        let Some(parameter) = parameter else {
+            if unknown_named == UnknownNamedArgumentPolicy::Reject {
+                self.errors.push(TypeCheckError::new(format!(
+                    "function `{label}` has no named parameter `{name}`"
+                )));
+            }
             self.check_expr(value);
             return;
         };
@@ -481,17 +470,71 @@ impl TypeChecker<'_> {
         &mut self,
         label: &str,
         value: &Expr,
-        schema: &CallableSignatureSchema,
+        policy: SpreadArgumentPolicy,
+        parameters: &[CallableParameter],
+        provided: &mut [bool],
+        positional: &mut usize,
+    ) -> bool {
+        match policy {
+            SpreadArgumentPolicy::Unchecked => {
+                self.check_expr(value);
+                false
+            }
+            SpreadArgumentPolicy::Reject => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "function `{label}` does not accept spread arguments"
+                )));
+                self.check_expr(value);
+                true
+            }
+            SpreadArgumentPolicy::FixedLiteralOnly => {
+                let Some(slots) = fixed_literal_spread_slots(value) else {
+                    self.errors.push(TypeCheckError::new(format!(
+                        "function `{label}` does not accept non-literal spread arguments"
+                    )));
+                    self.check_expr(value);
+                    return true;
+                };
+                self.check_registered_fixed_spread(
+                    label, value, slots, parameters, provided, positional,
+                );
+                false
+            }
+            SpreadArgumentPolicy::TypedRest => {
+                if let Some(slots) = fixed_literal_spread_slots(value) {
+                    self.check_registered_fixed_spread(
+                        label, value, slots, parameters, provided, positional,
+                    );
+                    false
+                } else {
+                    self.check_registered_typed_rest_spread(label, value, parameters, provided)
+                }
+            }
+        }
+    }
+
+    fn check_registered_fixed_spread(
+        &mut self,
+        label: &str,
+        value: &Expr,
+        slots: Vec<FixedLiteralSpreadSlot<'_>>,
+        parameters: &[CallableParameter],
+        provided: &mut [bool],
+        positional: &mut usize,
+    ) {
+        self.reserve_fixed_literal_spread_container_expr(value);
+        for slot in slots {
+            self.check_registered_positional(label, slot, parameters, provided, positional);
+        }
+    }
+
+    fn check_registered_typed_rest_spread(
+        &mut self,
+        label: &str,
+        value: &Expr,
         parameters: &[CallableParameter],
         provided: &[bool],
-    ) {
-        if schema.argument_policy().spread() != SpreadArgumentPolicy::TypedRest {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{label}` does not accept non-literal spread arguments"
-            )));
-            self.check_expr(value);
-            return;
-        }
+    ) -> bool {
         let Some(rest) = parameters
             .iter()
             .find(|parameter| parameter.passing() == CallableParameterPassing::RestPositional)
@@ -500,7 +543,7 @@ impl TypeChecker<'_> {
                 "function `{label}` has no positional rest parameter"
             )));
             self.check_expr(value);
-            return;
+            return true;
         };
         if parameters.iter().any(|parameter| {
             parameter.presence() == CallableParameterPresence::Required
@@ -511,14 +554,14 @@ impl TypeChecker<'_> {
                 "function `{label}` spread argument must follow required fixed arguments"
             )));
             self.check_expr(value);
-            return;
+            return true;
         }
         let actual = self.check_expr(value);
         let Some(item) = actual.as_ref().and_then(spread_item_type) else {
             self.errors.push(TypeCheckError::new(format!(
                 "function `{label}` spread argument must have a sequence type"
             )));
-            return;
+            return false;
         };
         if let CallableParameterType::Exact(expected) = rest.ty()
             && !self.types_compatible(expected, item)
@@ -530,6 +573,7 @@ impl TypeChecker<'_> {
                 item.clone(),
             ));
         }
+        false
     }
 
     fn check_registered_argument_slot(
@@ -596,32 +640,142 @@ fn call_shape_is_viable(schema: &CallableSignatureSchema, args: &[CallArg]) -> b
         return false;
     };
     let parameters = group.parameters();
-    let required = parameters
+    let mut provided = vec![false; parameters.len()];
+    let mut positional = 0usize;
+    for argument in args {
+        match argument {
+            CallArg::Positional(_) => {
+                if !mark_viable_positional(parameters, &mut provided, &mut positional) {
+                    return false;
+                }
+            }
+            CallArg::Named { name, .. } => {
+                let parameter = registered_named_parameter(parameters, name);
+                let Some(parameter) = parameter else {
+                    if schema.argument_policy().unknown_named()
+                        == UnknownNamedArgumentPolicy::Reject
+                    {
+                        return false;
+                    }
+                    continue;
+                };
+                if parameter.passing() != CallableParameterPassing::RestNamed {
+                    let index = parameter.index().get();
+                    if provided[index] {
+                        return false;
+                    }
+                    provided[index] = true;
+                }
+            }
+            CallArg::Spread { value } => match schema.argument_policy().spread() {
+                SpreadArgumentPolicy::Reject => return false,
+                SpreadArgumentPolicy::Unchecked => {}
+                SpreadArgumentPolicy::FixedLiteralOnly => {
+                    let Some(slots) = fixed_literal_spread_slots(value) else {
+                        return false;
+                    };
+                    if slots.into_iter().any(|_| {
+                        !mark_viable_positional(parameters, &mut provided, &mut positional)
+                    }) {
+                        return false;
+                    }
+                }
+                SpreadArgumentPolicy::TypedRest => {
+                    if let Some(slots) = fixed_literal_spread_slots(value) {
+                        if slots.into_iter().any(|_| {
+                            !mark_viable_positional(parameters, &mut provided, &mut positional)
+                        }) {
+                            return false;
+                        }
+                    } else if !parameters.iter().any(|parameter| {
+                        parameter.passing() == CallableParameterPassing::RestPositional
+                    }) || required_fixed_parameter_is_missing(parameters, &provided)
+                    {
+                        return false;
+                    }
+                }
+            },
+        }
+    }
+    !required_fixed_parameter_is_missing(parameters, &provided)
+}
+
+fn mark_viable_positional(
+    parameters: &[CallableParameter],
+    provided: &mut [bool],
+    positional: &mut usize,
+) -> bool {
+    let Some(parameter) = next_registered_positional_parameter(parameters, provided, positional)
+    else {
+        return false;
+    };
+    if parameter.passing() != CallableParameterPassing::RestPositional {
+        let index = parameter.index().get();
+        provided[index] = true;
+        *positional = index + 1;
+    }
+    true
+}
+
+fn next_registered_positional_parameter<'a>(
+    parameters: &'a [CallableParameter],
+    provided: &[bool],
+    positional: &mut usize,
+) -> Option<&'a CallableParameter> {
+    while let Some(parameter) = parameters.get(*positional) {
+        if provided[*positional]
+            || matches!(
+                parameter.passing(),
+                CallableParameterPassing::NamedOnly | CallableParameterPassing::RestNamed
+            )
+        {
+            *positional += 1;
+        } else {
+            break;
+        }
+    }
+    parameters.get(*positional).or_else(|| {
+        parameters
+            .iter()
+            .find(|parameter| parameter.passing() == CallableParameterPassing::RestPositional)
+    })
+}
+
+fn registered_named_parameter<'a>(
+    parameters: &'a [CallableParameter],
+    name: &str,
+) -> Option<&'a CallableParameter> {
+    parameters
         .iter()
-        .filter(|parameter| {
-            parameter.presence() == CallableParameterPresence::Required
-                && !matches!(
+        .find(|parameter| {
+            parameter
+                .name()
+                .is_some_and(|candidate| candidate.as_str() == name)
+                && matches!(
                     parameter.passing(),
-                    CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
+                    CallableParameterPassing::PositionalOrNamed
+                        | CallableParameterPassing::NamedOnly
                 )
         })
-        .count();
-    let has_rest = parameters.iter().any(|parameter| {
-        matches!(
-            parameter.passing(),
-            CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
-        )
-    });
-    let supplied = args
-        .iter()
-        .map(|argument| match argument {
-            CallArg::Spread { value } => {
-                fixed_literal_spread_slots(value).map_or(1, |slots| slots.len())
-            }
-            CallArg::Named { .. } | CallArg::Positional(_) => 1,
+        .or_else(|| {
+            parameters
+                .iter()
+                .find(|parameter| parameter.passing() == CallableParameterPassing::RestNamed)
         })
-        .sum::<usize>();
-    supplied >= required && (has_rest || supplied <= parameters.len())
+}
+
+fn required_fixed_parameter_is_missing(
+    parameters: &[CallableParameter],
+    provided: &[bool],
+) -> bool {
+    parameters.iter().any(|parameter| {
+        parameter.presence() == CallableParameterPresence::Required
+            && !matches!(
+                parameter.passing(),
+                CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
+            )
+            && !provided[parameter.index().get()]
+    })
 }
 
 fn parameter_label(parameter: &CallableParameter) -> String {

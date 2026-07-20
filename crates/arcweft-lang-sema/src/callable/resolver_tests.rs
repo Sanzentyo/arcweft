@@ -206,7 +206,7 @@ flow @flow.main main effects { fs.read } {
     let text: String = fs.read_text("opening.txt")
     let display = fmt(text)
     log.info(text)
-    event.emit(AppStarted, flow = @flow.main)
+    event.emit("AppStarted", flow = @flow.main)
 }
 "#;
     let (document, project, symbol_world) =
@@ -277,6 +277,9 @@ flow @flow.main main effects { fs.read } {
         untyped_standard.schema().validator(),
         &CallableValidator::Untyped
     );
+    assert_generic_untyped_schema(untyped_standard.schema());
+    let event_emit = resolved_candidate(fixture.resolve_path(&["event", "emit"]));
+    assert_generic_untyped_schema(event_emit.schema());
 
     let registered =
         analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world);
@@ -290,6 +293,175 @@ flow @flow.main main effects { fs.read } {
         standalone.diagnostics.is_empty(),
         "standalone checking must use the same unchecked capability argument policy: {:?}",
         standalone.diagnostics
+    );
+}
+
+#[test]
+fn untyped_calls_check_every_authored_argument_without_name_special_cases() {
+    const SOURCE: &str = r"
+flow @flow.main main {
+    event.emit(missing_event, payload = missing_payload)
+}
+";
+    let (document, project, symbol_world) = root_project_source("untyped-all-arguments", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let base = TypeCheckEnv::standard();
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(base.clone()),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("untyped all-arguments fixture");
+
+    for report in [
+        analyze_registered_project_types(&project.linked_module(), &world),
+        analyze_types(&project.linked_module(), &base),
+    ] {
+        for missing in ["missing_event", "missing_payload"] {
+            assert!(
+                report.diagnostics.iter().any(|error| error
+                    .message()
+                    .contains(&format!("unknown symbol `{missing}`"))),
+                "untyped checking must retain `{missing}`: {:?}",
+                report.diagnostics
+            );
+        }
+    }
+}
+
+#[test]
+fn non_event_untyped_callable_accepts_open_named_and_spread_arguments() {
+    const SOURCE: &str = r#"
+flow @flow.main main {
+    let values: Vec<i32> = [3i32, 4i32]
+    custom_untyped(1i32, label = "open", [2i32]..., values..., 5i32...)
+}
+"#;
+    let (document, project, symbol_world) = root_project_source("generic-untyped-callable", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let base = TypeCheckEnv::standard().with_function_signature(
+        "custom_untyped",
+        FunctionSignature::return_only(TypeKind::Unit),
+    );
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(base.clone()),
+        &project,
+        &facts,
+        None,
+    ))
+    .expect("generic untyped callable fixture");
+    let fixture = ResolverFixture {
+        document,
+        project,
+        world,
+    };
+    let candidate = resolved_candidate(fixture.resolve("custom_untyped"));
+    assert_eq!(
+        candidate.schema().argument_policy(),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::OpenUnchecked,
+            SpreadArgumentPolicy::Unchecked,
+        )
+    );
+
+    let registered =
+        analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world);
+    assert!(
+        registered.diagnostics.is_empty(),
+        "registered generic untyped calls accept open named and unchecked spread arguments: {:?}",
+        registered.diagnostics
+    );
+    let standalone = analyze_types(&fixture.project.linked_module(), &base);
+    assert!(
+        standalone.diagnostics.is_empty(),
+        "standalone generic untyped calls retain the same policy: {:?}",
+        standalone.diagnostics
+    );
+}
+
+#[test]
+fn registered_open_checked_named_arguments_still_check_their_values() {
+    const SOURCE: &str = r"
+flow @flow.main main {
+    open_checked(extra = missing_open_checked_value)
+}
+";
+    let (document, project, symbol_world) = root_project_source("registered-open-checked", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let world = CharacterRegistrar::register(
+        CharacterRegistrationRequest::new(
+            Arc::new(TypeCheckEnv::standard()),
+            &project,
+            &facts,
+            None,
+        )
+        .with_callable_publication(adapter_publication()),
+    )
+    .expect("registered open-checked fixture");
+    let report = analyze_registered_project_types(&project.linked_module(), &world);
+    assert!(
+        report.diagnostics.iter().any(|error| error
+            .message()
+            .contains("unknown symbol `missing_open_checked_value`")),
+        "OpenChecked must check the authored value: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .all(|error| !error.message().contains("has no named parameter `extra`")),
+        "OpenChecked must not reject the authored name: {:?}",
+        report.diagnostics
+    );
+}
+
+#[test]
+fn registered_spread_policy_distinguishes_fixed_literal_and_rejected_spreads() {
+    const SOURCE: &str = r"
+flow @flow.main main {
+    let values: Vec<i32> = [3i32, 4i32]
+    let accepted: String = fixed_literal_only([1i32, 2i32]...)
+    let dynamic: String = fixed_literal_only(values...)
+    let rejected: String = adapter_value([5i32]...)
+}
+";
+    let (document, project, symbol_world) = root_project_source("registered-spread-policy", SOURCE);
+    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let world = CharacterRegistrar::register(
+        CharacterRegistrationRequest::new(
+            Arc::new(TypeCheckEnv::standard()),
+            &project,
+            &facts,
+            None,
+        )
+        .with_callable_publication(adapter_publication()),
+    )
+    .expect("registered spread-policy fixture");
+    let report = analyze_registered_project_types(&project.linked_module(), &world);
+    assert!(
+        report
+            .diagnostics
+            .iter()
+            .any(|error| error.message().contains(
+                "function `fixed_literal_only` does not accept non-literal spread arguments"
+            )),
+        "FixedLiteralOnly must reject dynamic spread: {:?}",
+        report.diagnostics
+    );
+    assert!(
+        report.diagnostics.iter().any(|error| error
+            .message()
+            .contains("function `adapter_value` does not accept spread arguments")),
+        "Reject must reject fixed literal spread too: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(
+        report.diagnostics.len(),
+        2,
+        "the accepted fixed literal spread must not add a diagnostic: {:?}",
+        report.diagnostics
     );
 }
 
@@ -652,6 +824,30 @@ fn callable_path(segments: &[&str]) -> CallablePath {
     .expect("callable path")
 }
 
+fn assert_generic_untyped_schema(schema: &CallableSignatureSchema) {
+    let group = schema
+        .group(CallableGroupIndex::ZERO)
+        .expect("untyped callable initial group");
+    let [parameter] = group.parameters() else {
+        panic!("untyped callable must publish one variadic parameter")
+    };
+    assert_eq!(parameter.name().map(CallableName::as_str), Some("args"));
+    assert_eq!(parameter.ty(), &CallableParameterType::Unchecked);
+    assert_eq!(
+        parameter.passing(),
+        CallableParameterPassing::RestPositional
+    );
+    assert_eq!(parameter.presence(), CallableParameterPresence::Optional);
+    assert_eq!(
+        schema.argument_policy(),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::OpenUnchecked,
+            SpreadArgumentPolicy::Unchecked,
+        )
+    );
+    assert_eq!(schema.validator(), &CallableValidator::Untyped);
+}
+
 fn adapter_publication() -> EnvironmentCallablePublication {
     let owner = EnvironmentCallableOwner::Adapter(
         AdapterPackageId::try_new("adapter.resolver").expect("adapter id"),
@@ -704,9 +900,38 @@ fn adapter_publication() -> EnvironmentCallablePublication {
         EnvironmentDeclarationOrdinal::try_from_usize(3).expect("declaration ordinal"),
     )
     .expect("adapter method record");
+    let open_checked = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(callable_path(&["open_checked"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        open_checked_schema(),
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(4).expect("declaration ordinal"),
+    )
+    .expect("open-checked adapter record");
+    let fixed_literal_only = EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(callable_path(&["fixed_literal_only"])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        fixed_literal_only_schema(),
+        CallableDocumentation::missing(),
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(5).expect("declaration ordinal"),
+    )
+    .expect("fixed-literal-only adapter record");
     EnvironmentCallablePublication::try_new(
         owner,
-        vec![single, dotted, receiver_collision, method],
+        vec![
+            single,
+            dotted,
+            receiver_collision,
+            method,
+            open_checked,
+            fixed_literal_only,
+        ],
         &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("adapter publication")
@@ -747,4 +972,60 @@ fn ordinary_single_parameter_schema(
         &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("adapter schema")
+}
+
+fn open_checked_schema() -> CallableSignatureSchema {
+    CallableSignatureSchema::try_new(
+        vec![
+            CallableParameterGroup::try_new(
+                CallableGroupIndex::ZERO,
+                CallableGroupKind::Initial,
+                Vec::new(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("empty open-checked group"),
+        ],
+        TypeKind::Unit,
+        CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::new())),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::OpenChecked,
+            SpreadArgumentPolicy::Reject,
+        ),
+        CallableValidator::Ordinary,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("open-checked schema")
+}
+
+fn fixed_literal_only_schema() -> CallableSignatureSchema {
+    let parameter = CallableParameter::try_new(
+        CallableParameterIndex::try_from_usize(0).expect("parameter index"),
+        Some(CallableName::try_new("values").expect("parameter name")),
+        CallableParameterType::Exact(TypeKind::I32),
+        CallableParameterPassing::RestPositional,
+        CallableParameterPresence::Optional,
+        None,
+        None,
+    )
+    .expect("fixed-literal-only parameter");
+    CallableSignatureSchema::try_new(
+        vec![
+            CallableParameterGroup::try_new(
+                CallableGroupIndex::ZERO,
+                CallableGroupKind::Initial,
+                vec![parameter],
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("fixed-literal-only group"),
+        ],
+        TypeKind::String,
+        CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::new())),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("fixed-literal-only schema")
 }

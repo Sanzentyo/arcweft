@@ -1,4 +1,3 @@
-use super::builtin::CapabilityFunctionSpec;
 use super::partial::expr_contains_partial_placeholder;
 use super::support::{
     FixedLiteralSpreadSlot, call_arg_spread_value, fixed_literal_spread_slot_count,
@@ -68,15 +67,8 @@ impl TypeChecker<'_> {
         result_ty
     }
 
-    pub(super) fn check_untyped_function_args(&mut self, name: &str, args: &[CallArg]) {
-        let checked_args = if let Some(spec) = CapabilityFunctionSpec::resolve(name) {
-            args.iter()
-                .skip(spec.unchecked_prefix_args())
-                .collect::<Vec<_>>()
-        } else {
-            args.iter().collect::<Vec<_>>()
-        };
-        for arg in checked_args {
+    pub(super) fn check_untyped_function_args(&mut self, args: &[CallArg]) {
+        for arg in args {
             self.check_expr(arg.value());
         }
     }

@@ -50,27 +50,6 @@ impl BuiltinCallSpec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct CapabilityFunctionSpec {
-    unchecked_prefix_args: usize,
-}
-
-impl CapabilityFunctionSpec {
-    pub(super) fn resolve(path: &str) -> Option<Self> {
-        let segments = path.split('.').collect::<Vec<_>>();
-        match segments.as_slice() {
-            ["event", "emit"] => Some(Self {
-                unchecked_prefix_args: 1,
-            }),
-            _ => None,
-        }
-    }
-
-    pub(super) const fn unchecked_prefix_args(self) -> usize {
-        self.unchecked_prefix_args
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum MathIntrinsic {
     MatrixF32,
     MatrixF64,

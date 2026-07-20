@@ -752,7 +752,7 @@ impl TypeChecker<'_> {
         if let Some(name) = expr_path_label(callee)
             && let Some(ty) = well_known_static_capacity_method_type(&name)
         {
-            self.check_untyped_function_args(&name, args);
+            self.check_untyped_function_args(args);
             return Some(ty);
         }
         match self.check_registered_catalog_free_call(callee, args, expected, expression_id) {
@@ -775,7 +775,7 @@ impl TypeChecker<'_> {
                     expected,
                 ));
             }
-            self.check_untyped_function_args(&name, args);
+            self.check_untyped_function_args(args);
             self.check_function_effects(&name);
             self.last_checked_curried_signature_call = None;
             self.record_function_return_effect_result(&name, &ty);
