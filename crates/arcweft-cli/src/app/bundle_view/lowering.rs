@@ -8,7 +8,7 @@ mod text_controls;
 use self::content::{assign_action_button_bounds, lower_button, lower_image, lower_text};
 use self::modifiers::{
     lower_button_modifiers, lower_modifiers, lower_navigation_group, lower_navigation_target,
-    lower_text_modifiers,
+    lower_text_control_modifiers, lower_text_modifiers,
 };
 use self::scroll::lower_scroll_region;
 use self::text_controls::{

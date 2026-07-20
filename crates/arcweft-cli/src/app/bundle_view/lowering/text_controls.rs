@@ -8,8 +8,8 @@ use super::{
     ViewProgramInstruction, ViewSecureInputPolicy, ViewSemanticTarget, ViewSidecarError,
     ViewTextControlPayloadField, ViewTextField, ViewTextFieldMode, ViewTextSelectionPolicy,
     ViewTextShortcutPolicy, ViewTextSourceKind, ViewTextSourceRecord, ViewTextTabPolicy,
-    ViewTextVerticalNavigationPolicy, expr_source, first_part, lower_modifiers,
-    lower_navigation_target, normalize_entity_ref, view_resource_id,
+    ViewTextVerticalNavigationPolicy, expr_source, first_part, lower_navigation_target,
+    lower_text_control_modifiers, normalize_entity_ref, view_resource_id,
 };
 
 struct AuthoredTextControl {
@@ -132,7 +132,12 @@ pub(super) fn lower_text_field(
             key: None,
             source: None,
         });
-    lower_modifiers(view_id, field.modifiers(), state)?;
+    lower_text_control_modifiers(
+        view_id,
+        field.modifiers(),
+        field.submit_action().is_some(),
+        state,
+    )?;
     state
         .instructions
         .push(ViewProgramInstruction::CloseElement);

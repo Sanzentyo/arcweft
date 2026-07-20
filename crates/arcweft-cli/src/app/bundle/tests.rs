@@ -1700,6 +1700,45 @@ flow test {
 }
 
 #[test]
+fn view_text_control_submit_uses_only_the_input_writeback_route() {
+    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
+
+    let parsed = arcweft_lang_syntax::parser::parse_source(
+        r#"
+pub action feedback.submit(value: String)
+
+view FeedbackForm() {
+  let feedback = input.text(@input:.feedback, initial = "")
+  TextField(feedback)
+    .on_submit {
+      action.invoke(@action:.feedback.submit, value = feedback.text)
+    }
+}
+
+flow test {
+  view(@view:.FeedbackForm)
+}
+"#,
+    );
+    assert_eq!(parsed.errors(), &[]);
+    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let program = sidecars.program.expect("program sidecar");
+    let input = sidecars.input.expect("input sidecar");
+
+    assert_eq!(
+        input.options[0].submit_handler.as_deref(),
+        Some("action.feedback.submit")
+    );
+    assert!(!program.instructions.iter().any(|instruction| {
+        matches!(
+            instruction,
+            ViewProgramInstruction::BindHandler { event, .. } if event == "submit"
+        )
+    }));
+}
+
+#[test]
 fn view_text_area_and_secure_field_emit_layout_bounds() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"

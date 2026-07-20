@@ -25,36 +25,67 @@ pub(super) fn lower_text_modifiers(
     lower_modifiers_without_style(view_id, modifiers, state)
 }
 
+pub(super) fn lower_text_control_modifiers(
+    view_id: &str,
+    modifiers: &[ViewModifier],
+    has_canonical_submit_action: bool,
+    state: &mut ViewLoweringState,
+) -> Result<(), ViewSidecarError> {
+    for modifier in modifiers {
+        // Text-control submit is owned by `ViewInputOptions::submit_handler`
+        // and the runtime write-back path. Emitting a second generic
+        // `BindHandler` would give the catalog an event it cannot dispatch.
+        if matches!(
+            modifier,
+            ViewModifier::OnEvent { name, .. }
+                if has_canonical_submit_action && name == "submit"
+        ) {
+            continue;
+        }
+        lower_modifier_without_style(view_id, modifier, state)?;
+    }
+    Ok(())
+}
+
 fn lower_modifiers_without_style(
     view_id: &str,
     modifiers: &[ViewModifier],
     state: &mut ViewLoweringState,
 ) -> Result<(), ViewSidecarError> {
     for modifier in modifiers {
-        match modifier {
-            ViewModifier::Fx(application) => {
-                if let Some(instruction) = super::lower_fx_application(application, state)? {
-                    state.instructions.push(instruction);
-                }
+        lower_modifier_without_style(view_id, modifier, state)?;
+    }
+    Ok(())
+}
+
+fn lower_modifier_without_style(
+    view_id: &str,
+    modifier: &ViewModifier,
+    state: &mut ViewLoweringState,
+) -> Result<(), ViewSidecarError> {
+    match modifier {
+        ViewModifier::Fx(application) => {
+            if let Some(instruction) = super::lower_fx_application(application, state)? {
+                state.instructions.push(instruction);
             }
-            ViewModifier::OnEvent { name, .. } => {
-                lower_event_handler_modifier(view_id, name, state);
-            }
-            ViewModifier::Style(_)
-            | ViewModifier::Part(_)
-            | ViewModifier::Label(_)
-            | ViewModifier::AgentTarget(_)
-            | ViewModifier::Placeholder(_)
-            | ViewModifier::Purpose(_)
-            | ViewModifier::EnterKey(_)
-            | ViewModifier::Enabled(_)
-            | ViewModifier::Focusable(_)
-            | ViewModifier::Property { .. }
-            | ViewModifier::Environment(_)
-            | ViewModifier::Focus(_)
-            | ViewModifier::Navigation(_)
-            | ViewModifier::Raw(_) => {}
         }
+        ViewModifier::OnEvent { name, .. } => {
+            lower_event_handler_modifier(view_id, name, state);
+        }
+        ViewModifier::Style(_)
+        | ViewModifier::Part(_)
+        | ViewModifier::Label(_)
+        | ViewModifier::AgentTarget(_)
+        | ViewModifier::Placeholder(_)
+        | ViewModifier::Purpose(_)
+        | ViewModifier::EnterKey(_)
+        | ViewModifier::Enabled(_)
+        | ViewModifier::Focusable(_)
+        | ViewModifier::Property { .. }
+        | ViewModifier::Environment(_)
+        | ViewModifier::Focus(_)
+        | ViewModifier::Navigation(_)
+        | ViewModifier::Raw(_) => {}
     }
     Ok(())
 }
