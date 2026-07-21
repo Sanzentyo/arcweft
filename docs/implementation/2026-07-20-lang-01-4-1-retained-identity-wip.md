@@ -65,6 +65,37 @@ The largest file in the new crate is the 1,014-LOC integration test
 at 714 LOC. No production, facade, or integration-test warning threshold is
 crossed.
 
+## Latest-main intake audit
+
+The implementation-ready package was re-audited on `main` at
+`163281b6089c269d7132941a3ee8fd52710b9b2f`. Its external SHA-256 remains
+`2ff03e6c97d29783244ee8b6fbc7f8fb60261f1922634d81e8f3fba17a4e563a`,
+and the current focused `arcweft-resource-model` suite still passes all 36
+unit/integration tests plus doc-tests.
+
+No additional isolated production cut exists after the generic substrate:
+
+- the exact retained kind/value/path/transcript contracts are already owned by
+  `arcweft-resource-model`; adding another catalog, DTO, or projection there
+  would create a second authority rather than complete a consumer;
+- the nine corrected built-in field paths cannot be published as partial
+  descriptors because the complete built-in schemas, stable field/schema IDs,
+  defaults, codecs, and atomic registry transaction must land together;
+- accepted owner resolution, visibility, aliases, source occurrences, and
+  diagnostics require the one accepted project world after the public
+  syntax/HIR identity switch and the in-flight callable-sema work release their
+  owners;
+- bundle retained-dependency records require the common resource definition,
+  directory, value-path wire, and source-table product rather than a standalone
+  provisional section; and
+- the public manifest codec and bundle publication remain gated by the
+  unreturned Lang-01.4.2 wire correction. A retained-only reader would be a
+  forbidden second reader.
+
+Accordingly this audit adds no Rust scaffold, compatibility shape, detached
+wire record, or unused lowerer. The next production cut must begin at one of
+the dependency releases below and implement its complete atomic boundary.
+
 ## Dependency-ordered remainder
 
 The following work remains part of Lang-01.4/01.4.1 rather than being counted
