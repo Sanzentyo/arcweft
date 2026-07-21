@@ -8,7 +8,10 @@ use crate::ViewElementKind;
 use crate::{ViewPartLocalName, ViewPartName};
 use arcweft_id::{IdError, PublicId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt,
+};
 use thiserror::Error;
 
 mod codec;
@@ -313,6 +316,16 @@ impl ViewStyleSheetId {
 
     pub const fn public_id(&self) -> &PublicId {
         &self.0
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl fmt::Display for ViewStyleSheetId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 

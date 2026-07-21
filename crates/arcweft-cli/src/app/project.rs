@@ -9,8 +9,8 @@ use arcweft_adapter_context::{
     manifest::AdapterManifest, publication::AdapterManifestSource, standard,
 };
 use arcweft_compiler::project::{
-    ProjectCompilationContext, ProjectCompileDiagnostic, ProjectCompileError,
-    ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
+    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompileDiagnostic,
+    ProjectCompileError, ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_host_adapter::HostCallPolicy;
@@ -893,7 +893,16 @@ pub(in crate::app) fn profile_project_compilation_context(
         ExitCode::FAILURE
     })?;
     let (facts, _) = registration.into_parts();
-    compilation_context_from_facts(facts, Some(topology.selected_profile()), semantic)
+    let context =
+        compilation_context_from_facts(facts, Some(topology.selected_profile()), semantic)?;
+    let accepted_profile = AcceptedLaunchProfileInput::new(
+        Arc::clone(topology.manifest()),
+        topology.selected_profile().id().clone(),
+        topology.selected_profile().clone(),
+        topology.source_documents_revision(),
+        Arc::clone(context.resource_types()),
+    );
+    Ok(context.with_accepted_launch_profile(accepted_profile))
 }
 
 fn compilation_context_from_facts(

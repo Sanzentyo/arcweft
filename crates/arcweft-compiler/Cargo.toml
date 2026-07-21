@@ -11,6 +11,7 @@ arcweft-agent-protocol = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
 arcweft-core = { workspace = true }
 arcweft-data = { workspace = true }
+arcweft-dialogue = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-launch = { workspace = true }
 arcweft-layout = { workspace = true }

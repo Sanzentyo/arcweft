@@ -6,6 +6,7 @@
 //! the transitional crate-global semantic-pass view.
 
 mod cache_batch;
+mod dialogue_profile;
 mod entry_runtime;
 #[cfg(test)]
 mod entry_tests;
@@ -15,6 +16,7 @@ pub(crate) use cache_batch::PendingProjectCompileStores;
 #[cfg(test)]
 use cache_batch::PendingStoreTransitionError;
 pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, ProjectCompileCache};
+pub use dialogue_profile::{CheckedDialogueProfile, DialogueProfileAdmissionError};
 pub(crate) use entry_runtime::EntryRuntimeProjection;
 pub use registration::{
     AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectEntrySelection,
@@ -77,6 +79,7 @@ pub enum ProjectCompileStage {
     ImageLower,
     FxLower,
     ViewLower,
+    DialogueProfileAdmission,
     LineTaskLower,
     RuntimePlanLower,
 }
@@ -145,6 +148,7 @@ pub struct CompiledProject {
     image_catalog: CompiledImageCatalog,
     fx_definitions: Arc<[FxDefinition]>,
     view_product: CompiledViewProduct,
+    dialogue_profile: Option<CheckedDialogueProfile>,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     runtime_plan: RuntimePlanLowerReport,
 }
@@ -174,6 +178,7 @@ impl ProjectCompileStage {
             Self::ImageLower => "image-lower",
             Self::FxLower => "fx-lower",
             Self::ViewLower => "view-lower",
+            Self::DialogueProfileAdmission => "dialogue-profile-admission",
             Self::LineTaskLower => "line-task-lower",
             Self::RuntimePlanLower => "runtime-plan-lower",
         }
@@ -358,6 +363,13 @@ impl CompiledProject {
         &self.view_product
     }
 
+    /// Launch-selected dialogue presentation admitted against this project's
+    /// exact View/Style product. Direct source compilation has no launch
+    /// profile and therefore returns `None`.
+    pub const fn dialogue_profile(&self) -> Option<&CheckedDialogueProfile> {
+        self.dialogue_profile.as_ref()
+    }
+
     pub fn line_task_groups(&self) -> &[LoweredLineTaskGroup] {
         &self.line_task_groups
     }
@@ -536,6 +548,19 @@ where
                 [error.diagnostic()],
             )
         })?;
+        let dialogue_profile = context
+            .accepted_launch_profile()
+            .map(|input| {
+                CheckedDialogueProfile::try_admit(input, &view_product, context.resource_types())
+            })
+            .transpose()
+            .map_err(|error| {
+                linked_error_with_compilation_sources(
+                    ProjectCompileStage::DialogueProfileAdmission,
+                    context,
+                    [error.diagnostic()],
+                )
+            })?;
         let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
             linked_error(
                 ProjectCompileStage::LineTaskLower,
@@ -605,6 +630,7 @@ where
             image_catalog,
             fx_definitions,
             view_product,
+            dialogue_profile,
             line_task_groups,
             runtime_plan,
         })
@@ -961,6 +987,42 @@ fn linked_error_with_registration_sources(
                     facts
                         .documents()
                         .find(|document| document.identity() == span.source())
+                        .map(|document| ProjectDiagnosticSource::new(document.as_ref().clone()))
+                });
+                ProjectCompileDiagnostic {
+                    module: None,
+                    stage,
+                    source,
+                    parse_error: None,
+                    diagnostic,
+                }
+            })
+            .collect(),
+    }
+}
+
+fn linked_error_with_compilation_sources(
+    stage: ProjectCompileStage,
+    context: &ProjectCompilationContext,
+    diagnostics: impl IntoIterator<Item = Diagnostic>,
+) -> ProjectCompileError {
+    ProjectCompileError {
+        stage: stage.as_str(),
+        diagnostics: diagnostics
+            .into_iter()
+            .map(|diagnostic| {
+                let source = diagnostic.span().and_then(|span| {
+                    context
+                        .facts()
+                        .documents()
+                        .find(|document| document.identity() == span.source())
+                        .cloned()
+                        .or_else(|| {
+                            context.accepted_launch_profile().and_then(|input| {
+                                let document = input.manifest().document();
+                                (document.identity() == span.source()).then(|| Arc::clone(document))
+                            })
+                        })
                         .map(|document| ProjectDiagnosticSource::new(document.as_ref().clone()))
                 });
                 ProjectCompileDiagnostic {
