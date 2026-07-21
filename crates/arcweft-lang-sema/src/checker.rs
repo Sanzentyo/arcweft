@@ -72,6 +72,9 @@ pub mod lifetime_access;
 pub mod line_plan;
 pub mod module;
 pub mod presentation;
+mod registered_candidate_transaction;
+#[cfg(test)]
+mod registered_candidate_transaction_tests;
 pub(crate) mod signature;
 pub mod source;
 pub mod source_ranges;
@@ -84,7 +87,7 @@ pub use module::{
 };
 
 pub(crate) use call_target_facts::FocusedCallSite;
-use call_target_facts::{CallResolverControl, CallTargetFactRecorder};
+use call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallableWorkOperation};
 use fx::FxCatalog;
 use helpers::{
     await_branch_pattern_type, builtin_path_type, choice_output_type,
@@ -483,6 +486,11 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
     analyze_types(module, env).into_result()
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SignatureWorkChargeState {
+    candidate_work: bool,
+}
+
 struct TypeChecker<'a> {
     env: &'a TypeCheckEnv,
     checked_module: &'a HirModule,
@@ -561,12 +569,17 @@ struct TypeChecker<'a> {
     project_entity_references: Vec<ProjectEntityReference>,
     call_target_fact_recorder: CallTargetFactRecorder,
     call_resolver_control: CallResolverControl<'a>,
+    signature_work_charge: SignatureWorkChargeState,
+    focused_candidate_depth: usize,
     local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
     semantic_scope_stack: Vec<SemanticScopeId>,
     next_semantic_scope: u32,
     next_semantic_binding: u32,
     current_module: Option<arcweft_lang_syntax::ast::module_path::CanonicalModulePath>,
     checked_speaker_lines: Vec<CheckedSpeakerLine>,
+    registered_candidate_transaction_depth: usize,
+    registered_candidate_journal:
+        Vec<registered_candidate_transaction::RegisteredCandidateMutation>,
 }
 
 /// Type and authored provenance of the value bound by one active pipe RHS.
@@ -812,6 +825,52 @@ impl TypeChecker<'_> {
 }
 
 impl<'a> TypeChecker<'a> {
+    fn charge_signature_work(
+        &mut self,
+        kind: crate::callable::SignatureWorkKind,
+        units: u64,
+    ) -> bool {
+        match self.call_resolver_control.charge_signature(kind, units) {
+            Ok(()) => true,
+            Err(reason) => {
+                self.call_target_fact_recorder
+                    .record_signature_accounting_error(reason);
+                false
+            }
+        }
+    }
+
+    fn charge_callable_work(
+        &mut self,
+        call: &arcweft_lang_syntax::expr::CallExpr,
+        focused: bool,
+        operation: CallableWorkOperation,
+    ) -> bool {
+        let call_span = self.source_span_for_current_range(call.range());
+        self.charge_callable_work_for_span(call_span.as_ref(), focused, operation)
+    }
+
+    fn charge_callable_work_for_span(
+        &mut self,
+        call_span: Option<&arcweft_source::SourceSpan>,
+        focused: bool,
+        operation: CallableWorkOperation,
+    ) -> bool {
+        match self
+            .call_resolver_control
+            .charge_callable_operation(focused, operation)
+        {
+            Ok(()) => true,
+            Err(error) => {
+                let error = crate::callable::ResolveCallError::Work(error);
+                self.call_target_fact_recorder
+                    .record_resolve_error(call_span, error.clone());
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                false
+            }
+        }
+    }
+
     fn new_with_project(
         env: &'a TypeCheckEnv,
         checked_module: &'a HirModule,
@@ -904,12 +963,18 @@ impl<'a> TypeChecker<'a> {
             project_entity_references: Vec::new(),
             call_target_fact_recorder: CallTargetFactRecorder::new(call_target_fact_mode),
             call_resolver_control,
+            signature_work_charge: SignatureWorkChargeState {
+                candidate_work: false,
+            },
+            focused_candidate_depth: 0,
             local_symbol_identities: HashMap::new(),
             semantic_scope_stack: Vec::new(),
             next_semantic_scope: 0,
             next_semantic_binding: 0,
             current_module: None,
             checked_speaker_lines: Vec::new(),
+            registered_candidate_transaction_depth: 0,
+            registered_candidate_journal: Vec::new(),
         }
     }
 
@@ -918,6 +983,13 @@ impl<'a> TypeChecker<'a> {
         call_span: Option<&arcweft_source::SourceSpan>,
     ) -> bool {
         self.call_target_fact_recorder.wants(call_span)
+    }
+
+    pub(super) fn uses_focused_callable_work(
+        &self,
+        call_span: Option<&arcweft_source::SourceSpan>,
+    ) -> bool {
+        self.focused_candidate_depth != 0 || self.records_call_target_facts(call_span)
     }
 
     pub(super) fn record_call_target_facts(
@@ -931,23 +1003,33 @@ impl<'a> TypeChecker<'a> {
         if !self.records_call_target_facts(Some(call_span)) {
             return;
         }
+        let active_parameter = self.call_target_fact_recorder.active_parameter(&checked);
         let diagnostics = match diagnostic {
-            Some((code, subject)) => match CallableDiagnostic::try_new(
-                code,
-                CallableDiagnosticSeverity::Error,
-                Some(call_span.clone()),
-                subject,
-                Vec::new(),
-                Some(document),
-                &PRODUCTION_CALLABLE_LIMITS,
-            ) {
-                Ok(diagnostic) => vec![diagnostic],
-                Err(reason) => {
-                    self.call_target_fact_recorder
-                        .record_unavailable(call_span, reason);
+            Some((code, subject)) => {
+                if !self.charge_callable_work_for_span(
+                    Some(call_span),
+                    true,
+                    CallableWorkOperation::Resolver,
+                ) {
                     return;
                 }
-            },
+                match CallableDiagnostic::try_new(
+                    code,
+                    CallableDiagnosticSeverity::Error,
+                    Some(call_span.clone()),
+                    subject,
+                    Vec::new(),
+                    Some(document),
+                    &PRODUCTION_CALLABLE_LIMITS,
+                ) {
+                    Ok(diagnostic) => vec![diagnostic],
+                    Err(reason) => {
+                        self.call_target_fact_recorder
+                            .record_unavailable(call_span, reason);
+                        return;
+                    }
+                }
+            }
             None => Vec::new(),
         };
         match CallTargetFacts::try_new(
@@ -955,6 +1037,7 @@ impl<'a> TypeChecker<'a> {
             document.clone(),
             call_span.clone(),
             checked,
+            active_parameter,
             diagnostics,
             &PRODUCTION_CALLABLE_LIMITS,
         ) {
@@ -1014,8 +1097,8 @@ impl<'a> TypeChecker<'a> {
                 name: name.clone(),
             },
         );
-        if let Some(frame) = self.closure_capture_stack.last_mut() {
-            frame.locals.insert(name.clone());
+        if let Some(frame) = self.closure_capture_stack.len().checked_sub(1) {
+            self.retain_closure_frame_local(frame, name.clone());
         }
         if let Some(scope) = self.local_scope_stack.last_mut() {
             scope.entries.push(LocalBindingSnapshotEntry {
@@ -1188,8 +1271,7 @@ impl<'a> TypeChecker<'a> {
         else {
             return;
         };
-        self.closure_effect_callables_by_expr
-            .insert(ExprNodeKey::from_expr(expr), callable.clone());
+        self.retain_closure_effect_callable(ExprNodeKey::from_expr(expr), callable.clone());
         self.last_checked_closure_effect_callable = Some(callable);
     }
 
@@ -1255,9 +1337,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn record_closure_suspension_boundary(&mut self, boundary: SuspensionBoundary) {
-        if let Some(frame) = self.closure_capture_stack.last_mut() {
-            frame.suspension_boundaries.insert(boundary);
-        }
+        self.retain_closure_suspension_boundary(boundary);
     }
 
     fn push_closure_inference_context(&mut self, inferred_return_type: bool) {
@@ -1345,14 +1425,20 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn record_closure_capture(&mut self, name: &str, ty: &TypeKind) {
-        for frame in self.closure_capture_stack.iter_mut().rev() {
+        let mut inserted = Vec::new();
+        for (index, frame) in self.closure_capture_stack.iter_mut().enumerate().rev() {
             if frame.locals.contains(name) {
                 break;
             }
-            frame
-                .captures
-                .entry(name.to_owned())
-                .or_insert_with(|| ty.clone());
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                frame.captures.entry(name.to_owned())
+            {
+                entry.insert(ty.clone());
+                inserted.push(index);
+            }
+        }
+        for frame in inserted {
+            self.retain_closure_capture(frame, name.to_owned());
         }
     }
 
@@ -1557,17 +1643,16 @@ impl<'a> TypeChecker<'a> {
             return;
         };
         if current_callable == scope.callable {
-            self.higher_order_param_invocations
-                .entry(scope.function_name.clone())
-                .or_default()
-                .insert(param_name.to_owned());
+            self.retain_higher_order_param_invocation(
+                scope.function_name.clone(),
+                param_name.to_owned(),
+            );
         } else {
-            self.higher_order_param_closure_invocations
-                .entry(scope.function_name.clone())
-                .or_default()
-                .entry(param_name.to_owned())
-                .or_default()
-                .insert(current_callable);
+            self.retain_higher_order_param_closure_invocation(
+                scope.function_name.clone(),
+                param_name.to_owned(),
+                current_callable,
+            );
         }
     }
 

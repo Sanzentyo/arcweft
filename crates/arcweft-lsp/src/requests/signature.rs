@@ -719,17 +719,25 @@ const fn query_lsp_code(error: &SignatureQueryError) -> i32 {
     match error {
         SignatureQueryError::Stale(_) => ErrorCode::ContentModified as i32,
         SignatureQueryError::InvalidPosition(_) => ErrorCode::InvalidParams as i32,
-        SignatureQueryError::LimitExceeded(CallableQueryLimitError::ArithmeticOverflow)
+        SignatureQueryError::ArithmeticOverflow { .. }
+        | SignatureQueryError::CallableLimitExceeded(CallableQueryLimitError::ArithmeticOverflow)
         | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(
             CallableQueryLimitError::ArithmeticOverflow,
         ))
-        | SignatureQueryError::Resolve(ResolveCallError::Work(
-            CallableQueryLimitError::ArithmeticOverflow,
-        )) => ErrorCode::RequestFailed as i32,
+        | SignatureQueryError::Resolve(
+            ResolveCallError::Work(CallableQueryLimitError::ArithmeticOverflow)
+            | ResolveCallError::SignatureArithmeticOverflow { .. },
+        ) => ErrorCode::RequestFailed as i32,
         SignatureQueryError::LimitExceeded(_)
+        | SignatureQueryError::CallableLimitExceeded(_)
         | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(_))
-        | SignatureQueryError::Resolve(ResolveCallError::Work(_))
-        | SignatureQueryError::DeadlineExceeded => ErrorCode::ServerCancelled as i32,
+        | SignatureQueryError::DeadlineExceeded
+        | SignatureQueryError::Resolve(
+            ResolveCallError::CandidateLimit { .. }
+            | ResolveCallError::Work(_)
+            | ResolveCallError::SignatureLimit(_)
+            | ResolveCallError::DeadlineExceeded,
+        ) => ErrorCode::ServerCancelled as i32,
         SignatureQueryError::Cancelled
         | SignatureQueryError::Resolve(ResolveCallError::Cancelled) => {
             ErrorCode::RequestCanceled as i32
@@ -745,22 +753,33 @@ const fn query_stable_code(error: &SignatureQueryError) -> &'static str {
         SignatureQueryError::Stale(_) => "aw.signature.query.stale",
         SignatureQueryError::InvalidPosition(_) => "aw.signature.query.invalid_position",
         SignatureQueryError::SemanticUnavailable(_) => "aw.signature.query.semantic_unavailable",
-        SignatureQueryError::LimitExceeded(CallableQueryLimitError::ArithmeticOverflow)
+        SignatureQueryError::ArithmeticOverflow { .. }
+        | SignatureQueryError::CallableLimitExceeded(CallableQueryLimitError::ArithmeticOverflow)
         | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(
             CallableQueryLimitError::ArithmeticOverflow,
         ))
-        | SignatureQueryError::Resolve(ResolveCallError::Work(
-            CallableQueryLimitError::ArithmeticOverflow,
-        )) => "aw.signature.query.arithmetic_overflow",
+        | SignatureQueryError::Resolve(
+            ResolveCallError::Work(CallableQueryLimitError::ArithmeticOverflow)
+            | ResolveCallError::SignatureArithmeticOverflow { .. },
+        ) => "aw.signature.query.arithmetic_overflow",
         SignatureQueryError::LimitExceeded(_)
+        | SignatureQueryError::CallableLimitExceeded(_)
         | SignatureQueryError::InvalidSignature(SemanticSignatureError::Limit(_))
-        | SignatureQueryError::Resolve(ResolveCallError::Work(_)) => {
-            "aw.signature.query.limit_exceeded"
-        }
+        | SignatureQueryError::Resolve(
+            ResolveCallError::CandidateLimit { .. }
+            | ResolveCallError::Work(_)
+            | ResolveCallError::SignatureLimit(_),
+        ) => "aw.signature.query.limit_exceeded",
         SignatureQueryError::InvalidSignature(_) => "aw.signature.query.invalid_signature",
+        SignatureQueryError::Cancelled
+        | SignatureQueryError::Resolve(ResolveCallError::Cancelled) => {
+            "aw.signature.query.cancelled"
+        }
+        SignatureQueryError::DeadlineExceeded
+        | SignatureQueryError::Resolve(ResolveCallError::DeadlineExceeded) => {
+            "aw.signature.query.deadline_exceeded"
+        }
         SignatureQueryError::Resolve(_) => "aw.signature.query.resolve",
-        SignatureQueryError::Cancelled => "aw.signature.query.cancelled",
-        SignatureQueryError::DeadlineExceeded => "aw.signature.query.deadline_exceeded",
     }
 }
 
@@ -838,7 +857,36 @@ mod tests {
 
     #[test]
     fn query_resource_and_arithmetic_failures_remain_distinct() {
+        use arcweft_lang_sema::callable::{
+            SignatureLimitExceeded, SignatureLimitKind, SignatureWorkKind,
+        };
+
         for (query_error, expected_lsp_code, expected_stable_code) in [
+            (
+                SignatureQueryError::LimitExceeded(SignatureLimitExceeded {
+                    kind: SignatureLimitKind::NestedCalls,
+                    observed: 65,
+                    maximum: 64,
+                }),
+                ErrorCode::ServerCancelled as i32,
+                "aw.signature.query.limit_exceeded",
+            ),
+            (
+                SignatureQueryError::CallableLimitExceeded(CallableQueryLimitError::Candidates {
+                    actual: 257,
+                    limit: 256,
+                }),
+                ErrorCode::ServerCancelled as i32,
+                "aw.signature.query.limit_exceeded",
+            ),
+            (
+                SignatureQueryError::Resolve(ResolveCallError::CandidateLimit {
+                    actual: 257,
+                    limit: 256,
+                }),
+                ErrorCode::ServerCancelled as i32,
+                "aw.signature.query.limit_exceeded",
+            ),
             (
                 SignatureQueryError::Cancelled,
                 ErrorCode::RequestCanceled as i32,
@@ -850,7 +898,9 @@ mod tests {
                 "aw.signature.query.deadline_exceeded",
             ),
             (
-                SignatureQueryError::LimitExceeded(CallableQueryLimitError::ArithmeticOverflow),
+                SignatureQueryError::ArithmeticOverflow {
+                    counter: SignatureWorkKind::SourceBytes,
+                },
                 ErrorCode::RequestFailed as i32,
                 "aw.signature.query.arithmetic_overflow",
             ),

@@ -505,9 +505,8 @@ impl TypeChecker<'_> {
             }
             if let Some(name) = ident_pattern_name(pattern)
                 && let Some(slot_family) = default_presentation_slot_family(expr)
-                && let Some(previous) = self
-                    .active_presentation_defaults
-                    .insert(slot_family.to_owned(), name.to_owned())
+                && let Some(previous) =
+                    self.set_active_presentation_default(slot_family, name.to_owned())
             {
                 self.errors.push(TypeCheckError::new(format!(
                     "presentation `{slot_family}` default slot already has live handle `{previous}`; use an explicit `slot = @slot.{slot_family}.name` for simultaneous values"

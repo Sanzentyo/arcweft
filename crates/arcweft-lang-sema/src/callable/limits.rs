@@ -1,5 +1,10 @@
 //! Inclusive callable catalog and query limits.
-use super::{CallableBuildLimitError, CallableQueryLimitError};
+#[cfg(test)]
+use super::SignatureLimitConfigurationError;
+use super::{
+    CallableBuildLimitError, CallableQueryLimitError, SignatureLimitExceeded, SignatureLimitKind,
+    SignatureWorkKind,
+};
 
 /// Fixed resource limits shared by callable registration and semantic queries.
 #[allow(
@@ -39,6 +44,119 @@ pub const PRODUCTION_CALLABLE_LIMITS: CallableLimits = CallableLimits {
     max_catalog_build_work: 1_048_576,
     max_query_work: 4_096,
 };
+
+/// Inclusive public signature-search and result limits.
+///
+/// These limits are intentionally independent from callable catalog and
+/// resolver staging. In particular, resolver facts fail closed at their own
+/// diagnostic limit while the public result deterministically truncates its
+/// diagnostic projection.
+#[allow(
+    clippy::struct_field_names,
+    reason = "the contract names each inclusive bound as an explicit maximum"
+)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SignatureQueryLimits {
+    candidate_calls: u64,
+    overloads: u64,
+    parameters_per_signature: u64,
+    nested_calls: u64,
+    recovery_nodes: u64,
+    source_bytes: u64,
+    diagnostics: u64,
+    work_units: u64,
+}
+
+/// Production signature limits. Every bound is inclusive.
+pub const PRODUCTION_SIGNATURE_LIMITS: SignatureQueryLimits = SignatureQueryLimits::PRODUCTION;
+
+impl SignatureQueryLimits {
+    pub const PRODUCTION: Self = Self {
+        candidate_calls: 4_096,
+        overloads: 64,
+        parameters_per_signature: 128,
+        nested_calls: 64,
+        recovery_nodes: 512,
+        source_bytes: 8_388_608,
+        diagnostics: 32,
+        work_units: 262_144,
+    };
+
+    pub const fn candidate_calls(self) -> u64 {
+        self.candidate_calls
+    }
+
+    pub const fn overloads(self) -> u64 {
+        self.overloads
+    }
+
+    pub const fn parameters_per_signature(self) -> u64 {
+        self.parameters_per_signature
+    }
+
+    pub const fn nested_calls(self) -> u64 {
+        self.nested_calls
+    }
+
+    pub const fn recovery_nodes(self) -> u64 {
+        self.recovery_nodes
+    }
+
+    pub const fn source_bytes(self) -> u64 {
+        self.source_bytes
+    }
+
+    pub const fn diagnostics(self) -> u64 {
+        self.diagnostics
+    }
+
+    pub const fn work_units(self) -> u64 {
+        self.work_units
+    }
+
+    #[cfg(test)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "tests need independent exact and one-over controls for every public limit"
+    )]
+    pub(crate) fn try_for_test(
+        candidate_calls: u64,
+        overloads: u64,
+        parameters_per_signature: u64,
+        nested_calls: u64,
+        recovery_nodes: u64,
+        source_bytes: u64,
+        diagnostics: u64,
+        work_units: u64,
+    ) -> Result<Self, SignatureLimitConfigurationError> {
+        let limits = [
+            (SignatureLimitKind::CandidateCalls, candidate_calls),
+            (SignatureLimitKind::Overloads, overloads),
+            (
+                SignatureLimitKind::ParametersPerSignature,
+                parameters_per_signature,
+            ),
+            (SignatureLimitKind::NestedCalls, nested_calls),
+            (SignatureLimitKind::RecoveryNodes, recovery_nodes),
+            (SignatureLimitKind::SourceBytes, source_bytes),
+            (SignatureLimitKind::Diagnostics, diagnostics),
+            (SignatureLimitKind::WorkUnits, work_units),
+        ];
+        if let Some((kind, _)) = limits.into_iter().find(|(_, value)| *value == 0) {
+            return Err(SignatureLimitConfigurationError::Zero { kind });
+        }
+        Ok(Self {
+            candidate_calls,
+            overloads,
+            parameters_per_signature,
+            nested_calls,
+            recovery_nodes,
+            source_bytes,
+            diagnostics,
+            work_units,
+        })
+    }
+}
 
 impl CallableLimits {
     pub const fn max_path_segments(self) -> usize {
@@ -165,6 +283,9 @@ impl CatalogBuildWork {
 pub(crate) struct ResolverWork {
     consumed: u64,
     limit: u64,
+    resolver: u64,
+    argument_mapping: u64,
+    type_checks: u64,
 }
 
 #[allow(
@@ -173,14 +294,42 @@ pub(crate) struct ResolverWork {
 )]
 impl ResolverWork {
     pub(crate) const fn new(limit: u64) -> Self {
-        Self { consumed: 0, limit }
+        Self {
+            consumed: 0,
+            limit,
+            resolver: 0,
+            argument_mapping: 0,
+            type_checks: 0,
+        }
     }
 
     pub(crate) fn reset(&mut self) {
         self.consumed = 0;
+        self.resolver = 0;
+        self.argument_mapping = 0;
+        self.type_checks = 0;
     }
 
     pub(crate) fn charge(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
+        self.charge_component(units, ResolverWorkComponent::Resolver)
+    }
+
+    pub(crate) fn charge_argument_mapping(
+        &mut self,
+        units: u64,
+    ) -> Result<(), CallableQueryLimitError> {
+        self.charge_component(units, ResolverWorkComponent::ArgumentMapping)
+    }
+
+    pub(crate) fn charge_type_check(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
+        self.charge_component(units, ResolverWorkComponent::TypeCheck)
+    }
+
+    fn charge_component(
+        &mut self,
+        units: u64,
+        component: ResolverWorkComponent,
+    ) -> Result<(), CallableQueryLimitError> {
         let next = self
             .consumed
             .checked_add(units)
@@ -192,7 +341,18 @@ impl ResolverWork {
                 limit: self.limit,
             });
         }
+        let next_component = match component {
+            ResolverWorkComponent::Resolver => self.resolver.checked_add(units),
+            ResolverWorkComponent::ArgumentMapping => self.argument_mapping.checked_add(units),
+            ResolverWorkComponent::TypeCheck => self.type_checks.checked_add(units),
+        }
+        .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
         self.consumed = next;
+        match component {
+            ResolverWorkComponent::Resolver => self.resolver = next_component,
+            ResolverWorkComponent::ArgumentMapping => self.argument_mapping = next_component,
+            ResolverWorkComponent::TypeCheck => self.type_checks = next_component,
+        }
         Ok(())
     }
 
@@ -205,6 +365,29 @@ impl ResolverWork {
     pub(crate) const fn limit(self) -> u64 {
         self.limit
     }
+
+    pub(crate) fn signature_report(
+        self,
+        recovery_nodes: usize,
+        diagnostics: usize,
+        limits: &CallableLimits,
+    ) -> Result<SignatureWorkReport, CallableQueryLimitError> {
+        SignatureWorkReport::try_new(
+            self.resolver,
+            self.argument_mapping,
+            self.type_checks,
+            recovery_nodes,
+            diagnostics,
+            limits,
+        )
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ResolverWorkComponent {
+    Resolver,
+    ArgumentMapping,
+    TypeCheck,
 }
 
 /// Work performed while resolving and projecting one semantic signature query.
@@ -277,5 +460,315 @@ impl SignatureWorkReport {
             .checked_add(self.argument_mapping)
             .and_then(|value| value.checked_add(self.type_checks))
             .ok_or(CallableQueryLimitError::ArithmeticOverflow)
+    }
+}
+
+/// Search-stage work for the outer position-aware signature query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SignatureQuerySearchWork {
+    node_visits: u64,
+    candidate_calls: u64,
+    nested_calls: u64,
+    arguments: u64,
+    recovery_nodes: u64,
+}
+
+impl SignatureQuerySearchWork {
+    pub const fn new(
+        node_visits: u64,
+        candidate_calls: u64,
+        nested_calls: u64,
+        arguments: u64,
+        recovery_nodes: u64,
+    ) -> Self {
+        Self {
+            node_visits,
+            candidate_calls,
+            nested_calls,
+            arguments,
+            recovery_nodes,
+        }
+    }
+
+    pub const fn node_visits(self) -> u64 {
+        self.node_visits
+    }
+    pub const fn candidate_calls(self) -> u64 {
+        self.candidate_calls
+    }
+    pub const fn nested_calls(self) -> u64 {
+        self.nested_calls
+    }
+    pub const fn arguments(self) -> u64 {
+        self.arguments
+    }
+    pub const fn recovery_nodes(self) -> u64 {
+        self.recovery_nodes
+    }
+}
+
+/// Resolver and checker-transaction work charged by the outer query meter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SignatureQueryResolutionWork {
+    resolver: u64,
+    argument_bindings: u64,
+    specificity_checks: u64,
+}
+
+impl SignatureQueryResolutionWork {
+    pub const fn new(resolver: u64, argument_bindings: u64, specificity_checks: u64) -> Self {
+        Self {
+            resolver,
+            argument_bindings,
+            specificity_checks,
+        }
+    }
+
+    pub const fn resolver(self) -> u64 {
+        self.resolver
+    }
+    pub const fn argument_bindings(self) -> u64 {
+        self.argument_bindings
+    }
+    pub const fn specificity_checks(self) -> u64 {
+        self.specificity_checks
+    }
+}
+
+/// Public-result projection work charged by the outer query meter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SignatureQueryProjectionWork {
+    overloads: u64,
+    parameters: u64,
+    diagnostic_considerations: u64,
+}
+
+impl SignatureQueryProjectionWork {
+    pub const fn new(overloads: u64, parameters: u64, diagnostic_considerations: u64) -> Self {
+        Self {
+            overloads,
+            parameters,
+            diagnostic_considerations,
+        }
+    }
+
+    pub const fn overloads(self) -> u64 {
+        self.overloads
+    }
+    pub const fn parameters(self) -> u64 {
+        self.parameters
+    }
+    pub const fn diagnostic_considerations(self) -> u64 {
+        self.diagnostic_considerations
+    }
+}
+
+/// Exact outer-query operation counts, separated by owning stage.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SignatureQueryWorkReport {
+    search: SignatureQuerySearchWork,
+    resolution: SignatureQueryResolutionWork,
+    projection: SignatureQueryProjectionWork,
+    total: u64,
+}
+
+impl SignatureQueryWorkReport {
+    pub const fn search(self) -> SignatureQuerySearchWork {
+        self.search
+    }
+    pub const fn resolution(self) -> SignatureQueryResolutionWork {
+        self.resolution
+    }
+    pub const fn projection(self) -> SignatureQueryProjectionWork {
+        self.projection
+    }
+
+    pub const fn total_work(self) -> u64 {
+        self.total
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SignatureAccountingError {
+    Limit(SignatureLimitExceeded),
+    Arithmetic { counter: SignatureWorkKind },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SignatureQueryWorkMeter {
+    limits: SignatureQueryLimits,
+    node_visits: u64,
+    candidate_calls: u64,
+    nested_calls: u64,
+    arguments: u64,
+    recovery_nodes: u64,
+    resolver: u64,
+    argument_bindings: u64,
+    specificity_checks: u64,
+    overloads: u64,
+    parameters: u64,
+    diagnostic_considerations: u64,
+    total: u64,
+}
+
+impl SignatureQueryWorkMeter {
+    pub(crate) const fn new(limits: SignatureQueryLimits) -> Self {
+        Self {
+            limits,
+            node_visits: 0,
+            candidate_calls: 0,
+            nested_calls: 0,
+            arguments: 0,
+            recovery_nodes: 0,
+            resolver: 0,
+            argument_bindings: 0,
+            specificity_checks: 0,
+            overloads: 0,
+            parameters: 0,
+            diagnostic_considerations: 0,
+            total: 0,
+        }
+    }
+
+    pub(crate) fn charge(
+        &mut self,
+        kind: SignatureWorkKind,
+        units: u64,
+    ) -> Result<(), SignatureAccountingError> {
+        let counter = self.counter(kind);
+        let next_counter = counter
+            .checked_add(units)
+            .ok_or(SignatureAccountingError::Arithmetic { counter: kind })?;
+        if let Some((limit_kind, maximum)) = self.operation_limit(kind)
+            && next_counter > maximum
+        {
+            return Err(SignatureAccountingError::Limit(SignatureLimitExceeded {
+                kind: limit_kind,
+                observed: next_counter,
+                maximum,
+            }));
+        }
+        let next_total = self
+            .total
+            .checked_add(units)
+            .ok_or(SignatureAccountingError::Arithmetic { counter: kind })?;
+        if next_total > self.limits.work_units() {
+            return Err(SignatureAccountingError::Limit(SignatureLimitExceeded {
+                kind: SignatureLimitKind::WorkUnits,
+                observed: next_total,
+                maximum: self.limits.work_units(),
+            }));
+        }
+        *self.counter_mut(kind) = next_counter;
+        self.total = next_total;
+        Ok(())
+    }
+
+    pub(crate) fn charge_parameter(
+        &mut self,
+        parameters_in_signature: &mut u64,
+    ) -> Result<(), SignatureAccountingError> {
+        let observed =
+            parameters_in_signature
+                .checked_add(1)
+                .ok_or(SignatureAccountingError::Arithmetic {
+                    counter: SignatureWorkKind::Parameters,
+                })?;
+        if observed > self.limits.parameters_per_signature() {
+            return Err(SignatureAccountingError::Limit(SignatureLimitExceeded {
+                kind: SignatureLimitKind::ParametersPerSignature,
+                observed,
+                maximum: self.limits.parameters_per_signature(),
+            }));
+        }
+        self.charge(SignatureWorkKind::Parameters, 1)?;
+        *parameters_in_signature = observed;
+        Ok(())
+    }
+
+    pub(crate) fn report(&self) -> SignatureQueryWorkReport {
+        SignatureQueryWorkReport {
+            search: SignatureQuerySearchWork::new(
+                self.node_visits,
+                self.candidate_calls,
+                self.nested_calls,
+                self.arguments,
+                self.recovery_nodes,
+            ),
+            resolution: SignatureQueryResolutionWork::new(
+                self.resolver,
+                self.argument_bindings,
+                self.specificity_checks,
+            ),
+            projection: SignatureQueryProjectionWork::new(
+                self.overloads,
+                self.parameters,
+                self.diagnostic_considerations,
+            ),
+            total: self.total,
+        }
+    }
+
+    const fn counter(&self, kind: SignatureWorkKind) -> u64 {
+        match kind {
+            SignatureWorkKind::SourceBytes => 0,
+            SignatureWorkKind::NodeVisits => self.node_visits,
+            SignatureWorkKind::CandidateCalls => self.candidate_calls,
+            SignatureWorkKind::NestedCalls => self.nested_calls,
+            SignatureWorkKind::Arguments => self.arguments,
+            SignatureWorkKind::RecoveryNodes => self.recovery_nodes,
+            SignatureWorkKind::Resolver => self.resolver,
+            SignatureWorkKind::ArgumentBindings => self.argument_bindings,
+            SignatureWorkKind::SpecificityChecks => self.specificity_checks,
+            SignatureWorkKind::Overloads => self.overloads,
+            SignatureWorkKind::Parameters => self.parameters,
+            SignatureWorkKind::DiagnosticConsiderations => self.diagnostic_considerations,
+        }
+    }
+
+    fn counter_mut(&mut self, kind: SignatureWorkKind) -> &mut u64 {
+        match kind {
+            SignatureWorkKind::SourceBytes => {
+                unreachable!("source bytes are checked before the work meter is created")
+            }
+            SignatureWorkKind::NodeVisits => &mut self.node_visits,
+            SignatureWorkKind::CandidateCalls => &mut self.candidate_calls,
+            SignatureWorkKind::NestedCalls => &mut self.nested_calls,
+            SignatureWorkKind::Arguments => &mut self.arguments,
+            SignatureWorkKind::RecoveryNodes => &mut self.recovery_nodes,
+            SignatureWorkKind::Resolver => &mut self.resolver,
+            SignatureWorkKind::ArgumentBindings => &mut self.argument_bindings,
+            SignatureWorkKind::SpecificityChecks => &mut self.specificity_checks,
+            SignatureWorkKind::Overloads => &mut self.overloads,
+            SignatureWorkKind::Parameters => &mut self.parameters,
+            SignatureWorkKind::DiagnosticConsiderations => &mut self.diagnostic_considerations,
+        }
+    }
+
+    const fn operation_limit(&self, kind: SignatureWorkKind) -> Option<(SignatureLimitKind, u64)> {
+        match kind {
+            SignatureWorkKind::CandidateCalls => Some((
+                SignatureLimitKind::CandidateCalls,
+                self.limits.candidate_calls(),
+            )),
+            SignatureWorkKind::NestedCalls => {
+                Some((SignatureLimitKind::NestedCalls, self.limits.nested_calls()))
+            }
+            SignatureWorkKind::RecoveryNodes => Some((
+                SignatureLimitKind::RecoveryNodes,
+                self.limits.recovery_nodes(),
+            )),
+            SignatureWorkKind::Overloads => {
+                Some((SignatureLimitKind::Overloads, self.limits.overloads()))
+            }
+            SignatureWorkKind::SourceBytes
+            | SignatureWorkKind::NodeVisits
+            | SignatureWorkKind::Arguments
+            | SignatureWorkKind::Resolver
+            | SignatureWorkKind::ArgumentBindings
+            | SignatureWorkKind::SpecificityChecks
+            | SignatureWorkKind::Parameters
+            | SignatureWorkKind::DiagnosticConsiderations => None,
+        }
     }
 }

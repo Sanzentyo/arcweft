@@ -3,7 +3,7 @@
     reason = "test helpers assert the complete public typed query error without erasing evidence"
 )]
 
-use std::{sync::Arc, sync::atomic::AtomicBool, time::Instant};
+use std::{cell::Cell, sync::Arc, sync::atomic::AtomicBool, time::Instant};
 
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
@@ -17,14 +17,18 @@ use crate::{
     callable::{
         AdapterPackageId, CallableArgumentPolicy, CallableCandidateId, CallableDiagnosticCode,
         CallableDocumentation, CallableEffectSchema, CallableFamily, CallableGroupIndex,
-        CallableGroupKind, CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex,
+        CallableGroupKind, CallableLookupKey, CallableName, CallableOverloadIndex,
         CallableParameter, CallableParameterGroup, CallableParameterIndex,
         CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
         CallableSignatureSchema, CallableValidator, EnvironmentCallableKind,
         EnvironmentCallableOwner, EnvironmentCallablePublication,
         EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
-        PRODUCTION_CALLABLE_LIMITS, SemanticSignatureIndex, SpreadArgumentPolicy,
-        UnknownNamedArgumentPolicy,
+        PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, ResolverWork,
+        SemanticSignatureIndex, SignatureOrigin, SignatureQueryLimits, SignatureQueryStep,
+        SignatureQueryWorkMeter, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    },
+    checker::module::{
+        SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
     },
     effect_row::EffectRow,
     effects::EffectSet,
@@ -34,7 +38,7 @@ use crate::{
         PACKAGE, one_character_facts, register, root_project_source, sample_manifest,
         source_document,
     },
-    types::TypeKind,
+    types::{EntityKind, TypeKind},
 };
 
 use super::{
@@ -87,17 +91,20 @@ impl SignatureFixture {
     }
 
     fn with_publication(source: &str, publication: EnvironmentCallablePublication) -> Self {
+        Self::with_environment_and_publication(source, TypeCheckEnv::standard(), publication)
+    }
+
+    fn with_environment_and_publication(
+        source: &str,
+        environment: TypeCheckEnv,
+        publication: EnvironmentCallablePublication,
+    ) -> Self {
         let (document, project, world_id) =
             root_project_source("signature-query-publication", source);
         let facts = one_character_facts(&document, world_id, &sample_manifest("layers/body.png"));
         let world = CharacterRegistrar::register(
-            CharacterRegistrationRequest::new(
-                Arc::new(TypeCheckEnv::standard()),
-                &project,
-                &facts,
-                None,
-            )
-            .with_callable_publication(publication),
+            CharacterRegistrationRequest::new(Arc::new(environment), &project, &facts, None)
+                .with_callable_publication(publication),
         )
         .expect("signature publication fixture registers");
         Self {
@@ -160,10 +167,25 @@ impl SignatureFixture {
         )
     }
 
+    fn query_with_control(
+        &self,
+        byte_offset: usize,
+        control: SignatureQueryControl<'_>,
+    ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
+        let hir = self.project.linked_module();
+        query_signature(SignatureQuery::production(
+            &self.world,
+            &self.document,
+            &hir,
+            byte_offset,
+            control,
+        )?)
+    }
+
     fn query_with_limits(
         &self,
         byte_offset: usize,
-        limits: CallableLimits,
+        limits: SignatureQueryLimits,
     ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
         let cancelled = AtomicBool::new(false);
         let hir = self.project.linked_module();
@@ -507,6 +529,66 @@ fn query_control_and_positions_fail_before_semantic_projection() {
         query_signature(query),
         Err(SignatureQueryError::DeadlineExceeded)
     );
+
+    let cancelled = AtomicBool::new(false);
+    let remaining_steps = Cell::new(1);
+    let control =
+        SignatureQueryControl::new(&cancelled, None).with_remaining_steps(&remaining_steps);
+    assert_eq!(
+        fixture.query_with_control(unique_offset(fixture.document.text(), "1i32"), control),
+        Err(SignatureQueryError::DeadlineExceeded),
+        "the preflight succeeds and the first focused resolver step expires"
+    );
+}
+
+#[test]
+fn deadline_during_candidate_probe_or_selected_replay_returns_no_partial_help() {
+    let ambiguous = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = ambiguous_value(1i32)
+    ()
+}
+",
+        ambiguous_publication(),
+    );
+    let cancelled = AtomicBool::new(false);
+    let control = SignatureQueryControl::new(&cancelled, None)
+        .with_deadline_step(SignatureQueryStep::CandidateProbe);
+    assert_eq!(
+        ambiguous.query_with_control(unique_offset(ambiguous.document.text(), "1i32"), control,),
+        Err(SignatureQueryError::DeadlineExceeded)
+    );
+    let control = SignatureQueryControl::new(&cancelled, None)
+        .with_deadline_step(SignatureQueryStep::CandidateArgumentProbe);
+    assert_eq!(
+        ambiguous.query_with_control(unique_offset(ambiguous.document.text(), "1i32"), control,),
+        Err(SignatureQueryError::DeadlineExceeded),
+        "candidate arguments are polled at their evaluation boundary"
+    );
+    let control = SignatureQueryControl::new(&cancelled, None)
+        .with_deadline_step(SignatureQueryStep::CandidateComparison);
+    assert_eq!(
+        ambiguous.query_with_control(unique_offset(ambiguous.document.text(), "1i32"), control,),
+        Err(SignatureQueryError::DeadlineExceeded),
+        "candidate comparisons are polled at their comparison boundary"
+    );
+
+    let selected = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = selected_overload(1i32)
+    ()
+}
+",
+        selected_overload_publication(),
+    );
+    let control = SignatureQueryControl::new(&cancelled, None)
+        .with_deadline_step(SignatureQueryStep::SelectedReplay);
+    assert_eq!(
+        selected.query_with_control(unique_offset(selected.document.text(), "1i32"), control,),
+        Err(SignatureQueryError::DeadlineExceeded)
+    );
 }
 
 #[test]
@@ -528,9 +610,8 @@ fn accepted_tuple_rejects_changed_bytes_world_mismatch_and_utf8_midpoint() {
             unique_offset(changed.text(), "1i32"),
             SignatureQueryControl::new(&cancelled, None),
         ),
-        Err(SignatureQueryError::Stale(
-            SignatureSemanticStale::HirDocumentIdentity { .. }
-        ))
+        Err(SignatureQueryError::Stale(stale))
+            if matches!(*stale, SignatureSemanticStale::HirDocumentIdentity { .. })
     ));
 
     let other = SignatureFixture::new(&format!("{SOURCE}\n// another world"));
@@ -542,9 +623,8 @@ fn accepted_tuple_rejects_changed_bytes_world_mismatch_and_utf8_midpoint() {
             unique_offset(fixture.document.text(), "1i32"),
             SignatureQueryControl::new(&cancelled, None),
         ),
-        Err(SignatureQueryError::Stale(
-            SignatureSemanticStale::WorldDocumentIdentity { .. }
-        ))
+        Err(SignatureQueryError::Stale(stale))
+            if matches!(*stale, SignatureSemanticStale::WorldDocumentIdentity { .. })
     ));
 
     let unicode = SignatureFixture::new(
@@ -606,10 +686,57 @@ fn main() -> Unit {
         .expect("non-callable query");
     assert!(matches!(
         outcome,
-        SignatureQueryOutcome::NotApplicable(
-            super::SignatureNotApplicable::NonCallableCallee { .. }
-        )
+        SignatureQueryOutcome::NotApplicable(super::SignatureNotApplicable::NonCallableCallee)
     ));
+}
+
+#[test]
+fn unknown_callee_and_non_call_dialogue_surfaces_are_typed_outcomes() {
+    let unknown = SignatureFixture::new(
+        r"
+fn main() -> Unit {
+    missing_callable(2i32)
+    ()
+}
+",
+    );
+    assert_eq!(
+        unknown
+            .query_in("missing_callable(2i32)", "2i32")
+            .expect("unknown-callee query"),
+        SignatureQueryOutcome::NotApplicable(super::SignatureNotApplicable::UnknownCallee)
+    );
+
+    let dialogue_tag = SignatureFixture::new(
+        r"
+flow @flow.main main {
+    alice: Moving.[move at=.left]
+}
+",
+    );
+    assert_eq!(
+        dialogue_tag
+            .query_in("[move at=.left]", "at=.left")
+            .expect("dialogue-tag query"),
+        SignatureQueryOutcome::NotApplicable(super::SignatureNotApplicable::UnsupportedSurface)
+    );
+
+    let goto = SignatureFixture::new(
+        r"
+flow @flow.main main {
+    goto @flow.target
+}
+
+flow @flow.target target {
+    return ()
+}
+",
+    );
+    assert_eq!(
+        goto.query_in("goto @flow.target", "@flow.target")
+            .expect("goto query"),
+        SignatureQueryOutcome::NotApplicable(super::SignatureNotApplicable::UnsupportedSurface)
+    );
 }
 
 #[test]
@@ -656,7 +783,7 @@ fn exact_query_budget_succeeds_and_one_under_fails_without_a_partial_result() {
     else {
         panic!("production budget must produce help")
     };
-    let exact_work = production.work().total_work().expect("bounded work");
+    let exact_work = production.query_work().total_work();
     let exact = test_limits(exact_work);
     assert!(matches!(
         fixture.query_with_limits(cursor, exact),
@@ -670,7 +797,203 @@ fn exact_query_budget_succeeds_and_one_under_fails_without_a_partial_result() {
 }
 
 #[test]
-fn ambiguous_help_keeps_all_candidates_and_focuses_deterministic_first() {
+fn candidate_call_and_nested_path_limits_are_inclusive() {
+    let exact_candidates = nested_call_fixture(3);
+    let cursor = unique_offset(exact_candidates.document.text(), "1i32");
+    let exact = custom_limits(3, 64, 128, 3, 512, 8_388_608, 32, 262_144);
+    let SignatureQueryOutcome::Help(help) = exact_candidates
+        .query_with_limits(cursor, exact)
+        .expect("three cursor-containing calls are accepted")
+    else {
+        panic!("nested target must produce signature help")
+    };
+    assert_eq!(help.query_work().search().candidate_calls(), 3);
+    assert_eq!(help.query_work().search().nested_calls(), 3);
+
+    let one_under = custom_limits(2, 64, 128, 64, 512, 8_388_608, 32, 262_144);
+    assert!(matches!(
+        exact_candidates.query_with_limits(cursor, one_under),
+        Err(SignatureQueryError::LimitExceeded(
+            crate::callable::SignatureLimitExceeded {
+                kind: crate::callable::SignatureLimitKind::CandidateCalls,
+                observed: 3,
+                maximum: 2,
+            }
+        ))
+    ));
+
+    let nested_one_under = custom_limits(4_096, 64, 128, 2, 512, 8_388_608, 32, 262_144);
+    assert!(matches!(
+        exact_candidates.query_with_limits(cursor, nested_one_under),
+        Err(SignatureQueryError::LimitExceeded(
+            crate::callable::SignatureLimitExceeded {
+                kind: crate::callable::SignatureLimitKind::NestedCalls,
+                observed: 3,
+                maximum: 2,
+            }
+        ))
+    ));
+}
+
+#[test]
+fn overload_limit_fails_before_candidate_probe() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    ambiguous_value(1i32)
+    ()
+}
+",
+        ambiguous_publication(),
+    );
+    let cancelled = AtomicBool::new(false);
+    let control = SignatureQueryControl::new(&cancelled, None)
+        .with_deadline_step(SignatureQueryStep::CandidateProbe);
+    let hir = fixture.project.linked_module();
+    let request = SignatureQuery::try_new(
+        &fixture.world,
+        &fixture.document,
+        &hir,
+        unique_offset(fixture.document.text(), "1i32"),
+        custom_limits(4_096, 1, 128, 64, 512, 8_388_608, 32, 262_144),
+        control,
+    )
+    .expect("the public overload limit is validated during semantic work");
+    assert!(matches!(
+        query_signature(request),
+        Err(SignatureQueryError::LimitExceeded(
+            crate::callable::SignatureLimitExceeded {
+                kind: crate::callable::SignatureLimitKind::Overloads,
+                observed: 2,
+                maximum: 1,
+            }
+        ))
+    ));
+}
+
+#[test]
+fn surface_scan_charges_every_visited_sibling_call_list() {
+    let fixture = SignatureFixture::new(
+        r"
+fn id(value: i32) -> i32 { value }
+fn combine(first: i32, second: i32, third: i32) -> i32 { third }
+fn main() -> Unit {
+    let value = combine(id(id(1i32)), id(id(2i32)), id(3i32))
+    ()
+}
+",
+    );
+    let cursor = unique_offset(fixture.document.text(), "3i32");
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_with_limits(
+            cursor,
+            custom_limits(6, 64, 128, 2, 512, 8_388_608, 32, 262_144),
+        )
+        .expect("all six visited call lists fit the exact search limit")
+    else {
+        panic!("target id call must produce signature help")
+    };
+    assert_eq!(help.query_work().search().candidate_calls(), 6);
+    assert_eq!(help.query_work().search().nested_calls(), 2);
+}
+
+#[test]
+fn overload_probes_do_not_recharge_nested_cursor_path_syntax() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn id(value: i32) -> i32 { value }
+fn main() -> Unit {
+    let value = ambiguous_value(id(1i32))
+    ()
+}
+",
+        ambiguous_publication(),
+    );
+    let cursor = unique_offset(fixture.document.text(), "1i32");
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_with_limits(
+            cursor,
+            custom_limits(2, 64, 128, 2, 512, 8_388_608, 32, 262_144),
+        )
+        .expect("semantic overload probes do not add to two syntax call lists")
+    else {
+        panic!("nested id target must produce signature help")
+    };
+    assert_eq!(help.query_work().search().candidate_calls(), 2);
+    assert_eq!(help.query_work().search().nested_calls(), 2);
+}
+
+#[test]
+fn zero_argument_overloads_charge_each_actual_candidate_comparison() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = zero_choice()
+    ()
+}
+",
+        publication(
+            "adapter.signature-zero-comparisons",
+            "zero_choice",
+            [
+                no_parameter_schema(TypeKind::String),
+                no_parameter_schema(TypeKind::Bool),
+                no_parameter_schema(TypeKind::I32),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("zero_choice()", ")")
+        .expect("zero-argument overload query")
+    else {
+        panic!("ambiguous zero-argument target must produce help")
+    };
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(help.query_work().resolution().specificity_checks(), 0);
+    assert!(
+        help.work().resolver() >= 2,
+        "three candidates require two internally charged pair comparisons"
+    );
+}
+
+#[test]
+fn source_byte_limit_accepts_exact_bytes_and_rejects_one_over() {
+    let fixture = SignatureFixture::new(SOURCE);
+    let cursor = unique_offset(fixture.document.text(), "1i32");
+    let source_bytes = u64::try_from(fixture.document.text().len()).expect("source length");
+    assert!(matches!(
+        fixture.query_with_limits(
+            cursor,
+            custom_limits(4_096, 64, 128, 64, 512, source_bytes, 32, 262_144),
+        ),
+        Ok(SignatureQueryOutcome::Help(_))
+    ));
+    assert!(matches!(
+        fixture.query_with_limits(
+            cursor,
+            custom_limits(
+                4_096,
+                64,
+                128,
+                64,
+                512,
+                source_bytes - 1,
+                32,
+                262_144,
+            ),
+        ),
+        Err(SignatureQueryError::LimitExceeded(
+            crate::callable::SignatureLimitExceeded {
+                kind: crate::callable::SignatureLimitKind::SourceBytes,
+                observed,
+                maximum,
+            }
+        )) if observed == source_bytes && maximum == source_bytes - 1
+    ));
+}
+
+#[test]
+fn ambiguous_help_keeps_all_viable_candidates_and_focuses_the_first() {
     let fixture = SignatureFixture::with_publication(
         r"
 fn main() -> Unit {
@@ -689,6 +1012,7 @@ fn main() -> Unit {
 
     assert_eq!(help.signatures().len(), 2);
     assert_eq!(help.active_signature().get(), 0);
+    assert!(help.active_parameter().is_some());
     assert_eq!(
         help.diagnostics()
             .iter()
@@ -726,6 +1050,581 @@ fn main() -> Unit {
         SemanticSignatureIndex::try_from_usize(1).expect("signature one")
     );
     assert!(help.active_parameter().is_some());
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ranking test keeps the exact, fixed/rest, and omission precedence cases together"
+)]
+fn overload_selection_prefers_exact_types_fixed_parameters_and_fewer_omissions() {
+    let exact = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = exact_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-exact",
+            "exact_choice",
+            [
+                one_parameter_schema(
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::Bool,
+                ),
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::I32),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = exact
+        .query_in("exact_choice(1i32)", "1i32")
+        .expect("exact overload query")
+    else {
+        panic!("exact overload must produce help")
+    };
+    let active = help.active_signature();
+    assert_eq!(help.signatures()[active.get()].result(), &TypeKind::String);
+
+    let fixed = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = fixed_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-fixed",
+            "fixed_choice",
+            [
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::I32),
+                    CallableParameterPassing::RestPositional,
+                    CallableParameterPresence::Required,
+                    TypeKind::Bool,
+                ),
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::I32),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixed
+        .query_in("fixed_choice(1i32)", "1i32")
+        .expect("fixed overload query")
+    else {
+        panic!("fixed overload must produce help")
+    };
+    let active = help.active_signature();
+    assert_eq!(active.get(), 0);
+    assert_eq!(help.signatures()[active.get()].result(), &TypeKind::Bool);
+    assert_eq!(
+        help.diagnostics()
+            .iter()
+            .map(crate::callable::CallableDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CallableDiagnosticCode::AmbiguousOverload],
+        "fixed/rest binding counts are not later-contract tie-breakers"
+    );
+
+    let omissions = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = omission_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-omissions",
+            "omission_choice",
+            [
+                two_parameter_mapping_schema(false, TypeKind::Bool),
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::I32),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = omissions
+        .query_in("omission_choice(1i32)", "1i32")
+        .expect("omission overload query")
+    else {
+        panic!("omission overload must produce help")
+    };
+    let active = help.active_signature();
+    assert_eq!(help.signatures()[active.get()].result(), &TypeKind::String);
+}
+
+#[test]
+fn open_typed_and_unchecked_slots_are_equally_non_specific() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = open_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-open-specificity",
+            "open_choice",
+            [
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::Named("_".to_owned())),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+                one_parameter_schema(
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::Bool,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("open_choice(1i32)", "1i32")
+        .expect("open specificity query")
+    else {
+        panic!("open specificity target must produce help")
+    };
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.diagnostics()
+            .iter()
+            .map(crate::callable::CallableDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CallableDiagnosticCode::AmbiguousOverload]
+    );
+}
+
+#[test]
+fn otherwise_equal_standard_candidate_precedes_adapter_candidate() {
+    let fixture = SignatureFixture::with_environment_and_publication(
+        r"
+fn main() -> Unit {
+    let value = authority_choice(1i32)
+    ()
+}
+",
+        TypeCheckEnv::standard().with_function_signature(
+            "authority_choice",
+            FunctionSignature::new(
+                TypeKind::String,
+                [FunctionParam::required("value", TypeKind::I32)],
+            ),
+        ),
+        publication(
+            "adapter.signature-standard-precedence",
+            "authority_choice",
+            [one_parameter_schema(
+                CallableParameterType::Exact(TypeKind::I32),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+                TypeKind::Bool,
+            )],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("authority_choice(1i32)", "1i32")
+        .expect("standard-adapter precedence query")
+    else {
+        panic!("standard-adapter target must produce help")
+    };
+    let active = help.active_signature();
+    assert!(matches!(
+        help.signatures()[active.get()].origin(),
+        SignatureOrigin::Standard { .. }
+    ));
+    assert_eq!(help.signatures()[active.get()].result(), &TypeKind::String);
+}
+
+#[test]
+fn rejected_overload_probes_do_not_duplicate_selected_closure_capture_inventory() {
+    let source = r"
+fn main() -> Unit {
+    let captured = 1i32
+    let callback = closure_choice(|value: i32| -> i32 { captured })
+    ()
+}
+";
+    let function_type = TypeKind::function_with_effects(
+        [TypeKind::I32],
+        TypeKind::I32,
+        EffectRow::closed(EffectSet::new()),
+    );
+    let fixture = SignatureFixture::with_publication(
+        source,
+        publication(
+            "adapter.signature-transaction",
+            "closure_choice",
+            [
+                one_parameter_schema(
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::Bool,
+                ),
+                one_parameter_schema(
+                    CallableParameterType::Exact(function_type),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+            ],
+        ),
+    );
+    let cancellation = AtomicBool::new(false);
+    let mut resolver_work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let mut signature_work = SignatureQueryWorkMeter::new(PRODUCTION_SIGNATURE_LIMITS);
+    let control = SignatureQueryControl::new(&cancellation, None);
+    let linked = fixture.project.linked_module();
+    let byte_offset = unique_offset(source, "captured })");
+    let site = super::surface::select_signature_surface(
+        &linked,
+        &fixture.document,
+        byte_offset,
+        control,
+        &mut signature_work,
+    )
+    .expect("surface search succeeds")
+    .site
+    .expect("focused call surface");
+    let report = analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
+        module: &linked,
+        registered: &fixture.world,
+        site,
+        cancellation: &cancellation,
+        work: &mut resolver_work,
+        signature_work: &mut signature_work,
+        signature_control: &control,
+    })
+    .expect("focused semantic analysis succeeds");
+
+    assert_eq!(report.report().closure_captures.len(), 1);
+    assert_eq!(
+        report.report().closure_captures[0]
+            .captures
+            .iter()
+            .map(|capture| capture.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["captured"]
+    );
+}
+
+#[test]
+fn no_viable_overload_is_unselected_and_retains_typed_diagnostic() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = impossible_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-no-viable",
+            "impossible_choice",
+            [
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::String),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::Bool),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::Bool,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("impossible_choice(1i32)", "1i32")
+        .expect("no-viable query still returns candidate signatures")
+    else {
+        panic!("no-viable target must produce help")
+    };
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.active_parameter(),
+        Some(crate::callable::CallableParameterCoordinate::new(
+            CallableGroupIndex::ZERO,
+            CallableParameterIndex::try_from_usize(0).expect("parameter zero"),
+        ))
+    );
+    assert_eq!(
+        help.diagnostics()
+            .iter()
+            .map(crate::callable::CallableDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CallableDiagnosticCode::NoViableSignature]
+    );
+}
+
+#[test]
+fn rejected_candidates_are_filtered_and_singletons_keep_no_viable_facts() {
+    let mixed = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    mixed_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-mixed-viability",
+            "mixed_choice",
+            [
+                single_parameter_schema(TypeKind::String),
+                single_parameter_schema(TypeKind::Bool),
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::String),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::Unit,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = mixed
+        .query_in("mixed_choice(1i32)", "1i32")
+        .expect("mixed-viability query")
+    else {
+        panic!("two tied viable candidates must retain help")
+    };
+    assert_eq!(help.signatures().len(), 2);
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.diagnostics()
+            .iter()
+            .map(crate::callable::CallableDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CallableDiagnosticCode::AmbiguousOverload]
+    );
+
+    let singleton = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    singleton_choice(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-singleton-rejection",
+            "singleton_choice",
+            [one_parameter_schema(
+                CallableParameterType::Exact(TypeKind::String),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+                TypeKind::String,
+            )],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = singleton
+        .query_in("singleton_choice(1i32)", "1i32")
+        .expect("rejected singleton query")
+    else {
+        panic!("a rejected singleton still projects its one signature")
+    };
+    assert_eq!(help.signatures().len(), 1);
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.diagnostics()
+            .iter()
+            .map(crate::callable::CallableDiagnostic::code)
+            .collect::<Vec<_>>(),
+        vec![CallableDiagnosticCode::NoViableSignature]
+    );
+}
+
+#[test]
+fn candidate_zero_owns_unselected_mapping_and_closed_entity_refs_rank_exactly() {
+    let no_viable = SignatureFixture::with_publication(
+        r#"
+fn main() -> Unit {
+    mapped_rejection("wrong")
+    ()
+}
+"#,
+        publication(
+            "adapter.signature-rejected-mapping",
+            "mapped_rejection",
+            [
+                two_parameter_mapping_schema(true, TypeKind::String),
+                two_parameter_mapping_schema(false, TypeKind::Bool),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = no_viable
+        .query_in("mapped_rejection(\"wrong\")", "wrong")
+        .expect("candidate-zero rejected mapping query")
+    else {
+        panic!("no-viable candidates still project help")
+    };
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.active_parameter()
+            .expect("candidate zero supplies the unselected mapping")
+            .parameter()
+            .get(),
+        1
+    );
+
+    let entity = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    entity_choice(@character.alice)
+    ()
+}
+",
+        publication(
+            "adapter.signature-closed-entity",
+            "entity_choice",
+            [
+                one_parameter_schema(
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::Bool,
+                ),
+                one_parameter_schema(
+                    CallableParameterType::Exact(TypeKind::entity_ref(EntityKind::Character)),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                    TypeKind::String,
+                ),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = entity
+        .query_in("entity_choice(@character.alice)", "@character.alice")
+        .expect("closed entity-reference query")
+    else {
+        panic!("closed entity reference must select the exact overload")
+    };
+    assert_eq!(help.active_signature().get(), 1);
+    assert_eq!(help.signatures()[1].result(), &TypeKind::String);
+}
+
+#[test]
+fn fixed_expression_spread_focuses_the_exact_element_parameter() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    spread_choice([1i32 + 0i32, 2i32 + 0i32]...)
+    ()
+}
+",
+        publication(
+            "adapter.signature-fixed-spread-focus",
+            "spread_choice",
+            [two_positional_parameter_schema_with_spread(
+                TypeKind::String,
+            )],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("spread_choice([1i32 + 0i32, 2i32 + 0i32]...)", "2i32")
+        .expect("fixed expression-spread query")
+    else {
+        panic!("fixed expression spread must produce help")
+    };
+    assert_eq!(
+        help.active_parameter()
+            .expect("the second fixed element has exact source evidence")
+            .parameter()
+            .get(),
+        1
+    );
+}
+
+#[test]
+fn ambiguous_candidates_use_the_first_committed_mapping_for_ui_focus() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = mapped_differently(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-active-parameter",
+            "mapped_differently",
+            [
+                two_parameter_mapping_schema(true, TypeKind::String),
+                two_parameter_mapping_schema(false, TypeKind::Bool),
+            ],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("mapped_differently(1i32)", "1i32")
+        .expect("candidate-specific mapping query")
+    else {
+        panic!("ambiguous target must produce help")
+    };
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.active_parameter()
+            .expect("the first viable candidate supplies committed focus")
+            .parameter()
+            .get(),
+        1
+    );
+}
+
+#[test]
+fn unselected_candidates_bind_active_slots_after_prior_arguments() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let trailing = pair_choice(1i32, )
+    let reordered = pair_choice(first = 1i32, 2i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-next-active-parameter",
+            "pair_choice",
+            [
+                two_positional_parameter_schema(TypeKind::String),
+                two_positional_parameter_schema(TypeKind::Bool),
+            ],
+        ),
+    );
+    for (call, cursor) in [
+        ("pair_choice(1i32, )", ")"),
+        ("pair_choice(first = 1i32, 2i32)", "2i32"),
+    ] {
+        let SignatureQueryOutcome::Help(help) = fixture
+            .query_in(call, cursor)
+            .expect("candidate-local active binding query")
+        else {
+            panic!("unselected pair target must produce help")
+        };
+        assert_eq!(help.active_signature().get(), 0);
+        assert_eq!(
+            help.active_parameter()
+                .expect("both candidates agree on the next parameter")
+                .parameter()
+                .get(),
+            1
+        );
+    }
 }
 
 #[test]
@@ -800,6 +1699,199 @@ fn ambiguous_publication() -> EnvironmentCallablePublication {
         .expect("ambiguous publication")
 }
 
+fn publication(
+    owner: &str,
+    callable: &str,
+    schemas: impl IntoIterator<Item = CallableSignatureSchema>,
+) -> EnvironmentCallablePublication {
+    let owner =
+        EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).expect("adapter id"));
+    let segments = callable.split('.').collect::<Vec<_>>();
+    let key = CallableLookupKey::Free(callable_path(&segments));
+    let records = schemas
+        .into_iter()
+        .enumerate()
+        .map(|(overload, schema)| {
+            EnvironmentCallablePublicationRecord::try_new(
+                EnvironmentCallableKind::Function,
+                key.clone(),
+                CallableOverloadIndex::try_from_usize(overload).expect("overload"),
+                schema,
+                CallableDocumentation::missing(),
+                None,
+                None,
+                EnvironmentDeclarationOrdinal::try_from_usize(overload)
+                    .expect("declaration ordinal"),
+            )
+            .expect("overload publication record")
+        })
+        .collect::<Vec<_>>();
+    EnvironmentCallablePublication::try_new(owner, records, &PRODUCTION_CALLABLE_LIMITS)
+        .expect("overload publication")
+}
+
+fn one_parameter_schema(
+    ty: CallableParameterType,
+    passing: CallableParameterPassing,
+    presence: CallableParameterPresence,
+    result: TypeKind,
+) -> CallableSignatureSchema {
+    schema_with_parameters(
+        vec![
+            CallableParameter::try_new(
+                CallableParameterIndex::try_from_usize(0).expect("parameter zero"),
+                Some(CallableName::try_new("value").expect("parameter name")),
+                ty,
+                passing,
+                presence,
+                None,
+                None,
+            )
+            .expect("parameter"),
+        ],
+        result,
+    )
+}
+
+fn two_parameter_mapping_schema(
+    named_parameter_first: bool,
+    result: TypeKind,
+) -> CallableSignatureSchema {
+    let make = |index: usize,
+                name: &str,
+                passing: CallableParameterPassing,
+                presence: CallableParameterPresence| {
+        CallableParameter::try_new(
+            CallableParameterIndex::try_from_usize(index).expect("parameter index"),
+            Some(CallableName::try_new(name).expect("parameter name")),
+            CallableParameterType::Exact(TypeKind::I32),
+            passing,
+            presence,
+            None,
+            None,
+        )
+        .expect("parameter")
+    };
+    let parameters = if named_parameter_first {
+        vec![
+            make(
+                0,
+                "named",
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            make(
+                1,
+                "value",
+                CallableParameterPassing::PositionalOnly,
+                CallableParameterPresence::Required,
+            ),
+        ]
+    } else {
+        vec![
+            make(
+                0,
+                "value",
+                CallableParameterPassing::PositionalOnly,
+                CallableParameterPresence::Required,
+            ),
+            make(
+                1,
+                "named",
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+        ]
+    };
+    schema_with_parameters(parameters, result)
+}
+
+fn two_positional_parameter_schema(result: TypeKind) -> CallableSignatureSchema {
+    let parameters = [
+        ("first", CallableParameterPresence::Required),
+        ("second", CallableParameterPresence::Optional),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (name, presence))| {
+        CallableParameter::try_new(
+            CallableParameterIndex::try_from_usize(index).expect("parameter index"),
+            Some(CallableName::try_new(name).expect("parameter name")),
+            CallableParameterType::Exact(TypeKind::I32),
+            CallableParameterPassing::PositionalOrNamed,
+            presence,
+            None,
+            None,
+        )
+        .expect("positional parameter")
+    })
+    .collect();
+    schema_with_parameters(parameters, result)
+}
+
+fn two_positional_parameter_schema_with_spread(result: TypeKind) -> CallableSignatureSchema {
+    let parameters = ["first", "second"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            CallableParameter::try_new(
+                CallableParameterIndex::try_from_usize(index).expect("parameter index"),
+                Some(CallableName::try_new(name).expect("parameter name")),
+                CallableParameterType::Exact(TypeKind::I32),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+                None,
+                None,
+            )
+            .expect("fixed-spread parameter")
+        })
+        .collect();
+    let group = CallableParameterGroup::try_new(
+        CallableGroupIndex::ZERO,
+        CallableGroupKind::Initial,
+        parameters,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("fixed-spread parameter group");
+    CallableSignatureSchema::try_new(
+        vec![group],
+        result,
+        CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("fixed-spread signature schema")
+}
+
+fn schema_with_parameters(
+    parameters: Vec<CallableParameter>,
+    result: TypeKind,
+) -> CallableSignatureSchema {
+    let group = CallableParameterGroup::try_new(
+        CallableGroupIndex::ZERO,
+        CallableGroupKind::Initial,
+        parameters,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("parameter group");
+    CallableSignatureSchema::try_new(
+        vec![group],
+        result,
+        CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::Reject,
+        ),
+        CallableValidator::Ordinary,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("signature schema")
+}
+
 fn no_parameter_schema(result: TypeKind) -> CallableSignatureSchema {
     let group = CallableParameterGroup::try_new(
         CallableGroupIndex::ZERO,
@@ -863,8 +1955,45 @@ fn callable_path(segments: &[&str]) -> CallablePath {
     .expect("callable path")
 }
 
-fn test_limits(max_query_work: u64) -> CallableLimits {
-    CallableLimits::for_test(32, 16, 128, 32, 256, 256, 128, 1_048_576, max_query_work)
+fn test_limits(max_query_work: u64) -> SignatureQueryLimits {
+    custom_limits(4_096, 64, 128, 64, 512, 8_388_608, 32, max_query_work)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn custom_limits(
+    candidate_calls: u64,
+    overloads: u64,
+    parameters_per_signature: u64,
+    nested_calls: u64,
+    recovery_nodes: u64,
+    source_bytes: u64,
+    diagnostics: u64,
+    work_units: u64,
+) -> SignatureQueryLimits {
+    SignatureQueryLimits::try_for_test(
+        candidate_calls,
+        overloads,
+        parameters_per_signature,
+        nested_calls,
+        recovery_nodes,
+        source_bytes,
+        diagnostics,
+        work_units,
+    )
+    .expect("positive signature query limits")
+}
+
+fn nested_call_fixture(depth: usize) -> SignatureFixture {
+    let expression = format!("{}1i32{}", "id(".repeat(depth), ")".repeat(depth));
+    SignatureFixture::new(&format!(
+        r"
+fn id(value: i32) -> i32 {{ value }}
+fn main() -> Unit {{
+    let value: i32 = {expression}
+    ()
+}}
+"
+    ))
 }
 
 fn unique_offset(source: &str, needle: &str) -> usize {

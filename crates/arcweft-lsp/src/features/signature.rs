@@ -46,12 +46,12 @@ fn project_help(help: &SemanticSignatureHelp) -> Result<SignatureHelp, Signature
         .iter()
         .enumerate()
         .map(|(index, signature)| {
-            let coordinate = (index == active_signature)
+            let active = (active_signature == index)
                 .then_some(help.active_parameter())
                 .flatten();
-            let projected = project_signature(signature, coordinate)?;
-            if index == active_signature {
-                active_parameter = projected.active_parameter;
+            let projected = project_signature(signature, active)?;
+            if active_signature == index {
+                active_parameter = help.active_parameter().and(projected.active_parameter);
             }
             Ok(projected.information)
         })

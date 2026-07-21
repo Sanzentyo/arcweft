@@ -12,19 +12,16 @@ use super::{
     CallableParameterCoordinate, CallableParameterPassing, CallableParameterPresence,
     CallableParameterSource, CallableParameterType, CallableQueryLimitError, CallableSource,
     NonCallableSource, ResolvedCallable, SemanticSignatureError, SignatureOrigin,
-    SignatureWorkReport,
+    SignatureQueryWorkReport, SignatureWorkReport, UnknownCallKind,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CallTargetFactMode {
     Disabled,
-    #[cfg(test)]
     Focused {
         call: SourceSpan,
-    },
-    Cursor {
-        document: SourceDocumentIdentity,
-        byte_offset: usize,
+        active_argument: Option<usize>,
+        byte_offset: Option<usize>,
     },
 }
 
@@ -42,6 +39,7 @@ pub(crate) struct CallTargetFacts {
     function_value_type: Option<TypeKind>,
     poison: CallPoison,
     diagnostics: Arc<[CallableDiagnostic]>,
+    active_parameter: Option<CallableParameterCoordinate>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,6 +54,9 @@ pub(crate) enum CallTargetFact {
     NonCallable {
         source: NonCallableSource,
         ty: TypeKind,
+    },
+    Missing {
+        kind: UnknownCallKind,
     },
 }
 
@@ -126,6 +127,7 @@ impl CallTargetFacts {
         document: SourceDocumentIdentity,
         call_span: SourceSpan,
         checked: CheckedCallTarget,
+        active_parameter: Option<CallableParameterCoordinate>,
         diagnostics: Vec<CallableDiagnostic>,
         limits: &CallableLimits,
     ) -> Result<Self, SemanticSignatureError> {
@@ -177,6 +179,21 @@ impl CallTargetFacts {
                 }
             }
         }
+        if let Some(active_parameter) = active_parameter
+            && checked
+                .active_candidate()
+                .and_then(|candidate| {
+                    candidate
+                        .schema()
+                        .group(active_parameter.group())
+                        .and_then(|group| {
+                            group.parameters().get(active_parameter.parameter().get())
+                        })
+                })
+                .is_none()
+        {
+            return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
+        }
         Ok(Self {
             expression,
             document,
@@ -190,6 +207,7 @@ impl CallTargetFacts {
             function_value_type: checked.function_value_type,
             poison: checked.poison,
             diagnostics: diagnostics.into(),
+            active_parameter,
         })
     }
 
@@ -205,6 +223,7 @@ impl CallTargetFacts {
     pub(crate) const fn target(&self) -> &CallTargetFact {
         &self.target
     }
+    #[cfg(test)]
     pub(crate) fn arguments(&self) -> &[CheckedCallArgumentFact] {
         &self.arguments
     }
@@ -230,6 +249,9 @@ impl CallTargetFacts {
     pub(crate) fn diagnostics(&self) -> &[CallableDiagnostic] {
         &self.diagnostics
     }
+    pub(crate) const fn active_parameter(&self) -> Option<CallableParameterCoordinate> {
+        self.active_parameter
+    }
 }
 
 impl CheckedCallArgumentFact {
@@ -254,16 +276,17 @@ impl CheckedCallArgumentFact {
     pub(crate) const fn index(&self) -> CallableArgumentIndex {
         self.index
     }
+    #[cfg(test)]
     pub(crate) const fn authored_name(&self) -> Option<&CallableName> {
         self.authored_name.as_ref()
     }
+    #[cfg(test)]
     pub(crate) const fn spread(&self) -> bool {
         self.spread
     }
     pub(crate) fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
         &self.slots
     }
-    #[cfg(test)]
     pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
     }
@@ -293,21 +316,106 @@ impl CheckedCallArgumentSlotFact {
     pub(crate) const fn mapped(&self) -> Option<CallableParameterCoordinate> {
         self.mapped
     }
-    #[cfg(test)]
     pub(crate) const fn inferred(&self) -> Option<&TypeKind> {
         self.inferred.as_ref()
     }
-    #[cfg(test)]
     pub(crate) const fn expected(&self) -> Option<&TypeKind> {
         self.expected.as_ref()
     }
-    #[cfg(test)]
     pub(crate) const fn poison(&self) -> CallPoison {
         self.poison
     }
 }
 
 impl CheckedCallTarget {
+    fn active_candidate(&self) -> Option<&ResolvedCallable> {
+        match &self.target {
+            CallTargetFact::Selected { selected, .. } => Some(selected),
+            CallTargetFact::Ambiguous { candidates } => candidates.first(),
+            CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => None,
+        }
+    }
+
+    pub(crate) fn active_parameter(
+        &self,
+        active_argument: Option<usize>,
+        byte_offset: Option<usize>,
+    ) -> Option<CallableParameterCoordinate> {
+        let active_argument = active_argument?;
+        let candidate = self.active_candidate()?;
+        let group = candidate.schema().group(self.current_group)?;
+        if let Some(argument) = self.arguments.get(active_argument) {
+            if let Some(byte_offset) = byte_offset {
+                let mut exact = argument
+                    .slots
+                    .iter()
+                    .filter(|slot| {
+                        slot.source.as_ref().is_some_and(|source| {
+                            source.range().start() <= byte_offset
+                                && byte_offset <= source.range().end()
+                        })
+                    })
+                    .filter_map(|slot| slot.mapped);
+                let first = exact.next();
+                if first.is_some() && exact.all(|candidate| Some(candidate) == first) {
+                    return first;
+                }
+            }
+            let mut mapped = argument.slots.iter().filter_map(|slot| slot.mapped);
+            let first = mapped.next();
+            return (first.is_some() && mapped.all(|candidate| Some(candidate) == first))
+                .then_some(first)
+                .flatten();
+        }
+        if active_argument != self.arguments.len() {
+            return None;
+        }
+
+        let mut provided = vec![false; group.parameters().len()];
+        if let super::CallableInstantiation::DataLast {
+            group: implicit_group,
+            parameter,
+            ..
+        } = candidate.instantiation()
+            && *implicit_group == self.current_group
+            && let Some(provided) = provided.get_mut(parameter.get())
+        {
+            *provided = true;
+        }
+        for coordinate in self
+            .arguments
+            .iter()
+            .flat_map(|argument| argument.slots.iter())
+            .filter_map(|slot| slot.mapped)
+            .filter(|coordinate| coordinate.group() == self.current_group)
+        {
+            let Some(parameter) = group.parameters().get(coordinate.parameter().get()) else {
+                continue;
+            };
+            if !matches!(
+                parameter.passing(),
+                CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
+            ) {
+                provided[parameter.index().get()] = true;
+            }
+        }
+        group
+            .parameters()
+            .iter()
+            .find(|parameter| {
+                !provided[parameter.index().get()]
+                    && matches!(
+                        parameter.passing(),
+                        CallableParameterPassing::PositionalOrNamed
+                            | CallableParameterPassing::PositionalOnly
+                            | CallableParameterPassing::RestPositional
+                    )
+            })
+            .map(|parameter| {
+                CallableParameterCoordinate::new(self.current_group, parameter.index())
+            })
+    }
+
     pub(crate) fn selected(
         selected: &ResolvedCallable,
         considered: &[ResolvedCallable],
@@ -367,6 +475,23 @@ impl CheckedCallTarget {
     ) -> Self {
         Self {
             target: CallTargetFact::NonCallable { source, ty },
+            result: None,
+            arguments: arguments.into(),
+            effects: EffectRow::closed(crate::effects::EffectSet::new()),
+            current_group,
+            next_group: None,
+            function_value_type: None,
+            poison: CallPoison::Rejected,
+        }
+    }
+
+    pub(crate) fn missing(
+        kind: UnknownCallKind,
+        arguments: Vec<CheckedCallArgumentFact>,
+        current_group: CallableGroupIndex,
+    ) -> Self {
+        Self {
+            target: CallTargetFact::Missing { kind },
             result: None,
             arguments: arguments.into(),
             effects: EffectRow::closed(crate::effects::EffectSet::new()),
@@ -619,7 +744,9 @@ pub struct SemanticSignatureHelp {
     next_group: Option<CallableGroupIndex>,
     recovery: SemanticSignatureRecovery,
     diagnostics: Arc<[CallableDiagnostic]>,
+    omitted_diagnostics: u64,
     work: SignatureWorkReport,
+    query_work: SignatureQueryWorkReport,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -649,7 +776,9 @@ impl SemanticSignatureHelp {
         next_group: Option<CallableGroupIndex>,
         recovery: SemanticSignatureRecovery,
         diagnostics: Vec<CallableDiagnostic>,
+        omitted_diagnostics: u64,
         work: SignatureWorkReport,
+        query_work: SignatureQueryWorkReport,
         limits: &CallableLimits,
     ) -> Result<Self, SemanticSignatureError> {
         if signatures.is_empty() {
@@ -717,15 +846,10 @@ impl SemanticSignatureHelp {
             }
         }
         if let Some(active) = active_parameter {
-            let parameter_exists = signatures
-                .get(active_signature.get())
-                .and_then(|signature| signature.groups.get(signature.current_group.get()))
-                .is_some_and(|group| {
-                    group
-                        .parameters
-                        .iter()
-                        .any(|parameter| parameter.coordinate == active)
-                });
+            let parameter_exists = active.group() == current_group
+                && signatures
+                    .get(active_signature.get())
+                    .is_some_and(|signature| signature_has_parameter(signature, active));
             if !parameter_exists {
                 return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
             }
@@ -759,7 +883,9 @@ impl SemanticSignatureHelp {
             next_group,
             recovery,
             diagnostics: diagnostics.into(),
+            omitted_diagnostics,
             work,
+            query_work,
         })
     }
     pub const fn document(&self) -> &SourceDocumentIdentity {
@@ -795,9 +921,30 @@ impl SemanticSignatureHelp {
     pub fn diagnostics(&self) -> &[CallableDiagnostic] {
         &self.diagnostics
     }
+    pub const fn omitted_diagnostics(&self) -> u64 {
+        self.omitted_diagnostics
+    }
     pub const fn work(&self) -> SignatureWorkReport {
         self.work
     }
+    pub const fn query_work(&self) -> SignatureQueryWorkReport {
+        self.query_work
+    }
+}
+
+fn signature_has_parameter(
+    signature: &SemanticSignature,
+    coordinate: CallableParameterCoordinate,
+) -> bool {
+    signature
+        .groups
+        .get(coordinate.group().get())
+        .is_some_and(|group| {
+            group
+                .parameters
+                .iter()
+                .any(|parameter| parameter.coordinate == coordinate)
+        })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

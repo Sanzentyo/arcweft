@@ -148,7 +148,24 @@ pub(crate) struct CallResolverRequest<'a> {
     expression: TypeExpressionId,
     cancellation: &'a AtomicBool,
     work: &'a mut ResolverWork,
+    signature_work: Option<&'a mut super::SignatureQueryWorkMeter>,
+    signature_control: Option<&'a dyn SignatureQueryStepControl>,
     limits: &'a CallableLimits,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SignatureQueryStep {
+    SurfaceTraversal,
+    Resolver,
+    CandidateMaterialization,
+    CandidateProbe,
+    CandidateArgumentProbe,
+    CandidateComparison,
+    SelectedReplay,
+}
+
+pub(crate) trait SignatureQueryStepControl {
+    fn check_signature_query_step(&self, step: SignatureQueryStep) -> Result<(), ResolveCallError>;
 }
 
 impl ResolvedFunctionValueSeed {
@@ -278,8 +295,26 @@ impl<'a> CallResolverRequest<'a> {
             expression,
             cancellation,
             work,
+            signature_work: None,
+            signature_control: None,
             limits,
         })
+    }
+
+    pub(crate) fn with_signature_work(
+        mut self,
+        signature_work: Option<&'a mut super::SignatureQueryWorkMeter>,
+    ) -> Self {
+        self.signature_work = signature_work;
+        self
+    }
+
+    pub(crate) fn with_signature_control(
+        mut self,
+        signature_control: Option<&'a dyn SignatureQueryStepControl>,
+    ) -> Self {
+        self.signature_control = signature_control;
+        self
     }
 
     pub(crate) const fn callee(&self) -> &CallCallee<'a> {
@@ -368,22 +403,22 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
                 Err(error) => ResolveCallOutcome::Rejected(error),
             }
         }
-        CallCallee::Dialogue { id, callee } => match resolve_dialogue_call(&request, id, callee) {
-            Ok(target) => ResolveCallOutcome::Resolved(target),
-            Err(error) => ResolveCallOutcome::Rejected(error),
-        },
-        CallCallee::FunctionValue { value } => {
-            match resolve_function_value(value, request.limits) {
+        CallCallee::Dialogue { id, callee } => {
+            match resolve_dialogue_call(&mut request, id, callee) {
                 Ok(target) => ResolveCallOutcome::Resolved(target),
                 Err(error) => ResolveCallOutcome::Rejected(error),
             }
         }
+        CallCallee::FunctionValue { value } => match resolve_function_value(value, &mut request) {
+            Ok(target) => ResolveCallOutcome::Resolved(target),
+            Err(error) => ResolveCallOutcome::Rejected(error),
+        },
     }
 }
 
 #[allow(clippy::result_large_err)]
 fn resolve_dialogue_call(
-    request: &CallResolverRequest<'_>,
+    request: &mut CallResolverRequest<'_>,
     id: super::DialogueCallableId,
     callee: &super::DialogueCalleeIdentity,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
@@ -408,6 +443,7 @@ fn resolve_dialogue_call(
         },
         DialogueCalleeIdentity::Content { .. } => CallableInstantiation::None,
     };
+    check_query_step(request)?;
     let callable = ResolvedCallable::try_new(
         CallableCandidateId::Dialogue(id),
         SignatureOrigin::Language {
@@ -426,8 +462,9 @@ fn resolve_dialogue_call(
 #[allow(clippy::result_large_err)]
 fn resolve_function_value(
     seed: &ResolvedFunctionValueSeed,
-    limits: &CallableLimits,
+    request: &mut CallResolverRequest<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
+    check_query_step(request)?;
     let callable = ResolvedCallable::try_new(
         CallableCandidateId::FunctionValue(seed.id.clone()),
         SignatureOrigin::FunctionValue {
@@ -437,7 +474,7 @@ fn resolve_function_value(
         CallableInstantiation::None,
         Vec::new(),
         None,
-        limits,
+        request.limits,
     )?;
     ResolvedFunctionValue::try_new(
         seed.id.clone(),
@@ -592,7 +629,7 @@ fn resolve_data_last_method(
     if let Some(binding) = request.lexical.binding(method) {
         if let LexicalCallBinding::Callable { .. } = binding
             && let ResolvedCallTarget::Candidates(candidates) =
-                resolve_lexical_binding(method, binding, request.limits)?
+                resolve_lexical_binding(method, binding, request)?
         {
             bases.extend(candidates.as_slice().iter().cloned());
         }
@@ -664,6 +701,7 @@ fn finish_data_last_candidates(
         let origin = base.origin().clone();
         let equivalent_sources = base.equivalent_sources().to_vec();
         let authority = base.authority();
+        check_query_step(request)?;
         candidates.push(ResolvedCallable::try_new(
             CallableCandidateId::DataLast(id),
             origin,
@@ -852,6 +890,7 @@ fn resolved_trait_method(
             request.limits,
         )
         .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+    check_query_step(request)?;
     let callable = ResolvedCallable::try_new(
         CallableCandidateId::TraitMethod(id.clone()),
         SignatureOrigin::Trait { id },
@@ -875,6 +914,7 @@ fn resolved_language_method(
     schema: CallableSignatureSchema,
     instantiation: CallableInstantiation,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
+    check_query_step(request)?;
     let callable = ResolvedCallable::try_new(
         id,
         SignatureOrigin::Language { family },
@@ -925,6 +965,7 @@ fn resolve_free_call(
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
     check_query_step(request)?;
     if let FxResolution::Known(id) = FxCallableSignatureId::resolve(path) {
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Fx(id),
             SignatureOrigin::Language {
@@ -942,11 +983,15 @@ fn resolve_free_call(
     }
 
     check_query_step(request)?;
-    if let CallCallee::Free {
-        enum_variant: Some(seed),
-        ..
-    } = &request.callee
-    {
+    let enum_variant = match &request.callee {
+        CallCallee::Free {
+            enum_variant: Some(seed),
+            ..
+        } => Some((*seed).clone()),
+        _ => None,
+    };
+    if let Some(seed) = enum_variant {
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::EnumVariant(seed.id.clone()),
             SignatureOrigin::Language {
@@ -971,6 +1016,7 @@ fn resolve_free_call(
             .expected
             .filter(|expected| matches!(expected, TypeKind::Result { .. }))
             .cloned();
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Result(kind),
             SignatureOrigin::Language {
@@ -993,6 +1039,7 @@ fn resolve_free_call(
             .expected
             .filter(|expected| matches!(expected, TypeKind::Option(_)))
             .cloned();
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Option(kind),
             SignatureOrigin::Language {
@@ -1017,6 +1064,7 @@ fn resolve_free_call(
             }
             _ => id.signature_schema(),
         });
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Builtin(id),
             SignatureOrigin::Language {
@@ -1036,6 +1084,7 @@ fn resolve_free_call(
     check_query_step(request)?;
     if let Some(id) = AgentIntrinsicSignatureId::resolve(path) {
         let schema = Arc::new(id.signature_schema());
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Agent(id),
             SignatureOrigin::Language {
@@ -1057,6 +1106,7 @@ fn resolve_free_call(
         let schema = id
             .checker_signature_schema()
             .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Presentation(id),
             SignatureOrigin::Language {
@@ -1078,7 +1128,7 @@ fn resolve_free_call(
         && let Some(binding) = request.lexical.binding(name)
     {
         check_query_step(request)?;
-        return resolve_lexical_binding(name, binding, request.limits).map(Some);
+        return resolve_lexical_binding(name, binding, request).map(Some);
     }
 
     check_query_step(request)?;
@@ -1116,6 +1166,7 @@ fn resolve_free_call(
 
     check_query_step(request)?;
     if let Some(id) = PromotionCallableId::resolve(path) {
+        check_query_step(request)?;
         let callable = ResolvedCallable::try_new(
             CallableCandidateId::Promotion(id),
             SignatureOrigin::Language {
@@ -1144,7 +1195,7 @@ fn resolve_free_call(
 fn resolve_lexical_binding(
     name: &CallableName,
     binding: &LexicalCallBinding,
-    limits: &CallableLimits,
+    request: &mut CallResolverRequest<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     match binding {
         LexicalCallBinding::Callable {
@@ -1153,6 +1204,7 @@ fn resolve_lexical_binding(
             effects,
         } => {
             let _ = effects;
+            check_query_step(request)?;
             let callable = ResolvedCallable::try_new(
                 CallableCandidateId::Local(id.clone()),
                 SignatureOrigin::Lexical { id: id.clone() },
@@ -1160,13 +1212,14 @@ fn resolve_lexical_binding(
                 CallableInstantiation::None,
                 Vec::new(),
                 None,
-                limits,
+                request.limits,
             )?;
-            NonEmptyResolvedCandidates::try_new(vec![callable], limits)
+            NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
                 .map(ResolvedCallTarget::Candidates)
         }
-        LexicalCallBinding::FunctionValue(seed) => resolve_function_value(seed, limits),
+        LexicalCallBinding::FunctionValue(seed) => resolve_function_value(seed, request),
         LexicalCallBinding::Speaker { id, schema } => {
+            check_query_step(request)?;
             let callable = ResolvedCallable::try_new(
                 CallableCandidateId::Speaker(id.clone()),
                 SignatureOrigin::Language {
@@ -1176,9 +1229,9 @@ fn resolve_lexical_binding(
                 CallableInstantiation::None,
                 Vec::new(),
                 None,
-                limits,
+                request.limits,
             )?;
-            NonEmptyResolvedCandidates::try_new(vec![callable], limits)
+            NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
                 .map(ResolvedCallTarget::Candidates)
         }
         LexicalCallBinding::NonCallable { ty } => Ok(ResolvedCallTarget::NonCallable(
@@ -1312,8 +1365,22 @@ fn corrupt(
 
 #[allow(clippy::result_large_err)]
 fn check_query_step(request: &mut CallResolverRequest<'_>) -> Result<(), ResolveCallError> {
-    if request.cancellation.load(Ordering::Relaxed) {
+    if let Some(control) = request.signature_control {
+        control.check_signature_query_step(SignatureQueryStep::Resolver)?;
+    } else if request.cancellation.load(Ordering::Relaxed) {
         return Err(ResolveCallError::Cancelled);
+    }
+    if let Some(signature_work) = request.signature_work.as_deref_mut() {
+        signature_work
+            .charge(super::SignatureWorkKind::Resolver, 1)
+            .map_err(|error| match error {
+                super::SignatureAccountingError::Limit(error) => {
+                    ResolveCallError::SignatureLimit(error)
+                }
+                super::SignatureAccountingError::Arithmetic { counter } => {
+                    ResolveCallError::SignatureArithmeticOverflow { counter }
+                }
+            })?;
     }
     request.work.charge(1).map_err(ResolveCallError::Work)
 }
@@ -1387,6 +1454,27 @@ pub enum CallableInstantiation {
 }
 
 impl ResolvedCallable {
+    pub(crate) fn call_shape_is_viable(
+        &self,
+        group: CallableGroupIndex,
+        arguments: &[arcweft_lang_syntax::expr::CallArg],
+    ) -> bool {
+        let implicit = match &self.instantiation {
+            CallableInstantiation::DataLast {
+                group: implicit_group,
+                parameter,
+                ..
+            } if *implicit_group == group => Some(*parameter),
+            _ => None,
+        };
+        super::arguments::call_shape_is_viable_with_implicit(
+            &self.schema,
+            group,
+            arguments,
+            implicit,
+        )
+    }
+
     #[allow(
         clippy::result_large_err,
         reason = "the typed query error preserves the offending candidate identity"
@@ -1423,7 +1511,7 @@ impl ResolvedCallable {
             debug_assert_eq!(curried.next_group(), *group);
             if schema.group(*group).is_none() {
                 return Err(ResolveCallError::InvalidCallGroup {
-                    candidate: base.clone(),
+                    candidate: Box::new(base.clone()),
                     group: *group,
                 });
             }
@@ -1467,7 +1555,7 @@ impl ResolvedCallable {
     ) -> Result<Self, ResolveCallError> {
         if self.schema.group(group).is_none() {
             return Err(ResolveCallError::InvalidCallGroup {
-                candidate: self.id.clone(),
+                candidate: Box::new(self.id.clone()),
                 group,
             });
         }

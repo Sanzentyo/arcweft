@@ -68,13 +68,13 @@ impl TypeChecker<'_> {
             }
             PresentationCallableId::ClearBackground => {
                 self.check_presentation_named_args(callable, args, "background");
-                self.active_presentation_defaults.remove("background");
+                self.clear_active_presentation_default("background");
                 Some(TypeKind::Named("Option<BackgroundSurface>".to_owned()))
             }
             PresentationCallableId::Hide => {
                 self.check_positional_entity_arg(args, 0, &EntityKind::Character, "hide character");
                 self.check_presentation_named_args(callable, args, "character");
-                self.active_presentation_defaults.remove("character");
+                self.clear_active_presentation_default("character");
                 Some(TypeKind::Named("Option<CharacterSurface>".to_owned()))
             }
         }

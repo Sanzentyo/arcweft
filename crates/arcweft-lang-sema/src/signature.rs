@@ -1,5 +1,7 @@
 //! Position-aware semantic signature queries over one accepted HIR revision.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
@@ -12,16 +14,19 @@ use thiserror::Error;
 
 use crate::{
     callable::{
-        CallTargetFactError, CallableFamily, CallableLimits, CallableQueryLimitError,
-        NonCallableSource, PRODUCTION_CALLABLE_LIMITS, ResolveCallError, ResolverWork,
-        SemanticSignatureError, SemanticSignatureHelp,
+        CallTargetFactError, CallableFamily, CallableQueryLimitError, PRODUCTION_CALLABLE_LIMITS,
+        PRODUCTION_SIGNATURE_LIMITS, ResolveCallError, ResolverWork, SemanticSignatureError,
+        SemanticSignatureHelp, SignatureLimitExceeded, SignatureQueryLimits, SignatureQueryStep,
+        SignatureQueryStepControl, SignatureQueryWorkMeter, SignatureWorkKind,
     },
-    checker::module::analyze_registered_project_types_for_signature_cursor,
+    checker::module::{
+        SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
+    },
     registration::RegisteredSemanticWorld,
-    types::TypeKind,
 };
 
 mod project;
+mod surface;
 
 /// Immutable inputs for one native semantic signature query.
 pub struct SignatureQuery<'a> {
@@ -29,7 +34,7 @@ pub struct SignatureQuery<'a> {
     document: &'a SourceDocument,
     hir: &'a HirModule,
     byte_offset: usize,
-    limits: CallableLimits,
+    limits: SignatureQueryLimits,
     control: SignatureQueryControl<'a>,
 }
 
@@ -44,13 +49,19 @@ impl<'a> SignatureQuery<'a> {
         document: &'a SourceDocument,
         hir: &'a HirModule,
         byte_offset: usize,
-        limits: CallableLimits,
+        limits: SignatureQueryLimits,
         control: SignatureQueryControl<'a>,
     ) -> Result<Self, SignatureQueryError> {
-        if document.text().len() > limits.max_source_bytes() {
-            return Err(CallableQueryLimitError::SourceBytes {
-                actual: document.text().len(),
-                limit: limits.max_source_bytes(),
+        let source_bytes = u64::try_from(document.text().len()).map_err(|_| {
+            SignatureQueryError::ArithmeticOverflow {
+                counter: SignatureWorkKind::SourceBytes,
+            }
+        })?;
+        if source_bytes > limits.source_bytes() {
+            return Err(SignatureLimitExceeded {
+                kind: crate::callable::SignatureLimitKind::SourceBytes,
+                observed: source_bytes,
+                maximum: limits.source_bytes(),
             }
             .into());
         }
@@ -125,7 +136,7 @@ impl<'a> SignatureQuery<'a> {
             document,
             hir,
             byte_offset,
-            PRODUCTION_CALLABLE_LIMITS,
+            PRODUCTION_SIGNATURE_LIMITS,
             control,
         )
     }
@@ -144,6 +155,10 @@ impl<'a> SignatureQuery<'a> {
 pub struct SignatureQueryControl<'a> {
     cancelled: &'a AtomicBool,
     deadline: Option<Instant>,
+    #[cfg(test)]
+    remaining_steps: Option<&'a Cell<usize>>,
+    #[cfg(test)]
+    deadline_step: Option<SignatureQueryStep>,
 }
 
 impl<'a> SignatureQueryControl<'a> {
@@ -151,7 +166,23 @@ impl<'a> SignatureQueryControl<'a> {
         Self {
             cancelled,
             deadline,
+            #[cfg(test)]
+            remaining_steps: None,
+            #[cfg(test)]
+            deadline_step: None,
         }
+    }
+
+    #[cfg(test)]
+    fn with_remaining_steps(mut self, remaining_steps: &'a Cell<usize>) -> Self {
+        self.remaining_steps = Some(remaining_steps);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_deadline_step(mut self, deadline_step: SignatureQueryStep) -> Self {
+        self.deadline_step = Some(deadline_step);
+        self
     }
 
     #[allow(
@@ -159,6 +190,14 @@ impl<'a> SignatureQueryControl<'a> {
         reason = "the query uses one typed error surface for control and semantic failures"
     )]
     fn check(self) -> Result<(), SignatureQueryError> {
+        #[cfg(test)]
+        if let Some(remaining) = self.remaining_steps {
+            let current = remaining.get();
+            if current == 0 {
+                return Err(SignatureQueryError::DeadlineExceeded);
+            }
+            remaining.set(current - 1);
+        }
         if self.cancelled.load(Ordering::Relaxed) {
             return Err(SignatureQueryError::Cancelled);
         }
@@ -172,6 +211,23 @@ impl<'a> SignatureQueryControl<'a> {
     }
 }
 
+impl SignatureQueryStepControl for SignatureQueryControl<'_> {
+    fn check_signature_query_step(&self, step: SignatureQueryStep) -> Result<(), ResolveCallError> {
+        #[cfg(test)]
+        if self.deadline_step == Some(step) {
+            return Err(ResolveCallError::DeadlineExceeded);
+        }
+        #[cfg(not(test))]
+        let _ = step;
+        match (*self).check() {
+            Ok(()) => Ok(()),
+            Err(SignatureQueryError::Cancelled) => Err(ResolveCallError::Cancelled),
+            Err(SignatureQueryError::DeadlineExceeded) => Err(ResolveCallError::DeadlineExceeded),
+            Err(_) => unreachable!("query control checks only cancellation and deadline"),
+        }
+    }
+}
+
 /// Runs one native signature query without parsing, lowering, or name fallback.
 #[allow(
     clippy::needless_pass_by_value,
@@ -182,24 +238,17 @@ pub fn query_signature(
     request: SignatureQuery<'_>,
 ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
     request.check_control()?;
-    let mut work = ResolverWork::new(request.limits.max_query_work());
-    let checked = analyze_registered_project_types_for_signature_cursor(
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let mut signature_work = SignatureQueryWorkMeter::new(request.limits);
+    let selection = surface::select_signature_surface(
         request.hir,
-        request.world,
-        request.document.identity().clone(),
+        request.document,
         request.byte_offset,
-        request.control.cancelled,
-        &mut work,
-    )
-    .map_err(map_focused_error)?;
-    request.check_control()?;
-
-    let site = checked.signature_call_site().map_err(map_focused_error)?;
-    let Some(site) = site else {
-        return if checked
-            .unsupported_signature_surface()
-            .map_err(map_focused_error)?
-        {
+        request.control,
+        &mut signature_work,
+    )?;
+    let Some(site) = selection.site else {
+        return if selection.unsupported_surface {
             Ok(SignatureQueryOutcome::NotApplicable(
                 SignatureNotApplicable::UnsupportedSurface,
             ))
@@ -209,52 +258,58 @@ pub fn query_signature(
             ))
         };
     };
-    let Some(facts) = checked
-        .signature_call_target_facts()
-        .map_err(map_focused_error)?
-    else {
-        return Err(SignatureSemanticUnavailable::MissingCallableFacts {
-            call: site.call().clone(),
-        }
-        .into());
-    };
+    let checked = analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
+        module: request.hir,
+        registered: request.world,
+        site: site.clone(),
+        cancellation: request.control.cancelled,
+        work: &mut work,
+        signature_work: &mut signature_work,
+        signature_control: &request.control,
+    })
+    .map_err(map_focused_error)?;
+    request.check_control()?;
+    let facts = checked
+        .focused_call_target_facts()
+        .map_err(map_focused_error)?;
     if facts.call_span() != site.call() {
         return Err(SignatureSemanticUnavailable::MissingCallableFacts {
             call: site.call().clone(),
         }
         .into());
     }
-    project::project_signature_help(
-        request.world,
-        request.document,
-        request.control,
-        site,
+    project::project_signature_help(project::SignatureProjection {
+        world: request.world,
+        document: request.document,
+        control: request.control,
+        site: &site,
         facts,
-        &mut work,
-        &request.limits,
-    )
+        work: &mut work,
+        callable_limits: &PRODUCTION_CALLABLE_LIMITS,
+        signature_limits: &request.limits,
+        signature_work: &mut signature_work,
+    })
 }
 
 fn map_focused_error(error: CallTargetFactError) -> SignatureQueryError {
     match error {
-        CallTargetFactError::AmbiguousCallRange {
-            document,
-            byte_offset,
-        } => SignatureSemanticUnavailable::AmbiguousCallRange {
-            document,
-            byte_offset,
-        }
-        .into(),
         CallTargetFactError::Resolve { reason, .. } => match *reason {
             ResolveCallError::Cancelled => SignatureQueryError::Cancelled,
+            ResolveCallError::DeadlineExceeded => SignatureQueryError::DeadlineExceeded,
             ResolveCallError::Work(error) => error.into(),
+            ResolveCallError::SignatureLimit(error) => error.into(),
+            ResolveCallError::SignatureArithmeticOverflow { counter } => {
+                SignatureQueryError::ArithmeticOverflow { counter }
+            }
             reason => SignatureQueryError::Resolve(reason),
         },
+        CallTargetFactError::SignatureAccounting { reason } => {
+            map_signature_accounting_error(reason)
+        }
         CallTargetFactError::Unavailable { reason, .. } => reason.into(),
         CallTargetFactError::FocusedSourceUnavailable { document } => {
             SignatureSemanticUnavailable::SourceOutsideAcceptedProject { document }.into()
         }
-        #[cfg(test)]
         CallTargetFactError::FocusedTargetMissing { call }
         | CallTargetFactError::FocusedTargetDuplicate { call } => {
             SignatureSemanticUnavailable::MissingCallableFacts { call }.into()
@@ -265,8 +320,23 @@ fn map_focused_error(error: CallTargetFactError) -> SignatureQueryError {
     }
 }
 
+pub(super) fn map_signature_accounting_error(
+    error: crate::callable::SignatureAccountingError,
+) -> SignatureQueryError {
+    match error {
+        crate::callable::SignatureAccountingError::Limit(error) => error.into(),
+        crate::callable::SignatureAccountingError::Arithmetic { counter } => {
+            SignatureQueryError::ArithmeticOverflow { counter }
+        }
+    }
+}
+
 /// Result of one accepted native query.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the frozen public query contract returns semantic help by value and has no compatibility indirection"
+)]
 pub enum SignatureQueryOutcome {
     Help(SemanticSignatureHelp),
     NotApplicable(SignatureNotApplicable),
@@ -276,11 +346,9 @@ pub enum SignatureQueryOutcome {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureNotApplicable {
     CursorOutsideArgumentList,
+    UnknownCallee,
     UnsupportedSurface,
-    NonCallableCallee {
-        source: NonCallableSource,
-        ty: TypeKind,
-    },
+    NonCallableCallee,
 }
 
 /// Recovery retained from the exact parser-owned argument list.
@@ -300,13 +368,17 @@ pub const fn signature_family_support(_family: CallableFamily) -> SignatureFamil
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SignatureQueryError {
     #[error(transparent)]
-    Stale(#[from] SignatureSemanticStale),
+    Stale(Box<SignatureSemanticStale>),
     #[error(transparent)]
     InvalidPosition(#[from] SignaturePositionError),
     #[error(transparent)]
     SemanticUnavailable(#[from] SignatureSemanticUnavailable),
     #[error(transparent)]
-    LimitExceeded(#[from] CallableQueryLimitError),
+    CallableLimitExceeded(#[from] CallableQueryLimitError),
+    #[error(transparent)]
+    LimitExceeded(#[from] SignatureLimitExceeded),
+    #[error("signature query counter overflowed")]
+    ArithmeticOverflow { counter: SignatureWorkKind },
     #[error(transparent)]
     InvalidSignature(#[from] SemanticSignatureError),
     #[error(transparent)]
@@ -315,6 +387,12 @@ pub enum SignatureQueryError {
     Cancelled,
     #[error("signature query deadline elapsed")]
     DeadlineExceeded,
+}
+
+impl From<SignatureSemanticStale> for SignatureQueryError {
+    fn from(value: SignatureSemanticStale) -> Self {
+        Self::Stale(Box::new(value))
+    }
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

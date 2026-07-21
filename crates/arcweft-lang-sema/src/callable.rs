@@ -34,7 +34,8 @@ pub use error::{
     CallableIdentityError, CallableIndexKind, CallablePathError, CallablePublicationError,
     CallableQueryLimitError, CallableScalarError, CallableScalarKind, CallableSchemaError,
     CallableSourceError, CorruptCallableCatalogReason, ResolveCallError, RustProvenanceError,
-    RustProvenanceField, SemanticSignatureError,
+    RustProvenanceField, SemanticSignatureError, SignatureLimitConfigurationError,
+    SignatureLimitExceeded, SignatureLimitKind, SignatureWorkKind,
 };
 pub use facts::{
     CallPoison, CallableDiagnostic, CallableDiagnosticRelated, CallableDiagnosticSeverity,
@@ -61,14 +62,19 @@ pub use identity::{
     StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitCallableId,
     TraitCallableSource, TraitImplementationIndex, VectorDimensions,
 };
-pub(crate) use limits::ResolverWork;
-pub use limits::{CallableLimits, PRODUCTION_CALLABLE_LIMITS, SignatureWorkReport};
+pub use limits::{
+    CallableLimits, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, SignatureQueryLimits,
+    SignatureQueryProjectionWork, SignatureQueryResolutionWork, SignatureQuerySearchWork,
+    SignatureQueryWorkReport, SignatureWorkReport,
+};
+pub(crate) use limits::{ResolverWork, SignatureAccountingError, SignatureQueryWorkMeter};
 pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamedArgument};
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
     CallCallee, CallResolverRequest, CallSourceContext, LexicalCallBinding, LexicalCallableScope,
-    ResolvedEnumSeed, ResolvedFunctionValueSeed, resolve_call_target,
+    ResolvedEnumSeed, ResolvedFunctionValueSeed, SignatureQueryStep, SignatureQueryStepControl,
+    resolve_call_target,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerResolution, CharacterOwnerSource, NonCallableSource,

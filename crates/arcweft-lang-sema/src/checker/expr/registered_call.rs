@@ -5,21 +5,22 @@ use arcweft_lang_syntax::{
     expr::{CallArg, CallExpr, Expr},
     reference::BorrowKind,
 };
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
 use super::{TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
 use crate::{
     callable::{
         CallCallee, CallPoison, CallResolverRequest, CallSourceContext, CallableArgumentIndex,
-        CallableCandidateId, CallableDiagnosticCode, CallableDiagnosticSubject, CallableGroupIndex,
-        CallableName, CallableParameter, CallableParameterPassing, CallableParameterPresence,
+        CallableDiagnosticCode, CallableDiagnosticSubject, CallableGroupIndex, CallableName,
+        CallableParameter, CallableParameterPassing, CallableParameterPresence,
         CallableParameterType, CallablePath, CallableSignatureSchema, CallableValidator,
         CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallTarget,
         DataLastCallableId, DialogueCallableId, DialogueCalleeIdentity, FunctionValueOrdinal,
         FunctionValueSignatureId, LexicalBindingIndex, LexicalCallBinding, LexicalCallableScope,
-        LocalCallableId, NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS,
-        ProjectNominalTypeId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
-        ResolvedEnumSeed, ResolvedFunctionValueSeed, SpeakerCallableId, SpreadArgumentPolicy,
-        UnknownNamedArgumentPolicy, call_shape_is_viable, data_last_unsupported_spread_reason,
+        LocalCallableId, PRODUCTION_CALLABLE_LIMITS, ProjectNominalTypeId, ResolveCallOutcome,
+        ResolvedCallTarget, ResolvedCallable, ResolvedEnumSeed, ResolvedFunctionValueSeed,
+        SignatureQueryStep, SpeakerCallableId, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        data_last_unsupported_spread_reason,
     },
     checker::{
         CurriedSignatureCallValue, DataLastMethodFallbackArg, TypedLoweringEvidence,
@@ -53,9 +54,19 @@ struct ArgumentFactBuilder {
     poison: CallPoison,
 }
 
+#[derive(Clone)]
 struct RegisteredArgumentCheck {
     facts: Vec<CheckedCallArgumentFact>,
     poison: CallPoison,
+}
+
+impl RegisteredArgumentCheck {
+    fn new(facts: Vec<CheckedCallArgumentFact>, poison: CallPoison) -> Self {
+        let poison = facts
+            .iter()
+            .fold(poison, |combined, fact| combined.merge(fact.poison()));
+        Self { facts, poison }
+    }
 }
 
 struct RegisteredSpreadResult {
@@ -68,6 +79,7 @@ struct RegisteredSlotCheck {
     inferred: Option<TypeKind>,
 }
 
+#[derive(Clone)]
 struct RegisteredCandidateCheck {
     arguments: RegisteredArgumentCheck,
     result: TypeKind,
@@ -111,6 +123,7 @@ fn is_placeholder(ty: &TypeKind) -> bool {
     matches!(ty, TypeKind::Named(name) if name == "_")
 }
 
+#[derive(Clone)]
 struct RegisteredCallSite<'a> {
     label: &'a str,
     call: &'a CallExpr,
@@ -122,6 +135,8 @@ struct RegisteredCallSite<'a> {
     receiver: Option<(&'a Expr, &'a TypeKind)>,
     function_value_type: Option<TypeKind>,
 }
+
+mod selection;
 
 struct RegisteredFreeResolutionSite<'a> {
     path: &'a CallablePath,
@@ -137,6 +152,8 @@ struct RegisteredArgumentContext<'a> {
     schema: &'a CallableSignatureSchema,
     group: CallableGroupIndex,
     parameters: &'a [CallableParameter],
+    call: &'a CallExpr,
+    focused: bool,
 }
 
 struct RegisteredPositionalCheck<'a> {
@@ -233,29 +250,40 @@ impl TypeChecker<'_> {
         };
         let call_span = self.source_span_for_current_range(call.range());
         let callee_span = self.source_span_for_current_range(call.callee_range());
-        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
+        let focused_work = self.uses_focused_callable_work(call_span.as_ref());
         let enum_variant = self.registered_enum_seed(expected, &path, &module, symbols);
-        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
-        let request = match CallResolverRequest::try_new(
-            CallCallee::Free {
-                path: &path,
-                enum_variant: enum_variant.as_ref(),
+        let trait_catalog = &self.trait_catalog;
+        let resolved = match self.call_resolver_control.with_parts(
+            focused_work,
+            |cancellation, work, signature_work, signature_control| {
+                CallResolverRequest::try_new(
+                    CallCallee::Free {
+                        path: &path,
+                        enum_variant: enum_variant.as_ref(),
+                    },
+                    &lexical,
+                    expected,
+                    &module,
+                    symbols,
+                    world,
+                    trait_catalog,
+                    &[],
+                    CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
+                    CallableGroupIndex::ZERO,
+                    expression,
+                    cancellation,
+                    work,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .map(|request| {
+                    request
+                        .with_signature_work(signature_work)
+                        .with_signature_control(signature_control)
+                })
+                .map(crate::callable::resolve_call_target)
             },
-            &lexical,
-            expected,
-            &module,
-            symbols,
-            world,
-            &self.trait_catalog,
-            &[],
-            CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
-            CallableGroupIndex::ZERO,
-            expression,
-            cancellation,
-            work,
-            &PRODUCTION_CALLABLE_LIMITS,
         ) {
-            Ok(request) => request,
+            Ok(resolved) => resolved,
             Err(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
                 self.call_target_fact_recorder
@@ -266,7 +294,6 @@ impl TypeChecker<'_> {
                 return RegisteredFreeCallOutcome::Checked(None);
             }
         };
-        let resolved = crate::callable::resolve_call_target(request);
         self.finish_registered_free_resolution(
             RegisteredFreeResolutionSite {
                 path: &path,
@@ -299,6 +326,10 @@ impl TypeChecker<'_> {
         Some(ResolvedEnumSeed::new(id, expected.clone(), schema))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one typed resolver outcome boundary retains free-call facts and ordinary fallback semantics"
+    )]
     fn finish_registered_free_resolution(
         &mut self,
         site: RegisteredFreeResolutionSite<'_>,
@@ -318,7 +349,7 @@ impl TypeChecker<'_> {
                             )
                         });
                 RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidates(
-                    RegisteredCallSite {
+                    &RegisteredCallSite {
                         label: &label,
                         call: site.call,
                         call_span: site.call_span,
@@ -367,7 +398,7 @@ impl TypeChecker<'_> {
                 let label = site.path.dotted_name();
                 let candidate = value.callable();
                 RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidate(
-                    RegisteredCallSite {
+                    &RegisteredCallSite {
                         label: &label,
                         call: site.call,
                         call_span: site.call_span,
@@ -382,7 +413,28 @@ impl TypeChecker<'_> {
                     std::slice::from_ref(candidate),
                 )))
             }
-            ResolveCallOutcome::Missing(_) => RegisteredFreeCallOutcome::NotHandled,
+            ResolveCallOutcome::Missing(missing) => {
+                let records_facts = self.records_call_target_facts(site.call_span.as_ref());
+                if !records_facts {
+                    return RegisteredFreeCallOutcome::NotHandled;
+                }
+                let arguments =
+                    self.check_unmapped_registered_arguments(site.call, CallPoison::Rejected, true);
+                if let Some(call_span) = site.call_span {
+                    self.record_call_target_facts(
+                        site.expression,
+                        site.document,
+                        &call_span,
+                        CheckedCallTarget::missing(
+                            missing.kind(),
+                            arguments,
+                            CallableGroupIndex::ZERO,
+                        ),
+                        None,
+                    );
+                }
+                RegisteredFreeCallOutcome::Checked(None)
+            }
             ResolveCallOutcome::Rejected(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
                 self.call_target_fact_recorder
@@ -562,31 +614,42 @@ impl TypeChecker<'_> {
         let lexical = self.registered_free_lexical_scope(expression);
         let call_span = self.source_span_for_current_range(call.range());
         let callee_span = self.source_span_for_current_range(call.callee_range());
-        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
+        let focused_work = self.uses_focused_callable_work(call_span.as_ref());
         let active_trait_predicates = self.active_trait_predicates();
-        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
-        let request = match CallResolverRequest::try_new(
-            CallCallee::Selected {
-                receiver_expression,
-                receiver_type,
-                method: &method,
-                arguments: args,
+        let trait_catalog = &self.trait_catalog;
+        let resolved = match self.call_resolver_control.with_parts(
+            focused_work,
+            |cancellation, work, signature_work, signature_control| {
+                CallResolverRequest::try_new(
+                    CallCallee::Selected {
+                        receiver_expression,
+                        receiver_type,
+                        method: &method,
+                        arguments: args,
+                    },
+                    &lexical,
+                    None,
+                    &module,
+                    symbols,
+                    world,
+                    trait_catalog,
+                    &active_trait_predicates,
+                    CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
+                    CallableGroupIndex::ZERO,
+                    expression,
+                    cancellation,
+                    work,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .map(|request| {
+                    request
+                        .with_signature_work(signature_work)
+                        .with_signature_control(signature_control)
+                })
+                .map(crate::callable::resolve_call_target)
             },
-            &lexical,
-            None,
-            &module,
-            symbols,
-            world,
-            &self.trait_catalog,
-            &active_trait_predicates,
-            CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
-            CallableGroupIndex::ZERO,
-            expression,
-            cancellation,
-            work,
-            &PRODUCTION_CALLABLE_LIMITS,
         ) {
-            Ok(request) => request,
+            Ok(resolved) => resolved,
             Err(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
                 self.call_target_fact_recorder
@@ -597,10 +660,10 @@ impl TypeChecker<'_> {
                 return RegisteredMethodCallOutcome::Checked(None);
             }
         };
-        match crate::callable::resolve_call_target(request) {
+        match resolved {
             ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
                 RegisteredMethodCallOutcome::Checked(Some(self.check_registered_candidates(
-                    RegisteredCallSite {
+                    &RegisteredCallSite {
                         label: method_name,
                         call,
                         call_span,
@@ -614,7 +677,28 @@ impl TypeChecker<'_> {
                     &candidates,
                 )))
             }
-            ResolveCallOutcome::Missing(_) => RegisteredMethodCallOutcome::NotHandled,
+            ResolveCallOutcome::Missing(missing) => {
+                let records_facts = self.records_call_target_facts(call_span.as_ref());
+                if !records_facts {
+                    return RegisteredMethodCallOutcome::NotHandled;
+                }
+                let arguments =
+                    self.check_unmapped_registered_arguments(call, CallPoison::Rejected, true);
+                if let Some(call_span) = call_span {
+                    self.record_call_target_facts(
+                        expression,
+                        document,
+                        &call_span,
+                        CheckedCallTarget::missing(
+                            missing.kind(),
+                            arguments,
+                            CallableGroupIndex::ZERO,
+                        ),
+                        None,
+                    );
+                }
+                RegisteredMethodCallOutcome::Checked(None)
+            }
             ResolveCallOutcome::Rejected(error) => {
                 match &error {
                     crate::callable::ResolveCallError::AmbiguousTraitMethod { candidates } => {
@@ -721,25 +805,36 @@ impl TypeChecker<'_> {
         let lexical = LexicalCallableScope::default();
         let call_span = self.source_span_for_current_range(call.range());
         let callee_span = self.source_span_for_current_range(call.callee_range());
-        let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
-        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
-        let request = match CallResolverRequest::try_new(
-            CallCallee::FunctionValue { value: &seed },
-            &lexical,
-            None,
-            &module,
-            symbols,
-            world,
-            &self.trait_catalog,
-            &[],
-            CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
-            current_group,
-            expression,
-            cancellation,
-            work,
-            &PRODUCTION_CALLABLE_LIMITS,
+        let focused_work = self.uses_focused_callable_work(call_span.as_ref());
+        let trait_catalog = &self.trait_catalog;
+        let resolved = match self.call_resolver_control.with_parts(
+            focused_work,
+            |cancellation, work, signature_work, signature_control| {
+                CallResolverRequest::try_new(
+                    CallCallee::FunctionValue { value: &seed },
+                    &lexical,
+                    None,
+                    &module,
+                    symbols,
+                    world,
+                    trait_catalog,
+                    &[],
+                    CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
+                    current_group,
+                    expression,
+                    cancellation,
+                    work,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .map(|request| {
+                    request
+                        .with_signature_work(signature_work)
+                        .with_signature_control(signature_control)
+                })
+                .map(crate::callable::resolve_call_target)
+            },
         ) {
-            Ok(request) => request,
+            Ok(resolved) => resolved,
             Err(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
                 self.call_target_fact_recorder
@@ -750,12 +845,12 @@ impl TypeChecker<'_> {
                 return RegisteredFreeCallOutcome::Checked(None);
             }
         };
-        match crate::callable::resolve_call_target(request) {
+        match resolved {
             ResolveCallOutcome::Resolved(ResolvedCallTarget::FunctionValue(value)) => {
                 let label = callee.unwrap_or("<function value>");
                 let candidate = value.callable();
                 RegisteredFreeCallOutcome::Checked(Some(self.check_registered_candidate(
-                    RegisteredCallSite {
+                    &RegisteredCallSite {
                         label,
                         call,
                         call_span,
@@ -831,27 +926,39 @@ impl TypeChecker<'_> {
         let call_span = self.source_span_for_expr(dialogue);
         let callee_span = self.source_span_for_expr(callee);
         let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
-        let (cancellation, work) = self.call_resolver_control.parts(records_facts);
-        let request = match CallResolverRequest::try_new(
-            CallCallee::Dialogue {
-                id,
-                callee: &callee_identity,
+        let focused_work = self.uses_focused_callable_work(call_span.as_ref());
+        let trait_catalog = &self.trait_catalog;
+        let resolved = match self.call_resolver_control.with_parts(
+            focused_work,
+            |cancellation, work, signature_work, signature_control| {
+                CallResolverRequest::try_new(
+                    CallCallee::Dialogue {
+                        id,
+                        callee: &callee_identity,
+                    },
+                    &lexical,
+                    None,
+                    &module,
+                    symbols,
+                    world,
+                    trait_catalog,
+                    &[],
+                    CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
+                    CallableGroupIndex::ZERO,
+                    expression,
+                    cancellation,
+                    work,
+                    &PRODUCTION_CALLABLE_LIMITS,
+                )
+                .map(|request| {
+                    request
+                        .with_signature_work(signature_work)
+                        .with_signature_control(signature_control)
+                })
+                .map(crate::callable::resolve_call_target)
             },
-            &lexical,
-            None,
-            &module,
-            symbols,
-            world,
-            &self.trait_catalog,
-            &[],
-            CallSourceContext::new(document, call_span.as_ref(), callee_span.as_ref()),
-            CallableGroupIndex::ZERO,
-            expression,
-            cancellation,
-            work,
-            &PRODUCTION_CALLABLE_LIMITS,
         ) {
-            Ok(request) => request,
+            Ok(resolved) => resolved,
             Err(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
                 self.call_target_fact_recorder
@@ -859,7 +966,24 @@ impl TypeChecker<'_> {
                 return;
             }
         };
-        match crate::callable::resolve_call_target(request) {
+        self.finish_registered_dialogue_resolution(
+            resolved,
+            expression,
+            document,
+            call_span,
+            records_facts,
+        );
+    }
+
+    fn finish_registered_dialogue_resolution(
+        &mut self,
+        resolved: ResolveCallOutcome,
+        expression: TypeExpressionId,
+        document: &SourceDocumentIdentity,
+        call_span: Option<SourceSpan>,
+        records_facts: bool,
+    ) {
+        match resolved {
             ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => {
                 let selected = candidates.first();
                 if records_facts && let Some(call_span) = call_span {
@@ -887,239 +1011,16 @@ impl TypeChecker<'_> {
             ResolveCallOutcome::Missing(_)
             | ResolveCallOutcome::Resolved(
                 ResolvedCallTarget::FunctionValue(_) | ResolvedCallTarget::NonCallable(_),
-            ) => {
-                self.errors.push(TypeCheckError::new(
-                    "dialogue resolver returned a non-dialogue target".to_owned(),
-                ));
-            }
+            ) => self.errors.push(TypeCheckError::new(
+                "dialogue resolver returned a non-dialogue target".to_owned(),
+            )),
         }
-    }
-
-    fn check_registered_candidates(
-        &mut self,
-        site: RegisteredCallSite<'_>,
-        candidates: &NonEmptyResolvedCandidates,
-    ) -> TypeKind {
-        let args = site.call.args();
-        let viable = candidates
-            .as_slice()
-            .iter()
-            .filter(|candidate| call_shape_is_viable(candidate.schema(), site.group, args))
-            .collect::<Vec<_>>();
-        let selected = match viable.as_slice() {
-            [selected] => *selected,
-            [] => candidates.first(),
-            multiple => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "call `{}` is ambiguous between {:?}",
-                    site.label,
-                    multiple
-                        .iter()
-                        .map(|candidate| candidate.id())
-                        .collect::<Vec<_>>()
-                )));
-                let records_facts = self.records_call_target_facts(site.call_span.as_ref());
-                let arguments = self.check_unmapped_registered_arguments(
-                    site.call,
-                    CallPoison::Rejected,
-                    records_facts,
-                );
-                if records_facts && let Some(call_span) = site.call_span {
-                    let candidate_products = multiple
-                        .iter()
-                        .map(|candidate| (*candidate).clone())
-                        .collect::<Vec<_>>();
-                    self.record_call_target_facts(
-                        site.expression,
-                        site.document,
-                        &call_span,
-                        CheckedCallTarget::ambiguous(&candidate_products, arguments, site.group),
-                        Some((
-                            CallableDiagnosticCode::AmbiguousOverload,
-                            CallableDiagnosticSubject::Candidate(
-                                candidate_products[0].id().clone(),
-                            ),
-                        )),
-                    );
-                }
-                return TypeKind::Named("_".to_owned());
-            }
-        };
-        self.check_registered_candidate(site, selected, candidates.as_slice())
     }
 
     #[allow(
         clippy::too_many_lines,
-        reason = "the selected candidate is checked once and atomically projected into facts"
+        reason = "the reduction validator atomically checks shape, borrow semantics, facts, and inferred result"
     )]
-    fn check_registered_candidate(
-        &mut self,
-        site: RegisteredCallSite<'_>,
-        candidate: &ResolvedCallable,
-        considered: &[ResolvedCallable],
-    ) -> TypeKind {
-        let RegisteredCallSite {
-            label,
-            call,
-            call_span,
-            callee_range,
-            expression,
-            document,
-            group,
-            receiver,
-            function_value_type,
-        } = site;
-        let args = call.args();
-        let schema = candidate.schema();
-        self.check_virtual_path_call(label, args);
-        let records_facts = self.records_call_target_facts(call_span.as_ref());
-        let checked = if let CallableCandidateId::DataLast(id) = candidate.id() {
-            let Some((receiver, receiver_type)) = receiver else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "data-last callable `{label}` has no selected receiver"
-                )));
-                return schema_result_type(schema, group);
-            };
-            self.check_registered_data_last_candidate(
-                label,
-                id,
-                schema,
-                call,
-                receiver,
-                receiver_type,
-                group,
-                expression,
-                records_facts,
-            )
-        } else {
-            match schema.validator() {
-                CallableValidator::Ordinary
-                | CallableValidator::Untyped
-                | CallableValidator::Builtin(_)
-                | CallableValidator::Agent(_)
-                | CallableValidator::Fx(_)
-                | CallableValidator::EnumConstructor(_)
-                | CallableValidator::Presentation(_)
-                | CallableValidator::Collection(_)
-                | CallableValidator::PresentationHandle(_)
-                | CallableValidator::Integer(_)
-                | CallableValidator::Domain(_)
-                | CallableValidator::Capacity(_)
-                | CallableValidator::Trait(_)
-                | CallableValidator::Drop
-                | CallableValidator::Promotion(_)
-                | CallableValidator::Speaker => RegisteredCandidateCheck {
-                    arguments: self.check_registered_schema_args(
-                        label,
-                        schema,
-                        group,
-                        call,
-                        records_facts,
-                    ),
-                    result: schema_result_type(schema, group),
-                },
-                CallableValidator::ReductionConstructor(kind) => self
-                    .check_registered_reduction_constructor(
-                        *kind,
-                        label,
-                        schema,
-                        call,
-                        records_facts,
-                    ),
-                CallableValidator::ResultConstructor(kind) => self
-                    .check_registered_sum_constructor(
-                        RegisteredSumConstructor::Result(*kind),
-                        label,
-                        schema,
-                        call,
-                        records_facts,
-                    ),
-                CallableValidator::OptionConstructor(kind) => self
-                    .check_registered_sum_constructor(
-                        RegisteredSumConstructor::Option(*kind),
-                        label,
-                        schema,
-                        call,
-                        records_facts,
-                    ),
-                validator => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "registered callable `{label}` has unsupported validator {validator:?}"
-                    )));
-                    RegisteredCandidateCheck {
-                        arguments: RegisteredArgumentCheck {
-                            facts: self.check_unmapped_registered_arguments(
-                                call,
-                                CallPoison::Rejected,
-                                records_facts,
-                            ),
-                            poison: CallPoison::Rejected,
-                        },
-                        result: schema_result_type(schema, group),
-                    }
-                }
-            }
-        };
-        let site = EffectSite::new(format!("call `{label}`"));
-        if let CallableCandidateId::Presentation(id) = candidate.id() {
-            match id {
-                crate::callable::PresentationCallableId::ClearBackground => {
-                    self.active_presentation_defaults.remove("background");
-                }
-                crate::callable::PresentationCallableId::Hide => {
-                    self.active_presentation_defaults.remove("character");
-                }
-                _ => {}
-            }
-        }
-        if let Some(declaration) = schema.effects().project_declaration() {
-            self.effect_collector.record_local_call(
-                crate::effect_model::CallableId::project_function(declaration),
-                site,
-            );
-        } else {
-            self.effect_collector.record_named_call(
-                label,
-                Some(schema.effects().declared().concrete().clone()),
-                site,
-            );
-        }
-        if let CallableCandidateId::Project(declaration) = candidate.id()
-            && let (Some(module), Some(range)) = (&self.current_module, callee_range)
-        {
-            self.project_callable_references
-                .push(super::super::ProjectCallableReference {
-                    module: module.clone(),
-                    declaration: declaration.clone(),
-                    range,
-                });
-        }
-        let result = checked.result;
-        if records_facts && let Some(call_span) = call_span {
-            let checked_target = CheckedCallTarget::selected(
-                candidate,
-                considered,
-                checked.arguments.facts,
-                result.clone(),
-                group,
-                checked.arguments.poison,
-            );
-            let checked_target = match function_value_type {
-                Some(function_value_type) => {
-                    checked_target.with_function_value_type(function_value_type)
-                }
-                None => checked_target,
-            };
-            self.record_call_target_facts(expression, document, &call_span, checked_target, None);
-        }
-        let completed_group = match candidate.instantiation() {
-            crate::callable::CallableInstantiation::DataLast { group, .. } => *group,
-            _ => group,
-        };
-        self.retain_registered_curried_result(label, candidate, completed_group, &result);
-        result
-    }
-
     fn check_registered_reduction_constructor(
         &mut self,
         kind: crate::callable::ReductionConstructorKind,
@@ -1128,6 +1029,7 @@ impl TypeChecker<'_> {
         call: &CallExpr,
         records_facts: bool,
     ) -> RegisteredCandidateCheck {
+        let focused = self.is_focused_registered_call(call);
         match kind {
             crate::callable::ReductionConstructorKind::Unchanged => {
                 let expected_state = kind.state_type(schema.result());
@@ -1151,8 +1053,14 @@ impl TypeChecker<'_> {
                     parameters: schema
                         .group(CallableGroupIndex::ZERO)
                         .map_or(&[], |group| group.parameters()),
+                    call,
+                    focused,
                 };
                 for (argument_index, arg) in call.args().iter().enumerate() {
+                    if !self.begin_registered_candidate_argument_probe(call, focused) {
+                        poison = CallPoison::Rejected;
+                        break;
+                    }
                     let (value, mapped, shape_poison) = match arg {
                         CallArg::Positional(value) => (value, parameter, CallPoison::Clean),
                         CallArg::Named { name, value } => {
@@ -1213,7 +1121,7 @@ impl TypeChecker<'_> {
                         .collect()
                 });
                 RegisteredCandidateCheck {
-                    arguments: RegisteredArgumentCheck { facts, poison },
+                    arguments: RegisteredArgumentCheck::new(facts, poison),
                     result: expected_state.map_or_else(
                         || {
                             inferred_state.map_or_else(
@@ -1238,6 +1146,7 @@ impl TypeChecker<'_> {
         call: &CallExpr,
         records_facts: bool,
     ) -> RegisteredCandidateCheck {
+        let focused = self.is_focused_registered_call(call);
         let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
         let mut poison = CallPoison::Clean;
         let mut inferred_payload = None;
@@ -1256,8 +1165,14 @@ impl TypeChecker<'_> {
             schema,
             group: CallableGroupIndex::ZERO,
             parameters,
+            call,
+            focused,
         };
         for (argument_index, arg) in call.args().iter().enumerate() {
+            if !self.begin_registered_candidate_argument_probe(call, focused) {
+                poison = CallPoison::Rejected;
+                break;
+            }
             let (value, mapped, shape_poison) = match arg {
                 CallArg::Positional(value) => (value, parameter, CallPoison::Clean),
                 CallArg::Named { name, value } => {
@@ -1298,7 +1213,7 @@ impl TypeChecker<'_> {
             constructor.result_with_payload(inferred_payload.unwrap_or(TypeKind::Unit))
         };
         RegisteredCandidateCheck {
-            arguments: RegisteredArgumentCheck { facts, poison },
+            arguments: RegisteredArgumentCheck::new(facts, poison),
             result,
         }
     }
@@ -1319,22 +1234,19 @@ impl TypeChecker<'_> {
         let receiver_group = id.receiver_group();
         let result = schema_result_type(schema, receiver_group);
         if let Some(reason) = data_last_unsupported_spread_reason(call.args()) {
-            for argument in call.args() {
-                self.check_expr(argument.value());
-            }
             self.errors
                 .push(TypeCheckError::unsupported_data_last_method_fallback(
                     label, reason,
                 ));
             return RegisteredCandidateCheck {
-                arguments: RegisteredArgumentCheck {
-                    facts: self.check_unmapped_registered_arguments(
+                arguments: RegisteredArgumentCheck::new(
+                    self.check_unmapped_registered_arguments(
                         call,
                         CallPoison::Rejected,
                         records_facts,
                     ),
-                    poison: CallPoison::Rejected,
-                },
+                    CallPoison::Rejected,
+                ),
                 result,
             };
         }
@@ -1377,14 +1289,14 @@ impl TypeChecker<'_> {
             },
         ));
         RegisteredCandidateCheck {
-            arguments: RegisteredArgumentCheck {
-                facts: if records_facts {
+            arguments: RegisteredArgumentCheck::new(
+                if records_facts {
                     arguments.facts
                 } else {
                     Vec::new()
                 },
-                poison: arguments.poison,
-            },
+                arguments.poison,
+            ),
             result,
         }
     }
@@ -1494,6 +1406,38 @@ impl TypeChecker<'_> {
         )
     }
 
+    fn begin_registered_candidate_argument_probe(
+        &mut self,
+        call: &CallExpr,
+        focused: bool,
+    ) -> bool {
+        if focused
+            && let Err(error) = self
+                .call_resolver_control
+                .check_signature_query_step(SignatureQueryStep::CandidateArgumentProbe)
+        {
+            self.errors.push(TypeCheckError::new(error.to_string()));
+            let call_span = self.source_span_for_current_range(call.range());
+            self.call_target_fact_recorder
+                .record_resolve_error(call_span.as_ref(), error);
+            return false;
+        }
+        if !self.charge_callable_work(
+            call,
+            focused,
+            crate::checker::call_target_facts::CallableWorkOperation::ArgumentMapping,
+        ) {
+            return false;
+        }
+        !self.signature_work_charge.candidate_work
+            || self.charge_signature_work(crate::callable::SignatureWorkKind::SpecificityChecks, 1)
+    }
+
+    fn is_focused_registered_call(&self, call: &CallExpr) -> bool {
+        let call_span = self.source_span_for_current_range(call.range());
+        self.uses_focused_callable_work(call_span.as_ref())
+    }
+
     fn check_registered_schema_args_with_implicit(
         &mut self,
         label: &str,
@@ -1504,25 +1448,24 @@ impl TypeChecker<'_> {
         implicit: Option<crate::callable::CallableParameterIndex>,
     ) -> RegisteredArgumentCheck {
         let args = call.args();
+        let focused = self.is_focused_registered_call(call);
         let Some(group) = schema.group(current_group) else {
             self.errors.push(TypeCheckError::new(format!(
                 "registered callable `{label}` has no parameter group {}",
                 current_group.get()
             )));
-            return RegisteredArgumentCheck {
-                facts: self.check_unmapped_registered_arguments(
-                    call,
-                    CallPoison::Rejected,
-                    records_facts,
-                ),
-                poison: CallPoison::Rejected,
-            };
+            return RegisteredArgumentCheck::new(
+                self.check_unmapped_registered_arguments(call, CallPoison::Rejected, records_facts),
+                CallPoison::Rejected,
+            );
         };
         let context = RegisteredArgumentContext {
             label,
             schema,
             group: current_group,
             parameters: group.parameters(),
+            call,
+            focused,
         };
         let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
         let mut provided = vec![false; context.parameters.len()];
@@ -1535,6 +1478,10 @@ impl TypeChecker<'_> {
         let mut poison = CallPoison::Clean;
         let mut spread_shape_rejected = false;
         for (argument_index, arg) in args.iter().enumerate() {
+            if !self.begin_registered_candidate_argument_probe(call, focused) {
+                poison = CallPoison::Rejected;
+                break;
+            }
             match arg {
                 CallArg::Positional(value) => {
                     poison =
@@ -1587,15 +1534,15 @@ impl TypeChecker<'_> {
                 poison = CallPoison::Rejected;
             }
         }
-        RegisteredArgumentCheck {
-            facts: fact_builders.map_or_else(Vec::new, |builders| {
+        RegisteredArgumentCheck::new(
+            fact_builders.map_or_else(Vec::new, |builders| {
                 builders
                     .into_iter()
                     .map(ArgumentFactBuilder::finish)
                     .collect()
             }),
             poison,
-        }
+        )
     }
 
     fn check_registered_positional(&mut self, input: RegisteredPositionalCheck<'_>) -> CallPoison {
@@ -1820,6 +1767,10 @@ impl TypeChecker<'_> {
         poison
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the typed-rest rule atomically validates placement, sequence item type, and checked facts"
+    )]
     fn check_registered_typed_rest_spread(
         &mut self,
         context: RegisteredArgumentContext<'_>,
@@ -1833,45 +1784,53 @@ impl TypeChecker<'_> {
             .iter()
             .find(|parameter| parameter.passing() == CallableParameterPassing::RestPositional)
         else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{}` has no positional rest parameter",
-                context.label
-            )));
-            return RegisteredSpreadResult {
-                poison: self.check_registered_argument_slot(
-                    context,
-                    None,
-                    FixedLiteralSpreadSlot::Expr(value),
-                    argument_index,
-                    fact_builders,
-                    CallPoison::Rejected,
+            return self.reject_registered_typed_rest_spread(
+                format!(
+                    "function `{}` has no positional rest parameter",
+                    context.label
                 ),
-                shape_rejected: true,
-            };
+                context,
+                value,
+                argument_index,
+                fact_builders,
+            );
         };
         if context.parameters.iter().any(|parameter| {
             parameter.presence() == CallableParameterPresence::Required
                 && parameter.passing() != CallableParameterPassing::RestPositional
                 && !provided[parameter.index().get()]
         }) {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{}` spread argument must follow required fixed arguments",
-                context.label
-            )));
-            return RegisteredSpreadResult {
-                poison: self.check_registered_argument_slot(
-                    context,
-                    None,
-                    FixedLiteralSpreadSlot::Expr(value),
-                    argument_index,
-                    fact_builders,
-                    CallPoison::Rejected,
+            return self.reject_registered_typed_rest_spread(
+                format!(
+                    "function `{}` spread argument must follow required fixed arguments",
+                    context.label
                 ),
-                shape_rejected: true,
+                context,
+                value,
+                argument_index,
+                fact_builders,
+            );
+        }
+        if self.signature_work_charge.candidate_work
+            && !self.charge_signature_work(crate::callable::SignatureWorkKind::ArgumentBindings, 1)
+        {
+            return RegisteredSpreadResult {
+                poison: CallPoison::Rejected,
+                shape_rejected: false,
             };
         }
         let expression = TypeExpressionId::from_index(self.stats.expressions);
         let source = self.source_span_for_expr(value);
+        if !self.charge_callable_work(
+            context.call,
+            context.focused,
+            crate::checker::call_target_facts::CallableWorkOperation::TypeCheck,
+        ) {
+            return RegisteredSpreadResult {
+                poison: CallPoison::Rejected,
+                shape_rejected: false,
+            };
+        }
         let actual = self.check_expr(value);
         let Some(item) = actual.as_ref().and_then(spread_item_type) else {
             self.errors.push(TypeCheckError::new(format!(
@@ -1925,6 +1884,28 @@ impl TypeChecker<'_> {
         }
     }
 
+    fn reject_registered_typed_rest_spread(
+        &mut self,
+        message: String,
+        context: RegisteredArgumentContext<'_>,
+        value: &Expr,
+        argument_index: usize,
+        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
+    ) -> RegisteredSpreadResult {
+        self.errors.push(TypeCheckError::new(message));
+        RegisteredSpreadResult {
+            poison: self.check_registered_argument_slot(
+                context,
+                None,
+                FixedLiteralSpreadSlot::Expr(value),
+                argument_index,
+                fact_builders,
+                CallPoison::Rejected,
+            ),
+            shape_rejected: true,
+        }
+    }
+
     fn check_registered_argument_slot(
         &mut self,
         context: RegisteredArgumentContext<'_>,
@@ -1954,6 +1935,14 @@ impl TypeChecker<'_> {
         fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
         mut poison: CallPoison,
     ) -> RegisteredSlotCheck {
+        if self.signature_work_charge.candidate_work
+            && !self.charge_signature_work(crate::callable::SignatureWorkKind::ArgumentBindings, 1)
+        {
+            return RegisteredSlotCheck {
+                poison: CallPoison::Rejected,
+                inferred: None,
+            };
+        }
         let expected = match parameter.map(CallableParameter::ty) {
             Some(CallableParameterType::Exact(expected)) => Some(expected),
             Some(CallableParameterType::Unchecked) | None => None,
@@ -1964,6 +1953,16 @@ impl TypeChecker<'_> {
             .and_then(|expr| self.source_span_for_expr(expr));
         if value.source_expr().is_none() {
             self.stats.expressions += 1;
+        }
+        if !self.charge_callable_work(
+            context.call,
+            context.focused,
+            crate::checker::call_target_facts::CallableWorkOperation::TypeCheck,
+        ) {
+            return RegisteredSlotCheck {
+                poison: CallPoison::Rejected,
+                inferred: None,
+            };
         }
         let actual = self.check_fixed_literal_spread_slot(value, expected);
         if let (Some(expected), Some(actual)) = (expected, actual.as_ref())

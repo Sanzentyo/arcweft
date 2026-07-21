@@ -1,18 +1,19 @@
 //! Projection from checker-owned focused facts into the public read model.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
 
 use arcweft_source::SourceDocument;
 
 use crate::{
     callable::{
-        CallPoison, CallTargetFact, CallTargetFacts, CallableCandidateId, CallableLimits,
-        CallableLookupKey, CallableParameter, CallableParameterCoordinate,
+        CallPoison, CallTargetFact, CallTargetFacts, CallableCandidateId, CallableDiagnostic,
+        CallableDiagnosticCode, CallableDiagnosticSeverity, CallableDiagnosticSubject,
+        CallableLimits, CallableLookupKey, CallableParameter, CallableParameterCoordinate,
         CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallableRecord,
-        CheckedCallArgumentFact, CheckedCallArgumentSlotFact, RegisteredCallableCatalog,
-        ResolvedCallable, ResolverWork, SemanticParameter, SemanticParameterGroup,
-        SemanticSignature, SemanticSignatureHelp, SemanticSignatureIndex,
-        SemanticSignatureRecovery, SignatureWorkReport,
+        RegisteredCallableCatalog, ResolvedCallable, ResolverWork, SemanticParameter,
+        SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp, SemanticSignatureIndex,
+        SemanticSignatureRecovery, SignatureQueryLimits, SignatureQueryWorkMeter,
+        SignatureWorkKind,
     },
     checker::FocusedCallSite,
     registration::RegisteredSemanticWorld,
@@ -20,7 +21,20 @@ use crate::{
 
 use super::{
     SignatureNotApplicable, SignatureQueryControl, SignatureQueryError, SignatureQueryOutcome,
+    map_signature_accounting_error,
 };
+
+pub(super) struct SignatureProjection<'a> {
+    pub(super) world: &'a RegisteredSemanticWorld,
+    pub(super) document: &'a SourceDocument,
+    pub(super) control: SignatureQueryControl<'a>,
+    pub(super) site: &'a FocusedCallSite,
+    pub(super) facts: &'a CallTargetFacts,
+    pub(super) callable_limits: &'a CallableLimits,
+    pub(super) signature_limits: &'a SignatureQueryLimits,
+    pub(super) signature_work: &'a mut SignatureQueryWorkMeter,
+    pub(super) work: &'a mut ResolverWork,
+}
 
 #[allow(
     clippy::result_large_err,
@@ -28,14 +42,19 @@ use super::{
     reason = "one projection validates and publishes the complete public signature-help result"
 )]
 pub(super) fn project_signature_help(
-    world: &RegisteredSemanticWorld,
-    document: &SourceDocument,
-    control: SignatureQueryControl<'_>,
-    site: &FocusedCallSite,
-    facts: &CallTargetFacts,
-    work: &mut ResolverWork,
-    limits: &CallableLimits,
+    projection: SignatureProjection<'_>,
 ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
+    let SignatureProjection {
+        world,
+        document,
+        control,
+        site,
+        facts,
+        callable_limits,
+        signature_limits,
+        signature_work,
+        work,
+    } = projection;
     control.check()?;
     site.callee()
         .validate_for(document)
@@ -44,33 +63,20 @@ pub(super) fn project_signature_help(
         .text()
         .get(site.callee().range().as_range())
         .ok_or(crate::callable::SemanticSignatureError::InvalidSpan)?;
-    let initial_resolver_work = work.consumed();
-    let arguments = facts
-        .arguments()
-        .iter()
-        .flat_map(CheckedCallArgumentFact::slots)
-        .count();
-    let argument_mapping = u64::try_from(arguments)
-        .map_err(|_| crate::callable::CallableQueryLimitError::ArithmeticOverflow)?;
-    let type_checks = argument_mapping;
-    work.charge(
-        argument_mapping
-            .checked_add(type_checks)
-            .ok_or(crate::callable::CallableQueryLimitError::ArithmeticOverflow)?,
-    )?;
-
     let (candidates, selected_candidate) = match facts.target() {
         CallTargetFact::Selected {
             selected,
             considered,
         } => (considered.as_ref(), Some(selected.as_ref())),
         CallTargetFact::Ambiguous { candidates } => (candidates.as_ref(), None),
-        CallTargetFact::NonCallable { source, ty } => {
+        CallTargetFact::NonCallable { .. } => {
             return Ok(SignatureQueryOutcome::NotApplicable(
-                SignatureNotApplicable::NonCallableCallee {
-                    source: source.clone(),
-                    ty: ty.clone(),
-                },
+                SignatureNotApplicable::NonCallableCallee,
+            ));
+        }
+        CallTargetFact::Missing { .. } => {
+            return Ok(SignatureQueryOutcome::NotApplicable(
+                SignatureNotApplicable::UnknownCallee,
             ));
         }
     };
@@ -92,32 +98,29 @@ pub(super) fn project_signature_help(
             facts,
             is_selected,
             control,
+            callable_limits,
+            signature_work,
             work,
-            limits,
         )?);
     }
 
-    let active_parameter = candidates
-        .get(active_signature.get())
-        .and_then(|candidate| active_parameter(facts, site.active_argument(), candidate));
-    let resolver = initial_resolver_work
-        .checked_add(
-            work.consumed()
-                .checked_sub(initial_resolver_work)
-                .and_then(|projection_and_arguments| {
-                    projection_and_arguments.checked_sub(argument_mapping.checked_add(type_checks)?)
-                })
-                .ok_or(crate::callable::CallableQueryLimitError::ArithmeticOverflow)?,
-        )
-        .ok_or(crate::callable::CallableQueryLimitError::ArithmeticOverflow)?;
-    let work_report = SignatureWorkReport::try_new(
-        resolver,
-        argument_mapping,
-        type_checks,
-        site.recovery_nodes(),
-        facts.diagnostics().len(),
-        limits,
+    let active_parameter = facts.active_parameter();
+    let (diagnostics, omitted_diagnostics) = bounded_diagnostics(
+        facts.diagnostics(),
+        facts.document(),
+        site.call(),
+        callable_limits,
+        signature_limits,
+        signature_work,
     )?;
+    let work_report = work
+        .signature_report(
+            site.recovery_nodes(),
+            facts.diagnostics().len(),
+            callable_limits,
+        )
+        .map_err(SignatureQueryError::from)?;
+    let query_work_report = signature_work.report();
     control.check()?;
     let recovery = if site.recovery_nodes() == 0 {
         SemanticSignatureRecovery::Complete
@@ -138,9 +141,11 @@ pub(super) fn project_signature_help(
         facts.current_group(),
         facts.next_group(),
         recovery,
-        facts.diagnostics().to_vec(),
+        diagnostics,
+        omitted_diagnostics,
         work_report,
-        limits,
+        query_work_report,
+        callable_limits,
     )?))
 }
 
@@ -156,19 +161,22 @@ fn project_signature(
     facts: &CallTargetFacts,
     active: bool,
     control: SignatureQueryControl<'_>,
+    callable_limits: &CallableLimits,
+    signature_work: &mut SignatureQueryWorkMeter,
     work: &mut ResolverWork,
-    limits: &CallableLimits,
 ) -> Result<SemanticSignature, SignatureQueryError> {
-    work.charge(1)?;
     let schema = candidate.schema();
     let mut groups = Vec::with_capacity(schema.groups().len());
+    let mut parameters_in_signature = 0u64;
     for group in schema.groups() {
         control.check()?;
-        work.charge(1)?;
         let mut parameters = Vec::with_capacity(group.parameters().len());
         for parameter in group.parameters() {
             control.check()?;
-            work.charge(1)?;
+            work.charge(1).map_err(SignatureQueryError::from)?;
+            signature_work
+                .charge_parameter(&mut parameters_in_signature)
+                .map_err(map_signature_accounting_error)?;
             let coordinate = CallableParameterCoordinate::new(group.index(), parameter.index());
             parameters.push(SemanticParameter::try_new(
                 coordinate,
@@ -197,7 +205,7 @@ fn project_signature(
             group.index(),
             group.kind(),
             parameters,
-            limits,
+            callable_limits,
         )?);
     }
     let result = if active {
@@ -247,7 +255,7 @@ fn project_signature(
         } else {
             CallPoison::Clean
         },
-        limits,
+        callable_limits,
     )?)
 }
 
@@ -301,77 +309,70 @@ fn parameter_label(parameter: &CallableParameter) -> String {
     label
 }
 
-fn active_parameter(
-    facts: &CallTargetFacts,
-    active_argument: Option<usize>,
-    selected: &ResolvedCallable,
-) -> Option<CallableParameterCoordinate> {
-    let active_argument = active_argument?;
-    let current_group = facts.current_group();
-    let group = selected.schema().group(current_group)?;
-    if let Some(argument) = facts.arguments().get(active_argument) {
-        let mapped = argument
-            .slots()
-            .iter()
-            .filter_map(CheckedCallArgumentSlotFact::mapped)
-            .collect::<HashSet<_>>();
-        if mapped.len() == 1 {
-            return mapped.into_iter().next();
-        }
-        if let Some(name) = argument.authored_name() {
-            return group.parameters().iter().find_map(|parameter| {
-                (parameter.name() == Some(name))
-                    .then(|| CallableParameterCoordinate::new(current_group, parameter.index()))
-            });
-        }
-        if argument.spread() {
-            return None;
-        }
-        let positional_ordinal = facts
-            .arguments()
-            .iter()
-            .take(active_argument + 1)
-            .filter(|argument| !argument.spread() && argument.authored_name().is_none())
-            .count()
-            .saturating_sub(1);
-        return positional_parameter(group.parameters(), current_group, positional_ordinal);
+fn bounded_diagnostics(
+    diagnostics: &[CallableDiagnostic],
+    document: &arcweft_source::SourceDocumentIdentity,
+    call: &arcweft_source::SourceSpan,
+    callable_limits: &CallableLimits,
+    signature_limits: &SignatureQueryLimits,
+    signature_work: &mut SignatureQueryWorkMeter,
+) -> Result<(Vec<CallableDiagnostic>, u64), SignatureQueryError> {
+    for _ in diagnostics {
+        signature_work
+            .charge(SignatureWorkKind::DiagnosticConsiderations, 1)
+            .map_err(map_signature_accounting_error)?;
     }
-
-    let mapped = facts
-        .arguments()
-        .iter()
-        .flat_map(CheckedCallArgumentFact::slots)
-        .filter_map(CheckedCallArgumentSlotFact::mapped)
-        .collect::<HashSet<_>>();
-    group.parameters().iter().find_map(|parameter| {
-        let coordinate = CallableParameterCoordinate::new(current_group, parameter.index());
-        (!mapped.contains(&coordinate) && accepts_positional(parameter.passing()))
-            .then_some(coordinate)
-    })
-}
-
-fn positional_parameter(
-    parameters: &[CallableParameter],
-    group: crate::callable::CallableGroupIndex,
-    mut ordinal: usize,
-) -> Option<CallableParameterCoordinate> {
-    for parameter in parameters {
-        if !accepts_positional(parameter.passing()) {
-            continue;
-        }
-        if parameter.passing() == CallableParameterPassing::RestPositional || ordinal == 0 {
-            return Some(CallableParameterCoordinate::new(group, parameter.index()));
-        }
-        ordinal -= 1;
+    let observed =
+        u64::try_from(diagnostics.len()).map_err(|_| SignatureQueryError::ArithmeticOverflow {
+            counter: SignatureWorkKind::DiagnosticConsiderations,
+        })?;
+    let mut diagnostics = diagnostics.to_vec();
+    diagnostics.sort_by(compare_diagnostics);
+    if observed <= signature_limits.diagnostics() {
+        return Ok((diagnostics, 0));
     }
-    None
+    let retained = signature_limits.diagnostics().checked_sub(1).ok_or(
+        SignatureQueryError::ArithmeticOverflow {
+            counter: SignatureWorkKind::DiagnosticConsiderations,
+        },
+    )?;
+    let omitted =
+        observed
+            .checked_sub(retained)
+            .ok_or(SignatureQueryError::ArithmeticOverflow {
+                counter: SignatureWorkKind::DiagnosticConsiderations,
+            })?;
+    let retained =
+        usize::try_from(retained).map_err(|_| SignatureQueryError::ArithmeticOverflow {
+            counter: SignatureWorkKind::DiagnosticConsiderations,
+        })?;
+    diagnostics.truncate(retained);
+    diagnostics.push(CallableDiagnostic::try_new(
+        CallableDiagnosticCode::DiagnosticsTruncated,
+        CallableDiagnosticSeverity::Information,
+        Some(call.clone()),
+        CallableDiagnosticSubject::None,
+        Vec::new(),
+        Some(document),
+        callable_limits,
+    )?);
+    Ok((diagnostics, omitted))
 }
 
-const fn accepts_positional(passing: CallableParameterPassing) -> bool {
-    matches!(
-        passing,
-        CallableParameterPassing::PositionalOnly
-            | CallableParameterPassing::PositionalOrNamed
-            | CallableParameterPassing::RestPositional
-    )
+fn compare_diagnostics(left: &CallableDiagnostic, right: &CallableDiagnostic) -> Ordering {
+    left.code()
+        .cmp(&right.code())
+        .then_with(|| severity_rank(left.severity()).cmp(&severity_rank(right.severity())))
+        .then_with(|| left.span().cmp(&right.span()))
 }
+
+const fn severity_rank(severity: CallableDiagnosticSeverity) -> u8 {
+    match severity {
+        CallableDiagnosticSeverity::Error => 0,
+        CallableDiagnosticSeverity::Warning => 1,
+        CallableDiagnosticSeverity::Information => 2,
+    }
+}
+
+#[cfg(test)]
+mod tests;

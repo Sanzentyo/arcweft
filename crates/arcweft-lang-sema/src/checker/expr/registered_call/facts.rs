@@ -105,16 +105,27 @@ impl TypeChecker<'_> {
         records_facts: bool,
     ) -> Vec<CheckedCallArgumentFact> {
         let mut builders = self.registered_argument_fact_builders(call, records_facts);
+        let focused = self.is_focused_registered_call(call);
         let syntax = call
             .syntax()
             .argument_list()
             .map(arcweft_lang_syntax::expr::ArgumentListSyntax::arguments);
         for (argument_index, argument) in call.args().iter().enumerate() {
+            if !self.begin_registered_candidate_argument_probe(call, focused) {
+                break;
+            }
             let expression = TypeExpressionId::from_index(self.stats.expressions);
             let source = syntax
                 .and_then(|arguments| arguments.get(argument_index))
                 .and_then(|argument| self.source_span_for_current_range(argument.value_range()))
                 .or_else(|| self.source_span_for_expr(argument.value()));
+            if !self.charge_callable_work(
+                call,
+                focused,
+                crate::checker::call_target_facts::CallableWorkOperation::TypeCheck,
+            ) {
+                break;
+            }
             let inferred = self.check_expr(argument.value());
             Self::push_registered_argument_slot(
                 RegisteredArgumentSlot {

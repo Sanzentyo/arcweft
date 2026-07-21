@@ -2,11 +2,16 @@
 
 ## Status
 
-Complete on `main` from base revision `27227bbc8e1d5c78d7b35c2865bad8fb6d00fca9`.
+The production resolver migration is complete on `main` from base revision
+`27227bbc8e1d5c78d7b35c2865bad8fb6d00fca9`. A 2026-07-21 follow-up audit
+found that the finalized contract's public immutable target-fact read API is
+still crate-private; the completion claim in this note is therefore limited to
+resolver/checker integration, not the complete public API contract.
 
 The accepted semantic world, type checker, focused call-fact query, and
 signature surface now consume one typed resolver product. All 22 production
-`CallableFamily` variants report `SignatureFamilySupport::NativeFacts`; there
+`CallableFamily` variants report `SignatureFamilySupport::NativeFacts`; this
+denotes resolver/checker fact ownership, not source-surface reachability. There
 is no `NotIntegrated` family or compatibility fallback.
 
 ## Implemented contract
@@ -88,6 +93,10 @@ capture path, so it does not meet the repository's Tier 2 risk predicate.
 
 ## Remaining work
 
-No AW-AH-009.3.3 implementation item remains. Downstream LSP or caller-specific
-presentation work should consume these facts as an independent cut rather than
-reintroducing a parallel resolver.
+The finalized AW-AH-009.3.3 contract requires `CallTargetFacts`,
+`CallTargetFact`, checked argument and slot facts, `CallTargetFactError`, and
+the corresponding `TypeCheckReport` read APIs to be public. They remain
+crate-owned in current production. That visibility/read-model cut must be
+completed or explicitly superseded before AW-AH-009.3.3 can be called fully
+complete. Downstream work must not reintroduce a parallel resolver while
+closing it.

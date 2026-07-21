@@ -58,8 +58,7 @@ impl TypeChecker<'_> {
             return;
         }
 
-        self.assertion_effect_conditions
-            .insert(callable.clone(), index);
+        self.retain_assertion_effect_condition(callable.clone(), index);
         let outer = self.effect_collector.current_callable();
         if let Some(outer) = outer.as_ref() {
             self.effect_collector.record_local_call_from(

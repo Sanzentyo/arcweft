@@ -24,6 +24,40 @@ pub struct EffectCollector {
     known: BTreeMap<String, Option<CallableId>>,
     inferred_rows: BTreeMap<CallableId, EffectVar>,
     effect_vars: EffectVarSupply,
+    transaction_depth: usize,
+    transaction_journal: Vec<EffectMutation>,
+}
+
+#[derive(Clone, Debug)]
+enum EffectMutation {
+    RegisteredCallable {
+        id: CallableId,
+        source_name: String,
+        previous_known: PreviousKnownCallable,
+    },
+    InferredRowInserted {
+        callable: CallableId,
+    },
+    RecordedCall {
+        caller: CallableId,
+    },
+    RecordedEffect {
+        caller: CallableId,
+    },
+}
+
+#[derive(Clone, Debug)]
+enum PreviousKnownCallable {
+    Missing,
+    Ambiguous,
+    Known(CallableId),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct EffectCollectorCheckpoint {
+    journal_start: usize,
+    current: Option<CallableId>,
+    effect_vars: EffectVarSupply,
 }
 
 impl EffectCollector {
@@ -36,6 +70,75 @@ impl EffectCollector {
             known: BTreeMap::new(),
             inferred_rows: BTreeMap::new(),
             effect_vars: EffectVarSupply::default(),
+            transaction_depth: 0,
+            transaction_journal: Vec::new(),
+        }
+    }
+
+    pub(crate) fn checkpoint(&mut self) -> EffectCollectorCheckpoint {
+        self.transaction_depth += 1;
+        EffectCollectorCheckpoint {
+            journal_start: self.transaction_journal.len(),
+            current: self.current.clone(),
+            effect_vars: self.effect_vars.clone(),
+        }
+    }
+
+    pub(crate) fn rollback(&mut self, checkpoint: EffectCollectorCheckpoint) {
+        while self.transaction_journal.len() > checkpoint.journal_start {
+            match self
+                .transaction_journal
+                .pop()
+                .expect("journal length was checked")
+            {
+                EffectMutation::RegisteredCallable {
+                    id,
+                    source_name,
+                    previous_known,
+                } => {
+                    self.program.remove_callable(&id);
+                    match previous_known {
+                        PreviousKnownCallable::Known(previous) => {
+                            self.known.insert(source_name, Some(previous));
+                        }
+                        PreviousKnownCallable::Ambiguous => {
+                            self.known.insert(source_name, None);
+                        }
+                        PreviousKnownCallable::Missing => {
+                            self.known.remove(&source_name);
+                        }
+                    }
+                }
+                EffectMutation::InferredRowInserted { callable } => {
+                    self.inferred_rows.remove(&callable);
+                }
+                EffectMutation::RecordedCall { caller } => self
+                    .program
+                    .callable_mut(&caller)
+                    .expect("entered callable remains registered")
+                    .pop_call(),
+                EffectMutation::RecordedEffect { caller } => self
+                    .program
+                    .callable_mut(&caller)
+                    .expect("entered callable remains registered")
+                    .pop_direct_effect(),
+            }
+        }
+        self.current = checkpoint.current;
+        self.effect_vars = checkpoint.effect_vars;
+        self.transaction_depth = self
+            .transaction_depth
+            .checked_sub(1)
+            .expect("effect checkpoints roll back exactly once");
+    }
+
+    pub(crate) fn commit(&mut self, checkpoint: &EffectCollectorCheckpoint) {
+        self.transaction_depth = self
+            .transaction_depth
+            .checked_sub(1)
+            .expect("effect checkpoints commit exactly once");
+        if self.transaction_depth == 0 {
+            self.transaction_journal.truncate(checkpoint.journal_start);
         }
     }
 
@@ -48,8 +151,21 @@ impl EffectCollector {
         contract: EffectContract,
     ) -> Result<(), DuplicateCallableError> {
         let source_name = source_name.into();
+        let previous_known = match self.known.get(&source_name) {
+            Some(Some(callable)) => PreviousKnownCallable::Known(callable.clone()),
+            Some(None) => PreviousKnownCallable::Ambiguous,
+            None => PreviousKnownCallable::Missing,
+        };
         self.program
             .insert(CallableFacts::new(id.clone(), kind, visibility).with_contract(contract))?;
+        if self.transaction_depth != 0 {
+            self.transaction_journal
+                .push(EffectMutation::RegisteredCallable {
+                    id: id.clone(),
+                    source_name: source_name.clone(),
+                    previous_known,
+                });
+        }
         self.known
             .entry(source_name)
             .and_modify(|existing| *existing = None)
@@ -60,10 +176,19 @@ impl EffectCollector {
     /// Allocates the open row owned by a callable whose value semantics are
     /// defined by the ordinary function/closure inference model.
     pub(crate) fn ensure_inferred_effect_row(&mut self, callable: &CallableId) -> EffectRow {
-        let tail = *self
-            .inferred_rows
-            .entry(callable.clone())
-            .or_insert_with(|| self.effect_vars.fresh());
+        let tail = if let Some(tail) = self.inferred_rows.get(callable) {
+            *tail
+        } else {
+            let tail = self.effect_vars.fresh();
+            self.inferred_rows.insert(callable.clone(), tail);
+            if self.transaction_depth != 0 {
+                self.transaction_journal
+                    .push(EffectMutation::InferredRowInserted {
+                        callable: callable.clone(),
+                    });
+            }
+            tail
+        };
         EffectRow::open(EffectSet::new(), tail)
     }
 
@@ -114,6 +239,11 @@ impl EffectCollector {
         }) else {
             return;
         };
+        if self.transaction_depth != 0 {
+            self.transaction_journal.push(EffectMutation::RecordedCall {
+                caller: current.clone(),
+            });
+        }
         self.current_facts_mut(&current).record_call(edge);
     }
 
@@ -126,6 +256,11 @@ impl EffectCollector {
         let Some(current) = self.current.clone() else {
             return;
         };
+        if self.transaction_depth != 0 {
+            self.transaction_journal.push(EffectMutation::RecordedCall {
+                caller: current.clone(),
+            });
+        }
         self.current_facts_mut(&current)
             .record_call(CallEdge::dynamic(label, effects, site));
     }
@@ -134,6 +269,11 @@ impl EffectCollector {
         let Some(current) = self.current.clone() else {
             return;
         };
+        if self.transaction_depth != 0 {
+            self.transaction_journal.push(EffectMutation::RecordedCall {
+                caller: current.clone(),
+            });
+        }
         self.current_facts_mut(&current)
             .record_call(CallEdge::local(callee, site));
     }
@@ -144,6 +284,11 @@ impl EffectCollector {
         target: CallableId,
         site: EffectSite,
     ) {
+        if self.transaction_depth != 0 {
+            self.transaction_journal.push(EffectMutation::RecordedCall {
+                caller: caller_id.clone(),
+            });
+        }
         self.current_facts_mut(caller_id)
             .record_call(CallEdge::local(target, site));
     }
@@ -152,6 +297,12 @@ impl EffectCollector {
         let Some(current) = self.current.clone() else {
             return;
         };
+        if self.transaction_depth != 0 {
+            self.transaction_journal
+                .push(EffectMutation::RecordedEffect {
+                    caller: current.clone(),
+                });
+        }
         self.current_facts_mut(&current).record_effect(effect, site);
     }
 

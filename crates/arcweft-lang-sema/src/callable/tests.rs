@@ -25,7 +25,7 @@ use crate::{
     types::TypeKind,
 };
 
-use super::limits::{CatalogBuildWork, ResolverWork};
+use super::limits::{CatalogBuildWork, ResolverWork, SignatureQueryWorkMeter};
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallPoison,
     CallableArgumentIndex, CallableArgumentPolicy, CallableArgumentSlotIndex,
@@ -42,13 +42,14 @@ use super::{
     EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, FloatWidth, FunctionValueOrdinal,
     FunctionValueSignatureId, FxCallableSignatureId, FxResolution, LanguageCallableFamily,
     LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates,
-    PresentationCallableId, ProjectCallablePath, ProjectNameBinding, ReceiverMethodKey,
-    ReductionConstructorKind, RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable,
-    ResolvedCharacterOwner, ResolvedFunctionValue, RustItemPath, SemanticParameter,
-    SemanticParameterGroup, SemanticSignature, SemanticSignatureError, SemanticSignatureHelp,
-    SemanticSignatureIndex, SemanticSignatureRecovery, SignatureOrigin, SignatureWorkReport,
-    SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation,
-    TraitImplementationIndex, UnknownNamedArgumentPolicy,
+    PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, PresentationCallableId,
+    ProjectCallablePath, ProjectNameBinding, ReceiverMethodKey, ReductionConstructorKind,
+    RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable, ResolvedCharacterOwner,
+    ResolvedFunctionValue, RustItemPath, SemanticParameter, SemanticParameterGroup,
+    SemanticSignature, SemanticSignatureError, SemanticSignatureHelp, SemanticSignatureIndex,
+    SemanticSignatureRecovery, SignatureOrigin, SignatureQueryLimits, SignatureWorkKind,
+    SignatureWorkReport, SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId,
+    StdFloatOperation, TraitImplementationIndex, UnknownNamedArgumentPolicy,
 };
 
 fn name(value: &str) -> CallableName {
@@ -70,6 +71,20 @@ fn group(value: usize) -> CallableGroupIndex {
 
 fn limits(groups: usize, parameters: usize, work: u64) -> CallableLimits {
     CallableLimits::for_test(32, groups, parameters, 32, 256, 256, 128, work, work)
+}
+
+fn signature_limits(work: u64) -> SignatureQueryLimits {
+    SignatureQueryLimits::try_for_test(4_096, 64, 128, 64, 512, 8_388_608, 32, work)
+        .expect("positive signature limits")
+}
+
+fn signature_work_report() -> SignatureWorkReport {
+    SignatureWorkReport::try_new(3, 0, 0, 0, 0, &PRODUCTION_CALLABLE_LIMITS)
+        .expect("test signature work")
+}
+
+fn signature_query_work_report() -> super::SignatureQueryWorkReport {
+    SignatureQueryWorkMeter::new(PRODUCTION_SIGNATURE_LIMITS).report()
 }
 
 fn project_binding_limits(max_path_segments: usize, work: u64) -> CallableLimits {
@@ -307,7 +322,7 @@ fn assert_curried_one_over(fixture: ResolvedFixture) {
             &limits(2, 4, 20),
         ),
         Err(ResolveCallError::InvalidCallGroup {
-            candidate: fixture.base,
+            candidate: Box::new(fixture.base),
             group: one_over,
         })
     );
@@ -1383,7 +1398,7 @@ fn resolved_curried_rejects_corrupt_world_prebuilt_candidate() {
             &limits(2, 4, 20),
         ),
         Err(ResolveCallError::InvalidCallGroup {
-            candidate: base,
+            candidate: Box::new(base),
             group: missing_group,
         })
     );
@@ -1393,7 +1408,7 @@ fn resolved_curried_rejects_corrupt_world_prebuilt_candidate() {
 fn invalid_call_group_has_stable_diagnostic_code() {
     assert_eq!(
         ResolveCallError::InvalidCallGroup {
-            candidate: CallableCandidateId::Builtin(BuiltinCallableId::Panic),
+            candidate: Box::new(CallableCandidateId::Builtin(BuiltinCallableId::Panic)),
             group: group(1),
         }
         .code(),
@@ -1724,13 +1739,147 @@ fn inclusive_work_limits_do_not_mutate_on_failure() {
     assert_eq!(query.remaining(), 0);
     assert_eq!(query.limit(), 2);
 
-    let report =
-        SignatureWorkReport::try_new(1, 1, 1, 0, 0, &limits(2, 4, 3)).expect("exact total work");
-    assert_eq!(report.total_work(), Ok(3));
+    let signature_limits = signature_limits(3);
+    let mut signature_work = SignatureQueryWorkMeter::new(signature_limits);
+    signature_work
+        .charge(SignatureWorkKind::NodeVisits, 3)
+        .expect("exact signature work");
+    assert_eq!(signature_work.report().total_work(), 3);
     assert!(matches!(
-        SignatureWorkReport::try_new(1, 1, 2, 0, 0, &limits(2, 4, 3)),
-        Err(CallableQueryLimitError::Work { .. })
+        signature_work.charge(SignatureWorkKind::NodeVisits, 1),
+        Err(super::SignatureAccountingError::Limit(
+            super::SignatureLimitExceeded {
+                kind: super::SignatureLimitKind::WorkUnits,
+                observed: 4,
+                maximum: 3,
+            }
+        ))
     ));
+    assert_eq!(signature_work.report().total_work(), 3);
+}
+
+#[test]
+fn every_signature_limit_rejects_zero_configuration() {
+    let cases = [
+        (
+            (0, 1, 1, 1, 1, 1, 1, 1),
+            super::SignatureLimitKind::CandidateCalls,
+        ),
+        (
+            (1, 0, 1, 1, 1, 1, 1, 1),
+            super::SignatureLimitKind::Overloads,
+        ),
+        (
+            (1, 1, 0, 1, 1, 1, 1, 1),
+            super::SignatureLimitKind::ParametersPerSignature,
+        ),
+        (
+            (1, 1, 1, 0, 1, 1, 1, 1),
+            super::SignatureLimitKind::NestedCalls,
+        ),
+        (
+            (1, 1, 1, 1, 0, 1, 1, 1),
+            super::SignatureLimitKind::RecoveryNodes,
+        ),
+        (
+            (1, 1, 1, 1, 1, 0, 1, 1),
+            super::SignatureLimitKind::SourceBytes,
+        ),
+        (
+            (1, 1, 1, 1, 1, 1, 0, 1),
+            super::SignatureLimitKind::Diagnostics,
+        ),
+        (
+            (1, 1, 1, 1, 1, 1, 1, 0),
+            super::SignatureLimitKind::WorkUnits,
+        ),
+    ];
+    for ((calls, overloads, parameters, nested, recovery, source, diagnostics, work), kind) in cases
+    {
+        assert_eq!(
+            SignatureQueryLimits::try_for_test(
+                calls,
+                overloads,
+                parameters,
+                nested,
+                recovery,
+                source,
+                diagnostics,
+                work,
+            ),
+            Err(super::SignatureLimitConfigurationError::Zero { kind })
+        );
+    }
+}
+
+#[test]
+fn signature_operation_limits_are_inclusive_and_parameters_reset_per_signature() {
+    let limits = PRODUCTION_SIGNATURE_LIMITS;
+    for (work_kind, limit_kind, maximum) in [
+        (
+            SignatureWorkKind::CandidateCalls,
+            super::SignatureLimitKind::CandidateCalls,
+            4_096,
+        ),
+        (
+            SignatureWorkKind::Overloads,
+            super::SignatureLimitKind::Overloads,
+            64,
+        ),
+        (
+            SignatureWorkKind::NestedCalls,
+            super::SignatureLimitKind::NestedCalls,
+            64,
+        ),
+        (
+            SignatureWorkKind::RecoveryNodes,
+            super::SignatureLimitKind::RecoveryNodes,
+            512,
+        ),
+    ] {
+        let mut meter = SignatureQueryWorkMeter::new(limits);
+        meter
+            .charge(work_kind, maximum)
+            .expect("exact operation boundary");
+        assert_eq!(
+            meter.charge(work_kind, 1),
+            Err(super::SignatureAccountingError::Limit(
+                super::SignatureLimitExceeded {
+                    kind: limit_kind,
+                    observed: maximum + 1,
+                    maximum,
+                }
+            ))
+        );
+    }
+
+    let mut meter = SignatureQueryWorkMeter::new(limits);
+    let mut first_signature = 0;
+    for _ in 0..128 {
+        meter
+            .charge_parameter(&mut first_signature)
+            .expect("parameter within the exact per-signature boundary");
+    }
+    assert_eq!(
+        meter.charge_parameter(&mut first_signature),
+        Err(super::SignatureAccountingError::Limit(
+            super::SignatureLimitExceeded {
+                kind: super::SignatureLimitKind::ParametersPerSignature,
+                observed: 129,
+                maximum: 128,
+            }
+        ))
+    );
+    assert_eq!(
+        first_signature, 128,
+        "failed charges do not mutate the local count"
+    );
+    let mut second_signature = 0;
+    meter
+        .charge_parameter(&mut second_signature)
+        .expect("the next signature starts a fresh parameter count");
+    assert_eq!(second_signature, 1);
+    assert_eq!(meter.report().projection().parameters(), 129);
 }
 
 fn semantic_signature(source: Option<CallableSource>) -> SemanticSignature {
@@ -1826,8 +1975,7 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
     let call_span = document
         .span(SourceRange::new(0, document.text().len()))
         .expect("call span");
-    let report =
-        SignatureWorkReport::try_new(1, 1, 1, 0, 0, &limits(2, 4, 20)).expect("work report");
+    let report = signature_work_report();
     let zero = SemanticSignatureIndex::try_from_usize(0).expect("signature index");
     let expression = TypeExpressionId::from_index(7);
 
@@ -1844,8 +1992,10 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
             None,
             SemanticSignatureRecovery::Complete,
             Vec::new(),
+            0,
             report,
-            &limits(2, 4, 20),
+            signature_query_work_report(),
+            &PRODUCTION_CALLABLE_LIMITS,
         ),
         Err(SemanticSignatureError::EmptySignatures)
     );
@@ -1857,13 +2007,15 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
             expression,
             vec![semantic_signature(None)],
             SemanticSignatureIndex::try_from_usize(1).expect("representable index"),
-            None,
+            Some(CallableParameterCoordinate::new(group(0), index(0))),
             group(0),
             None,
             SemanticSignatureRecovery::Complete,
             Vec::new(),
+            0,
             report,
-            &limits(2, 4, 20),
+            signature_query_work_report(),
+            &PRODUCTION_CALLABLE_LIMITS,
         ),
         Err(SemanticSignatureError::ActiveSignatureOutOfBounds)
     );
@@ -1880,10 +2032,76 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
             None,
             SemanticSignatureRecovery::Complete,
             Vec::new(),
+            0,
             report,
-            &limits(2, 4, 20),
+            signature_query_work_report(),
+            &PRODUCTION_CALLABLE_LIMITS,
         ),
         Err(SemanticSignatureError::ActiveParameterOutOfBounds)
+    );
+
+    let make_group = |group_index: usize, kind| {
+        let coordinate = CallableParameterCoordinate::new(group(group_index), index(0));
+        let parameter = SemanticParameter::try_new(
+            coordinate,
+            format!("value{group_index}: String"),
+            Some(name(&format!("value{group_index}"))),
+            CallableParameterType::Exact(TypeKind::String),
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("curried semantic parameter");
+        SemanticParameterGroup::try_new(
+            group(group_index),
+            kind,
+            vec![parameter],
+            &limits(2, 4, 20),
+        )
+        .expect("curried semantic group")
+    };
+    let curried_signature = SemanticSignature::try_new(
+        super::CallableCandidateId::Builtin(BuiltinCallableId::Panic),
+        Vec::new(),
+        SignatureOrigin::Language {
+            family: LanguageCallableFamily::Builtin,
+        },
+        Arc::from("panic"),
+        Arc::from("panic"),
+        vec![
+            make_group(0, CallableGroupKind::Initial),
+            make_group(1, CallableGroupKind::Curried),
+        ],
+        TypeKind::Never,
+        EffectRow::default(),
+        CallableDocumentation::missing(),
+        None,
+        group(0),
+        CallPoison::Clean,
+        &limits(2, 4, 20),
+    )
+    .expect("curried semantic signature");
+    assert_eq!(
+        SemanticSignatureHelp::try_new(
+            document.identity().clone(),
+            call_span.clone(),
+            call_span.clone(),
+            expression,
+            vec![curried_signature],
+            zero,
+            Some(CallableParameterCoordinate::new(group(1), index(0))),
+            group(0),
+            Some(group(1)),
+            SemanticSignatureRecovery::Complete,
+            Vec::new(),
+            0,
+            report,
+            signature_query_work_report(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        ),
+        Err(SemanticSignatureError::ActiveParameterOutOfBounds),
+        "active parameters must belong to the help result's current group"
     );
 
     let other = SourceDocument::try_new(
@@ -1904,13 +2122,15 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
         expression,
         vec![semantic_signature(Some(source))],
         zero,
-        None,
+        Some(CallableParameterCoordinate::new(group(0), index(0))),
         group(0),
         None,
         SemanticSignatureRecovery::Complete,
         Vec::new(),
+        0,
         report,
-        &limits(2, 4, 20),
+        signature_query_work_report(),
+        &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("accepted project signatures may originate in another document");
     assert_eq!(
@@ -1933,8 +2153,10 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
         None,
         SemanticSignatureRecovery::Complete,
         Vec::new(),
+        0,
         report,
-        &limits(2, 4, 20),
+        signature_query_work_report(),
+        &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("valid semantic signature help");
     assert_eq!(help.active_signature(), zero);

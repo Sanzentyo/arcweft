@@ -53,13 +53,13 @@ impl TypeChecker<'_> {
 
     pub(super) fn drop_lifetime_key(&mut self, key: &LifetimeKey) {
         self.check_lifetime_access(key, LifetimeAccessMode::Drop);
-        if !self.dropped_lifetime_keys.insert(key.clone()) {
+        if !self.retain_dropped_lifetime_key(key.clone()) {
             self.errors.push(TypeCheckError::new(format!(
                 "lifetime registry key `{}` was dropped more than once",
                 key.as_dotted()
             )));
         }
-        self.lifetime_guarantees.remove(key);
+        self.release_lifetime_guarantee(key);
     }
 
     pub(super) fn release_direct_drop_expr(&mut self, expr: &Expr) {

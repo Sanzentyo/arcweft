@@ -340,7 +340,7 @@ impl TypeChecker<'_> {
         ) {
             self.reject_borrow_escape(value_ty.as_ref(), "upper lifetime registry write");
         }
-        self.lifetime_guarantees.insert(key);
+        self.retain_lifetime_guarantee(key);
     }
 
     pub(super) fn check_wait_stmt(&mut self, target: &WaitTarget) {

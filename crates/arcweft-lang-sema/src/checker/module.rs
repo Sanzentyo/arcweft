@@ -2,9 +2,8 @@
 
 mod view;
 
-use super::call_target_facts::{
-    CallResolverControl, CallTargetFactRecorder, CallTargetFactReport, FocusedCallSite,
-};
+pub(crate) use super::call_target_facts::SignatureFocusedAnalysis;
+use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallTargetFactReport};
 use super::line_plan::DialogueContentRangeMode;
 use super::{
     EffectScope, EntityKind, EnumVariantPayload, FunctionKind, FxCatalog, HirModule,
@@ -17,7 +16,9 @@ use super::{
     signature_generic_names, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
     validate_typecheck_ready,
 };
-use crate::callable::{CallTargetFactError, CallTargetFactMode, CallTargetFacts, ResolverWork};
+#[cfg(test)]
+use crate::callable::ResolverWork;
+use crate::callable::{CallTargetFactError, CallTargetFactMode, CallTargetFacts};
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
 };
@@ -45,10 +46,9 @@ use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{FnParam, FnSignature, TypeRef, parse_type_ref};
 use arcweft_source::SourceDocumentId;
 use arcweft_source::SourceDocumentIdentity;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    sync::atomic::AtomicBool,
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(test)]
+use std::sync::atomic::AtomicBool;
 
 impl TypeCheckReport {
     pub fn into_result(self) -> Result<(), Vec<TypeCheckError>> {
@@ -116,11 +116,10 @@ impl FocusedCallTypeCheckReport {
         &self.report
     }
 
-    #[cfg(test)]
     pub(crate) fn focused_call_target_facts(
         &self,
     ) -> Result<&CallTargetFacts, CallTargetFactError> {
-        let CallTargetFactMode::Focused { call } = &self.call_targets.mode else {
+        let CallTargetFactMode::Focused { call, .. } = &self.call_targets.mode else {
             return Err(CallTargetFactError::FocusedModeRequired);
         };
         if let Some(error) = &self.call_targets.error {
@@ -130,30 +129,6 @@ impl FocusedCallTypeCheckReport {
             .fact
             .as_ref()
             .ok_or_else(|| CallTargetFactError::FocusedTargetMissing { call: call.clone() })
-    }
-
-    pub(crate) fn signature_call_site(
-        &self,
-    ) -> Result<Option<&FocusedCallSite>, CallTargetFactError> {
-        let CallTargetFactMode::Cursor { .. } = &self.call_targets.mode else {
-            return Err(CallTargetFactError::FocusedModeRequired);
-        };
-        if let Some(error) = &self.call_targets.error {
-            return Err(error.clone());
-        }
-        Ok(self.call_targets.site.as_ref())
-    }
-
-    pub(crate) fn signature_call_target_facts(
-        &self,
-    ) -> Result<Option<&CallTargetFacts>, CallTargetFactError> {
-        self.signature_call_site()?;
-        Ok(self.call_targets.fact.as_ref())
-    }
-
-    pub(crate) fn unsupported_signature_surface(&self) -> Result<bool, CallTargetFactError> {
-        self.signature_call_site()?;
-        Ok(self.call_targets.unsupported_surface)
     }
 }
 
@@ -223,8 +198,12 @@ pub(crate) fn analyze_registered_project_types_for_call_facts(
         None,
         Some(registered.symbols()),
         Some(registered),
-        CallTargetFactMode::Focused { call },
-        CallResolverControl::caller_owned(cancellation, work),
+        CallTargetFactMode::Focused {
+            call,
+            active_argument: None,
+            byte_offset: None,
+        },
+        CallResolverControl::caller_owned(cancellation, work, None, None),
     );
     let (report, call_targets) = finish_type_check_with_call_facts(
         module,
@@ -240,16 +219,26 @@ pub(crate) fn analyze_registered_project_types_for_call_facts(
     })
 }
 
-pub(crate) fn analyze_registered_project_types_for_signature_cursor(
-    module: &HirModule,
-    registered: &crate::registration::RegisteredSemanticWorld,
-    document: SourceDocumentIdentity,
-    byte_offset: usize,
-    cancellation: &AtomicBool,
-    work: &mut ResolverWork,
+pub(crate) fn analyze_registered_project_types_for_signature_call(
+    analysis: SignatureFocusedAnalysis<'_>,
 ) -> Result<FocusedCallTypeCheckReport, CallTargetFactError> {
-    if registered.symbols().source_identity(module.module_path()) != Some(&document) {
-        return Err(CallTargetFactError::FocusedSourceUnavailable { document });
+    let SignatureFocusedAnalysis {
+        module,
+        registered,
+        site,
+        cancellation,
+        work,
+        signature_work,
+        signature_control,
+    } = analysis;
+    if !registered
+        .symbols()
+        .modules()
+        .any(|module| registered.symbols().source_identity(module) == Some(site.call().source()))
+    {
+        return Err(CallTargetFactError::FocusedSourceUnavailable {
+            document: site.call().source().clone(),
+        });
     }
     let (style_catalog, style_diagnostics) = check_view_styles(module);
     let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
@@ -259,11 +248,17 @@ pub(crate) fn analyze_registered_project_types_for_signature_cursor(
         None,
         Some(registered.symbols()),
         Some(registered),
-        CallTargetFactMode::Cursor {
-            document,
-            byte_offset,
+        CallTargetFactMode::Focused {
+            call: site.call().clone(),
+            active_argument: site.active_argument(),
+            byte_offset: site.byte_offset(),
         },
-        CallResolverControl::caller_owned(cancellation, work),
+        CallResolverControl::caller_owned(
+            cancellation,
+            work,
+            Some(signature_work),
+            Some(signature_control),
+        ),
     );
     let (report, call_targets) = finish_type_check_with_call_facts(
         module,

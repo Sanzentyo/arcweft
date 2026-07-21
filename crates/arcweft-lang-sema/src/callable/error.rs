@@ -288,6 +288,52 @@ pub enum CallableQueryLimitError {
     ArithmeticOverflow,
 }
 
+/// Semantic operation whose public signature-query counter overflowed or exceeded a bound.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SignatureWorkKind {
+    SourceBytes,
+    NodeVisits,
+    CandidateCalls,
+    NestedCalls,
+    Arguments,
+    RecoveryNodes,
+    Resolver,
+    ArgumentBindings,
+    SpecificityChecks,
+    Overloads,
+    Parameters,
+    DiagnosticConsiderations,
+}
+
+/// Public signature-search/result limit category.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SignatureLimitKind {
+    CandidateCalls,
+    Overloads,
+    ParametersPerSignature,
+    NestedCalls,
+    RecoveryNodes,
+    SourceBytes,
+    Diagnostics,
+    WorkUnits,
+}
+
+/// Public signature-search/result limit failure.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("signature query limit exceeded")]
+pub struct SignatureLimitExceeded {
+    pub kind: SignatureLimitKind,
+    pub observed: u64,
+    pub maximum: u64,
+}
+
+/// Invalid custom signature-query limit configuration.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum SignatureLimitConfigurationError {
+    #[error("signature query limit {kind:?} must be positive")]
+    Zero { kind: SignatureLimitKind },
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CorruptCallableCatalogReason {
     EmptySet,
@@ -303,6 +349,8 @@ pub enum CorruptCallableCatalogReason {
 pub enum ResolveCallError {
     #[error("call resolution was cancelled")]
     Cancelled,
+    #[error("call resolution deadline elapsed")]
+    DeadlineExceeded,
     #[error("call resolution world does not match the accepted request")]
     WorldMismatch,
     #[error("call source does not match the accepted document")]
@@ -311,7 +359,7 @@ pub enum ResolveCallError {
     InvalidSourceSpan,
     #[error("candidate {candidate:?} has no call group {group:?}")]
     InvalidCallGroup {
-        candidate: CallableCandidateId,
+        candidate: Box<CallableCandidateId>,
         group: CallableGroupIndex,
     },
     #[error("call produced {actual} candidates; maximum is {limit}")]
@@ -335,6 +383,10 @@ pub enum ResolveCallError {
     InvalidResolvedCallable,
     #[error(transparent)]
     Work(#[from] CallableQueryLimitError),
+    #[error(transparent)]
+    SignatureLimit(#[from] SignatureLimitExceeded),
+    #[error("signature query counter overflowed")]
+    SignatureArithmeticOverflow { counter: SignatureWorkKind },
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -343,17 +395,10 @@ pub(crate) enum CallTargetFactError {
     FocusedModeRequired,
     #[error("focused call source is not part of the accepted project: {document:?}")]
     FocusedSourceUnavailable { document: SourceDocumentIdentity },
-    #[cfg(test)]
     #[error("focused call target {call:?} was not recorded")]
     FocusedTargetMissing { call: SourceSpan },
-    #[cfg(test)]
     #[error("focused call target {call:?} was recorded more than once")]
     FocusedTargetDuplicate { call: SourceSpan },
-    #[error("cursor {byte_offset} selects more than one equally specific call in {document:?}")]
-    AmbiguousCallRange {
-        document: SourceDocumentIdentity,
-        byte_offset: usize,
-    },
     #[error("focused call target {call:?} could not retain checked facts: {reason}")]
     Unavailable {
         call: SourceSpan,
@@ -363,6 +408,10 @@ pub(crate) enum CallTargetFactError {
     Resolve {
         call: SourceSpan,
         reason: Box<ResolveCallError>,
+    },
+    #[error("focused signature accounting failed: {reason:?}")]
+    SignatureAccounting {
+        reason: super::SignatureAccountingError,
     },
 }
 
@@ -396,6 +445,8 @@ pub enum CallableDiagnosticCode {
     UnknownFxConstructor,
     InvalidFxPath,
     AmbiguousOverload,
+    NoViableSignature,
+    DiagnosticsTruncated,
     AmbiguousTraitMethod,
     DuplicateArgument,
     UnknownNamedArgument,
@@ -419,6 +470,7 @@ pub enum CallableDiagnosticCode {
     WorldMismatch,
     SourceIdentityMismatch,
     Cancelled,
+    DeadlineExceeded,
     ResourceExhausted,
 }
 
@@ -503,6 +555,7 @@ impl ResolveCallError {
     pub const fn code(&self) -> CallableDiagnosticCode {
         match self {
             Self::Cancelled => CallableDiagnosticCode::Cancelled,
+            Self::DeadlineExceeded => CallableDiagnosticCode::DeadlineExceeded,
             Self::WorldMismatch => CallableDiagnosticCode::WorldMismatch,
             Self::SourceIdentityMismatch | Self::InvalidSourceSpan => {
                 CallableDiagnosticCode::SourceIdentityMismatch
@@ -512,9 +565,11 @@ impl ResolveCallError {
             Self::DataLastAmbiguity { .. } => CallableDiagnosticCode::DataLastAmbiguity,
             Self::CorruptCatalog { .. } => CallableDiagnosticCode::CorruptCallableCatalog,
             Self::InvalidCallGroup { .. } => CallableDiagnosticCode::InvalidCallGroup,
-            Self::CandidateLimit { .. } | Self::InvalidResolvedCallable | Self::Work(_) => {
-                CallableDiagnosticCode::ResourceExhausted
-            }
+            Self::CandidateLimit { .. }
+            | Self::InvalidResolvedCallable
+            | Self::Work(_)
+            | Self::SignatureLimit(_)
+            | Self::SignatureArithmeticOverflow { .. } => CallableDiagnosticCode::ResourceExhausted,
         }
     }
 }

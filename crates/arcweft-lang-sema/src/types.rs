@@ -13,6 +13,7 @@ use core::fmt::{self, Write as _};
 mod character_nominal;
 mod compatibility;
 mod mismatch;
+mod openness;
 mod order;
 
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
