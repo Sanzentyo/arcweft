@@ -11,6 +11,7 @@ publish = false
 arcweft-id = { workspace = true }
 arcweft-source = { workspace = true }
 blake3.workspace = true
+png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

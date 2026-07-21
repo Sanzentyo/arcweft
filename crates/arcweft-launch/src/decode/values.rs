@@ -178,17 +178,21 @@ fn decode_content_roots(
         else {
             continue;
         };
+        let source_path = ManifestPath::new([
+            ManifestPathSegment::Root(ManifestRootField::ContentUnits),
+            ManifestPathSegment::ContentUnit(id.clone()),
+            ManifestPathSegment::ContentUnitField(ContentUnitField::Roots),
+            ManifestPathSegment::Index(source_index),
+        ]);
         value::record_array_element(
             source_entries,
-            ManifestPath::new([
-                ManifestPathSegment::Root(ManifestRootField::ContentUnits),
-                ManifestPathSegment::ContentUnit(id.clone()),
-                ManifestPathSegment::ContentUnitField(ContentUnitField::Roots),
-                ManifestPathSegment::Index(source_index),
-            ]),
+            source_path.clone(),
             source_index,
             span.clone(),
         );
+        if let Some(selection) = value::string_content_span(document, &node, &span) {
+            value::record_string_content(source_entries, source_path, selection);
+        }
         let Some(raw) = value::node_text(
             &node,
             &span,

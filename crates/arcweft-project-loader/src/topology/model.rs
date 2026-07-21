@@ -17,6 +17,7 @@ use arcweft_launch::{
 use arcweft_manifest_model::{
     ActivityId, AdapterExportId, ExternalModuleImportId, ExternalModuleImportSpec,
 };
+use arcweft_project::content::ProjectBinaryResource;
 use arcweft_project::layout::ProjectLayoutSpec;
 use arcweft_source::{
     MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentId, SourceSetRevision, SourceSpan,
@@ -53,6 +54,10 @@ pub enum ProfileTopologyResourceKind {
     CharacterPackageManifest {
         character: arcweft_character::id::CharacterId,
     },
+    CharacterLayerPayload {
+        character: arcweft_character::id::CharacterId,
+        asset: arcweft_character::manifest::CharacterAssetPath,
+    },
     ExternalModuleMetadata {
         import: ExternalModuleImportId,
     },
@@ -71,10 +76,17 @@ pub struct LoadedProfileTopologyResource {
     pub(super) id: ProfileTopologyResourceId,
     pub(super) kind: ProfileTopologyResourceKind,
     pub(super) path: PathBuf,
-    pub(super) document: Arc<SourceDocument>,
+    pub(super) payload: LoadedProfileTopologyResourcePayload,
     pub(super) ownership: LoadedDocumentOwnership,
     pub(super) access: LoadedDocumentAccess,
     pub(super) origin: ProfileTopologyResourceOrigin,
+}
+
+/// Exact text or binary payload retained for one topology resource.
+#[derive(Clone, Debug)]
+pub enum LoadedProfileTopologyResourcePayload {
+    Text(Arc<SourceDocument>),
+    Binary(Arc<ProjectBinaryResource>),
 }
 
 impl LoadedProfileTopologyResource {
@@ -90,8 +102,18 @@ impl LoadedProfileTopologyResource {
         &self.path
     }
 
-    pub fn document(&self) -> &Arc<SourceDocument> {
-        &self.document
+    pub const fn text_document(&self) -> Option<&Arc<SourceDocument>> {
+        match &self.payload {
+            LoadedProfileTopologyResourcePayload::Text(document) => Some(document),
+            LoadedProfileTopologyResourcePayload::Binary(_) => None,
+        }
+    }
+
+    pub const fn binary_resource(&self) -> Option<&Arc<ProjectBinaryResource>> {
+        match &self.payload {
+            LoadedProfileTopologyResourcePayload::Text(_) => None,
+            LoadedProfileTopologyResourcePayload::Binary(resource) => Some(resource),
+        }
     }
 
     pub const fn ownership(&self) -> LoadedDocumentOwnership {
@@ -104,6 +126,35 @@ impl LoadedProfileTopologyResource {
 
     pub const fn origin(&self) -> ProfileTopologyResourceOrigin {
         self.origin
+    }
+}
+
+/// Binary bytes supplied independently of text-document overlays.
+#[derive(Clone, Debug)]
+pub struct ProfileTopologyBinaryOverlaySeed {
+    path: PathBuf,
+    bytes: Arc<[u8]>,
+}
+
+impl ProfileTopologyBinaryOverlaySeed {
+    pub fn try_new(
+        path: impl Into<PathBuf>,
+        bytes: impl Into<Arc<[u8]>>,
+    ) -> Result<Self, ProfileTopologySeedError> {
+        let path = path.into();
+        validate_absolute_normalized_path(&path, "binary overlay path")?;
+        Ok(Self {
+            path,
+            bytes: bytes.into(),
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub const fn bytes(&self) -> &Arc<[u8]> {
+        &self.bytes
     }
 }
 
@@ -144,6 +195,73 @@ pub struct ProfileDependencyResourceSeed {
     root: PathBuf,
     path: PathBuf,
     source_id: SourceDocumentId,
+}
+
+/// Explicit dependency-owned binary resource supplied by a dependency resolver.
+#[derive(Clone, Debug)]
+pub struct ProfileDependencyBinaryResourceSeed {
+    id: ProfileTopologyResourceId,
+    kind: ProfileTopologyResourceKind,
+    root: PathBuf,
+    path: PathBuf,
+}
+
+impl ProfileDependencyBinaryResourceSeed {
+    pub fn try_new(
+        id: ProfileTopologyResourceId,
+        kind: ProfileTopologyResourceKind,
+        root: impl Into<PathBuf>,
+        path: impl Into<PathBuf>,
+    ) -> Result<Self, ProfileTopologySeedError> {
+        if !matches!(id.owner(), ProfileTopologyOwnerId::Dependency { .. }) {
+            return Err(ProfileTopologySeedError::DependencyOwnerRequired);
+        }
+        if !matches!(
+            kind,
+            ProfileTopologyResourceKind::CharacterLayerPayload { .. }
+        ) {
+            return Err(ProfileTopologySeedError::BinaryKindRequired);
+        }
+        let root = root.into();
+        let path = path.into();
+        validate_absolute_normalized_path(&root, "binary dependency root")?;
+        validate_absolute_normalized_path(&path, "binary dependency path")?;
+        let relative =
+            path.strip_prefix(&root)
+                .map_err(|_| ProfileTopologySeedError::OutsideRoot {
+                    root: root.clone(),
+                    path: path.clone(),
+                })?;
+        let logical = slash_relative_path(relative)?;
+        if logical != id.path().as_str() {
+            return Err(ProfileTopologySeedError::LogicalPathMismatch {
+                expected: id.path().as_str().to_owned(),
+                actual: logical,
+            });
+        }
+        Ok(Self {
+            id,
+            kind,
+            root,
+            path,
+        })
+    }
+
+    pub const fn id(&self) -> &ProfileTopologyResourceId {
+        &self.id
+    }
+
+    pub const fn kind(&self) -> &ProfileTopologyResourceKind {
+        &self.kind
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 impl ProfileDependencyResourceSeed {
@@ -210,7 +328,9 @@ pub struct ProfileTopologyLoadRequest<'a> {
     pub(super) workspace_owner: ProfileTopologyOwnerId,
     pub(super) selection: LaunchProfileSelection<'a>,
     pub(super) overlays: &'a [ProfileTopologyOverlaySeed],
+    pub(super) binary_overlays: &'a [ProfileTopologyBinaryOverlaySeed],
     pub(super) dependency_resources: &'a [ProfileDependencyResourceSeed],
+    pub(super) dependency_binary_resources: &'a [ProfileDependencyBinaryResourceSeed],
     pub(super) base_adapters: AdapterRegistry,
     pub(super) layout: ProjectLayoutSpec,
 }
@@ -228,10 +348,21 @@ impl<'a> ProfileTopologyLoadRequest<'a> {
             workspace_owner,
             selection,
             overlays,
+            binary_overlays: &[],
             dependency_resources: &[],
+            dependency_binary_resources: &[],
             base_adapters,
             layout: ProjectLayoutSpec::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_binary_overlays(
+        mut self,
+        overlays: &'a [ProfileTopologyBinaryOverlaySeed],
+    ) -> Self {
+        self.binary_overlays = overlays;
+        self
     }
 
     #[must_use]
@@ -240,6 +371,15 @@ impl<'a> ProfileTopologyLoadRequest<'a> {
         resources: &'a [ProfileDependencyResourceSeed],
     ) -> Self {
         self.dependency_resources = resources;
+        self
+    }
+
+    #[must_use]
+    pub fn with_dependency_binary_resources(
+        mut self,
+        resources: &'a [ProfileDependencyBinaryResourceSeed],
+    ) -> Self {
+        self.dependency_binary_resources = resources;
         self
     }
 
@@ -261,9 +401,37 @@ pub struct LoadedProfileTopology {
     adapter: AdapterManifest,
     registration_adapter_manifests: Arc<[AdapterManifest]>,
     resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
+    character_packages: BTreeMap<arcweft_character::id::CharacterId, LoadedCharacterPackage>,
     consumed_overlay_ids: Arc<[ProfileTopologyResourceId]>,
-    source_revision: SourceSetRevision,
+    source_documents_revision: SourceSetRevision,
+    watch_inventory: Arc<[ProfileTopologyWatchEntry]>,
     work: u64,
+}
+
+/// One complete loaded Character package and its source provenance.
+#[derive(Clone, Debug)]
+pub struct LoadedCharacterPackage {
+    package: Arc<arcweft_character::package::CharacterPackage>,
+    source_manifest: Arc<arcweft_character::manifest::registration::SourceBackedCharacterManifest>,
+    package_root: PathBuf,
+    manifest_path: PathBuf,
+    layer_paths: BTreeMap<arcweft_character::manifest::CharacterAssetPath, PathBuf>,
+}
+
+/// Presence expectation for one exact topology watch path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProfileTopologyWatchExpectation {
+    MustExist,
+    OptionalMayAppear,
+}
+
+/// Exact retained path consumed by host watcher adapters.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileTopologyWatchEntry {
+    id: ProfileTopologyResourceId,
+    host_path: PathBuf,
+    kind: ProfileTopologyResourceKind,
+    expectation: ProfileTopologyWatchExpectation,
 }
 
 /// One selected generated-module document after exact hash and identity checks.
@@ -317,11 +485,22 @@ impl LoadedProfileTopology {
         external_modules: Vec<LoadedExternalModuleMetadata>,
         adapter: AdapterManifest,
         resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
+        character_packages: BTreeMap<arcweft_character::id::CharacterId, LoadedCharacterPackage>,
         consumed_overlay_ids: Vec<ProfileTopologyResourceId>,
-        source_revision: SourceSetRevision,
+        source_documents_revision: SourceSetRevision,
         work: u64,
     ) -> Self {
         let registration_adapter_manifests = Arc::from([adapter.clone()]);
+        let watch_inventory = resources
+            .values()
+            .map(|resource| ProfileTopologyWatchEntry {
+                id: resource.id.clone(),
+                host_path: resource.path.clone(),
+                kind: resource.kind.clone(),
+                expectation: ProfileTopologyWatchExpectation::MustExist,
+            })
+            .collect::<Vec<_>>()
+            .into();
         Self {
             loaded_project,
             manifest,
@@ -331,8 +510,10 @@ impl LoadedProfileTopology {
             adapter,
             registration_adapter_manifests,
             resources,
+            character_packages,
             consumed_overlay_ids: consumed_overlay_ids.into(),
-            source_revision,
+            source_documents_revision,
+            watch_inventory,
             work,
         }
     }
@@ -376,18 +557,99 @@ impl LoadedProfileTopology {
         self.resources.get(id)
     }
 
+    pub fn character_packages(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&arcweft_character::id::CharacterId, &LoadedCharacterPackage)>
+    {
+        self.character_packages.iter()
+    }
+
+    pub fn character_package(
+        &self,
+        character: &arcweft_character::id::CharacterId,
+    ) -> Option<&LoadedCharacterPackage> {
+        self.character_packages.get(character)
+    }
+
     pub fn consumed_overlay_ids(
         &self,
     ) -> impl ExactSizeIterator<Item = &ProfileTopologyResourceId> {
         self.consumed_overlay_ids.iter()
     }
 
-    pub const fn source_revision(&self) -> SourceSetRevision {
-        self.source_revision
+    pub const fn source_documents_revision(&self) -> SourceSetRevision {
+        self.source_documents_revision
+    }
+
+    pub fn watch_inventory(&self) -> &[ProfileTopologyWatchEntry] {
+        &self.watch_inventory
     }
 
     pub const fn work(&self) -> u64 {
         self.work
+    }
+}
+
+impl LoadedCharacterPackage {
+    pub(super) fn new(
+        package: Arc<arcweft_character::package::CharacterPackage>,
+        source_manifest: Arc<
+            arcweft_character::manifest::registration::SourceBackedCharacterManifest,
+        >,
+        package_root: PathBuf,
+        manifest_path: PathBuf,
+        layer_paths: BTreeMap<arcweft_character::manifest::CharacterAssetPath, PathBuf>,
+    ) -> Self {
+        Self {
+            package,
+            source_manifest,
+            package_root,
+            manifest_path,
+            layer_paths,
+        }
+    }
+
+    pub const fn package(&self) -> &Arc<arcweft_character::package::CharacterPackage> {
+        &self.package
+    }
+
+    pub const fn source_manifest(
+        &self,
+    ) -> &Arc<arcweft_character::manifest::registration::SourceBackedCharacterManifest> {
+        &self.source_manifest
+    }
+
+    pub fn package_root(&self) -> &Path {
+        &self.package_root
+    }
+
+    pub fn manifest_path(&self) -> &Path {
+        &self.manifest_path
+    }
+
+    pub fn layer_paths(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&arcweft_character::manifest::CharacterAssetPath, &PathBuf)>
+    {
+        self.layer_paths.iter()
+    }
+}
+
+impl ProfileTopologyWatchEntry {
+    pub const fn id(&self) -> &ProfileTopologyResourceId {
+        &self.id
+    }
+
+    pub fn host_path(&self) -> &Path {
+        &self.host_path
+    }
+
+    pub const fn kind(&self) -> &ProfileTopologyResourceKind {
+        &self.kind
+    }
+
+    pub const fn expectation(&self) -> ProfileTopologyWatchExpectation {
+        self.expectation
     }
 }
 
@@ -475,6 +737,12 @@ pub enum ProfileTopologySeedError {
     DuplicateOverlayPath { path: PathBuf },
     #[error("dependency seed path `{path}` and role occur more than once")]
     DuplicateDependencySeed { path: PathBuf },
+    #[error("the same overlay path `{path}` was supplied as both text and binary")]
+    OverlayKindConflict { path: PathBuf },
+    #[error("binary dependency resource kind must be a Character layer payload")]
+    BinaryKindRequired,
+    #[error("binary overlay `{path}` was not consumed by an exact Character layer")]
+    UnconsumedBinaryOverlay { path: PathBuf },
 }
 
 /// Failure while projecting accepted generated metadata into mounted project facts.
@@ -701,6 +969,12 @@ pub enum ProfileTopologyLoadError {
         expected: arcweft_character::id::CharacterId,
         actual: arcweft_character::id::CharacterId,
     },
+    #[error("failed to construct complete Character package `{path}`: {source}")]
+    CharacterPackage {
+        path: PathBuf,
+        #[source]
+        source: arcweft_character::package::CharacterPackageError,
+    },
     #[error("selected adapter `{id}` was not found in the complete checked registry")]
     AdapterSelection { id: String },
     #[error("generated metadata raw hash does not match import `{import}`")]
@@ -756,7 +1030,8 @@ impl ProfileTopologyLoadError {
             Self::ModuleImport { .. } => ProfileTopologyErrorCode::ModuleImport,
             Self::CharacterManifest { .. }
             | Self::CharacterReference { .. }
-            | Self::CharacterIdentityMismatch { .. } => ProfileTopologyErrorCode::CharacterManifest,
+            | Self::CharacterIdentityMismatch { .. }
+            | Self::CharacterPackage { .. } => ProfileTopologyErrorCode::CharacterManifest,
             Self::AdapterSelection { .. } => ProfileTopologyErrorCode::AdapterSelection,
             Self::ExternalModuleMetadataHash { .. }
             | Self::ExternalModuleMetadataDecode { .. }

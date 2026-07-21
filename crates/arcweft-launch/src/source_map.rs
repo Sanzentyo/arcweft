@@ -326,6 +326,7 @@ pub(crate) enum ManifestSourceSlot {
     FieldKey,
     ScalarValue,
     ArrayElement { index: u32 },
+    StringContent,
 }
 
 /// Closed typed path to one manifest field or collection member.

@@ -212,6 +212,49 @@ pub(super) fn record_array_element(
     );
 }
 
+pub(super) fn record_string_content(
+    entries: &mut BTreeMap<ManifestSourceKey, SourceSpan>,
+    path: ManifestPath,
+    span: SourceSpan,
+) {
+    entries.insert(
+        ManifestSourceKey {
+            path,
+            slot: ManifestSourceSlot::StringContent,
+        },
+        span,
+    );
+}
+
+pub(super) fn string_content_span(
+    document: &SourceDocument,
+    node: &Node,
+    value_span: &SourceSpan,
+) -> Option<SourceSpan> {
+    if !matches!(node, Node::Str(_)) {
+        return None;
+    }
+    let range = value_span.range();
+    let raw = document.text().get(range.start()..range.end())?;
+    let delimiter_bytes = if (raw.starts_with("\"\"\"") && raw.ends_with("\"\"\""))
+        || (raw.starts_with("'''") && raw.ends_with("'''"))
+    {
+        3
+    } else if (raw.starts_with('"') && raw.ends_with('"'))
+        || (raw.starts_with('\'') && raw.ends_with('\''))
+    {
+        1
+    } else {
+        return None;
+    };
+    document
+        .span(arcweft_source::SourceRange::new(
+            range.start() + delimiter_bytes,
+            range.end() - delimiter_bytes,
+        ))
+        .ok()
+}
+
 pub(super) fn bounded_array_index(
     index: usize,
     span: &SourceSpan,

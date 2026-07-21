@@ -266,15 +266,17 @@ pub fn load_profile_registration(
     let mut sources = RegistrationSources {
         documents: topology
             .resources()
-            .map(|resource| Arc::clone(resource.document()))
+            .filter_map(|resource| resource.text_document().map(Arc::clone))
             .collect(),
         file_documents: topology
             .resources()
-            .map(|resource| LoadedFileDocument {
-                document: Arc::clone(resource.document()),
-                path: resource.path().to_path_buf(),
-                ownership: resource.ownership(),
-                access: resource.access(),
+            .filter_map(|resource| {
+                Some(LoadedFileDocument {
+                    document: Arc::clone(resource.text_document()?),
+                    path: resource.path().to_path_buf(),
+                    ownership: resource.ownership(),
+                    access: resource.access(),
+                })
             })
             .collect(),
         external_facts: Vec::new(),
@@ -420,20 +422,11 @@ fn append_topology_character_sources(
     sources: &mut RegistrationSources,
     topology: &LoadedProfileTopology,
 ) -> Result<(), ProjectRegistrationLoadError> {
-    for resource in topology.resources().filter(|resource| {
-        matches!(
-            resource.kind(),
-            ProfileTopologyResourceKind::CharacterPackageManifest { .. }
-        )
-    }) {
-        let path = resource.path().to_path_buf();
-        let loaded = character_manifest::decode(path.clone(), Arc::clone(resource.document()))
-            .map_err(|source| ProjectRegistrationLoadError::CharacterManifest {
-                path: path.clone(),
-                source: Box::new(source),
-            })?;
-        let (_document, path, manifest) = loaded.into_parts();
-        let source = character_registration_source(&path, manifest)?;
+    for (_, package) in topology.character_packages() {
+        let source = character_registration_source(
+            package.manifest_path(),
+            package.source_manifest().as_ref().clone(),
+        )?;
         sources.external_facts.push(source.external_fact);
         sources.character_manifests.push(source.manifest);
     }
@@ -584,6 +577,7 @@ compression = "none"
                 "../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
             ),
         );
+        fixture.write_character_layers("assets/zundamon.awchar");
 
         let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
             &fixture.path("arcw.toml"),
@@ -698,6 +692,7 @@ compression = "none"
                 "../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
             ),
         );
+        fixture.write_character_layers("assets/zundamon.awchar");
         let manifest_path = fixture.path("arcw.toml");
         let owner = ProfileTopologyOwnerId::workspace(
             format!("file:///{}", slash(fixture.root())),
@@ -727,7 +722,9 @@ compression = "none"
         assert!(registration.file_documents().all(|file| {
             topology.resources().any(|resource| {
                 resource.path() == file.path()
-                    && resource.document().identity() == file.document().identity()
+                    && resource
+                        .text_document()
+                        .is_some_and(|document| document.identity() == file.document().identity())
             })
         }));
     }
@@ -764,11 +761,53 @@ compression = "none"
         }
 
         fn write(&self, relative: &str, contents: &str) {
+            self.write_bytes(relative, contents.as_bytes());
+        }
+
+        fn write_bytes(&self, relative: &str, contents: &[u8]) {
             let path = self.path(relative);
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).expect("fixture directory");
             }
             fs::write(path, contents).expect("fixture file");
+        }
+
+        fn write_character_layers(&self, package_root: &str) {
+            const LAYERS: [(&str, &[u8]); 5] = [
+                (
+                    "layers/body--default.png",
+                    include_bytes!(
+                        "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/body--default.png"
+                    ),
+                ),
+                (
+                    "layers/eyes--normal.png",
+                    include_bytes!(
+                        "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/eyes--normal.png"
+                    ),
+                ),
+                (
+                    "layers/eyes--smile.png",
+                    include_bytes!(
+                        "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/eyes--smile.png"
+                    ),
+                ),
+                (
+                    "layers/mouth--neutral.png",
+                    include_bytes!(
+                        "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/mouth--neutral.png"
+                    ),
+                ),
+                (
+                    "layers/mouth--smile.png",
+                    include_bytes!(
+                        "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/mouth--smile.png"
+                    ),
+                ),
+            ];
+            for (relative, bytes) in LAYERS {
+                self.write_bytes(&format!("{package_root}/{relative}"), bytes);
+            }
         }
     }
 

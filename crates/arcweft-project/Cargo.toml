@@ -7,8 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-character = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-manifest-model = { workspace = true }
+arcweft-resource-model = { workspace = true }
 arcweft-source = { workspace = true }
 blake3.workspace = true
 serde.workspace = true

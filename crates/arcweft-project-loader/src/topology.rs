@@ -12,12 +12,15 @@ pub use id::{
 };
 pub use loader::load_profile_topology;
 pub use model::{
-    ExternalModuleFactsError, LoadedDocumentAccess, LoadedDocumentOwnership,
-    LoadedExternalModuleMetadata, LoadedProfileTopology, LoadedProfileTopologyResource,
-    ProfileDependencyResourceSeed, ProfileTopologyErrorCode, ProfileTopologyLimitKind,
+    ExternalModuleFactsError, LoadedCharacterPackage, LoadedDocumentAccess,
+    LoadedDocumentOwnership, LoadedExternalModuleMetadata, LoadedProfileTopology,
+    LoadedProfileTopologyResource, LoadedProfileTopologyResourcePayload,
+    ProfileDependencyBinaryResourceSeed, ProfileDependencyResourceSeed,
+    ProfileTopologyBinaryOverlaySeed, ProfileTopologyErrorCode, ProfileTopologyLimitKind,
     ProfileTopologyLimits, ProfileTopologyLoadError, ProfileTopologyLoadRequest,
     ProfileTopologyOverlaySeed, ProfileTopologyResourceKind, ProfileTopologyResourceOrigin,
-    ProfileTopologySeedError, TypeReferenceLimitKind, TypeReferenceLimits,
+    ProfileTopologySeedError, ProfileTopologyWatchEntry, ProfileTopologyWatchExpectation,
+    TypeReferenceLimitKind, TypeReferenceLimits,
 };
 
 #[cfg(test)]

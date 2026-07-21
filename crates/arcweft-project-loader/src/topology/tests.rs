@@ -1,7 +1,7 @@
 use super::{
-    ProfileTopologyErrorCode, ProfileTopologyLimits, ProfileTopologyLoadRequest,
-    ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, ProfileTopologyResourceKind,
-    ProfileTopologyResourceOrigin, load_profile_topology,
+    ProfileTopologyBinaryOverlaySeed, ProfileTopologyErrorCode, ProfileTopologyLimits,
+    ProfileTopologyLoadRequest, ProfileTopologyOverlaySeed, ProfileTopologyOwnerId,
+    ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, load_profile_topology,
 };
 use arcweft_adapter_context::{
     manifest::{AdapterCallableName, AdapterEffectCapability, AdapterManifest, AdapterRegistry},
@@ -29,6 +29,38 @@ const TRUCK_METADATA: &str =
     include_str!("../../../arcweft-adapter-metadata/tests/fixtures/truck-rust.adapter.json");
 const CHARACTER_MANIFEST: &str =
     include_str!("../../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json");
+const CHARACTER_LAYER_FIXTURES: [(&str, &[u8]); 5] = [
+    (
+        "layers/body--default.png",
+        include_bytes!(
+            "../../../arcweft-character/tests/fixtures/zundamon.awchar/layers/body--default.png"
+        ),
+    ),
+    (
+        "layers/eyes--normal.png",
+        include_bytes!(
+            "../../../arcweft-character/tests/fixtures/zundamon.awchar/layers/eyes--normal.png"
+        ),
+    ),
+    (
+        "layers/eyes--smile.png",
+        include_bytes!(
+            "../../../arcweft-character/tests/fixtures/zundamon.awchar/layers/eyes--smile.png"
+        ),
+    ),
+    (
+        "layers/mouth--neutral.png",
+        include_bytes!(
+            "../../../arcweft-character/tests/fixtures/zundamon.awchar/layers/mouth--neutral.png"
+        ),
+    ),
+    (
+        "layers/mouth--smile.png",
+        include_bytes!(
+            "../../../arcweft-character/tests/fixtures/zundamon.awchar/layers/mouth--smile.png"
+        ),
+    ),
+];
 
 #[test]
 fn open_manifest_overlay_precedes_disk_decode() {
@@ -49,7 +81,10 @@ fn open_manifest_overlay_precedes_disk_decode() {
         .find(|resource| resource.kind() == &ProfileTopologyResourceKind::Manifest)
         .expect("manifest retained");
     assert_eq!(manifest.origin(), ProfileTopologyResourceOrigin::Overlay);
-    assert_eq!(manifest.document().text(), overlays[0].source().as_ref());
+    assert_eq!(
+        manifest.text_document().expect("text manifest").text(),
+        overlays[0].source().as_ref()
+    );
 }
 
 #[test]
@@ -171,6 +206,7 @@ fn character_content_root_uses_canonical_asset_package_path() {
         "assets/zundamon.awchar/character.awchar.json",
         CHARACTER_MANIFEST,
     )];
+    project.write_character_layers("assets/zundamon.awchar");
 
     let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
     let character = topology
@@ -188,6 +224,135 @@ fn character_content_root_uses_canonical_asset_package_path() {
         character.id().path().as_str(),
         "assets/zundamon.awchar/character.awchar.json"
     );
+}
+
+#[test]
+fn character_layers_accept_binary_overlays_and_retain_one_byte_authority() {
+    let project = TestProject::new("topology-character-binary-overlays");
+    project.write("arcw.toml", &character_profile_manifest());
+    project.write("src/main.arcw", ROOT_SOURCE);
+    let text_overlays = vec![project.overlay(
+        "assets/zundamon.awchar/character.awchar.json",
+        CHARACTER_MANIFEST,
+    )];
+    let binary_overlays = CHARACTER_LAYER_FIXTURES
+        .iter()
+        .map(|(relative, bytes)| {
+            project.binary_overlay(&format!("assets/zundamon.awchar/{relative}"), *bytes)
+        })
+        .collect::<Vec<_>>();
+
+    let topology = project.load_with_binary_overlays(
+        LaunchProfileSelection::Explicit("dev"),
+        &text_overlays,
+        &binary_overlays,
+    );
+    let (_, loaded_package) = topology
+        .character_packages()
+        .next()
+        .expect("character package retained");
+    let layers = topology
+        .resources()
+        .filter(|resource| {
+            matches!(
+                resource.kind(),
+                ProfileTopologyResourceKind::CharacterLayerPayload { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(layers.len(), CHARACTER_LAYER_FIXTURES.len());
+    for resource in layers {
+        let ProfileTopologyResourceKind::CharacterLayerPayload { asset, .. } = resource.kind()
+        else {
+            unreachable!("filtered to Character layers");
+        };
+        let binary = resource.binary_resource().expect("binary layer resource");
+        let payload = loaded_package
+            .package()
+            .layer_payloads()
+            .find(|payload| payload.path() == asset)
+            .expect("package payload uses retained layer");
+        assert_eq!(resource.origin(), ProfileTopologyResourceOrigin::Overlay);
+        assert!(std::sync::Arc::ptr_eq(
+            &binary.shared_bytes(),
+            payload.shared_bytes()
+        ));
+    }
+    assert_eq!(topology.watch_inventory().len(), topology.resources().len());
+}
+
+#[test]
+fn corrupt_binary_overlay_does_not_fall_back_to_valid_disk_layer() {
+    let project = TestProject::new("topology-character-corrupt-binary-overlay");
+    project.write("arcw.toml", &character_profile_manifest());
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write(
+        "assets/zundamon.awchar/character.awchar.json",
+        CHARACTER_MANIFEST,
+    );
+    project.write_character_layers("assets/zundamon.awchar");
+    let binary_overlays = vec![project.binary_overlay(
+        "assets/zundamon.awchar/layers/eyes--normal.png",
+        &b"not a png"[..],
+    )];
+
+    let error = project.load_error_with_binary_overlays(
+        LaunchProfileSelection::Explicit("dev"),
+        &[],
+        &binary_overlays,
+    );
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::CharacterPackage {
+            source: arcweft_character::package::CharacterPackageError::InvalidLayerPng { path, .. },
+            ..
+        } if path.as_str() == "layers/eyes--normal.png"
+    ));
+}
+
+#[test]
+fn text_and_binary_overlays_cannot_claim_the_same_path() {
+    let project = TestProject::new("topology-overlay-kind-conflict");
+    project.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
+    project.write("src/main.arcw", ROOT_SOURCE);
+    let text_overlays = vec![project.overlay("src/main.arcw", ROOT_SOURCE)];
+    let binary_overlays = vec![project.binary_overlay("src/main.arcw", &b"binary"[..])];
+
+    let error = project.load_error_with_binary_overlays(
+        LaunchProfileSelection::Explicit("dev"),
+        &text_overlays,
+        &binary_overlays,
+    );
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::DependencySeed {
+            source: super::ProfileTopologySeedError::OverlayKindConflict { .. }
+        }
+    ));
+}
+
+#[test]
+fn unconsumed_binary_overlay_is_rejected() {
+    let project = TestProject::new("topology-unconsumed-binary-overlay");
+    project.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
+    project.write("src/main.arcw", ROOT_SOURCE);
+    let binary_overlays = vec![project.binary_overlay("assets/unclaimed.png", &b"binary"[..])];
+
+    let error = project.load_error_with_binary_overlays(
+        LaunchProfileSelection::Explicit("dev"),
+        &[],
+        &binary_overlays,
+    );
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::DependencySeed {
+            source: super::ProfileTopologySeedError::UnconsumedBinaryOverlay { .. }
+        }
+    ));
 }
 
 #[test]
@@ -226,6 +391,7 @@ fn nested_character_identity_maps_to_nested_asset_package_path() {
         "assets/npc/alice.awchar/character.awchar.json",
         &nested_manifest,
     )];
+    project.write_character_layers("assets/npc/alice.awchar");
 
     let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
     let character = topology
@@ -518,7 +684,10 @@ fn generated_metadata_overlay_is_the_only_admitted_revision() {
         .expect("metadata resource retained");
 
     assert_eq!(resource.origin(), ProfileTopologyResourceOrigin::Overlay);
-    assert_eq!(resource.document().text(), metadata);
+    assert_eq!(
+        resource.text_document().expect("text metadata").text(),
+        metadata
+    );
 }
 
 #[test]
@@ -689,6 +858,7 @@ fn activity_binding_requires_the_exact_abstract_activity_identity() {
 #[test]
 fn consumed_overlay_ids_are_sorted_and_complete() {
     let project = TestProject::new("topology-consumed-overlay-order");
+    project.write_character_layers("assets/zundamon.awchar");
     let overlays = vec![
         project.overlay("arcw.toml", &character_profile_manifest()),
         project.overlay(
@@ -728,16 +898,18 @@ fn topology_source_revision_covers_every_retained_resource_identity() {
         "assets/zundamon.awchar/character.awchar.json",
         CHARACTER_MANIFEST,
     )];
+    project.write_character_layers("assets/zundamon.awchar");
 
     let topology = project.load(LaunchProfileSelection::Explicit("dev"), &overlays);
     let expected = SourceSetRevision::try_for_identities(
         topology
             .resources()
-            .map(|resource| resource.document().identity()),
+            .filter_map(|resource| resource.text_document())
+            .map(|document| document.identity()),
     )
     .expect("retained source identities form one revision");
 
-    assert_eq!(topology.source_revision(), expected);
+    assert_eq!(topology.source_documents_revision(), expected);
     assert!(
         topology
             .resources()
@@ -1121,6 +1293,10 @@ impl TestProject {
     }
 
     fn write(&self, relative: &str, contents: &str) {
+        self.write_bytes(relative, contents.as_bytes());
+    }
+
+    fn write_bytes(&self, relative: &str, contents: &[u8]) {
         let path = self.path(relative);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("fixture directory");
@@ -1128,9 +1304,24 @@ impl TestProject {
         fs::write(path, contents).expect("fixture file");
     }
 
+    fn write_character_layers(&self, package_root: &str) {
+        for (relative, bytes) in CHARACTER_LAYER_FIXTURES {
+            self.write_bytes(&format!("{package_root}/{relative}"), bytes);
+        }
+    }
+
     fn overlay(&self, relative: &str, contents: &str) -> ProfileTopologyOverlaySeed {
         ProfileTopologyOverlaySeed::try_new(self.path(relative), contents.to_owned())
             .expect("normalized overlay")
+    }
+
+    fn binary_overlay(
+        &self,
+        relative: &str,
+        bytes: impl Into<std::sync::Arc<[u8]>>,
+    ) -> ProfileTopologyBinaryOverlaySeed {
+        ProfileTopologyBinaryOverlaySeed::try_new(self.path(relative), bytes)
+            .expect("normalized binary overlay")
     }
 
     fn owner(&self) -> ProfileTopologyOwnerId {
@@ -1166,6 +1357,26 @@ impl TestProject {
         .expect("topology loads")
     }
 
+    fn load_with_binary_overlays(
+        &self,
+        selection: LaunchProfileSelection<'_>,
+        overlays: &[ProfileTopologyOverlaySeed],
+        binary_overlays: &[ProfileTopologyBinaryOverlaySeed],
+    ) -> super::LoadedProfileTopology {
+        let manifest_path = self.path("arcw.toml");
+        load_profile_topology(
+            ProfileTopologyLoadRequest::new(
+                &manifest_path,
+                self.owner(),
+                selection,
+                overlays,
+                standard_registry(),
+            )
+            .with_binary_overlays(binary_overlays),
+        )
+        .expect("topology loads")
+    }
+
     fn load_error(
         &self,
         selection: LaunchProfileSelection<'_>,
@@ -1179,6 +1390,26 @@ impl TestProject {
             overlays,
             standard_registry(),
         ))
+        .expect_err("topology fails")
+    }
+
+    fn load_error_with_binary_overlays(
+        &self,
+        selection: LaunchProfileSelection<'_>,
+        overlays: &[ProfileTopologyOverlaySeed],
+        binary_overlays: &[ProfileTopologyBinaryOverlaySeed],
+    ) -> super::ProfileTopologyLoadError {
+        let manifest_path = self.path("arcw.toml");
+        load_profile_topology(
+            ProfileTopologyLoadRequest::new(
+                &manifest_path,
+                self.owner(),
+                selection,
+                overlays,
+                standard_registry(),
+            )
+            .with_binary_overlays(binary_overlays),
+        )
         .expect_err("topology fails")
     }
 }

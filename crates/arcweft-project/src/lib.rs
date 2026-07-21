@@ -4,6 +4,7 @@
 //! Filesystem discovery and reads remain in `arcweft-project-loader`.
 
 pub mod artifact;
+pub mod content;
 pub mod fingerprint;
 pub mod graph;
 pub mod incremental;

@@ -7,11 +7,12 @@ use crate::{
     manifest::ArcweftManifestDocument,
     resolve,
     source_map::{
-        ManifestPath, ManifestPathSegment, ManifestRootField, ManifestSourceKey, ManifestSourceMap,
-        ManifestSourceSlot, ManifestTokenPath, ManifestTokenSlot, ProfileField,
+        ContentUnitField, ManifestPath, ManifestPathSegment, ManifestRootField, ManifestSourceKey,
+        ManifestSourceMap, ManifestSourceSlot, ManifestTokenPath, ManifestTokenSlot,
+        ProfileContentField, ProfileField,
     },
 };
-use arcweft_manifest_model::{EntityIdRef, ProfileId};
+use arcweft_manifest_model::{ContentUnitId, EntityIdRef, ProfileId};
 use arcweft_source::{SourceDocument, SourceSpan};
 use std::sync::Arc;
 
@@ -26,6 +27,32 @@ pub struct SourceBackedManifest {
     document: Arc<SourceDocument>,
     manifest: ArcweftManifestDocument,
     source_map: ManifestSourceMap,
+}
+
+/// Exact source locations for one manifest content-root occurrence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentRootOccurrenceSource {
+    value: SourceSpan,
+    selection: SourceSpan,
+}
+
+/// Exact source locations for one manifest content-unit declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContentUnitManifestSource {
+    unit_key: SourceSpan,
+    table: SourceSpan,
+    visibility: SourceSpan,
+    demand: SourceSpan,
+}
+
+/// Exact source locations for one selected profile content policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProfileContentManifestSource {
+    unit_key: SourceSpan,
+    table: SourceSpan,
+    residency: SourceSpan,
+    placement: SourceSpan,
+    compression: SourceSpan,
 }
 
 impl SourceBackedManifest {
@@ -88,6 +115,101 @@ impl SourceBackedManifest {
             })
     }
 
+    /// Projects one accepted content unit's exact source locations without reparsing TOML.
+    pub fn content_unit_source(&self, unit: &ContentUnitId) -> Option<ContentUnitManifestSource> {
+        let base = content_unit_path(unit, []);
+        Some(ContentUnitManifestSource {
+            unit_key: self
+                .source_map
+                .get(&ManifestSourceKey {
+                    path: base.clone(),
+                    slot: ManifestSourceSlot::MapKey,
+                })?
+                .clone(),
+            table: self
+                .source_map
+                .get(&ManifestSourceKey {
+                    path: base,
+                    slot: ManifestSourceSlot::TableHeader,
+                })?
+                .clone(),
+            visibility: self.content_unit_field_span(unit, ContentUnitField::Visibility)?,
+            demand: self.content_unit_field_span(unit, ContentUnitField::Demand)?,
+        })
+    }
+
+    /// Projects the value and string-content span of one accepted content root.
+    pub fn content_root_source(
+        &self,
+        unit: &ContentUnitId,
+        root_index: usize,
+    ) -> Option<ContentRootOccurrenceSource> {
+        let root_index = u32::try_from(root_index).ok()?;
+        let path = content_unit_path(
+            unit,
+            [
+                ManifestPathSegment::ContentUnitField(ContentUnitField::Roots),
+                ManifestPathSegment::Index(root_index),
+            ],
+        );
+        Some(ContentRootOccurrenceSource {
+            value: self
+                .source_map
+                .get(&ManifestSourceKey {
+                    path: path.clone(),
+                    slot: ManifestSourceSlot::ArrayElement { index: root_index },
+                })?
+                .clone(),
+            selection: self
+                .source_map
+                .get(&ManifestSourceKey {
+                    path,
+                    slot: ManifestSourceSlot::StringContent,
+                })?
+                .clone(),
+        })
+    }
+
+    /// Projects one selected profile content policy's exact source locations.
+    pub fn selected_profile_content_source(
+        &self,
+        profile: &ProfileId,
+        unit: &ContentUnitId,
+    ) -> Option<ProfileContentManifestSource> {
+        let base = profile_content_path(profile, unit, []);
+        Some(ProfileContentManifestSource {
+            unit_key: self
+                .source_map
+                .get(&ManifestSourceKey {
+                    path: base.clone(),
+                    slot: ManifestSourceSlot::MapKey,
+                })?
+                .clone(),
+            table: self
+                .source_map
+                .get(&ManifestSourceKey {
+                    path: base,
+                    slot: ManifestSourceSlot::TableHeader,
+                })?
+                .clone(),
+            residency: self.profile_content_field_span(
+                profile,
+                unit,
+                ProfileContentField::Residency,
+            )?,
+            placement: self.profile_content_field_span(
+                profile,
+                unit,
+                ProfileContentField::Placement,
+            )?,
+            compression: self.profile_content_field_span(
+                profile,
+                unit,
+                ProfileContentField::Compression,
+            )?,
+        })
+    }
+
     /// Returns one exact token span from this accepted manifest revision.
     pub fn manifest_token_span(
         &self,
@@ -101,6 +223,37 @@ impl SourceBackedManifest {
         &self.source_map
     }
 
+    fn content_unit_field_span(
+        &self,
+        unit: &ContentUnitId,
+        field: ContentUnitField,
+    ) -> Option<SourceSpan> {
+        self.source_map
+            .get(&ManifestSourceKey {
+                path: content_unit_path(unit, [ManifestPathSegment::ContentUnitField(field)]),
+                slot: ManifestSourceSlot::ScalarValue,
+            })
+            .cloned()
+    }
+
+    fn profile_content_field_span(
+        &self,
+        profile: &ProfileId,
+        unit: &ContentUnitId,
+        field: ProfileContentField,
+    ) -> Option<SourceSpan> {
+        self.source_map
+            .get(&ManifestSourceKey {
+                path: profile_content_path(
+                    profile,
+                    unit,
+                    [ManifestPathSegment::ProfileContentField(field)],
+                ),
+                slot: ManifestSourceSlot::ScalarValue,
+            })
+            .cloned()
+    }
+
     /// Selects and resolves one profile without I/O or source reparsing.
     pub fn resolve_profile(
         &self,
@@ -110,11 +263,94 @@ impl SourceBackedManifest {
     }
 }
 
+impl ContentRootOccurrenceSource {
+    pub const fn value(&self) -> &SourceSpan {
+        &self.value
+    }
+
+    pub const fn selection(&self) -> &SourceSpan {
+        &self.selection
+    }
+}
+
+impl ContentUnitManifestSource {
+    pub const fn unit_key(&self) -> &SourceSpan {
+        &self.unit_key
+    }
+
+    pub const fn table(&self) -> &SourceSpan {
+        &self.table
+    }
+
+    pub const fn visibility(&self) -> &SourceSpan {
+        &self.visibility
+    }
+
+    pub const fn demand(&self) -> &SourceSpan {
+        &self.demand
+    }
+}
+
+impl ProfileContentManifestSource {
+    pub const fn unit_key(&self) -> &SourceSpan {
+        &self.unit_key
+    }
+
+    pub const fn table(&self) -> &SourceSpan {
+        &self.table
+    }
+
+    pub const fn residency(&self) -> &SourceSpan {
+        &self.residency
+    }
+
+    pub const fn placement(&self) -> &SourceSpan {
+        &self.placement
+    }
+
+    pub const fn compression(&self) -> &SourceSpan {
+        &self.compression
+    }
+}
+
+fn content_unit_path(
+    unit: &ContentUnitId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    ManifestPath::new(
+        [
+            ManifestPathSegment::Root(ManifestRootField::ContentUnits),
+            ManifestPathSegment::ContentUnit(unit.clone()),
+        ]
+        .into_iter()
+        .chain(tail)
+        .collect::<Vec<_>>(),
+    )
+}
+
+fn profile_content_path(
+    profile: &ProfileId,
+    unit: &ContentUnitId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    ManifestPath::new(
+        [
+            ManifestPathSegment::Root(ManifestRootField::Profiles),
+            ManifestPathSegment::Profile(profile.clone()),
+            ManifestPathSegment::ProfileField(ProfileField::Content),
+            ManifestPathSegment::ProfileContent(unit.clone()),
+        ]
+        .into_iter()
+        .chain(tail)
+        .collect::<Vec<_>>(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{MANIFEST_DECODE_PASSES, SourceBackedManifest};
     use crate::{LaunchProfileSelection, ManifestTokenPath, ManifestTokenSlot};
-    use arcweft_manifest_model::ProfileId;
+    use arcweft_manifest_model::{ContentUnitId, ProfileId};
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
     use std::sync::Arc;
 
@@ -179,6 +415,70 @@ entry = "@entry.game"
             1,
             "accepted profile and source-map consumers must not reparse the manifest"
         );
+    }
+
+    #[test]
+    fn content_accessors_project_exact_existing_source_map_spans() {
+        let source = r#"schema = 1
+[package]
+id = "org.arcweft.test"
+version = "1.0.0"
+[content-units.cast]
+roots = ["@character.alice", '@view.dialogue']
+visibility = "private"
+demand = "optional"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+[profiles.dev.content.cast]
+residency = "startup"
+placement = "embedded"
+compression = "none"
+"#;
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("content-source-manifest").unwrap(),
+                SourceName::Memory,
+                source,
+            )
+            .unwrap(),
+        );
+        let accepted = SourceBackedManifest::decode(document).unwrap();
+        let unit = ContentUnitId::new("cast").unwrap();
+        let profile = ProfileId::new("dev").unwrap();
+
+        let unit_source = accepted.content_unit_source(&unit).unwrap();
+        assert_eq!(span_text(source, unit_source.unit_key()), "cast");
+        assert_eq!(
+            span_text(source, unit_source.table()),
+            "[content-units.cast]"
+        );
+        assert_eq!(span_text(source, unit_source.visibility()), "\"private\"");
+        assert_eq!(span_text(source, unit_source.demand()), "\"optional\"");
+
+        let first = accepted.content_root_source(&unit, 0).unwrap();
+        assert_eq!(span_text(source, first.value()), "\"@character.alice\"");
+        assert_eq!(span_text(source, first.selection()), "@character.alice");
+        let second = accepted.content_root_source(&unit, 1).unwrap();
+        assert_eq!(span_text(source, second.value()), "'@view.dialogue'");
+        assert_eq!(span_text(source, second.selection()), "@view.dialogue");
+        assert!(accepted.content_root_source(&unit, 2).is_none());
+
+        let policy = accepted
+            .selected_profile_content_source(&profile, &unit)
+            .unwrap();
+        assert_eq!(span_text(source, policy.unit_key()), "cast");
+        assert_eq!(
+            span_text(source, policy.table()),
+            "[profiles.dev.content.cast]"
+        );
+        assert_eq!(span_text(source, policy.residency()), "\"startup\"");
+        assert_eq!(span_text(source, policy.placement()), "\"embedded\"");
+        assert_eq!(span_text(source, policy.compression()), "\"none\"");
+    }
+
+    fn span_text<'a>(source: &'a str, span: &arcweft_source::SourceSpan) -> &'a str {
+        &source[span.range().start()..span.range().end()]
     }
 
     #[test]

@@ -6,8 +6,11 @@
 
 use crate::manifest::{
     CharacterAssetPath, CharacterManifest, CharacterManifestError, CharacterRuntimeDecodeError,
+    registration::SourceBackedCharacterManifest,
 };
+use arcweft_source::SourceDocument;
 use std::collections::BTreeMap;
+use std::{io::Cursor, sync::Arc};
 use thiserror::Error;
 
 /// File name inside an `.awchar` package directory.
@@ -17,14 +20,14 @@ pub const CHARACTER_PACKAGE_MANIFEST_PATH: &str = "character.awchar.json";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterLayerPayload {
     path: CharacterAssetPath,
-    bytes: Vec<u8>,
+    bytes: Arc<[u8]>,
 }
 
 /// Complete Sans I/O representation of one `.awchar` package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterPackage {
     manifest: CharacterManifest,
-    manifest_bytes: Vec<u8>,
+    manifest_bytes: Arc<[u8]>,
     layer_payloads: BTreeMap<CharacterAssetPath, CharacterLayerPayload>,
 }
 
@@ -49,12 +52,32 @@ pub enum CharacterPackageError {
     },
     #[error("package contains unreferenced layer payload `{0}`")]
     UnreferencedLayerPayload(String),
+    #[error("source-backed Character manifest does not belong to the supplied source document")]
+    ManifestSourceIdentityMismatch,
+    #[error("character layer `{path}` is not a complete valid PNG: {message}")]
+    InvalidLayerPng {
+        path: CharacterAssetPath,
+        message: String,
+    },
+    #[error(
+        "character layer `{path}` is {actual_width}x{actual_height}, expected {expected_width}x{expected_height}"
+    )]
+    LayerDimensionsMismatch {
+        path: CharacterAssetPath,
+        expected_width: u32,
+        expected_height: u32,
+        actual_width: u32,
+        actual_height: u32,
+    },
 }
 
 impl CharacterLayerPayload {
     /// Creates one package-relative PNG payload.
-    pub fn new(path: CharacterAssetPath, bytes: Vec<u8>) -> Self {
-        Self { path, bytes }
+    pub fn new(path: CharacterAssetPath, bytes: impl Into<Arc<[u8]>>) -> Self {
+        Self {
+            path,
+            bytes: bytes.into(),
+        }
     }
 
     /// Package-relative manifest path.
@@ -64,6 +87,11 @@ impl CharacterLayerPayload {
 
     /// Exact bytes published for this layer.
     pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// Shared exact bytes retained by the topology owner.
+    pub const fn shared_bytes(&self) -> &Arc<[u8]> {
         &self.bytes
     }
 }
@@ -77,24 +105,41 @@ impl CharacterPackage {
         manifest.validate()?;
         let manifest_bytes = manifest
             .to_json_pretty()
-            .map(String::into_bytes)
+            .map(|source| Arc::<[u8]>::from(source.into_bytes()))
             .map_err(CharacterPackageError::ManifestEncode)?;
         Self::from_validated_parts(manifest, manifest_bytes, payloads)
     }
 
     /// Parses manifest bytes and validates that all layer payloads are present.
     pub fn from_manifest_bytes(
-        manifest_bytes: Vec<u8>,
+        manifest_bytes: impl Into<Arc<[u8]>>,
         payloads: impl IntoIterator<Item = CharacterLayerPayload>,
     ) -> Result<Self, CharacterPackageError> {
+        let manifest_bytes = manifest_bytes.into();
         let manifest_source = std::str::from_utf8(&manifest_bytes)?;
         let manifest = CharacterManifest::decode_runtime_json(manifest_source)?;
         Self::from_validated_parts(manifest, manifest_bytes, payloads)
     }
 
+    /// Builds a package from the sole registration decode and its exact source bytes.
+    pub fn from_source_backed_manifest(
+        document: &SourceDocument,
+        source_manifest: &SourceBackedCharacterManifest,
+        payloads: impl IntoIterator<Item = CharacterLayerPayload>,
+    ) -> Result<Self, CharacterPackageError> {
+        if document.identity() != source_manifest.source_map().document() {
+            return Err(CharacterPackageError::ManifestSourceIdentityMismatch);
+        }
+        Self::from_validated_parts(
+            source_manifest.manifest().clone(),
+            Arc::<[u8]>::from(document.text().as_bytes()),
+            payloads,
+        )
+    }
+
     fn from_validated_parts(
         manifest: CharacterManifest,
-        manifest_bytes: Vec<u8>,
+        manifest_bytes: Arc<[u8]>,
         payloads: impl IntoIterator<Item = CharacterLayerPayload>,
     ) -> Result<Self, CharacterPackageError> {
         let mut layer_payloads = BTreeMap::new();
@@ -120,12 +165,12 @@ impl CharacterPackage {
         payloads: &BTreeMap<CharacterAssetPath, CharacterLayerPayload>,
     ) -> Result<(), CharacterPackageError> {
         let expected = expected_payloads(manifest);
-        for (path, (part, variant)) in &expected {
+        for (path, expected) in &expected {
             if !payloads.contains_key(*path) {
                 return Err(CharacterPackageError::MissingLayerPayload {
                     path: path.as_str().to_owned(),
-                    part: part.clone(),
-                    variant: variant.clone(),
+                    part: expected.part.clone(),
+                    variant: expected.variant.clone(),
                 });
             }
         }
@@ -134,6 +179,25 @@ impl CharacterPackage {
                 return Err(CharacterPackageError::UnreferencedLayerPayload(
                     path.as_str().to_owned(),
                 ));
+            }
+        }
+        for (path, expected) in expected {
+            let Some(payload) = payloads.get(path) else {
+                return Err(CharacterPackageError::MissingLayerPayload {
+                    path: path.as_str().to_owned(),
+                    part: expected.part,
+                    variant: expected.variant,
+                });
+            };
+            let (actual_width, actual_height) = decode_complete_png(payload)?;
+            if actual_width != expected.width || actual_height != expected.height {
+                return Err(CharacterPackageError::LayerDimensionsMismatch {
+                    path: path.clone(),
+                    expected_width: expected.width,
+                    expected_height: expected.height,
+                    actual_width,
+                    actual_height,
+                });
             }
         }
         Ok(())
@@ -160,7 +224,7 @@ impl CharacterPackage {
     }
 
     /// Consumes the package into manifest bytes and layer payloads.
-    pub fn into_parts(self) -> (CharacterManifest, Vec<u8>, Vec<CharacterLayerPayload>) {
+    pub fn into_parts(self) -> (CharacterManifest, Arc<[u8]>, Vec<CharacterLayerPayload>) {
         (
             self.manifest,
             self.manifest_bytes,
@@ -169,9 +233,7 @@ impl CharacterPackage {
     }
 }
 
-fn expected_payloads(
-    manifest: &CharacterManifest,
-) -> BTreeMap<&CharacterAssetPath, (String, String)> {
+fn expected_payloads(manifest: &CharacterManifest) -> BTreeMap<&CharacterAssetPath, ExpectedLayer> {
     manifest
         .parts()
         .iter()
@@ -179,11 +241,46 @@ fn expected_payloads(
             part.variants().iter().map(move |variant| {
                 (
                     variant.asset(),
-                    (part.id().to_string(), variant.id().to_string()),
+                    ExpectedLayer {
+                        part: part.id().to_string(),
+                        variant: variant.id().to_string(),
+                        width: variant.rect().width(),
+                        height: variant.rect().height(),
+                    },
                 )
             })
         })
         .collect::<BTreeMap<_, _>>()
+}
+
+struct ExpectedLayer {
+    part: String,
+    variant: String,
+    width: u32,
+    height: u32,
+}
+
+fn decode_complete_png(
+    payload: &CharacterLayerPayload,
+) -> Result<(u32, u32), CharacterPackageError> {
+    let invalid = |error: png::DecodingError| CharacterPackageError::InvalidLayerPng {
+        path: payload.path.clone(),
+        message: error.to_string(),
+    };
+    let mut reader = png::Decoder::new(Cursor::new(payload.bytes()))
+        .read_info()
+        .map_err(invalid)?;
+    let output_size =
+        reader
+            .output_buffer_size()
+            .ok_or_else(|| CharacterPackageError::InvalidLayerPng {
+                path: payload.path.clone(),
+                message: "decoded frame exceeds the supported address space".to_owned(),
+            })?;
+    let mut decoded = vec![0; output_size];
+    let output = reader.next_frame(&mut decoded).map_err(invalid)?;
+    reader.finish().map_err(invalid)?;
+    Ok((output.width, output.height))
 }
 
 #[cfg(test)]

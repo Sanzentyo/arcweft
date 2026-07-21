@@ -13,9 +13,27 @@ fn package() -> CharacterPackage {
         .iter()
         .flat_map(|part| {
             part.variants().iter().map(|variant| {
+                let bytes: &[u8] = match variant.asset().as_str() {
+                    "layers/body--default.png" => {
+                        include_bytes!("fixtures/zundamon.awchar/layers/body--default.png")
+                    }
+                    "layers/eyes--normal.png" => {
+                        include_bytes!("fixtures/zundamon.awchar/layers/eyes--normal.png")
+                    }
+                    "layers/eyes--smile.png" => {
+                        include_bytes!("fixtures/zundamon.awchar/layers/eyes--smile.png")
+                    }
+                    "layers/mouth--neutral.png" => {
+                        include_bytes!("fixtures/zundamon.awchar/layers/mouth--neutral.png")
+                    }
+                    "layers/mouth--smile.png" => {
+                        include_bytes!("fixtures/zundamon.awchar/layers/mouth--smile.png")
+                    }
+                    path => panic!("unexpected fixture layer {path}"),
+                };
                 CharacterLayerPayload::new(
                     CharacterAssetPath::try_new(variant.asset().as_str()).expect("asset path"),
-                    vec![1, 2, 3],
+                    bytes.as_ref(),
                 )
             })
         })

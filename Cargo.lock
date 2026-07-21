@@ -503,6 +503,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-source",
  "blake3",
+ "png",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -700,6 +701,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-data",
  "arcweft-debug-model",
+ "arcweft-dialogue",
  "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
@@ -1163,8 +1165,10 @@ dependencies = [
 name = "arcweft-project"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-lang-syntax",
  "arcweft-manifest-model",
+ "arcweft-resource-model",
  "arcweft-source",
  "blake3",
  "serde",

@@ -339,6 +339,47 @@ rewired.
 
 ### Source `content` removal: blocked on typed admission
 
+#### Lang-01.5.1.2 safe binary substrate (2026-07-22)
+
+The parts of the returned Lang-01.5.1.2 contract that do not depend on its
+incorrectly revived Source family are now implemented:
+
+- `arcweft-project` owns exact `ProjectBinaryResource` bytes and the canonical
+  `ProjectTopologyRevision` v1 transcript types, including typed present,
+  semantic, and optional-absence records, stable ordering, duplicate rejection,
+  and a fixed digest vector;
+- profile topology input has disjoint text and binary overlay/dependency maps,
+  rejects same-path kind conflicts and unconsumed binary overlays, never turns
+  binary payloads into `SourceDocument`, and publishes exact typed watch
+  entries for every retained present resource;
+- selected Character roots acquire only the manifest-named layer paths, retain
+  the sole source-backed manifest decode, build one complete
+  `CharacterPackage`, and share the retained `Arc<[u8]>` layer allocations;
+- Character package validation decodes each complete PNG stream and requires
+  its dimensions to match the typed manifest rectangle; and
+- `SourceBackedManifest` projects content-unit, root-occurrence, and selected
+  profile-policy spans from the existing source map without reparsing TOML.
+
+This is deliberately not final content-root admission. Required/optional
+candidate facts, accepted absences, the accepted resource-registry semantic
+record, candidate topology-revision publication, `ProjectIndex`/`ProgramHash`
+injection, source `content` deletion, and bundle/LSP generation migration remain
+open. In particular, no `SourceContentRootFamily::Source`, `EntityKind::Source`,
+compatibility reader, or provisional closed family was introduced while
+[Lang-01.5.1.2.1](../reviews/requests/2026-07-22-lang-01.5.1.2.1-content-root-family-source-elimination-reconciliation.md)
+is unresolved.
+
+Focused validation for this substrate passed:
+
+- `cargo fmt --all -- --check`;
+- `cargo test -p arcweft-project --lib` (31 passed);
+- `cargo test -p arcweft-character --all-targets` (51 passed across four test
+  binaries);
+- `cargo test -p arcweft-launch --lib` (41 passed);
+- `cargo check -p arcweft-project-loader --all-targets`;
+- `cargo test -p arcweft-project-loader --lib topology::tests` (34 passed); and
+- `cargo test -p arcweft-bundle --test character_package` (3 passed).
+
 Do not delete or replace `EntityDeclKind::Content` until
 [Lang-01.5.1.2](../reviews/requests/2026-07-20-lang-01.5.1.2-typed-content-root-admission-contract-correction.md)
 returns a complete binary resource/revision and `ProjectIndex` injection
