@@ -5,6 +5,7 @@ mod character_dialogue;
 pub mod character_presentation;
 mod inline_failure;
 mod presentation_profile;
+mod presentation_revision;
 pub mod rich_text;
 
 pub use character_dialogue::{
@@ -23,6 +24,7 @@ pub use inline_failure::{
     FallbackStylePolicy, InlineFailurePolicy, InlineFallback, InlineTextFailure,
 };
 pub use presentation_profile::DialoguePresentationProfile;
+pub use presentation_revision::DialogueProfileRevision;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogueContent {

@@ -7,8 +7,9 @@ use arcweft_lang_syntax::{
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
-            Attribute, EntityDeclItem, EnumItem, ExternCapabilityItem, ExternModItem, FunctionKind,
-            FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
+            Attribute, EntityDeclItem, EntityDeclKind, EnumItem, ExternCapabilityItem,
+            ExternModItem, FunctionKind, FunctionSignatureSource, ImplItem, StructItem, TraitItem,
+            TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -463,6 +464,16 @@ impl HirModule {
         &self.declarations
     }
 
+    /// Typed authored View declarations in deterministic linked-HIR order.
+    ///
+    /// Consumers use this inventory instead of rediscovering View owners from
+    /// source text or declaration spellings.
+    pub fn view_declarations(&self) -> impl Iterator<Item = &EntityDeclItem> {
+        self.declarations
+            .iter()
+            .filter_map(HirTopLevelDecl::as_view)
+    }
+
     /// Inline style patches in deterministic source order.
     pub fn style_patches(&self) -> &[HirStylePatch] {
         &self.style_patches
@@ -471,6 +482,16 @@ impl HirModule {
     /// Owner-qualified private/public View-part declarations.
     pub fn view_parts(&self) -> &[HirViewPartOwner] {
         &self.view_parts
+    }
+}
+
+impl HirTopLevelDecl {
+    /// Returns the retained typed View owner represented by this declaration.
+    pub const fn as_view(&self) -> Option<&EntityDeclItem> {
+        match self {
+            Self::EntityDecl(item) if matches!(item.kind(), EntityDeclKind::View) => Some(item),
+            _ => None,
+        }
     }
 }
 

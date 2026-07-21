@@ -11,6 +11,7 @@ arcweft-character = { path = "../arcweft-character" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-ref = { path = "../arcweft-ref" }
+arcweft-resource-model.workspace = true
 arcweft-rich-text-schema = { path = "../arcweft-rich-text-schema" }
 arcweft-source = { path = "../arcweft-source" }
 arcweft-view = { path = "../arcweft-view" }

@@ -17,7 +17,8 @@ use cache_batch::PendingStoreTransitionError;
 pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, ProjectCompileCache};
 pub(crate) use entry_runtime::EntryRuntimeProjection;
 pub use registration::{
-    ProjectCompilationContext, ProjectEntrySelection, ProjectEntrySelectionKind,
+    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectEntrySelection,
+    ProjectEntrySelectionKind,
 };
 
 use crate::{hir, lower, parse, style};

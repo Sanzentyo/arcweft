@@ -12,10 +12,13 @@ arcweft-bundle = { path = "../arcweft-bundle" }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { path = "../arcweft-data" }
 arcweft-id = { path = "../arcweft-id" }
+arcweft-launch = { path = "../arcweft-launch" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-manifest-model.workspace = true
 arcweft-project = { path = "../arcweft-project" }
+arcweft-resource-model.workspace = true
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-source = { path = "../arcweft-source" }
@@ -30,7 +33,6 @@ path = "src/lib.rs"
 [dev-dependencies]
 arcweft-agent-runner = { path = "../arcweft-agent-runner" }
 arcweft-debug-model = { path = "../arcweft-debug-model" }
-arcweft-manifest-model = { path = "../arcweft-manifest-model" }
 trybuild.workspace = true
 
 [lints]
