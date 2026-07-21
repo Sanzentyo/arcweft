@@ -187,7 +187,7 @@ pub(super) fn expr_kind_name(expr: &Expr) -> &'static str {
         Expr::DialogueCall { .. } => "dialogue_call",
         Expr::Index { .. } => "index",
         Expr::Pipe { .. } => "pipe",
-        Expr::Try { .. } => "try",
+        Expr::Try(_) => "try",
         Expr::Await(_) => "await",
         Expr::Thread { .. } => "thread",
         Expr::Range { .. } => "range",

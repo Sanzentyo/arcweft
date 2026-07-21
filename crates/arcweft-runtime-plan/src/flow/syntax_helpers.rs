@@ -14,7 +14,7 @@ pub(super) fn dialogue_call_parts(
             content,
             plan,
         } => Some((callee.as_ref(), content.as_ref(), plan.as_ref())),
-        Expr::Try { expr } => dialogue_call_parts(expr),
+        Expr::Try(try_expr) => dialogue_call_parts(try_expr.operand()),
         _ => None,
     }
 }

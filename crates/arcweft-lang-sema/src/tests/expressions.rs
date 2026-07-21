@@ -57,7 +57,7 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 
     let context_closure =
         parse_expr(r#"load_bg(id).with_context(|| "failed")?"#).expect("closure argument parses");
-    assert!(matches!(context_closure, Expr::Try { .. }));
+    assert!(matches!(context_closure, Expr::Try(_)));
 
     let delimited =
         parse_expr("@<say.opening.dream_hint@sem:b3_9f2a1c>").expect("delimited ref expr parses");

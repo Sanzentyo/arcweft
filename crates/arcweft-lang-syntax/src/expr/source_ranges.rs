@@ -483,11 +483,15 @@ fn collect_operator_expr_source_ranges<'a>(
             }
             true
         }
-        Expr::Try { expr } => {
-            if let Some(rest) = source.strip_prefix("try") {
-                collect_expr_source_ranges_inner(expr, rest, base + "try".len(), ranges);
-            } else if let Some(rest) = source.strip_suffix('?') {
-                collect_expr_source_ranges_inner(expr, rest, base, ranges);
+        Expr::Try(try_expr) => {
+            let operand_range = try_expr.source().operand();
+            if let Some(operand_source) = absolute_source_slice(source, base, operand_range) {
+                collect_expr_source_ranges_inner(
+                    try_expr.operand(),
+                    operand_source,
+                    operand_range.start(),
+                    ranges,
+                );
             }
             true
         }

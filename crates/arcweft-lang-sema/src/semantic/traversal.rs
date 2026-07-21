@@ -160,9 +160,10 @@ fn expr_contains_unchecked_promotion(expr: &Expr) -> bool {
             expr_contains_unchecked_promotion(value) || expr_contains_unchecked_promotion(len)
         }
         Expr::Select(select) => expr_contains_unchecked_promotion(select.target()),
-        Expr::Try { expr: value }
-        | Expr::Unary { expr: value, .. }
-        | Expr::Closure { body: value, .. } => expr_contains_unchecked_promotion(value),
+        Expr::Try(try_expr) => expr_contains_unchecked_promotion(try_expr.operand()),
+        Expr::Unary { expr: value, .. } | Expr::Closure { body: value, .. } => {
+            expr_contains_unchecked_promotion(value)
+        }
         Expr::Await(awaited) => expr_contains_unchecked_promotion(awaited.operand()),
         Expr::Borrow(borrow) => expr_contains_unchecked_promotion(borrow.operand()),
         Expr::Deref(deref) => expr_contains_unchecked_promotion(deref.operand()),
@@ -545,9 +546,8 @@ fn collect_expr_drop_keys(expr: &Expr, keys: &mut HashSet<LifetimeKey>) {
             }
         }
         Expr::Select(select) => collect_expr_drop_keys(select.target(), keys),
-        Expr::Try { expr: value } | Expr::Unary { expr: value, .. } => {
-            collect_expr_drop_keys(value, keys);
-        }
+        Expr::Try(try_expr) => collect_expr_drop_keys(try_expr.operand(), keys),
+        Expr::Unary { expr: value, .. } => collect_expr_drop_keys(value, keys),
         Expr::Await(awaited) => collect_expr_drop_keys(awaited.operand(), keys),
         Expr::Binary { lhs, rhs, .. }
         | Expr::Pipe { lhs, rhs }
@@ -616,9 +616,8 @@ fn collect_expr_write_accesses(expr: &Expr, accesses: &mut BTreeSet<ResourceAcce
             collect_expr_write_accesses(len, accesses);
         }
         Expr::Select(select) => collect_expr_write_accesses(select.target(), accesses),
-        Expr::Try { expr: value } | Expr::Unary { expr: value, .. } => {
-            collect_expr_write_accesses(value, accesses);
-        }
+        Expr::Try(try_expr) => collect_expr_write_accesses(try_expr.operand(), accesses),
+        Expr::Unary { expr: value, .. } => collect_expr_write_accesses(value, accesses),
         Expr::Await(awaited) => collect_expr_write_accesses(awaited.operand(), accesses),
         Expr::Binary { lhs, rhs, .. }
         | Expr::Pipe { lhs, rhs }

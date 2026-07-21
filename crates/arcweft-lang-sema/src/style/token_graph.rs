@@ -195,7 +195,8 @@ fn collect_token_references(expr: &Expr, references: &mut BTreeSet<String>) {
             collect_token_references(len, references);
         }
         Expr::Select(select) => collect_token_references(select.target(), references),
-        Expr::Try { expr } | Expr::Unary { expr, .. } | Expr::Closure { body: expr, .. } => {
+        Expr::Try(try_expr) => collect_token_references(try_expr.operand(), references),
+        Expr::Unary { expr, .. } | Expr::Closure { body: expr, .. } => {
             collect_token_references(expr, references);
         }
         Expr::Await(awaited) => collect_token_references(awaited.operand(), references),

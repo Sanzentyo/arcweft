@@ -1,6 +1,7 @@
 use super::{
     AwaitExpr, AwaitExprSource, AwaitPropagation, AwaitPropagationSource, DottedPath, Expr, ExprOp,
-    ExprParseError, ExprParser, LexedToken, Name, Placeholder, Token, UnaryOp,
+    ExprParseError, ExprParser, LexedToken, Name, Placeholder, Token, TryExpr, TryExprSource,
+    TryOperatorSource, UnaryOp, parse_expr_at,
 };
 use crate::ast::common::TextRange;
 use crate::reference::{BorrowExpr, BorrowKind, DerefExpr};
@@ -21,14 +22,28 @@ impl ExprParser {
             return self.parse_prefix_chain(prefix);
         }
         let prefix_range = self.absolute_range(&prefix)?;
+        if let Some(dialogue) = self.parse_dialogue_primary(&prefix)? {
+            return Ok(dialogue);
+        }
         match prefix.token {
             Token::Ident(keyword) if keyword == "try" && self.peek_ident("await") => {
                 self.parse_try_await_expr(prefix_range)
             }
             Token::Ident(keyword) if keyword == "await" => self.parse_await_expr(prefix_range),
-            Token::Ident(keyword) if keyword == "try" => Ok(Expr::Try {
-                expr: Box::new(self.parse_expr_bp(90)?),
-            }),
+            Token::Ident(keyword) if keyword == "try" => {
+                let operand = self.parse_expr_bp_spanned(90)?;
+                let whole = TextRange::new(prefix_range.start(), operand.range.end());
+                Ok(Expr::Try(TryExpr::new(
+                    Box::new(operand.expr),
+                    TryExprSource::new(
+                        whole,
+                        operand.range,
+                        TryOperatorSource::PrefixTry {
+                            try_keyword: prefix_range,
+                        },
+                    ),
+                )))
+            }
             Token::Ident(keyword) if keyword == "thread" => self.parse_thread_expr(),
             Token::Ident(keyword) if keyword == "if" => self.parse_if_expr_after_keyword(),
             Token::Ident(keyword) if keyword == "match" => self.parse_match_expr_after_keyword(),
@@ -82,6 +97,44 @@ impl ExprParser {
                 prefix_range,
             )),
         }
+    }
+
+    fn parse_dialogue_primary(
+        &mut self,
+        first: &LexedToken,
+    ) -> Result<Option<Expr>, ExprParseError> {
+        if matches!(
+            &first.token,
+            Token::Ident(keyword)
+                if matches!(keyword.as_str(), "try" | "await" | "thread" | "if" | "match")
+        ) {
+            return Ok(None);
+        }
+        let Some(primary) = self.dialogue_primary.take() else {
+            return Ok(None);
+        };
+        if first.start >= primary.open {
+            self.dialogue_primary = Some(primary);
+            return Ok(None);
+        }
+
+        let callee_source = self.source.get(first.start..primary.open).ok_or_else(|| {
+            ExprParseError::at(
+                "syntax.expr.invalid_scope",
+                "dialogue callee range is outside the expression source",
+                TextRange::new(self.base, self.base),
+            )
+        })?;
+        let callee_base = self.absolute_offset(first.start)?;
+        let callee = parse_expr_at(callee_source, callee_base)?;
+        while self.peek() != &Token::Eof && self.peek_lexed().start < primary.end {
+            self.bump();
+        }
+        Ok(Some(Expr::DialogueCall {
+            callee: Box::new(callee),
+            content: Box::new(primary.content),
+            plan: primary.plan,
+        }))
     }
 
     fn parse_try_await_expr(&mut self, try_keyword: TextRange) -> Result<Expr, ExprParseError> {

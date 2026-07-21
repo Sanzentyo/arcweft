@@ -137,7 +137,7 @@ flow @flow.opening opening {
             ..
         }),
         FlowItem::Stmt(Stmt::Let {
-            expr: Expr::Try { expr },
+            expr: Expr::Try(try_expr),
             ..
         }),
     ] = flow.body()
@@ -149,7 +149,7 @@ flow @flow.opening opening {
         [LinePlanItem::Out(Expr::Literal(Literal::Bool(true)))]
     ));
     assert!(matches!(
-        expr.as_ref(),
+        try_expr.operand(),
         Expr::DialogueCall {
             plan: Some(plan),
             ..

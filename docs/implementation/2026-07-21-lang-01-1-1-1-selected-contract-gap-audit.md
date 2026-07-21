@@ -151,6 +151,38 @@ It must not infer a terminal from a removed declaration spelling.
 
 ## Acceptance status
 
+### Cut 1 implemented on 2026-07-22
+
+The atomic typed Try syntax switch is complete in the current implementation
+cut:
+
+- `Expr::Try(TryExpr)` is the only general propagation AST shape;
+- `TryOperatorSource`, `TryExprSource`, and `TryExpr` own exact absolute UTF-8
+  ranges with crate-private construction and public read access;
+- prefix `try` and postfix `?` use binding powers 90 and 100 respectively;
+- direct `try await` and `await?` remain one existing `AwaitExpr`;
+- the private lossless grammar and strict parser share the ordinary prefix
+  path, including dialogue-primary composition;
+- dialogue-only Try peeling/wrapping and Try spelling reconstruction in source
+  range traversal are deleted;
+- all syntax, HIR, sema, runtime-plan, verifier, Agent REPL, and CLI exhaustive
+  consumers compile against the new shape.
+
+Focused validation passed: 435 syntax library tests; the syntax/HIR/sema/
+runtime-plan/verifier/Agent REPL library and integration suites; all 194 CLI
+library tests and its binary target; workspace all-target/all-feature check;
+workspace all-target/all-feature Clippy with warnings denied; format and diff
+checks. The structural audit recorded 0 errors and 137 pre-existing warning
+level findings in
+[`structure-audits/lang-01-1-1-1-try-syntax-cut-1/`](structure-audits/lang-01-1-1-1-try-syntax-cut-1/).
+
+Cuts 2 through 5 remain open. In particular, this cut deliberately does not
+pretend the old `expected_returns` stack or propagation diagnostics are final.
+Those changes require the selected ordinary-function/generator fact and the
+corrected Lang-01.1.1.2 project nominal resolver; neither an old
+`FunctionKind::Stream` authority nor the rejected `CheckedReturnTarget` model
+will be used as a temporary bridge.
+
 ### Implemented substrate
 
 The following reusable substrate already exists, but does not by itself close

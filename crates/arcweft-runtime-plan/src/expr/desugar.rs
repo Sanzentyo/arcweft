@@ -20,7 +20,7 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
                     .any(call_arg_contains_partial_placeholder)
         }
         Expr::Select(select) => expr_contains_partial_placeholder(select.target()),
-        Expr::Try { expr: target } => expr_contains_partial_placeholder(target),
+        Expr::Try(try_expr) => expr_contains_partial_placeholder(try_expr.operand()),
         Expr::Index { target, index } => {
             expr_contains_partial_placeholder(target) || expr_contains_partial_placeholder(index)
         }

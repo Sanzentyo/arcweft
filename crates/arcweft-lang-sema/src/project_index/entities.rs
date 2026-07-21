@@ -261,9 +261,8 @@ fn index_expr_agent_actions(
             index_call_expr_agent_actions(call.callee(), call.args(), index, source_name)
         }
         Expr::Select(select) => index_expr_agent_actions(select.target(), index, source_name),
-        Expr::Try { expr: target } | Expr::Unary { expr: target, .. } => {
-            index_expr_agent_actions(target, index, source_name)
-        }
+        Expr::Try(try_expr) => index_expr_agent_actions(try_expr.operand(), index, source_name),
+        Expr::Unary { expr: target, .. } => index_expr_agent_actions(target, index, source_name),
         Expr::Await(awaited) => index_expr_agent_actions(awaited.operand(), index, source_name),
         Expr::Borrow(borrow) => index_expr_agent_actions(borrow.operand(), index, source_name),
         Expr::Deref(deref) => index_expr_agent_actions(deref.operand(), index, source_name),

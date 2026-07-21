@@ -38,7 +38,8 @@ impl Expr {
             Self::Select(select) => select.target().contains_pipe_left(),
             Self::DialogueCall { callee, .. } => callee.contains_pipe_left(),
             Self::Pipe { lhs, .. } => lhs.contains_pipe_left(),
-            Self::Try { expr } | Self::Unary { expr, .. } | Self::Closure { body: expr, .. } => {
+            Self::Try(try_expr) => try_expr.operand().contains_pipe_left(),
+            Self::Unary { expr, .. } | Self::Closure { body: expr, .. } => {
                 expr.contains_pipe_left()
             }
             Self::Await(awaited) => awaited.operand().contains_pipe_left(),

@@ -562,10 +562,7 @@ fn strict_runtime_lowers_partial_placeholder_filter_body() {
 
 #[test]
 fn strict_runtime_rejects_try_and_await_without_control_boundaries() {
-    let method_call = parsed_expr("frame.objects.require_role(\"dialogue_view\")");
-    let try_expr = Expr::Try {
-        expr: Box::new(method_call.clone()),
-    };
+    let try_expr = parsed_expr("frame.objects.require_role(\"dialogue_view\")?");
     let await_expr = parsed_expr("await frame.objects.require_role(\"dialogue_view\")");
 
     let try_error =
@@ -579,9 +576,7 @@ fn strict_runtime_rejects_try_and_await_without_control_boundaries() {
 
 #[test]
 fn lossy_runtime_label_lowering_remains_non_executable() {
-    let expr = Expr::Try {
-        expr: Box::new(parsed_expr("frame.objects.require_role(\"dialogue_view\")")),
-    };
+    let expr = parsed_expr("frame.objects.require_role(\"dialogue_view\")?");
 
     let lowered = lower_runtime_expr(&expr);
 

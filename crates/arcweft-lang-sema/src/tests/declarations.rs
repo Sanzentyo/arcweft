@@ -969,7 +969,7 @@ fn load_score() -> Result<i32, ScoreError> {
     assert!(matches!(
         hir.functions()[0].statements()[0],
         Stmt::Let {
-            expr: Expr::Try { .. },
+            expr: Expr::Try(_),
             ..
         }
     ));

@@ -184,7 +184,8 @@ fn expr_contains_recovery(expr: &Expr) -> bool {
         Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, rhs, .. } => {
             expr_contains_recovery(lhs) || expr_contains_recovery(rhs)
         }
-        Expr::Try { expr } | Expr::Unary { expr, .. } => expr_contains_recovery(expr),
+        Expr::Try(try_expr) => expr_contains_recovery(try_expr.operand()),
+        Expr::Unary { expr, .. } => expr_contains_recovery(expr),
         Expr::Await(awaited) => expr_contains_recovery(awaited.operand()),
         Expr::Borrow(borrow) => expr_contains_recovery(borrow.operand()),
         Expr::Deref(deref) => expr_contains_recovery(deref.operand()),

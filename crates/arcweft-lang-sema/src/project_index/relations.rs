@@ -334,11 +334,13 @@ fn index_expr_symbol_dependency_relations(
         Expr::Select(select) => {
             index = index_expr_symbol_dependency_relations(parent, select.target(), index)?;
         }
-        Expr::Try { expr: target }
-        | Expr::Unary { expr: target, .. }
+        Expr::Unary { expr: target, .. }
         | Expr::DialogueCall { callee: target, .. }
         | Expr::Closure { body: target, .. } => {
             index = index_expr_symbol_dependency_relations(parent, target, index)?;
+        }
+        Expr::Try(try_expr) => {
+            index = index_expr_symbol_dependency_relations(parent, try_expr.operand(), index)?;
         }
         Expr::Await(awaited) => {
             index = index_expr_symbol_dependency_relations(parent, awaited.operand(), index)?;
@@ -865,7 +867,10 @@ fn index_compound_expr_dependency_relations(
         Expr::Select(select) => {
             index = index_expr_dependency_relations(parent, select.target(), index)?;
         }
-        Expr::Try { expr: target } | Expr::Unary { expr: target, .. } => {
+        Expr::Try(try_expr) => {
+            index = index_expr_dependency_relations(parent, try_expr.operand(), index)?;
+        }
+        Expr::Unary { expr: target, .. } => {
             index = index_expr_dependency_relations(parent, target, index)?;
         }
         Expr::Await(awaited) => {

@@ -117,7 +117,7 @@ fn agent_repl_serialized_numeric_bracket_seq_source(
 
 fn agent_repl_snapshot_expr_kind(expr: &Expr) -> Option<&'static str> {
     match expr {
-        Expr::Try { expr } => agent_repl_snapshot_expr_kind(expr),
+        Expr::Try(try_expr) => agent_repl_snapshot_expr_kind(try_expr.operand()),
         Expr::Await(awaited) => agent_repl_snapshot_expr_kind(awaited.operand()),
         Expr::Call(call) if agent_repl_snapshot_call_args_are_self_contained(call.args()) => {
             agent_repl_call_snapshot_kind(call.callee())

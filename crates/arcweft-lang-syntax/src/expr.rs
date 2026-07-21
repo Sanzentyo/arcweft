@@ -285,6 +285,99 @@ impl SelectExpr {
     }
 }
 
+/// Exact authored operator token for one general Try expression.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TryOperatorSource {
+    /// `try operand`.
+    PrefixTry { try_keyword: TextRange },
+    /// `operand?`.
+    PostfixQuestion { question: TextRange },
+}
+
+impl TryOperatorSource {
+    /// Returns the exact half-open UTF-8 byte range of the authored operator.
+    pub const fn range(self) -> TextRange {
+        match self {
+            Self::PrefixTry { try_keyword } => try_keyword,
+            Self::PostfixQuestion { question } => question,
+        }
+    }
+}
+
+/// Exact source ownership for one general Try expression.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TryExprSource {
+    whole: TextRange,
+    operand: TextRange,
+    operator: TryOperatorSource,
+}
+
+impl TryExprSource {
+    pub(crate) const fn new(
+        whole: TextRange,
+        operand: TextRange,
+        operator: TryOperatorSource,
+    ) -> Self {
+        Self {
+            whole,
+            operand,
+            operator,
+        }
+    }
+
+    /// Returns the complete authored Try-expression range.
+    pub const fn whole(self) -> TextRange {
+        self.whole
+    }
+
+    /// Returns the complete authored operand range.
+    pub const fn operand(self) -> TextRange {
+        self.operand
+    }
+
+    /// Returns the authored operator spelling and range.
+    pub const fn operator(self) -> TryOperatorSource {
+        self.operator
+    }
+
+    /// Returns the smallest authored operator-token range.
+    pub const fn operator_range(self) -> TextRange {
+        self.operator.range()
+    }
+}
+
+/// Semantic Result/Option propagation with exact authored source evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TryExpr {
+    operand: Box<Expr>,
+    source: TryExprSource,
+}
+
+impl TryExpr {
+    pub(crate) const fn new(operand: Box<Expr>, source: TryExprSource) -> Self {
+        Self { operand, source }
+    }
+
+    /// Returns the propagated operand.
+    pub const fn operand(&self) -> &Expr {
+        &self.operand
+    }
+
+    pub(crate) const fn operand_mut(&mut self) -> &mut Expr {
+        &mut self.operand
+    }
+
+    /// Returns exact source ownership for this expression.
+    pub const fn source(&self) -> TryExprSource {
+        self.source
+    }
+
+    /// Splits this expression into its semantic operand and source evidence.
+    pub fn into_parts(self) -> (Expr, TryExprSource) {
+        (*self.operand, self.source)
+    }
+}
+
 /// Error-propagation behavior attached directly to an `await` expression.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AwaitPropagation {
@@ -435,9 +528,7 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
-    Try {
-        expr: Box<Expr>,
-    },
+    Try(TryExpr),
     Await(AwaitExpr),
     Thread {
         block: Box<ThreadBlock>,
@@ -960,6 +1051,28 @@ pub(crate) fn parse_expr_at(source: &str, base: usize) -> Result<Expr, ExprParse
     reject_recovery_diagnostics(parsed).map(|parsed| parsed.expr)
 }
 
+pub(crate) fn parse_dialogue_context_expr(
+    source: &str,
+    open: usize,
+    close: usize,
+    content: DialogueContent,
+    plan: Option<LinePlan>,
+) -> Result<ParsedExpr, ExprParseError> {
+    parse_expr_fragment_with_owner_and_dialogue(
+        source,
+        0,
+        source,
+        0,
+        CallRecoveryBoundarySyntax::EndOfExpression,
+        Some(pratt::DialoguePrimary {
+            open,
+            end: close,
+            content,
+            plan,
+        }),
+    )
+}
+
 pub(crate) fn parse_expr_recovering_at(
     source: &str,
     scope: ExprParseScope,
@@ -1061,6 +1174,24 @@ fn parse_expr_fragment_with_owner(
     owner_base: usize,
     end_boundary: CallRecoveryBoundarySyntax,
 ) -> Result<ParsedExpr, ExprParseError> {
+    parse_expr_fragment_with_owner_and_dialogue(
+        source,
+        base,
+        owner_source,
+        owner_base,
+        end_boundary,
+        None,
+    )
+}
+
+fn parse_expr_fragment_with_owner_and_dialogue(
+    source: &str,
+    base: usize,
+    owner_source: &str,
+    owner_base: usize,
+    end_boundary: CallRecoveryBoundarySyntax,
+    dialogue_primary: Option<pratt::DialoguePrimary>,
+) -> Result<ParsedExpr, ExprParseError> {
     let scope_base = base;
     let scope_end = scope_base.checked_add(source.len()).ok_or_else(|| {
         ExprParseError::at(
@@ -1134,6 +1265,7 @@ fn parse_expr_fragment_with_owner(
         end_boundary,
         recovery_end: scope_end,
     })
+    .with_dialogue_primary(dialogue_primary)
     .parse()?;
     if let Some((kind, range)) =
         collect_expr_source_ranges(&parsed.expr, trimmed, TextRange::new(base, end))

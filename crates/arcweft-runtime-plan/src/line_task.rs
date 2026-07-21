@@ -634,7 +634,7 @@ fn flatten_defer_stack(defer_stack: Vec<Vec<LineEffectRequest>>) -> Vec<LineEffe
 fn dialogue_expr_plan(expr: &Expr) -> Option<(&Expr, &LinePlan)> {
     match expr {
         Expr::DialogueCall { callee, plan, .. } => Some((callee.as_ref(), plan.as_ref()?)),
-        Expr::Try { expr } => dialogue_expr_plan(expr),
+        Expr::Try(try_expr) => dialogue_expr_plan(try_expr.operand()),
         _ => None,
     }
 }

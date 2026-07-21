@@ -439,7 +439,7 @@ pub(crate) fn lower_runtime_expr(expr: &Expr) -> RuntimeExpr {
         Expr::Index { target, index } => {
             lower_runtime_index_expr(target, index).unwrap_or_else(|| lower_runtime_expr(target))
         }
-        Expr::Try { expr } => lower_runtime_expr(expr),
+        Expr::Try(try_expr) => lower_runtime_expr(try_expr.operand()),
         Expr::Await(awaited) => lower_runtime_expr(awaited.operand()),
         Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr(lhs, rhs),
         _ => RuntimeExpr::Value(RuntimeValue::String(expr_label(expr))),
@@ -576,7 +576,7 @@ fn lower_runtime_expr_strict_with_helpers(
         }
         Expr::DialogueCall { plan, .. } => Ok(lower_dialogue_call_value(plan.as_ref())),
         Expr::Index { target, index } => lower_strict_index_expr(target, index, helpers),
-        Expr::Try { .. } => unsupported_runtime_control_value(RuntimeControlValue::Try),
+        Expr::Try(_) => unsupported_runtime_control_value(RuntimeControlValue::Try),
         Expr::Await(_) => unsupported_runtime_control_value(RuntimeControlValue::Await),
         Expr::Pipe { lhs, rhs } => lower_runtime_pipe_expr_strict(lhs, rhs, helpers, expression_id),
         Expr::Placeholder(Placeholder::PipeLeft) => helpers

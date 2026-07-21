@@ -459,7 +459,7 @@ fn runtime_function_value_expr_supported(
         | Expr::Deref(_)
         | Expr::Placeholder(arcweft_lang_hir::syntax::expr::Placeholder::Partial)
         | Expr::DialogueCall { .. }
-        | Expr::Try { .. }
+        | Expr::Try(_)
         | Expr::Await(_)
         | Expr::Thread { .. }
         | Expr::Raw(_) => false,

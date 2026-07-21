@@ -1,10 +1,10 @@
 use super::call_syntax::CallSyntaxInvariantError;
 use super::{
-    BinaryOp, CallExpr, CallRecoveryBoundarySyntax, CallbackBlockCallSyntax, DottedPath, Expr,
-    ExprOp, ExprParseError, ExprParseStats, FlowItem, LexedToken, Lexer, Literal,
-    MAX_EXPR_DIAGNOSTICS, MAX_EXPR_RECOVERY_NODES, ParenthesizedCallSyntax, ParsedExpr, Stmt,
-    ThreadBlock, ThreadModifier, Token, flat_literal_bracket_seq_expr, literal_exprs_from_tokens,
-    nonempty_joined_name, parse_expr, token_source,
+    BinaryOp, CallExpr, CallRecoveryBoundarySyntax, CallbackBlockCallSyntax, DialogueContent,
+    DottedPath, Expr, ExprOp, ExprParseError, ExprParseStats, FlowItem, LexedToken, Lexer,
+    LinePlan, Literal, MAX_EXPR_DIAGNOSTICS, MAX_EXPR_RECOVERY_NODES, ParenthesizedCallSyntax,
+    ParsedExpr, Stmt, ThreadBlock, ThreadModifier, Token, flat_literal_bracket_seq_expr,
+    literal_exprs_from_tokens, nonempty_joined_name, parse_expr, token_source,
 };
 use crate::ast::common::TextRange;
 
@@ -13,6 +13,13 @@ mod call;
 pub(super) struct SpannedExpr {
     pub(super) expr: Expr,
     pub(super) range: TextRange,
+}
+
+pub(super) struct DialoguePrimary {
+    pub(super) open: usize,
+    pub(super) end: usize,
+    pub(super) content: DialogueContent,
+    pub(super) plan: Option<LinePlan>,
 }
 
 #[derive(Clone, Copy)]
@@ -44,6 +51,7 @@ pub(super) struct ExprParser {
     active_call_depth: usize,
     pub(super) prefix_depth: usize,
     pub(super) control_body_brace_is_boundary: bool,
+    pub(super) dialogue_primary: Option<DialoguePrimary>,
 }
 
 impl ExprParser {
@@ -65,7 +73,16 @@ impl ExprParser {
             active_call_depth: 0,
             prefix_depth: 0,
             control_body_brace_is_boundary: false,
+            dialogue_primary: None,
         }
+    }
+
+    pub(super) fn with_dialogue_primary(
+        mut self,
+        dialogue_primary: Option<DialoguePrimary>,
+    ) -> Self {
+        self.dialogue_primary = dialogue_primary;
+        self
     }
 
     pub(super) fn parse(mut self) -> Result<ParsedExpr, ExprParseError> {
@@ -122,12 +139,19 @@ impl ExprParser {
     }
 
     fn parse_try_postfix(&mut self, lhs: SpannedExpr) -> Result<SpannedExpr, ExprParseError> {
-        let end = self.bump_lexed().end;
+        let question = self.bump_lexed();
+        let question = self.absolute_range(&question)?;
+        let range = TextRange::new(lhs.range.start(), question.end());
         Ok(SpannedExpr {
-            expr: Expr::Try {
-                expr: Box::new(lhs.expr),
-            },
-            range: TextRange::new(lhs.range.start(), self.absolute_offset(end)?),
+            expr: Expr::Try(super::TryExpr::new(
+                Box::new(lhs.expr),
+                super::TryExprSource::new(
+                    range,
+                    lhs.range,
+                    super::TryOperatorSource::PostfixQuestion { question },
+                ),
+            )),
+            range,
         })
     }
 

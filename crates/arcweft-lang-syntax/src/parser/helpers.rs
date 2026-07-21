@@ -792,16 +792,11 @@ pub(super) fn parse_expr_with_inline_line_plan_with_stats(
         }
         return parse_expr_lossy_with_stats(source, stats);
     };
-    let mut expr = parse_dialogue_call_expr_source(expr_source.trim())
-        .unwrap_or_else(|| parse_expr_lossy_with_stats(expr_source.trim(), stats.as_deref_mut()));
     let Some(plan) = parse_inline_line_plan_source(trailing_plan) else {
         return parse_expr_lossy_with_stats(source, stats);
     };
-    if attach_plan_to_dialogue_expr(&mut expr, plan) {
-        expr
-    } else {
-        parse_expr_lossy_with_stats(source, stats)
-    }
+    parse_dialogue_call_expr_source_with_plan(expr_source.trim(), Some(plan))
+        .unwrap_or_else(|| parse_expr_lossy_with_stats(source, stats))
 }
 
 fn parse_dialogue_call_expr_surface(
@@ -819,7 +814,6 @@ fn looks_like_dialogue_call_expr_surface(
     stats: Option<&mut SyntaxParseStats>,
 ) -> bool {
     let source = source.trim();
-    let source = source.strip_prefix("try ").map_or(source, str::trim);
     let Some(open) = find_content_bracket(source) else {
         return false;
     };
@@ -853,26 +847,29 @@ fn content_may_be_typed_expr(source: &str) -> bool {
 }
 
 pub(super) fn parse_dialogue_call_expr_source(source: &str) -> Option<Expr> {
-    if let Some(rest) = source.trim().strip_prefix("try ") {
-        return Some(Expr::Try {
-            expr: Box::new(parse_dialogue_call_expr_source(rest.trim())?),
-        });
-    }
+    parse_dialogue_call_expr_source_with_plan(source, None)
+}
+
+fn parse_dialogue_call_expr_source_with_plan(source: &str, plan: Option<LinePlan>) -> Option<Expr> {
+    let source = source.trim();
     let open = find_content_bracket(source)?;
     let close = find_matching_punctuation(source, open, '[', ']')?;
     if !source[close + 1..].trim().is_empty() {
         return None;
     }
-    let callee = source[..open].trim();
-    if callee.is_empty() {
+    if source[..open].trim().is_empty() {
         return None;
     }
     let content = source[open + 1..close].trim();
-    Some(Expr::DialogueCall {
-        callee: Box::new(parse_expr_lossy(callee)),
-        content: Box::new(parse_dialogue_content(content)),
-        plan: None,
-    })
+    crate::expr::parse_dialogue_context_expr(
+        source,
+        open,
+        close + ']'.len_utf8(),
+        parse_dialogue_content(content),
+        plan,
+    )
+    .ok()
+    .map(|parsed| parsed.expr)
 }
 
 pub(super) fn attach_plan_to_dialogue_expr(expr: &mut Expr, line_plan: LinePlan) -> bool {
@@ -881,7 +878,7 @@ pub(super) fn attach_plan_to_dialogue_expr(expr: &mut Expr, line_plan: LinePlan)
             *plan = Some(line_plan);
             true
         }
-        Expr::Try { expr } => attach_plan_to_dialogue_expr(expr, line_plan),
+        Expr::Try(try_expr) => attach_plan_to_dialogue_expr(try_expr.operand_mut(), line_plan),
         _ => false,
     }
 }
@@ -889,7 +886,7 @@ pub(super) fn attach_plan_to_dialogue_expr(expr: &mut Expr, line_plan: LinePlan)
 pub(super) fn contains_dialogue_expr(expr: &Expr) -> bool {
     match expr {
         Expr::DialogueCall { .. } => true,
-        Expr::Try { expr } => contains_dialogue_expr(expr),
+        Expr::Try(try_expr) => contains_dialogue_expr(try_expr.operand()),
         _ => false,
     }
 }
@@ -959,6 +956,23 @@ mod tests {
         let indexed = parse_expr_with_inline_line_plan_with_stats("items[0]", Some(&mut stats));
         assert!(!matches!(indexed, Expr::DialogueCall { .. }));
         assert_eq!(stats.dialogue_rescue_expr_parse_attempts, 1);
+    }
+
+    #[test]
+    fn general_try_wraps_the_typed_dialogue_primary() {
+        let parsed = parse_expr_with_inline_line_plan_with_stats("try alice[おはよう。]", None);
+        let Expr::Try(try_expr) = parsed else {
+            panic!("expected typed general try expression");
+        };
+        assert_eq!(
+            try_expr.source().whole(),
+            crate::ast::common::TextRange::new(0, 26)
+        );
+        assert_eq!(
+            try_expr.source().operand(),
+            crate::ast::common::TextRange::new(4, 26)
+        );
+        assert!(matches!(try_expr.operand(), Expr::DialogueCall { .. }));
     }
 
     #[test]

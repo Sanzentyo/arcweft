@@ -54,15 +54,7 @@ pub(super) fn emit_dialogue_context_expression(
         return;
     };
 
-    if surface.has_try_prefix {
-        parser.start(SyntaxKind::TryExpression, role);
-        parser.bump();
-        parser.bump_trivia();
-        emit_dialogue_call(parser, end, SyntaxRole::Operand, surface);
-        parser.finish();
-    } else {
-        emit_dialogue_call(parser, end, role, surface);
-    }
+    parse_binding_power_with_dialogue(parser, end, 0, role, Some(surface));
 }
 
 /// Emits one owner-provided named plan section through the shared expression
@@ -79,23 +71,15 @@ pub(super) fn emit_named_plan_block(
 struct DialogueSurface {
     open: usize,
     close: Option<usize>,
-    has_try_prefix: bool,
 }
 
 fn dialogue_surface(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> Option<DialogueSurface> {
     let start = parser.cursor();
     let first = super::shadow_recovery::first_significant(parser, start, end)?;
-    let has_try_prefix = super::shadow_recovery::token_text(parser, first) == Some("try");
-    let callee_start = if has_try_prefix {
-        super::shadow_recovery::first_significant(parser, first + 1, end)?
-    } else {
-        first
-    };
-
     let mut depth = 0_usize;
     let mut saw_call = false;
     let mut open = None;
-    for index in callee_start..end {
+    for index in first..end {
         let text = super::shadow_recovery::token_text(parser, index)?;
         if depth == 0 && text == "[" {
             open = Some(index);
@@ -112,7 +96,7 @@ fn dialogue_surface(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> Option
         }
     }
     let open = open?;
-    super::shadow_recovery::first_significant(parser, callee_start, open)?;
+    super::shadow_recovery::first_significant(parser, first, open)?;
 
     let close = super::shadow_recovery::find_matching_close(parser, open + 1, "[")
         .filter(|close| *close < end);
@@ -134,11 +118,8 @@ fn dialogue_surface(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> Option
             .is_some_and(|token| token.kind() == SyntaxKind::TextToken)
     });
 
-    (saw_call || begins_non_ascii_text || contains_raw_text).then_some(DialogueSurface {
-        open,
-        close,
-        has_try_prefix,
-    })
+    (saw_call || begins_non_ascii_text || contains_raw_text)
+        .then_some(DialogueSurface { open, close })
 }
 
 fn emit_dialogue_call(
@@ -146,7 +127,8 @@ fn emit_dialogue_call(
     end: usize,
     role: SyntaxRole,
     surface: DialogueSurface,
-) {
+) -> CompletedNode {
+    let start_event = parser.event_position();
     parser.start(SyntaxKind::DialogueCallExpression, role);
     emit_expression(parser, surface.open, SyntaxRole::Callee);
     bump_until(parser, surface.open);
@@ -161,6 +143,7 @@ fn emit_dialogue_call(
     );
     bump_until(parser, end);
     parser.finish();
+    CompletedNode { start_event }
 }
 
 pub(super) fn expression_is_call(
@@ -206,7 +189,17 @@ fn parse_binding_power(
     minimum: u8,
     role: SyntaxRole,
 ) -> CompletedNode {
-    let mut left = parse_prefix(parser, end, role);
+    parse_binding_power_with_dialogue(parser, end, minimum, role, None)
+}
+
+fn parse_binding_power_with_dialogue(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    minimum: u8,
+    role: SyntaxRole,
+    dialogue: Option<DialogueSurface>,
+) -> CompletedNode {
+    let mut left = parse_prefix_with_dialogue(parser, end, role, dialogue);
 
     while let Some((operator_index, _, operator)) = parser.next_significant() {
         if operator_index >= end {
@@ -246,10 +239,11 @@ fn parse_binding_power(
     left
 }
 
-fn parse_prefix(
+fn parse_prefix_with_dialogue(
     parser: &mut ShadowDocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
+    dialogue: Option<DialogueSurface>,
 ) -> CompletedNode {
     let start_event = parser.event_position();
     let Some(token) = parser.current() else {
@@ -259,13 +253,38 @@ fn parse_prefix(
     };
     let text = parser.text_of(token);
 
+    if let Some(surface) = dialogue
+        && parser.cursor() < surface.open
+        && !matches!(
+            text,
+            "try" | "await" | "thread" | "if" | "match" | "&" | "*" | "!" | "-" | "+"
+        )
+    {
+        return emit_dialogue_call(parser, end, role, surface);
+    }
+
     match text {
         "&" => emit_prefix_operand(parser, end, SyntaxKind::BorrowExpression, role, true),
         "*" => emit_prefix_operand(parser, end, SyntaxKind::DereferenceExpression, role, false),
         "!" | "-" | "+" => {
             emit_prefix_operand(parser, end, SyntaxKind::UnaryExpression, role, false)
         }
-        "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
+        "try" => emit_prefix_operand_with_dialogue(
+            parser,
+            end,
+            SyntaxKind::TryExpression,
+            role,
+            false,
+            dialogue,
+        ),
+        "await" => emit_prefix_operand_with_dialogue(
+            parser,
+            end,
+            SyntaxKind::AwaitExpression,
+            role,
+            false,
+            dialogue,
+        ),
         "thread" if composite::has_braced_body(parser, end) => {
             composite::emit_thread_expression(parser, end, role)
         }
@@ -317,6 +336,17 @@ fn emit_prefix_operand(
     role: SyntaxRole,
     accepts_mutability: bool,
 ) -> CompletedNode {
+    emit_prefix_operand_with_dialogue(parser, end, kind, role, accepts_mutability, None)
+}
+
+fn emit_prefix_operand_with_dialogue(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+    accepts_mutability: bool,
+    dialogue: Option<DialogueSurface>,
+) -> CompletedNode {
     let start_event = parser.event_position();
     parser.start(kind, role);
     parser.bump();
@@ -326,7 +356,7 @@ fn emit_prefix_operand(
         parser.bump_trivia();
     }
     if parser.cursor() < end {
-        parse_binding_power(parser, end, 90, SyntaxRole::Operand);
+        parse_binding_power_with_dialogue(parser, end, 90, SyntaxRole::Operand, dialogue);
     } else {
         parser.start(SyntaxKind::MissingExpression, SyntaxRole::Operand);
         parser.finish();

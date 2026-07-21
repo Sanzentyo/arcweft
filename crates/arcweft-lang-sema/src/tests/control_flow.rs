@@ -883,14 +883,14 @@ flow @flow.trying trying {
     };
     let FlowItem::Stmt(Stmt::Let {
         pattern,
-        expr: Expr::Try { expr },
+        expr: Expr::Try(try_expr),
         ..
     }) = &flow.body()[0]
     else {
         panic!("expected let binding with postfix try expression");
     };
     assert_eq!(pattern, &Pattern::Ident("config".to_owned()));
-    assert!(matches!(expr.as_ref(), Expr::Call(_)));
+    assert!(matches!(try_expr.operand(), Expr::Call(_)));
 
     let hir = lower_to_hir(&tree).expect("postfix try fixture lowers");
     validate_typecheck_ready(&hir).expect("postfix try expression is typecheck-ready");

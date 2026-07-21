@@ -1,6 +1,7 @@
 use super::{
     AwaitPropagation, AwaitPropagationSource, BinaryOp, CallRecoveryBoundarySyntax, Expr,
-    ExprParseError, ExprParseErrorKind, Placeholder, parse_expr, parse_expr_fragment_recovering_at,
+    ExprParseError, ExprParseErrorKind, Placeholder, TryOperatorSource, collect_expr_source_ranges,
+    parse_expr, parse_expr_at, parse_expr_fragment_recovering_at,
 };
 use crate::ast::common::TextRange;
 use crate::reference::BorrowKind;
@@ -93,19 +94,92 @@ fn await_question_grouping_keeps_attached_and_postfix_try_distinct() {
         panic!("expected outer await expression");
     };
     assert_eq!(awaited.propagation(), AwaitPropagation::PreserveResult);
-    assert!(matches!(awaited.operand(), Expr::Try { .. }));
+    assert!(matches!(awaited.operand(), Expr::Try(_)));
     assert_eq!(awaited.source().whole(), TextRange::new(0, 11));
     assert_eq!(awaited.source().operand(), TextRange::new(6, 11));
 
-    let Expr::Try { expr } = parse_expr("(await need)?").expect("outer postfix try parses") else {
+    let Expr::Try(try_expr) = parse_expr("(await need)?").expect("outer postfix try parses") else {
         panic!("expected outer try expression");
     };
-    let Expr::Await(awaited) = expr.as_ref() else {
+    let Expr::Await(awaited) = try_expr.operand() else {
         panic!("expected postfix try to wrap await");
     };
     assert_eq!(awaited.propagation(), AwaitPropagation::PreserveResult);
     assert_eq!(awaited.source().whole(), TextRange::new(1, 11));
     assert_eq!(awaited.source().operand(), TextRange::new(7, 11));
+}
+
+#[test]
+fn general_try_expressions_retain_exact_operator_and_operand_ranges() {
+    let Expr::Try(postfix) = parse_expr("value?").expect("postfix try parses") else {
+        panic!("expected postfix try expression");
+    };
+    assert_eq!(postfix.source().whole(), TextRange::new(0, 6));
+    assert_eq!(postfix.source().operand(), TextRange::new(0, 5));
+    assert_eq!(postfix.source().operator_range(), TextRange::new(5, 6));
+    assert_eq!(
+        postfix.source().operator(),
+        TryOperatorSource::PostfixQuestion {
+            question: TextRange::new(5, 6),
+        }
+    );
+    assert!(matches!(postfix.operand(), Expr::Path(_)));
+
+    let Expr::Try(prefix) = parse_expr("try value").expect("prefix try parses") else {
+        panic!("expected prefix try expression");
+    };
+    assert_eq!(prefix.source().whole(), TextRange::new(0, 9));
+    assert_eq!(prefix.source().operand(), TextRange::new(4, 9));
+    assert_eq!(prefix.source().operator_range(), TextRange::new(0, 3));
+    assert_eq!(
+        prefix.source().operator(),
+        TryOperatorSource::PrefixTry {
+            try_keyword: TextRange::new(0, 3),
+        }
+    );
+    assert!(matches!(prefix.operand(), Expr::Path(_)));
+}
+
+#[test]
+fn nested_try_precedence_and_utf8_nonzero_base_ranges_are_exact() {
+    let Expr::Try(prefix) = parse_expr_at("try 値?", 40).expect("nested try parses") else {
+        panic!("expected prefix try expression");
+    };
+    assert_eq!(prefix.source().whole(), TextRange::new(40, 48));
+    assert_eq!(prefix.source().operand(), TextRange::new(44, 48));
+    assert_eq!(prefix.source().operator_range(), TextRange::new(40, 43));
+
+    let Expr::Try(postfix) = prefix.operand() else {
+        panic!("prefix try must contain the tighter postfix try");
+    };
+    assert_eq!(postfix.source().whole(), TextRange::new(44, 48));
+    assert_eq!(postfix.source().operand(), TextRange::new(44, 47));
+    assert_eq!(postfix.source().operator_range(), TextRange::new(47, 48));
+}
+
+#[test]
+fn source_range_collection_uses_typed_try_coordinates() {
+    let source = "try (await need)?";
+    let expr = parse_expr(source).expect("nested await and try parse");
+    let ranges = collect_expr_source_ranges(&expr, source, TextRange::new(0, source.len()));
+
+    assert_eq!(ranges[0].range(), TextRange::new(0, source.len()));
+    assert!(matches!(ranges[0].expr(), Expr::Try(_)));
+    assert_eq!(ranges[1].range(), TextRange::new(4, source.len()));
+    assert!(matches!(ranges[1].expr(), Expr::Try(_)));
+    assert_eq!(ranges[2].range(), TextRange::new(4, 16));
+    let Expr::Await(awaited) = ranges[2].expr() else {
+        panic!("expected the grouped await operand");
+    };
+    assert_eq!(awaited.source().whole(), TextRange::new(5, 15));
+}
+
+#[test]
+fn missing_general_try_operand_reports_the_eof_insertion_point() {
+    let error = strict_error("try");
+    assert_eq!(error.code(), "syntax.expr.parse");
+    assert_eq!(error.range(), TextRange::new(3, 3));
+    assert_eq!(error.to_string(), "expected expression, found Eof");
 }
 
 #[test]

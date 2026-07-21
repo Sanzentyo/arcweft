@@ -1484,7 +1484,10 @@ fn collect_expr_action_invokes(
             collect_two_expr_action_invokes(value, len, range, invokes);
         }
         Expr::Select(select) => collect_expr_action_invokes(select.target(), range, invokes),
-        Expr::Try { expr: target } | Expr::Unary { expr: target, .. } => {
+        Expr::Try(try_expr) => {
+            collect_expr_action_invokes(try_expr.operand(), range, invokes);
+        }
+        Expr::Unary { expr: target, .. } => {
             collect_expr_action_invokes(target, range, invokes);
         }
         Expr::Await(awaited) => {

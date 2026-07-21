@@ -202,7 +202,7 @@ impl TypeChecker<'_> {
             )),
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs, expression_id),
-            Expr::Try { expr } => self.check_try_expr(expr),
+            Expr::Try(try_expr) => self.check_try_expr(try_expr.operand()),
             Expr::Await(awaited) => self.check_await_expr_node(awaited),
             Expr::Thread { block } => Some(self.check_thread_expr(block)),
             Expr::Range { start, end, .. } => {

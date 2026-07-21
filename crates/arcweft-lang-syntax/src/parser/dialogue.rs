@@ -833,7 +833,9 @@ fn split_dialogue_default_assignment(
 fn replace_dialogue_call_content_source_map(expr: &mut Expr, source_map: DialogueContentSourceMap) {
     match expr {
         Expr::DialogueCall { content, .. } => content.replace_source_map(source_map),
-        Expr::Try { expr } => replace_dialogue_call_content_source_map(expr, source_map),
+        Expr::Try(try_expr) => {
+            replace_dialogue_call_content_source_map(try_expr.operand_mut(), source_map);
+        }
         _ => {}
     }
 }

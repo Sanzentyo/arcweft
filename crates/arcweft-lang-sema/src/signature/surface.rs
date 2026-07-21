@@ -568,9 +568,8 @@ impl SurfaceScanner<'_> {
                 self.scan_expr(lhs)?;
                 self.scan_expr(rhs)?;
             }
-            Expr::Closure { body, .. }
-            | Expr::Unary { expr: body, .. }
-            | Expr::Try { expr: body } => self.scan_expr(body)?,
+            Expr::Try(try_expr) => self.scan_expr(try_expr.operand())?,
+            Expr::Closure { body, .. } | Expr::Unary { expr: body, .. } => self.scan_expr(body)?,
             Expr::Await(awaited) => self.scan_expr(awaited.operand())?,
             Expr::Borrow(borrow) => self.scan_expr(borrow.operand())?,
             Expr::Deref(deref) => self.scan_expr(deref.operand())?,

@@ -317,9 +317,8 @@ pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
             .iter()
             .any(|(_, value)| expr_contains_partial_placeholder(value)),
         Expr::Select(select) => expr_contains_partial_placeholder(select.target()),
-        Expr::Try { expr: target } | Expr::Unary { expr: target, .. } => {
-            expr_contains_partial_placeholder(target)
-        }
+        Expr::Try(try_expr) => expr_contains_partial_placeholder(try_expr.operand()),
+        Expr::Unary { expr: target, .. } => expr_contains_partial_placeholder(target),
         Expr::Await(awaited) => expr_contains_partial_placeholder(awaited.operand()),
         Expr::Borrow(borrow) => expr_contains_partial_placeholder(borrow.operand()),
         Expr::Deref(deref) => expr_contains_partial_placeholder(deref.operand()),

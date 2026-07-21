@@ -256,10 +256,10 @@ fn summarize_expr_control(expr: &Expr) -> ProjectFlowControlSummary {
             summary.merge(summarize_expr_call_control(call.callee(), call.args()));
         }
         Expr::Select(select) => summary.merge(summarize_expr_control(select.target())),
-        Expr::Try { expr: target }
-        | Expr::Unary { expr: target, .. }
+        Expr::Unary { expr: target, .. }
         | Expr::DialogueCall { callee: target, .. }
         | Expr::Closure { body: target, .. } => summary.merge(summarize_expr_control(target)),
+        Expr::Try(try_expr) => summary.merge(summarize_expr_control(try_expr.operand())),
         Expr::Await(awaited) => summary.merge(summarize_expr_control(awaited.operand())),
         Expr::Borrow(borrow) => summary.merge(summarize_expr_control(borrow.operand())),
         Expr::Deref(deref) => summary.merge(summarize_expr_control(deref.operand())),

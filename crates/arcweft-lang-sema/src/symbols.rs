@@ -841,9 +841,8 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
             collect_expr(rhs, uses);
         }
         Expr::Closure { body, .. } => collect_expr(body, uses),
-        Expr::Unary { expr, .. } | Expr::Try { expr } => {
-            collect_expr(expr, uses);
-        }
+        Expr::Unary { expr, .. } => collect_expr(expr, uses),
+        Expr::Try(try_expr) => collect_expr(try_expr.operand(), uses),
         Expr::Await(awaited) => collect_expr(awaited.operand(), uses),
         Expr::Borrow(borrow) => collect_expr(borrow.operand(), uses),
         Expr::Deref(deref) => collect_expr(deref.operand(), uses),

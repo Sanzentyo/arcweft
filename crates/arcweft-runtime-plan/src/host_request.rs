@@ -211,7 +211,7 @@ fn call_parts(expr: &Expr) -> Option<CallParts<'_>> {
             })
         }
         Expr::Await(awaited) => call_parts(awaited.operand()),
-        Expr::Try { expr } => call_parts(expr),
+        Expr::Try(try_expr) => call_parts(try_expr.operand()),
         _ => None,
     }
 }
@@ -243,7 +243,7 @@ fn agent_call_parts(expr: &Expr) -> Option<CallParts<'_>> {
             })
         }
         Expr::Await(awaited) => agent_call_parts(awaited.operand()),
-        Expr::Try { expr } => agent_call_parts(expr),
+        Expr::Try(try_expr) => agent_call_parts(try_expr.operand()),
         _ => None,
     }
 }
