@@ -5,6 +5,7 @@ mod control;
 
 use super::document::ShadowDocumentParser;
 use super::path::emit_path;
+use super::rich_text_grammar::emit_dialogue_rich_text;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_open_delimiter, find_top_level_boundary, trimmed_end,
 };
@@ -151,7 +152,7 @@ fn emit_dialogue_call(
     bump_until(parser, surface.open);
     emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
     let content_end = surface.close.unwrap_or(end);
-    bump_until(parser, content_end);
+    emit_dialogue_rich_text(parser, content_end);
     emit_close_delimiter(
         parser,
         SyntaxKind::CloseBracketNode,

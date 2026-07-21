@@ -42,6 +42,7 @@ define_syntax_kinds! {
     AttributeList,
     FieldList,
     ArgumentList,
+    RichTextArgumentList,
     MatchArmList,
     LogicalLine,
     IndentedSuite,
@@ -204,6 +205,24 @@ define_syntax_kinds! {
     CallExpression,
     SelectExpression,
     DialogueCallExpression,
+    RichTextTag,
+    RichTextEndTag,
+    RichTextTagName,
+    RichTextArgumentPayload,
+    RichTextFxCallPayload,
+    RichTextDialogueCallPayload,
+    RichTextConditionPayload,
+    RichTextPositionalArgument,
+    RichTextNamedArgument,
+    RichTextInvalidArgument,
+    RichTextArgumentKey,
+    RichTextArgumentEquals,
+    RichTextArgumentValue,
+    RichTextArgumentToken,
+    RichTextArgumentContent,
+    RichTextArgumentQuote,
+    RichTextMissingArgumentValue,
+    RichTextInvalidArgumentIssue,
     IndexExpression,
     PipeExpression,
     TryExpression,
@@ -272,6 +291,7 @@ define_syntax_kinds! {
     LifetimeToken,
     NumberToken,
     StringToken,
+    UnterminatedStringToken,
     RawStringToken,
     CharacterToken,
     EntityReferenceToken,
@@ -315,6 +335,7 @@ pub(crate) enum AstTag {
     DeclarationPart,
     Body,
     Delimiter,
+    RichText,
     Recovery,
 }
 
@@ -348,6 +369,7 @@ impl SyntaxKind {
             | Self::AttributeList
             | Self::FieldList
             | Self::ArgumentList
+            | Self::RichTextArgumentList
             | Self::MatchArmList
             | Self::LogicalLine
             | Self::IndentedSuite
@@ -362,6 +384,7 @@ impl SyntaxKind {
             | Self::LifetimeToken
             | Self::NumberToken
             | Self::StringToken
+            | Self::UnterminatedStringToken
             | Self::RawStringToken
             | Self::CharacterToken
             | Self::EntityReferenceToken
@@ -528,6 +551,24 @@ impl SyntaxKind {
             | Self::CallExpression
             | Self::SelectExpression
             | Self::DialogueCallExpression
+            | Self::RichTextTag
+            | Self::RichTextEndTag
+            | Self::RichTextTagName
+            | Self::RichTextArgumentPayload
+            | Self::RichTextFxCallPayload
+            | Self::RichTextDialogueCallPayload
+            | Self::RichTextConditionPayload
+            | Self::RichTextPositionalArgument
+            | Self::RichTextNamedArgument
+            | Self::RichTextInvalidArgument
+            | Self::RichTextArgumentKey
+            | Self::RichTextArgumentEquals
+            | Self::RichTextArgumentValue
+            | Self::RichTextArgumentToken
+            | Self::RichTextArgumentContent
+            | Self::RichTextArgumentQuote
+            | Self::RichTextMissingArgumentValue
+            | Self::RichTextInvalidArgumentIssue
             | Self::IndexExpression
             | Self::PipeExpression
             | Self::TryExpression
@@ -697,6 +738,24 @@ impl SyntaxKind {
             | Self::OmittedBlockTail
             | Self::MissingExpression
             | Self::ErrorExpression => Some(AstTag::Expression),
+            Self::RichTextTag
+            | Self::RichTextEndTag
+            | Self::RichTextTagName
+            | Self::RichTextArgumentPayload
+            | Self::RichTextFxCallPayload
+            | Self::RichTextDialogueCallPayload
+            | Self::RichTextConditionPayload
+            | Self::RichTextPositionalArgument
+            | Self::RichTextNamedArgument
+            | Self::RichTextInvalidArgument
+            | Self::RichTextArgumentKey
+            | Self::RichTextArgumentEquals
+            | Self::RichTextArgumentValue
+            | Self::RichTextArgumentToken
+            | Self::RichTextArgumentContent
+            | Self::RichTextArgumentQuote
+            | Self::RichTextMissingArgumentValue
+            | Self::RichTextInvalidArgumentIssue => Some(AstTag::RichText),
             Self::WildcardPattern
             | Self::BindingPattern
             | Self::MutableBindingPattern
@@ -820,6 +879,7 @@ impl SyntaxKind {
             | Self::AttributeList
             | Self::FieldList
             | Self::ArgumentList
+            | Self::RichTextArgumentList
             | Self::MatchArmList
             | Self::LogicalLine
             | Self::IndentedSuite
@@ -834,6 +894,7 @@ impl SyntaxKind {
             | Self::LifetimeToken
             | Self::NumberToken
             | Self::StringToken
+            | Self::UnterminatedStringToken
             | Self::RawStringToken
             | Self::CharacterToken
             | Self::EntityReferenceToken
@@ -1025,6 +1086,7 @@ impl SyntaxKind {
                 | Self::MissingExpression
                 | Self::MissingPattern
                 | Self::MissingType
+                | Self::RichTextMissingArgumentValue
         )
     }
 
@@ -1038,6 +1100,8 @@ impl SyntaxKind {
                 | Self::ErrorExpression
                 | Self::ErrorPattern
                 | Self::ErrorType
+                | Self::RichTextInvalidArgument
+                | Self::RichTextInvalidArgumentIssue
                 | Self::ErrorNode
         )
     }

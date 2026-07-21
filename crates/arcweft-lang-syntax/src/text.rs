@@ -1,13 +1,19 @@
+mod dialogue_opaque;
 mod rich_text_tag;
+
+pub(crate) use dialogue_opaque::scan_dialogue_opaque_surface;
 
 pub use rich_text_tag::{
     DialogueTagBoundary, MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS,
     MAX_RICH_TEXT_TAG_ARGUMENTS, MAX_RICH_TEXT_TAG_BODY_BYTES, MAX_RICH_TEXT_TAG_KEY_BYTES,
     MAX_RICH_TEXT_TAG_VALUE_BYTES, find_dialogue_tag_boundary,
 };
-use rich_text_tag::{
-    parse_tag, parse_tag_arguments, split_tag_name_attrs, tag_arg_value, trim_rich_text_whitespace,
+pub(crate) use rich_text_tag::{
+    ScannedTagArgValue, ScannedTagArgValueSurface, ScannedTagArgument, ScannedTagArguments,
+    find_dialogue_tag_boundary_before, is_rich_text_whitespace, scan_tag_arg_value,
+    scan_tag_arguments, trim_rich_text_whitespace, utf8_boundary_at_or_before,
 };
+use rich_text_tag::{parse_tag, parse_tag_arguments, split_tag_name_attrs, tag_arg_value};
 
 use crate::ast::{
     common::TextRange,
@@ -170,6 +176,8 @@ struct DialogueTextAccumulator {
     text: String,
     rich_text_tag_count: usize,
     rich_text_argument_count: usize,
+    rich_text_tag_limit_exhausted: bool,
+    rich_text_argument_limit_exhausted: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -189,7 +197,9 @@ impl DialogueTextAccumulator {
     }
 
     fn parse_open_tag(&mut self, source: &str, index: usize) -> Option<usize> {
-        if self.rich_text_tag_count >= MAX_RICH_TEXT_CONTENT_TAGS {
+        if self.rich_text_tag_limit_exhausted
+            || self.rich_text_tag_count >= MAX_RICH_TEXT_CONTENT_TAGS
+        {
             let consumed_to = find_dialogue_tag_boundary(source, index)?.end();
             return Some(self.retain_limited_markup(
                 source,
@@ -213,7 +223,17 @@ impl DialogueTextAccumulator {
 
         let remaining =
             MAX_RICH_TEXT_CONTENT_ARGUMENTS.saturating_sub(self.rich_text_argument_count);
-        let parsed = parse_tag(source, index, remaining)?;
+        let mut parsed = parse_tag(source, index, remaining)?;
+        let reports_argument_limit = parsed.diagnostics.iter().any(|diagnostic| {
+            diagnostic.code() == DialogueTextDiagnosticCode::RichTextContentArgumentLimit
+        });
+        if self.rich_text_argument_limit_exhausted {
+            parsed.diagnostics.retain(|diagnostic| {
+                diagnostic.code() != DialogueTextDiagnosticCode::RichTextContentArgumentLimit
+            });
+        } else if reports_argument_limit {
+            self.rich_text_argument_limit_exhausted = true;
+        }
         self.flush_text();
         self.diagnostics.extend(parsed.diagnostics);
         self.rich_text_tag_count += usize::from(is_rich_text_tag_token(&parsed.token));
@@ -278,13 +298,14 @@ impl DialogueTextAccumulator {
         end: usize,
         limit: RichTextContentLimit,
     ) -> usize {
-        let (code, message, recovery) = match limit {
+        let (code, message, recovery, already_exhausted) = match limit {
             RichTextContentLimit::Tags => (
                 DialogueTextDiagnosticCode::RichTextContentTagLimit,
                 format!(
                     "dialogue content has more than {MAX_RICH_TEXT_CONTENT_TAGS} RichText tags"
                 ),
                 "split the dialogue content or remove excess tags",
+                core::mem::replace(&mut self.rich_text_tag_limit_exhausted, true),
             ),
             RichTextContentLimit::Arguments => (
                 DialogueTextDiagnosticCode::RichTextContentArgumentLimit,
@@ -292,17 +313,18 @@ impl DialogueTextAccumulator {
                     "dialogue content has more than {MAX_RICH_TEXT_CONTENT_ARGUMENTS} RichText arguments"
                 ),
                 "split the dialogue content or remove excess arguments",
+                core::mem::replace(&mut self.rich_text_argument_limit_exhausted, true),
             ),
         };
-        self.flush_text();
-        self.diagnostics.push(DialogueTextDiagnostic::with_code(
-            code,
-            TextRange::new(start, end),
-            message,
-            recovery,
-        ));
-        self.tokens
-            .push(DialogueToken::Text(source[start..end].to_owned()));
+        if !already_exhausted {
+            self.diagnostics.push(DialogueTextDiagnostic::with_code(
+                code,
+                TextRange::new(start, end),
+                message,
+                recovery,
+            ));
+        }
+        self.text.push_str(&source[start..end]);
         end
     }
 }

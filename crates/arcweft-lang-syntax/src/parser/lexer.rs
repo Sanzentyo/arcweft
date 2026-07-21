@@ -111,7 +111,15 @@ impl<'a> DocumentLexer<'a> {
             return Some((SyntaxKind::RawStringToken, len));
         }
         if first == '"' {
-            return Some((SyntaxKind::StringToken, quoted_token(source, '"').0));
+            let (len, closed) = quoted_token(source, '"');
+            return Some(if closed {
+                (SyntaxKind::StringToken, len)
+            } else {
+                (
+                    SyntaxKind::UnterminatedStringToken,
+                    unescaped_recovery_square_close(&source[..len]).unwrap_or(len),
+                )
+            });
         }
         if first == '\'' {
             return Some(character_or_lifetime(source));
@@ -240,6 +248,25 @@ fn quoted_token(source: &str, delimiter: char) -> (usize, bool) {
         }
     }
     (source.len(), false)
+}
+
+/// Leaves an unescaped square close visible to the parser when an unterminated
+/// string would otherwise swallow the rest of a dialogue tag and its siblings.
+/// A normally closed string remains one token, including any `]` in its body.
+fn unescaped_recovery_square_close(source: &str) -> Option<usize> {
+    let mut escaped = false;
+    source.char_indices().find_map(|(index, character)| {
+        if escaped {
+            escaped = false;
+            return None;
+        }
+        if character == '\\' {
+            escaped = true;
+            None
+        } else {
+            (character == ']').then_some(index)
+        }
+    })
 }
 
 fn character_or_lifetime(source: &str) -> (SyntaxKind, usize) {
@@ -461,4 +488,44 @@ fn is_keyword(spelling: &str) -> bool {
             | "while"
             | "yield"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DocumentLexer;
+    use crate::grammar::kinds::SyntaxKind;
+
+    #[test]
+    fn closed_string_keeps_square_close_inside_one_token() {
+        let source = r#""a]b""#;
+        let tokens = DocumentLexer::new(source).lex();
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind(), SyntaxKind::StringToken);
+        assert_eq!(&source[tokens[0].range().as_range()], source);
+    }
+
+    #[test]
+    fn unclosed_string_exposes_unescaped_square_close_for_recovery() {
+        let source = r#""unfinished]next"#;
+        let tokens = DocumentLexer::new(source).lex();
+
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].kind(), SyntaxKind::UnterminatedStringToken);
+        assert_eq!(&source[tokens[0].range().as_range()], r#""unfinished"#);
+        assert_eq!(tokens[1].kind(), SyntaxKind::PunctuationToken);
+        assert_eq!(&source[tokens[1].range().as_range()], "]");
+        assert_eq!(tokens[2].kind(), SyntaxKind::IdentifierToken);
+        assert_eq!(&source[tokens[2].range().as_range()], "next");
+    }
+
+    #[test]
+    fn unclosed_string_keeps_escaped_square_close_inside_token() {
+        let source = r#""unfinished\]next"#;
+        let tokens = DocumentLexer::new(source).lex();
+
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].kind(), SyntaxKind::UnterminatedStringToken);
+        assert_eq!(&source[tokens[0].range().as_range()], source);
+    }
 }

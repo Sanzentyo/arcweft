@@ -32,6 +32,7 @@ pub(crate) enum AstNodeFamily {
     DeclarationPart,
     Body,
     Delimiter,
+    RichText,
     Recovery,
 }
 
@@ -258,6 +259,27 @@ define_family!(DelimiterFamily, DelimiterNode, Delimiter, |kind| matches!(
         | SyntaxKind::OpenAngleNode
         | SyntaxKind::CloseAngleNode
 ));
+define_family!(RichTextFamily, RichTextNode, RichText, |kind| matches!(
+    kind,
+    SyntaxKind::RichTextTag
+        | SyntaxKind::RichTextEndTag
+        | SyntaxKind::RichTextTagName
+        | SyntaxKind::RichTextArgumentPayload
+        | SyntaxKind::RichTextFxCallPayload
+        | SyntaxKind::RichTextDialogueCallPayload
+        | SyntaxKind::RichTextConditionPayload
+        | SyntaxKind::RichTextPositionalArgument
+        | SyntaxKind::RichTextNamedArgument
+        | SyntaxKind::RichTextInvalidArgument
+        | SyntaxKind::RichTextArgumentKey
+        | SyntaxKind::RichTextArgumentEquals
+        | SyntaxKind::RichTextArgumentValue
+        | SyntaxKind::RichTextArgumentToken
+        | SyntaxKind::RichTextArgumentContent
+        | SyntaxKind::RichTextArgumentQuote
+        | SyntaxKind::RichTextMissingArgumentValue
+        | SyntaxKind::RichTextInvalidArgumentIssue
+));
 define_family!(
     RecoveryFamily,
     RecoveryNode,
@@ -279,7 +301,7 @@ mod tests {
     use super::{
         AstNodeFamily, AttributeFamily, BodyFamily, DeclarationPartFamily, DelimiterFamily,
         ExpressionFamily, FamilySpec, ItemFamily, NameFamily, PathFamily, PatternFamily,
-        RecoveryFamily, StatementFamily, TypeFamily,
+        RecoveryFamily, RichTextFamily, StatementFamily, TypeFamily,
     };
     use crate::grammar::kinds::{AstTag, IdentityClass, SyntaxKind};
 
@@ -301,6 +323,7 @@ mod tests {
                 ),
                 (AstNodeFamily::Body, BodyFamily::accepts(kind)),
                 (AstNodeFamily::Delimiter, DelimiterFamily::accepts(kind)),
+                (AstNodeFamily::RichText, RichTextFamily::accepts(kind)),
                 (AstNodeFamily::Recovery, RecoveryFamily::accepts(kind)),
             ]
             .iter()

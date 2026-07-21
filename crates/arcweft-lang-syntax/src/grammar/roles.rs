@@ -30,6 +30,16 @@ pub(crate) enum SyntaxRole {
     Condition,
     Callee,
     Argument(u16),
+    RichTextTag(u32),
+    Payload,
+    Key,
+    Equals,
+    Value,
+    Token,
+    Content,
+    OpeningQuote,
+    ClosingQuote,
+    Issue,
     Target,
     Operand,
     LeftOperand,
@@ -91,6 +101,16 @@ pub(crate) enum SyntaxRoleClass {
     Condition,
     Callee,
     Argument,
+    RichTextTag,
+    Payload,
+    Key,
+    Equals,
+    Value,
+    Token,
+    Content,
+    OpeningQuote,
+    ClosingQuote,
+    Issue,
     Target,
     Operand,
     LeftOperand,
@@ -148,6 +168,16 @@ impl SyntaxRole {
             Self::Condition => SyntaxRoleClass::Condition,
             Self::Callee => SyntaxRoleClass::Callee,
             Self::Argument(_) => SyntaxRoleClass::Argument,
+            Self::RichTextTag(_) => SyntaxRoleClass::RichTextTag,
+            Self::Payload => SyntaxRoleClass::Payload,
+            Self::Key => SyntaxRoleClass::Key,
+            Self::Equals => SyntaxRoleClass::Equals,
+            Self::Value => SyntaxRoleClass::Value,
+            Self::Token => SyntaxRoleClass::Token,
+            Self::Content => SyntaxRoleClass::Content,
+            Self::OpeningQuote => SyntaxRoleClass::OpeningQuote,
+            Self::ClosingQuote => SyntaxRoleClass::ClosingQuote,
+            Self::Issue => SyntaxRoleClass::Issue,
             Self::Target => SyntaxRoleClass::Target,
             Self::Operand => SyntaxRoleClass::Operand,
             Self::LeftOperand => SyntaxRoleClass::LeftOperand,
@@ -200,9 +230,10 @@ impl SyntaxRole {
             | Self::Policy(ordinal)
             | Self::Reference(ordinal)
             | Self::RelatedReference(ordinal) => Some(ordinal as u32),
-            Self::Statement(ordinal) | Self::Element(ordinal) | Self::Recovery(ordinal) => {
-                Some(ordinal)
-            }
+            Self::Statement(ordinal)
+            | Self::RichTextTag(ordinal)
+            | Self::Element(ordinal)
+            | Self::Recovery(ordinal) => Some(ordinal),
             Self::Root
             | Self::Documentation
             | Self::Visibility
@@ -222,6 +253,15 @@ impl SyntaxRole {
             | Self::Tail
             | Self::Condition
             | Self::Callee
+            | Self::Payload
+            | Self::Key
+            | Self::Equals
+            | Self::Value
+            | Self::Token
+            | Self::Content
+            | Self::OpeningQuote
+            | Self::ClosingQuote
+            | Self::Issue
             | Self::Target
             | Self::Operand
             | Self::LeftOperand

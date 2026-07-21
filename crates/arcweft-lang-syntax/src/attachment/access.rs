@@ -10,8 +10,8 @@ use std::sync::Arc;
 use super::family::{
     AstNodeFamily, BodyFamily, BodyNode, DelimiterFamily, DelimiterNode, ExprNode,
     ExpressionFamily, FamilyNode, FamilySpec, ItemFamily, ItemNode, NameFamily, NameNode,
-    PatternFamily, PatternNode, RecoveryFamily, RecoveryNode, StatementFamily, StatementNode,
-    TypeFamily, TypeNode,
+    PatternFamily, PatternNode, RecoveryFamily, RecoveryNode, RichTextFamily, RichTextNode,
+    StatementFamily, StatementNode, TypeFamily, TypeNode,
 };
 use super::node::{
     AssertionStatementKind, AstKind, AstNode, BinaryExpressionKind, CallArgumentKind,
@@ -19,8 +19,12 @@ use super::node::{
     ExpressionBodyKind, FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind,
     LetStatementKind, MissingBodyKind, NameReferenceKind, OmittedBlockTailKind, OuterAttributeKind,
     ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind, ProofBodyKind,
-    ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind, SourceFileKind,
-    TypeArgumentKind, VisibilityKind, WholeBindingPatternKind,
+    ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind, RichTextArgumentPayloadKind,
+    RichTextArgumentTokenKind, RichTextArgumentValueKind, RichTextConditionPayloadKind,
+    RichTextDialogueCallPayloadKind, RichTextEndTagKind, RichTextFxCallPayloadKind,
+    RichTextInvalidArgumentKind, RichTextNamedArgumentKind, RichTextPositionalArgumentKind,
+    RichTextTagKind, RichTextTagNameKind, SourceFileKind, TypeArgumentKind, VisibilityKind,
+    WholeBindingPatternKind,
 };
 use super::{SyntaxAccessError, SyntaxLookupError, SyntaxNodeHandle, SyntaxSnapshotData};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
@@ -102,6 +106,7 @@ const fn role_class_is_ordinal(role: SyntaxRoleClass) -> bool {
             | SyntaxRoleClass::EnsuresClause
             | SyntaxRoleClass::Statement
             | SyntaxRoleClass::Argument
+            | SyntaxRoleClass::RichTextTag
             | SyntaxRoleClass::MatchArm
             | SyntaxRoleClass::Field
             | SyntaxRoleClass::Member
@@ -550,15 +555,95 @@ impl AstNode<CallArgumentKind> {
 }
 
 impl AstNode<DialogueCallExpressionKind> {
-    /// Ordinary call arguments already attached below this dialogue call.
-    ///
-    /// This remains empty for rich-text payload arguments until that payload
-    /// joins the bound grammar in the atomic `ParsedSource` switch. It never
-    /// reparses bracket text or manufactures range-backed shadow nodes.
-    pub(crate) fn attached_arguments(
-        &self,
-    ) -> Result<Vec<AstNode<CallArgumentKind>>, SyntaxAccessError> {
-        self.ordered_exact_children(SyntaxRoleClass::Argument)
+    /// `RichText` tags attached in authored order by the shared dialogue parse.
+    pub(crate) fn rich_text_tags(&self) -> Result<Vec<RichTextNode>, SyntaxAccessError> {
+        self.ordered_family_children::<RichTextFamily>(SyntaxRoleClass::RichTextTag)
+    }
+}
+
+impl AstNode<RichTextTagKind> {
+    pub(crate) fn name(&self) -> Result<AstNode<RichTextTagNameKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::Name)
+    }
+
+    pub(crate) fn payload(&self) -> Result<Option<RichTextNode>, SyntaxAccessError> {
+        self.optional_family_child::<RichTextFamily>(SyntaxRole::Payload)
+    }
+}
+
+impl AstNode<RichTextEndTagKind> {
+    pub(crate) fn name(&self) -> Result<Option<AstNode<RichTextTagNameKind>>, SyntaxAccessError> {
+        self.optional_exact_child(SyntaxRole::Name)
+    }
+}
+
+impl AstNode<RichTextArgumentPayloadKind> {
+    pub(crate) fn arguments(&self) -> Result<Vec<RichTextNode>, SyntaxAccessError> {
+        self.ordered_family_children::<RichTextFamily>(SyntaxRoleClass::Argument)
+    }
+}
+
+impl AstNode<RichTextNamedArgumentKind> {
+    pub(crate) fn key(&self) -> Result<RichTextNode, SyntaxAccessError> {
+        self.required_family_child::<RichTextFamily>(SyntaxRole::Key)
+    }
+
+    pub(crate) fn equals(&self) -> Result<RichTextNode, SyntaxAccessError> {
+        self.required_family_child::<RichTextFamily>(SyntaxRole::Equals)
+    }
+
+    pub(crate) fn value(&self) -> Result<RichTextNode, SyntaxAccessError> {
+        self.required_family_child::<RichTextFamily>(SyntaxRole::Value)
+    }
+}
+
+impl AstNode<RichTextPositionalArgumentKind> {
+    pub(crate) fn value(&self) -> Result<RichTextNode, SyntaxAccessError> {
+        self.required_family_child::<RichTextFamily>(SyntaxRole::Value)
+    }
+}
+
+impl AstNode<RichTextInvalidArgumentKind> {
+    pub(crate) fn issue(&self) -> Result<RichTextNode, SyntaxAccessError> {
+        self.required_family_child::<RichTextFamily>(SyntaxRole::Issue)
+    }
+}
+
+impl AstNode<RichTextArgumentValueKind> {
+    pub(crate) fn token(&self) -> Result<AstNode<RichTextArgumentTokenKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::Token)
+    }
+}
+
+impl AstNode<RichTextArgumentTokenKind> {
+    pub(crate) fn content(&self) -> Result<RichTextNode, SyntaxAccessError> {
+        self.required_family_child::<RichTextFamily>(SyntaxRole::Content)
+    }
+
+    pub(crate) fn opening_quote(&self) -> Result<Option<RichTextNode>, SyntaxAccessError> {
+        self.optional_family_child::<RichTextFamily>(SyntaxRole::OpeningQuote)
+    }
+
+    pub(crate) fn closing_quote(&self) -> Result<Option<RichTextNode>, SyntaxAccessError> {
+        self.optional_family_child::<RichTextFamily>(SyntaxRole::ClosingQuote)
+    }
+}
+
+impl AstNode<RichTextFxCallPayloadKind> {
+    pub(crate) fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
+        self.required_family_child::<ExpressionFamily>(SyntaxRole::Operand)
+    }
+}
+
+impl AstNode<RichTextDialogueCallPayloadKind> {
+    pub(crate) fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
+        self.required_family_child::<ExpressionFamily>(SyntaxRole::Operand)
+    }
+}
+
+impl AstNode<RichTextConditionPayloadKind> {
+    pub(crate) fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
+        self.required_family_child::<ExpressionFamily>(SyntaxRole::Condition)
     }
 }
 

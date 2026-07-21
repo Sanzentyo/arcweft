@@ -1726,6 +1726,60 @@ fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
 }
 
 #[test]
+fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
+    let name = SourceName::path("rich-text-attachment-failure.arcw");
+    let source = concat!(
+        "flow @flow.opening opening {\n",
+        "    let line = alice[本文。[effect .wave amp=2 label=\"強い\"]]\n",
+        "}\n",
+    );
+    let mut database = SyntaxDatabase::default();
+    let lineage_before = database.shadow.next_lineage_for_test();
+    let failed = database.parse_initial_with_attachment_failure(
+        &SourceSnapshotId::initial(name.clone()),
+        source_document(&name, source),
+    );
+
+    assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
+    assert!(database.lineages.is_empty());
+    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+
+    let accepted = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("valid retry uses the unconsumed RichText lineage and slots");
+    let mut control_database = SyntaxDatabase::default();
+    let control_name = SourceName::path("rich-text-attachment-failure.arcw");
+    let control = control_database
+        .parse_initial(
+            SourceSnapshotId::initial(control_name.clone()),
+            source_document(&control_name, source),
+        )
+        .expect("control RichText transaction");
+
+    let slots = |parsed: &ParsedSource| {
+        parsed
+            .attached()
+            .nodes()
+            .filter(|node| {
+                matches!(
+                    node.kind(),
+                    GrammarKind::RichTextTag
+                        | GrammarKind::RichTextArgumentPayload
+                        | GrammarKind::RichTextPositionalArgument
+                        | GrammarKind::RichTextNamedArgument
+                        | GrammarKind::RichTextArgumentValue
+                )
+            })
+            .map(|node| node.id().slot())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(slots(&accepted), slots(&control));
+}
+
+#[test]
 fn fatal_private_attachment_failure_rolls_back_reparse_transaction() {
     let name = SourceName::path("reparse-attachment-failure.arcw");
     let source = "proof first() = ()\n";

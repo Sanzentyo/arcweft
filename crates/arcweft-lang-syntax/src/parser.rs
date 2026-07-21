@@ -90,6 +90,7 @@ mod resource_grammar_tests;
 mod retained_grammar_tests;
 #[cfg(test)]
 mod retained_header_tests;
+mod rich_text_grammar;
 mod shadow_flow;
 #[cfg(test)]
 mod shadow_flow_tests;

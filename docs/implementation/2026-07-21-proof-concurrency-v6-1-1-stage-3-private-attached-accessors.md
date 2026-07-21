@@ -66,24 +66,16 @@ The new tests prove:
 
 ## Rich-text attachment boundary
 
-The public rich-text parser already retains ordered and ranged tag arguments,
-but the private accepted grammar does not yet own identity-bearing rich-text
-tag or tag-argument nodes. `DialogueCallExpression` currently retains its
-bracket payload losslessly as tokens.
+This predecessor originally left RichText payloads as lossless tokens. The
+follow-up [private attached RichText grammar](2026-07-21-aw-ah-007-008-private-rich-text-grammar.md)
+now emits identity-bearing tags, ordered arguments, exact scalar descendants,
+and dedicated expression payloads through the same private lexer/event/
+attachment transaction.
 
-This cut deliberately does not:
-
-- reparse the bracket payload from its source range;
-- manufacture shadow `CallArgument` descendants;
-- wrap the detached `DialogueTagArg` representation; or
-- publish a dual reader.
-
-A direct guard test verifies that rich-text payload spelling produces no
-attached `Argument(n)` children in this private predecessor. Rich-text tags and
-their ordered scalar/expression payloads must join the accepted grammar in the
-same coherent cut that binds the shared parser to `ParsedSource`; only then may
-typed tag-argument accessors be enabled. Ordinary call expressions already use
-the final exact `CallArgument + Argument(n) + Name/Operand` ownership model.
+The follow-up preserves the boundary selected here: it does not manufacture
+ordinary `CallArgument` nodes, wrap detached `DialogueTagArg` values, call the
+public dialogue parser from private production code, or publish a dual reader.
+The public dialogue AST remains authoritative until the atomic public switch.
 
 ## Completion boundary
 
@@ -95,7 +87,6 @@ This is still private Stage 3 preparation. It does not:
   MCP, or capture consumers;
 - preserve the detached AST with an adapter, alias, compatibility wrapper, or
   second public reader;
-- implement the bound rich-text grammar described above; or
 - claim that the package's atomic typed-AST/HIR/runtime identity migration is
   complete.
 

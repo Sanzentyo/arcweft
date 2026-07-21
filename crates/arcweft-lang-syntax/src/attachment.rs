@@ -338,20 +338,25 @@ mod tests {
     use core::num::NonZeroU64;
 
     use super::access::{BlockTailNode, DeclarationBodyNode};
-    use super::family::{DelimiterFamily, ExpressionFamily, FamilyNode, TypeFamily};
+    use super::family::{DelimiterFamily, ExpressionFamily, FamilyNode, RichTextNode, TypeFamily};
     use super::node::{
         AssertionStatementKind, BinaryExpressionKind, CallExpressionKind, CharacterBodyKind,
         CharacterDeclarationItemKind, DialogueCallExpressionKind, ExpressionBodyKind,
         FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind, LetStatementKind,
         PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
-        RecordPatternKind, WholeBindingPatternKind,
+        RecordPatternKind, RichTextArgumentPayloadKind, RichTextArgumentValueKind,
+        RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind, RichTextEndTagKind,
+        RichTextFxCallPayloadKind, RichTextInvalidArgumentKind, RichTextNamedArgumentKind,
+        RichTextTagKind, WholeBindingPatternKind,
     };
     use super::{
         AstNode, GrammarIdentityMap, PredicateItemKind, ProofItemKind, SyntaxDatabaseId,
         SyntaxLineageId, SyntaxLookupError, SyntaxNodeId, SyntaxSnapshotId, attach_typed_tree,
     };
+    use crate::ast::dialogue::DialogueToken;
     use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole, SyntaxRoleClass};
     use crate::parser::parse_shadow_document;
+    use crate::text::parse_dialogue_text;
 
     fn document(text: &str) -> Arc<SourceDocument> {
         Arc::new(
@@ -872,10 +877,17 @@ mod tests {
     }
 
     #[test]
-    fn dialogue_rich_text_does_not_invent_detached_tag_argument_nodes() {
+    fn dialogue_rich_text_owns_ordered_ranged_attached_descendants() {
         let source = concat!(
             "flow @flow.opening opening {\n",
-            "    let line = alice[本文。[effect .wave amp=2px]]\n",
+            "    let line = alice[本文。",
+            "[transform .offset x=4px pattern==value label='二 px' missing= bad=\\q]",
+            "[fx warning(accent=\"urgent\")]",
+            "[call flash(level=2)]",
+            "[! blink(level=3)]",
+            "[if player.ready]",
+            "[.sparkle]",
+            "[/]]\n",
             "}\n",
         );
         let snapshot = attach(source);
@@ -885,23 +897,390 @@ mod tests {
             .expect("dialogue expression")
             .cast::<DialogueCallExpressionKind>()
             .unwrap();
-        assert!(
-            dialogue.attached_arguments().unwrap().is_empty(),
-            "rich-text arguments join only with the bound shared-parser switch"
-        );
-        assert!(
-            dialogue
-                .syntax()
-                .children()
-                .iter()
-                .all(|child| child.role().class() != SyntaxRoleClass::Argument)
-        );
-        assert_eq!(dialogue.range(), SourceRange::new(44, 82));
+        assert_eq!(snapshot.root_handle().rowan().text().to_string(), source);
 
-        assert!(matches!(
-            dialogue.required_family_child::<ExpressionFamily>(SyntaxRole::Argument(0)),
-            Err(super::SyntaxAccessError::MissingFamilyChild { .. })
-        ));
+        let tags = dialogue.rich_text_tags().unwrap();
+        assert_eq!(tags.len(), 7);
+        for (ordinal, tag) in tags.iter().enumerate() {
+            assert_eq!(
+                tag.role(),
+                SyntaxRole::RichTextTag(u32::try_from(ordinal).unwrap())
+            );
+        }
+
+        assert_rich_text_argument_descendants(source, &tags[0]);
+        assert_rich_text_expression_payloads(&tags[1..5]);
+        let sparkle = tags[5].cast::<RichTextTagKind>().unwrap();
+        assert_eq!(
+            sparkle.name().unwrap().syntax().rowan().text().to_string(),
+            ".sparkle"
+        );
+        assert!(sparkle.payload().unwrap().is_none());
+        assert!(
+            tags[6]
+                .cast::<RichTextEndTagKind>()
+                .unwrap()
+                .name()
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    fn assert_rich_text_argument_descendants(source: &str, tag: &RichTextNode) {
+        let tag = tag.cast::<RichTextTagKind>().unwrap();
+        assert_eq!(
+            tag.name().unwrap().syntax().rowan().text().to_string(),
+            "transform"
+        );
+        let payload = tag
+            .payload()
+            .unwrap()
+            .unwrap()
+            .cast::<RichTextArgumentPayloadKind>()
+            .unwrap();
+        let arguments = payload.arguments().unwrap();
+        assert_eq!(arguments.len(), 6);
+        for (ordinal, argument) in arguments.iter().enumerate() {
+            assert_eq!(
+                argument.role(),
+                SyntaxRole::Argument(u16::try_from(ordinal).unwrap())
+            );
+        }
+
+        assert_split_equals_argument(&arguments[2]);
+        assert_quoted_argument(source, &arguments[3]);
+        assert_missing_and_invalid_arguments(source, &arguments[4], &arguments[5]);
+    }
+
+    fn assert_split_equals_argument(argument: &RichTextNode) {
+        let split_equals = argument.cast::<RichTextNamedArgumentKind>().unwrap();
+        let equals = split_equals.equals().unwrap();
+        assert_eq!(equals.syntax().rowan().text().to_string(), "=");
+        assert_eq!(
+            equals.syntax().rowan().first_token().unwrap().kind().0,
+            SyntaxKind::PunctuationToken as u16
+        );
+        assert_eq!(
+            split_equals
+                .value()
+                .unwrap()
+                .cast::<RichTextArgumentValueKind>()
+                .unwrap()
+                .token()
+                .unwrap()
+                .content()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "=value"
+        );
+    }
+
+    #[test]
+    fn dialogue_non_tag_surfaces_do_not_gain_rich_text_identity() {
+        let source = concat!(
+            "flow @flow.opening opening {\n",
+            "    let line = alice[本文。",
+            "\\[effect .wave]",
+            "#[score]",
+            "$([effect .wave])",
+            "|[base](ruby)",
+            "[raw]literal [p][/raw]",
+            "[raw: [p]x]",
+            "[em:夢]",
+            "[color #a8:night]",
+            "[ruby rt=x]base[/ruby]",
+            "[effect .wave]",
+            "]\n",
+            "}\n",
+        );
+        let snapshot = attach(source);
+        let dialogue = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::DialogueCallExpression)
+            .expect("dialogue expression")
+            .cast::<DialogueCallExpressionKind>()
+            .unwrap();
+        let tags = dialogue.rich_text_tags().unwrap();
+
+        assert_eq!(tags.len(), 1);
+        assert_eq!(
+            tags[0]
+                .cast::<RichTextTagKind>()
+                .unwrap()
+                .name()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "effect"
+        );
+        assert_eq!(tags[0].role(), SyntaxRole::RichTextTag(0));
+        assert_eq!(snapshot.root_handle().rowan().text().to_string(), source);
+    }
+
+    fn assert_quoted_argument(source: &str, argument: &RichTextNode) {
+        let quoted = argument.cast::<RichTextNamedArgumentKind>().unwrap();
+        assert_eq!(
+            quoted.key().unwrap().syntax().rowan().text().to_string(),
+            "label"
+        );
+        assert_eq!(
+            quoted.equals().unwrap().syntax().rowan().text().to_string(),
+            "="
+        );
+        let value = quoted
+            .value()
+            .unwrap()
+            .cast::<RichTextArgumentValueKind>()
+            .unwrap();
+        assert_eq!(&source[value.range().as_range()], "'二 px'");
+        let token = value.token().unwrap();
+        assert_eq!(
+            token.content().unwrap().syntax().rowan().text().to_string(),
+            "二 px"
+        );
+        assert_eq!(
+            token
+                .opening_quote()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "'"
+        );
+        assert_eq!(
+            token
+                .closing_quote()
+                .unwrap()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "'"
+        );
+    }
+
+    fn assert_missing_and_invalid_arguments(
+        source: &str,
+        missing: &RichTextNode,
+        invalid: &RichTextNode,
+    ) {
+        let missing = missing.cast::<RichTextNamedArgumentKind>().unwrap();
+        let missing_value = missing.value().unwrap();
+        assert_eq!(
+            missing_value.kind(),
+            SyntaxKind::RichTextMissingArgumentValue
+        );
+        assert_eq!(missing_value.range().start(), missing_value.range().end());
+        assert_eq!(missing_value.range().start(), missing.range().end());
+
+        let invalid = invalid.cast::<RichTextInvalidArgumentKind>().unwrap();
+        assert_eq!(&source[invalid.range().as_range()], "bad=\\q");
+        assert_eq!(
+            invalid.issue().unwrap().syntax().rowan().text().to_string(),
+            "\\q"
+        );
+    }
+
+    fn assert_rich_text_expression_payloads(tags: &[RichTextNode]) {
+        let fx = tags[0]
+            .cast::<RichTextTagKind>()
+            .unwrap()
+            .payload()
+            .unwrap()
+            .unwrap()
+            .cast::<RichTextFxCallPayloadKind>()
+            .unwrap();
+        assert_eq!(
+            fx.expression().unwrap().syntax().rowan().text().to_string(),
+            "warning(accent=\"urgent\")"
+        );
+        let call = tags[1]
+            .cast::<RichTextTagKind>()
+            .unwrap()
+            .payload()
+            .unwrap()
+            .unwrap()
+            .cast::<RichTextDialogueCallPayloadKind>()
+            .unwrap();
+        assert_eq!(
+            call.expression()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "flash(level=2)"
+        );
+        let bang = tags[2].cast::<RichTextTagKind>().unwrap();
+        assert_eq!(
+            bang.name().unwrap().syntax().rowan().text().to_string(),
+            "!"
+        );
+        let bang = bang
+            .payload()
+            .unwrap()
+            .unwrap()
+            .cast::<RichTextDialogueCallPayloadKind>()
+            .unwrap();
+        assert_eq!(
+            bang.expression()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "blink(level=3)"
+        );
+        let condition = tags[3]
+            .cast::<RichTextTagKind>()
+            .unwrap()
+            .payload()
+            .unwrap()
+            .unwrap()
+            .cast::<RichTextConditionPayloadKind>()
+            .unwrap();
+        assert_eq!(
+            condition
+                .expression()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "player.ready"
+        );
+    }
+
+    #[test]
+    fn attached_rich_text_ranges_match_the_public_lossless_scan() {
+        let tag_source = "[effect .wave\u{3000}amp=2 label=\"游 ゴシック\"]";
+        let source = format!(
+            "flow @flow.opening opening {{\r\n    let line = alice[本文。{tag_source}]\r\n}}\r\n"
+        );
+        let snapshot = attach(&source);
+        assert_eq!(snapshot.root_handle().rowan().text().to_string(), source);
+        let dialogue = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::DialogueCallExpression)
+            .unwrap()
+            .cast::<DialogueCallExpressionKind>()
+            .unwrap();
+        let private_tag = dialogue.rich_text_tags().unwrap().remove(0);
+        let private_tag = private_tag.cast::<RichTextTagKind>().unwrap();
+        let payload = private_tag
+            .payload()
+            .unwrap()
+            .unwrap()
+            .cast::<RichTextArgumentPayloadKind>()
+            .unwrap();
+        let private_arguments = payload.arguments().unwrap();
+
+        let parsed = parse_dialogue_text(tag_source);
+        assert!(
+            parsed.diagnostics().is_empty(),
+            "{:?}",
+            parsed.diagnostics()
+        );
+        let public_tag = parsed
+            .tokens()
+            .iter()
+            .find_map(|token| match token {
+                DialogueToken::Tag(tag) => Some(tag),
+                _ => None,
+            })
+            .unwrap();
+        let base = source.find(tag_source).unwrap();
+        assert_eq!(
+            private_tag.range(),
+            SourceRange::new(
+                base + public_tag.range().start(),
+                base + public_tag.range().end(),
+            )
+        );
+        assert_eq!(private_arguments.len(), public_tag.arguments().len());
+        for (private, public) in private_arguments.iter().zip(public_tag.arguments()) {
+            assert_eq!(
+                private.range(),
+                SourceRange::new(base + public.range().start(), base + public.range().end())
+            );
+        }
+
+        let private_label = private_arguments[2]
+            .cast::<RichTextNamedArgumentKind>()
+            .unwrap();
+        let public_label = &public_tag.arguments()[2];
+        let public_value = public_label.value().unwrap();
+        assert_eq!(
+            private_label.key().unwrap().range(),
+            shifted(base, public_label.name_range().unwrap())
+        );
+        assert_eq!(
+            private_label.equals().unwrap().range(),
+            shifted(base, public_label.equals_range().unwrap())
+        );
+        let private_value = private_label
+            .value()
+            .unwrap()
+            .cast::<RichTextArgumentValueKind>()
+            .unwrap();
+        let private_token = private_value.token().unwrap();
+        assert_eq!(
+            private_token.range(),
+            shifted(base, public_value.token_range())
+        );
+        assert_eq!(
+            private_token.content().unwrap().range(),
+            shifted(base, public_value.content_range())
+        );
+        assert_eq!(
+            private_token.opening_quote().unwrap().unwrap().range(),
+            shifted(base, public_value.opening_quote_range().unwrap())
+        );
+        assert_eq!(
+            private_token.closing_quote().unwrap().unwrap().range(),
+            shifted(base, public_value.closing_quote_range().unwrap())
+        );
+    }
+
+    fn shifted(base: usize, range: crate::ast::common::TextRange) -> SourceRange {
+        SourceRange::new(base + range.start(), base + range.end())
+    }
+
+    #[test]
+    fn equal_range_rich_text_recovery_nodes_keep_distinct_path_identity() {
+        let source = concat!(
+            "flow @flow.opening opening {\n",
+            "    let line = alice[本文。[effect \\q]]\n",
+            "}\n",
+        );
+        let snapshot = attach(source);
+        let invalid = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::RichTextInvalidArgument)
+            .unwrap()
+            .cast::<RichTextInvalidArgumentKind>()
+            .unwrap();
+        let issue = invalid.issue().unwrap();
+
+        assert_eq!(invalid.range(), issue.range());
+        assert_ne!(invalid.id(), issue.id());
+        assert_eq!(
+            snapshot.bind_rowan(invalid.syntax().rowan()).unwrap().id(),
+            invalid.id()
+        );
+        assert_eq!(
+            snapshot.bind_rowan(issue.syntax().rowan()).unwrap().id(),
+            issue.id()
+        );
+        assert_eq!(snapshot.root_handle().rowan().text().to_string(), source);
     }
 
     #[test]

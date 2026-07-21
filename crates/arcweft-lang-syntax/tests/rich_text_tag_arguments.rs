@@ -422,7 +422,8 @@ fn exact_tag_body(bytes: usize) -> String {
 
 #[test]
 fn syntax_content_limits_stop_retaining_excess_nodes_and_arguments() {
-    let tags = "[p]".repeat(MAX_RICH_TEXT_CONTENT_TAGS + 1);
+    let excess_tags = 3;
+    let tags = "[p]".repeat(MAX_RICH_TEXT_CONTENT_TAGS + excess_tags);
     let parsed = parse_dialogue_text(&tags);
     assert_eq!(
         parsed
@@ -434,6 +435,10 @@ fn syntax_content_limits_stop_retaining_excess_nodes_and_arguments() {
             .count(),
         1
     );
+    assert!(matches!(
+        parsed.tokens().last(),
+        Some(DialogueToken::Text(text)) if text == &"[p]".repeat(excess_tags)
+    ));
 
     let one_tag = format!(
         "[effect {}]",
@@ -442,11 +447,31 @@ fn syntax_content_limits_stop_retaining_excess_nodes_and_arguments() {
             .collect::<Vec<_>>()
             .join(" ")
     );
-    let content = one_tag.repeat(MAX_RICH_TEXT_CONTENT_ARGUMENTS / MAX_RICH_TEXT_TAG_ARGUMENTS + 1);
+    let content = one_tag.repeat(MAX_RICH_TEXT_CONTENT_ARGUMENTS / MAX_RICH_TEXT_TAG_ARGUMENTS + 3);
     let parsed = parse_dialogue_text(&content);
-    assert!(parsed.diagnostics().iter().any(|diagnostic| {
-        diagnostic.code() == DialogueTextDiagnosticCode::RichTextContentArgumentLimit
-    }));
+    assert_eq!(
+        parsed
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.code() == DialogueTextDiagnosticCode::RichTextContentArgumentLimit
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        parsed
+            .tokens()
+            .iter()
+            .filter_map(|token| match token {
+                DialogueToken::Tag(tag) | DialogueToken::InferredTag(tag) => {
+                    Some(tag.arguments().len())
+                }
+                _ => None,
+            })
+            .sum::<usize>(),
+        MAX_RICH_TEXT_CONTENT_ARGUMENTS
+    );
 }
 
 #[test]

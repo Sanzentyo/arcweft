@@ -229,6 +229,27 @@ define_ast_kinds!(DELIMITER_MARKERS, Delimiter;
     CloseAngleKind => CloseAngleNode,
 );
 
+define_ast_kinds!(RICH_TEXT_MARKERS, RichText;
+    RichTextTagKind => RichTextTag,
+    RichTextEndTagKind => RichTextEndTag,
+    RichTextTagNameKind => RichTextTagName,
+    RichTextArgumentPayloadKind => RichTextArgumentPayload,
+    RichTextFxCallPayloadKind => RichTextFxCallPayload,
+    RichTextDialogueCallPayloadKind => RichTextDialogueCallPayload,
+    RichTextConditionPayloadKind => RichTextConditionPayload,
+    RichTextPositionalArgumentKind => RichTextPositionalArgument,
+    RichTextNamedArgumentKind => RichTextNamedArgument,
+    RichTextInvalidArgumentKind => RichTextInvalidArgument,
+    RichTextArgumentKeyKind => RichTextArgumentKey,
+    RichTextArgumentEqualsKind => RichTextArgumentEquals,
+    RichTextArgumentValueKind => RichTextArgumentValue,
+    RichTextArgumentTokenKind => RichTextArgumentToken,
+    RichTextArgumentContentKind => RichTextArgumentContent,
+    RichTextArgumentQuoteKind => RichTextArgumentQuote,
+    RichTextMissingArgumentValueKind => RichTextMissingArgumentValue,
+    RichTextInvalidArgumentIssueKind => RichTextInvalidArgumentIssue,
+);
+
 define_ast_kinds!(RECOVERY_MARKERS, Recovery;
     WrongFamilyReferenceKind => WrongFamilyReference,
     MissingDeclarationIdKind => MissingDeclarationId,
@@ -393,7 +414,7 @@ mod tests {
     use super::{
         ATTRIBUTE_MARKERS, BODY_MARKERS, DECLARATION_PART_MARKERS, DELIMITER_MARKERS,
         EXPRESSION_MARKERS, ITEM_MARKERS, NAME_MARKERS, PATH_MARKERS, PATTERN_MARKERS,
-        RECOVERY_MARKERS, SOURCE_FILE_MARKERS, STATEMENT_MARKERS, TYPE_MARKERS,
+        RECOVERY_MARKERS, RICH_TEXT_MARKERS, SOURCE_FILE_MARKERS, STATEMENT_MARKERS, TYPE_MARKERS,
     };
     use crate::grammar::kinds::{AstTag, IdentityClass, SyntaxKind};
 
@@ -411,6 +432,7 @@ mod tests {
             PATH_MARKERS,
             BODY_MARKERS,
             DELIMITER_MARKERS,
+            RICH_TEXT_MARKERS,
             RECOVERY_MARKERS,
             DECLARATION_PART_MARKERS,
         ];

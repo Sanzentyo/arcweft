@@ -138,3 +138,24 @@ fn shadow_root_keeps_non_declarations_as_generic_errors() {
     );
     assert_eq!(built.green().to_string(), source);
 }
+
+#[test]
+fn unterminated_non_dialogue_string_is_not_a_literal_expression() {
+    let source = "fn bad() { let values = [\"unfinished] }\n";
+    let tokens = DocumentLexer::new(source).lex();
+    assert!(
+        tokens
+            .iter()
+            .any(|token| token.kind == SyntaxKind::UnterminatedStringToken)
+    );
+
+    let built = parse_shadow_document(&document(source)).unwrap();
+    assert!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .any(|entry| entry.kind() == SyntaxKind::ErrorExpression)
+    );
+    assert_eq!(built.green().to_string(), source);
+}

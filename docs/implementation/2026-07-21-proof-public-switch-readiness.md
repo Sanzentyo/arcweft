@@ -52,11 +52,15 @@ remaining prerequisites are:
 3. complete the Lang 01.4 public `res` migration for configured resources while
    retaining dedicated stable-identity declarations such as Character, View,
    Action, Activity, Signal, Metric, Layer, and Asset;
-4. carry RichText arguments into the private grammar as identity-bearing,
-   ordered, ranged children after the AW-AH-007/008 owner schemas settle; and
-5. preserve the already-selected Lang 01.5 and trusted-proof ownership rather
+4. preserve the already-selected Lang 01.5 and trusted-proof ownership rather
    than adding private nodes for removed `extern mod`, `dialogue defaults`,
    source `content`, concrete Activity origin, or `trusted axiom` syntax.
+
+The former RichText prerequisite is now complete in the
+[private attached RichText grammar](2026-07-21-aw-ah-007-008-private-rich-text-grammar.md):
+tags, ordered scalar arguments, exact recovery descendants, and dedicated
+expression payloads share the private lexer/event/attachment transaction
+without publishing a second reader.
 
 The unreturned correction contracts remain explicit non-goals. Their absence
 does not justify inventing a wire shape or preserving an obsolete source form.

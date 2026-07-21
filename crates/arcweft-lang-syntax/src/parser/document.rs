@@ -80,6 +80,10 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
             .map(|token| &self.source[token.range().as_range()])
     }
 
+    pub(super) const fn source(&self) -> &'source str {
+        self.source
+    }
+
     pub(super) fn current_offset(&self) -> usize {
         self.current().map_or_else(
             || {
@@ -101,6 +105,17 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         if self.budget.event(&event) {
             self.events.push(event);
         }
+        self.cursor += 1;
+        Some(token)
+    }
+
+    /// Advances one already-lexed token without emitting it.
+    ///
+    /// `RichText` uses this only when the same token is partitioned into exact
+    /// quote/content ranges in the current event transaction. The caller must
+    /// emit lossless replacement token events before building the tree.
+    pub(super) fn take_for_partition(&mut self) -> Option<LexToken> {
+        let token = self.current()?;
         self.cursor += 1;
         Some(token)
     }
@@ -193,6 +208,32 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 
     pub(super) fn token_at(&self, index: usize) -> Option<LexToken> {
         self.tokens.get(index).copied()
+    }
+
+    pub(super) fn offset_at_token_boundary(&self, index: usize) -> Option<usize> {
+        if let Some(token) = self.tokens.get(index) {
+            return Some(token.range().start());
+        }
+        (index == self.tokens.len()).then(|| {
+            self.tokens
+                .last()
+                .map_or(self.empty_offset, |token| token.range().end())
+        })
+    }
+
+    pub(super) fn token_boundary_index(&self, offset: usize) -> Option<usize> {
+        if offset
+            == self
+                .tokens
+                .last()
+                .map_or(self.empty_offset, |token| token.range().end())
+        {
+            return Some(self.tokens.len());
+        }
+        self.tokens[self.cursor..]
+            .iter()
+            .position(|token| token.range().start() == offset)
+            .map(|relative| self.cursor + relative)
     }
 
     pub(super) fn text_of(&self, token: LexToken) -> &'source str {
