@@ -37,6 +37,10 @@ restoring `stream fn`. The first returned runtime-wire package remained
 internally inconsistent; its required correction is
 [Lang-01.3.1.2.1 typed Stream runtime/wire contract correction](../reviews/requests/2026-07-19-lang-01.3.1.2.1-typed-stream-runtime-wire-contract-correction.md).
 
+The returned correction still loses values captured by earlier parameter
+groups for curried external operations. Its narrow remaining blocker is
+[Lang-01.3.1.2.2 curried external Stream runtime argument projection](../reviews/requests/2026-07-22-lang-01.3.1.2.2-curried-external-stream-runtime-argument-projection-correction.md).
+
 ## Package verification
 
 The package contains:
@@ -135,7 +139,8 @@ the returned Lang-01.3.1.2.1 correction.
 
 1. Finish the Lang-01.1.1 ordinary-function/generator substrate.
 2. Apply the accepted Lang-01.3.1.1 callable surface.
-3. Obtain and apply the corrected Lang-01.3.1.2.1 core/AWBC/save contract.
+3. Obtain and apply Lang-01.3.1.2.2, then consume the otherwise concrete
+   Lang-01.3.1.2.1 core/AWBC/save contract.
 4. Migrate syntax, HIR/sema/callable catalog, then RuntimePlan/core.
 5. Perform the AWBC/data-format cut atomically before publishing a state with
    both Source and Stream paths.

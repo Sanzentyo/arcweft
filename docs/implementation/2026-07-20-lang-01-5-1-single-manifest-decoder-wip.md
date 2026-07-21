@@ -351,6 +351,11 @@ contract. Its eventual atomic inventory includes:
 - compiler/bundle/watch/LSP consumers of the injected typed facts; and
 - ordinary parser rejection of source `content` with no historical node.
 
+The returned package's binary topology and Character-package parts are
+concrete, but its closed family incorrectly retains the independently removed
+Source entity. Final family and admission work therefore also waits on
+[Lang-01.5.1.2.1 content-root family / Source-elimination reconciliation](../reviews/requests/2026-07-22-lang-01.5.1.2.1-content-root-family-source-elimination-reconciliation.md).
+
 Until then E-22, E-24, and E-29 remain partial and E-25 through E-28 remain
 open. A text-only `SourceDocument`, `Arc<str>` overlay, directory scan, or
 ad-hoc digest is not an acceptable stand-in.
