@@ -6,6 +6,7 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_lang_sema::view_part::{CheckedViewPartCatalog, CheckedViewPartExport};
 use arcweft_source::{SourceDocumentId, SourceSpan};
+use arcweft_view::{ViewId, ViewIdError};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -30,6 +31,8 @@ pub enum ViewPartLowerError {
     #[error("exported-part source range exceeds its source document extent")]
     SourceOutOfBounds,
     #[error(transparent)]
+    InvalidOwner(#[from] ViewIdError),
+    #[error(transparent)]
     ProductSource(#[from] ViewProductBuildError),
 }
 
@@ -53,17 +56,19 @@ pub fn lower_view_part_exports(
     emitted_owners: &BTreeSet<ViewDefinitionRef>,
     source_map: &SourceMapSection,
 ) -> Result<LoweredViewPartExports, ViewPartLowerError> {
-    let selected = catalog
-        .owners()
-        .iter()
-        .filter_map(|owner| {
-            let owner_ref = ViewDefinitionRef::from_public_id(owner.id().public_id().clone());
-            emitted_owners
-                .contains(&owner_ref)
-                .then_some((owner_ref, owner.exports()))
-        })
-        .flat_map(|(owner, exports)| exports.iter().map(move |export| (owner.clone(), export)))
-        .collect::<Vec<_>>();
+    let mut selected = Vec::new();
+    for owner in catalog.owners() {
+        let owner_ref =
+            ViewDefinitionRef::new(ViewId::try_new(owner.id().public_id().as_str().to_owned())?);
+        if emitted_owners.contains(&owner_ref) {
+            selected.extend(
+                owner
+                    .exports()
+                    .iter()
+                    .map(|export| (owner_ref.clone(), export)),
+            );
+        }
+    }
 
     let mut source_refs = selected
         .iter()

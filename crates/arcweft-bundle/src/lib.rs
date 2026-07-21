@@ -1131,7 +1131,7 @@ impl ArcweftBundle {
             .iter()
             .flat_map(|program| program.definitions.iter())
         {
-            let view = definition.public_id.to_view_id();
+            let view = definition.public_id.view_id().clone();
             if definitions.insert(view.clone(), definition).is_some() {
                 return Err(BundleCodecError::DuplicateViewDefinition { view });
             }

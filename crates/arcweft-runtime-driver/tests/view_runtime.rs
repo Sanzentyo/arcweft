@@ -109,11 +109,11 @@ fn program_id(value: &str) -> ViewProgramId {
 }
 
 fn view_id(value: &str) -> ViewId {
-    ViewId::try_new_engine_owned(value).unwrap()
+    ViewId::parse_public(value).unwrap()
 }
 
 fn definition_ref(value: &str) -> ViewDefinitionRef {
-    ViewDefinitionRef::try_new(value).unwrap()
+    ViewDefinitionRef::new(view_id(value))
 }
 
 fn minimal_program(program: &str, view: &str, schema: u64) -> ViewProgramResource {
@@ -685,10 +685,7 @@ fn exported_part(
 ) -> ViewExportedPart {
     let source = &source_refs[0];
     ViewExportedPart {
-        target: ViewOwnedPartRef::new(
-            ViewDefinitionRef::try_new(owner).expect("valid View owner"),
-            local_part(local),
-        ),
+        target: ViewOwnedPartRef::new(definition_ref(owner), local_part(local)),
         public_name: public_part(public),
         source: ViewPartExportSourceRef {
             declaration: source_range(source_refs, source, 0, 32),

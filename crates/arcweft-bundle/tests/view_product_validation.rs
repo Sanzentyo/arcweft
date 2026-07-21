@@ -8,7 +8,7 @@ use arcweft_bundle::resource_codec::{
     ViewProductValidationLimits, ViewProgramResource,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::{ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
 
 #[test]
 fn complete_product_accepts_exact_revision_and_exposes_only_validated_views() {
@@ -311,10 +311,7 @@ fn exported_program(
         program_id: arcweft_view::ViewProgramId::try_new("view.program.export-validation").unwrap(),
         source_refs: source_refs.to_owned(),
         definitions: vec![ViewDefinitionResource {
-            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                "view.Validation",
-            )
-            .unwrap(),
+            public_id: view_ref("view.Validation"),
             body: ViewInstructionSpan::new(0, 1),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -328,7 +325,7 @@ fn exported_program(
         }],
         exported_parts: vec![ViewExportedPart {
             target: ViewOwnedPartRef::new(
-                ViewDefinitionRef::try_new("view.Validation").expect("owner"),
+                view_ref("view.Validation"),
                 ViewPartLocalName::try_new("part.local").expect("local part"),
             ),
             public_name: ViewPartName::try_new("part.public").expect("public part"),
@@ -344,12 +341,16 @@ fn exported_program(
 
 fn definition(public_id: &str, start: u32, end: u32) -> ViewDefinitionResource {
     ViewDefinitionResource {
-        public_id: ViewDefinitionRef::try_new(public_id).expect("definition ID"),
+        public_id: view_ref(public_id),
         body: ViewInstructionSpan::new(start, end),
         styles: Vec::new(),
         parameters: Vec::new(),
         state_schema_hash: 0,
     }
+}
+
+fn view_ref(value: &str) -> ViewDefinitionRef {
+    ViewDefinitionRef::new(ViewId::try_new(value).expect("definition ID"))
 }
 
 fn validate_without_sources(

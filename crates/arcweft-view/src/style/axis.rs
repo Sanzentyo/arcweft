@@ -752,13 +752,13 @@ mod tests {
                 ViewBoxAxisMode::VerticalRl,
                 ViewStylePriority::new(1, 2, 3, 4, 5, 6),
                 &ViewStyleContributionSource::Sheet {
-                    sheet: ViewStyleSheetId::try_new("main-style").unwrap(),
+                    sheet: ViewStyleSheetId::try_new("style.main").unwrap(),
                     rule: ViewStyleSourceId::new(7),
                     declaration: ViewStyleSourceId::new(8),
                 },
             )
             .value(),
-            0x6298_9f22_c1b5_63c5
+            0xd03d_1f32_86aa_ae2c
         );
     }
 }

@@ -939,7 +939,7 @@ mod tests {
     fn every_node_producer_preserves_ordered_typed_style_applications() {
         let applications = vec![
             ViewStyleApplicationTarget::named(
-                ViewStyleSheetId::try_new("app.style.primary")
+                ViewStyleSheetId::try_new("style.app.primary")
                     .expect("test sheet ID must be valid"),
             ),
             ViewStyleApplicationTarget::inline(ViewStylePatchId::new(7)),

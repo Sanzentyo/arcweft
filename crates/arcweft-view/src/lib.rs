@@ -101,9 +101,10 @@ pub use style::{
     ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult,
     ViewStyleResolver, ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule,
     ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleToken, ViewStyleTokenId,
-    ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection,
-    ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily, ViewTextScaleComparison,
+    ViewStyleSheetId, ViewStyleSheetIdError, ViewStyleSourceId, ViewStyleSpecificity,
+    ViewStyleToken, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
+    ViewStyleTraceRejection, ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
+    ViewTextScaleComparison,
 };
 pub use text_field::{
     ExternalTextUpdatePolicy, TextEditError, TextEditOutcome, TextEditState, TextEditorMode,
@@ -118,9 +119,9 @@ pub use value_program::{
     ViewValueProgramInventory, ViewValueSlotSnapshot,
 };
 pub use view::{
-    AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewId, ViewIdentityError,
-    ViewImplementation, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewProgramId,
-    ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
+    AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewId, ViewIdError,
+    ViewIdentityError, ViewImplementation, ViewMountAllocationError, ViewMountAllocator,
+    ViewMountId, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
 };
 
 /// Stable key for one retained View fragment node.

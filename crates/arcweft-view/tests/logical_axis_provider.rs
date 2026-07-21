@@ -1678,7 +1678,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
         let program = ViewStyleProgram::try_new(
             vec![
                 make_sheet(
-                    "axis.sheet.first",
+                    "style.axis.sheet.first",
                     axis_rule(
                         1,
                         Vec::new(),
@@ -1688,7 +1688,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
                     ),
                 ),
                 make_sheet(
-                    "axis.sheet.second",
+                    "style.axis.sheet.second",
                     axis_rule(
                         2,
                         Vec::new(),
@@ -1712,7 +1712,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
             None,
             seed,
             ViewAxisProviderParticipation::RetainedPrimary,
-            &[named_application("axis.sheet.first", 0)],
+            &[named_application("style.axis.sheet.first", 0)],
             ViewStyleRevisionSet::default(),
         )
         .unwrap()
@@ -1725,7 +1725,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
             None,
             seed,
             ViewAxisProviderParticipation::RetainedPrimary,
-            &[named_application("axis.sheet.second", 0)],
+            &[named_application("style.axis.sheet.second", 0)],
             ViewStyleRevisionSet {
                 sheets: 1,
                 ..ViewStyleRevisionSet::default()
@@ -1798,7 +1798,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
             ViewStyleProgram::try_new(
                 vec![
                     ViewStyleSheet::new(
-                        ViewStyleSheetId::try_new("axis.sheet.token").unwrap(),
+                        ViewStyleSheetId::try_new("style.axis.sheet.token").unwrap(),
                         vec![token],
                         vec![axis_rule(
                             1,
@@ -1817,7 +1817,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
         };
         let initial_program = token_program(ViewBoxAxisMode::HorizontalLtr);
         let changed_program = token_program(ViewBoxAxisMode::VerticalLr);
-        let application = named_application("axis.sheet.token", 0);
+        let application = named_application("style.axis.sheet.token", 0);
         let key = node(53, 0);
         let seed = host_seed(&key, 0, ViewBoxAxisHostSeed::Default);
         let mut resolver = ViewStyleResolver::default();
@@ -1913,7 +1913,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
     {
         let program = ViewStyleProgram::try_new(
             vec![make_sheet(
-                "axis.sheet.interaction",
+                "style.axis.sheet.interaction",
                 axis_rule(
                     1,
                     vec![ViewStylePredicate::Interaction(
@@ -1927,7 +1927,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
             Vec::new(),
         )
         .unwrap();
-        let application = named_application("axis.sheet.interaction", 0);
+        let application = named_application("style.axis.sheet.interaction", 0);
         let plain = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
         let hovered = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel)).with_interactions(
             ViewInteractionStateSet::default().with(ViewInteractionSelector::Hovered),
@@ -1982,7 +1982,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
     {
         let program = ViewStyleProgram::try_new(
             vec![make_sheet(
-                "axis.sheet.container",
+                "style.axis.sheet.container",
                 axis_rule(
                     1,
                     vec![ViewStylePredicate::Container(ViewContainerPredicate::new(
@@ -1998,7 +1998,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
             Vec::new(),
         )
         .unwrap();
-        let application = named_application("axis.sheet.container", 0);
+        let application = named_application("style.axis.sheet.container", 0);
         let key = node(56, 0);
         let seed = host_seed(&key, 0, ViewBoxAxisHostSeed::Default);
         let mut resolver = ViewStyleResolver::default();
@@ -2041,7 +2041,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
     {
         let program = ViewStyleProgram::try_new(
             vec![make_sheet(
-                "axis.sheet.environment",
+                "style.axis.sheet.environment",
                 axis_rule_with_environment(
                     1,
                     Vec::new(),
@@ -2068,7 +2068,7 @@ fn every_revision_set_recomputes_and_provider_identity_follows_the_actual_winner
             Vec::new(),
         )
         .unwrap();
-        let application = named_application("axis.sheet.environment", 0);
+        let application = named_application("style.axis.sheet.environment", 0);
         let facts = ViewStyleNodeFacts::new(Some(ViewElementKind::Panel));
         let light =
             environment_with_revision(ColorScheme::Light, EnvironmentRevision::from_value(1));

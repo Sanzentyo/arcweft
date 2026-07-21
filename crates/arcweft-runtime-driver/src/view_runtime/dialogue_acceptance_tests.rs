@@ -36,7 +36,7 @@ fn runtime_with_definitions(
         definitions: definitions
             .into_iter()
             .map(|(view, role)| ViewDefinitionResource {
-                public_id: ViewDefinitionRef::try_new(view).expect("definition ID"),
+                public_id: ViewDefinitionRef::new(view_id(view)),
                 body: ViewInstructionSpan::new(0, 0),
                 styles: Vec::new(),
                 parameters: vec![ViewParameterResource {

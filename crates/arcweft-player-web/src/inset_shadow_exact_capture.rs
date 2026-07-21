@@ -321,8 +321,10 @@ fn exact_view_program() -> ViewProgramResource {
         program_id: ViewProgramId::try_new("view.seq06_13e1_inset_box_shadow_exact")
             .expect("fixture View program id is valid"),
         definitions: vec![ViewDefinitionResource {
-            public_id: ViewDefinitionRef::try_new("view.InsetShadowExactFixture")
-                .expect("fixture View definition id is valid"),
+            public_id: ViewDefinitionRef::new(
+                ViewId::try_new("view.InsetShadowExactFixture")
+                    .expect("fixture View definition id is valid"),
+            ),
             body: ViewInstructionSpan::new(0, 4),
             styles: vec![ViewStyleApplicationTarget::named(exact_style_sheet_id())],
             parameters: Vec::new(),

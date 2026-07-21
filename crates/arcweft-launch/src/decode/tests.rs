@@ -18,6 +18,7 @@ use arcweft_manifest_model::{
     ContentUnitId, ExternalModuleImportId, ProfileId,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+use arcweft_view::ViewId;
 use std::{collections::BTreeMap, net::SocketAddr, str::FromStr, sync::Arc};
 
 fn document(source: &str) -> Arc<SourceDocument> {
@@ -854,6 +855,72 @@ profiles.dev.player.viewport.fit = "cover"
             .map(|viewport| viewport.fit),
         Some(LaunchPlayerViewportFit::Cover)
     );
+}
+
+#[test]
+fn dialogue_view_and_style_ids_distinguish_malformed_text_from_wrong_family() {
+    for (field, value, code) in [
+        ("view", "@view.dialogue", ManifestDiagnosticCode::IdInvalid),
+        ("view", "style.dialogue", ManifestDiagnosticCode::IdFamily),
+        (
+            "style",
+            "@style.dialogue",
+            ManifestDiagnosticCode::IdInvalid,
+        ),
+        ("style", "view.dialogue", ManifestDiagnosticCode::IdFamily),
+    ] {
+        let source = minimal(&format!(
+            "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n[profiles.dev.dialogue]\n{field} = {value:?}\n"
+        ));
+        let report = decode(document(&source)).expect_err("invalid nominal identity must fail");
+        let diagnostic = report
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code() == code)
+            .expect("exact nominal identity diagnostic");
+        assert_eq!(
+            diagnostic.primary().range(),
+            range_of(&source, &format!("{value:?}"), 0)
+        );
+    }
+}
+
+#[test]
+fn dialogue_view_and_style_accept_authored_and_engine_owned_nominal_ids() {
+    for (view, style) in [
+        ("view.dialogue", "style.dialogue"),
+        ("std.view.dialogue", "std.style.dialogue"),
+    ] {
+        let source = minimal(&format!(
+            "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n[profiles.dev.dialogue]\nview = {view:?}\nstyle = {style:?}\n"
+        ));
+        let decoded = decode(document(&source)).expect("nominal dialogue profile IDs");
+        let profile = decoded
+            .manifest
+            .profiles
+            .get(&ProfileId::new("dev").expect("profile ID"))
+            .expect("profile");
+        assert_eq!(
+            profile.dialogue.view.as_ref().map(ViewId::as_str),
+            Some(view)
+        );
+        assert_eq!(
+            profile
+                .dialogue
+                .style
+                .as_ref()
+                .map(|id| id.public_id().as_str()),
+            Some(style)
+        );
+    }
+}
+
+#[test]
+fn canonical_manifest_serialization_omits_an_empty_dialogue_profile() {
+    let source = minimal("[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n");
+    let decoded = decode(document(&source)).expect("minimal profile");
+    let encoded = serde_json::to_value(&decoded.manifest).expect("semantic manifest codec");
+    assert!(encoded["profiles"]["dev"].get("dialogue").is_none());
 }
 
 #[test]

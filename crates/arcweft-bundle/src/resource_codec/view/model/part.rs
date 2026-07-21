@@ -1,14 +1,13 @@
 //! Typed product identities and provenance for exported View parts.
 
 use crate::resource_codec::SourceRangeRef;
-use arcweft_id::{IdError, PublicId};
 use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
 use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Canonical product reference to one View definition.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ViewDefinitionRef(PublicId);
+pub struct ViewDefinitionRef(ViewId);
 
 /// Owner-qualified private part target in one View definition.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -37,20 +36,11 @@ pub struct ViewExportedPart {
 }
 
 impl ViewDefinitionRef {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        PublicId::try_new(value).map(Self)
+    pub const fn new(view: ViewId) -> Self {
+        Self(view)
     }
 
-    /// Constructs a product reference for an engine-owned reserved View.
-    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
-        PublicId::try_new_engine_owned(value).map(Self)
-    }
-
-    pub const fn from_public_id(id: PublicId) -> Self {
-        Self(id)
-    }
-
-    pub const fn public_id(&self) -> &PublicId {
+    pub const fn view_id(&self) -> &ViewId {
         &self.0
     }
 
@@ -58,9 +48,8 @@ impl ViewDefinitionRef {
         self.0.as_str()
     }
 
-    /// Projects this accepted product definition owner into its semantic View identity.
-    pub fn to_view_id(&self) -> ViewId {
-        ViewId::from_public_id(self.0.clone())
+    pub fn into_view_id(self) -> ViewId {
+        self.0
     }
 }
 
@@ -72,7 +61,7 @@ impl ViewOwnedPartRef {
 
 impl fmt::Display for ViewDefinitionRef {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
+        formatter.write_str(self.view_id().as_str())
     }
 }
 
@@ -95,7 +84,7 @@ impl Serialize for ViewDefinitionRef {
     where
         S: Serializer,
     {
-        serializer.serialize_str(self.public_id().as_str())
+        serializer.serialize_str(self.view_id().as_str())
     }
 }
 
@@ -104,7 +93,8 @@ impl<'de> Deserialize<'de> for ViewDefinitionRef {
     where
         D: Deserializer<'de>,
     {
-        let value = String::deserialize(deserializer)?;
-        Self::try_new_engine_owned(value).map_err(serde::de::Error::custom)
+        ViewId::parse_public(String::deserialize(deserializer)?)
+            .map(Self::new)
+            .map_err(serde::de::Error::custom)
     }
 }

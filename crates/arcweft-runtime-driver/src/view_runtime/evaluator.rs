@@ -288,7 +288,7 @@ impl BundleViewRuntime {
             .iter()
             .filter(|handle| !handle.is_terminal())
             .filter(|handle| {
-                ViewId::try_new_engine_owned(handle.resource_id.clone())
+                ViewId::parse_public(handle.resource_id.clone())
                     .ok()
                     .and_then(|view| catalog.definition_index(&view))
                     .is_some()
@@ -337,7 +337,7 @@ impl BundleViewRuntime {
             if handle.is_terminal() {
                 continue;
             }
-            let Ok(view) = ViewId::try_new_engine_owned(handle.resource_id.clone()) else {
+            let Ok(view) = ViewId::parse_public(handle.resource_id.clone()) else {
                 if handle.kind == PresentationHandleKind::View
                     && handle.state == PresentationResourceState::Mounted
                 {
@@ -440,7 +440,7 @@ impl ViewEvaluator<'_> {
         call_arguments: Option<&BTreeMap<u16, FxRuntimeValue>>,
     ) -> Result<(), EvaluationFailure> {
         let definition = self.definition(definition_index).clone();
-        let definition_view = definition.public_id.to_view_id();
+        let definition_view = definition.public_id.view_id().clone();
         if let Some(existing) = self.mounts.get(key)
             && existing.view() != &definition_view
         {
@@ -745,7 +745,7 @@ impl ViewEvaluator<'_> {
         if depth >= VIEW_RECURSION_LIMIT {
             self.record_failure(
                 &key,
-                &definition.public_id.to_view_id(),
+                definition.public_id.view_id(),
                 None,
                 EvaluationFailure::new(
                     BundleViewDiagnosticCode::RecursionLimitExceeded,
@@ -790,7 +790,7 @@ impl ViewEvaluator<'_> {
                         self.mounts.insert(key.clone(), mounted);
                         self.record_failure(
                             &key,
-                            &definition.public_id.to_view_id(),
+                            definition.public_id.view_id(),
                             Some(mount_id),
                             EvaluationFailure::new(
                                 BundleViewDiagnosticCode::InvalidControlFlow,
@@ -812,7 +812,7 @@ impl ViewEvaluator<'_> {
                 let mut output = vec![BundleViewMountOutput {
                     handle: key.handle,
                     mount: mount_id,
-                    view: definition.public_id.to_view_id(),
+                    view: definition.public_id.view_id().clone(),
                     path: key.path,
                     host_axis_seed,
                     dialogue,
@@ -829,7 +829,7 @@ impl ViewEvaluator<'_> {
             Err(error) => {
                 let mount = rollback.state.mount();
                 self.mounts.insert(key.clone(), rollback);
-                self.record_failure(&key, &definition.public_id.to_view_id(), Some(mount), error);
+                self.record_failure(&key, definition.public_id.view_id(), Some(mount), error);
                 Vec::new()
             }
         }
@@ -1100,7 +1100,7 @@ impl ViewEvaluator<'_> {
                                 path: structural_path,
                                 instruction: instruction_ordinal(cursor)?,
                                 kind: BundleViewStyleNodeKind::CallView {
-                                    view: view.to_view_id(),
+                                    view: view.view_id().clone(),
                                 },
                                 part: part.as_ref(),
                                 local: styles,
@@ -1113,7 +1113,7 @@ impl ViewEvaluator<'_> {
                         .style_scopes
                         .for_nested_view(&local_styles)
                         .map_err(|error| EvaluationFailure::style_scope(Some(cursor), error))?;
-                    let child_view = view.to_view_id();
+                    let child_view = view.view_id().clone();
                     let Some(child_index) = self.catalog.definition_index(&child_view) else {
                         return Err(EvaluationFailure::new(
                             BundleViewDiagnosticCode::MissingDefinition,

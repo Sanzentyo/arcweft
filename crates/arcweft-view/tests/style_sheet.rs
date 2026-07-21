@@ -6,12 +6,50 @@ use arcweft_view::{
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleCombinator, ViewStyleDeclaration,
     ViewStyleModelError, ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStyleProgram,
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
-    ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId, ViewStyleTransition, ViewStyleValueKind,
+    ViewStyleSheetIdError, ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId,
+    ViewStyleTransition, ViewStyleValueKind,
 };
 use serde::de::DeserializeOwned;
 
 fn token_id(value: &str) -> ViewStyleTokenId {
     ViewStyleTokenId::try_new(value).expect("valid token ID")
+}
+
+#[test]
+fn sheet_identity_owns_authored_and_engine_family_invariants() {
+    assert_eq!(
+        ViewStyleSheetId::try_new("style.dialogue")
+            .unwrap()
+            .public_id()
+            .as_str(),
+        "style.dialogue"
+    );
+    assert_eq!(
+        ViewStyleSheetId::try_new_engine_owned("std.style.dialogue")
+            .unwrap()
+            .public_id()
+            .as_str(),
+        "std.style.dialogue"
+    );
+    assert!(matches!(
+        ViewStyleSheetId::parse_public("view.dialogue"),
+        Err(ViewStyleSheetIdError::WrongFamily { .. })
+    ));
+    assert!(matches!(
+        ViewStyleSheetId::parse_public("@style.dialogue"),
+        Err(ViewStyleSheetIdError::Invalid(_))
+    ));
+    assert!(ViewStyleSheetId::try_new("std.style.dialogue").is_err());
+    assert!(ViewStyleSheetId::try_new_engine_owned("style.dialogue").is_err());
+    assert!(ViewStyleSheetId::try_new("style.").is_err());
+    assert_eq!(
+        serde_json::from_str::<ViewStyleSheetId>(r#""std.style.dialogue""#)
+            .unwrap()
+            .public_id()
+            .as_str(),
+        "std.style.dialogue"
+    );
+    assert!(serde_json::from_str::<ViewStyleSheetId>(r#""view.dialogue""#).is_err());
 }
 
 fn button_selector() -> ViewStyleSelector {

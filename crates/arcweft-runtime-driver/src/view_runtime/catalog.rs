@@ -6,6 +6,7 @@ use arcweft_bundle::resource_codec::SourceSetRevision;
 use arcweft_bundle::resource_codec::view::{
     ValidatedViewProduct, ViewDefinitionResource, ViewProgramInstruction, ViewProgramResource,
 };
+use arcweft_id::PublicId;
 use arcweft_view::{
     AcceptedViewProgramRevision, CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId,
     TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall, ViewCallArgument,
@@ -98,12 +99,12 @@ impl ViewProgramCatalog {
         let resource = validated.resource().clone();
         let inventory = ViewValueProgramInventory::from_programs(resource.value_programs.clone())?;
         let mut candidates = resource.definitions.clone();
-        candidates.sort_by_key(|definition| definition.public_id.to_view_id());
+        candidates.sort_by_key(|definition| definition.public_id.view_id().clone());
 
         let mut definitions = Vec::with_capacity(candidates.len());
         let mut by_view = BTreeMap::new();
         for definition in candidates {
-            let view = definition.public_id.to_view_id();
+            let view = definition.public_id.view_id().clone();
             let index = ViewDefinitionIndex::try_from_index(definitions.len())?;
             if by_view.insert(view.clone(), index).is_some() {
                 return Err(ViewProgramCatalogError::DuplicateDefinition(view));
@@ -406,7 +407,7 @@ fn map_instruction(
             key,
             ..
         } => ViewInstruction::CallView(ViewCall {
-            view: target.to_view_id(),
+            view: target.view_id().clone(),
             arguments: arguments
                 .iter()
                 .map(|argument| ViewCallArgument {
@@ -518,14 +519,11 @@ fn map_instruction(
             ..
         } => ViewInstruction::AttachSemantic(ViewSemanticSpec {
             semantic: SemanticSpecId(semantic_ids[target]),
-            target: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                target.clone(),
-            )
-            .map_err(|_| ViewProgramCatalogError::InvalidSemanticTarget {
-                target: target.clone(),
-            })?
-            .public_id()
-            .clone(),
+            target: PublicId::try_new(target.clone()).map_err(|_| {
+                ViewProgramCatalogError::InvalidSemanticTarget {
+                    target: target.clone(),
+                }
+            })?,
             label: label_text_source
                 .as_ref()
                 .map(|label| TextSourceId(text_ids[label])),

@@ -70,7 +70,9 @@ use arcweft_lang_syntax::{
 };
 use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
-use arcweft_view::{ViewPartLocalName, ViewProgramId, part::ViewPartNameError};
+use arcweft_view::{
+    ViewId, ViewIdError, ViewPartLocalName, ViewProgramId, part::ViewPartNameError,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -108,6 +110,8 @@ pub(in crate::app) enum ViewSidecarError {
     InvalidViewSignature { view: String, message: String },
     #[error("View `{value}` has an invalid public ID: {source}")]
     InvalidViewPublicId { value: String, source: IdError },
+    #[error("View `{value}` does not have a valid View-family identity: {source}")]
+    InvalidViewIdentity { value: String, source: ViewIdError },
     #[error("View part `{value}` has an invalid local identity: {source}")]
     InvalidViewPartId {
         value: String,
@@ -222,12 +226,13 @@ pub(in crate::app) fn view_sidecars(
     for view in views {
         if let Some(body) = view.view_body().and_then(|body| body.view()) {
             let public_id = view_resource_id(view.id().body());
-            let typed_public_id = PublicId::try_new(public_id.clone()).map_err(|source| {
-                ViewSidecarError::InvalidViewPublicId {
+            let typed_view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
+                ViewSidecarError::InvalidViewIdentity {
                     value: public_id.clone(),
                     source,
                 }
             })?;
+            let typed_public_id = typed_view_id.public_id().clone();
             let schema = state.view_schemas.get(&public_id).cloned().ok_or_else(|| {
                 ViewSidecarError::UnknownViewCall {
                     view: public_id.clone(),
@@ -264,7 +269,7 @@ pub(in crate::app) fn view_sidecars(
             state.dialogue_parameters.clear();
             let end_instruction = usize_to_u32_saturating(state.instructions.len());
             state.definitions.push(ViewDefinitionResource {
-                public_id: ViewDefinitionRef::from_public_id(typed_public_id),
+                public_id: ViewDefinitionRef::new(typed_view_id),
                 styles: root_styles,
                 body: ViewInstructionSpan::new(start_instruction, end_instruction),
                 parameters,
@@ -604,12 +609,12 @@ fn lower_nested_view_call(
     }
     let styles = state.producer_styles(call.range());
     state.instructions.push(ViewProgramInstruction::CallView {
-        view: ViewDefinitionRef::try_new(view.clone()).map_err(|source| {
-            ViewSidecarError::InvalidViewPublicId {
+        view: ViewDefinitionRef::new(ViewId::parse_public(view.clone()).map_err(|source| {
+            ViewSidecarError::InvalidViewIdentity {
                 value: view,
                 source,
             }
-        })?,
+        })?),
         arguments,
         styles,
         part: first_part(call.modifiers())?,

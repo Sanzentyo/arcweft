@@ -9,6 +9,15 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewId(PublicId);
 
+/// Invalid public identity for the View family.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum ViewIdError {
+    #[error(transparent)]
+    Invalid(#[from] IdError),
+    #[error("public ID `{actual}` is not in the View family")]
+    WrongFamily { actual: PublicId },
+}
+
 /// Stable identity of one accepted Arcweft View program.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewProgramId(PublicId);
@@ -27,13 +36,48 @@ pub enum ViewIdentityError {
 }
 
 impl ViewId {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        PublicId::try_new(value).map(Self)
+    /// Constructs an authored `view.*` identity.
+    pub fn try_new(value: impl Into<String>) -> Result<Self, ViewIdError> {
+        let public_id = PublicId::try_new(value)?;
+        if public_id
+            .as_str()
+            .strip_prefix("view.")
+            .is_some_and(|tail| !tail.is_empty())
+        {
+            Ok(Self(public_id))
+        } else {
+            Err(ViewIdError::WrongFamily { actual: public_id })
+        }
     }
 
     /// Constructs a semantic identity for an engine-owned reserved View.
-    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, IdError> {
-        PublicId::try_new_engine_owned(value).map(Self)
+    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, ViewIdError> {
+        let public_id = PublicId::try_new_engine_owned(value)?;
+        if public_id
+            .as_str()
+            .strip_prefix("std.view.")
+            .is_some_and(|tail| !tail.is_empty())
+        {
+            Ok(Self(public_id))
+        } else {
+            Err(ViewIdError::WrongFamily { actual: public_id })
+        }
+    }
+
+    /// Parses either an authored `view.*` identity or an engine-owned
+    /// `std.view.*` identity at a public data boundary.
+    pub fn parse_public(value: impl Into<String>) -> Result<Self, ViewIdError> {
+        let public_id = PublicId::try_new_engine_owned(value)?;
+        let value = public_id.as_str();
+        if value
+            .strip_prefix("view.")
+            .or_else(|| value.strip_prefix("std.view."))
+            .is_some_and(|tail| !tail.is_empty())
+        {
+            Ok(Self(public_id))
+        } else {
+            Err(ViewIdError::WrongFamily { actual: public_id })
+        }
     }
 
     /// Engine-owned fallback used when a launch profile does not select a View.
@@ -45,10 +89,6 @@ impl ViewId {
     pub fn standard_dialogue() -> Self {
         Self::try_new_engine_owned("std.view.dialogue")
             .expect("the reserved standard dialogue View identity is valid")
-    }
-
-    pub const fn from_public_id(value: PublicId) -> Self {
-        Self(value)
     }
 
     pub const fn public_id(&self) -> &PublicId {
@@ -148,8 +188,7 @@ impl<'de> Deserialize<'de> for ViewId {
     where
         D: Deserializer<'de>,
     {
-        Self::try_new_engine_owned(String::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
+        Self::parse_public(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -217,7 +256,10 @@ const fn hex_value(byte: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{AcceptedViewProgramRevision, ViewId, ViewIdentityError, ViewProgramId};
+    use super::{
+        AcceptedViewProgramRevision, ViewId, ViewIdError, ViewIdentityError, ViewProgramId,
+    };
+    use arcweft_id::PublicId;
 
     #[test]
     fn stable_view_identities_serialize_as_validated_public_id_strings() {
@@ -236,12 +278,44 @@ mod tests {
             serde_json::from_str::<ViewId>(r#""view.dialogue.standard""#).unwrap(),
             view
         );
+        assert_eq!(
+            serde_json::from_str::<ViewId>(r#""std.view.dialogue""#).unwrap(),
+            ViewId::standard_dialogue()
+        );
         assert!(serde_json::from_str::<ViewId>("\"#view.dialogue\"").is_err());
+        assert!(serde_json::from_str::<ViewId>(r#""style.dialogue""#).is_err());
     }
 
     #[test]
     fn standard_dialogue_identity_uses_the_engine_owned_namespace() {
         assert_eq!(ViewId::standard_dialogue().as_str(), "std.view.dialogue");
+    }
+
+    #[test]
+    fn view_identity_owns_authored_and_engine_family_invariants() {
+        assert_eq!(
+            ViewId::try_new("view.dialogue").unwrap().as_str(),
+            "view.dialogue"
+        );
+        assert_eq!(
+            ViewId::try_new_engine_owned("std.view.dialogue")
+                .unwrap()
+                .as_str(),
+            "std.view.dialogue"
+        );
+        assert_eq!(
+            ViewId::parse_public("style.dialogue"),
+            Err(ViewIdError::WrongFamily {
+                actual: PublicId::try_new("style.dialogue").unwrap(),
+            })
+        );
+        assert!(matches!(
+            ViewId::parse_public("@view.dialogue"),
+            Err(ViewIdError::Invalid(_))
+        ));
+        assert!(ViewId::try_new("std.view.dialogue").is_err());
+        assert!(ViewId::try_new_engine_owned("view.dialogue").is_err());
+        assert!(ViewId::try_new("view.").is_err());
     }
 
     #[test]

@@ -17,6 +17,15 @@ mod codec;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleSheetId(PublicId);
 
+/// Invalid public identity for the native View Style-sheet family.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum ViewStyleSheetIdError {
+    #[error(transparent)]
+    Invalid(#[from] IdError),
+    #[error("public ID `{actual}` is not in the View Style-sheet family")]
+    WrongFamily { actual: PublicId },
+}
+
 /// Sheet-local identity of one Style token.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewStyleTokenId(PublicId);
@@ -259,12 +268,47 @@ pub enum ViewStyleModelError {
 }
 
 impl ViewStyleSheetId {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
-        PublicId::try_new(value).map(Self)
+    /// Constructs an authored `style.*` sheet identity.
+    pub fn try_new(value: impl Into<String>) -> Result<Self, ViewStyleSheetIdError> {
+        let public_id = PublicId::try_new(value)?;
+        if public_id
+            .as_str()
+            .strip_prefix("style.")
+            .is_some_and(|tail| !tail.is_empty())
+        {
+            Ok(Self(public_id))
+        } else {
+            Err(ViewStyleSheetIdError::WrongFamily { actual: public_id })
+        }
     }
 
-    pub const fn from_public_id(id: PublicId) -> Self {
-        Self(id)
+    /// Constructs an engine-owned `std.style.*` sheet identity.
+    pub fn try_new_engine_owned(value: impl Into<String>) -> Result<Self, ViewStyleSheetIdError> {
+        let public_id = PublicId::try_new_engine_owned(value)?;
+        if public_id
+            .as_str()
+            .strip_prefix("std.style.")
+            .is_some_and(|tail| !tail.is_empty())
+        {
+            Ok(Self(public_id))
+        } else {
+            Err(ViewStyleSheetIdError::WrongFamily { actual: public_id })
+        }
+    }
+
+    /// Parses an authored or engine-owned public sheet identity.
+    pub fn parse_public(value: impl Into<String>) -> Result<Self, ViewStyleSheetIdError> {
+        let public_id = PublicId::try_new_engine_owned(value)?;
+        let value = public_id.as_str();
+        if value
+            .strip_prefix("style.")
+            .or_else(|| value.strip_prefix("std.style."))
+            .is_some_and(|tail| !tail.is_empty())
+        {
+            Ok(Self(public_id))
+        } else {
+            Err(ViewStyleSheetIdError::WrongFamily { actual: public_id })
+        }
     }
 
     pub const fn public_id(&self) -> &PublicId {
@@ -928,7 +972,7 @@ impl<'de> Deserialize<'de> for ViewStyleSheetId {
         D: Deserializer<'de>,
     {
         let value = String::deserialize(deserializer)?;
-        Self::try_new(value).map_err(serde::de::Error::custom)
+        Self::parse_public(value).map_err(serde::de::Error::custom)
     }
 }
 

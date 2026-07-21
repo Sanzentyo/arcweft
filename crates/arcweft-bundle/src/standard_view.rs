@@ -17,7 +17,7 @@ use arcweft_view::style::{
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId,
 };
-use arcweft_view::{ViewPartLocalName, ViewPartName};
+use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
 
@@ -61,8 +61,10 @@ pub fn dialogue_program() -> ViewProgramResource {
         program_id: arcweft_view::ViewProgramId::try_new("view.standard.dialogue.program")
             .expect("the standard dialogue View program identity is valid"),
         definitions: vec![ViewDefinitionResource {
-            public_id: ViewDefinitionRef::try_new_engine_owned(DIALOGUE_VIEW_ID)
-                .expect("the standard dialogue View identity is valid"),
+            public_id: ViewDefinitionRef::new(
+                ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID)
+                    .expect("the standard dialogue View identity is valid"),
+            ),
             body: ViewInstructionSpan::new(0, 6),
             styles: vec![dialogue_style_ref()],
             parameters: vec![ViewParameterResource {

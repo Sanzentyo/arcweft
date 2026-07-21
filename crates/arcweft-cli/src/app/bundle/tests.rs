@@ -1275,7 +1275,7 @@ flow test {
     let [export] = program.exported_parts.as_slice() else {
         panic!("authored export must produce exactly one product record");
     };
-    assert_eq!(export.target.view.public_id().as_str(), "view.Card");
+    assert_eq!(export.target.view.view_id().as_str(), "view.Card");
     assert_eq!(export.target.part.as_public_id().as_str(), "title");
     assert_eq!(export.public_name.as_public_id().as_str(), "heading");
     let expected_source = arcweft_bundle::resource_codec::ProductSourceId::try_for_document_id(

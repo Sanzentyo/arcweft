@@ -460,7 +460,7 @@ fn non_reversible_logical_translation_is_a_typed_resolver_error() {
     )
     .unwrap();
     let sheet = ViewStyleSheet::new(
-        ViewStyleSheetId::try_new("axis.tokens").unwrap(),
+        ViewStyleSheetId::try_new("style.axis.tokens").unwrap(),
         vec![token],
         Vec::new(),
     )

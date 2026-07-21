@@ -17,7 +17,7 @@ pub struct IdError {
 pub enum IdErrorKind {
     #[error("identifier must not be empty")]
     Empty,
-    #[error("identifier value must not include a leading # reference marker")]
+    #[error("identifier value must not include a leading reference marker")]
     StartsWithReferenceMarker,
     #[error("identifier must not contain whitespace")]
     ContainsWhitespace,
@@ -281,7 +281,7 @@ fn validate_id_text(
         return Err(IdError::new(IdErrorKind::Empty));
     }
 
-    if reject_hash && value.starts_with('#') {
+    if reject_hash && value.starts_with(['#', '@']) {
         return Err(IdError::new(IdErrorKind::StartsWithReferenceMarker));
     }
 
@@ -315,6 +315,9 @@ mod tests {
     #[test]
     fn public_id_rejects_reference_marker() {
         let err = PublicId::try_new("#flow.opening").expect_err("leading # is syntax, not id data");
+        assert_eq!(err.kind(), IdErrorKind::StartsWithReferenceMarker);
+
+        let err = PublicId::try_new("@flow.opening").expect_err("leading @ is syntax, not id data");
         assert_eq!(err.kind(), IdErrorKind::StartsWithReferenceMarker);
     }
 

@@ -395,7 +395,7 @@ fn decode_record(
         .as_identifier()
         .ok_or_else(|| field_shape("view", "expected EntityRef"))
         .and_then(|value| {
-            ViewId::try_new_engine_owned(value.to_owned())
+            ViewId::parse_public(value.to_owned())
                 .map_err(|error| field_shape("view", error.to_string()))
         })?;
     let source_locale = decode_option(&fields[12], "source_locale")?

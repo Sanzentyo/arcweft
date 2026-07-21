@@ -997,7 +997,7 @@ impl ViewProgramResource {
                 )
                 .chain(self.exported_parts.iter().flat_map(|part| {
                     [
-                        part.target.view.public_id().as_str().to_owned(),
+                        part.target.view.view_id().as_str().to_owned(),
                         part.target.part.as_public_id().as_str().to_owned(),
                         part.public_name.as_public_id().as_str().to_owned(),
                     ]

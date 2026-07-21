@@ -83,11 +83,21 @@ The current checkout already contains useful final-direction substrate:
   prepared-text, rendering, capture, and observation paths; and
 - typed Character dialogue patches and runtime-owned dialogue lifecycle state.
 
-The authority cut is not complete:
+The authority cut is not complete. The first nominal-identity slice now:
 
-- `ViewId` and `ViewStyleSheetId` do not yet prove their public-ID families,
-  and unchecked public `from_public_id` paths remain;
-- `ViewDefinitionRef` still stores a generic `PublicId`;
+- makes authored `view.*` / `style.*` and engine-owned `std.view.*` /
+  `std.style.*` construction distinct, while public decoders accept exactly
+  those two families;
+- rejects both `#` and `@` reference markers before nominal-family checks;
+- removes unchecked public `from_public_id` construction; and
+- makes `ViewDefinitionRef` own a validated `ViewId` directly;
+- decodes View/Style values explicitly as nominal IDs and distinguishes
+  `manifest.id.invalid` from `manifest.id.family`; and
+- publishes the complete dialogue token family through the existing
+  revision-bound `ManifestTokenPath`, with no second source map.
+
+The remaining work is:
+
 - compiler-owned typed View lowering and checked profile admission are absent;
 - `RuntimePlanLowerOptions` still contains raw `dialogue_defaults` and a
   separately optional inline policy;
@@ -144,6 +154,22 @@ MCP 22/22, Agent observe 1/1, native auxiliary 16/16, and visual 7/7 all
 passed. That is baseline evidence only. The complete Tier 2 suite must run again
 after the final dialogue-profile authority cut because the package changes the
 selected View/Style/revision path.
+
+The nominal-identity/manifest slice has passed `arcweft-id` unit and
+compile-fail tests, the complete `arcweft-view`, `arcweft-bundle`, and
+`arcweft-launch` test suites, the focused runtime-driver View-runtime suite,
+workspace all-target/all-feature check, and workspace strict Clippy. The
+structural audit scanned 3,468 files / 1,804 Rust files / 830,297 physical Rust
+LOC / 94 manifests with zero errors and 131 existing warnings; exact metrics
+are retained under
+`docs/implementation/structure-audits/lang-01-5-1-1-nominal-manifest-2026-07-21/`.
+
+The freshly rebuilt `target/debug/arcw.exe` also reached a responsive
+`Arcweft Player` window with the exact command
+`arcw run --runner native samples/modern-feedback-view/src/main.arcw`. The
+former `image.glass_bg` missing-asset failure is not reproducible on the current
+binary; the validation process was then terminated and no `arcw.exe` process
+was left behind.
 
 ## Completion boundary
 

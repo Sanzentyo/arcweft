@@ -60,7 +60,7 @@ pub(crate) struct ProfileSpec {
     pub(crate) external_modules: Vec<ExternalModuleImportId>,
     #[serde(default)]
     pub(crate) activity_bindings: Vec<ActivityBindingSpec>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "DialogueProfileSpec::is_empty")]
     pub(crate) dialogue: DialogueProfileSpec,
     #[serde(default)]
     pub(crate) localization: ProfileLocalizationSpec,
@@ -84,6 +84,12 @@ pub(crate) struct DialogueProfileSpec {
     pub(crate) style: Option<ViewStyleSheetId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) inline_failure: Option<InlineFailurePolicy>,
+}
+
+impl DialogueProfileSpec {
+    pub(crate) const fn is_empty(&self) -> bool {
+        self.view.is_none() && self.style.is_none() && self.inline_failure.is_none()
+    }
 }
 
 /// Numeric host address used by server profiles.

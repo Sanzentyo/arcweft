@@ -8,7 +8,7 @@ use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::{BundleSessionSaveError, BundleSessionSnapshot};
 use arcweft_runtime_driver::view_runtime::BundleViewMountOutput;
-use arcweft_view::{ViewInheritedBoxAxes, ViewMountId, ViewProgramId};
+use arcweft_view::{ViewId, ViewInheritedBoxAxes, ViewMountId, ViewProgramId};
 
 fn append_orphan_dialogue_mount(
     snapshot: &mut BundleSessionSnapshot,
@@ -178,7 +178,7 @@ fn restore_rejects_catalog_valid_dialogue_owner_not_authorized_by_the_bundle() {
             Some(ViewProgramResource {
                 program_id: ViewProgramId::try_new("view.program.restore-authorization").unwrap(),
                 definitions: vec![ViewDefinitionResource {
-                    public_id: ViewDefinitionRef::try_new(OTHER_DIALOGUE).unwrap(),
+                    public_id: ViewDefinitionRef::new(ViewId::try_new(OTHER_DIALOGUE).unwrap()),
                     body: ViewInstructionSpan::new(0, 0),
                     styles: Vec::new(),
                     parameters: vec![ViewParameterResource {

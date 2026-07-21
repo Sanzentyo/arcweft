@@ -16,6 +16,19 @@ pub(crate) struct ManifestSourceMap {
 /// Revision-bound semantic coordinate in one accepted manifest document.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ManifestTokenPath {
+    ProfileTable { profile: ProfileId },
+    ProfileDialogueTable { profile: ProfileId },
+    ProfileDialogueView { profile: ProfileId },
+    ProfileDialogueStyle { profile: ProfileId },
+    ProfileDialogueInlineFailureTable { profile: ProfileId },
+    ProfileDialogueInlineFailureKind { profile: ProfileId },
+    ProfileDialogueInlineFallbackTable { profile: ProfileId },
+    ProfileDialogueInlineFallbackKind { profile: ProfileId },
+    ProfileDialogueInlineFallbackText { profile: ProfileId },
+    ProfileDialogueInlineFallbackStyleTable { profile: ProfileId },
+    ProfileDialogueInlineFallbackStyleKind { profile: ProfileId },
+    ProfileDialogueInlineFallbackStyles { profile: ProfileId },
+    ProfileDialogueInlineFallbackStyleElement { profile: ProfileId, ordinal: u16 },
     ProfileCharacterNamesTable { profile: ProfileId },
     ProfileCharacterNamesActive { profile: ProfileId },
     ProfileCharacterNamesFallback { profile: ProfileId, ordinal: u16 },
@@ -51,28 +64,143 @@ impl ManifestSourceMap {
 
 impl ManifestTokenPath {
     pub(crate) fn source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
+        match self {
+            Self::ProfileTable { .. }
+            | Self::ProfileDialogueTable { .. }
+            | Self::ProfileDialogueView { .. }
+            | Self::ProfileDialogueStyle { .. } => self.profile_dialogue_source_key(slot),
+            Self::ProfileDialogueInlineFailureTable { .. }
+            | Self::ProfileDialogueInlineFailureKind { .. }
+            | Self::ProfileDialogueInlineFallbackTable { .. }
+            | Self::ProfileDialogueInlineFallbackKind { .. }
+            | Self::ProfileDialogueInlineFallbackText { .. }
+            | Self::ProfileDialogueInlineFallbackStyleTable { .. }
+            | Self::ProfileDialogueInlineFallbackStyleKind { .. }
+            | Self::ProfileDialogueInlineFallbackStyles { .. }
+            | Self::ProfileDialogueInlineFallbackStyleElement { .. } => {
+                self.inline_failure_source_key(slot)
+            }
+            Self::ProfileCharacterNamesTable { .. }
+            | Self::ProfileCharacterNamesActive { .. }
+            | Self::ProfileCharacterNamesFallback { .. } => self.character_name_source_key(slot),
+        }
+    }
+
+    fn profile_dialogue_source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
+        match self {
+            Self::ProfileTable { profile } => Some(token_key(
+                profile_path(profile, []),
+                table_header_slot(slot)?,
+            )),
+            Self::ProfileDialogueTable { profile } => Some(token_key(
+                dialogue_path(profile, []),
+                table_header_slot(slot)?,
+            )),
+            Self::ProfileDialogueView { profile } => Some(token_key(
+                dialogue_path(
+                    profile,
+                    [ManifestPathSegment::Dialogue(DialogueField::View)],
+                ),
+                field_slot(slot)?,
+            )),
+            Self::ProfileDialogueStyle { profile } => Some(token_key(
+                dialogue_path(
+                    profile,
+                    [ManifestPathSegment::Dialogue(DialogueField::Style)],
+                ),
+                field_slot(slot)?,
+            )),
+            _ => None,
+        }
+    }
+
+    fn inline_failure_source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
         let (path, source_slot) = match self {
-            Self::ProfileCharacterNamesTable { profile } => (
-                character_names_path(profile, []),
-                match slot {
-                    ManifestTokenSlot::TableHeader => ManifestSourceSlot::TableHeader,
-                    ManifestTokenSlot::FieldKey | ManifestTokenSlot::Value => return None,
-                },
+            Self::ProfileDialogueInlineFailureTable { profile } => {
+                (inline_failure_path(profile, []), table_header_slot(slot)?)
+            }
+            Self::ProfileDialogueInlineFailureKind { profile } => (
+                inline_failure_path(
+                    profile,
+                    [ManifestPathSegment::InlineFailure(InlineFailureField::Kind)],
+                ),
+                field_slot(slot)?,
             ),
-            Self::ProfileCharacterNamesActive { profile } => {
-                let path = character_names_path(
+            Self::ProfileDialogueInlineFallbackTable { profile } => {
+                (inline_fallback_path(profile, []), table_header_slot(slot)?)
+            }
+            Self::ProfileDialogueInlineFallbackKind { profile } => (
+                inline_fallback_path(
+                    profile,
+                    [ManifestPathSegment::InlineFallback(
+                        InlineFallbackField::Kind,
+                    )],
+                ),
+                field_slot(slot)?,
+            ),
+            Self::ProfileDialogueInlineFallbackText { profile } => (
+                inline_fallback_path(
+                    profile,
+                    [ManifestPathSegment::InlineFallback(
+                        InlineFallbackField::Text,
+                    )],
+                ),
+                field_slot(slot)?,
+            ),
+            Self::ProfileDialogueInlineFallbackStyleTable { profile } => {
+                (fallback_style_path(profile, []), table_header_slot(slot)?)
+            }
+            Self::ProfileDialogueInlineFallbackStyleKind { profile } => (
+                fallback_style_path(
+                    profile,
+                    [ManifestPathSegment::FallbackStyle(FallbackStyleField::Kind)],
+                ),
+                field_slot(slot)?,
+            ),
+            Self::ProfileDialogueInlineFallbackStyles { profile } => (
+                fallback_style_path(
+                    profile,
+                    [ManifestPathSegment::FallbackStyle(
+                        FallbackStyleField::Styles,
+                    )],
+                ),
+                field_slot(slot)?,
+            ),
+            Self::ProfileDialogueInlineFallbackStyleElement { profile, ordinal } => {
+                let index = u32::from(*ordinal);
+                if slot != ManifestTokenSlot::Value {
+                    return None;
+                }
+                (
+                    fallback_style_path(
+                        profile,
+                        [
+                            ManifestPathSegment::FallbackStyle(FallbackStyleField::Styles),
+                            ManifestPathSegment::Index(index),
+                        ],
+                    ),
+                    ManifestSourceSlot::ArrayElement { index },
+                )
+            }
+            _ => return None,
+        };
+        Some(token_key(path, source_slot))
+    }
+
+    fn character_name_source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
+        let (path, source_slot) = match self {
+            Self::ProfileCharacterNamesTable { profile } => {
+                (character_names_path(profile, []), table_header_slot(slot)?)
+            }
+            Self::ProfileCharacterNamesActive { profile } => (
+                character_names_path(
                     profile,
                     [ManifestPathSegment::CharacterNames(
                         CharacterNamesField::Active,
                     )],
-                );
-                let source_slot = match slot {
-                    ManifestTokenSlot::FieldKey => ManifestSourceSlot::FieldKey,
-                    ManifestTokenSlot::Value => ManifestSourceSlot::ScalarValue,
-                    ManifestTokenSlot::TableHeader => return None,
-                };
-                (path, source_slot)
-            }
+                ),
+                field_slot(slot)?,
+            ),
             Self::ProfileCharacterNamesFallback { profile, ordinal } => {
                 if slot != ManifestTokenSlot::Value {
                     return None;
@@ -89,12 +217,84 @@ impl ManifestTokenPath {
                     },
                 )
             }
+            _ => return None,
         };
-        Some(ManifestSourceKey {
-            path,
-            slot: source_slot,
-        })
+        Some(token_key(path, source_slot))
     }
+}
+
+fn token_key(path: ManifestPath, slot: ManifestSourceSlot) -> ManifestSourceKey {
+    ManifestSourceKey { path, slot }
+}
+
+fn table_header_slot(slot: ManifestTokenSlot) -> Option<ManifestSourceSlot> {
+    (slot == ManifestTokenSlot::TableHeader).then_some(ManifestSourceSlot::TableHeader)
+}
+
+fn field_slot(slot: ManifestTokenSlot) -> Option<ManifestSourceSlot> {
+    match slot {
+        ManifestTokenSlot::FieldKey => Some(ManifestSourceSlot::FieldKey),
+        ManifestTokenSlot::Value => Some(ManifestSourceSlot::ScalarValue),
+        ManifestTokenSlot::TableHeader => None,
+    }
+}
+
+fn profile_path(
+    profile: &ProfileId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    let mut segments = vec![
+        ManifestPathSegment::Root(ManifestRootField::Profiles),
+        ManifestPathSegment::Profile(profile.clone()),
+    ];
+    segments.extend(tail);
+    ManifestPath::new(segments)
+}
+
+fn dialogue_path(
+    profile: &ProfileId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    profile_path(
+        profile,
+        std::iter::once(ManifestPathSegment::ProfileField(ProfileField::Dialogue)).chain(tail),
+    )
+}
+
+fn inline_failure_path(
+    profile: &ProfileId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    dialogue_path(
+        profile,
+        std::iter::once(ManifestPathSegment::Dialogue(DialogueField::InlineFailure)).chain(tail),
+    )
+}
+
+fn inline_fallback_path(
+    profile: &ProfileId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    inline_failure_path(
+        profile,
+        std::iter::once(ManifestPathSegment::InlineFailure(
+            InlineFailureField::Fallback,
+        ))
+        .chain(tail),
+    )
+}
+
+fn fallback_style_path(
+    profile: &ProfileId,
+    tail: impl IntoIterator<Item = ManifestPathSegment>,
+) -> ManifestPath {
+    inline_fallback_path(
+        profile,
+        std::iter::once(ManifestPathSegment::InlineFallback(
+            InlineFallbackField::Style,
+        ))
+        .chain(tail),
+    )
 }
 
 fn character_names_path(

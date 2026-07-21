@@ -6,7 +6,9 @@ use thiserror::Error;
 mod identity;
 mod registry;
 
-pub use identity::{AcceptedViewProgramRevision, ViewId, ViewIdentityError, ViewProgramId};
+pub use identity::{
+    AcceptedViewProgramRevision, ViewId, ViewIdError, ViewIdentityError, ViewProgramId,
+};
 pub use registry::{
     ViewDescriptor, ViewImplementation, ViewRegistry, ViewRegistryError, ViewRegistryId,
 };

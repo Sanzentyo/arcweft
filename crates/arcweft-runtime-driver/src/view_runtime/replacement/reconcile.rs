@@ -175,7 +175,7 @@ fn resolve_candidate_path(
                     view: target, key, ..
                 },
             ) if authored_key == key => {
-                view = target.to_view_id();
+                view = target.view_id().clone();
                 definition = candidate
                     .definition_index(&view)
                     .map(|index| candidate.execution_definition(index))?;

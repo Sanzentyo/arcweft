@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
 arcweft-core = { path = "../arcweft-core" }
 arcweft-interaction-model = { path = "../arcweft-interaction-model" }
+arcweft-id = { path = "../arcweft-id" }
 arcweft-save = { path = "../arcweft-save" }
 arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
@@ -21,7 +22,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-id = { path = "../arcweft-id" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
 arcweft-source = { path = "../arcweft-source" }
 

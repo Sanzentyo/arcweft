@@ -115,7 +115,7 @@ mod tests {
     use super::{MANIFEST_DECODE_PASSES, SourceBackedManifest};
     use crate::{LaunchProfileSelection, ManifestTokenPath, ManifestTokenSlot};
     use arcweft_manifest_model::ProfileId;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
     use std::sync::Arc;
 
     #[test]
@@ -240,5 +240,202 @@ fallbacks = ["en", "fr"]
             );
             assert_eq!(span.source(), document.identity());
         }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn dialogue_token_paths_publish_the_exact_accepted_document_spans() {
+        let layout = std::iter::repeat_n("0", 32).collect::<Vec<_>>().join(", ");
+        let style_element = format!("{{ layout = [{layout}], value = {{ Record = [] }} }}");
+        let styles_value = format!("[{style_element}]");
+        let source = format!(
+            r#"schema = 1
+[package]
+id = "org.arcweft.test"
+version = "1.0.0"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+[profiles.dev.dialogue]
+view = "view.dialogue"
+style = "style.dialogue"
+[profiles.dev.dialogue.inline-failure]
+kind = "fallback"
+[profiles.dev.dialogue.inline-failure.fallback]
+kind = "text"
+text = "[missing]"
+[profiles.dev.dialogue.inline-failure.fallback.style]
+kind = "apply"
+styles = {styles_value}
+"#
+        );
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("dialogue-manifest").expect("document id"),
+                SourceName::Memory,
+                source.clone(),
+            )
+            .expect("source document"),
+        );
+        let accepted =
+            SourceBackedManifest::decode(Arc::clone(&document)).expect("accepted manifest");
+        let profile = ProfileId::new("dev").expect("profile id");
+        let range = |needle: &str, occurrence: usize| {
+            let start = source
+                .match_indices(needle)
+                .nth(occurrence)
+                .map(|(start, _)| start)
+                .expect("fixture token");
+            SourceRange::new(start, start + needle.len())
+        };
+
+        let cases = vec![
+            (
+                ManifestTokenPath::ProfileTable {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::TableHeader,
+                range("[profiles.dev]", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueTable {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::TableHeader,
+                range("[profiles.dev.dialogue]", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueView {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::FieldKey,
+                range("view", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueView {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range("\"view.dialogue\"", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueStyle {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::FieldKey,
+                range("style", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueStyle {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range("\"style.dialogue\"", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFailureTable {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::TableHeader,
+                range("[profiles.dev.dialogue.inline-failure]", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFailureKind {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range("\"fallback\"", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackTable {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::TableHeader,
+                range("[profiles.dev.dialogue.inline-failure.fallback]", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackKind {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range("\"text\"", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackText {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range("\"[missing]\"", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackStyleTable {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::TableHeader,
+                range("[profiles.dev.dialogue.inline-failure.fallback.style]", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackStyleKind {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range("\"apply\"", 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackStyles {
+                    profile: profile.clone(),
+                },
+                ManifestTokenSlot::Value,
+                range(&styles_value, 0),
+            ),
+            (
+                ManifestTokenPath::ProfileDialogueInlineFallbackStyleElement {
+                    profile,
+                    ordinal: 0,
+                },
+                ManifestTokenSlot::Value,
+                range(&style_element, 0),
+            ),
+        ];
+
+        for (path, slot, expected_range) in cases {
+            let span = accepted
+                .manifest_token_span(&path, slot)
+                .unwrap_or_else(|| panic!("dialogue manifest token span for {path:?} / {slot:?}"));
+            assert_eq!(span.range(), expected_range);
+            assert_eq!(span.source(), document.identity());
+        }
+
+        assert!(
+            accepted
+                .manifest_token_span(
+                    &ManifestTokenPath::ProfileTable {
+                        profile: ProfileId::new("dev").expect("profile id"),
+                    },
+                    ManifestTokenSlot::Value,
+                )
+                .is_none()
+        );
+        assert!(
+            accepted
+                .manifest_token_span(
+                    &ManifestTokenPath::ProfileDialogueView {
+                        profile: ProfileId::new("dev").expect("profile id"),
+                    },
+                    ManifestTokenSlot::TableHeader,
+                )
+                .is_none()
+        );
+        assert!(
+            accepted
+                .manifest_token_span(
+                    &ManifestTokenPath::ProfileDialogueInlineFallbackStyleElement {
+                        profile: ProfileId::new("dev").expect("profile id"),
+                        ordinal: 0,
+                    },
+                    ManifestTokenSlot::FieldKey,
+                )
+                .is_none()
+        );
     }
 }

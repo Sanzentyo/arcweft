@@ -148,10 +148,9 @@ fn authored_program_is_merged_without_replacing_the_reserved_standard_definition
     let authored = ViewProgramResource {
         program_id: arcweft_view::ViewProgramId::try_new("view.project").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                "view.CustomDialogue",
-            )
-            .unwrap(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                ViewId::try_new("view.CustomDialogue").unwrap(),
+            ),
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -205,11 +204,9 @@ fn reserved_standard_dialogue_view_id_cannot_be_overridden() {
     let authored = ViewProgramResource {
         program_id: arcweft_view::ViewProgramId::try_new("view.project").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id:
-                arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new_engine_owned(
-                    DIALOGUE_VIEW_ID,
-                )
-                .unwrap(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).unwrap(),
+            ),
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),
@@ -396,10 +393,7 @@ fn dialogue_view_id_rejects_registered_owner_without_dialogue_role() {
     let authored = ViewProgramResource {
         program_id: arcweft_view::ViewProgramId::try_new("view.project.role").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                owner.as_str(),
-            )
-            .unwrap(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(owner.clone()),
             body: ViewInstructionSpan::new(0, 0),
             styles: Vec::new(),
             parameters: Vec::new(),

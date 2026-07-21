@@ -979,10 +979,9 @@ fn authored_view_program_resource() -> ViewProgramResource {
             .unwrap(),
         source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
-            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                "view.WebPanel",
-            )
-            .unwrap(),
+            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                arcweft_view::ViewId::try_new("view.WebPanel").unwrap(),
+            ),
             body: ViewInstructionSpan::new(0, 6),
             styles: Vec::new(),
             parameters: Vec::new(),

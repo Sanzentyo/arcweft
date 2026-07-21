@@ -44,7 +44,7 @@ pub(super) fn validate_exports(
     let mut public_names = BTreeSet::new();
 
     for exported in &program.exported_parts {
-        let owner = exported.target.view.public_id().as_str();
+        let owner = exported.target.view.view_id().as_str();
         let part = exported.target.part.as_public_id().as_str();
         let owner_targets = targets
             .get(owner)

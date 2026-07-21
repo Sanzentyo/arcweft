@@ -121,7 +121,7 @@ impl ViewDefinitionFingerprints {
             direct_calls: body
                 .iter()
                 .filter_map(|instruction| match instruction {
-                    ViewProgramInstruction::CallView { view, .. } => Some(view.to_view_id()),
+                    ViewProgramInstruction::CallView { view, .. } => Some(view.view_id().clone()),
                     _ => None,
                 })
                 .collect(),

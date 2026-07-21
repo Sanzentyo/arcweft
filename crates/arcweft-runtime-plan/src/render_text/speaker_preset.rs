@@ -184,7 +184,7 @@ pub(crate) fn effective_dialogue_view(
         })
         .or_else(|| defaults.global.view.clone())
         .unwrap_or_else(|| DEFAULT_DIALOGUE_VIEW.to_owned());
-    arcweft_view::ViewId::try_new_engine_owned(selected.clone()).map_err(|error| {
+    arcweft_view::ViewId::parse_public(selected.clone()).map_err(|error| {
         crate::errors::RuntimePlanLowerError::new(format!(
             "dialogue View `{selected}` is not a valid public View identity: {error}"
         ))

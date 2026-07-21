@@ -438,20 +438,18 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
         program_id: ViewProgramId::try_new("view.program.nested-axis-update").unwrap(),
         definitions: vec![
             ViewDefinitionResource {
-                public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                    "view.Parent",
-                )
-                .unwrap(),
+                public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                    arcweft_view::ViewId::try_new("view.Parent").unwrap(),
+                ),
                 body: ViewInstructionSpan::new(0, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
                 state_schema_hash: 1,
             },
             ViewDefinitionResource {
-                public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new(
-                    "view.Child",
-                )
-                .unwrap(),
+                public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                    arcweft_view::ViewId::try_new("view.Child").unwrap(),
+                ),
                 body: ViewInstructionSpan::new(1, 1),
                 styles: Vec::new(),
                 parameters: Vec::new(),
@@ -459,8 +457,9 @@ fn nested_mount_host_mutation_is_rejected_without_changing_runtime_state() {
             },
         ],
         instructions: vec![ViewProgramInstruction::CallView {
-            view: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new("view.Child")
-                .unwrap(),
+            view: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+                arcweft_view::ViewId::try_new("view.Child").unwrap(),
+            ),
             arguments: Vec::new(),
             styles: Vec::new(),
             part: None,

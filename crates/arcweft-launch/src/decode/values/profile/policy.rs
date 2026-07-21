@@ -15,8 +15,7 @@ use arcweft_dialogue::{
 };
 use arcweft_manifest_model::ProfileId;
 use arcweft_source::{SourceDocument, SourceSpan};
-use arcweft_view::{ViewId, ViewStyleSheetId};
-use serde::de::DeserializeOwned;
+use arcweft_view::{ViewId, ViewIdError, ViewStyleSheetId, ViewStyleSheetIdError};
 use std::collections::BTreeMap;
 
 pub(super) fn decode_dialogue(
@@ -48,26 +47,8 @@ pub(super) fn decode_dialogue(
         return DialogueProfileSpec::default();
     };
 
-    let view = decode_optional_dialogue_value::<ViewId>(
-        index,
-        profile_id,
-        &base,
-        "view",
-        DialogueField::View,
-        "dialogue View",
-        source_entries,
-        diagnostics,
-    );
-    let style = decode_optional_dialogue_value::<ViewStyleSheetId>(
-        index,
-        profile_id,
-        &base,
-        "style",
-        DialogueField::Style,
-        "dialogue base Style",
-        source_entries,
-        diagnostics,
-    );
+    let view = decode_dialogue_view(index, profile_id, &base, source_entries, diagnostics);
+    let style = decode_dialogue_style(index, profile_id, &base, source_entries, diagnostics);
     let inline_failure = decode_inline_failure(
         document,
         index,
@@ -84,33 +65,96 @@ pub(super) fn decode_dialogue(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn decode_optional_dialogue_value<T>(
+fn decode_dialogue_view(
     index: &ManifestIndex,
     profile_id: &ProfileId,
     dialogue_base: &[String],
-    field_name: &str,
-    source_field: DialogueField,
-    expectation: &str,
     source_entries: &mut BTreeMap<ManifestSourceKey, SourceSpan>,
     diagnostics: &mut Vec<ManifestDiagnostic>,
-) -> Option<T>
-where
-    T: DeserializeOwned,
-{
-    let path = append(dialogue_base, field_name);
+) -> Option<ViewId> {
+    let path = append(dialogue_base, "view");
     let field = index.field_by_path(&path)?;
     value::record_field(
         source_entries,
-        dialogue_path(profile_id, [ManifestPathSegment::Dialogue(source_field)]),
+        dialogue_path(
+            profile_id,
+            [ManifestPathSegment::Dialogue(DialogueField::View)],
+        ),
         field,
     );
-    value::typed(
+    let raw = value::text(
         field,
-        ManifestDiagnosticCode::IdInvalid,
-        expectation,
+        ManifestDiagnosticCode::ValueType,
+        "dialogue View",
         diagnostics,
-    )
+    )?;
+    match ViewId::parse_public(raw) {
+        Ok(view) => Some(view),
+        Err(ViewIdError::Invalid(error)) => {
+            diagnostics.push(value::diagnostic(
+                ManifestDiagnosticCode::IdInvalid,
+                format!("dialogue View has an invalid public ID: {error}"),
+                field.value_span.clone(),
+                Vec::new(),
+            ));
+            None
+        }
+        Err(ViewIdError::WrongFamily { actual }) => {
+            diagnostics.push(value::diagnostic(
+                ManifestDiagnosticCode::IdFamily,
+                format!("public ID `{actual}` is not in the View family"),
+                field.value_span.clone(),
+                Vec::new(),
+            ));
+            None
+        }
+    }
+}
+
+fn decode_dialogue_style(
+    index: &ManifestIndex,
+    profile_id: &ProfileId,
+    dialogue_base: &[String],
+    source_entries: &mut BTreeMap<ManifestSourceKey, SourceSpan>,
+    diagnostics: &mut Vec<ManifestDiagnostic>,
+) -> Option<ViewStyleSheetId> {
+    let path = append(dialogue_base, "style");
+    let field = index.field_by_path(&path)?;
+    value::record_field(
+        source_entries,
+        dialogue_path(
+            profile_id,
+            [ManifestPathSegment::Dialogue(DialogueField::Style)],
+        ),
+        field,
+    );
+    let raw = value::text(
+        field,
+        ManifestDiagnosticCode::ValueType,
+        "dialogue base Style",
+        diagnostics,
+    )?;
+    match ViewStyleSheetId::parse_public(raw) {
+        Ok(style) => Some(style),
+        Err(ViewStyleSheetIdError::Invalid(error)) => {
+            diagnostics.push(value::diagnostic(
+                ManifestDiagnosticCode::IdInvalid,
+                format!("dialogue base Style has an invalid public ID: {error}"),
+                field.value_span.clone(),
+                Vec::new(),
+            ));
+            None
+        }
+        Err(ViewStyleSheetIdError::WrongFamily { actual }) => {
+            diagnostics.push(value::diagnostic(
+                ManifestDiagnosticCode::IdFamily,
+                format!("public ID `{actual}` is not in the View Style-sheet family"),
+                field.value_span.clone(),
+                Vec::new(),
+            ));
+            None
+        }
+    }
 }
 
 fn decode_inline_failure(

@@ -59,8 +59,8 @@ pub use selector::{
 pub use sheet::{
     ViewStyleApplication, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts,
     ViewStyleDeclaration, ViewStyleModelError, ViewStylePatch, ViewStylePatchId, ViewStyleProgram,
-    ViewStyleRule, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    ViewStyleToken, ViewStyleTokenId,
+    ViewStyleRule, ViewStyleScopeId, ViewStyleSheet, ViewStyleSheetId, ViewStyleSheetIdError,
+    ViewStyleSourceId, ViewStyleToken, ViewStyleTokenId,
 };
 pub use trace::{ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode, ViewStyleTraceRejection};
 pub use value::{

@@ -851,7 +851,7 @@ impl BundleViewRuntime {
             .iter()
             .filter(|handle| !handle.is_terminal())
             .filter(|handle| {
-                ViewId::try_new_engine_owned(handle.resource_id.clone())
+                ViewId::parse_public(handle.resource_id.clone())
                     .ok()
                     .and_then(|view| self.catalog.as_ref()?.definition_index(&view))
                     .is_some()

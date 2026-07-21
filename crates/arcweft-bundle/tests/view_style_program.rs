@@ -8,6 +8,7 @@ use arcweft_bundle::resource_codec::{
     CrossSectionRef, ProductSourceRef, SourceMapSection, SourceRangeRef,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_view::ViewId;
 use arcweft_view::style::{
     ViewBoxAxisMode, ViewPropertyKind, ViewRatioMilli, ViewSpecifiedValue, ViewStyleAssignOp,
     ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId, ViewStyleProgram, ViewStyleRule,
@@ -44,8 +45,9 @@ fn style_program_contract_rejects_dangling_targets_and_inline_definition_roots()
     let style = style_resource("view.style.alpha", "style.alpha", 0);
     let mut program = ViewProgramResource::default();
     program.definitions.push(ViewDefinitionResource {
-        public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::try_new("view.main")
-            .unwrap(),
+        public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(
+            ViewId::try_new("view.main").unwrap(),
+        ),
         body: ViewInstructionSpan::new(0, 0),
         styles: vec![ViewStyleApplicationTarget::named(sheet_id("style.missing"))],
         parameters: Vec::new(),

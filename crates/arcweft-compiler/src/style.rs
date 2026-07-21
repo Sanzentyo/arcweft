@@ -26,8 +26,8 @@ use arcweft_view::style::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
     ViewEnvironmentWrapperIndex, ViewEnvironmentWrapperSource, ViewStyleApplicationTarget,
     ViewStyleAssignOp, ViewStyleDeclaration, ViewStyleModelError, ViewStylePatch, ViewStylePatchId,
-    ViewStyleProgram, ViewStyleRule, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
-    ViewStyleToken,
+    ViewStyleProgram, ViewStyleRule, ViewStyleSheet, ViewStyleSheetId, ViewStyleSheetIdError,
+    ViewStyleSourceId, ViewStyleToken,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -63,7 +63,10 @@ pub enum ViewStyleLowerError {
     #[error("invalid View public ID `{value}`: {source}")]
     InvalidViewId { value: String, source: IdError },
     #[error("invalid Style sheet ID `{value}`: {source}")]
-    InvalidSheetId { value: String, source: IdError },
+    InvalidSheetId {
+        value: String,
+        source: ViewStyleSheetIdError,
+    },
     #[error("duplicate source origin for Style sheet `{0}`")]
     DuplicateSheetOrigin(String),
     #[error("duplicate Style application inventory for View `{0}`")]
@@ -96,7 +99,7 @@ pub enum ViewStyleLowerError {
     InvalidSheetApplication {
         sheet: String,
         range: TextRange,
-        source: IdError,
+        source: ViewStyleSheetIdError,
     },
     #[error("View Style application in module `{module}` at {range:?} has no checked inline patch")]
     MissingInlinePatch {

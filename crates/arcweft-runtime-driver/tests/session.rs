@@ -187,7 +187,7 @@ fn paged_inventory_fixture_bundle() -> ArcweftBundle {
             Some(ViewProgramResource {
                 program_id: ViewProgramId::try_new("view.program.inventory").unwrap(),
                 definitions: vec![ViewDefinitionResource {
-                    public_id: ViewDefinitionRef::try_new("view.inventory").unwrap(),
+                    public_id: ViewDefinitionRef::new(ViewId::try_new("view.inventory").unwrap()),
                     body: ViewInstructionSpan::new(0, 0),
                     styles: Vec::new(),
                     parameters: Vec::new(),
@@ -283,7 +283,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
     bundle.view_program = Some(ViewProgramResource {
         program_id: ViewProgramId::try_new("view.program.session").unwrap(),
         definitions: vec![ViewDefinitionResource {
-            public_id: ViewDefinitionRef::try_new("view.Root").unwrap(),
+            public_id: ViewDefinitionRef::new(ViewId::try_new("view.Root").unwrap()),
             body: ViewInstructionSpan::new(0, 5),
             styles: Vec::new(),
             parameters: vec![ViewParameterResource {
@@ -545,7 +545,9 @@ fn fixture_bundle_with_dialogue_owner(owner: &ViewId, display_text: &str) -> Arc
                 definitions: ["view.DialogueOld", "view.DialogueNew"]
                     .into_iter()
                     .map(|view| ViewDefinitionResource {
-                        public_id: ViewDefinitionRef::try_new(view).expect("definition ID"),
+                        public_id: ViewDefinitionRef::new(
+                            ViewId::try_new(view).expect("definition ID"),
+                        ),
                         body: ViewInstructionSpan::new(0, 0),
                         styles: Vec::new(),
                         parameters: vec![ViewParameterResource {
