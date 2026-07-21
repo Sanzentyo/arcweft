@@ -41,6 +41,7 @@ pub(crate) fn compile_repl_cell(
     let context = ProjectCompilationContext::new(
         Arc::new(base.project().typecheck_env()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         Some(ProjectEntrySelection::new(
             selected_entry.clone(),

@@ -21,7 +21,8 @@ pub use registration::{
     ProjectEntrySelectionKind,
 };
 
-use crate::{hir, lower, parse, style};
+use crate::{hir, image, lower, parse, style, view};
+use crate::{image::CompiledImageCatalog, view::CompiledViewProduct};
 use arcweft_lang_hir::{
     model::HirModule,
     project::{HirProject, HirProjectModule},
@@ -40,12 +41,14 @@ use arcweft_lang_syntax::{
     lint::{SyntaxLint, SyntaxLintSeverity},
     parser::recovery::ParseError,
 };
+use arcweft_presentation::fx::FxDefinition;
 use arcweft_project::{
     graph::CompileUnitId,
     sources::{ModuleSourceHash, ProjectSourceFile, ProjectSources},
 };
 use arcweft_runtime_plan::{
     flow::{RuntimePlanLowerOptions, RuntimePlanLowerReport},
+    fx::lower_fx_definitions_for_package,
     line_task::LoweredLineTaskGroup,
 };
 #[cfg(test)]
@@ -71,6 +74,9 @@ pub enum ProjectCompileStage {
     EntryBinding,
     EntrySelection,
     StyleLower,
+    ImageLower,
+    FxLower,
+    ViewLower,
     LineTaskLower,
     RuntimePlanLower,
 }
@@ -136,6 +142,9 @@ pub struct CompiledProject {
     typecheck_report: TypeCheckReport,
     checked_entries: CheckedEntryCatalog,
     style: style::CompiledViewStyleArtifact,
+    image_catalog: CompiledImageCatalog,
+    fx_definitions: Arc<[FxDefinition]>,
+    view_product: CompiledViewProduct,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     runtime_plan: RuntimePlanLowerReport,
 }
@@ -162,6 +171,9 @@ impl ProjectCompileStage {
             Self::EntryBinding => "entry-binding",
             Self::EntrySelection => "entry-selection",
             Self::StyleLower => "style-lower",
+            Self::ImageLower => "image-lower",
+            Self::FxLower => "fx-lower",
+            Self::ViewLower => "view-lower",
             Self::LineTaskLower => "line-task-lower",
             Self::RuntimePlanLower => "runtime-plan-lower",
         }
@@ -334,6 +346,18 @@ impl CompiledProject {
         &self.style
     }
 
+    pub const fn image_catalog(&self) -> &CompiledImageCatalog {
+        &self.image_catalog
+    }
+
+    pub fn fx_definitions(&self) -> &[FxDefinition] {
+        &self.fx_definitions
+    }
+
+    pub const fn view_product(&self) -> &CompiledViewProduct {
+        &self.view_product
+    }
+
     pub fn line_task_groups(&self) -> &[LoweredLineTaskGroup] {
         &self.line_task_groups
     }
@@ -473,6 +497,45 @@ where
                 ],
             )
         })?;
+        let image_catalog =
+            image::lower_project_images(&hir_project, project).map_err(|error| {
+                linked_error_with_registration_sources(
+                    ProjectCompileStage::ImageLower,
+                    context.facts(),
+                    [error.diagnostic()],
+                )
+            })?;
+        let fx_definitions = Arc::<[FxDefinition]>::from(
+            lower_fx_definitions_for_package(&linked_hir, project.package().id.as_str()).map_err(
+                |error| {
+                    linked_error(
+                        ProjectCompileStage::FxLower,
+                        [
+                            Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                                .with_code("compiler.fx.lower"),
+                        ],
+                    )
+                },
+            )?,
+        );
+        let view_product = view::ViewProjectLowerer::for_project(
+            &hir_project,
+            &linked_hir,
+            &typecheck_report,
+            &style,
+            project,
+            &image_catalog,
+            &fx_definitions,
+            context.resource_types(),
+        )
+        .and_then(view::ViewProjectLowerer::lower)
+        .map_err(|error| {
+            linked_error_with_registration_sources(
+                ProjectCompileStage::ViewLower,
+                context.facts(),
+                [error.diagnostic()],
+            )
+        })?;
         let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
             linked_error(
                 ProjectCompileStage::LineTaskLower,
@@ -539,6 +602,9 @@ where
             typecheck_report,
             checked_entries,
             style,
+            image_catalog,
+            fx_definitions,
+            view_product,
             line_task_groups,
             runtime_plan,
         })

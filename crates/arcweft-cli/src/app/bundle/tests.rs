@@ -1,6 +1,7 @@
 use super::*;
 use arcweft_bundle::{
-    BundleImageObjectBounds,
+    BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
+    BundleImageObjectPlayback, BundleImageObjectTransform,
     container::{BundleView, ReadBudget},
     patch::{BundlePatchArtifact, encode_patch_bundle},
 };
@@ -12,22 +13,13 @@ use arcweft_core::task::{
 };
 use arcweft_layout::stage_placement::{StagePlacement, StageRect};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
+use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocumentId, SourceName};
 use std::path::Path;
 
 mod scroll_style;
 mod view_part_recovery;
-mod view_sidecars;
-
-fn image_declaration_document(source: &str) -> SourceDocument {
-    SourceDocument::try_new(
-        SourceDocumentId::try_new("arcweft-test://bundle-image-declaration")
-            .expect("test source identity"),
-        SourceName::path("bundle-image-declaration.arcw"),
-        source,
-    )
-    .expect("test source document")
-}
 
 fn image_await(id: &str) -> FlowOp {
     FlowOp::Await {
@@ -52,6 +44,50 @@ fn image_effect_call(callee: &str, arg: &str) -> FlowOp {
         callee: callee.to_owned(),
         args: vec![arg.to_owned()],
     }))
+}
+
+fn view_definition<'a>(
+    program: &'a ViewProgramResource,
+    id: &str,
+) -> &'a arcweft_bundle::resource_codec::view::ViewDefinitionResource {
+    program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == id)
+        .unwrap_or_else(|| panic!("missing View definition `{id}`"))
+}
+
+fn view_action_buttons<'a>(
+    program: &'a ViewProgramResource,
+    view: &str,
+) -> Vec<&'a arcweft_bundle::resource_codec::view::ViewActionButtonResource> {
+    program
+        .action_buttons
+        .iter()
+        .filter(|button| button.view.as_deref() == Some(view))
+        .collect()
+}
+
+fn view_text_blocks<'a>(
+    program: &'a ViewProgramResource,
+    view: &str,
+) -> Vec<&'a arcweft_bundle::resource_codec::view::ViewTextBlockResource> {
+    program
+        .text_blocks
+        .iter()
+        .filter(|block| block.view.as_deref() == Some(view))
+        .collect()
+}
+
+fn view_surfaces<'a>(
+    program: &'a ViewProgramResource,
+    view: &str,
+) -> Vec<&'a arcweft_bundle::resource_codec::view::ViewSurfaceResource> {
+    program
+        .surfaces
+        .iter()
+        .filter(|surface| surface.view.as_deref() == Some(view))
+        .collect()
 }
 
 fn plan_with_ops(ops: Vec<FlowOp>) -> RuntimePlan {
@@ -104,7 +140,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
@@ -116,10 +154,13 @@ flow test {
     assert_eq!(input.options.len(), 1);
 
     let style = sidecars.style.expect("style sidecar");
-    assert_eq!(style.program.sheets().len(), 1);
-    assert_eq!(
-        style.program.sheets()[0].id().public_id().as_str(),
-        "style.primary_button"
+    assert!(
+        style
+            .program
+            .sheets()
+            .iter()
+            .any(|sheet| sheet.id().public_id().as_str() == "style.primary_button"),
+        "the authored sheet shares the compiler-owned product with the standard sheet"
     );
     assert_eq!(style.program.patches().len(), 1);
 
@@ -181,32 +222,36 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
-    assert_eq!(program.definitions.len(), 3);
-    let child = program
-        .definitions
-        .iter()
-        .find(|definition| definition.public_id.as_str() == "view.Child")
-        .expect("transitively reachable child definition");
-    let parent = program
-        .definitions
-        .iter()
-        .find(|definition| definition.public_id.as_str() == "view.Parent")
-        .expect("mounted parent definition");
-    let toggle = program
-        .definitions
-        .iter()
-        .find(|definition| definition.public_id.as_str() == "view.Toggle")
-        .expect("second transitively reachable child definition");
+    assert_eq!(
+        program
+            .definitions
+            .iter()
+            .filter(|definition| {
+                definition.public_id.as_str() != arcweft_bundle::standard_view::DIALOGUE_VIEW_ID
+            })
+            .count(),
+        3
+    );
+    let child = view_definition(&program, "view.Child");
+    let parent = view_definition(&program, "view.Parent");
+    let toggle = view_definition(&program, "view.Toggle");
     assert_eq!(child.body.start_instruction, 0);
     assert_eq!(child.body.end_instruction, toggle.body.start_instruction);
     assert_eq!(toggle.body.end_instruction, parent.body.start_instruction);
-    assert_eq!(
-        parent.body.end_instruction as usize,
-        program.instructions.len()
+    let standard_dialogue =
+        view_definition(&program, arcweft_bundle::standard_view::DIALOGUE_VIEW_ID);
+    assert!(parent.body.end_instruction as usize <= program.instructions.len());
+    assert!(standard_dialogue.body.end_instruction as usize <= program.instructions.len());
+    assert!(
+        parent.body.end_instruction <= standard_dialogue.body.start_instruction
+            || standard_dialogue.body.end_instruction <= child.body.start_instruction,
+        "authored and standard definition bodies must not overlap"
     );
     assert_eq!(child.parameters.len(), 1);
     assert_eq!(child.parameters[0].ordinal, 0);
@@ -297,7 +342,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources_for_package(&hir, &[], "test-package")
         .expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
@@ -386,7 +433,7 @@ source = "demo.arcw"
 }
 
 #[test]
-fn view_local_let_input_handle_lowers_to_program_binding() {
+fn view_local_let_input_handle_lowers_without_a_fabricated_scalar_program() {
     use arcweft_bundle::resource_codec::view::{ViewProgramInstruction, ViewTextSourceKind};
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
@@ -405,20 +452,25 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
-    assert!(program.instructions.iter().any(|instruction| {
-        matches!(
-            instruction,
-            ViewProgramInstruction::BindLocal {
-                binding,
-                value_program: _,
-                source: None
-            } if binding == "visitor_name"
-        )
-    }));
+    assert!(
+        !program.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                ViewProgramInstruction::BindLocal {
+                    binding,
+                    value_program: _,
+                    source: None
+                } if binding == "visitor_name"
+            )
+        }),
+        "input handles are compiler bindings, not scalar runtime values"
+    );
 
     let input = sidecars.input.expect("input sidecar");
     assert_eq!(input.options.len(), 1);
@@ -473,7 +525,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
@@ -508,11 +562,10 @@ flow test {
         program.scroll_regions[0].overflow,
         arcweft_bundle::resource_codec::ViewScrollOverflowPolicy::Hidden
     );
-    assert_eq!(program.action_buttons.len(), 1);
+    let feedback_buttons = view_action_buttons(&program, "view.FeedbackForm");
+    assert_eq!(feedback_buttons.len(), 1);
     assert_eq!(
-        program.action_buttons[0]
-            .containing_scroll_region
-            .as_deref(),
+        feedback_buttons[0].containing_scroll_region.as_deref(),
         Some(program.scroll_regions[0].public_id.as_str())
     );
     let input = sidecars.input.as_ref().expect("input sidecar");
@@ -557,7 +610,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
@@ -594,7 +649,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
 
     assert!(collect_bundle_dsl_view_resources(&hir, &[]).is_err());
 }
@@ -653,7 +710,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
 
     assert!(collect_bundle_dsl_view_resources(&hir, &[]).is_err());
 }
@@ -674,7 +733,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
@@ -703,7 +764,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
@@ -737,7 +800,9 @@ flow test {
 ",
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let source_images = vec![BundleImageObject {
         id: "image.sample.pulse".to_owned(),
         asset: "asset.bg.pulse".to_owned(),
@@ -795,14 +860,17 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program lowers");
     let text = sidecars.text.expect("text resource lowers");
 
     assert_eq!(program.scroll_regions.len(), 1);
-    assert_eq!(program.text_blocks.len(), 1);
-    let block = &program.text_blocks[0];
+    let notes_blocks = view_text_blocks(&program, "view.NotesPanel");
+    assert_eq!(notes_blocks.len(), 1);
+    let block = notes_blocks[0];
     assert_eq!(block.public_id, "text.block.view.NotesPanel.0");
     assert_eq!(block.view.as_deref(), Some("view.NotesPanel"));
     assert_eq!(
@@ -833,15 +901,18 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program lowers");
 
-    assert_eq!(program.text_blocks.len(), 2);
-    let wrapped = &program.text_blocks[0].bounds;
+    let status_blocks = view_text_blocks(&program, "view.StatusPanel");
+    assert_eq!(status_blocks.len(), 2);
+    let wrapped = &status_blocks[0].bounds;
     assert_eq!(wrapped.width_milli, 100_000);
     assert_eq!(wrapped.height_milli, 48_000);
-    let after = &program.text_blocks[1].bounds;
+    let after = &status_blocks[1].bounds;
     assert_eq!(after.y_milli, 112_000);
 }
 
@@ -863,18 +934,7 @@ fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
         .expect("modern feedback project semantic context loads");
     let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)
         .expect("modern feedback project compiles through the canonical profile path");
-    let package = selection
-        .package_identity()
-        .expect("modern feedback package identity resolves");
-    let sidecars = collect_bundle_dsl_view_resources_with_style_for_package(
-        &compiled.hir,
-        &compiled.style,
-        &[],
-        &package,
-        &compiled.typecheck_report.view_part_catalog,
-        &compiled.source_map,
-    )
-    .expect("sidecars lower from the checked project artifacts");
+    let sidecars = TestCompiledViewResources::from_compiled(compiled.view_product.clone());
     let program = sidecars.program.expect("program lowers");
     let text = sidecars.text.expect("text resource lowers");
 
@@ -902,69 +962,6 @@ fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
                 .saturating_add(16_000),
         "name field must be placed after the wrapped subtitle: subtitle={subtitle:?}, name={name_field:?}"
     );
-}
-
-#[test]
-fn view_await_lowers_to_view_program_branch_spans() {
-    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
-
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
-view AvatarPanel() {
-  Column {
-    AwaitView(load_avatar(user)) {
-      pending _ => Text("Loading")
-      ready img => Image(img)
-      error _ => Button(@button:.fallback, label = "Fallback")
-    }
-  }
-}
-
-flow test {
-  view(@view:.AvatarPanel)
-}
-"#,
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
-
-    let program = sidecars.program.expect("program sidecar");
-    let await_instruction = program
-        .instructions
-        .iter()
-        .find_map(|instruction| match instruction {
-            ViewProgramInstruction::Await {
-                pending_branch,
-                ready_branch,
-                error_branch,
-                denied_branch,
-                ..
-            } => Some((
-                pending_branch.as_ref(),
-                ready_branch.as_ref(),
-                error_branch.as_ref(),
-                denied_branch.as_ref(),
-            )),
-            _ => None,
-        })
-        .expect("await instruction");
-    assert!(
-        await_instruction
-            .0
-            .is_some_and(|branch| branch.body_span > 0)
-    );
-    assert!(
-        await_instruction
-            .1
-            .is_some_and(|branch| branch.body_span > 0)
-    );
-    assert!(
-        await_instruction
-            .2
-            .is_some_and(|branch| branch.body_span > 0)
-    );
-    assert!(await_instruction.3.is_none());
 }
 
 #[test]
@@ -998,7 +995,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
@@ -1125,7 +1124,9 @@ flow test {
 ",
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let text = sidecars.text.expect("text sidecar");
 
@@ -1173,7 +1174,9 @@ pub dialogue defaults {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let text = sidecars.text.expect("dialogue text sidecar");
     assert!(text.sources.iter().any(|source| {
@@ -1206,19 +1209,16 @@ pub dialogue defaults {
                 _ => false,
             })
     );
-    assert!(program.action_buttons.iter().any(|button| matches!(
-        &button.action,
-        ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
-            if parameter == "dialogue"
-    )));
     let primary_action = program
         .action_buttons
         .iter()
         .find(|button| {
-            matches!(
-                &button.action,
-                ViewActionButtonActionResource::DialoguePrimaryAction { .. }
-            )
+            button.view.as_deref() == Some("view.DialoguePanel")
+                && matches!(
+                    &button.action,
+                    ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
+                        if parameter == "dialogue"
+                )
         })
         .expect("dialogue primary action button");
     assert!(text.sources.iter().any(|source| {
@@ -1228,16 +1228,19 @@ pub dialogue defaults {
                     value: String::new(),
                 }
     }));
-    assert_eq!(program.surfaces.len(), 1);
-    assert_eq!(program.surfaces[0].bounds.x_milli, 57_600);
-    assert_eq!(program.surfaces[0].bounds.y_milli, 460_800);
-    assert_eq!(program.surfaces[0].bounds.width_milli, 1_164_800);
-    assert_eq!(program.surfaces[0].bounds.height_milli, 201_600);
-    assert_eq!(program.text_blocks[0].bounds.x_milli, 85_600);
-    assert_eq!(program.text_blocks[0].bounds.y_milli, 480_800);
-    assert_eq!(program.text_blocks[1].bounds.x_milli, 85_600);
-    assert_eq!(program.text_blocks[1].bounds.y_milli, 518_800);
-    assert_eq!(program.text_blocks[1].bounds.height_milli, 125_600);
+    let dialogue_surfaces = view_surfaces(&program, "view.DialoguePanel");
+    assert_eq!(dialogue_surfaces.len(), 1);
+    assert_eq!(dialogue_surfaces[0].bounds.x_milli, 57_600);
+    assert_eq!(dialogue_surfaces[0].bounds.y_milli, 460_800);
+    assert_eq!(dialogue_surfaces[0].bounds.width_milli, 1_164_800);
+    assert_eq!(dialogue_surfaces[0].bounds.height_milli, 201_600);
+    let dialogue_text_blocks = view_text_blocks(&program, "view.DialoguePanel");
+    assert_eq!(dialogue_text_blocks.len(), 2);
+    assert_eq!(dialogue_text_blocks[0].bounds.x_milli, 85_600);
+    assert_eq!(dialogue_text_blocks[0].bounds.y_milli, 480_800);
+    assert_eq!(dialogue_text_blocks[1].bounds.x_milli, 85_600);
+    assert_eq!(dialogue_text_blocks[1].bounds.y_milli, 518_800);
+    assert_eq!(dialogue_text_blocks[1].bounds.height_milli, 125_600);
 }
 
 #[test]
@@ -1268,7 +1271,9 @@ flow test {
     );
     let parsed = parse_document_with_source(document.clone(), ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources_from_source(&hir, &[], "test.arcw", source)
         .expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
@@ -1340,26 +1345,20 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
-    let direct_style = sidecars.style.clone().expect("authored Style resource");
-    let bundle = return_bundle("style-link.arcw", "done")
-        .with_view_resources(sidecars.program, sidecars.style)
-        .expect("authored resources link with the standard View library");
-    let program = bundle.view_program.expect("linked View program");
-    let style = bundle.view_style.expect("linked Style resource");
+    let product = sidecars.compiled.product();
+    let program = product.program().expect("linked View program").resource();
+    let style = product.style().expect("linked Style resource").resource();
     let showcase_id =
         ViewStyleSheetId::try_new("style.showcase").expect("valid authored Style sheet ID");
-    let standard_id = ViewStyleSheetId::try_new("style.dialogue.standard")
+    let standard_id = ViewStyleSheetId::try_new_engine_owned("std.style.dialogue")
         .expect("valid standard Style sheet ID");
     let showcase_target = ViewStyleApplicationTarget::named(showcase_id.clone());
 
-    assert_eq!(style.style_program_id, direct_style.style_program_id);
-    let showcase_definition = program
-        .definitions
-        .iter()
-        .find(|definition| definition.public_id.as_str() == "view.Showcase")
-        .expect("authored View definition survives standard-resource linking");
+    let showcase_definition = view_definition(program, "view.Showcase");
     let showcase_body = &program.instructions[showcase_definition.body.start_instruction as usize
         ..showcase_definition.body.end_instruction as usize];
     assert!(
@@ -1411,9 +1410,9 @@ flow test {
         }
     );
 
-    assert_linked_style_sources_are_valid(&style);
+    assert_linked_style_sources_are_valid(style);
     program
-        .validate_style_contract(Some(&style))
+        .validate_style_contract(Some(style))
         .expect("linked View program keeps valid typed Style references");
 }
 
@@ -1483,7 +1482,9 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
 
     let parsed = arcweft_lang_syntax::parser::parse_source(CUSTOM_DIALOGUE_VIEW_SOURCE);
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("custom dialogue View program");
     let text = sidecars.text.expect("custom dialogue text resource");
@@ -1576,7 +1577,7 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
 }
 
 #[test]
-fn view_declaration_is_not_mounted_implicitly() {
+fn view_declaration_is_catalogued_without_creating_a_runtime_mount() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r#"
 view FeedbackForm() {
@@ -1586,12 +1587,29 @@ view FeedbackForm() {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
-    assert!(sidecars.program.is_none());
-    assert!(sidecars.text.is_none());
-    assert!(sidecars.input.is_none());
+    let product = sidecars.compiled.product().as_ref().clone();
+    let runtime = BundleViewRuntime::try_new(product, sidecars.text.clone())
+        .expect("accepted catalog creates a View runtime");
+    assert_eq!(runtime.live_mount_count(), 0);
+
+    let program = sidecars.program.expect("complete View program");
+    assert!(
+        program
+            .definitions
+            .iter()
+            .any(|definition| definition.public_id.as_str() == "view.FeedbackForm")
+    );
+    assert!(sidecars.input.as_ref().is_some_and(|input| {
+        input
+            .options
+            .iter()
+            .any(|option| option.view.as_deref() == Some("view.FeedbackForm"))
+    }));
 }
 
 #[test]
@@ -1625,7 +1643,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let text = sidecars.text.expect("text sidecar");
@@ -1721,7 +1741,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
@@ -1759,7 +1781,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
@@ -1846,7 +1870,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
@@ -1894,7 +1920,9 @@ flow test {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
@@ -1917,40 +1945,6 @@ flow test {
                 }
             )
     ));
-}
-
-#[test]
-fn view_generic_callback_block_lowers_to_handler_binding() {
-    use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
-
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
-pub action feedback.focus(value: String)
-
-view FeedbackForm() {
-  Button(@button:.continue, label = "Continue")
-    .on_focus {
-      action.invoke(@action:.feedback.focus, value = "focused")
-    }
-}
-
-flow test {
-  view(@view:.FeedbackForm)
-}
-"#,
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
-    let program = sidecars.program.expect("program sidecar");
-
-    assert!(program.instructions.iter().any(|instruction| {
-        matches!(
-            instruction,
-            ViewProgramInstruction::BindHandler { event, handler, .. }
-                if event == "focus" && handler.contains(".handler.focus.")
-        )
-    }));
 }
 
 #[test]
@@ -2125,6 +2119,14 @@ flow main(state: GameState) { return "done" }
 
     let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
         .expect("ordinary source bundle compiles");
+    assert!(
+        artifact.bundle.view_program.is_some(),
+        "the bundle consumes the compiler-owned accepted View product"
+    );
+    assert!(
+        artifact.bundle.view_theme.is_none(),
+        "an absent authored theme remains the canonical runtime default"
+    );
     assert!(matches!(
         artifact.bundle.bytecode.program.entries[0].roles,
         arcweft_core::entry::RuntimeEntryRoles::Stateful(_)
@@ -2197,8 +2199,14 @@ flow main {
         .fx_applications()
         .next()
         .expect("typed Fx application remains in RichText");
+    let expected_definition = format!(
+        "{}::wave",
+        selection
+            .package_identity()
+            .expect("direct source has one compiler package identity")
+    );
 
-    assert_eq!(application.definition().to_string(), "opening::wave");
+    assert_eq!(application.definition().to_string(), expected_definition);
     assert!(
         artifact
             .bundle
@@ -2395,7 +2403,7 @@ fn static_image_asset_refs_collects_nested_asset_image_entity_refs() {
     }]);
 
     assert_eq!(
-        static_image_asset_refs(&plan, &BTreeMap::new()),
+        static_image_asset_refs(&plan, std::iter::empty::<&str>()),
         vec!["asset.bg.room".to_owned(), "asset.view.logo".to_owned()]
     );
 }
@@ -2420,7 +2428,7 @@ fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
     ]);
 
     assert_eq!(
-        static_image_asset_refs(&plan, &BTreeMap::new()),
+        static_image_asset_refs(&plan, std::iter::empty::<&str>()),
         vec![
             "asset.bg.pulse".to_owned(),
             "asset.bg.room".to_owned(),
@@ -2436,7 +2444,17 @@ fn static_image_asset_refs_ignore_unknown_calls() {
         "asset = @asset:.view.logo",
     )]);
 
-    assert!(static_image_asset_refs(&plan, &BTreeMap::new()).is_empty());
+    assert!(static_image_asset_refs(&plan, std::iter::empty::<&str>()).is_empty());
+}
+
+#[test]
+fn static_image_asset_refs_rejects_non_asset_public_ids() {
+    let plan = plan_with_ops(vec![
+        image_effect_call("image", "@view:.logo"),
+        image_effect_call("bg", "not a public id"),
+    ]);
+
+    assert!(static_image_asset_refs(&plan, std::iter::empty::<&str>()).is_empty());
 }
 
 #[test]
@@ -2446,7 +2464,7 @@ fn evaluated_builtin_effects_are_not_host_tasks_or_static_image_calls() {
     ))]);
 
     assert!(bundle_required_host_calls(&plan).is_empty());
-    assert!(static_image_asset_refs(&plan, &BTreeMap::new()).is_empty());
+    assert!(static_image_asset_refs(&plan, std::iter::empty::<&str>()).is_empty());
 }
 
 #[test]
@@ -2457,162 +2475,17 @@ fn static_image_asset_refs_collects_line_task_image_calls() {
     }));
 
     assert_eq!(
-        static_image_asset_refs(&plan, &BTreeMap::new()),
+        static_image_asset_refs(&plan, std::iter::empty::<&str>()),
         vec!["asset.bg.room"]
     );
 }
 
 #[test]
-fn static_image_asset_refs_collects_declared_image_object_assets() {
-    let document = image_declaration_document(
-        r"
-image @image.sample.pulse {
-    asset = @asset:.bg.pulse
-    target = @target.sample.pulse
-    layer = @layer.foreground
-    x = 12px
-    y = 34px
-    width = 56px
-    height = 78px
-}
-",
-    );
-    let declarations = parse_declared_image_objects(&document);
-
+fn static_image_asset_refs_collects_compiled_catalog_assets() {
     assert_eq!(
-        static_image_asset_refs(&plan_with_ops(Vec::new()), &declarations),
+        static_image_asset_refs(&plan_with_ops(Vec::new()), ["asset.bg.pulse"]),
         vec!["asset.bg.pulse"]
     );
-}
-
-#[test]
-fn bundle_image_objects_collect_declared_bounds_and_opacity() {
-    let document = image_declaration_document(
-        r"
-image @image.sample.pulse {
-    asset = @asset:.bg.pulse
-    target = @target.sample.pulse
-    layer = @layer.foreground
-    x = 12px
-    y = 34px
-    width = 56px
-    height = 78px
-    fit = intrinsic
-    alignment.x = right
-    alignment.y = bottom
-    playback.start = 25ms
-    playback.local_time = 50ms
-    transform.tx = 24px
-    transform.ty = 12px
-    depth = 2500
-    opacity = 0.875
-    action = action.inspect.pulse
-    param.role = animated-hotspot
-    proxy.id = proxy.pulse.hotspot
-    proxy.type = PulseHotspot
-    proxy.role = inspect
-    proxy.layer = layer.hit
-    proxy.depth = 2600
-    proxy.hit_test = true
-    proxy.param.channel = preview
-    visible = true
-}
-",
-    );
-    let declarations = parse_declared_image_objects(&document);
-
-    let objects = bundle_image_objects(&declarations, &document).expect("image object metadata");
-
-    assert_eq!(
-        objects,
-        vec![BundleImageObject {
-            id: "image.sample.pulse".to_owned(),
-            asset: "asset.bg.pulse".to_owned(),
-            target: Some("target.sample.pulse".to_owned()),
-            layer: Some("layer.foreground".to_owned()),
-            view: None,
-            containing_scroll_region: None,
-            bounds: BundleImageObjectBounds::from_px(12, 34, 56, 78),
-            placement: Some(StagePlacement::absolute(StageRect::new(
-                12_000, 34_000, 56_000, 78_000,
-            ))),
-            fit: BundleImageObjectFit::Intrinsic,
-            alignment: BundleImageObjectAlignment {
-                x_milli: 1_000,
-                y_milli: 1_000,
-            },
-            playback: BundleImageObjectPlayback {
-                start_time_millis: 25,
-                rate_milli: 1_000,
-                paused_at_millis: None,
-                pinned_local_time_millis: Some(50),
-            },
-            transform: BundleImageObjectTransform {
-                m11_milli: 1_000,
-                m12_milli: 0,
-                m21_milli: 0,
-                m22_milli: 1_000,
-                tx_milli: 24_000,
-                ty_milli: 12_000,
-            },
-            depth_milli: 2500,
-            opacity_milli: 875,
-            actions: vec!["action.inspect.pulse".to_owned()],
-            params: [(
-                "param.role".to_owned(),
-                BundleImageObjectParam::Text {
-                    value: "animated-hotspot".to_owned(),
-                },
-            )]
-            .into(),
-            proxies: vec![BundleImageObjectProxy {
-                id: "proxy.pulse.hotspot".to_owned(),
-                type_name: Some("PulseHotspot".to_owned()),
-                role: Some("inspect".to_owned()),
-                layer: Some("layer.hit".to_owned()),
-                depth_milli: Some(2600),
-                hit_test: true,
-                params: [(
-                    "channel".to_owned(),
-                    BundleImageObjectParam::Text {
-                        value: "preview".to_owned(),
-                    },
-                )]
-                .into(),
-            }],
-            visible: true,
-        }]
-    );
-}
-
-#[test]
-fn bundle_image_objects_ignore_unknown_declaration_fields() {
-    let document = image_declaration_document(
-        r"
-image @image.sample.unknown_fields {
-    asset = @asset:.bg.poster
-    x = 12px
-    y = 34px
-    width = 56px
-    height = 78px
-    mystery.alignment = right
-    mystery.playback = 25ms
-}
-",
-    );
-    let declarations = parse_declared_image_objects(&document);
-
-    let objects = bundle_image_objects(&declarations, &document).expect("image object metadata");
-    let object = objects.first().expect("declared image object");
-
-    assert_eq!(
-        object.alignment,
-        BundleImageObjectAlignment {
-            x_milli: 500,
-            y_milli: 500,
-        }
-    );
-    assert_eq!(object.playback, BundleImageObjectPlayback::default());
 }
 
 #[test]
@@ -2622,11 +2495,13 @@ fn validate_referenced_bundle_image_assets_rejects_missing_static_refs() {
         image_effect_call("image", "asset = @asset:.view.logo"),
     ]);
 
-    assert!(validate_referenced_bundle_image_assets(&plan, &BTreeMap::new(), &[]).is_err());
+    assert!(
+        validate_referenced_bundle_image_assets(&plan, std::iter::empty::<&str>(), &[]).is_err()
+    );
     assert!(
         validate_referenced_bundle_image_assets(
             &plan,
-            &BTreeMap::new(),
+            std::iter::empty::<&str>(),
             &[image_asset("asset.bg.room"), image_asset("asset.view.logo")]
         )
         .is_ok()

@@ -19,6 +19,7 @@ arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-manifest-model = { path = "../arcweft-manifest-model" }
 arcweft-project = { path = "../arcweft-project" }
+arcweft-resource-model.workspace = true
 arcweft-runtime-codegen = { path = "../arcweft-runtime-codegen" }
 arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }

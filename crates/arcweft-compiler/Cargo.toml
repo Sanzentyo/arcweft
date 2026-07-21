@@ -13,11 +13,13 @@ arcweft-core = { path = "../arcweft-core" }
 arcweft-data = { path = "../arcweft-data" }
 arcweft-id = { path = "../arcweft-id" }
 arcweft-launch = { path = "../arcweft-launch" }
+arcweft-layout = { path = "../arcweft-layout" }
 arcweft-lang-hir = { path = "../arcweft-lang-hir" }
 arcweft-lang-sema = { path = "../arcweft-lang-sema" }
 arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
 arcweft-manifest-model.workspace = true
 arcweft-project = { path = "../arcweft-project" }
+arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-resource-model.workspace = true
 arcweft-render-text = { path = "../arcweft-render-text" }
 arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
@@ -25,6 +27,7 @@ arcweft-source = { path = "../arcweft-source" }
 arcweft-view = { path = "../arcweft-view" }
 
 blake3.workspace = true
+num-traits = "0.2.19"
 thiserror.workspace = true
 
 [lib]

@@ -167,6 +167,11 @@ pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
 }
 
 impl TypeRef {
+    /// Deterministic Arcweft spelling used by typed semantic identities.
+    pub fn canonical_label(&self) -> String {
+        type_ref_parse_label(self)
+    }
+
     pub(crate) fn rebase_reference_ranges(&mut self, base: usize) {
         match self {
             Self::Tuple(items) | Self::Choice(items) => {
@@ -816,6 +821,51 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
 }
 
 fn type_ref_parse_label(ty: &TypeRef) -> String {
+    type_ref_label_in(ty, TypeLabelContext::TopLevel)
+}
+
+#[derive(Clone, Copy)]
+enum TypeLabelContext {
+    TopLevel,
+    FunctionParameter,
+    FunctionReturn,
+    ChoiceAlternative,
+    ReferenceReferent,
+    ProjectionSubject,
+    Delimited,
+}
+
+fn type_ref_label_in(ty: &TypeRef, context: TypeLabelContext) -> String {
+    let label = type_ref_unparenthesized_label(ty);
+    if type_ref_label_needs_parentheses(ty, context) {
+        format!("({label})")
+    } else {
+        label
+    }
+}
+
+fn type_ref_label_needs_parentheses(ty: &TypeRef, context: TypeLabelContext) -> bool {
+    match context {
+        TypeLabelContext::TopLevel | TypeLabelContext::Delimited => false,
+        TypeLabelContext::FunctionParameter => matches!(ty, TypeRef::Function { .. }),
+        TypeLabelContext::FunctionReturn => {
+            matches!(
+                ty,
+                TypeRef::Function {
+                    effects: Some(_),
+                    ..
+                }
+            )
+        }
+        TypeLabelContext::ChoiceAlternative
+        | TypeLabelContext::ReferenceReferent
+        | TypeLabelContext::ProjectionSubject => {
+            matches!(ty, TypeRef::Function { .. } | TypeRef::Choice(_))
+        }
+    }
+}
+
+fn type_ref_unparenthesized_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
@@ -824,7 +874,7 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
             "({})",
             items
                 .iter()
-                .map(type_ref_parse_label)
+                .map(|item| type_ref_label_in(item, TypeLabelContext::Delimited))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -834,31 +884,34 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
             effects,
         } => {
             let params = if params.len() == 1 {
-                type_ref_parse_label(&params[0])
+                type_ref_label_in(&params[0], TypeLabelContext::FunctionParameter)
             } else {
                 format!(
                     "({})",
                     params
                         .iter()
-                        .map(type_ref_parse_label)
+                        .map(|param| type_ref_label_in(param, TypeLabelContext::Delimited))
                         .collect::<Vec<_>>()
                         .join(", ")
                 )
             };
-            let label = format!("{params} -> {}", type_ref_parse_label(return_type));
+            let label = format!(
+                "{params} -> {}",
+                type_ref_label_in(return_type, TypeLabelContext::FunctionReturn)
+            );
             type_effect_row_label(effects.as_ref()).map_or(label.clone(), |effects| {
                 format!("{label} effects {effects}")
             })
         }
         TypeRef::Choice(alternatives) => alternatives
             .iter()
-            .map(type_ref_parse_label)
+            .map(|alternative| type_ref_label_in(alternative, TypeLabelContext::ChoiceAlternative))
             .collect::<Vec<_>>()
             .join(" | "),
         TypeRef::Generic { base, args } => format!(
             "{base}<{}>",
             args.iter()
-                .map(type_ref_parse_label)
+                .map(|arg| type_ref_label_in(arg, TypeLabelContext::Delimited))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -866,19 +919,22 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
             let mut args = bound
                 .args
                 .iter()
-                .map(type_ref_parse_label)
+                .map(|arg| type_ref_label_in(arg, TypeLabelContext::Delimited))
                 .collect::<Vec<_>>();
             args.extend(bound.assoc_bindings.iter().map(|binding| {
                 format!(
                     "{} = {}",
                     binding.name,
-                    type_ref_parse_label(&binding.value)
+                    type_ref_label_in(&binding.value, TypeLabelContext::Delimited)
                 )
             }));
             format!("{}<{}>", bound.path, args.join(", "))
         }
         TypeRef::Projection { subject, assoc } => {
-            format!("{}::{assoc}", type_ref_parse_label(subject))
+            format!(
+                "{}::{assoc}",
+                type_ref_label_in(subject, TypeLabelContext::ProjectionSubject)
+            )
         }
         TypeRef::Reference(reference) => {
             let lifetime = reference
@@ -889,10 +945,13 @@ fn type_ref_parse_label(ty: &TypeRef) -> String {
             format!(
                 "&{lifetime}{}{}",
                 reference.kind().source_qualifier(),
-                type_ref_parse_label(reference.referent())
+                type_ref_label_in(reference.referent(), TypeLabelContext::ReferenceReferent)
             )
         }
-        TypeRef::Slice(inner) => format!("[{}]", type_ref_parse_label(inner)),
+        TypeRef::Slice(inner) => format!(
+            "[{}]",
+            type_ref_label_in(inner, TypeLabelContext::Delimited)
+        ),
     }
 }
 

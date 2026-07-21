@@ -34,6 +34,7 @@ use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_data::{Number, Value};
 use arcweft_layout::stage_placement::StagePlacement;
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_source::SourceDocumentId;
 use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -354,6 +355,17 @@ pub enum BundleLaunchKind {
     Agent,
 }
 
+/// Failure to attach a compiler-accepted View product to an existing bundle.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum BundleViewProductAttachError {
+    #[error("View product source map omits existing bundle document `{id}`")]
+    MissingBundleDocument { id: SourceDocumentId },
+    #[error("View product source map conflicts with existing bundle document `{id}`")]
+    ConflictingBundleDocument { id: SourceDocumentId },
+    #[error("View product primary source does not match the existing bundle primary source")]
+    PrimaryDocumentMismatch,
+}
+
 #[derive(Debug, Error)]
 pub enum BundleCodecError {
     #[error("unsupported Arcweft bundle schema version {actual}; expected {expected}")]
@@ -551,15 +563,19 @@ impl ArcweftBundle {
     /// # Errors
     ///
     /// Returns a source-map build error when the supplied map conflicts with,
-    /// or has no capacity for, the reserved standard dialogue Style source.
+    /// or has no capacity for, the reserved standard dialogue View/Style
+    /// sources.
     pub fn try_new(
         manifest: BundleManifest,
         source_map: SourceMapSection,
         bytecode: BytecodeProgram,
         display: LineDisplayCatalog,
     ) -> Result<Self, SourceMapBuildError> {
+        let standard_view_source = standard_view::dialogue_view_source_document();
         let standard_style_source = standard_view::dialogue_style_source_document();
-        let source_map = source_map.try_with_document(&standard_style_source)?;
+        let source_map = source_map
+            .try_with_document(&standard_view_source)?
+            .try_with_document(&standard_style_source)?;
         Ok(Self {
             schema_version: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             bundle_kind: BundleKind::Game,
@@ -590,18 +606,13 @@ impl ArcweftBundle {
     /// Human-readable label projected from the canonical source map.
     pub fn source_display_name(&self) -> &str {
         self.source_map
-            .documents()
-            .find(|source| source.document_id().as_str() != standard_view::DIALOGUE_STYLE_SOURCE_ID)
-            .or_else(|| self.source_map.documents().next())
+            .primary_document()
             .map_or("<no source>", |source| source.display_name().display_name())
     }
 
     /// Primary non-engine source document used by adapters that need a workspace anchor.
     pub fn primary_source_document(&self) -> Option<&crate::resource_codec::SourceMapDocument> {
-        self.source_map
-            .documents()
-            .find(|source| source.document_id().as_str() != standard_view::DIALOGUE_STYLE_SOURCE_ID)
-            .or_else(|| self.source_map.documents().next())
+        self.source_map.primary_document()
     }
 
     #[must_use]
@@ -692,6 +703,44 @@ impl ArcweftBundle {
         )?;
         self.view_program = merged.program;
         self.view_style = merged.style;
+        Ok(self)
+    }
+
+    /// Installs an already accepted complete View product without linking a
+    /// second standard or authored catalog.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error unless the product source map is an exact superset of
+    /// the bundle's current source map and preserves its primary document.
+    pub fn try_with_validated_view_product(
+        mut self,
+        product: &ValidatedViewProduct,
+    ) -> Result<Self, BundleViewProductAttachError> {
+        let product_sources = product.source_map();
+        if self.source_map.primary_document_id() != product_sources.primary_document_id() {
+            return Err(BundleViewProductAttachError::PrimaryDocumentMismatch);
+        }
+        for existing in self.source_map.documents() {
+            let Some(candidate) = product_sources.get(existing.id()) else {
+                return Err(BundleViewProductAttachError::MissingBundleDocument {
+                    id: existing.document_id().clone(),
+                });
+            };
+            if candidate.document_id() != existing.document_id()
+                || candidate.display_name() != existing.display_name()
+                || candidate.revision() != existing.revision()
+                || candidate.source_len() != existing.source_len()
+                || candidate.text() != existing.text()
+            {
+                return Err(BundleViewProductAttachError::ConflictingBundleDocument {
+                    id: existing.document_id().clone(),
+                });
+            }
+        }
+        self.source_map = product.source_map().clone();
+        self.view_program = product.program().map(|program| program.resource().clone());
+        self.view_style = product.style().map(|style| style.resource().clone());
         Ok(self)
     }
 

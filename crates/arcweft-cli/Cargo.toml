@@ -39,6 +39,7 @@ arcweft-layout.workspace = true
 arcweft-presentation = { path = "../arcweft-presentation" }
 arcweft-project = { path = "../arcweft-project" }
 arcweft-project-loader = { path = "../arcweft-project-loader" }
+arcweft-resource-model.workspace = true
 arcweft-player-native = { path = "../arcweft-player-native", optional = true }
 arcweft-player-scene = { path = "../arcweft-player-scene", optional = true }
 arcweft-render-text = { path = "../arcweft-render-text" }

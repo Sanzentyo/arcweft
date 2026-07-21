@@ -15,7 +15,8 @@ fn assert_scroll_regions_match_unstyled_baseline(
     let parsed = arcweft_lang_syntax::parser::parse_source(&baseline_source);
     assert_eq!(parsed.errors(), &[]);
     let hir =
-        arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("baseline HIR lowers");
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("baseline HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("baseline sidecars lower");
     let baseline_program = sidecars.program.expect("baseline program sidecar");
     assert_eq!(
@@ -66,7 +67,9 @@ flow test {
 "#;
     let parsed = arcweft_lang_syntax::parser::parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.as_ref().expect("program sidecar");
@@ -164,7 +167,9 @@ flow test {
 "#;
     let parsed = arcweft_lang_syntax::parser::parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree()).expect("HIR lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("HIR lowers");
     let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
 
     let program = sidecars.program.as_ref().expect("program sidecar");

@@ -52,6 +52,7 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
     let context = ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
         Vec::new(),
@@ -395,6 +396,7 @@ fn pending_stores_discard_on_registration_error() {
     let context = ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
         Vec::new(),

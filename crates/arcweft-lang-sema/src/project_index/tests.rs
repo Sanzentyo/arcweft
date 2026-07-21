@@ -484,6 +484,85 @@ fn project_index_keeps_same_named_function_and_view_owners_distinct() {
     assert_eq!(index.project_callables().len(), 2);
 }
 
+fn indexed_view_semantic_hash(source: &str) -> String {
+    let (_, project, _) = root_project_source("project-index-view-semantic-hash", source);
+    project_semantic_index_from_checked_project(
+        &project,
+        ProgramHash::new("program-view-semantic-hash"),
+        &CheckedEntryCatalog::default(),
+    )
+    .expect("View callable indexes")
+    .project_callable(&QualifiedName::new("Card"))
+    .expect("Card View callable")
+    .semantic_hash()
+    .as_str()
+    .to_owned()
+}
+
+#[test]
+fn view_semantic_hash_is_stable_across_signature_whitespace() {
+    let compact = indexed_view_semantic_hash(
+        "pub view Card<T: Display>(value: T = make_default(1), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+    );
+    let spaced = indexed_view_semantic_hash(
+        "pub view Card< T : Display >( value : T = make_default( 1 ), labels : ...String ) where T : Clone {\n    Panel()\n}\n",
+    );
+
+    assert_eq!(compact, spaced);
+}
+
+#[test]
+fn view_semantic_hash_distinguishes_typed_callable_contract_changes() {
+    let baseline = indexed_view_semantic_hash(
+        "pub view Card<T: Display>(value: T = make_default(1), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+    );
+    let changed_contracts = [
+        (
+            "required parameter",
+            "pub view Card<T: Display>(value: T, labels: ...String) where T: Clone {\n    Panel()\n}\n",
+        ),
+        (
+            "default expression",
+            "pub view Card<T: Display>(value: T = make_default(2), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+        ),
+        (
+            "fixed rather than rest parameter",
+            "pub view Card<T: Display>(value: T = make_default(1), labels: String) where T: Clone {\n    Panel()\n}\n",
+        ),
+        (
+            "generic bound",
+            "pub view Card<T: Debug>(value: T = make_default(1), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+        ),
+        (
+            "where clause",
+            "pub view Card<T: Display>(value: T = make_default(1), labels: ...String) where T: Copy {\n    Panel()\n}\n",
+        ),
+    ];
+
+    for (dimension, source) in changed_contracts {
+        assert_ne!(
+            baseline,
+            indexed_view_semantic_hash(source),
+            "{dimension} must participate in View semantic identity"
+        );
+    }
+}
+
+#[test]
+fn view_contract_label_includes_declared_return_type() {
+    let string_signature =
+        arcweft_lang_syntax::types::parse_fn_signature("fn view(value: i32) -> String")
+            .expect("String-returning typed signature");
+    let unit_signature =
+        arcweft_lang_syntax::types::parse_fn_signature("fn view(value: i32) -> Unit")
+            .expect("Unit-returning typed signature");
+
+    assert_ne!(
+        super::entities::view_callable_contract_label(&string_signature, "(value: i32) -> String"),
+        super::entities::view_callable_contract_label(&unit_signature, "(value: i32) -> Unit")
+    );
+}
+
 #[test]
 fn checked_project_index_records_exact_entry_roles_to_original_declarations() {
     let source = r"

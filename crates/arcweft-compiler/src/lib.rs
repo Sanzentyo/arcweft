@@ -7,6 +7,7 @@ pub mod content_partition;
 pub mod effect_manifest;
 pub mod error;
 pub mod hir;
+pub mod image;
 pub mod incremental;
 pub mod link;
 pub mod lower;
@@ -19,6 +20,7 @@ pub mod source;
 pub mod style;
 pub mod trait_methods;
 pub mod types;
+pub mod view;
 pub mod view_part;
 
 #[cfg(test)]

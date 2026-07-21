@@ -30,7 +30,7 @@ use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::view::parse_view_body;
 use super::{
     Parser, PendingDocLines, collect_logical_block_items, collect_logical_block_items_with_base,
-    parse_expr_lossy, parse_scope_authored_expr_body,
+    parse_expr_lossy, parse_owned_expr_recovering, parse_scope_authored_expr_body,
     parse_scope_authored_expr_body_recovering_with_base, parse_type_ref_or_error,
     split_top_level_binding,
 };
@@ -413,6 +413,22 @@ impl Parser<'_> {
             self.current_module_path.as_deref(),
             &mut self.errors,
         )?;
+        let structured_body = (kind == EntityDeclKind::View)
+            .then(|| {
+                parse_structured_entity_decl_body(
+                    kind,
+                    &StructuredEntityBodyContext {
+                        signature_tail: &signature_tail,
+                        body: "",
+                        base: line.start,
+                        body_base: line.end,
+                        module_path: self.current_module_path.as_deref(),
+                        document: self.document,
+                    },
+                    &mut self.errors,
+                )
+            })
+            .flatten();
         Some(EntityDeclItem::new(
             attrs,
             kind,
@@ -422,7 +438,7 @@ impl Parser<'_> {
             surface_alias,
             signature_tail,
             None,
-            None,
+            structured_body,
             None,
             TextRange::new(line.start, line.end),
         ))
@@ -608,10 +624,29 @@ fn parse_structured_entity_decl_body(
             parse_content_roots_field(context.body, context.base, errors),
         ))),
         EntityDeclKind::Image => Some(EntityDeclBody::Image(ImageDeclBody::new(
-            parse_image_decl_fields(context.body, context.base, errors),
+            parse_image_decl_fields(context.body, context.body_base, errors),
         ))),
         EntityDeclKind::View => {
-            if entity_signature_has_return_type(context.signature_tail) {
+            let signature_source = format!("fn view{}", context.signature_tail);
+            let signature_error_count = errors.len();
+            let signature = match parse_fn_signature(&signature_source) {
+                Ok(signature) => Some(signature),
+                Err(error) => {
+                    errors.push(simple_error(
+                        context.base,
+                        context.signature_tail.len(),
+                        &error.to_string(),
+                        "view Name(...) { ... }",
+                    ));
+                    None
+                }
+            };
+            let signature_has_recovery = errors.len() != signature_error_count;
+            if signature
+                .as_ref()
+                .and_then(crate::types::FnSignature::return_type)
+                .is_some()
+            {
                 errors.push(simple_error(
                     context.base,
                     context.signature_tail.len(),
@@ -619,33 +654,33 @@ fn parse_structured_entity_decl_body(
                     "view Name(...) { ... }",
                 ));
             }
+            let body_error_count = errors.len();
+            let view = parse_view_body(
+                context.body,
+                context.body_base,
+                context.module_path,
+                context.document,
+                errors,
+            );
+            let has_recovery = signature_has_recovery || errors.len() != body_error_count;
             Some(EntityDeclBody::View(Box::new(ViewDeclBody::new(
-                parse_view_body(
-                    context.body,
-                    context.body_base,
-                    context.module_path,
-                    context.document,
-                    errors,
-                ),
+                signature,
+                view,
+                has_recovery,
             ))))
         }
         _ => None,
     }
 }
 
-fn entity_signature_has_return_type(signature_tail: &str) -> bool {
-    split_top_level_arcweft_punctuation_once(signature_tail, ArcweftPunctuation::ThinArrow)
-        .is_some()
-}
-
 fn parse_image_decl_fields(
     body: &str,
-    base: usize,
+    body_base: usize,
     errors: &mut Vec<super::recovery::ParseError>,
 ) -> Vec<ImageDeclField> {
-    collect_logical_block_items(body)
+    collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .filter_map(|item| parse_image_decl_field(item.trim(), base, errors))
+        .filter_map(|item| parse_image_decl_field(&item.source, item.base, errors))
         .collect()
 }
 
@@ -657,7 +692,9 @@ fn parse_image_decl_field(
     if line.is_empty() {
         return None;
     }
-    let line = line.trim_end_matches(',').trim();
+    let leading = line.len().saturating_sub(line.trim_start().len());
+    let line_base = base.saturating_add(leading);
+    let line = line.trim().trim_end_matches(',').trim_end();
     let Some((name, value)) = split_top_level_binding(line) else {
         errors.push(simple_error(
             base,
@@ -667,6 +704,7 @@ fn parse_image_decl_field(
         ));
         return None;
     };
+    let name_start = name.len().saturating_sub(name.trim_start().len());
     let name = name.trim();
     if name.is_empty() {
         errors.push(simple_error(
@@ -677,11 +715,25 @@ fn parse_image_decl_field(
         ));
         return None;
     }
-    let value_source = value.trim().to_owned();
+    let value_untrimmed_start = line.len().saturating_sub(value.len());
+    let value_leading = value.len().saturating_sub(value.trim_start().len());
+    let value_source = value.trim();
+    let name_range = TextRange::new(
+        line_base.saturating_add(name_start),
+        line_base
+            .saturating_add(name_start)
+            .saturating_add(name.len()),
+    );
+    let value_start = line_base
+        .saturating_add(value_untrimmed_start)
+        .saturating_add(value_leading);
+    let value_range = TextRange::new(value_start, value_start.saturating_add(value_source.len()));
     Some(ImageDeclField::new(
         name.to_owned(),
-        value_source.clone(),
-        parse_expr_lossy(&value_source),
+        parse_owned_expr_recovering(value_source, value_start, None, errors),
+        TextRange::new(line_base, line_base.saturating_add(line.len())),
+        name_range,
+        value_range,
     ))
 }
 

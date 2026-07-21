@@ -1,15 +1,17 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
+mod view;
+
 use super::call_target_facts::{
     CallResolverControl, CallTargetFactRecorder, CallTargetFactReport, FocusedCallSite,
 };
 use super::line_plan::DialogueContentRangeMode;
 use super::{
-    ActionParam, ActionSignature, EffectScope, EntityKind, EnumVariantPayload, FunctionKind,
-    FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, NominalTypeContext,
-    Pattern, Stmt, TypeCheckEnv, TypeCheckError, TypeCheckReport, TypeCheckWarning, TypeChecker,
-    TypeExpressionId, TypeKind, TypedLoweringEvidenceKind, YieldContext, choice_output_type,
-    entity_kind_for_decl, entity_syntax_kind, function_callable_id, function_param_local_type,
+    EffectScope, EntityKind, EnumVariantPayload, FunctionKind, FxCatalog, HirModule,
+    HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, NominalTypeContext, Pattern, Stmt,
+    TypeCheckEnv, TypeCheckError, TypeCheckReport, TypeCheckWarning, TypeChecker, TypeExpressionId,
+    TypeKind, TypedLoweringEvidenceKind, YieldContext, choice_output_type, entity_kind_for_decl,
+    entity_syntax_kind, function_callable_id, function_param_local_type,
     function_param_local_type_with_generics, function_signature_type,
     function_signature_type_with_nominal_types, ident_pattern_name, normalize_choice_type,
     signature_generic_names, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
@@ -20,9 +22,7 @@ use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
 };
 use crate::checker::helpers::{type_kind_label, type_ref_label};
-use crate::dialogue_view::{
-    DialogueViewModelRegistry, DialogueViewProjection, STANDARD_DIALOGUE_VIEW_RESOURCE,
-};
+use crate::dialogue_view::{DialogueViewModelRegistry, STANDARD_DIALOGUE_VIEW_RESOURCE};
 use crate::effect_model::{
     CallableId, CallableKind, EffectContract, Visibility as EffectVisibility,
 };
@@ -41,11 +41,8 @@ use arcweft_lang_syntax::ast::items::{
     EnumVariant, ExternModItem, ExternModMember, ExternModSource, ImplItem, ImplMember, StructItem,
     TypeAliasItem,
 };
-use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload};
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
-use arcweft_lang_syntax::types::{
-    FnParam, FnSignature, TypeRef, parse_fn_signature, parse_type_ref,
-};
+use arcweft_lang_syntax::types::{FnParam, FnSignature, TypeRef, parse_type_ref};
 use arcweft_source::SourceDocumentId;
 use arcweft_source::SourceDocumentIdentity;
 use std::{
@@ -519,7 +516,7 @@ impl TypeChecker<'_> {
         }
 
         self.collect_and_store_trait_catalog(module);
-        self.action_signatures = collect_action_signatures(module, &mut self.errors);
+        self.action_signatures = view::collect_action_signatures(module, &mut self.errors);
         self.bind_top_level_entity_aliases(module);
         self.bind_top_level_type_aliases(module);
         self.bind_top_level_nominal_fields(module);
@@ -1074,9 +1071,7 @@ impl TypeChecker<'_> {
                     &entity_kind_for_decl(item.kind()),
                     "entity declaration id",
                 );
-                self.check_view_action_invokes(item);
-                self.check_view_fx_applications(item);
-                self.check_view_dialogue_text_sources(item);
+                self.check_view_declaration(item);
             }
             HirTopLevelDecl::TypeAlias(item) => {
                 self.check_type_alias_decl(item);
@@ -1119,197 +1114,6 @@ impl TypeChecker<'_> {
                     "dialogue defaults `view` must be a typed View reference".to_owned(),
                 ));
             }
-        }
-    }
-
-    fn check_view_dialogue_text_sources(&mut self, item: &EntityDeclItem) {
-        let Some(view) = item.view_body().and_then(|body| body.view()) else {
-            return;
-        };
-        let signature = match parse_fn_signature(&format!("fn view{}", item.signature_tail())) {
-            Ok(signature) => signature,
-            Err(error) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "View `{}` has an invalid parameter signature: {error}",
-                    item.id().body()
-                )));
-                return;
-            }
-        };
-        let parameters = signature
-            .param_groups()
-            .iter()
-            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-            .filter_map(|parameter| {
-                let name = parameter.pattern().simple_binding_name()?;
-                let TypeRef::Path(type_name) = parameter.ty() else {
-                    return None;
-                };
-                Some((name, type_name.as_str()))
-            })
-            .collect::<HashMap<_, _>>();
-
-        for text in view.text_nodes() {
-            let Some(label) = text.source().dotted_selector_label() else {
-                continue;
-            };
-            let Some((parameter, field)) = label.split_once('.') else {
-                continue;
-            };
-            let Some(type_name) = parameters.get(parameter) else {
-                continue;
-            };
-            let Some(model) = self.dialogue_view_models.model(type_name) else {
-                continue;
-            };
-            let Some(projection) = model.projection(field) else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "dialogue View parameter `{parameter}` has no runtime projection `{field}`"
-                )));
-                continue;
-            };
-            let rich = text.rich_surface().is_some();
-            match projection {
-                DialogueViewProjection::Content if !rich => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "dialogue content projection `{label}` must be emitted by `RichText(...)`"
-                    )));
-                }
-                DialogueViewProjection::Speaker if rich => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "dialogue speaker projection `{label}` must be emitted by `Text(...)`"
-                    )));
-                }
-                DialogueViewProjection::Speaker | DialogueViewProjection::Content => {}
-                DialogueViewProjection::Occurrence
-                | DialogueViewProjection::Stage
-                | DialogueViewProjection::Reveal
-                | DialogueViewProjection::PrimaryAction => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "dialogue lifecycle projection `{label}` is not text content"
-                    )));
-                }
-            }
-        }
-
-        for action in view.action_projections() {
-            let Some(label) = action.dotted_selector_label() else {
-                continue;
-            };
-            let Some((parameter, field)) = label.split_once('.') else {
-                continue;
-            };
-            let Some(type_name) = parameters.get(parameter) else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "View action projection `{label}` has no matching parameter"
-                )));
-                continue;
-            };
-            let Some(model) = self.dialogue_view_models.model(type_name) else {
-                self.errors.push(TypeCheckError::new(format!(
-                    "View action projection `{label}` does not come from a dialogue View model"
-                )));
-                continue;
-            };
-            if model.projection(field) != Some(DialogueViewProjection::PrimaryAction) {
-                self.errors.push(TypeCheckError::new(format!(
-                    "View action projection `{label}` must select `primary_action`"
-                )));
-            }
-        }
-    }
-
-    fn check_view_action_invokes(&mut self, item: &EntityDeclItem) {
-        let Some(view) = item.view_body().and_then(|body| body.view()) else {
-            return;
-        };
-        for action in view.action_invokes() {
-            self.check_view_action_invoke(&action);
-        }
-    }
-
-    fn check_view_fx_applications(&mut self, item: &EntityDeclItem) {
-        let Some(view) = item.view_body().and_then(|body| body.view()) else {
-            return;
-        };
-        for application in view.fx_applications() {
-            self.fx
-                .validate_view_application(application, &mut self.errors);
-        }
-    }
-
-    fn check_view_action_invoke(&mut self, action: &ViewActionInvokeAction) {
-        if entity_syntax_kind(action.action()) != Some(EntityKind::Action) {
-            self.errors.push(TypeCheckError::new(format!(
-                "action.invoke target `{}` must be an Action reference",
-                action.action().canonical_body()
-            )));
-            return;
-        }
-
-        let action_id = action.action().canonical_body();
-        let Some(signature) = self.action_signatures.get(&action_id).cloned() else {
-            self.errors.push(TypeCheckError::new(format!(
-                "action.invoke target `{action_id}` is not declared"
-            )));
-            return;
-        };
-
-        self.check_action_invoke_payload(&action_id, &signature, action);
-    }
-
-    fn check_action_invoke_payload(
-        &mut self,
-        action_id: &str,
-        signature: &ActionSignature,
-        action: &ViewActionInvokeAction,
-    ) {
-        let Some(payload) = action.payload() else {
-            for param in signature
-                .params()
-                .iter()
-                .filter(|param| !param.has_default())
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "action.invoke for `{action_id}` is missing payload `{}`",
-                    action_param_label(param)
-                )));
-            }
-            return;
-        };
-
-        let Some(payload_name) = action.payload_name() else {
-            self.errors.push(TypeCheckError::new(format!(
-                "action.invoke for `{action_id}` must name its payload"
-            )));
-            return;
-        };
-
-        let Some(param) = signature.param(payload_name) else {
-            self.errors.push(TypeCheckError::new(format!(
-                "action `{action_id}` does not declare payload `{payload_name}`"
-            )));
-            return;
-        };
-
-        let actual = action_payload_type(payload);
-        if !self.types_compatible(param.ty(), &actual) {
-            self.errors.push(TypeCheckError::new(format!(
-                "action.invoke payload `{payload_name}` for `{action_id}` expects {}, but View payload has {}",
-                type_kind_label(param.ty()),
-                type_kind_label(&actual)
-            )));
-        }
-
-        for missing in signature
-            .params()
-            .iter()
-            .filter(|param| !param.has_default() && param.name() != payload_name)
-        {
-            self.errors.push(TypeCheckError::new(format!(
-                "action.invoke for `{action_id}` is missing payload `{}`",
-                action_param_label(missing)
-            )));
         }
     }
 
@@ -2044,82 +1848,6 @@ fn type_ref_contains_choice(ty: &TypeRef) -> bool {
         TypeRef::Slice(inner) => type_ref_contains_choice(inner),
         TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => false,
     }
-}
-
-fn collect_action_signatures(
-    module: &HirModule,
-    errors: &mut Vec<TypeCheckError>,
-) -> HashMap<String, ActionSignature> {
-    module
-        .declarations()
-        .iter()
-        .filter_map(|declaration| match declaration {
-            HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Action => {
-                Some(item)
-            }
-            _ => None,
-        })
-        .filter_map(|item| match action_signature_from_decl(item) {
-            Ok(signature) => Some((item.id().body().to_owned(), signature)),
-            Err(message) => {
-                errors.push(TypeCheckError::new(format!(
-                    "invalid action signature for `{}`: {message}",
-                    item.id().body()
-                )));
-                None
-            }
-        })
-        .collect()
-}
-
-fn action_signature_from_decl(item: &EntityDeclItem) -> Result<ActionSignature, String> {
-    let signature_tail = item.signature_tail().trim();
-    if signature_tail.is_empty() {
-        return Ok(ActionSignature::new([]));
-    }
-
-    let signature = parse_fn_signature(&format!("fn action{signature_tail}"))
-        .map_err(|error| error.to_string())?;
-    if signature.return_type().is_some() {
-        return Err("action declarations do not return values".to_owned());
-    }
-
-    let params = signature
-        .param_groups()
-        .iter()
-        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(action_param_from_fn_param)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ActionSignature::new(params))
-}
-
-fn action_param_from_fn_param(param: &FnParam) -> Result<ActionParam, String> {
-    if param.is_rest() {
-        return Err("action payload parameters cannot be rest parameters".to_owned());
-    }
-    if param.receiver_kind().is_some() {
-        return Err("action payload parameters cannot include a receiver".to_owned());
-    }
-    let Some(name) = ident_pattern_name(param.pattern()) else {
-        return Err("action payload parameters must use identifier patterns".to_owned());
-    };
-    Ok(ActionParam::new(
-        name,
-        type_ref_kind(param.ty()),
-        param.default().is_some(),
-    ))
-}
-
-fn action_payload_type(payload: &ViewActionPayload) -> TypeKind {
-    match payload {
-        ViewActionPayload::LiteralString(_) | ViewActionPayload::TextControlProjection { .. } => {
-            TypeKind::String
-        }
-    }
-}
-
-fn action_param_label(param: &ActionParam) -> String {
-    format!("{}: {}", param.name(), type_kind_label(param.ty()))
 }
 
 fn pattern_public_label(pattern: &Pattern) -> String {

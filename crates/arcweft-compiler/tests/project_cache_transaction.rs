@@ -103,7 +103,14 @@ fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrat
 }
 
 fn context(base: TypeCheckEnv, facts: Arc<ProjectRegistrationFacts>) -> ProjectCompilationContext {
-    ProjectCompilationContext::new(Arc::new(base), facts, None, None, Vec::new())
+    ProjectCompilationContext::new(
+        Arc::new(base),
+        facts,
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        None,
+        None,
+        Vec::new(),
+    )
 }
 
 #[test]
@@ -185,6 +192,53 @@ fn pending_stores_discard_on_type_error() {
     assert_eq!(error.stage(), "type-check");
     assert_eq!(cache.stores, 0);
     assert!(cache.units.is_empty());
+}
+
+#[test]
+#[ignore = "AW-AH-009.3 callable-catalog registration currently blocks ImageLower"]
+fn pending_stores_discard_when_typed_image_admission_fails() {
+    let (project, facts) = fixture(
+        r"
+asset @asset.poster {
+}
+
+image @image.poster {
+    asset = @asset.poster
+    x = 0px
+    y = 0px
+    width = 1280px
+    height = 720px
+    enabled = true
+}
+",
+        "discard-image-error",
+    );
+    let mut cache = RecordingCache::default();
+
+    let error = compile_project_with_cache(
+        &project,
+        &context(TypeCheckEnv::standard(), facts),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect_err("unsupported retained image fields reject the compiler transaction");
+
+    assert_eq!(
+        error.stage(),
+        "image-lower",
+        "unexpected diagnostics: {:#?}",
+        error.diagnostics()
+    );
+    assert_eq!(cache.stores, 0);
+    assert!(cache.units.is_empty());
+    let diagnostic = &error.diagnostics()[0];
+    assert_eq!(
+        diagnostic
+            .diagnostic()
+            .code()
+            .map(arcweft_source::DiagnosticCode::as_str),
+        Some("compiler.image.unsupported_field")
+    );
 }
 
 #[test]

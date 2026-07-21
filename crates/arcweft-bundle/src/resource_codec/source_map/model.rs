@@ -35,6 +35,7 @@ pub struct SourceMapDocument {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceMapSection {
     source_set_revision: SourceSetRevision,
+    pub(super) primary_document_id: Option<SourceDocumentId>,
     documents: Vec<SourceMapDocument>,
 }
 
@@ -122,6 +123,11 @@ impl SourceMapDocument {
 }
 
 impl SourceMapSection {
+    /// Builds one canonical source inventory whose first supplied document is
+    /// the semantic primary/root document.
+    ///
+    /// Document records are sorted by `ProductSourceId` for deterministic
+    /// lookup and encoding; that sort never changes the explicit primary.
     pub fn try_from_documents(documents: &[&SourceDocument]) -> Result<Self, SourceMapBuildError> {
         Self::try_from_documents_with(documents, ProductSourceId::try_for_document_id)
     }
@@ -137,6 +143,9 @@ impl SourceMapSection {
             });
         }
 
+        let primary_document_id = documents
+            .first()
+            .map(|document| document.identity().id().clone());
         let mut by_document = BTreeMap::<SourceDocumentId, ProductSourceId>::new();
         let mut by_product = BTreeMap::<ProductSourceId, SourceDocumentId>::new();
         let mut total_bytes = 0_u64;
@@ -217,14 +226,14 @@ impl SourceMapSection {
         entries.sort_by(|left, right| left.id.cmp(&right.id));
         Ok(Self {
             source_set_revision,
+            primary_document_id,
             documents: entries,
         })
     }
 
-    pub(crate) fn try_with_document(
-        self,
-        document: &SourceDocument,
-    ) -> Result<Self, SourceMapBuildError> {
+    /// Adds one exact document and recomputes the deterministic source-set
+    /// revision, rejecting a reused document ID with different content.
+    pub fn try_with_document(self, document: &SourceDocument) -> Result<Self, SourceMapBuildError> {
         if let Some(existing) = self
             .documents
             .iter()
@@ -254,6 +263,7 @@ impl SourceMapSection {
             });
         }
 
+        let primary_document_id = self.primary_document_id.clone();
         let mut owned = self
             .documents
             .iter()
@@ -267,11 +277,26 @@ impl SourceMapSection {
             })
             .collect::<Result<Vec<_>, _>>()?;
         owned.push(document.clone());
-        Self::try_from_documents(&owned.iter().collect::<Vec<_>>())
+        let mut rebuilt = Self::try_from_documents(&owned.iter().collect::<Vec<_>>())?;
+        rebuilt.primary_document_id = primary_document_id.or(rebuilt.primary_document_id);
+        Ok(rebuilt)
     }
 
     pub const fn source_set_revision(&self) -> SourceSetRevision {
         self.source_set_revision
+    }
+
+    /// Root/primary document supplied first when this source set was built.
+    pub const fn primary_document_id(&self) -> Option<&SourceDocumentId> {
+        self.primary_document_id.as_ref()
+    }
+
+    /// Exact primary document independent of canonical hash ordering.
+    pub fn primary_document(&self) -> Option<&SourceMapDocument> {
+        let id = self.primary_document_id.as_ref()?;
+        self.documents
+            .iter()
+            .find(|document| document.document_id() == id)
     }
 
     pub fn documents(&self) -> impl ExactSizeIterator<Item = &SourceMapDocument> {

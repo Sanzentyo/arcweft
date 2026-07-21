@@ -114,18 +114,7 @@ pub fn compile_checked_agent_bundle(
     let bytecode = BytecodeProgram::from_runtime_plan(selected_plan);
     let bytecode_stats = bytecode.stats();
     let manifest = agent_artifact_manifest(compiled, checked, project, runtime_budget)?;
-    let documents = compiled
-        .modules()
-        .iter()
-        .map(|module| {
-            module
-                .hir()
-                .source_document()
-                .ok_or_else(|| CompileAgentError::MissingSourceDocument {
-                    module: module.module().to_string(),
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let documents = agent_bundle_source_documents(compiled)?;
     let source_map = SourceMapSection::try_from_documents(&documents)?;
     let bundle = ArcweftBundle::try_new(
         BundleManifest {
@@ -159,6 +148,40 @@ pub fn compile_checked_agent_bundle(
             ..RuntimePlanLowerStats::default()
         },
     })
+}
+
+fn agent_bundle_source_documents(
+    compiled: &CompiledProject,
+) -> Result<Vec<&arcweft_source::SourceDocument>, CompileAgentError> {
+    let root = compiled
+        .modules()
+        .iter()
+        .find(|module| module.module().is_crate_root())
+        .ok_or_else(|| CompileAgentError::MissingSourceDocument {
+            module: "crate".to_owned(),
+        })?
+        .hir()
+        .source_document()
+        .ok_or_else(|| CompileAgentError::MissingSourceDocument {
+            module: "crate".to_owned(),
+        })?;
+    let mut documents = Vec::with_capacity(compiled.modules().len());
+    documents.push(root);
+    documents.extend(
+        compiled
+            .modules()
+            .iter()
+            .filter(|module| !module.module().is_crate_root())
+            .map(|module| {
+                module.hir().source_document().ok_or_else(|| {
+                    CompileAgentError::MissingSourceDocument {
+                        module: module.module().to_string(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    Ok(documents)
 }
 
 fn validate_checked_agent_inputs(

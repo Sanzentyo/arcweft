@@ -213,7 +213,7 @@ pub(super) fn parse_entity_decl_head(
         push_unexpected_entity_header_tail(head, base, unexpected, errors);
         return None;
     }
-    if !entity_decl_header_tail_is_valid(&alias.signature_tail) {
+    if !entity_decl_header_tail_is_valid(kind, &alias.signature_tail) {
         push_unexpected_entity_header_tail(head, base, &alias.signature_tail, errors);
         return None;
     }
@@ -239,12 +239,18 @@ fn parse_explicit_entity_name_and_tail(input: &str) -> (Option<String>, String) 
     }
 }
 
-fn entity_decl_header_tail_is_valid(signature_tail: &str) -> bool {
+fn entity_decl_header_tail_is_valid(kind: EntityDeclKind, signature_tail: &str) -> bool {
     let tail = signature_tail.trim();
     if tail.is_empty() {
         return true;
     }
     if tail.starts_with('(') || tail.starts_with('<') {
+        // View declarations retain their one typed signature parse in
+        // `ViewDeclBody`. This generic boundary only recognizes the signature
+        // owner so malformed details recover with the View declaration.
+        if kind == EntityDeclKind::View {
+            return true;
+        }
         return parse_fn_signature(&format!("fn entity{tail}")).is_ok();
     }
     if let Some(type_source) = tail.strip_prefix(':') {

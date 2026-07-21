@@ -241,6 +241,14 @@ impl ValidatedViewProgramResource {
         self.resource.definitions.iter()
     }
 
+    /// Resolves one accepted definition by its nominal public View identity.
+    pub fn definition(&self, id: &arcweft_view::ViewId) -> Option<&ViewDefinitionResource> {
+        self.resource
+            .definitions
+            .iter()
+            .find(|definition| definition.public_id.view_id() == id)
+    }
+
     pub fn source_ref(&self, index: ProductSourceRefIndex) -> &ProductSourceRef {
         &self.resource.source_refs[index.index()]
     }

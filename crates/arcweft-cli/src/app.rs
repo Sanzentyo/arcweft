@@ -1,13 +1,9 @@
 mod agent;
 mod bundle;
-pub(in crate::app) mod bundle_view;
-mod bundle_view_layout;
-mod bundle_view_schema;
 mod cache;
 mod commands;
 mod debug;
 pub(in crate::app) mod diagnostics;
-mod image_declarations;
 mod import;
 mod inspect;
 pub(in crate::app) mod jit;

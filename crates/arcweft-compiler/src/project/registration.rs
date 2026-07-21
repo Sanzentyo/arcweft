@@ -53,6 +53,7 @@ pub struct ProjectEntrySelection {
 pub struct ProjectCompilationContext {
     base: Arc<TypeCheckEnv>,
     facts: Arc<ProjectRegistrationFacts>,
+    resource_types: Arc<ResourceTypeRegistry>,
     previous: Option<Arc<RegisteredTypeCheckEnv>>,
     entry_selection: Option<ProjectEntrySelection>,
     callable_publications: Vec<EnvironmentCallablePublication>,
@@ -130,6 +131,7 @@ impl ProjectCompilationContext {
     pub fn new(
         base: Arc<TypeCheckEnv>,
         facts: Arc<ProjectRegistrationFacts>,
+        resource_types: Arc<ResourceTypeRegistry>,
         previous: Option<Arc<RegisteredTypeCheckEnv>>,
         entry_selection: Option<ProjectEntrySelection>,
         callable_publications: Vec<EnvironmentCallablePublication>,
@@ -137,6 +139,7 @@ impl ProjectCompilationContext {
         Self {
             base,
             facts,
+            resource_types,
             previous,
             entry_selection,
             callable_publications,
@@ -164,6 +167,11 @@ impl ProjectCompilationContext {
     /// Accepted launch-profile input retained for the later compiler admission stages.
     pub const fn accepted_launch_profile(&self) -> Option<&AcceptedLaunchProfileInput> {
         self.accepted_launch_profile.as_ref()
+    }
+
+    /// Exact configured-resource registry used by this compiler transaction.
+    pub const fn resource_types(&self) -> &Arc<ResourceTypeRegistry> {
+        &self.resource_types
     }
 }
 

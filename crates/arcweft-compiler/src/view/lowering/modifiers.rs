@@ -5,8 +5,8 @@ use super::{
     ViewFocusInitialPolicy, ViewFocusNavigationEdge, ViewFocusNavigationResource,
     ViewFocusSkipPolicy, ViewFocusTargetResolution, ViewFocusWrapPolicy, ViewLoweringState,
     ViewModifier, ViewNavigationDirection, ViewNavigationInitial, ViewNavigationTarget,
-    ViewNavigationTrap, ViewProgramInstruction, ViewSidecarError, next_focus_group_id,
-    normalize_entity_ref, view_resource_id,
+    ViewNavigationTrap, ViewSidecarError, next_focus_group_id, normalize_entity_ref,
+    view_resource_id,
 };
 
 pub(super) fn lower_modifiers(
@@ -70,7 +70,14 @@ fn lower_modifier_without_style(
             }
         }
         ViewModifier::OnEvent { name, .. } => {
-            lower_event_handler_modifier(view_id, name, state);
+            return Err(ViewSidecarError::UnsupportedEventHandler {
+                event: name.clone(),
+            });
+        }
+        ViewModifier::Raw(_) => {
+            return Err(ViewSidecarError::RecoveredViewSyntax {
+                view: view_resource_id(view_id),
+            });
         }
         ViewModifier::Style(_)
         | ViewModifier::Part(_)
@@ -84,8 +91,7 @@ fn lower_modifier_without_style(
         | ViewModifier::Property { .. }
         | ViewModifier::Environment(_)
         | ViewModifier::Focus(_)
-        | ViewModifier::Navigation(_)
-        | ViewModifier::Raw(_) => {}
+        | ViewModifier::Navigation(_) => {}
     }
     Ok(())
 }
@@ -93,21 +99,20 @@ fn lower_modifier_without_style(
 pub(super) fn lower_button_modifiers(
     view_id: &str,
     modifiers: &[ViewModifier],
+    has_canonical_activation: bool,
     state: &mut ViewLoweringState,
 ) -> Result<(), ViewSidecarError> {
-    lower_modifiers_without_style(view_id, modifiers, state)
-}
-
-fn lower_event_handler_modifier(view_id: &str, name: &str, state: &mut ViewLoweringState) {
-    let handler = format!("{view_id}.handler.{name}.{}", state.handler_counter);
-    state.handler_counter += 1;
-    state
-        .instructions
-        .push(ViewProgramInstruction::BindHandler {
-            event: name.to_owned(),
-            handler,
-            source: None,
-        });
+    for modifier in modifiers {
+        if matches!(
+            modifier,
+            ViewModifier::OnEvent { name, .. }
+                if has_canonical_activation && name == "click"
+        ) {
+            continue;
+        }
+        lower_modifier_without_style(view_id, modifier, state)?;
+    }
+    Ok(())
 }
 
 pub(super) fn lower_navigation_group(

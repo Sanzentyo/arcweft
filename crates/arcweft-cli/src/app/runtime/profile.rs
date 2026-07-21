@@ -6,8 +6,9 @@ use crate::app::project::{
 use crate::output::RuntimeProfilePhase;
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_compiler::{
+    image::CompiledImageCatalog,
     project::{ProjectCompilationContext, compile_project},
-    style::CompiledViewStyleArtifact,
+    view::CompiledViewProduct,
 };
 use arcweft_core::{
     aot::{AotProgram, AotProgramStats},
@@ -17,6 +18,7 @@ use arcweft_core::{
 };
 use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_lang_syntax::cst::SyntaxParseStats;
+use arcweft_presentation::fx::FxDefinition;
 use arcweft_project::sources::ProjectSources;
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::{
@@ -32,7 +34,9 @@ use std::time::Instant;
 
 pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) hir: arcweft_lang_hir::model::HirModule,
-    pub(in crate::app) style: CompiledViewStyleArtifact,
+    pub(in crate::app) image_catalog: CompiledImageCatalog,
+    pub(in crate::app) fx_definitions: Arc<[FxDefinition]>,
+    pub(in crate::app) view_product: CompiledViewProduct,
     pub(in crate::app) plan: RuntimePlan,
     pub(in crate::app) syntax_warnings: usize,
     pub(in crate::app) syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
@@ -138,16 +142,6 @@ fn compile_project_sources_runtime_plan(
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
     let source_document = Arc::clone(sources.root_module().document());
-    let source_map = SourceMapSection::try_from_documents(
-        &sources
-            .modules()
-            .map(|source| source.document().as_ref())
-            .collect::<Vec<_>>(),
-    )
-    .map_err(|error| {
-        eprintln!("error: failed to build project source map: {error}");
-        ExitCode::FAILURE
-    })?;
     let runtime_options = runtime_plan_options_for_selection(selection)?;
     let compiled = run_profile_phase(phases, "project_compile", || {
         compile_project(sources, context, &runtime_options).map_err(|error| {
@@ -155,6 +149,7 @@ fn compile_project_sources_runtime_plan(
             ExitCode::FAILURE
         })
     })?;
+    let source_map = compiled.view_product().product().source_map().clone();
     let syntax_stats =
         compiled
             .modules()
@@ -193,7 +188,9 @@ fn compile_project_sources_runtime_plan(
     })?;
     Ok(ProfileCompiledRuntimePlan {
         hir: compiled.linked_hir().clone(),
-        style: compiled.style().clone(),
+        image_catalog: compiled.image_catalog().clone(),
+        fx_definitions: Arc::from(compiled.fx_definitions()),
+        view_product: compiled.view_product().clone(),
         plan,
         syntax_warnings: compiled.syntax_warnings(),
         syntax_stats,

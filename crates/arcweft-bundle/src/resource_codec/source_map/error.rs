@@ -41,7 +41,7 @@ pub enum SourceMapBuildError {
     ArithmeticOverflow,
 }
 
-/// Malformed or non-canonical schema-v2 source-map section.
+/// Malformed or non-canonical source-map section.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SourceMapCodecError {
     #[error(transparent)]
@@ -83,6 +83,10 @@ pub enum SourceMapCodecError {
     },
     #[error("source-map set revision does not match its document inventory")]
     SourceSetRevisionMismatch,
+    #[error("non-empty source map has no primary document")]
+    MissingPrimaryDocument,
+    #[error("primary source-map document is absent from the document inventory: {0}")]
+    PrimaryDocumentMissing(SourceDocumentId),
     #[error("source-map transcript is not in its one canonical encoding")]
     NonCanonicalEncoding,
     #[error("source-map transcript arithmetic overflow")]

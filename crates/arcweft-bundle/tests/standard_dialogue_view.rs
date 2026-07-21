@@ -1,16 +1,17 @@
-use arcweft_bundle::BundleCodecError;
 use arcweft_bundle::resource_codec::view::{
     ViewActionButtonActionResource, ViewDefinitionResource, ViewInstructionSpan,
     ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds,
     ViewStyleResource, ViewTextBlockBounds, ViewTextSourceKind,
 };
 use arcweft_bundle::resource_codec::{
-    MAX_SOURCE_MAP_DOCUMENTS, SectionCodecError, SourceMapBuildError, SourceMapSection,
+    MAX_SOURCE_MAP_DOCUMENTS, SectionCodecError, SourceMapBuildError, SourceMapDocument,
+    SourceMapSection, ValidatedViewProduct, ViewProductValidationLimits,
 };
 use arcweft_bundle::standard_view::{
-    DIALOGUE_STYLE_ID, DIALOGUE_STYLE_SOURCE_ID, DIALOGUE_VIEW_ID, dialogue_program,
-    dialogue_style, dialogue_text,
+    DIALOGUE_STYLE_ID, DIALOGUE_STYLE_SOURCE_ID, DIALOGUE_VIEW_ID, DIALOGUE_VIEW_SOURCE_ID,
+    dialogue_program, dialogue_style, dialogue_text,
 };
+use arcweft_bundle::{BundleCodecError, BundleViewProductAttachError};
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
@@ -179,15 +180,19 @@ fn authored_program_is_merged_without_replacing_the_reserved_standard_definition
 }
 
 #[test]
-fn bundle_source_map_owns_the_standard_dialogue_style_source() {
+fn bundle_source_map_owns_both_standard_dialogue_sources_without_changing_the_authored_primary() {
     let bundle = test_bundle();
 
-    assert!(
-        bundle
-            .source_map
-            .documents()
-            .any(|source| { source.document_id().as_str() == DIALOGUE_STYLE_SOURCE_ID })
-    );
+    for source_id in [DIALOGUE_VIEW_SOURCE_ID, DIALOGUE_STYLE_SOURCE_ID] {
+        assert!(
+            bundle
+                .source_map
+                .documents()
+                .any(|source| source.document_id().as_str() == source_id),
+            "bundle source map must include {source_id}"
+        );
+    }
+    assert_eq!(bundle.source_map.documents().len(), 3);
     assert_eq!(bundle.source_display_name(), "test.arcw");
     assert_eq!(
         bundle
@@ -196,6 +201,132 @@ fn bundle_source_map_owns_the_standard_dialogue_style_source() {
             .document_id()
             .as_str(),
         "test.arcw"
+    );
+}
+
+#[test]
+fn validated_view_product_attachment_accepts_an_exact_source_superset() {
+    let bundle = test_bundle();
+    let extra = SourceDocument::try_new(
+        SourceDocumentId::try_new("project://extra.arcw").expect("extra source ID"),
+        SourceName::path("src/extra.arcw"),
+        "view Extra() -> Node { Panel() }",
+    )
+    .expect("extra source document");
+    let mut documents = exact_bundle_source_documents(&bundle);
+    documents.push(extra);
+    let product = accepted_standard_product(source_map_with_primary(&documents, "test.arcw"));
+
+    let attached = bundle
+        .try_with_validated_view_product(&product)
+        .expect("an exact source superset attaches");
+
+    assert_eq!(
+        attached
+            .source_map
+            .primary_document_id()
+            .expect("attached product remains non-empty")
+            .as_str(),
+        "test.arcw"
+    );
+    assert!(
+        attached
+            .source_map
+            .documents()
+            .any(|document| { document.document_id().as_str() == "project://extra.arcw" })
+    );
+    assert!(attached.view_program.is_some());
+    assert!(attached.view_style.is_some());
+}
+
+#[test]
+fn validated_view_product_attachment_rejects_missing_or_conflicting_bundle_documents() {
+    let bundle = test_bundle();
+    let missing_documents = exact_bundle_source_documents(&bundle)
+        .into_iter()
+        .filter(|document| document.identity().id().as_str() != DIALOGUE_VIEW_SOURCE_ID)
+        .collect::<Vec<_>>();
+    let missing =
+        accepted_standard_product(source_map_with_primary(&missing_documents, "test.arcw"));
+    assert_eq!(
+        bundle
+            .clone()
+            .try_with_validated_view_product(&missing)
+            .expect_err("omitting an existing bundle document rejects"),
+        BundleViewProductAttachError::MissingBundleDocument {
+            id: SourceDocumentId::try_new(DIALOGUE_VIEW_SOURCE_ID)
+                .expect("standard View source ID")
+        }
+    );
+
+    let conflicting_documents = exact_bundle_source_documents(&bundle)
+        .into_iter()
+        .map(|document| {
+            if document.identity().id().as_str() == "test.arcw" {
+                SourceDocument::try_new(
+                    document.identity().id().clone(),
+                    SourceName::path("renamed/test.arcw"),
+                    document.text(),
+                )
+                .expect("conflicting source document")
+            } else {
+                document
+            }
+        })
+        .collect::<Vec<_>>();
+    let conflicting =
+        accepted_standard_product(source_map_with_primary(&conflicting_documents, "test.arcw"));
+    assert_eq!(
+        bundle
+            .clone()
+            .try_with_validated_view_product(&conflicting)
+            .expect_err("changed display identity rejects"),
+        BundleViewProductAttachError::ConflictingBundleDocument {
+            id: SourceDocumentId::try_new("test.arcw").expect("authored source ID")
+        }
+    );
+
+    let changed_text_documents = exact_bundle_source_documents(&bundle)
+        .into_iter()
+        .map(|document| {
+            if document.identity().id().as_str() == "test.arcw" {
+                SourceDocument::try_new(
+                    document.identity().id().clone(),
+                    document.display_name().clone(),
+                    "changed authored bytes",
+                )
+                .expect("changed source document")
+            } else {
+                document
+            }
+        })
+        .collect::<Vec<_>>();
+    let changed_text = accepted_standard_product(source_map_with_primary(
+        &changed_text_documents,
+        "test.arcw",
+    ));
+    assert_eq!(
+        bundle
+            .try_with_validated_view_product(&changed_text)
+            .expect_err("changed source bytes and revision reject"),
+        BundleViewProductAttachError::ConflictingBundleDocument {
+            id: SourceDocumentId::try_new("test.arcw").expect("authored source ID")
+        }
+    );
+}
+
+#[test]
+fn validated_view_product_attachment_rejects_a_different_primary_document() {
+    let bundle = test_bundle();
+    let documents = exact_bundle_source_documents(&bundle);
+    let product =
+        accepted_standard_product(source_map_with_primary(&documents, DIALOGUE_VIEW_SOURCE_ID));
+
+    assert_eq!(
+        bundle
+            .try_with_validated_view_product(&product)
+            .expect_err("the product cannot replace the authored root"),
+        BundleViewProductAttachError::PrimaryDocumentMismatch
     );
 }
 
@@ -235,28 +366,29 @@ fn dialogue_primary_action_requires_a_declared_typed_parameter() {
 }
 
 #[test]
-fn reserved_standard_source_collision_is_a_typed_bundle_build_error() {
-    let conflicting = SourceDocument::try_new(
-        SourceDocumentId::try_new(DIALOGUE_STYLE_SOURCE_ID).expect("reserved source ID"),
-        SourceName::path("user-controlled.arcw"),
-        "user-controlled text",
-    )
-    .expect("conflicting source document");
-    let source_map =
-        SourceMapSection::try_from_documents(&[&conflicting]).expect("conflicting source map");
+fn reserved_standard_source_collisions_are_typed_bundle_build_errors() {
+    for reserved in [DIALOGUE_VIEW_SOURCE_ID, DIALOGUE_STYLE_SOURCE_ID] {
+        let conflicting = SourceDocument::try_new(
+            SourceDocumentId::try_new(reserved).expect("reserved source ID"),
+            SourceName::path("user-controlled.arcw"),
+            "user-controlled text",
+        )
+        .expect("conflicting source document");
+        let source_map =
+            SourceMapSection::try_from_documents(&[&conflicting]).expect("conflicting source map");
 
-    let error = try_test_bundle(source_map).expect_err("reserved source collision must reject");
+        let error = try_test_bundle(source_map).expect_err("reserved source collision must reject");
 
-    assert!(matches!(
-        error,
-        SourceMapBuildError::DuplicateDocument(id)
-            if id.as_str() == DIALOGUE_STYLE_SOURCE_ID
-    ));
+        assert!(matches!(
+            error,
+            SourceMapBuildError::DuplicateDocument(id) if id.as_str() == reserved
+        ));
+    }
 }
 
 #[test]
-fn full_user_source_map_cannot_panic_when_standard_source_is_reserved() {
-    let documents = (0..MAX_SOURCE_MAP_DOCUMENTS)
+fn one_free_source_slot_is_insufficient_for_both_reserved_standard_sources() {
+    let documents = (0..MAX_SOURCE_MAP_DOCUMENTS - 1)
         .map(|index| {
             let id = format!("user/{index}.arcw");
             SourceDocument::try_new(
@@ -270,7 +402,7 @@ fn full_user_source_map_cannot_panic_when_standard_source_is_reserved() {
     let source_map = SourceMapSection::try_from_documents(&documents.iter().collect::<Vec<_>>())
         .expect("full source map");
 
-    let error = try_test_bundle(source_map).expect_err("standard source needs one reserved slot");
+    let error = try_test_bundle(source_map).expect_err("standard sources need two reserved slots");
 
     assert_eq!(
         error,
@@ -464,6 +596,44 @@ fn test_bundle() -> arcweft_bundle::ArcweftBundle {
 
     try_test_bundle(SourceMapSection::try_from_documents(&[&document]).expect("source map"))
         .expect("standard dialogue source joins source map")
+}
+
+fn exact_bundle_source_documents(bundle: &arcweft_bundle::ArcweftBundle) -> Vec<SourceDocument> {
+    bundle.source_map.documents().map(source_document).collect()
+}
+
+fn source_document(document: &SourceMapDocument) -> SourceDocument {
+    SourceDocument::try_new(
+        document.document_id().clone(),
+        document.display_name().clone(),
+        document.text(),
+    )
+    .expect("accepted SourceMap document reconstructs exactly")
+}
+
+fn source_map_with_primary(documents: &[SourceDocument], primary: &str) -> SourceMapSection {
+    let primary = documents
+        .iter()
+        .find(|document| document.identity().id().as_str() == primary)
+        .expect("requested primary exists");
+    let references = std::iter::once(primary)
+        .chain(
+            documents
+                .iter()
+                .filter(|document| document.identity().id() != primary.identity().id()),
+        )
+        .collect::<Vec<_>>();
+    SourceMapSection::try_from_documents(&references).expect("source map")
+}
+
+fn accepted_standard_product(source_map: SourceMapSection) -> ValidatedViewProduct {
+    ValidatedViewProduct::try_new(
+        Some(source_map),
+        Some(dialogue_program()),
+        Some(dialogue_style()),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("standard View product validates against the supplied source set")
 }
 
 fn try_test_bundle(

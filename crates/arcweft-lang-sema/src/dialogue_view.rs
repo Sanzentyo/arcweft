@@ -352,7 +352,7 @@ pub view DialoguePanel(dialogue: DialogueView) {
     #[test]
     fn authored_view_cannot_redeclare_the_standard_dialogue_resource() {
         let parsed =
-            parse_source("pub view @std.view.dialogue Dialogue {\n Text(\"reserved\")\n}\n");
+            parse_source("pub view @std.view.dialogue Dialogue() {\n Text(\"reserved\")\n}\n");
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         let hir = lower_to_hir(parsed.typed_tree()).expect("lower reserved View fixture");
         let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())

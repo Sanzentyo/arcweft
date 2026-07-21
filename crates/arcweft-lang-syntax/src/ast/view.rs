@@ -13,6 +13,7 @@ use crate::expr::{CallArg, Expr, Literal, MatchExprArm};
 
 mod fx;
 mod part;
+mod recovery;
 
 pub use fx::{ViewFxApplication, ViewFxApplicationOrdinal};
 pub use part::{ViewPartExportDecl, ViewPartLocalNameSyntax, ViewPartModifier, ViewPartNameSyntax};
@@ -180,6 +181,7 @@ pub struct ViewMatchArm {
     pattern: Pattern,
     guard: Option<Expr>,
     value: ViewExpr,
+    range: TextRange,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -203,6 +205,7 @@ pub struct ViewAwaitBranch {
     kind: ViewAwaitBranchKind,
     pattern: Pattern,
     value: ViewExpr,
+    range: TextRange,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -401,6 +404,15 @@ impl ViewBody {
 
     pub const fn range(&self) -> TextRange {
         self.range
+    }
+
+    /// Whether parser recovery remains anywhere in this retained View tree.
+    ///
+    /// Recovery nodes are useful to syntax tooling, but they are never an
+    /// executable View contract and must not enter an accepted compiler
+    /// product.
+    pub fn contains_recovered_syntax(&self) -> bool {
+        recovery::contains_recovered_syntax(self)
     }
 }
 
@@ -791,11 +803,17 @@ impl ViewMatch {
 }
 
 impl ViewMatchArm {
-    pub(crate) const fn new(pattern: Pattern, guard: Option<Expr>, value: ViewExpr) -> Self {
+    pub(crate) const fn new(
+        pattern: Pattern,
+        guard: Option<Expr>,
+        value: ViewExpr,
+        range: TextRange,
+    ) -> Self {
         Self {
             pattern,
             guard,
             value,
+            range,
         }
     }
 
@@ -809,6 +827,10 @@ impl ViewMatchArm {
 
     pub const fn value(&self) -> &ViewExpr {
         &self.value
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 
@@ -877,11 +899,17 @@ impl ViewAwait {
 }
 
 impl ViewAwaitBranch {
-    pub(crate) const fn new(kind: ViewAwaitBranchKind, pattern: Pattern, value: ViewExpr) -> Self {
+    pub(crate) const fn new(
+        kind: ViewAwaitBranchKind,
+        pattern: Pattern,
+        value: ViewExpr,
+        range: TextRange,
+    ) -> Self {
         Self {
             kind,
             pattern,
             value,
+            range,
         }
     }
 
@@ -895,6 +923,10 @@ impl ViewAwaitBranch {
 
     pub const fn value(&self) -> &ViewExpr {
         &self.value
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 

@@ -1,3 +1,5 @@
+//! Deterministic authored-View layout lowering.
+
 use arcweft_bundle::resource_codec::{
     ViewLogicalRect, ViewRuntimeButtonBounds, view::ViewInputKind,
 };
@@ -6,9 +8,11 @@ use arcweft_lang_syntax::{
     expr::{Expr, Literal, UnitNumberSuffix},
 };
 
-pub(in crate::app) const VIEW_LAYOUT_GAP_MILLI: i32 = 16_000;
-pub(in crate::app) const VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI: u32 = 420_000;
-pub(in crate::app) const VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI: u32 = 180_000;
+use super::ViewSidecarError;
+
+pub(super) const VIEW_LAYOUT_GAP_MILLI: i32 = 16_000;
+pub(super) const VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI: u32 = 420_000;
+pub(super) const VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI: u32 = 180_000;
 
 const VIEW_LAYOUT_ROOT_X_MILLI: i32 = 48_000;
 const VIEW_LAYOUT_ROOT_Y_MILLI: i32 = 48_000;
@@ -17,26 +21,26 @@ const VIEW_LAYOUT_BUTTON_WIDTH_MILLI: u32 = 180_000;
 const VIEW_LAYOUT_BUTTON_HEIGHT_MILLI: u32 = 44_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(in crate::app) struct ViewLayoutCursor {
-    pub(in crate::app) x_milli: i32,
-    pub(in crate::app) y_milli: i32,
+pub(super) struct ViewLayoutCursor {
+    pub(super) x_milli: i32,
+    pub(super) y_milli: i32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(in crate::app) struct ViewLayoutFrame {
-    pub(in crate::app) width_milli: u32,
-    pub(in crate::app) height_milli: u32,
+pub(super) struct ViewLayoutFrame {
+    pub(super) width_milli: u32,
+    pub(super) height_milli: u32,
 }
 
 impl ViewLayoutCursor {
-    pub(in crate::app) const fn root() -> Self {
+    pub(super) const fn root() -> Self {
         Self {
             x_milli: VIEW_LAYOUT_ROOT_X_MILLI,
             y_milli: VIEW_LAYOUT_ROOT_Y_MILLI,
         }
     }
 
-    pub(in crate::app) const fn text_control_rect(self, kind: ViewInputKind) -> ViewLogicalRect {
+    pub(super) const fn text_control_rect(self, kind: ViewInputKind) -> ViewLogicalRect {
         ViewLogicalRect::new(
             self.x_milli,
             self.y_milli,
@@ -47,119 +51,141 @@ impl ViewLayoutCursor {
 }
 
 impl ViewLayoutFrame {
-    pub(in crate::app) const fn zero() -> Self {
+    pub(super) const fn zero() -> Self {
         Self {
             width_milli: 0,
             height_milli: 0,
         }
     }
 
-    pub(in crate::app) const fn new(width_milli: u32, height_milli: u32) -> Self {
+    pub(super) const fn new(width_milli: u32, height_milli: u32) -> Self {
         Self {
             width_milli,
             height_milli,
         }
     }
 
-    pub(in crate::app) const fn text_control(kind: ViewInputKind) -> Self {
+    pub(super) const fn text_control(kind: ViewInputKind) -> Self {
         Self::new(
             VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI,
             kind.default_text_control_height_milli(),
         )
     }
 
-    pub(in crate::app) const fn action_button() -> Self {
+    pub(super) const fn action_button() -> Self {
         Self::new(
             VIEW_LAYOUT_BUTTON_WIDTH_MILLI,
             VIEW_LAYOUT_BUTTON_HEIGHT_MILLI,
         )
     }
 
-    pub(in crate::app) const fn is_empty(self) -> bool {
+    pub(super) const fn is_empty(self) -> bool {
         self.width_milli == 0 || self.height_milli == 0
     }
 }
 
-pub(in crate::app) fn button_bounds(
+pub(super) fn button_bounds(
     button: &ViewButton,
     layout: ViewLayoutCursor,
-) -> ViewRuntimeButtonBounds {
-    ViewRuntimeButtonBounds::new(
-        named_layout_length_i32(button.args(), &["x"]).unwrap_or(layout.x_milli),
-        named_layout_length_i32(button.args(), &["y"]).unwrap_or(layout.y_milli),
-        named_layout_length_u32(button.args(), &["width", "w"])
+) -> Result<ViewRuntimeButtonBounds, ViewSidecarError> {
+    Ok(ViewRuntimeButtonBounds::new(
+        named_layout_length_i32(button.args(), &["x"])?.unwrap_or(layout.x_milli),
+        named_layout_length_i32(button.args(), &["y"])?.unwrap_or(layout.y_milli),
+        named_layout_length_u32(button.args(), &["width", "w"])?
             .unwrap_or(VIEW_LAYOUT_BUTTON_WIDTH_MILLI),
-        named_layout_length_u32(button.args(), &["height", "h"])
+        named_layout_length_u32(button.args(), &["height", "h"])?
             .unwrap_or(VIEW_LAYOUT_BUTTON_HEIGHT_MILLI),
-    )
+    ))
 }
 
-pub(in crate::app) fn named_layout_length_u32(args: &[ViewArg], names: &[&str]) -> Option<u32> {
-    named_layout_length_i32(args, names).and_then(|value| u32::try_from(value.max(0)).ok())
+pub(super) fn named_layout_length_u32(
+    args: &[ViewArg],
+    names: &[&str],
+) -> Result<Option<u32>, ViewSidecarError> {
+    named_layout_length_i32(args, names)
+        .map(|value| value.map(|value| u32::try_from(value.max(0)).expect("non-negative i32")))
 }
 
-pub(in crate::app) fn modifier_layout_length_u32(
+pub(super) fn modifier_layout_length_u32(
     modifiers: &[ViewModifier],
     names: &[&str],
-) -> Option<u32> {
-    modifiers.iter().find_map(|modifier| match modifier {
-        ViewModifier::Property { name, value }
-            if names.iter().any(|candidate| name == candidate) =>
-        {
-            expr_px_milli(value).and_then(|value| u32::try_from(value.max(0)).ok())
-        }
-        _ => None,
-    })
+) -> Result<Option<u32>, ViewSidecarError> {
+    modifiers
+        .iter()
+        .find_map(|modifier| match modifier {
+            ViewModifier::Property { name, value }
+                if names.iter().any(|candidate| name == candidate) =>
+            {
+                Some((name, value))
+            }
+            _ => None,
+        })
+        .map(|(name, value)| {
+            expr_px_milli(value, name)
+                .map(|value| u32::try_from(value.max(0)).expect("non-negative i32"))
+        })
+        .transpose()
 }
 
-pub(in crate::app) fn modifier_layout_length_i32(
+pub(super) fn modifier_layout_length_i32(
     modifiers: &[ViewModifier],
     names: &[&str],
-) -> Option<i32> {
-    modifiers.iter().find_map(|modifier| match modifier {
-        ViewModifier::Property { name, value }
-            if names.iter().any(|candidate| name == candidate) =>
-        {
-            expr_px_milli(value)
-        }
-        _ => None,
-    })
+) -> Result<Option<i32>, ViewSidecarError> {
+    modifiers
+        .iter()
+        .find_map(|modifier| match modifier {
+            ViewModifier::Property { name, value }
+                if names.iter().any(|candidate| name == candidate) =>
+            {
+                Some((name, value))
+            }
+            _ => None,
+        })
+        .map(|(name, value)| expr_px_milli(value, name))
+        .transpose()
 }
 
-pub(in crate::app) fn text_block_frame(text: &str, modifiers: &[ViewModifier]) -> ViewLayoutFrame {
+pub(super) fn text_block_frame(
+    text: &str,
+    modifiers: &[ViewModifier],
+) -> Result<ViewLayoutFrame, ViewSidecarError> {
     let width_milli =
-        modifier_layout_length_u32(modifiers, &["width", "w", "inline-size", "inline_size"])
+        modifier_layout_length_u32(modifiers, &["width", "w", "inline-size", "inline_size"])?
             .unwrap_or(VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI)
             .max(1);
-    let font_size_milli = modifier_layout_length_u32(modifiers, &["font-size"]).unwrap_or(20_000);
+    let font_size_milli = modifier_layout_length_u32(modifiers, &["font-size"])?.unwrap_or(20_000);
     let fallback_line_height = font_size_milli.saturating_mul(6).saturating_add(4) / 5;
     let line_height_milli = modifier_layout_length_u32(
         modifiers,
         &["line-height", "line-height-milli", "line_height_milli"],
-    )
+    )?
     .unwrap_or(fallback_line_height)
     .max(VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI);
     let line_count = estimated_wrapped_text_lines(text, width_milli, font_size_milli);
     let inferred_height_milli = line_height_milli.saturating_mul(line_count);
     let height_milli =
-        modifier_layout_length_u32(modifiers, &["height", "h", "block-size", "block_size"])
+        modifier_layout_length_u32(modifiers, &["height", "h", "block-size", "block_size"])?
             .unwrap_or(inferred_height_milli)
             .max(1);
-    ViewLayoutFrame::new(width_milli, height_milli)
+    Ok(ViewLayoutFrame::new(width_milli, height_milli))
 }
 
-pub(in crate::app) fn u32_to_i32_saturating(value: u32) -> i32 {
+pub(super) fn u32_to_i32_saturating(value: u32) -> i32 {
     i32::try_from(value).unwrap_or(i32::MAX)
 }
 
-pub(in crate::app) fn named_layout_length_i32(args: &[ViewArg], names: &[&str]) -> Option<i32> {
+pub(super) fn named_layout_length_i32(
+    args: &[ViewArg],
+    names: &[&str],
+) -> Result<Option<i32>, ViewSidecarError> {
     names
         .iter()
-        .find_map(|name| named_arg(args, name))
-        .and_then(expr_px_milli)
+        .find_map(|name| named_arg(args, name).map(|value| (*name, value)))
+        .map(|(name, value)| expr_px_milli(value, name))
+        .transpose()
 }
 
-pub(in crate::app) fn named_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&'a Expr> {
+pub(super) fn named_arg<'a>(args: &'a [ViewArg], name: &str) -> Option<&'a Expr> {
     args.iter().find_map(|arg| match arg {
         ViewArg::Named {
             name: actual,
@@ -209,7 +235,10 @@ fn estimated_text_advance_milli(ch: char, font_size_milli: u32) -> u32 {
         / 1_000
 }
 
-fn expr_px_milli(expr: &Expr) -> Option<i32> {
+fn expr_px_milli(expr: &Expr, property: &str) -> Result<i32, ViewSidecarError> {
+    let invalid = || ViewSidecarError::UnsupportedLayoutValue {
+        property: property.to_owned(),
+    };
     match expr {
         Expr::Literal(Literal::UnitNumber {
             raw,
@@ -217,7 +246,7 @@ fn expr_px_milli(expr: &Expr) -> Option<i32> {
         }) => {
             let raw = raw.trim();
             let raw = raw.strip_suffix("px").map_or(raw, str::trim);
-            parse_px_milli(raw)
+            parse_px_milli(raw).ok_or_else(invalid)
         }
         Expr::Literal(Literal::UnitNumber {
             raw,
@@ -227,28 +256,19 @@ fn expr_px_milli(expr: &Expr) -> Option<i32> {
             raw.strip_suffix("milli")
                 .map(str::trim)
                 .and_then(|raw| raw.parse::<i32>().ok())
+                .ok_or_else(invalid)
         }
         Expr::Literal(Literal::Int(literal)) => literal
             .magnitude()
             .ok()
             .and_then(|value| value.checked_mul(1_000))
-            .and_then(|value| i32::try_from(value).ok()),
-        Expr::Raw(value) => value
-            .trim()
-            .strip_suffix("px")
-            .map(str::trim)
-            .and_then(parse_px_milli),
-        Expr::Path(value) => value
-            .as_label()
-            .trim()
-            .strip_suffix("px")
-            .map(str::trim)
-            .and_then(parse_px_milli),
-        _ => None,
+            .and_then(|value| i32::try_from(value).ok())
+            .ok_or_else(invalid),
+        _ => Err(invalid()),
     }
 }
 
-pub(in crate::app) fn parse_px_milli(raw: &str) -> Option<i32> {
+pub(super) fn parse_px_milli(raw: &str) -> Option<i32> {
     let source = raw.trim().replace('_', "");
     let (negative, unsigned) = source
         .strip_prefix('-')

@@ -36,6 +36,7 @@ fn project_context(project: &ProjectSources) -> ProjectCompilationContext {
     ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
         Vec::new(),
@@ -114,6 +115,34 @@ pub view Example() {
             ViewStyleApplicationTarget::inline(ViewStylePatchId::new(0)),
         ]
     );
+}
+
+#[test]
+fn style_compiler_keeps_same_shaped_authored_nodes_as_distinct_application_sites() {
+    let source = r#"pub style shared {
+    Button { opacity = 900milli }
+}
+
+pub view SameShape() {
+    Column {
+        Button("Same").style(@style.shared)
+        Button("Same").style(@style.shared)
+    }
+}
+"#;
+    let compiled = compile_source(source).expect("same-shaped style sites compile");
+    let view = PublicId::try_new("view.SameShape").expect("View ID");
+    let ranges = styled_producer_ranges(&compiled.hir, &view);
+    assert_eq!(ranges.len(), 2);
+    assert_ne!(ranges[0], ranges[1]);
+    for range in ranges {
+        assert_eq!(
+            compiled.style.applications().applications_for(&view, range),
+            &[ViewStyleApplicationTarget::named(
+                ViewStyleSheetId::try_new("style.shared").expect("Style ID")
+            )]
+        );
+    }
 }
 
 #[test]

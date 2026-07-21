@@ -39,18 +39,17 @@ pub image sample.pulse_sprite {
     transform.tx = 24px
     transform.ty = 12px
     depth = 2500
-    enabled = true
     visible = true
-    action = action.inspect.pulse_sprite
-    param.role = animated-hotspot
-    param.hit_channel = channel.preview
+    action = @action.inspect.pulse_sprite
+    param.role = "animated-hotspot"
+    param.hit_channel = "channel.preview"
     proxy.id = @proxy.pulse_sprite.hotspot
     proxy.type = PulseSpriteHotspot
     proxy.role = inspect
     proxy.layer = @layer.hit
     proxy.depth = 2600
     proxy.hit_test = true
-    proxy.param.channel = preview
+    proxy.param.channel = "preview"
 }
 
 pub character narrator {

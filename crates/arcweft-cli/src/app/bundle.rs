@@ -1,9 +1,4 @@
-use super::bundle_view::view_sidecars;
-use super::diagnostics::{DiagnosticEmitter, DiagnosticSource, emit_diagnostics};
-use super::image_declarations::{
-    DeclaredImageObject, declaration_arg_value, declared_image_asset_refs,
-    parse_declared_image_objects, public_asset_ref_arg, public_id_arg,
-};
+use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
@@ -34,11 +29,13 @@ use arcweft_adapter_desktop::{
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
     is_desktop_owned_window_host_call,
 };
+#[cfg(test)]
+use arcweft_bundle::BundleImageObject;
+#[cfg(test)]
+use arcweft_bundle::resource_codec::{ViewInputResource, ViewProgramResource, ViewStyleResource};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
-    BundleImageObject, BundleImageObjectAlignment, BundleImageObjectFit, BundleImageObjectParam,
-    BundleImageObjectPlayback, BundleImageObjectProxy, BundleImageObjectTransform,
     BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleVirtualFile,
     BundleVirtualFileRef, BundleVirtualFileSpace,
     container::{BundleDigest, BundleView, ReadBudget},
@@ -46,44 +43,41 @@ use arcweft_bundle::{
     patch::{
         BundlePatchArtifact, PatchCompatibility, apply_patch_bundle_bytes, encode_patch_bundle,
     },
-    resource_codec::{
-        ViewInputResource, ViewLocalizedTextResource, ViewProgramResource,
-        ViewProgramStyleResources, ViewStyleResource, ViewTextResource, ViewThemeResource,
-    },
+    resource_codec::{ViewLocalizedTextResource, ViewTextResource},
 };
-use arcweft_compiler::style::CompiledViewStyleArtifact;
+use arcweft_compiler::view::CompiledViewProduct;
+#[cfg(test)]
+use arcweft_compiler::{style::CompiledViewStyleArtifact, view::ViewProjectLowerer};
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
-use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_sema::dialogue_view::DialogueViewModelRegistry;
+use arcweft_id::{PublicId, RetainedIdentityFamily};
+#[cfg(test)]
+use arcweft_lang_hir::model::HirModule;
+#[cfg(test)]
+use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
+#[cfg(test)]
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
     run_bundle_with_native_adapters,
 };
+#[cfg(test)]
 use arcweft_runtime_plan::fx::lower_fx_definitions_for_package;
 use arcweft_source::SourceDocument;
-#[cfg(test)]
-use arcweft_source::{SourceDocumentId, SourceName};
 use arcweft_verify::{VerificationPolicy, VerificationReport, verify_module_with_env};
 use clap::Args;
-use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
-
-mod stage_placement;
-mod view_mounts;
-use stage_placement::{image_design_bounds, image_stage_placement};
-use view_mounts::{mounted_view_ids, mounted_view_matches};
 
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
@@ -309,33 +303,20 @@ pub(in crate::app) fn compile_bundle_for_selection(
         include_spaces,
     )?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
-    let image_declarations = parse_declared_image_objects(&compiled.source_document);
-    let mut image_objects = bundle_image_objects(&image_declarations, &compiled.source_document)?;
-    let package = selection.package_identity()?;
-    let fx_definitions = lower_fx_definitions_for_package(&compiled.hir, &package)
-        .map_err(|error| {
-            eprintln!("error: failed to compile Fx definitions: {error}");
+    let mut image_objects = compiled.image_catalog.objects().to_vec();
+    let fx_definitions =
+        FxDefinitions::try_new(compiled.fx_definitions.iter().cloned()).map_err(|error| {
+            eprintln!("error: failed to build Fx definitions inventory: {error}");
             ExitCode::FAILURE
-        })
-        .and_then(|definitions| {
-            FxDefinitions::try_new(definitions).map_err(|error| {
-                eprintln!("error: failed to build Fx definitions inventory: {error}");
-                ExitCode::FAILURE
-            })
         })?;
-    let view_sidecars = collect_bundle_view_sidecars(authored_resources.content())?.merged(
-        collect_bundle_dsl_view_resources_with_style_for_package(
-            &compiled.hir,
-            &compiled.style,
-            &image_objects,
-            &package,
-            &compiled.typecheck_report.view_part_catalog,
-            &compiled.source_map,
-        )?,
+    let view_product = compiled.view_product.clone();
+    image_objects.extend(view_product.image_objects().iter().cloned());
+    validate_referenced_bundle_image_assets(
+        &compiled.plan,
+        compiled.image_catalog.asset_refs(),
+        &image_assets,
     )?;
-    image_objects.extend(view_sidecars.image_objects.iter().cloned());
-    validate_referenced_bundle_image_assets(&compiled.plan, &image_declarations, &image_assets)?;
-    let bundle = attach_bundle_view_sidecars(
+    let bundle = attach_compiled_view_product(
         ArcweftBundle::try_new(
             bundle_manifest(
                 selection,
@@ -357,7 +338,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
         .with_virtual_files(virtual_files)
         .with_image_assets(image_assets)
         .with_image_objects(image_objects),
-        view_sidecars,
+        &view_product,
     )?;
     Ok(CompiledBundleArtifact {
         bundle,
@@ -370,109 +351,44 @@ fn emit_bundle_verification_diagnostics(document: &SourceDocument, report: &Veri
     emit_diagnostics(document, &diagnostics);
 }
 
-#[derive(Clone, Debug, Default)]
-struct BundleViewSidecars {
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct TestCompiledViewResources {
+    compiled: CompiledViewProduct,
     program: Option<ViewProgramResource>,
     style: Option<ViewStyleResource>,
     text: Option<ViewTextResource>,
     input: Option<ViewInputResource>,
-    theme: Option<ViewThemeResource>,
     image_objects: Vec<BundleImageObject>,
 }
 
-impl BundleViewSidecars {
-    fn merged(mut self, other: Self) -> Result<Self, ExitCode> {
-        let merged = ViewProgramStyleResources::new(self.program, self.style)
-            .merge(ViewProgramStyleResources::new(other.program, other.style))
-            .map_err(|error| {
-                eprintln!("error: failed to merge View program and Style resources: {error}");
-                ExitCode::FAILURE
-            })?;
-        self.program = merged.program;
-        self.style = merged.style;
-        self.text = merge_optional(self.text, other.text, merge_view_text);
-        self.input = merge_optional(self.input, other.input, merge_view_input);
-        self.theme = self.theme.or(other.theme);
-        self.image_objects.extend(other.image_objects);
-        Ok(self)
+#[cfg(test)]
+impl TestCompiledViewResources {
+    fn from_compiled(compiled: CompiledViewProduct) -> Self {
+        let program = compiled
+            .product()
+            .program()
+            .map(|program| program.resource().clone());
+        let style = compiled
+            .product()
+            .style()
+            .map(|style| style.resource().clone());
+        Self {
+            program,
+            style,
+            text: compiled.text().cloned(),
+            input: compiled.input().cloned(),
+            image_objects: compiled.image_objects().to_vec(),
+            compiled,
+        }
     }
-}
-
-fn merge_optional<T>(
-    left: Option<T>,
-    right: Option<T>,
-    merge: impl FnOnce(T, T) -> T,
-) -> Option<T> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some(merge(left, right)),
-        (Some(left), None) => Some(left),
-        (None, Some(right)) => Some(right),
-        (None, None) => None,
-    }
-}
-
-fn merge_view_text(mut left: ViewTextResource, right: ViewTextResource) -> ViewTextResource {
-    left.sources.extend(right.sources);
-    left.localized.extend(right.localized);
-    left.rich_text_documents.extend(right.rich_text_documents);
-    left.display_frames.extend(right.display_frames);
-    left.source_ranges.extend(right.source_ranges);
-    left.reveal_policies.extend(right.reveal_policies);
-    left.cursor_policies.extend(right.cursor_policies);
-    left.redactions.extend(right.redactions);
-    left
-}
-
-fn merge_view_input(mut left: ViewInputResource, right: ViewInputResource) -> ViewInputResource {
-    left.options.extend(right.options);
-    left.adapter_requirements.extend(right.adapter_requirements);
-    left
-}
-
-fn collect_bundle_view_sidecars(root: &Path) -> Result<BundleViewSidecars, ExitCode> {
-    if !root.exists() {
-        return Ok(BundleViewSidecars::default());
-    }
-
-    Ok(BundleViewSidecars {
-        program: read_optional_json_sidecar(&root.join("view.program.json"))?,
-        style: read_optional_json_sidecar(&root.join("view.style.json"))?,
-        text: read_optional_json_sidecar(&root.join("view.text.json"))?,
-        input: read_optional_json_sidecar(&root.join("view.input.json"))?,
-        theme: read_optional_json_sidecar(&root.join("view.theme.json"))?,
-        image_objects: Vec::new(),
-    })
-}
-
-fn read_optional_json_sidecar<T>(path: &Path) -> Result<Option<T>, ExitCode>
-where
-    T: DeserializeOwned,
-{
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let bytes = fs::read(path).map_err(|error| {
-        eprintln!(
-            "error: failed to read View resource sidecar {}: {error}",
-            path.display()
-        );
-        ExitCode::FAILURE
-    })?;
-    serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-        eprintln!(
-            "error: failed to decode View resource sidecar {}: {error}",
-            path.display()
-        );
-        ExitCode::FAILURE
-    })
 }
 
 #[cfg(test)]
 fn collect_bundle_dsl_view_resources(
     module: &HirModule,
     image_objects: &[BundleImageObject],
-) -> Result<BundleViewSidecars, ExitCode> {
+) -> Result<TestCompiledViewResources, ExitCode> {
     collect_bundle_dsl_view_resources_for_package(module, image_objects, "test-package")
 }
 
@@ -481,17 +397,32 @@ fn collect_bundle_dsl_view_resources_for_package(
     module: &HirModule,
     image_objects: &[BundleImageObject],
     package: &str,
-) -> Result<BundleViewSidecars, ExitCode> {
-    // Tests that do not retain their parsed document cannot project authored
-    // source-bound exports. A bounded placeholder remains sufficient for the
-    // unrelated View lowering fixtures that have no exported-part records.
-    let source = " ".repeat(1 << 20);
-    collect_bundle_dsl_view_resources_from_source_for_package(
+) -> Result<TestCompiledViewResources, ExitCode> {
+    let source = module.source_document().ok_or_else(|| {
+        eprintln!("error: test View lowering requires source-bound HIR");
+        ExitCode::FAILURE
+    })?;
+    let typecheck = arcweft_compiler::hir::validate_hir_with_env(
         module,
+        &arcweft_lang_sema::env::TypeCheckEnv::standard(),
+    )
+    .map_err(|error| {
+        eprintln!("error: test View HIR did not typecheck: {error}");
+        ExitCode::FAILURE
+    })?;
+    let style =
+        arcweft_compiler::style::lower_source_view_styles(module, &typecheck.style_catalog, source)
+            .map_err(|error| {
+                eprintln!("error: test View Style lowering failed: {error}");
+                ExitCode::FAILURE
+            })?;
+    collect_bundle_dsl_view_resources_with_style_for_package(
+        module,
+        &style,
         image_objects,
         package,
-        "test.arcw",
-        &source,
+        &typecheck,
+        source,
     )
 }
 
@@ -501,7 +432,7 @@ fn collect_bundle_dsl_view_resources_from_source(
     image_objects: &[BundleImageObject],
     source_id: &str,
     source: &str,
-) -> Result<BundleViewSidecars, ExitCode> {
+) -> Result<TestCompiledViewResources, ExitCode> {
     collect_bundle_dsl_view_resources_from_source_for_package(
         module,
         image_objects,
@@ -518,7 +449,15 @@ fn collect_bundle_dsl_view_resources_from_source_for_package(
     package: &str,
     source_id: &str,
     source: &str,
-) -> Result<BundleViewSidecars, ExitCode> {
+) -> Result<TestCompiledViewResources, ExitCode> {
+    let bound_source = module.source_document().ok_or_else(|| {
+        eprintln!("error: test View lowering requires source-bound HIR");
+        ExitCode::FAILURE
+    })?;
+    if bound_source.identity().id().as_str() != source_id || bound_source.text() != source {
+        eprintln!("error: test View source does not match the exact HIR-bound document");
+        return Err(ExitCode::FAILURE);
+    }
     let typecheck = arcweft_compiler::hir::validate_hir_with_env(
         module,
         &arcweft_lang_sema::env::TypeCheckEnv::standard(),
@@ -527,125 +466,72 @@ fn collect_bundle_dsl_view_resources_from_source_for_package(
         eprintln!("error: test View HIR did not typecheck: {error}");
         ExitCode::FAILURE
     })?;
-    let source_document = SourceDocument::try_new(
-        SourceDocumentId::try_new(source_id).map_err(|error| {
-            eprintln!("error: invalid test source identity: {error}");
-            ExitCode::FAILURE
-        })?,
-        SourceName::path(source_id),
-        source,
-    )
-    .map_err(|error| {
-        eprintln!("error: failed to build test source document: {error}");
-        ExitCode::FAILURE
-    })?;
     let style_artifact = arcweft_compiler::style::lower_source_view_styles(
         module,
         &typecheck.style_catalog,
-        &source_document,
+        bound_source,
     )
     .map_err(|error| {
         eprintln!("error: test View Style lowering failed: {error}");
         ExitCode::FAILURE
     })?;
-    let source_map =
-        arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[&source_document])
-            .map_err(|error| {
-            eprintln!("error: failed to build test source map: {error}");
-            ExitCode::FAILURE
-        })?;
     collect_bundle_dsl_view_resources_with_style_for_package(
         module,
         &style_artifact,
         image_objects,
         package,
-        &typecheck.view_part_catalog,
-        &source_map,
+        &typecheck,
+        bound_source,
     )
 }
 
+#[cfg(test)]
 fn collect_bundle_dsl_view_resources_with_style_for_package(
     module: &HirModule,
     style_artifact: &CompiledViewStyleArtifact,
     image_objects: &[BundleImageObject],
     package: &str,
-    view_part_catalog: &arcweft_lang_sema::view_part::CheckedViewPartCatalog,
-    source_map: &arcweft_bundle::resource_codec::SourceMapSection,
-) -> Result<BundleViewSidecars, ExitCode> {
-    let mounted_views = mounted_view_ids(module);
-    let views = module
-        .declarations()
-        .iter()
-        .filter_map(|decl| match decl {
-            HirTopLevelDecl::EntityDecl(item)
-                if item.view_body().is_some()
-                    && mounted_view_matches(&mounted_views, item.id().body()) =>
-            {
-                Some(item)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let style = (!style_artifact.resource().program.sheets().is_empty()
-        || !style_artifact.resource().program.patches().is_empty())
-    .then(|| style_artifact.resource().clone());
-    let dialogue_view_models = DialogueViewModelRegistry::from_hir(module).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {error}");
-        }
-        ExitCode::FAILURE
-    })?;
+    typecheck: &TypeCheckReport,
+    source: &SourceDocument,
+) -> Result<TestCompiledViewResources, ExitCode> {
     let fx_definitions = lower_fx_definitions_for_package(module, package).map_err(|error| {
         eprintln!("error: failed to compile View-visible Fx definitions: {error}");
         ExitCode::FAILURE
     })?;
-    let view_sidecars = view_sidecars(
-        &views,
-        &dialogue_view_models,
-        style_artifact.applications(),
+    let resource_types = ResourceTypeRegistry::empty();
+    let compiled = ViewProjectLowerer::for_source(
+        module,
+        typecheck,
+        style_artifact,
+        source,
         image_objects,
         &fx_definitions,
-        view_part_catalog,
-        source_map,
+        &resource_types,
     )
+    .and_then(ViewProjectLowerer::lower)
     .map_err(|error| {
-        eprintln!("{error}");
+        eprintln!("error: failed to compile the View product: {error}");
         ExitCode::FAILURE
     })?;
-    let resources = ViewProgramStyleResources::new(view_sidecars.program, style);
-    resources.validate().map_err(|error| {
-        eprintln!("error: invalid compiler-owned View program and Style resources: {error}");
-        ExitCode::FAILURE
-    })?;
-    Ok(BundleViewSidecars {
-        program: resources.program,
-        style: resources.style,
-        text: view_sidecars.text,
-        input: view_sidecars.input,
-        theme: None,
-        image_objects: view_sidecars.image_objects,
-    })
+    Ok(TestCompiledViewResources::from_compiled(compiled))
 }
 
-fn attach_bundle_view_sidecars(
+fn attach_compiled_view_product(
     mut bundle: ArcweftBundle,
-    sidecars: BundleViewSidecars,
+    compiled: &CompiledViewProduct,
 ) -> Result<ArcweftBundle, ExitCode> {
     bundle = bundle
-        .with_view_resources(sidecars.program, sidecars.style)
+        .try_with_validated_view_product(compiled.product())
         .map_err(|error| {
-            eprintln!("error: failed to attach View program and Style resources: {error}");
+            eprintln!("error: failed to attach the accepted View product: {error}");
             ExitCode::FAILURE
         })?;
-    if let Some(mut resource) = sidecars.text {
+    if let Some(mut resource) = compiled.text().cloned() {
         hydrate_default_view_localization(&mut resource, &bundle.display);
         bundle = bundle.with_view_text(resource);
     }
-    if let Some(resource) = sidecars.input {
+    if let Some(resource) = compiled.input().cloned() {
         bundle = bundle.with_view_input(resource);
-    }
-    if let Some(resource) = sidecars.theme {
-        bundle = bundle.with_view_theme(resource);
     }
     Ok(bundle)
 }
@@ -1058,14 +944,14 @@ fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) ->
 
 fn validate_referenced_bundle_image_assets(
     plan: &RuntimePlan,
-    image_declarations: &BTreeMap<String, DeclaredImageObject>,
+    declared_asset_refs: impl IntoIterator<Item = impl AsRef<str>>,
     image_assets: &[BundleImageAsset],
 ) -> Result<(), ExitCode> {
     let available = image_assets
         .iter()
         .map(|asset| asset.id.as_str())
         .collect::<Vec<_>>();
-    let missing = static_image_asset_refs(plan, image_declarations)
+    let missing = static_image_asset_refs(plan, declared_asset_refs)
         .into_iter()
         .filter(|id| !available.iter().any(|available_id| available_id == id))
         .collect::<Vec<_>>();
@@ -1079,360 +965,9 @@ fn validate_referenced_bundle_image_assets(
     Err(ExitCode::from(2))
 }
 
-fn bundle_image_objects(
-    image_declarations: &BTreeMap<String, DeclaredImageObject>,
-    document: &SourceDocument,
-) -> Result<Vec<BundleImageObject>, ExitCode> {
-    image_declarations
-        .values()
-        .map(|declaration| bundle_image_object(declaration, document))
-        .collect::<Result<Vec<_>, ExitCode>>()
-}
-
-fn bundle_image_object(
-    declaration: &DeclaredImageObject,
-    document: &SourceDocument,
-) -> Result<BundleImageObject, ExitCode> {
-    let asset = declaration
-        .args()
-        .iter()
-        .find_map(|arg| {
-            let (name, value) = arg.split_once(" = ")?;
-            (name.trim() == "asset")
-                .then_some(value.trim())
-                .and_then(public_asset_ref_arg)
-        })
-        .ok_or_else(|| {
-            DiagnosticEmitter::stderr().emit(
-                &declaration.missing_asset_diagnostic(document),
-                &DiagnosticSource::new(document),
-            );
-            ExitCode::from(2)
-        })?;
-    let placement = image_stage_placement(declaration)?;
-    let bounds = image_design_bounds(&placement)?;
-    Ok(BundleImageObject {
-        id: declaration.id().to_owned(),
-        asset,
-        target: declaration_arg_value(declaration.args(), "target").and_then(public_id_arg),
-        layer: declaration_arg_value(declaration.args(), "layer").and_then(public_id_arg),
-        view: None,
-        containing_scroll_region: None,
-        bounds,
-        placement: Some(placement),
-        fit: image_fit_arg(declaration),
-        alignment: image_alignment_arg(declaration),
-        playback: image_playback_arg(declaration),
-        transform: image_transform_arg(declaration),
-        depth_milli: declaration_arg_value(declaration.args(), "depth")
-            .and_then(parse_depth_arg)
-            .unwrap_or_default(),
-        opacity_milli: image_opacity_milli_arg(declaration)?,
-        actions: image_actions_arg(declaration),
-        params: image_params_arg(declaration),
-        proxies: image_proxies_arg(declaration),
-        visible: declaration_arg_value(declaration.args(), "visible")
-            .and_then(parse_bool_arg)
-            .unwrap_or(true),
-    })
-}
-
-fn image_fit_arg(declaration: &DeclaredImageObject) -> BundleImageObjectFit {
-    match declaration_arg_value(declaration.args(), "fit").map(unquote_arg) {
-        Some("cover") => BundleImageObjectFit::Cover,
-        Some("stretch") => BundleImageObjectFit::Stretch,
-        Some("intrinsic") => BundleImageObjectFit::Intrinsic,
-        _ => BundleImageObjectFit::Contain,
-    }
-}
-
-fn image_alignment_arg(declaration: &DeclaredImageObject) -> BundleImageObjectAlignment {
-    BundleImageObjectAlignment {
-        x_milli: declaration_arg_value(declaration.args(), "alignment.x")
-            .and_then(|value| parse_alignment_component_milli(value, "x"))
-            .unwrap_or(500),
-        y_milli: declaration_arg_value(declaration.args(), "alignment.y")
-            .and_then(|value| parse_alignment_component_milli(value, "y"))
-            .unwrap_or(500),
-    }
-}
-
-fn parse_alignment_component_milli(value: &str, axis: &str) -> Option<i32> {
-    match (axis, unquote_arg(value)) {
-        ("x", "left" | "start") | ("y", "top" | "start") => return Some(0),
-        ("x" | "y", "center" | "middle") => return Some(500),
-        ("x", "right" | "end") | ("y", "bottom" | "end") => return Some(1_000),
-        _ => {}
-    }
-    let integer = unquote_arg(value).parse::<i32>().ok()?;
-    Some(if (0..=1).contains(&integer) {
-        integer.saturating_mul(1_000)
-    } else {
-        integer.clamp(0, 1_000)
-    })
-}
-
-fn image_playback_arg(declaration: &DeclaredImageObject) -> BundleImageObjectPlayback {
-    BundleImageObjectPlayback {
-        start_time_millis: declaration_arg_value(declaration.args(), "playback.start")
-            .and_then(parse_duration_millis)
-            .unwrap_or_default(),
-        rate_milli: declaration_arg_value(declaration.args(), "playback.rate")
-            .and_then(parse_rate_milli)
-            .unwrap_or(1_000),
-        paused_at_millis: declaration_arg_value(declaration.args(), "playback.paused_at")
-            .and_then(parse_duration_millis),
-        pinned_local_time_millis: declaration_arg_value(declaration.args(), "playback.local_time")
-            .and_then(parse_duration_millis),
-    }
-}
-
-fn image_transform_arg(declaration: &DeclaredImageObject) -> BundleImageObjectTransform {
-    BundleImageObjectTransform {
-        m11_milli: declaration_arg_value(declaration.args(), "transform.m11")
-            .and_then(parse_milli_arg)
-            .unwrap_or(1_000),
-        m12_milli: declaration_arg_value(declaration.args(), "transform.m12")
-            .and_then(parse_milli_arg)
-            .unwrap_or_default(),
-        m21_milli: declaration_arg_value(declaration.args(), "transform.m21")
-            .and_then(parse_milli_arg)
-            .unwrap_or_default(),
-        m22_milli: declaration_arg_value(declaration.args(), "transform.m22")
-            .and_then(parse_milli_arg)
-            .unwrap_or(1_000),
-        tx_milli: declaration_arg_value(declaration.args(), "transform.tx")
-            .and_then(parse_px_milli)
-            .unwrap_or_default(),
-        ty_milli: declaration_arg_value(declaration.args(), "transform.ty")
-            .and_then(parse_px_milli)
-            .unwrap_or_default(),
-    }
-}
-
-fn image_actions_arg(declaration: &DeclaredImageObject) -> Vec<String> {
-    declaration
-        .args()
-        .iter()
-        .filter_map(|arg| {
-            let (name, value) = arg.split_once(" = ")?;
-            match name.trim() {
-                "action" => Some(vec![public_id_arg(value).unwrap_or_else(|| {
-                    unquote_arg(value.trim().trim_start_matches('@')).to_owned()
-                })]),
-                "actions" => Some(
-                    unquote_arg(value)
-                        .trim_matches(['[', ']'])
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                        .map(|value| {
-                            public_id_arg(value).unwrap_or_else(|| {
-                                unquote_arg(value.trim().trim_start_matches('@')).to_owned()
-                            })
-                        })
-                        .collect(),
-                ),
-                _ => None,
-            }
-        })
-        .flatten()
-        .collect()
-}
-
-fn image_params_arg(declaration: &DeclaredImageObject) -> BTreeMap<String, BundleImageObjectParam> {
-    declaration
-        .args()
-        .iter()
-        .filter_map(|arg| {
-            let (name, value) = arg.split_once(" = ")?;
-            let name = name.trim();
-            name.strip_prefix("param.").map(|_| {
-                (
-                    name.to_owned(),
-                    bundle_image_object_param_from_arg(value.trim()),
-                )
-            })
-        })
-        .collect()
-}
-
-fn image_proxies_arg(declaration: &DeclaredImageObject) -> Vec<BundleImageObjectProxy> {
-    let Some(id) = declaration_arg_value(declaration.args(), "proxy.id").and_then(public_id_arg)
-    else {
-        return Vec::new();
-    };
-    let params = declaration
-        .args()
-        .iter()
-        .filter_map(|arg| {
-            let (name, value) = arg.split_once(" = ")?;
-            name.trim().strip_prefix("proxy.param.").map(|name| {
-                (
-                    name.to_owned(),
-                    bundle_image_object_param_from_arg(value.trim()),
-                )
-            })
-        })
-        .collect();
-    vec![BundleImageObjectProxy {
-        id,
-        type_name: declaration_arg_value(declaration.args(), "proxy.type")
-            .map(unquote_arg)
-            .map(str::to_owned),
-        role: declaration_arg_value(declaration.args(), "proxy.role")
-            .map(unquote_arg)
-            .map(str::to_owned),
-        layer: declaration_arg_value(declaration.args(), "proxy.layer").and_then(public_id_arg),
-        depth_milli: declaration_arg_value(declaration.args(), "proxy.depth")
-            .and_then(parse_depth_arg),
-        hit_test: declaration_arg_value(declaration.args(), "proxy.hit_test")
-            .and_then(parse_bool_arg)
-            .unwrap_or_default(),
-        params,
-    }]
-}
-
-fn bundle_image_object_param_from_arg(value: &str) -> BundleImageObjectParam {
-    let trimmed = value.trim();
-    if let Some(value) = parse_bool_arg(trimmed) {
-        return BundleImageObjectParam::Bool { value };
-    }
-    if let Ok(value) = unquote_arg(trimmed).parse::<i64>() {
-        return BundleImageObjectParam::Integer { value };
-    }
-    if unquote_arg(trimmed).ends_with('%')
-        && let Some(value) = parse_milli_arg(trimmed)
-    {
-        return BundleImageObjectParam::Milli { value };
-    }
-    if trimmed.trim_start().starts_with('@')
-        && let Some(value) = public_id_arg(trimmed)
-    {
-        return BundleImageObjectParam::Id { value };
-    }
-    BundleImageObjectParam::Text {
-        value: unquote_arg(trimmed).to_owned(),
-    }
-}
-
-fn parse_bool_arg(value: &str) -> Option<bool> {
-    match unquote_arg(value) {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-fn parse_rate_milli(value: &str) -> Option<u32> {
-    let milli = parse_milli_arg(value)?;
-    u32::try_from(milli.max(0)).ok()
-}
-
-fn parse_depth_arg(value: &str) -> Option<i32> {
-    rounded_i32(unquote_arg(value).parse::<f64>().ok()?)
-}
-
-fn parse_milli_arg(value: &str) -> Option<i32> {
-    let value = unquote_arg(value);
-    if let Some(percent) = value.strip_suffix('%') {
-        let parsed = percent.trim().parse::<f64>().ok()?;
-        return rounded_i32(parsed * 10.0);
-    }
-    let parsed = value.parse::<f64>().ok()?;
-    rounded_i32(parsed * 1_000.0)
-}
-
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss
-)]
-fn parse_duration_millis(value: &str) -> Option<u64> {
-    let value = unquote_arg(value);
-    let millis = if let Some(ms) = value.strip_suffix("ms") {
-        ms.trim().parse::<f64>().ok()?
-    } else if let Some(seconds) = value.strip_suffix('s') {
-        seconds.trim().parse::<f64>().ok()? * 1_000.0
-    } else {
-        value.parse::<f64>().ok()?
-    };
-    let millis = millis.round();
-    millis
-        .is_finite()
-        .then_some(millis.clamp(0.0, u64::MAX as f64) as u64)
-}
-
-#[allow(clippy::cast_possible_truncation)]
-fn rounded_i32(value: f64) -> Option<i32> {
-    let rounded = value.round();
-    rounded
-        .is_finite()
-        .then_some(rounded.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32)
-}
-
-fn unquote_arg(value: &str) -> &str {
-    value.trim().trim_matches('"').trim_matches('\'')
-}
-
-fn parse_px_milli(value: &str) -> Option<i32> {
-    let pixels = unquote_arg(value).strip_suffix("px")?.trim();
-    let (whole, fraction) = pixels.split_once('.').unwrap_or((pixels, ""));
-    let sign = whole.starts_with('-');
-    let whole_abs = whole.trim_start_matches('-');
-    let whole_milli = whole_abs.parse::<i32>().ok()?.checked_mul(1_000)?;
-    let fraction_milli = fraction
-        .chars()
-        .take(3)
-        .try_fold((0_i32, 100_i32), |(value, scale), ch| {
-            let digit = ch.to_digit(10)?;
-            Some((value + i32::try_from(digit).ok()? * scale, scale / 10))
-        })?
-        .0;
-    let milli = whole_milli.checked_add(fraction_milli)?;
-    Some(if sign { -milli } else { milli })
-}
-
-fn image_opacity_milli_arg(declaration: &DeclaredImageObject) -> Result<u16, ExitCode> {
-    let Some(value) = declaration_arg_value(declaration.args(), "opacity") else {
-        return Ok(1_000);
-    };
-    let Some(milli) = parse_opacity_milli(value) else {
-        eprintln!(
-            "error: image object `{}` has invalid `opacity` value `{value}`",
-            declaration.id()
-        );
-        return Err(ExitCode::from(2));
-    };
-    Ok(milli)
-}
-
-fn parse_opacity_milli(value: &str) -> Option<u16> {
-    let value = value.trim();
-    if let Some(milli) = value.strip_suffix("milli") {
-        return milli
-            .trim()
-            .parse::<u16>()
-            .ok()
-            .filter(|value| *value <= 1_000);
-    }
-    let (whole, fraction) = value.split_once('.').unwrap_or((value, ""));
-    let whole = whole.parse::<u16>().ok()?;
-    let fraction_milli = fraction
-        .chars()
-        .take(3)
-        .try_fold((0_u16, 100_u16), |(value, scale), ch| {
-            let digit = ch.to_digit(10)?;
-            Some((value + u16::try_from(digit).ok()? * scale, scale / 10))
-        })?
-        .0;
-    let milli = whole.checked_mul(1_000)?.checked_add(fraction_milli)?;
-    (milli <= 1_000).then_some(milli)
-}
-
 fn static_image_asset_refs(
     plan: &RuntimePlan,
-    image_declarations: &BTreeMap<String, DeclaredImageObject>,
+    declared_asset_refs: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Vec<String> {
     let mut refs = plan
         .flows
@@ -1445,7 +980,11 @@ fn static_image_asset_refs(
                 .flat_map(collect_line_task_group_static_image_asset_refs),
         )
         .collect::<Vec<_>>();
-    refs.extend(declared_image_asset_refs(image_declarations));
+    refs.extend(
+        declared_asset_refs
+            .into_iter()
+            .map(|asset| asset.as_ref().to_owned()),
+    );
     refs.sort();
     refs.dedup();
     refs
@@ -1679,7 +1218,16 @@ fn runtime_positional_call_arg(call: &RuntimeCall, index: usize) -> Option<&str>
 }
 
 fn static_image_asset_ref_runtime_arg(arg: &str) -> Option<String> {
-    public_asset_ref_arg(arg)
+    let value = arg.trim().trim_matches('"').trim_matches('\'');
+    let value = value.strip_prefix('@').unwrap_or(value);
+    let canonical = if let Some((family, suffix)) = value.split_once(":.") {
+        (!family.is_empty() && !suffix.is_empty()).then(|| format!("{family}.{suffix}"))?
+    } else {
+        value.to_owned()
+    };
+    let id = PublicId::try_new(canonical).ok()?;
+    RetainedIdentityFamily::Asset.validate_public_id(&id).ok()?;
+    Some(id.as_str().to_owned())
 }
 
 fn host_call_id_for_template(capability: &str, operation: &str) -> String {

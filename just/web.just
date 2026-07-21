@@ -52,9 +52,8 @@ native-style-layout-coverage:
     @cargo run -p arcweft-cli -- bundle samples\native-style-layout-coverage\main.arcw --output target\native-style-layout-coverage\native-style-layout-coverage.awfb
 
 reactive-view-style-sample:
-    @New-Item -ItemType Directory -Force -Path web\local,target\reactive-view-style,target\reactive-view-style\interaction-states | Out-Null
+    @New-Item -ItemType Directory -Force -Path web\local | Out-Null
     @cargo run -p arcweft-cli -- bundle --manifest-path samples/reactive-view-style/arcw.toml --profile main --output web/local/reactive-view-style.awfb
-    @cargo run -p arcweft-render-wgpu --example view_interaction_showcase -- --out target\reactive-view-style\interaction-states
 
 web-player-refresh:
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown --all-features

@@ -162,6 +162,50 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
 }
 
 #[test]
+fn canonical_type_labels_round_trip_precedence_sensitive_structure() {
+    for source in [
+        "&(A | B)",
+        "(A -> B) | C",
+        "(A | B)::Item",
+        "(A -> B) -> C",
+        "A -> (B -> C effects { io.read })",
+        "A | (B | C)",
+        "Vec<(A -> B) | C>",
+    ] {
+        let parsed = parse_type_ref(source).expect("precedence-sensitive type parses");
+        let label = parsed.canonical_label();
+        let reparsed = parse_type_ref(&label).unwrap_or_else(|error| {
+            panic!("canonical label `{label}` for `{source}` must parse: {error}")
+        });
+        assert_eq!(reparsed, parsed, "canonical label changed `{source}`");
+        assert_eq!(reparsed.canonical_label(), label);
+    }
+}
+
+#[test]
+fn canonical_type_labels_do_not_collapse_distinct_type_trees() {
+    for (left, right) in [
+        ("&(A | B)", "&A | B"),
+        ("(A -> B) | C", "A -> B | C"),
+        ("(A | B)::Item", "A | B::Item"),
+        ("(A -> B) -> C", "A -> B -> C"),
+        (
+            "A -> (B -> C effects { io.read })",
+            "A -> B -> C effects { io.read }",
+        ),
+    ] {
+        let left = parse_type_ref(left).expect("left type parses");
+        let right = parse_type_ref(right).expect("right type parses");
+        assert_ne!(left, right, "fixtures must describe distinct type trees");
+        assert_ne!(
+            left.canonical_label(),
+            right.canonical_label(),
+            "distinct type trees need distinct canonical labels"
+        );
+    }
+}
+
+#[test]
 fn function_signatures_keep_function_typed_parameters() {
     let signature = parse_fn_signature("fn map<A, B>(f: A -> B)(xs: Vec<A>) -> Vec<B>")
         .expect("function-typed curried signature parses");

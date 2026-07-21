@@ -12,12 +12,18 @@ use crate::resource_codec::table::{
 };
 use crate::resource_codec::wire::ProductResourceEnvelope;
 
-const SOURCE_MAP_SCHEMA: u32 = 2;
+const SOURCE_MAP_SCHEMA: u32 = 3;
 const FIELD_SOURCE_MAP_TRANSCRIPT: FieldId = FieldId(1);
 const DISPLAY_PATH: u8 = 1;
 const DISPLAY_MEMORY: u8 = 2;
 const DISPLAY_GENERATED: u8 = 3;
 const NO_STRING_REF: u32 = u32::MAX;
+
+struct DecodedSourceMapTranscript {
+    source_set_revision: [u8; 32],
+    primary_document_id: Option<SourceDocumentId>,
+    documents: Vec<SourceDocument>,
+}
 
 impl SourceMapSection {
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SourceMapCodecError> {
@@ -41,6 +47,17 @@ impl SourceMapSection {
         let mut transcript = Vec::new();
         transcript.extend_from_slice(&SOURCE_MAP_SCHEMA.to_le_bytes());
         transcript.extend_from_slice(self.source_set_revision().as_bytes());
+        let primary = self
+            .primary_document_id()
+            .map(|id| {
+                strings
+                    .id_for(id.as_str())
+                    .map(|id| id.0)
+                    .ok_or(SourceMapCodecError::ArithmeticOverflow)
+            })
+            .transpose()?
+            .unwrap_or(NO_STRING_REF);
+        transcript.extend_from_slice(&primary.to_le_bytes());
         transcript.extend_from_slice(&u32_from_usize(self.documents().len())?.to_le_bytes());
         for document in self.documents() {
             let product = public_ids
@@ -110,10 +127,21 @@ impl SourceMapSection {
         if decoded.skipped_unknown_optional_fields != 0 {
             return Err(SourceMapCodecError::NonCanonicalEncoding);
         }
-        let (encoded_source_set, source_documents) = decode_transcript(&decoded.envelope)?;
-        let references = source_documents.iter().collect::<Vec<_>>();
-        let section = Self::try_from_documents(&references)?;
-        if encoded_source_set != *section.source_set_revision().as_bytes() {
+        let transcript = decode_transcript(&decoded.envelope)?;
+        let references = transcript.documents.iter().collect::<Vec<_>>();
+        let mut section = Self::try_from_documents(&references)?;
+        if let Some(primary) = transcript.primary_document_id {
+            if !section
+                .documents()
+                .any(|document| document.document_id() == &primary)
+            {
+                return Err(SourceMapCodecError::PrimaryDocumentMissing(primary));
+            }
+            section.primary_document_id = Some(primary);
+        } else if section.documents().len() != 0 {
+            return Err(SourceMapCodecError::MissingPrimaryDocument);
+        }
+        if transcript.source_set_revision != *section.source_set_revision().as_bytes() {
             return Err(SourceMapCodecError::SourceSetRevisionMismatch);
         }
         if section.encode_canonical_section()? != bytes {
@@ -125,7 +153,7 @@ impl SourceMapSection {
 
 fn decode_transcript(
     envelope: &ProductResourceEnvelope,
-) -> Result<([u8; 32], Vec<SourceDocument>), SourceMapCodecError> {
+) -> Result<DecodedSourceMapTranscript, SourceMapCodecError> {
     let field = envelope
         .fields
         .iter()
@@ -144,6 +172,16 @@ fn decode_transcript(
         });
     }
     let encoded_source_set = read_array::<32>(&mut cursor)?;
+    let primary_ref = cursor.read_u32()?;
+    let primary_document_id = if primary_ref == NO_STRING_REF {
+        None
+    } else {
+        let value = envelope.strings.get(StringId(primary_ref))?.to_owned();
+        Some(
+            SourceDocumentId::try_new(value.clone())
+                .map_err(|_| SourceMapCodecError::InvalidDocumentId(value))?,
+        )
+    };
     let count = cursor.read_u32()?;
     if count != envelope.header.record_count {
         return Err(SourceMapCodecError::RecordCountMismatch);
@@ -162,7 +200,11 @@ fn decode_transcript(
     if cursor.remaining() != 0 {
         return Err(crate::resource_codec::SectionCodecError::TrailingBytes.into());
     }
-    Ok((encoded_source_set, documents))
+    Ok(DecodedSourceMapTranscript {
+        source_set_revision: encoded_source_set,
+        primary_document_id,
+        documents,
+    })
 }
 
 fn decode_document(

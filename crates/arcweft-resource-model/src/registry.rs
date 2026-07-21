@@ -284,6 +284,24 @@ impl fmt::Display for ResourceTypeRegistryDigest {
 }
 
 impl ResourceTypeRegistry {
+    /// Publishes the canonical empty registry used when a compilation has no
+    /// configured resource types.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the current manifest schema rejects an empty canonical
+    /// publication, which would be an internal contract regression.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::publish(ResourceRegistryPublication::new(
+            RESOURCE_TYPE_MANIFEST_SCHEMA_VERSION,
+            [],
+            [],
+            [],
+        ))
+        .expect("the current empty resource registry is canonical")
+    }
+
     /// Validates and atomically publishes one immutable candidate registry.
     pub fn publish(
         publication: ResourceRegistryPublication,

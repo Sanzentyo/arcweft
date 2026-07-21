@@ -146,8 +146,120 @@ fn conflicting_constraints_are_typed_diagnostics() {
 
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("stage_placement.independent_axis_scale_rejected"),
+        stderr.contains("compiler.image.invalid_field")
+            && stderr.contains("image.bad.mixed")
+            && stderr.contains("cannot mix anchored placement with x/y/width/height"),
         "stderr should include typed placement diagnostic\nstderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_dir_all(work);
+}
+
+#[test]
+fn missing_image_asset_is_emitted_as_a_source_bound_structured_diagnostic() {
+    let work = temp_dir("missing-image-asset");
+    let source = work.join("main.arcw");
+    let output = work.join("missing-image-asset.awfb");
+    fs::write(
+        &source,
+        r#"
+image poster {
+    x = 0px
+    y = 0px
+    width = 1280px
+    height = 720px
+}
+
+entry cli @entry.main {
+    goto @flow.main
+}
+
+flow main {
+    return "missing image asset"
+}
+"#,
+    )
+    .expect("missing-asset fixture writes");
+
+    let result = run_arcw(&[
+        "bundle",
+        &path_arg(&source),
+        "--output",
+        &path_arg(&output),
+        "--format",
+        "awfb",
+    ]);
+    assert_failure("arcw bundle missing image asset", &result);
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("error[bundle.image.missing_asset_reference]")
+            && stderr.contains("--> ")
+            && stderr.contains("image poster {")
+            && stderr.contains('^'),
+        "stderr should render a source-bound diagnostic, not a plain text failure\nstderr:\n{stderr}"
+    );
+
+    let _ = fs::remove_dir_all(work);
+}
+
+#[test]
+fn view_lowering_renders_primary_and_secondary_project_source_spans() {
+    let work = temp_dir("view-image-collision");
+    let source = work.join("main.arcw");
+    let output = work.join("view-image-collision.awfb");
+    fs::write(
+        &source,
+        r#"
+pub image @image.poster {
+    asset = @asset.poster
+    x = 0px
+    y = 0px
+    width = 16px
+    height = 16px
+}
+
+pub image @image.view.First.0 {
+    asset = @asset.collision
+    x = 0px
+    y = 0px
+    width = 16px
+    height = 16px
+}
+
+view First() {
+    Image(@image.poster)
+}
+
+entry cli @entry.main {
+    goto @flow.main
+}
+
+flow main {
+    return "View collision"
+}
+"#,
+    )
+    .expect("View collision fixture writes");
+
+    let result = run_arcw(&[
+        "bundle",
+        &path_arg(&source),
+        "--output",
+        &path_arg(&output),
+        "--format",
+        "awfb",
+    ]);
+    assert_failure("arcw bundle View image collision", &result);
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("error[compiler.view.duplicate_image_object]")
+            && stderr.contains("view First()")
+            && stderr.contains("View materializes this colliding image identity")
+            && stderr.contains("pub image @image.view.First.0")
+            && stderr.contains("top-level image identity is declared here"),
+        "stderr should retain and render both source-owned View-lowering labels\nstderr:\n{stderr}"
     );
 
     let _ = fs::remove_dir_all(work);

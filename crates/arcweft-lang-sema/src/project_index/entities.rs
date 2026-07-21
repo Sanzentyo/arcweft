@@ -6,7 +6,11 @@ use super::{
     SyntaxFnSignature, TypeKind, TypeRef, parse_type_ref, type_ref_kind,
 };
 use arcweft_lang_hir::model::HirFunction;
-use arcweft_lang_syntax::{ast::items::EntityDeclItem, types::parse_fn_signature};
+use arcweft_lang_syntax::{
+    ast::items::EntityDeclItem,
+    cst::{SyntaxElement, SyntaxKind, parse_cst},
+    types::{FnReceiverKind, GenericParam},
+};
 
 pub(super) fn index_flow_items(
     items: &[HirFlowItem],
@@ -646,14 +650,14 @@ pub(super) fn project_view_callable_symbol(
             message: "View declaration has no local binding name".to_owned(),
         }
     })?;
-    let signature_source = format!("fn {name}{}", item.signature_tail());
-    let signature = parse_fn_signature(&signature_source).map_err(|error| {
-        ProjectSemanticIndexError::InvalidCallableSignature {
+    let syntax_signature = item
+        .view_body()
+        .and_then(arcweft_lang_syntax::ast::items::ViewDeclBody::signature)
+        .ok_or_else(|| ProjectSemanticIndexError::InvalidCallableSignature {
             name: name.to_owned(),
-            message: error.to_string(),
-        }
-    })?;
-    let signature = function_signature_from_syntax(&signature);
+            message: "View declaration has no retained typed signature".to_owned(),
+        })?;
+    let signature = function_signature_from_syntax(syntax_signature);
     let source = SourceAnchor::from_span(
         source_name
             .span(arcweft_source::SourceRange::new(
@@ -662,10 +666,10 @@ pub(super) fn project_view_callable_symbol(
             ))
             .expect("a View callable range belongs to the source document that was lowered"),
     );
-    let semantic_hash = SemanticHash::new(format!(
-        "hir:callable:view:{}:{}",
-        declaration.qualified_name(),
-        item.signature_tail().trim()
+    let semantic_hash = SemanticHash::new(project_view_semantic_label(
+        &declaration,
+        syntax_signature,
+        item.signature_tail(),
     ));
     Ok(ProjectCallableSymbol::view(
         declaration,
@@ -673,6 +677,128 @@ pub(super) fn project_view_callable_symbol(
         source,
         semantic_hash,
     ))
+}
+
+fn project_view_semantic_label(
+    declaration: &CallableDeclarationId,
+    signature: &SyntaxFnSignature,
+    signature_tail: &str,
+) -> String {
+    let contract = view_callable_contract_label(signature, signature_tail);
+    format!(
+        "hir:callable:view:{}:{}:{contract}",
+        declaration.package().as_str(),
+        declaration.qualified_name(),
+    )
+}
+
+pub(super) fn view_callable_contract_label(
+    signature: &SyntaxFnSignature,
+    signature_tail: &str,
+) -> String {
+    let generics = signature
+        .generic_params()
+        .iter()
+        .map(|parameter| match parameter {
+            GenericParam::Lifetime(lifetime) => format!("lifetime:'{}", lifetime.name()),
+            GenericParam::Type(parameter) => format!(
+                "type:{}:{}",
+                parameter.name(),
+                parameter
+                    .bounds()
+                    .iter()
+                    .map(TypeRef::canonical_label)
+                    .collect::<Vec<_>>()
+                    .join("+")
+            ),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let parameter_groups = signature
+        .param_groups()
+        .iter()
+        .map(|group| {
+            group
+                .params()
+                .iter()
+                .map(view_parameter_contract_label)
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .map(|group| format!("({group})"))
+        .collect::<Vec<_>>()
+        .join("->");
+    let where_clauses = signature
+        .where_clauses()
+        .iter()
+        .map(|clause| {
+            format!(
+                "{}:{}",
+                clause.subject().canonical_label(),
+                clause
+                    .bounds()
+                    .iter()
+                    .map(TypeRef::canonical_label)
+                    .collect::<Vec<_>>()
+                    .join("+")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let return_type = signature
+        .return_type()
+        .map_or_else(|| "_".to_owned(), TypeRef::canonical_label);
+    let authored_contract = canonical_callable_surface_label(signature_tail);
+    format!(
+        "generics[{generics}]:params[{parameter_groups}]:where[{where_clauses}]:return[{return_type}]:surface[{authored_contract}]",
+    )
+}
+
+fn view_parameter_contract_label(parameter: &SyntaxFnParam) -> String {
+    let arity = if parameter.is_rest() {
+        "rest"
+    } else if parameter.default().is_some() {
+        "default"
+    } else {
+        "required"
+    };
+    let receiver = match parameter.receiver_kind() {
+        Some(FnReceiverKind::Owned) => "owned",
+        Some(FnReceiverKind::SharedRef) => "shared",
+        Some(FnReceiverKind::MutRef) => "mutable",
+        None => "value",
+    };
+    let binding = callable_param_name(parameter.pattern()).unwrap_or("_");
+    format!(
+        "{arity}:{receiver}:{binding}:{}",
+        parameter.ty().canonical_label()
+    )
+}
+
+fn canonical_callable_surface_label(source: &str) -> String {
+    parse_cst(source)
+        .descendants_with_tokens()
+        .filter_map(SyntaxElement::into_token)
+        .filter_map(|token| {
+            let kind = match token.kind() {
+                SyntaxKind::Whitespace
+                | SyntaxKind::Newline
+                | SyntaxKind::Comment
+                | SyntaxKind::DocComment
+                | SyntaxKind::Root
+                | SyntaxKind::Line => return None,
+                SyntaxKind::Ident => "ident",
+                SyntaxKind::Number => "number",
+                SyntaxKind::String => "string",
+                SyntaxKind::EntityRef => "entity",
+                SyntaxKind::Punctuation => "punctuation",
+                SyntaxKind::Text => "text",
+                SyntaxKind::Error => "error",
+            };
+            Some(format!("{kind}:{}:{}", token.text().len(), token.text()))
+        })
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 fn project_function_semantic_label(

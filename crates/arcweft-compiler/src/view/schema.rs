@@ -15,7 +15,7 @@ use arcweft_lang_syntax::{
         pattern::Pattern,
         view::{ViewForEach, ViewMatchArm},
     },
-    expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp},
+    expr::{BinaryOp, CallArg, Expr, UnaryOp},
 };
 use arcweft_presentation::fx::{
     FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
@@ -45,15 +45,15 @@ struct InputSlot {
 }
 
 /// Complete typed output moved into one product View program resource.
-pub(in crate::app) struct CompiledViewValues {
-    pub(in crate::app) programs: Vec<ViewValueProgram>,
-    pub(in crate::app) inputs: Vec<ViewValueInputResource>,
+pub(super) struct CompiledViewValues {
+    pub(super) programs: Vec<ViewValueProgram>,
+    pub(super) inputs: Vec<ViewValueInputResource>,
 }
 
 /// Stateful compiler that gives every program in a View inventory one common
 /// typed input schema.
 #[derive(Default)]
-pub(in crate::app) struct ViewValueProgramCompiler {
+pub(super) struct ViewValueProgramCompiler {
     pending: Vec<PendingProgram>,
     inputs: Vec<ViewValueInputResource>,
     input_slots: BTreeMap<(ViewValueInputNamespace, ViewValueInputSource), InputSlot>,
@@ -65,11 +65,15 @@ pub(in crate::app) struct ViewValueProgramCompiler {
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(in crate::app) enum ViewValueCompileError {
+pub enum ViewValueCompileError {
     #[error("View value expression `{expression}` requires an expected scalar type")]
     MissingExpectedType { expression: String },
     #[error("View value expression `{expression}` is not supported by the closed value program")]
     UnsupportedExpression { expression: String },
+    #[error(
+        "View Await source requires a typed state or parameter projection; callable Await sources need a typed request contract"
+    )]
+    UnsupportedAwaitSource,
     #[error("View value literal `{literal}` is invalid for {expected:?}: {reason}")]
     InvalidLiteral {
         literal: String,
@@ -101,7 +105,7 @@ pub(in crate::app) enum ViewValueCompileError {
 }
 
 impl ViewValueProgramCompiler {
-    pub(in crate::app) fn begin_definition(
+    pub(super) fn begin_definition(
         &mut self,
         view: &str,
         parameters: impl IntoIterator<Item = (String, FxRuntimeType)>,
@@ -124,11 +128,11 @@ impl ViewValueProgramCompiler {
         Ok(slots)
     }
 
-    pub(in crate::app) fn is_local(&self, name: &str) -> bool {
+    pub(super) fn is_local(&self, name: &str) -> bool {
         self.local_types.contains_key(name)
     }
 
-    pub(in crate::app) fn compile(
+    pub(super) fn compile(
         &mut self,
         expression: &Expr,
         expected: Option<FxRuntimeType>,
@@ -137,14 +141,14 @@ impl ViewValueProgramCompiler {
             .map(|(id, _)| id)
     }
 
-    pub(in crate::app) fn compile_condition(
+    pub(super) fn compile_condition(
         &mut self,
         expression: &Expr,
     ) -> Result<ViewValueProgramId, ViewValueCompileError> {
         self.compile(expression, Some(FxRuntimeType::Bool))
     }
 
-    pub(in crate::app) fn compile_local(
+    pub(super) fn compile_local(
         &mut self,
         pattern: &Pattern,
         expression: &Expr,
@@ -153,19 +157,12 @@ impl ViewValueProgramCompiler {
             .simple_binding_name()
             .ok_or(ViewValueCompileError::UnsupportedLocalPattern)?
             .to_owned();
-        let (program, value_type) = match self.compile_with_type(expression, None) {
-            Ok(compiled) => compiled,
-            Err(
-                ViewValueCompileError::MissingExpectedType { .. }
-                | ViewValueCompileError::UnsupportedExpression { .. },
-            ) => self.compile_symbolic(expression)?,
-            Err(error) => return Err(error),
-        };
+        let (program, value_type) = self.compile_with_type(expression, None)?;
         self.local_types.insert(binding.clone(), value_type);
         Ok((binding, program))
     }
 
-    pub(in crate::app) fn compile_match_condition(
+    pub(super) fn compile_match_condition(
         &mut self,
         scrutinee: &Expr,
         arm: &ViewMatchArm,
@@ -208,13 +205,6 @@ impl ViewValueProgramCompiler {
                 });
                 instructions.push(ValueInstruction::Equal);
             }
-            Pattern::Raw(source) if valid_projection_path(source) => {
-                self.emit_expression(scrutinee, Some(FxRuntimeType::I32), &mut instructions)?;
-                instructions.push(ValueInstruction::Constant {
-                    value: FxRuntimeValue::I32(symbol_discriminant(source)),
-                });
-                instructions.push(ValueInstruction::Equal);
-            }
             pattern => {
                 return Err(ViewValueCompileError::UnsupportedMatchPattern {
                     pattern: format!("{pattern:?}"),
@@ -228,7 +218,7 @@ impl ViewValueProgramCompiler {
         self.finish_pending(FxRuntimeType::Bool, instructions)
     }
 
-    pub(in crate::app) fn compile_repeat_source(
+    pub(super) fn compile_repeat_source(
         &mut self,
         source: &Expr,
     ) -> Result<ViewValueProgramId, ViewValueCompileError> {
@@ -254,7 +244,7 @@ impl ViewValueProgramCompiler {
         self.compile(source, Some(FxRuntimeType::I32))
     }
 
-    pub(in crate::app) fn compile_repeat_key(
+    pub(super) fn compile_repeat_key(
         &mut self,
         repeat: &ViewForEach,
     ) -> Result<ViewValueProgramId, ViewValueCompileError> {
@@ -280,28 +270,17 @@ impl ViewValueProgramCompiler {
         self.finish_pending(FxRuntimeType::I32, instructions)
     }
 
-    pub(in crate::app) fn compile_await_source(
+    pub(super) fn compile_await_source(
         &mut self,
         source: &Expr,
     ) -> Result<ViewValueProgramId, ViewValueCompileError> {
         if matches!(source, Expr::Call(_) | Expr::Await(_)) {
-            let discriminant = symbol_discriminant(&format!("{source:?}"));
-            let label = u32::from_le_bytes(discriminant.to_le_bytes());
-            let mut instructions = Vec::new();
-            self.emit_input(
-                ViewValueInputNamespace::State,
-                ViewValueInputSource::Projection {
-                    path: vec!["await".to_owned(), format!("call_{label:08x}")],
-                },
-                FxRuntimeType::I32,
-                &mut instructions,
-            )?;
-            return self.finish_pending(FxRuntimeType::I32, instructions);
+            return Err(ViewValueCompileError::UnsupportedAwaitSource);
         }
         self.compile(source, Some(FxRuntimeType::I32))
     }
 
-    pub(in crate::app) fn finish(self) -> Result<CompiledViewValues, ViewValueCompileError> {
+    pub(super) fn finish(self) -> Result<CompiledViewValues, ViewValueCompileError> {
         let schema = |return_type| {
             ValueProgramSchema::new(
                 self.parameter_types.clone(),
@@ -336,19 +315,6 @@ impl ViewValueProgramCompiler {
         let return_type = self.emit_expression(expression, expected, &mut instructions)?;
         let id = self.finish_pending(return_type, instructions)?;
         Ok((id, return_type))
-    }
-
-    fn compile_symbolic(
-        &mut self,
-        expression: &Expr,
-    ) -> Result<(ViewValueProgramId, FxRuntimeType), ViewValueCompileError> {
-        let id = self.finish_pending(
-            FxRuntimeType::I32,
-            vec![ValueInstruction::Constant {
-                value: FxRuntimeValue::I32(symbol_discriminant(&format!("{expression:?}"))),
-            }],
-        )?;
-        Ok((id, FxRuntimeType::I32))
     }
 
     fn finish_pending(
@@ -435,12 +401,6 @@ impl ViewValueProgramCompiler {
             }
             Expr::Call(call) => {
                 self.emit_intrinsic(call.callee(), call.args(), expected, instructions)
-            }
-            Expr::Raw(source) if source == "true" || source == "false" => {
-                emit_literal(&Literal::Bool(source == "true"), expected, instructions)
-            }
-            Expr::Raw(source) if valid_projection_path(source) => {
-                self.emit_path(source, expected, instructions)
             }
             _ => Err(unsupported(expression)),
         }
@@ -746,17 +706,6 @@ fn unsupported(expression: &Expr) -> ViewValueCompileError {
     ViewValueCompileError::UnsupportedExpression {
         expression: format!("{expression:?}"),
     }
-}
-
-fn valid_projection_path(source: &str) -> bool {
-    !source.is_empty()
-        && source.split('.').all(|segment| {
-            let mut chars = segment.chars();
-            chars
-                .next()
-                .is_some_and(|character| character == '_' || character.is_alphabetic())
-                && chars.all(|character| character == '_' || character.is_alphanumeric())
-        })
 }
 
 fn symbol_discriminant(source: &str) -> i32 {

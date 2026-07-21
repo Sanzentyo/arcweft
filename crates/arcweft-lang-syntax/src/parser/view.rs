@@ -119,6 +119,25 @@ impl<'a> ViewSourceMap<'a> {
         })
     }
 
+    fn mapped_location(&self, source: &str) -> TextRange {
+        self.location(source)
+            .expect("View parser fragments remain attached to their authored source line")
+    }
+
+    fn mapped_lines_range(&self, lines: &[&str]) -> TextRange {
+        let first = self.mapped_location(
+            lines
+                .first()
+                .expect("a parsed View node consumes at least one source line"),
+        );
+        let last = self.mapped_location(
+            lines
+                .last()
+                .expect("a parsed View node consumes at least one source line"),
+        );
+        TextRange::new(first.start(), last.end())
+    }
+
     fn source(&self, range: TextRange) -> Option<&'a str> {
         let start = range.start().checked_sub(self.base)?;
         let end = range.end().checked_sub(self.base)?;
@@ -329,30 +348,9 @@ fn parse_view_exprs(
             index += 1;
             continue;
         }
-        if line.starts_with("if ") && line.ends_with('{') {
-            let (nested, consumed) =
-                parse_view_if_block(&lines[index..], base, module_path, source_map, errors);
-            items.push(nested);
-            index += consumed.max(1);
-            continue;
-        }
-        if line.starts_with("match ") && line.ends_with('{') {
-            let (nested, consumed) =
-                parse_view_match_block(&lines[index..], base, module_path, source_map, errors);
-            items.push(nested);
-            index += consumed.max(1);
-            continue;
-        }
-        if line.starts_with("for ") && line.ends_with('{') {
-            let (nested, consumed) =
-                parse_view_for_block(&lines[index..], base, module_path, source_map, errors);
-            items.push(nested);
-            index += consumed.max(1);
-            continue;
-        }
-        if line.starts_with("AwaitView(") && line.ends_with('{') {
-            let (nested, consumed) =
-                parse_view_await_block(&lines[index..], base, module_path, source_map, errors);
+        if let Some((nested, consumed)) =
+            parse_view_control_expr(&lines[index..], base, module_path, source_map, errors)
+        {
             items.push(nested);
             index += consumed.max(1);
             continue;
@@ -372,7 +370,7 @@ fn parse_view_exprs(
             source_map,
             errors,
         );
-        let range = TextRange::new(base, base.saturating_add(line.len()));
+        let range = source_map.mapped_lines_range(&lines[index..index + consumed]);
         items.push(build_view_expr(chain, range));
         index += consumed;
     }
@@ -380,6 +378,67 @@ fn parse_view_exprs(
         [single] => single.clone(),
         _ => ViewExpr::Fragment(items),
     }
+}
+
+fn parse_view_control_expr(
+    lines: &[&str],
+    base: usize,
+    module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
+    errors: &mut Vec<ParseError>,
+) -> Option<(ViewExpr, usize)> {
+    let line = lines.first()?.trim();
+    let (kind, error, example) = if starts_view_control_keyword(line, "if") {
+        (
+            "if",
+            "View `if` head must end before its braced body",
+            "if condition {\n    Text(\"visible\")\n}",
+        )
+    } else if starts_view_control_keyword(line, "match") {
+        (
+            "match",
+            "View `match` head must end before its braced body",
+            "match value {\n    .Case => Text(\"value\")\n}",
+        )
+    } else if starts_view_control_keyword(line, "for") {
+        (
+            "for",
+            "View `for` head must end before its braced body",
+            "for item in items key = item.id {\n    Row(item)\n}",
+        )
+    } else if line == "AwaitView" || line.starts_with("AwaitView(") {
+        (
+            "await",
+            "View await head must end before its braced branches",
+            "AwaitView(load()) {\n    ready value => Text(value)\n}",
+        )
+    } else {
+        return None;
+    };
+    if !line.ends_with('{') {
+        let range = source_map.mapped_location(lines[0]);
+        errors.push(simple_error(
+            range.start(),
+            range.end() - range.start(),
+            error,
+            example,
+        ));
+        return Some((ViewExpr::Raw(line.to_owned()), 1));
+    }
+    Some(match kind {
+        "if" => parse_view_if_block(lines, base, module_path, source_map, errors),
+        "match" => parse_view_match_block(lines, base, module_path, source_map, errors),
+        "for" => parse_view_for_block(lines, base, module_path, source_map, errors),
+        "await" => parse_view_await_block(lines, base, module_path, source_map, errors),
+        _ => unreachable!("View control kind is selected above"),
+    })
+}
+
+fn starts_view_control_keyword(line: &str, keyword: &str) -> bool {
+    line == keyword
+        || line
+            .strip_prefix(keyword)
+            .is_some_and(|rest| rest.chars().next().is_some_and(char::is_whitespace))
 }
 
 fn parse_view_let_line(
@@ -401,7 +460,7 @@ fn parse_view_let_line(
     ViewExpr::Let(ViewLet::new(
         parse_pattern(pattern.trim()),
         source_map.parse_owned_expr(value.trim(), errors),
-        TextRange::new(base, base.saturating_add(line.len())),
+        source_map.mapped_location(line),
     ))
 }
 
@@ -440,17 +499,27 @@ fn parse_view_await_block(
         ));
         return (ViewExpr::Raw(head.to_owned()), lines.len());
     };
-    let branches = lines[1..end]
-        .iter()
-        .filter_map(|line| {
-            parse_view_await_branch(line.trim(), base, module_path, source_map, errors)
-        })
-        .collect::<Vec<_>>();
+    let mut branches = Vec::new();
+    let mut branch_recovery = false;
+    for line in &lines[1..end] {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(branch) = parse_view_await_branch(line, base, module_path, source_map, errors) {
+            branches.push(branch);
+        } else {
+            branch_recovery = true;
+        }
+    }
+    if branch_recovery {
+        return (ViewExpr::Raw(head.to_owned()), end + 1);
+    }
     (
         ViewExpr::Await(ViewAwait::new(
             source_map.parse_owned_expr(source.trim(), errors),
             branches,
-            TextRange::new(base, base.saturating_add(head.len())),
+            source_map.mapped_lines_range(&lines[..=end]),
         )),
         end + 1,
     )
@@ -505,6 +574,7 @@ fn parse_view_await_branch(
         kind,
         parse_pattern(pattern),
         parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
+        source_map.mapped_location(line),
     ))
 }
 
@@ -560,7 +630,7 @@ fn parse_view_if_block(
             source_map.parse_owned_expr(condition, errors),
             Box::new(then_branch),
             else_branch,
-            TextRange::new(base, base.saturating_add(head.len())),
+            source_map.mapped_lines_range(&lines[..consumed]),
         )),
         consumed,
     )
@@ -587,15 +657,27 @@ fn parse_view_match_block(
         ));
         return (ViewExpr::Raw(head.to_owned()), lines.len());
     };
-    let arms = lines[1..end]
-        .iter()
-        .filter_map(|line| parse_view_match_arm(line.trim(), base, module_path, source_map, errors))
-        .collect::<Vec<_>>();
+    let mut arms = Vec::new();
+    let mut arm_recovery = false;
+    for line in &lines[1..end] {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(arm) = parse_view_match_arm(line, base, module_path, source_map, errors) {
+            arms.push(arm);
+        } else {
+            arm_recovery = true;
+        }
+    }
+    if arm_recovery {
+        return (ViewExpr::Raw(head.to_owned()), end + 1);
+    }
     (
         ViewExpr::Match(ViewMatch::new(
             source_map.parse_owned_expr(scrutinee, errors),
             arms,
-            TextRange::new(base, base.saturating_add(head.len())),
+            source_map.mapped_lines_range(&lines[..=end]),
         )),
         end + 1,
     )
@@ -627,6 +709,7 @@ fn parse_view_match_arm(
         parse_pattern(pattern.trim()),
         guard.map(|guard| source_map.parse_owned_expr(guard.trim(), errors)),
         parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
+        source_map.mapped_location(line),
     ))
 }
 
@@ -657,11 +740,35 @@ fn parse_view_for_block(
         ));
         return (ViewExpr::Raw(head.to_owned()), end + 1);
     };
-    let (source, key) = split_top_level_keyword_once(source_and_key, "key");
-    let key = key.and_then(|key| {
-        split_top_level_punctuation_once(key.trim(), '=')
-            .map(|(_, value)| source_map.parse_owned_expr(value.trim(), errors))
-    });
+    let (source, key_source) = split_top_level_keyword_once(source_and_key, "key");
+    let key = match key_source {
+        None => None,
+        Some(key_source) => {
+            let key_source = key_source.trim();
+            let Some((before_equals, value)) = split_top_level_punctuation_once(key_source, '=')
+            else {
+                let range = source_map.mapped_location(lines[0]);
+                errors.push(simple_error(
+                    range.start(),
+                    range.end() - range.start(),
+                    "View `for` key needs `=`",
+                    "for item in items key = item.id { ... }",
+                ));
+                return (ViewExpr::Raw(head.to_owned()), end + 1);
+            };
+            if !before_equals.trim().is_empty() || value.trim().is_empty() {
+                let range = source_map.mapped_location(lines[0]);
+                errors.push(simple_error(
+                    range.start(),
+                    range.end() - range.start(),
+                    "View `for` key needs exactly `key = expression`",
+                    "for item in items key = item.id { ... }",
+                ));
+                return (ViewExpr::Raw(head.to_owned()), end + 1);
+            }
+            Some(source_map.parse_owned_expr(value.trim(), errors))
+        }
+    };
     let body = parse_view_exprs(&lines[1..end], base, module_path, source_map, errors);
     (
         ViewExpr::ForEach(ViewForEach::new(
@@ -669,7 +776,7 @@ fn parse_view_for_block(
             source_map.parse_owned_expr(source.trim(), errors),
             key,
             Box::new(body),
-            TextRange::new(base, base.saturating_add(head.len())),
+            source_map.mapped_lines_range(&lines[..=end]),
         )),
         end + 1,
     )
@@ -730,11 +837,11 @@ fn parse_view_block(
             let callee = split_simple_call(head)
                 .map_or(head, |(callee, _)| callee)
                 .trim();
-            let range = TextRange::new(base, base.saturating_add(head.len()));
             if !is_view_container_element(callee) {
+                let range = source_map.mapped_location(lines[0]);
                 errors.push(simple_error(
-                    base,
-                    head.len(),
+                    range.start(),
+                    range.end() - range.start(),
                     &format!("unsupported View element `{callee}`"),
                     "Panel(...) | Box(...) | Scroll(...) | Row(...) | Column(...) | Stack(...)",
                 ));
@@ -742,6 +849,7 @@ fn parse_view_block(
             }
             let (modifiers, modifier_lines) =
                 parse_view_modifiers(&lines[index + 1..], base, module_path, source_map, errors);
+            let range = source_map.mapped_lines_range(&lines[..index + 1 + modifier_lines]);
             return (
                 ViewExpr::Element(ViewElement::new(
                     callee.to_owned(),
@@ -825,7 +933,7 @@ fn parse_view_chain(
     source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> ParsedViewChain {
-    let head = parse_view_head(lines[0], base, module_path, source_map, errors);
+    let head = parse_view_head(lines[0], module_path, source_map, errors);
     let (modifiers, _) = parse_view_modifiers(&lines[1..], base, module_path, source_map, errors);
     ParsedViewChain { head, modifiers }
 }
@@ -887,6 +995,9 @@ fn parse_view_modifiers(
                     ".label(\"Text\") | .on_click { action.invoke(@action:.name) } | .style(@style:.name)",
                 ));
             }
+            modifiers.push(ViewModifier::Raw(
+                lines[index..index + rejected_consumed].join("\n"),
+            ));
             index += rejected_consumed;
         }
     }
@@ -895,7 +1006,6 @@ fn parse_view_modifiers(
 
 fn parse_view_head(
     line: &str,
-    base: usize,
     module_path: Option<&str>,
     source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
@@ -946,7 +1056,7 @@ fn parse_view_head(
             args,
         },
         _ => ViewHead::ViewCall {
-            view: parse_view_call_target(callee, base, module_path, errors),
+            view: parse_view_call_target(callee, module_path, source_map, errors),
             args,
         },
     }
@@ -954,19 +1064,19 @@ fn parse_view_head(
 
 fn parse_view_call_target(
     callee: &str,
-    base: usize,
     module_path: Option<&str>,
+    source_map: &ViewSourceMap<'_>,
     errors: &mut Vec<ParseError>,
 ) -> Expr {
-    let range = TextRange::new(base, base.saturating_add(callee.len()));
+    let range = source_map.mapped_location(callee);
     if callee.starts_with('@') {
-        let Some((id, trailing)) = parse_required_id_ref(callee, base, errors) else {
+        let Some((id, trailing)) = parse_required_id_ref(callee, range.start(), errors) else {
             return Expr::Raw(callee.to_owned());
         };
         if !trailing.trim().is_empty() {
             errors.push(simple_error(
-                base,
-                callee.len(),
+                range.start(),
+                range.end() - range.start(),
                 "unexpected tokens after nested View reference",
                 "Child(...) | @view:.Child(...) | @view:package.Child(...)",
             ));
@@ -1012,11 +1122,13 @@ fn parse_view_modifier(
             .map(|application| (ViewModifier::Fx(application), consumed));
     }
     if let Some(value) = call_arg(line, ".style") {
-        let (reference, trailing) = parse_view_style_ref(value, base, module_path, errors)?;
+        let value_range = source_map.mapped_location(value);
+        let (reference, trailing) =
+            parse_view_style_ref(value, value_range.start(), module_path, errors)?;
         if !trailing.trim().is_empty() {
             errors.push(simple_error(
-                base,
-                value.len(),
+                value_range.start(),
+                value_range.end() - value_range.start(),
                 "style reference modifier has trailing syntax",
                 ".style(@style:.name)",
             ));
@@ -1032,9 +1144,7 @@ fn parse_view_modifier(
         return Some((ViewModifier::style_inline(patch), consumed));
     }
     if let Some(part) = call_arg(line, ".part") {
-        let range = source_map
-            .location(lines[0])
-            .unwrap_or_else(|| TextRange::new(base, base.saturating_add(line.len())));
+        let range = source_map.mapped_location(lines[0]);
         return part::parse_label(part, line, range, source_map.document, errors)
             .map(|label| (ViewModifier::Part(label), 1));
     }
@@ -1044,9 +1154,9 @@ fn parse_view_modifier(
         return Some((ViewModifier::AgentTarget(target), 1));
     }
     if let Some(value) = call_arg(line, ".nav") {
-        let range = TextRange::new(base, base.saturating_add(line.len()));
+        let range = source_map.mapped_location(lines[0]);
         return Some((
-            ViewModifier::Navigation(parse_navigation_modifier(value, range)?),
+            ViewModifier::Navigation(parse_navigation_modifier(value, range, source_map, errors)?),
             1,
         ));
     }
@@ -1084,11 +1194,7 @@ fn parse_view_modifier(
         ));
     }
     if let Some(value) = call_arg(line, ".focusable") {
-        let focusable = matches!(
-            source_map.parse_owned_expr(value, errors),
-            Expr::Literal(Literal::Bool(true))
-        );
-        return Some((ViewModifier::Focusable(focusable), 1));
+        return Some((parse_view_focusable(value, line, source_map, errors), 1));
     }
     if let Some((name, value)) = view_property_modifier(line) {
         return Some((
@@ -1100,6 +1206,25 @@ fn parse_view_modifier(
         ));
     }
     None
+}
+
+fn parse_view_focusable(
+    value: &str,
+    line: &str,
+    source_map: &ViewSourceMap<'_>,
+    errors: &mut Vec<ParseError>,
+) -> ViewModifier {
+    if let Expr::Literal(Literal::Bool(value)) = source_map.parse_owned_expr(value, errors) {
+        return ViewModifier::Focusable(value);
+    }
+    let range = source_map.mapped_location(line);
+    errors.push(simple_error(
+        range.start(),
+        range.end() - range.start(),
+        "View `.focusable` needs a literal boolean",
+        ".focusable(true)",
+    ));
+    ViewModifier::Raw(line.to_owned())
 }
 
 fn parse_view_fx_application(
@@ -1309,20 +1434,92 @@ fn rebase_family_ref_entity(
     EntityRef::module_scoped_declaration(family, suffix, module_path, *entity.range())
 }
 
-fn parse_navigation_modifier(source: &str, range: TextRange) -> Option<ViewNavigationModifier> {
-    let edges = parse_view_args(source)
+fn parse_navigation_modifier(
+    source: &str,
+    range: TextRange,
+    source_map: &ViewSourceMap<'_>,
+    errors: &mut Vec<ParseError>,
+) -> Option<ViewNavigationModifier> {
+    let arguments = split_top_level_punctuation(source, ',')
         .into_iter()
-        .filter_map(|arg| {
-            let ViewArg::Named { name, value } = arg else {
-                return None;
-            };
-            Some(ViewNavigationEdge::new(
-                parse_navigation_direction(&name)?,
-                parse_navigation_target(&value)?,
-            ))
-        })
+        .map(str::trim)
+        .filter(|argument| !argument.is_empty())
         .collect::<Vec<_>>();
-    (!edges.is_empty()).then(|| ViewNavigationModifier::new(edges, range))
+    if arguments.is_empty() {
+        errors.push(simple_error(
+            range.start(),
+            range.end() - range.start(),
+            "View `.nav` needs at least one named direction",
+            ".nav(right: @button:.apply)",
+        ));
+        return None;
+    }
+
+    let mut edges = Vec::with_capacity(arguments.len());
+    let mut invalid = false;
+    for argument in arguments {
+        let argument_range = source_map.mapped_location(argument);
+        let Some((name, value)) = split_top_level_binding(argument)
+            .or_else(|| split_top_level_punctuation_once(argument, ':'))
+        else {
+            errors.push(simple_error(
+                argument_range.start(),
+                argument_range.end() - argument_range.start(),
+                "View `.nav` arguments must name a direction",
+                ".nav(right: @button:.apply)",
+            ));
+            invalid = true;
+            continue;
+        };
+        let Some(direction) = parse_navigation_direction(name) else {
+            errors.push(simple_error(
+                argument_range.start(),
+                argument_range.end() - argument_range.start(),
+                &format!("unknown View navigation direction `{}`", name.trim()),
+                "up | down | left | right | next | previous",
+            ));
+            invalid = true;
+            continue;
+        };
+        if edges
+            .iter()
+            .any(|edge: &ViewNavigationEdge| edge.direction() == direction)
+        {
+            errors.push(simple_error(
+                argument_range.start(),
+                argument_range.end() - argument_range.start(),
+                &format!("duplicate View navigation direction `{}`", name.trim()),
+                "one target per navigation direction",
+            ));
+            invalid = true;
+            continue;
+        }
+        let value = value.trim();
+        if value.is_empty() {
+            errors.push(simple_error(
+                argument_range.start(),
+                argument_range.end() - argument_range.start(),
+                "View navigation direction needs a target",
+                ".nav(right: @button:.apply)",
+            ));
+            invalid = true;
+            continue;
+        }
+        let value = source_map.parse_owned_expr(value, errors);
+        let Some(target) = parse_navigation_target(&value) else {
+            errors.push(simple_error(
+                argument_range.start(),
+                argument_range.end() - argument_range.start(),
+                "invalid View navigation target",
+                "entity reference | auto | none | boundary",
+            ));
+            invalid = true;
+            continue;
+        };
+        edges.push(ViewNavigationEdge::new(direction, target));
+    }
+
+    (!invalid).then(|| ViewNavigationModifier::new(edges, range))
 }
 
 fn parse_navigation_direction(value: &str) -> Option<ViewNavigationDirection> {

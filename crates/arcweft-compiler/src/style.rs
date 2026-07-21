@@ -21,7 +21,7 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::ast::style::StylePatch as SyntaxStylePatch;
 use arcweft_lang_syntax::ast::view::{ViewBody, ViewExpr, ViewModifier, ViewStyleModifier};
 use arcweft_project::sources::ProjectSources;
-use arcweft_source::SourceDocument;
+use arcweft_source::{SourceDocument, SourceRange, SourceSpan, SourceSpanError};
 use arcweft_view::style::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentConditionError,
     ViewEnvironmentWrapperIndex, ViewEnvironmentWrapperSource, ViewStyleApplicationTarget,
@@ -37,6 +37,7 @@ use thiserror::Error;
 pub struct CompiledViewStyleArtifact {
     resource: ViewStyleResource,
     applications: ViewStyleApplicationLookup,
+    sources: BTreeMap<ViewStyleSheetId, SourceSpan>,
 }
 
 /// Typed Style applications indexed inside their owning View declaration.
@@ -69,6 +70,11 @@ pub enum ViewStyleLowerError {
     },
     #[error("duplicate source origin for Style sheet `{0}`")]
     DuplicateSheetOrigin(String),
+    #[error("Style sheet {sheet:?} has an invalid source range: {source}")]
+    InvalidSheetSource {
+        sheet: ViewStyleSheetId,
+        source: SourceSpanError,
+    },
     #[error("duplicate Style application inventory for View `{0}`")]
     DuplicateView(String),
     #[error("duplicate Style application site in View `{view}` at {range:?}")]
@@ -149,8 +155,19 @@ impl CompiledViewStyleArtifact {
         &self.applications
     }
 
-    pub fn into_parts(self) -> (ViewStyleResource, ViewStyleApplicationLookup) {
-        (self.resource, self.applications)
+    /// Exact source-bound declaration span for each authored Style sheet.
+    pub const fn sources(&self) -> &BTreeMap<ViewStyleSheetId, SourceSpan> {
+        &self.sources
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        ViewStyleResource,
+        ViewStyleApplicationLookup,
+        BTreeMap<ViewStyleSheetId, SourceSpan>,
+    ) {
+        (self.resource, self.applications, self.sources)
     }
 }
 
@@ -229,6 +246,7 @@ fn lower_view_styles(
     Ok(CompiledViewStyleArtifact {
         resource,
         applications,
+        sources: origins.sheet_spans.clone(),
     })
 }
 
@@ -236,11 +254,13 @@ fn lower_view_styles(
 struct StyleSourceDocument {
     source: ProductSourceRef,
     len: usize,
+    document: SourceDocument,
 }
 
 #[derive(Default)]
 struct StyleSourceOrigins {
     sheets: BTreeMap<ViewStyleSheetId, StyleSourceDocument>,
+    sheet_spans: BTreeMap<ViewStyleSheetId, SourceSpan>,
     patches: Vec<StyleSourceDocument>,
 }
 
@@ -254,6 +274,7 @@ impl StyleSourceDocument {
         Ok(Self {
             source: ProductSourceRef::from_document(document),
             len: source.text().len(),
+            document: source.clone(),
         })
     }
 }
@@ -306,11 +327,21 @@ impl StyleSourceOrigins {
             let value = style.id().body().to_owned();
             let id = ViewStyleSheetId::try_new(value.clone())
                 .map_err(|source| ViewStyleLowerError::InvalidSheetId { value, source })?;
-            if self.sheets.insert(id.clone(), document.clone()).is_some() {
+            if self.sheets.contains_key(&id) {
                 return Err(ViewStyleLowerError::DuplicateSheetOrigin(
                     id.public_id().as_str().to_owned(),
                 ));
             }
+            let range = style.range();
+            let span = document
+                .document
+                .span(SourceRange::new(range.start(), range.end()))
+                .map_err(|source| ViewStyleLowerError::InvalidSheetSource {
+                    sheet: id.clone(),
+                    source,
+                })?;
+            self.sheets.insert(id.clone(), document.clone());
+            self.sheet_spans.insert(id, span);
         }
         self.patches
             .extend(hir.style_patches().iter().map(|_| document.clone()));

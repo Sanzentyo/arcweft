@@ -4,19 +4,21 @@ use arcweft_bundle::resource_codec::{
     FieldId, MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, MAX_SOURCE_BYTES_PER_DOCUMENT,
     MAX_SOURCE_DISPLAY_NAME_BYTES, MAX_SOURCE_MAP_DOCUMENTS, MAX_SOURCE_MAP_TOTAL_UTF8_BYTES,
     ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
-    SectionCodecBudget, SourceMapBuildError, SourceMapCodecError, SourceMapSection,
+    SectionCodecBudget, SectionCodecError, SourceMapBuildError, SourceMapCodecError,
+    SourceMapDocument, SourceMapSection, StringId,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 const FIELD_SOURCE_MAP_TRANSCRIPT: FieldId = FieldId(1);
 const SET_REVISION_OFFSET: usize = 4;
-const FIRST_PRODUCT_REF_OFFSET: usize = 40;
-const FIRST_REVISION_OFFSET: usize = 53;
-const FIRST_EXTENT_OFFSET: usize = 85;
-const FIRST_UTF8_OFFSET: usize = 101;
+const PRIMARY_DOCUMENT_REF_OFFSET: usize = 36;
+const FIRST_PRODUCT_REF_OFFSET: usize = 44;
+const FIRST_REVISION_OFFSET: usize = 57;
+const FIRST_EXTENT_OFFSET: usize = 89;
+const FIRST_UTF8_OFFSET: usize = 105;
 
 #[test]
-fn source_map_is_order_independent_and_round_trips_exact_bytes() {
+fn source_map_primary_document_is_independent_of_canonical_document_order_and_round_trips() {
     let first = document(
         "project://first.arcw",
         SourceName::path("src/first.arcw"),
@@ -25,25 +27,117 @@ fn source_map_is_order_independent_and_round_trips_exact_bytes() {
     let second = document("project://second.arcw", SourceName::Generated, "second");
 
     let ordered = SourceMapSection::try_from_documents(&[&first, &second]).expect("source map");
-    let reversed =
-        SourceMapSection::try_from_documents(&[&second, &first]).expect("reversed source map");
-    let bytes = ordered
-        .encode_canonical_section()
-        .expect("source map encodes");
+    let canonical_first = ordered
+        .documents()
+        .next()
+        .expect("two-document source map")
+        .document_id()
+        .clone();
+    let (primary, other) = if canonical_first == *first.identity().id() {
+        (&second, &first)
+    } else {
+        (&first, &second)
+    };
+    let primary_after_canonical_sort =
+        SourceMapSection::try_from_documents(&[primary, other]).expect("source map");
 
     assert_eq!(
-        bytes,
-        reversed
-            .encode_canonical_section()
-            .expect("reversed source map encodes")
+        ordered
+            .documents()
+            .map(SourceMapDocument::document_id)
+            .collect::<Vec<_>>(),
+        primary_after_canonical_sort
+            .documents()
+            .map(SourceMapDocument::document_id)
+            .collect::<Vec<_>>()
     );
+    assert_eq!(
+        ordered.source_set_revision(),
+        primary_after_canonical_sort.source_set_revision()
+    );
+    assert_eq!(
+        primary_after_canonical_sort
+            .primary_document_id()
+            .expect("non-empty source map has a primary document"),
+        primary.identity().id()
+    );
+    assert_ne!(
+        primary_after_canonical_sort
+            .documents()
+            .next()
+            .expect("two-document source map")
+            .document_id(),
+        primary_after_canonical_sort
+            .primary_document_id()
+            .expect("non-empty source map has a primary document")
+    );
+
+    let bytes = primary_after_canonical_sort
+        .encode_canonical_section()
+        .expect("source map encodes");
     let decoded = SourceMapSection::decode_canonical_section(&bytes).expect("source map decodes");
-    assert_eq!(decoded, ordered);
+    assert_eq!(decoded, primary_after_canonical_sort);
     assert_eq!(
         decoded
             .encode_canonical_section()
             .expect("decoded source map re-encodes"),
         bytes
+    );
+}
+
+#[test]
+fn source_map_rejects_missing_absent_and_out_of_bounds_primary_documents() {
+    let source = document(
+        "project://main.arcw",
+        SourceName::path("src/main.arcw"),
+        "main",
+    );
+    let bytes = SourceMapSection::try_from_documents(&[&source])
+        .expect("source map")
+        .encode_canonical_section()
+        .expect("source map encodes");
+
+    let missing = mutate_transcript(&bytes, |payload| {
+        payload[PRIMARY_DOCUMENT_REF_OFFSET..PRIMARY_DOCUMENT_REF_OFFSET + 4]
+            .copy_from_slice(&u32::MAX.to_le_bytes());
+    });
+    assert_eq!(
+        SourceMapSection::decode_canonical_section(&missing)
+            .expect_err("a non-empty map requires a primary document"),
+        SourceMapCodecError::MissingPrimaryDocument
+    );
+
+    let envelope = ProductResourceEnvelope::decode_all_fields(
+        &bytes,
+        ProductSectionCodecKind::SourceMap,
+        SectionCodecBudget::default(),
+    )
+    .expect("source-map envelope");
+    let absent_ref = envelope
+        .strings
+        .id_for("src/main.arcw")
+        .expect("display path is in the string table")
+        .0;
+    let absent = mutate_transcript(&bytes, |payload| {
+        payload[PRIMARY_DOCUMENT_REF_OFFSET..PRIMARY_DOCUMENT_REF_OFFSET + 4]
+            .copy_from_slice(&absent_ref.to_le_bytes());
+    });
+    assert_eq!(
+        SourceMapSection::decode_canonical_section(&absent)
+            .expect_err("primary ID outside the inventory rejects"),
+        SourceMapCodecError::PrimaryDocumentMissing(
+            SourceDocumentId::try_new("src/main.arcw").expect("valid absent source ID")
+        )
+    );
+
+    let out_of_bounds = mutate_transcript(&bytes, |payload| {
+        payload[PRIMARY_DOCUMENT_REF_OFFSET..PRIMARY_DOCUMENT_REF_OFFSET + 4]
+            .copy_from_slice(&u32::MAX.saturating_sub(1).to_le_bytes());
+    });
+    assert_eq!(
+        SourceMapSection::decode_canonical_section(&out_of_bounds)
+            .expect_err("out-of-bounds primary string reference rejects"),
+        SourceMapCodecError::Envelope(SectionCodecError::StringOutOfBounds(StringId(u32::MAX - 1)))
     );
 }
 
@@ -94,7 +188,7 @@ fn source_map_rejects_digest_extent_set_revision_and_schema_tampering() {
         SourceMapSection::decode_canonical_section(&schema),
         Err(SourceMapCodecError::UnsupportedSchema {
             actual: 1,
-            expected: 2
+            expected: 3
         })
     ));
 

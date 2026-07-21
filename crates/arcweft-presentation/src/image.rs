@@ -6,7 +6,7 @@ use arcweft_id::PublicId;
 use std::collections::BTreeMap;
 
 /// Stable presentation object id for an image-like visual object.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ImageObjectId {
     id: PublicId,
 }

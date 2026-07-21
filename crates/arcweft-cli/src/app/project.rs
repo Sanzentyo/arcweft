@@ -275,13 +275,21 @@ impl SourceSelection {
                     ExitCode::FAILURE
                 });
         }
-        self.path()
+        let package_name = self
+            .path()
             .file_stem()
             .and_then(|stem| stem.to_str())
             .filter(|stem| !stem.is_empty())
-            .map(str::to_owned)
             .ok_or_else(|| {
                 eprintln!("error: direct source has no package identity");
+                ExitCode::FAILURE
+            })?;
+        direct_package_id(package_name)
+            .map(|package| package.as_str().to_owned())
+            .map_err(|error| {
+                eprintln!(
+                    "error: direct source has an invalid package identity `{package_name}`: {error}"
+                );
                 ExitCode::FAILURE
             })
     }
@@ -686,9 +694,16 @@ pub(in crate::app) fn direct_project_compilation_input(
     semantic: &SelectionSemanticContext,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<DirectProjectCompilationInput, ExitCode> {
+    let package_identity = selection.package_identity()?;
+    let package_id = PackageId::new(package_identity.clone()).map_err(|error| {
+        eprintln!(
+            "error: direct source has an invalid package identity `{package_identity}`: {error}"
+        );
+        ExitCode::FAILURE
+    })?;
     direct_project_compilation_input_with_env(
         selection.path(),
-        &selection.package_identity()?,
+        &package_id,
         semantic.base(),
         semantic.adapter_manifests(),
         phases,
@@ -697,7 +712,7 @@ pub(in crate::app) fn direct_project_compilation_input(
 
 fn direct_project_compilation_input_with_env(
     path: &Path,
-    package_name: &str,
+    package_id: &PackageId,
     env: &TypeCheckEnv,
     adapter_manifests: &[AdapterManifest],
     phases: &mut Vec<RuntimeProfilePhase>,
@@ -713,15 +728,12 @@ fn direct_project_compilation_input_with_env(
         })
     })?;
     let document = Arc::new(source_document_for_path(path, source)?);
-    let package_id = direct_package_id(package_name).map_err(|error| {
-        eprintln!("error: direct source has an invalid package identity `{package_name}`: {error}");
-        ExitCode::FAILURE
-    })?;
-    let sources = direct_project_sources(path, &package_id, &document)?;
-    let facts = direct_registration_facts(&package_id, &document, adapter_manifests)?;
+    let sources = direct_project_sources(path, package_id, &document)?;
+    let facts = direct_registration_facts(package_id, &document, adapter_manifests)?;
     let context = ProjectCompilationContext::new(
         Arc::new(env.clone()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
         callable_publications(adapter_manifests)?,
@@ -834,9 +846,6 @@ fn direct_registration_facts(
 }
 
 fn direct_package_id(package_name: &str) -> Result<PackageId, &'static str> {
-    if let Ok(package) = PackageId::new(package_name) {
-        return Ok(package);
-    }
     let mut suffix = package_name
         .chars()
         .map(|character| {
@@ -911,6 +920,7 @@ fn compilation_context_from_facts(
     Ok(ProjectCompilationContext::new(
         Arc::new(semantic.base().clone()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         entry_selection,
         callable_publications,
@@ -1163,8 +1173,12 @@ pub(in crate::app) fn load_and_check_with_env(
             eprintln!("error: direct source has no package identity");
             ExitCode::FAILURE
         })?;
+    let package_id = direct_package_id(package_name).map_err(|error| {
+        eprintln!("error: direct source has an invalid package identity `{package_name}`: {error}");
+        ExitCode::FAILURE
+    })?;
     let direct =
-        direct_project_compilation_input_with_env(path, package_name, env, &[], &mut phases)?;
+        direct_project_compilation_input_with_env(path, &package_id, env, &[], &mut phases)?;
     load_and_check_project_sources(direct.sources(), direct.context(), env, phases)
 }
 

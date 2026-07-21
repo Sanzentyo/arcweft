@@ -1,4 +1,4 @@
-//! Orchestrates view control-flow and layout lowering across responsibility modules.
+//! Orchestrates View control-flow and layout lowering across responsibility modules.
 
 mod content;
 mod modifiers;
@@ -17,6 +17,8 @@ use self::text_controls::{
     text_control_selection_policy,
 };
 
+use crate::style::ViewStyleApplicationLookup;
+use crate::view_part::{ViewPartLowerError, lower_view_part_exports};
 use arcweft_bundle::{
     BundleImageObject, BundleImageObjectBounds,
     container::BundleDigest,
@@ -43,8 +45,6 @@ use arcweft_bundle::{
         },
     },
 };
-use arcweft_compiler::style::ViewStyleApplicationLookup;
-use arcweft_compiler::view_part::{ViewPartLowerError, lower_view_part_exports};
 use arcweft_id::{IdError, PublicId};
 use arcweft_lang_sema::dialogue_view::{
     DialogueViewModel, DialogueViewModelRegistry,
@@ -66,7 +66,7 @@ use arcweft_lang_syntax::{
         },
     },
     expr::{CallArg, Expr, Literal},
-    types::{TypeRef, parse_fn_signature},
+    types::TypeRef,
 };
 use arcweft_presentation::fx::{FxDefinition, FxId, FxRuntimeType};
 use arcweft_view::ViewElementLayoutKind;
@@ -76,24 +76,24 @@ use arcweft_view::{
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
-use super::super::bundle_view_layout::{
+use super::layout::{
     VIEW_LAYOUT_GAP_MILLI, VIEW_LAYOUT_SCROLL_VIEWPORT_HEIGHT_MILLI,
     VIEW_LAYOUT_TEXT_CONTROL_WIDTH_MILLI, ViewLayoutCursor, ViewLayoutFrame, button_bounds,
     modifier_layout_length_i32, modifier_layout_length_u32, named_arg, named_layout_length_i32,
     named_layout_length_u32, text_block_frame, u32_to_i32_saturating,
 };
-use super::super::bundle_view_schema::{ViewValueCompileError, ViewValueProgramCompiler};
+use super::schema::{ViewValueCompileError, ViewValueProgramCompiler};
 
 #[derive(Clone, Debug, Default)]
-pub(in crate::app) struct ViewBundleSidecars {
-    pub(in crate::app) program: Option<ViewProgramResource>,
-    pub(in crate::app) text: Option<ViewTextResource>,
-    pub(in crate::app) input: Option<ViewInputResource>,
-    pub(in crate::app) image_objects: Vec<BundleImageObject>,
+pub struct ViewBundleSidecars {
+    pub(super) program: Option<ViewProgramResource>,
+    pub(super) text: Option<ViewTextResource>,
+    pub(super) input: Option<ViewInputResource>,
+    pub(super) image_objects: Vec<BundleImageObject>,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub(in crate::app) enum ViewSidecarError {
+pub enum ViewSidecarError {
     #[error(
         "error[AWF0618 view::scroll_axis_both_unsupported]: `{element}` cannot use `{value}` as a Scroll axis in this cut; use `.vertical` or `.horizontal` and keep two-axis scrolling behind a future typed contract"
     )]
@@ -119,6 +119,8 @@ pub(in crate::app) enum ViewSidecarError {
     },
     #[error("View `{view}` parameter {ordinal} must use one identifier binding")]
     UnsupportedViewParameter { view: String, ordinal: usize },
+    #[error("View `{view}` contains parser-recovered syntax and cannot enter an accepted product")]
+    RecoveredViewSyntax { view: String },
     #[error("View call references unknown definition `{view}`")]
     UnknownViewCall { view: String },
     #[error("View call `{view}` has invalid argument `{argument}`: {reason}")]
@@ -133,6 +135,45 @@ pub(in crate::app) enum ViewSidecarError {
         "View action projection `{expression}` must select `primary_action` from a dialogue View parameter"
     )]
     InvalidDialogueActionProjection { expression: String },
+    #[error(
+        "View {context} requires a literal, path, shorthand variant, or entity reference; dynamic values must use a typed View value program"
+    )]
+    UnsupportedStaticExpression { context: &'static str },
+    #[error(
+        "View {context} requires literal text; dynamic text must use a typed projection contract"
+    )]
+    UnsupportedLiteralText { context: &'static str },
+    #[error(
+        "View {context} requires a boolean literal; dynamic booleans must use a typed View value program"
+    )]
+    UnsupportedStaticBoolean { context: &'static str },
+    #[error("View `{view}` {policy} policy has unknown value `{value}`")]
+    UnknownPolicySymbol {
+        view: String,
+        policy: &'static str,
+        value: String,
+    },
+    #[error(
+        "View layout property `{property}` requires a static px, milli, or integer literal; dynamic layout requires a typed layout-value contract"
+    )]
+    UnsupportedLayoutValue { property: String },
+    #[error(
+        "View event handler `{event}` has no typed runtime handler program; use a supported canonical action"
+    )]
+    UnsupportedEventHandler { event: String },
+    #[error(
+        "standalone View expressions have no runtime lowering contract; use a typed View construct"
+    )]
+    UnsupportedStandaloneExpression,
+}
+
+impl ViewSidecarError {
+    pub(super) fn authored_view(&self) -> Option<&str> {
+        match self {
+            Self::UnknownPolicySymbol { view, .. } => Some(view),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -170,7 +211,6 @@ struct ViewLoweringState {
     image_counter: u32,
     element_counter: u32,
     group_counter: u32,
-    handler_counter: u32,
 }
 
 impl ViewLoweringState {
@@ -204,7 +244,7 @@ struct ViewParameterSchema {
     dialogue_model: Option<DialogueViewModel>,
 }
 
-pub(in crate::app) fn view_sidecars(
+pub(super) fn view_sidecars(
     views: &[&EntityDeclItem],
     dialogue_view_models: &DialogueViewModelRegistry,
     style_applications: &ViewStyleApplicationLookup,
@@ -224,8 +264,19 @@ pub(in crate::app) fn view_sidecars(
         return Ok(ViewBundleSidecars::default());
     };
     for view in views {
-        if let Some(body) = view.view_body().and_then(|body| body.view()) {
+        if let Some(declaration) = view.view_body() {
             let public_id = view_resource_id(view.id().body());
+            if declaration.has_recovery() {
+                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id });
+            }
+            let body = declaration
+                .view()
+                .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
+                    view: public_id.clone(),
+                })?;
+            if body.contains_recovered_syntax() {
+                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id });
+            }
             let typed_view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
                 ViewSidecarError::InvalidViewIdentity {
                     value: public_id.clone(),
@@ -372,13 +423,18 @@ fn view_definition_schemas(
     let mut schemas = BTreeMap::new();
     for view in views {
         let public_id = view_resource_id(view.id().body());
-        let signature =
-            parse_fn_signature(&format!("fn view{}", view.signature_tail())).map_err(|error| {
-                ViewSidecarError::InvalidViewSignature {
-                    view: public_id.clone(),
-                    message: error.to_string(),
-                }
+        let signature = view
+            .view_body()
+            .and_then(arcweft_lang_syntax::ast::items::ViewDeclBody::signature)
+            .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
+                view: public_id.clone(),
             })?;
+        if signature.return_type().is_some() {
+            return Err(ViewSidecarError::InvalidViewSignature {
+                view: public_id,
+                message: "View declarations cannot declare a return type".to_owned(),
+            });
+        }
         let parameters = signature
             .param_groups()
             .iter()
@@ -396,7 +452,7 @@ fn view_definition_schemas(
                 Ok(ViewParameterSchema {
                     name,
                     value_type: view_scalar_type(parameter.ty()),
-                    source_type: format!("{:?}", parameter.ty()),
+                    source_type: parameter.ty().canonical_label(),
                     default: parameter.default().cloned(),
                     dialogue_model: match parameter.ty() {
                         TypeRef::Path(type_name) => dialogue_view_models.model(type_name).cloned(),
@@ -514,7 +570,7 @@ fn lower_view_body(
     Ok(())
 }
 
-fn view_resource_id(view_id: &str) -> String {
+pub(super) fn view_resource_id(view_id: &str) -> String {
     if view_id.starts_with("view.") {
         view_id.to_owned()
     } else {
@@ -522,17 +578,17 @@ fn view_resource_id(view_id: &str) -> String {
     }
 }
 
-pub(in crate::app) fn normalize_view_call(view: &Expr) -> String {
+pub(super) fn normalize_view_call(view: &Expr) -> Result<String, ViewSidecarError> {
     let source = match view {
         Expr::EntityRef(reference) => normalize_entity_ref(reference),
-        _ => expr_source(view),
+        _ => static_symbol_source(view, "call target")?,
     };
     let source = source
         .trim()
         .trim_start_matches('@')
         .trim_start_matches("view:.")
         .trim_start_matches('.');
-    view_resource_id(source)
+    Ok(view_resource_id(source))
 }
 
 fn lower_nested_view_call(
@@ -540,7 +596,7 @@ fn lower_nested_view_call(
     call: &ViewCall,
     state: &mut ViewLoweringState,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
-    let view = normalize_view_call(call.view());
+    let view = normalize_view_call(call.view())?;
     let schema = state
         .view_schemas
         .get(&view)
@@ -640,14 +696,10 @@ fn lower_view_expr(
         ViewExpr::Let(view_let) => lower_view_let(view_let, state)?,
         ViewExpr::Fragment(children) => lower_layout_column(view_id, children, state, *layout)?,
         ViewExpr::ViewCall(call) => lower_nested_view_call(view_id, call, state)?,
-        ViewExpr::Raw(raw) => {
-            state.instructions.push(ViewProgramInstruction::EmitCustom {
-                element: raw.clone(),
-                styles: Vec::new(),
-                part: None,
-                source: None,
+        ViewExpr::Raw(_) => {
+            return Err(ViewSidecarError::RecoveredViewSyntax {
+                view: view_id.to_owned(),
             });
-            ViewLayoutFrame::zero()
         }
         ViewExpr::If(branch) => lower_view_if(view_id, branch, state, layout)?,
         ViewExpr::Match(view_match) => lower_view_match(view_id, view_match, state, layout)?,
@@ -655,7 +707,7 @@ fn lower_view_expr(
             lower_view_for_each(view_id, view_for_each, state, layout)?
         }
         ViewExpr::Await(view_await) => lower_view_await(view_id, view_await, state, layout)?,
-        ViewExpr::Expr(_) => ViewLayoutFrame::zero(),
+        ViewExpr::Expr(_) => return Err(ViewSidecarError::UnsupportedStandaloneExpression),
     })
 }
 
@@ -663,6 +715,9 @@ fn lower_view_let(
     view_let: &ViewLet,
     state: &mut ViewLoweringState,
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
+    if register_input_handle_binding(view_let, state)? {
+        return Ok(ViewLayoutFrame::zero());
+    }
     let (binding, value_program) = state
         .value_compiler
         .compile_local(view_let.pattern(), view_let.value())?;
@@ -671,7 +726,6 @@ fn lower_view_let(
         value_program,
         source: None,
     });
-    register_input_handle_binding(view_let, state);
     Ok(ViewLayoutFrame::zero())
 }
 
@@ -874,8 +928,8 @@ fn lower_element(
 ) -> Result<ViewLayoutFrame, ViewSidecarError> {
     if let Some(kind) = ViewElementKind::from_source_name(element.callee()) {
         let origin = ViewLayoutCursor {
-            x_milli: named_layout_length_i32(element.args(), &["x"]).unwrap_or(layout.x_milli),
-            y_milli: named_layout_length_i32(element.args(), &["y"]).unwrap_or(layout.y_milli),
+            x_milli: named_layout_length_i32(element.args(), &["x"])?.unwrap_or(layout.x_milli),
+            y_milli: named_layout_length_i32(element.args(), &["y"])?.unwrap_or(layout.y_milli),
         };
         let target = next_element_id(view_id, state);
         let part = element_part(element)?;
@@ -911,8 +965,9 @@ fn lower_element(
                 .map_or(ViewLayoutFrame::zero(), ViewLayoutFrame::text_control),
         };
         let frame = ViewLayoutFrame::new(
-            named_layout_length_u32(element.args(), &["width", "w"]).unwrap_or(frame.width_milli),
-            named_layout_length_u32(element.args(), &["height", "h"]).unwrap_or(frame.height_milli),
+            named_layout_length_u32(element.args(), &["width", "w"])?.unwrap_or(frame.width_milli),
+            named_layout_length_u32(element.args(), &["height", "h"])?
+                .unwrap_or(frame.height_milli),
         );
         if matches!(kind, ViewElementKind::Panel | ViewElementKind::Box) && !frame.is_empty() {
             state.surfaces.push(ViewSurfaceResource {
@@ -1077,13 +1132,26 @@ fn normalize_entity_ref(reference: &EntityRefSyntax) -> String {
     reference.canonical_body()
 }
 
-pub(in crate::app) fn expr_source(expr: &Expr) -> String {
+pub(super) fn static_symbol_source(
+    expr: &Expr,
+    context: &'static str,
+) -> Result<String, ViewSidecarError> {
     match expr {
-        Expr::Literal(Literal::String(value)) | Expr::Raw(value) => value.clone(),
-        Expr::Path(value) => value.as_label().to_owned(),
-        Expr::ShortVariant(value) => format!(".{value}"),
-        Expr::EntityRef(reference) => normalize_entity_ref(reference),
-        other => format!("{other:?}"),
+        Expr::Literal(Literal::String(value)) => Ok(value.clone()),
+        Expr::Path(value) => Ok(value.as_label().to_owned()),
+        Expr::ShortVariant(value) => Ok(format!(".{value}")),
+        Expr::EntityRef(reference) => Ok(normalize_entity_ref(reference)),
+        _ => Err(ViewSidecarError::UnsupportedStaticExpression { context }),
+    }
+}
+
+pub(super) fn literal_text_source(
+    expr: &Expr,
+    context: &'static str,
+) -> Result<String, ViewSidecarError> {
+    match expr {
+        Expr::Literal(Literal::String(value)) => Ok(value.clone()),
+        _ => Err(ViewSidecarError::UnsupportedLiteralText { context }),
     }
 }
 

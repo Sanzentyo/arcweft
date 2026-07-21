@@ -128,6 +128,7 @@ fn entry_project(
     let context = ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         Some(selection),
         Vec::new(),

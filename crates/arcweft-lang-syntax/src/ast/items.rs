@@ -371,7 +371,9 @@ pub enum EntityDeclBody {
 /// Structured retained View body for `view ...` declarations.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewDeclBody {
+    signature: Option<FnSignature>,
     view: Option<ViewBody>,
+    has_recovery: bool,
 }
 
 /// Content availability unit body declared with explicit root IDs.
@@ -390,8 +392,10 @@ pub struct ImageDeclBody {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImageDeclField {
     name: String,
-    value_source: String,
     value: Expr,
+    whole: TextRange,
+    name_range: TextRange,
+    value_range: TextRange,
 }
 
 /// Program entry declaration such as `entry cli @entry.main { goto @flow.opening }`.
@@ -972,8 +976,29 @@ impl ContentDeclBody {
 }
 
 impl ViewDeclBody {
-    pub(crate) const fn new(view: Option<ViewBody>) -> Self {
-        Self { view }
+    pub(crate) const fn new(
+        signature: Option<FnSignature>,
+        view: Option<ViewBody>,
+        has_recovery: bool,
+    ) -> Self {
+        Self {
+            signature,
+            view,
+            has_recovery,
+        }
+    }
+
+    /// Typed View callable signature retained from the declaration header.
+    ///
+    /// This is absent only when syntax recovery could not construct a valid
+    /// signature. Accepted compiler products must reject that recovery state.
+    pub const fn signature(&self) -> Option<&FnSignature> {
+        self.signature.as_ref()
+    }
+
+    /// Whether parsing required recovery not represented by a retained child.
+    pub const fn has_recovery(&self) -> bool {
+        self.has_recovery
     }
 
     pub const fn view(&self) -> Option<&ViewBody> {
@@ -992,11 +1017,19 @@ impl ImageDeclBody {
 }
 
 impl ImageDeclField {
-    pub(crate) fn new(name: String, value_source: String, value: Expr) -> Self {
+    pub(crate) const fn new(
+        name: String,
+        value: Expr,
+        whole: TextRange,
+        name_range: TextRange,
+        value_range: TextRange,
+    ) -> Self {
         Self {
             name,
-            value_source,
             value,
+            whole,
+            name_range,
+            value_range,
         }
     }
 
@@ -1004,12 +1037,23 @@ impl ImageDeclField {
         &self.name
     }
 
-    pub fn value_source(&self) -> &str {
-        &self.value_source
-    }
-
     pub const fn value(&self) -> &Expr {
         &self.value
+    }
+
+    /// Complete authored assignment range, excluding a trailing comma.
+    pub const fn whole(&self) -> TextRange {
+        self.whole
+    }
+
+    /// Exact authored field-name range.
+    pub const fn name_range(&self) -> TextRange {
+        self.name_range
+    }
+
+    /// Exact authored value-expression range.
+    pub const fn value_range(&self) -> TextRange {
+        self.value_range
     }
 }
 

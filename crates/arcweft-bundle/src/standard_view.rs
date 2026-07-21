@@ -20,6 +20,7 @@ use arcweft_view::style::{
 use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
+pub const DIALOGUE_VIEW_SOURCE_ID: &str = "arcweft:standard/dialogue-view";
 
 /// Stable typed owner of the engine-provided dialogue View.
 ///
@@ -33,7 +34,7 @@ pub fn dialogue_view_id() -> arcweft_view::ViewId {
         .expect("the reserved standard dialogue View identity is valid")
 }
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
-pub const DIALOGUE_STYLE_ID: &str = "style.dialogue.standard";
+pub const DIALOGUE_STYLE_ID: &str = "std.style.dialogue";
 pub const DIALOGUE_STYLE_SOURCE_ID: &str = "arcweft:standard/dialogue-style";
 
 const PANEL_PART: &str = "part.dialogue.panel";
@@ -48,6 +49,29 @@ fn local_part(value: &str) -> ViewPartLocalName {
 }
 const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
 const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";
+const DIALOGUE_VIEW_SOURCE: &str = "standard dialogue view";
+
+/// Exact engine-generated source document owning the standard dialogue View.
+///
+/// The standard View program is constructed as typed Rust data, but tooling
+/// and profile admission still require a stable, revision-bound definition
+/// owner. This generated document is that owner; it is not an authored-source
+/// compatibility alias.
+///
+/// # Panics
+///
+/// Panics only if the engine-owned source identity or generated text stops
+/// satisfying the canonical source-document invariants.
+#[must_use]
+pub fn dialogue_view_source_document() -> SourceDocument {
+    SourceDocument::try_new(
+        SourceDocumentId::try_new(DIALOGUE_VIEW_SOURCE_ID)
+            .expect("standard dialogue View source ID is canonical"),
+        SourceName::Generated,
+        DIALOGUE_VIEW_SOURCE,
+    )
+    .expect("standard dialogue View source is representable")
+}
 
 /// Minimal default dialogue View program linked through the normal View runtime.
 ///
@@ -253,7 +277,7 @@ fn dialogue_style_ref() -> ViewStyleApplicationTarget {
 }
 
 fn style_sheet_id() -> ViewStyleSheetId {
-    ViewStyleSheetId::try_new(DIALOGUE_STYLE_ID)
+    ViewStyleSheetId::try_new_engine_owned(DIALOGUE_STYLE_ID)
         .expect("standard dialogue Style ID is statically valid")
 }
 
