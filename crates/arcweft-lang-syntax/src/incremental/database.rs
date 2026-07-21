@@ -9,7 +9,7 @@ use arcweft_source::{SourceDocument, SourceEdit, SourceName};
 use core::num::NonZeroU64;
 use thiserror::Error;
 
-use super::bound::BoundParsedSource;
+use super::bound::{BoundExpressionFragment, BoundParsedSource};
 use crate::ast::items::TypedSyntaxTree;
 #[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
@@ -238,6 +238,45 @@ impl SyntaxDatabase {
         self.parse_initial_with_shadow_fault(&snapshot, document, transaction::ShadowFault::None)
     }
 
+    /// Attaches one standalone expression to a database-owned private lineage.
+    ///
+    /// The caller must provide the source identity explicitly. This private
+    /// predecessor never fabricates a source lineage and cannot be passed to
+    /// source-file HIR lowering as a [`ParsedSource`].
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
+        )
+    )]
+    pub(crate) fn parse_bound_expression_fragment(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &SourceDocument,
+    ) -> Result<BoundExpressionFragment, ParseFailure> {
+        self.parse_bound_expression_fragment_with_shadow_fault(
+            snapshot,
+            document,
+            transaction::ShadowFault::None,
+        )
+    }
+
+    fn parse_bound_expression_fragment_with_shadow_fault(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &SourceDocument,
+        shadow_fault: transaction::ShadowFault,
+    ) -> Result<BoundExpressionFragment, ParseFailure> {
+        if snapshot.name() != document.display_name() {
+            return Err(ParseFailure::SourceMismatch);
+        }
+        let staged = self
+            .shadow
+            .stage_expression_fragment(snapshot, document, shadow_fault)?;
+        Ok(self.shadow.commit_expression_fragment(staged))
+    }
+
     #[expect(
         clippy::arc_with_non_send_sync,
         reason = "the contract requires immutable Arc snapshots while Rowan red nodes remain session-thread-affine"
@@ -384,6 +423,19 @@ impl SyntaxDatabase {
         edits: &[SourceEdit],
     ) -> Result<Arc<ParsedSource>, ParseFailure> {
         self.reparse_with_shadow_fault(previous, edits, transaction::ShadowFault::MissingAttachment)
+    }
+
+    #[cfg(test)]
+    fn parse_bound_expression_fragment_with_attachment_failure(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &SourceDocument,
+    ) -> Result<BoundExpressionFragment, ParseFailure> {
+        self.parse_bound_expression_fragment_with_shadow_fault(
+            snapshot,
+            document,
+            transaction::ShadowFault::MissingAttachment,
+        )
     }
 }
 

@@ -1018,6 +1018,141 @@ fn private_bound_reparse_replaces_diagnostics_without_mutating_the_old_snapshot(
 }
 
 #[test]
+fn private_bound_expression_fragment_owns_one_attached_expression_lineage() {
+    let name = SourceName::path("bound-expression-fragment.arcw");
+    let source = "  left(1) + right  ";
+    let snapshot = SourceSnapshotId::initial(name.clone());
+    let document = source_document(&name, source);
+    let identity = document.identity().clone();
+    let mut database = SyntaxDatabase::default();
+    let fragment = database
+        .parse_bound_expression_fragment(&snapshot, &document)
+        .expect("standalone expression attaches to a private lineage");
+    let expression_start = source.find("left").unwrap();
+    let expression_end = source.rfind("right").unwrap() + "right".len();
+
+    assert_eq!(fragment.snapshot_id().source(), &snapshot);
+    assert_eq!(fragment.document().identity(), &identity);
+    assert_eq!(fragment.document().text(), source);
+    assert_eq!(fragment.status(), super::ParseStatus::Clean);
+    assert!(fragment.diagnostics().is_empty());
+    assert_eq!(fragment.root().kind(), GrammarKind::BinaryExpression);
+    assert_eq!(
+        fragment.root().role(),
+        crate::grammar::kinds::SyntaxRole::Element(0)
+    );
+    assert_eq!(
+        fragment.root().range(),
+        SourceRange::new(expression_start, expression_end)
+    );
+    assert_eq!(
+        fragment.root().parent().expect("source-file root").kind(),
+        GrammarKind::SourceFile
+    );
+    assert_eq!(
+        fragment
+            .syntax()
+            .root_handle()
+            .child(crate::grammar::kinds::SyntaxRole::Element(0))
+            .expect("attached expression child"),
+        fragment.root().clone()
+    );
+    assert_eq!(fragment.syntax().root_handle().rowan().to_string(), source);
+
+    let second = database
+        .parse_bound_expression_fragment(&snapshot, &source_document(&name, source))
+        .expect("each explicit fragment attachment owns a fresh lineage");
+    assert_ne!(
+        fragment.snapshot_id().lineage(),
+        second.snapshot_id().lineage()
+    );
+    assert_ne!(fragment.root().id(), second.root().id());
+}
+
+#[test]
+fn private_empty_expression_fragment_is_recovered_without_a_detached_value() {
+    let name = SourceName::path("bound-empty-expression-fragment.arcw");
+    let source = "   ";
+    let mut database = SyntaxDatabase::default();
+    let fragment = database
+        .parse_bound_expression_fragment(
+            &SourceSnapshotId::initial(name.clone()),
+            &source_document(&name, source),
+        )
+        .expect("missing expression remains attached and queryable");
+
+    assert_eq!(fragment.status(), super::ParseStatus::Recovered);
+    assert!(fragment.diagnostics().is_empty());
+    assert_eq!(fragment.root().kind(), GrammarKind::MissingExpression);
+    assert_eq!(
+        fragment.root().range(),
+        SourceRange::new(source.len(), source.len())
+    );
+}
+
+#[test]
+fn private_recovered_expression_fragment_binds_grammar_diagnostics_to_its_revision() {
+    let name = SourceName::path("bound-recovered-expression-fragment.arcw");
+    let source = "call(";
+    let snapshot = SourceSnapshotId::initial(name.clone());
+    let document = source_document(&name, source);
+    let mut database = SyntaxDatabase::default();
+    let fragment = database
+        .parse_bound_expression_fragment(&snapshot, &document)
+        .expect("recovered expression fragment remains attached");
+    let missing_close = fragment
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.expression.missing_call_close")
+        .unwrap_or_else(|| {
+            panic!(
+                "missing expression-fragment diagnostic: {:?}",
+                fragment.diagnostics()
+            )
+        });
+
+    assert_eq!(fragment.status(), super::ParseStatus::Recovered);
+    assert_eq!(fragment.root().kind(), GrammarKind::CallExpression);
+    assert_eq!(missing_close.primary().source(), document.identity());
+    assert_eq!(
+        missing_close.primary().range(),
+        SourceRange::new(source.len(), source.len())
+    );
+    assert!(missing_close.related().is_none());
+}
+
+#[test]
+fn private_fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
+    let name = SourceName::path("bound-fragment-attachment-failure.arcw");
+    let source = "value + 1";
+    let snapshot = SourceSnapshotId::initial(name.clone());
+    let mut database = SyntaxDatabase::default();
+    let lineage_before = database.shadow.next_lineage_for_test();
+    let wrong_name = SourceName::path("wrong-bound-fragment.arcw");
+    let mismatch =
+        database.parse_bound_expression_fragment(&snapshot, &source_document(&wrong_name, source));
+    assert!(matches!(mismatch, Err(ParseFailure::SourceMismatch)));
+    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+
+    let failed = database.parse_bound_expression_fragment_with_attachment_failure(
+        &snapshot,
+        &source_document(&name, source),
+    );
+
+    assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
+    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+
+    let accepted = database
+        .parse_bound_expression_fragment(&snapshot, &source_document(&name, source))
+        .expect("valid retry uses the unconsumed fragment lineage");
+    let mut control = SyntaxDatabase::default();
+    let control = control
+        .parse_bound_expression_fragment(&snapshot, &source_document(&name, source))
+        .expect("control fragment");
+    assert_eq!(accepted.root().id().slot(), control.root().id().slot());
+}
+
+#[test]
 fn independent_databases_cannot_resolve_equal_private_raw_slots() {
     let name = SourceName::path("same.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());

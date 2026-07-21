@@ -12,6 +12,7 @@ use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar};
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
+use super::expression::emit_expression;
 use super::item::{classify_top_level_item, is_declaration_item_kind};
 use super::lexer::{DocumentLexer, LexToken};
 
@@ -177,6 +178,36 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 pub(crate) fn parse_shadow_document(
     document: &SourceDocument,
 ) -> Result<GrammarBuild, GrammarBuildError> {
+    build_shadow_root(document, |tokens, events, budget| {
+        start_event(events, budget, SyntaxKind::ItemList, SyntaxRole::Element(0));
+        emit_logical_lines(document.text(), tokens, events, budget)?;
+        finish_event(events, budget);
+        Ok(())
+    })
+}
+
+/// Parses one standalone expression through the same lexer, event budget, and
+/// lossless root transaction as a complete source document.
+pub(crate) fn parse_shadow_expression_fragment(
+    document: &SourceDocument,
+) -> Result<GrammarBuild, GrammarBuildError> {
+    build_shadow_root(document, |tokens, events, budget| {
+        let mut parser = ShadowDocumentParser::new(document.text(), tokens, events, budget);
+        parser.bump_trivia();
+        emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
+        while parser.bump().is_some() {}
+        Ok(())
+    })
+}
+
+fn build_shadow_root(
+    document: &SourceDocument,
+    emit_body: impl FnOnce(
+        &[LexToken],
+        &mut Vec<SyntaxEvent>,
+        &mut GrammarBudget,
+    ) -> Result<(), GrammarBuildError>,
+) -> Result<GrammarBuild, GrammarBuildError> {
     let tokens = DocumentLexer::new(document.text()).lex();
     let mut events = Vec::with_capacity(tokens.len() + 8);
     let mut budget = GrammarBudget::default();
@@ -186,13 +217,7 @@ pub(crate) fn parse_shadow_document(
         SyntaxKind::SourceFile,
         SyntaxRole::Root,
     );
-    start_event(
-        &mut events,
-        &mut budget,
-        SyntaxKind::ItemList,
-        SyntaxRole::Element(0),
-    );
-    emit_logical_lines(document.text(), &tokens, &mut events, &mut budget)?;
+    emit_body(&tokens, &mut events, &mut budget)?;
     push_event(
         &mut events,
         &mut budget,
@@ -201,7 +226,6 @@ pub(crate) fn parse_shadow_document(
             SourceRange::new(document.text().len(), document.text().len()),
         ),
     );
-    finish_event(&mut events, &mut budget);
     finish_event(&mut events, &mut budget);
     budget_failure(&budget)?;
     build_grammar(document, &events)

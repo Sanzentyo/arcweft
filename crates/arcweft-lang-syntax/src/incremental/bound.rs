@@ -18,15 +18,28 @@ use std::sync::Arc;
 
 use arcweft_source::{SourceDocument, SourceSpan, SourceSpanError};
 
-use crate::attachment::{SyntaxSnapshotData, SyntaxSnapshotId};
+use crate::attachment::{SyntaxNodeHandle, SyntaxSnapshotData, SyntaxSnapshotId};
 use crate::grammar::build::GrammarBuild;
 use crate::grammar::event::PendingSyntaxDiagnostic;
+use crate::grammar::kinds::SyntaxRole;
 
-use super::ParseStatus;
+use super::{ParseFailure, ParseStatus};
 
 /// One immutable, source-bound result of the accepted private grammar.
 #[derive(Clone, Debug)]
 pub(crate) struct BoundParsedSource {
+    product: BoundSyntaxProduct,
+}
+
+/// Standalone expression attached to its own database-owned syntax lineage.
+#[derive(Clone, Debug)]
+pub(crate) struct BoundExpressionFragment {
+    product: BoundSyntaxProduct,
+    root: SyntaxNodeHandle,
+}
+
+#[derive(Clone, Debug)]
+struct BoundSyntaxProduct {
     syntax: Arc<SyntaxSnapshotData>,
     diagnostics: Arc<[SyntaxDiagnostic]>,
     status: ParseStatus,
@@ -48,6 +61,82 @@ impl BoundParsedSource {
         syntax: Arc<SyntaxSnapshotData>,
         build: &GrammarBuild,
     ) -> Result<Self, SourceSpanError> {
+        Ok(Self {
+            product: BoundSyntaxProduct::try_new(syntax, build)?,
+        })
+    }
+
+    /// Qualified grammar snapshot committed by this parse transaction.
+    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+        self.product.snapshot_id()
+    }
+
+    /// Exact immutable source document owned by the grammar snapshot.
+    pub(crate) fn document(&self) -> &Arc<SourceDocument> {
+        self.product.document()
+    }
+
+    /// Attached grammar and syntax identity inventory.
+    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
+        self.product.syntax()
+    }
+
+    /// Recoverable diagnostics emitted by this exact grammar transaction.
+    pub(crate) fn diagnostics(&self) -> &[SyntaxDiagnostic] {
+        self.product.diagnostics()
+    }
+
+    /// Whether the attached tree contains recovery evidence.
+    pub(crate) const fn status(&self) -> ParseStatus {
+        self.product.status()
+    }
+}
+
+impl BoundExpressionFragment {
+    pub(crate) fn try_new(
+        syntax: Arc<SyntaxSnapshotData>,
+        build: &GrammarBuild,
+    ) -> Result<Self, ParseFailure> {
+        let root = syntax
+            .root_handle()
+            .child(SyntaxRole::Element(0))
+            .filter(|node| node.kind().is_expression())
+            .ok_or(ParseFailure::InternalInvariant)?;
+        let product = BoundSyntaxProduct::try_new(syntax, build)
+            .map_err(|_| ParseFailure::InternalInvariant)?;
+        Ok(Self { product, root })
+    }
+
+    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+        self.product.snapshot_id()
+    }
+
+    pub(crate) fn document(&self) -> &Arc<SourceDocument> {
+        self.product.document()
+    }
+
+    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
+        self.product.syntax()
+    }
+
+    pub(crate) fn root(&self) -> &SyntaxNodeHandle {
+        &self.root
+    }
+
+    pub(crate) fn diagnostics(&self) -> &[SyntaxDiagnostic] {
+        self.product.diagnostics()
+    }
+
+    pub(crate) const fn status(&self) -> ParseStatus {
+        self.product.status()
+    }
+}
+
+impl BoundSyntaxProduct {
+    fn try_new(
+        syntax: Arc<SyntaxSnapshotData>,
+        build: &GrammarBuild,
+    ) -> Result<Self, SourceSpanError> {
         let diagnostics = build
             .diagnostics()
             .iter()
@@ -64,28 +153,23 @@ impl BoundParsedSource {
         })
     }
 
-    /// Qualified grammar snapshot committed by this parse transaction.
-    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+    fn snapshot_id(&self) -> &SyntaxSnapshotId {
         self.syntax.snapshot_id()
     }
 
-    /// Exact immutable source document owned by the grammar snapshot.
-    pub(crate) fn document(&self) -> &Arc<SourceDocument> {
+    fn document(&self) -> &Arc<SourceDocument> {
         self.syntax.document()
     }
 
-    /// Attached grammar and syntax identity inventory.
-    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
+    const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
         &self.syntax
     }
 
-    /// Recoverable diagnostics emitted by this exact grammar transaction.
-    pub(crate) fn diagnostics(&self) -> &[SyntaxDiagnostic] {
+    fn diagnostics(&self) -> &[SyntaxDiagnostic] {
         &self.diagnostics
     }
 
-    /// Whether the attached tree contains recovery evidence.
-    pub(crate) const fn status(&self) -> ParseStatus {
+    const fn status(&self) -> ParseStatus {
         self.status
     }
 }
