@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "CSV codec adapter for Arcweft row data."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 base64.workspace = true
 csv.workspace = true
 csv-core.workspace = true

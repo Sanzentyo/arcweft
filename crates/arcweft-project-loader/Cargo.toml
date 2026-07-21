@@ -8,18 +8,18 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
-arcweft-adapter-metadata = { path = "../arcweft-adapter-metadata" }
-arcweft-bundle = { path = "../arcweft-bundle" }
-arcweft-character = { path = "../arcweft-character" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-launch = { path = "../arcweft-launch" }
-arcweft-manifest-model = { path = "../arcweft-manifest-model" }
-arcweft-project = { path = "../arcweft-project" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-adapter-context = { workspace = true, features = ["sema"] }
+arcweft-adapter-metadata = { workspace = true }
+arcweft-bundle = { workspace = true, default-features = true }
+arcweft-character = { workspace = true }
+arcweft-core = { workspace = true }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
+arcweft-launch = { workspace = true }
+arcweft-manifest-model = { workspace = true }
+arcweft-project = { workspace = true }
+arcweft-source = { workspace = true }
 blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -27,7 +27,7 @@ thiserror.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
-arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-render-text = { workspace = true }
 ed25519-dalek.workspace = true
 trybuild.workspace = true
 

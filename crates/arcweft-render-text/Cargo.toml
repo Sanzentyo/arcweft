@@ -7,10 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-core = { path = "../arcweft-core" }
-arcweft-dialogue = { path = "../arcweft-dialogue" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-core = { workspace = true }
+arcweft-dialogue = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-view = { workspace = true }
 
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

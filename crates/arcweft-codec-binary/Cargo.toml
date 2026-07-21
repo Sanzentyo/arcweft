@@ -11,9 +11,9 @@ default = []
 bincode-interop = ["dep:bincode", "dep:arcweft-codec-json", "dep:serde_json"]
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 bincode = { version = "=2.0.1", features = ["serde"], optional = true }
-arcweft-codec-json = { path = "../arcweft-codec-json", optional = true }
+arcweft-codec-json = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
 [lints]

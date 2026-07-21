@@ -7,8 +7,8 @@ version = "0.1.0"
 description = "Optional serde bridge for external Rust ecosystem interop."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
-arcweft-codec-json = { path = "../arcweft-codec-json" }
+arcweft-data = { workspace = true }
+arcweft-codec-json = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 serde_bytes.workspace = true

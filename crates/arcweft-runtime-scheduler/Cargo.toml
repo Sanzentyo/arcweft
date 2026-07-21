@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-core = { path = "../arcweft-core" }
+arcweft-core = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

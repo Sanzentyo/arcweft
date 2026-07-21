@@ -1,59 +1,63 @@
 {
-  "fixture": "normal-single",
+  "byte_stability": {
+    "awfb_bytes_equal": true,
+    "content_root_equal": true,
+    "program_awbc_bytes_equal": true
+  },
   "command_shape": "arcw build --manifest-path <FIXTURE>/arcw.toml --target-dir <TEMP>/target --json",
   "first_build": {
-    "report": {
-      "status": "ok",
-      "package": "seq04_8_4_normal_build_cache",
-      "selected_profile": null,
-      "modules": [
-        "crate"
-      ],
-      "compile_units": [
-        {
-          "id": 0,
-          "modules": [
-            "crate"
-          ],
-          "cache": "miss"
-        }
-      ]
-    },
     "artifacts": {
       "awfb": true,
-      "project_json": true,
       "plan": true,
+      "project_json": true,
       "snapshot_json": true
     },
     "cache_records": {
       "bytecode_unit": {
-        "query": "bytecode_unit",
         "artifact_kind": "bytecode_unit",
-        "logical_item": "bytecode-unit:crate",
-        "status": "rebuilt",
         "key": "<DIGEST>",
+        "logical_item": "bytecode-unit:crate",
         "object_digest": "<DIGEST>",
+        "query": "bytecode_unit",
         "reuse_evidence": {
-          "kind": "actual_reusable",
-          "producer_family": "full_build",
+          "identity": "<DIGEST>",
           "identity_owner": "full_build_bytecode_unit_artifact",
-          "identity": "<DIGEST>"
-        }
+          "kind": "actual_reusable",
+          "producer_family": "full_build"
+        },
+        "status": "rebuilt"
       },
       "link_plan": {
-        "query": "link_plan",
         "artifact_kind": "link_plan",
-        "logical_item": "link-plan:crate",
-        "status": "rebuilt",
         "key": "<DIGEST>",
+        "logical_item": "link-plan:crate",
         "object_digest": "<DIGEST>",
+        "query": "link_plan",
         "reuse_evidence": {
-          "kind": "actual_reusable",
-          "producer_family": "full_build",
+          "identity": "<DIGEST>",
           "identity_owner": "full_build_link_plan_artifact",
-          "identity": "<DIGEST>"
-        }
+          "kind": "actual_reusable",
+          "producer_family": "full_build"
+        },
+        "status": "rebuilt"
       }
+    },
+    "report": {
+      "compile_units": [
+        {
+          "cache": "miss",
+          "id": 0,
+          "modules": [
+            "crate"
+          ]
+        }
+      ],
+      "modules": [
+        "crate"
+      ],
+      "package": "org.arcweft.fixtures.seq04-8-4-normal-build-cache",
+      "selected_profile": null,
+      "status": "ok"
     },
     "snapshot_queries": {
       "bytecode_unit": {
@@ -70,59 +74,60 @@
       }
     }
   },
+  "fixture": "normal-single",
   "second_build": {
-    "report": {
-      "status": "ok",
-      "package": "seq04_8_4_normal_build_cache",
-      "selected_profile": null,
-      "modules": [
-        "crate"
-      ],
-      "compile_units": [
-        {
-          "id": 0,
-          "modules": [
-            "crate"
-          ],
-          "cache": "miss"
-        }
-      ]
-    },
     "artifacts": {
       "awfb": true,
-      "project_json": true,
       "plan": true,
+      "project_json": true,
       "snapshot_json": true
     },
     "cache_records": {
       "bytecode_unit": {
-        "query": "bytecode_unit",
         "artifact_kind": "bytecode_unit",
-        "logical_item": "bytecode-unit:crate",
-        "status": "hit",
         "key": "<DIGEST>",
+        "logical_item": "bytecode-unit:crate",
         "object_digest": "<DIGEST>",
+        "query": "bytecode_unit",
         "reuse_evidence": {
-          "kind": "actual_reusable",
-          "producer_family": "full_build",
+          "identity": "<DIGEST>",
           "identity_owner": "full_build_bytecode_unit_artifact",
-          "identity": "<DIGEST>"
-        }
+          "kind": "actual_reusable",
+          "producer_family": "full_build"
+        },
+        "status": "hit"
       },
       "link_plan": {
-        "query": "link_plan",
         "artifact_kind": "link_plan",
-        "logical_item": "link-plan:crate",
-        "status": "hit",
         "key": "<DIGEST>",
+        "logical_item": "link-plan:crate",
         "object_digest": "<DIGEST>",
+        "query": "link_plan",
         "reuse_evidence": {
-          "kind": "actual_reusable",
-          "producer_family": "full_build",
+          "identity": "<DIGEST>",
           "identity_owner": "full_build_link_plan_artifact",
-          "identity": "<DIGEST>"
-        }
+          "kind": "actual_reusable",
+          "producer_family": "full_build"
+        },
+        "status": "hit"
       }
+    },
+    "report": {
+      "compile_units": [
+        {
+          "cache": "miss",
+          "id": 0,
+          "modules": [
+            "crate"
+          ]
+        }
+      ],
+      "modules": [
+        "crate"
+      ],
+      "package": "org.arcweft.fixtures.seq04-8-4-normal-build-cache",
+      "selected_profile": null,
+      "status": "ok"
     },
     "snapshot_queries": {
       "bytecode_unit": {
@@ -132,10 +137,5 @@
         "kind": "hit"
       }
     }
-  },
-  "byte_stability": {
-    "content_root_equal": true,
-    "awfb_bytes_equal": true,
-    "program_awbc_bytes_equal": true
   }
 }

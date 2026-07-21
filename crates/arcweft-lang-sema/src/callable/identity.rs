@@ -838,6 +838,7 @@ impl FxCallableSignatureId {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AgentIntrinsicSignatureId {
+    Observe,
     Expect,
     Deny,
     Checkpoint,
@@ -874,6 +875,7 @@ pub enum AgentIntrinsicSignatureId {
 impl AgentIntrinsicSignatureId {
     pub fn resolve(path: &CallablePath) -> Option<Self> {
         let entries = [
+            (&["observe"][..], Self::Observe),
             (&["expect"][..], Self::Expect),
             (&["deny"][..], Self::Deny),
             (&["checkpoint"][..], Self::Checkpoint),
@@ -1238,14 +1240,6 @@ impl CapacityMethodId {
             && matches!((method.as_str(), arity), ("voice_handle", 0))
         {
             TypeKind::Named("VoiceHandle".to_owned())
-        } else if matches!(receiver, TypeKind::Named(name) if name == "StageApi")
-            && matches!((method.as_str(), arity), ("acquire", 1))
-        {
-            TypeKind::Named("StageActorHandle".to_owned())
-        } else if matches!(receiver, TypeKind::Named(name) if name == "StageActorHandle")
-            && matches!((method.as_str(), arity), ("look", 1 | 2))
-        {
-            TypeKind::Named("CueHandle".to_owned())
         } else if let TypeKind::Vec(item) = receiver
             && matches!((method.as_str(), arity), ("pop" | "pop_front", 0))
         {
@@ -1268,6 +1262,28 @@ impl CapacityMethodId {
         Self::try_new(receiver.clone(), method.clone(), arity)
             .ok()
             .map(|id| (id, result))
+    }
+}
+
+/// Closed authored stage methods with stable argument names and types.
+///
+/// Stage operations are not collection-capacity helpers. Their dedicated
+/// identity keeps `scope` and `crossfade` visible to shared resolution.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StageMethodId {
+    Acquire,
+    Look,
+}
+
+impl StageMethodId {
+    pub fn resolve(receiver: &TypeKind, method: &CallableName, arity: usize) -> Option<Self> {
+        match (receiver, method.as_str(), arity) {
+            (TypeKind::Named(name), "acquire", 1) if name == "StageApi" => Some(Self::Acquire),
+            (TypeKind::Named(name), "look", 1 | 2) if name == "StageActorHandle" => {
+                Some(Self::Look)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -1476,6 +1492,7 @@ pub enum CallableCandidateId {
     TraitMethod(TraitCallableId),
     DataLast(DataLastCallableId),
     CapacityMethod(CapacityMethodId),
+    StageMethod(StageMethodId),
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
     Speaker(SpeakerCallableId),
@@ -1502,6 +1519,7 @@ pub enum CallableFamily {
     TraitMethod,
     DataLast,
     CapacityMethod,
+    StageMethod,
     Drop,
     Promotion,
     Speaker,
@@ -1509,7 +1527,7 @@ pub enum CallableFamily {
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::Fx,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1529,6 +1547,7 @@ impl CallableFamily {
         Self::TraitMethod,
         Self::DataLast,
         Self::CapacityMethod,
+        Self::StageMethod,
         Self::Drop,
         Self::Promotion,
         Self::Speaker,
@@ -1558,6 +1577,7 @@ impl CallableCandidateId {
             Self::TraitMethod(_) => CallableFamily::TraitMethod,
             Self::DataLast(_) => CallableFamily::DataLast,
             Self::CapacityMethod(_) => CallableFamily::CapacityMethod,
+            Self::StageMethod(_) => CallableFamily::StageMethod,
             Self::Drop(_) => CallableFamily::Drop,
             Self::Promotion(_) => CallableFamily::Promotion,
             Self::Speaker(_) => CallableFamily::Speaker,
@@ -1580,6 +1600,7 @@ pub enum LanguageCallableFamily {
     IntegerMethod,
     DomainMethod,
     CapacityMethod,
+    StageMethod,
     DataLast,
     Drop,
     Promote,

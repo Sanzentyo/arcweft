@@ -7,16 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-core = { path = "../arcweft-core" }
-arcweft-compiler = { path = "../arcweft-compiler" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-core = { workspace = true }
+arcweft-compiler = { workspace = true }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
+arcweft-source = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-lang-syntax = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

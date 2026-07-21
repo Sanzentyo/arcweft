@@ -1,11 +1,18 @@
 use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
 use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source, parse_source};
 use arcweft_lang_syntax::source::ParsedSource;
+use arcweft_source::SourceDocument;
+use std::sync::Arc;
 
 /// Parses source text into the shared syntax parser output.
 pub fn parse_source_text(source: impl Into<String>) -> ParsedSource {
     parse_source(source)
+}
+
+/// Parses an accepted source document without replacing its revision-bound identity.
+pub(crate) fn parse_source_document(document: Arc<SourceDocument>) -> ParsedSource {
+    parse_document_with_source(document, ParseOptions::default())
 }
 
 /// Runs syntax-level source lints on a typed syntax tree.

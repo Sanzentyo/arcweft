@@ -7,34 +7,34 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-glyphon = { path = "../arcweft-glyphon" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-image = { path = "../arcweft-image" }
+arcweft-bundle = { workspace = true, default-features = false }
+arcweft-core = { workspace = true }
+arcweft-glyphon = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-image = { workspace = true }
 arcweft-layout.workspace = true
-arcweft-player-scene = { path = "../arcweft-player-scene" }
-arcweft-player-text-input = { path = "../arcweft-player-text-input" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
-arcweft-text-layout = { path = "../arcweft-text-layout" }
-num-traits = "0.2.19"
+arcweft-player-scene = { workspace = true }
+arcweft-player-text-input = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-render-wgpu = { workspace = true }
+arcweft-runtime-driver = { workspace = true }
+arcweft-text-layout = { workspace = true }
+num-traits.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-source = { path = "../arcweft-source" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
+arcweft-runtime-plan = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-view = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-arcweft-render-web = { path = "../arcweft-render-web" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-render-web = { workspace = true }
+arcweft-view = { workspace = true }
 futures-channel.workspace = true
 js-sys.workspace = true
 wasm-bindgen.workspace = true

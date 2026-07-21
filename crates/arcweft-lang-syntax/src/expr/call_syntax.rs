@@ -441,15 +441,17 @@ impl ArgumentListSyntax {
     }
 
     /// Zero-based syntactic argument slot at a cursor inside this list.
+    ///
+    /// A comma belongs to the following slot from its start boundary onward.
     pub fn active_argument_slot(&self, cursor: usize) -> Option<usize> {
         self.contains_signature_cursor(cursor).then(|| {
             self.separators
                 .iter()
-                .filter(|separator| separator.end() <= cursor)
+                .filter(|separator| separator.start() <= cursor)
                 .count()
                 + usize::from(
                     self.trailing_comma
-                        .is_some_and(|comma| comma.end() <= cursor),
+                        .is_some_and(|comma| comma.start() <= cursor),
                 )
         })
     }

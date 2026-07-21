@@ -517,6 +517,32 @@ fn same_rank_callable_collision_rejects_candidate_world_before_publication() {
 }
 
 #[test]
+fn project_world_package_mismatch_rejects_registration_as_a_corrupt_catalog() {
+    let (root, project, _) = root_project("callable-package-mismatch");
+    let actual = CallablePackageId::try_new("registration-tests-other-package")
+        .expect("different callable package");
+    assert_ne!(project.package(), &actual);
+    let world = ProjectSymbolWorldId::try_new(
+        actual,
+        root.identity().id().clone(),
+        "callable-package-mismatch",
+    )
+    .expect("mismatched symbol world");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, vec![Arc::clone(&root)], Vec::new(), Vec::new())
+            .expect("registration facts retain their own typed world");
+
+    let report = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect_err("registration cannot combine project and symbol-world packages");
+    assert!(report.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic.kind(),
+        CharacterRegistrationDiagnosticKind::CallableCatalog {
+            code: crate::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+        }
+    )));
+}
+
+#[test]
 fn same_facts_same_inventory() {
     let (root, project, world) = root_project("same-facts-inventory");
     let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));

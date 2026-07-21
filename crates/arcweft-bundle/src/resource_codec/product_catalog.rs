@@ -23,12 +23,15 @@ use super::table::{EnumRegistry, EnumSymbol, PublicIdTable, StringTable};
 use super::wire::ProductResourceEnvelope;
 
 const FIELD_CATALOG_TRANSCRIPT: FieldId = FieldId(1);
+const MAX_ASSET_CATALOG_VIRTUAL_FILE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PRODUCT_CATALOG_TRANSCRIPT_BYTES: usize = 64 * 1024 * 1024;
 
 /// Decode limits for product catalog resource families.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProductCatalogBudget {
     pub common: SectionCodecBudget,
     pub virtual_files: usize,
+    pub virtual_file_bytes: usize,
     pub image_assets: usize,
     pub image_objects: usize,
     pub transcript_bytes: usize,
@@ -76,9 +79,10 @@ impl Default for ProductCatalogBudget {
                 ..SectionCodecBudget::default()
             },
             virtual_files: 262_144,
+            virtual_file_bytes: MAX_ASSET_CATALOG_VIRTUAL_FILE_BYTES,
             image_assets: 262_144,
             image_objects: 262_144,
-            transcript_bytes: 16 * 1024 * 1024,
+            transcript_bytes: MAX_PRODUCT_CATALOG_TRANSCRIPT_BYTES,
         }
     }
 }
@@ -163,6 +167,16 @@ impl AssetCatalogSection {
             self.virtual_files.len(),
             budget.virtual_files,
             "virtual_files",
+        )?;
+        let virtual_file_bytes = self.virtual_files.iter().try_fold(0_usize, |total, file| {
+            total
+                .checked_add(file.bytes.len())
+                .ok_or(SectionCodecError::LengthOverflow)
+        })?;
+        check_budget(
+            virtual_file_bytes,
+            budget.virtual_file_bytes,
+            "virtual_file_bytes",
         )?;
         check_budget(self.image_assets.len(), budget.image_assets, "image_assets")?;
         reject_duplicates(

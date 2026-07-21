@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-text-layout = { path = "../arcweft-text-layout" }
+arcweft-presentation = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-text-layout = { workspace = true }
 
 blake3.workspace = true
 glyphon.workspace = true

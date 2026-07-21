@@ -74,8 +74,6 @@ represented exactly.
   sources.
 - Lowered Arc Fx definitions once from linked HIR and retained the typed
   inventory in the compiler candidate.
-- Required standalone lowerer inputs to use HIR bound to the exact supplied
-  `SourceDocumentIdentity`; a same-length detached document is rejected.
 - Retained exact declaration spans for authored View and Style identities.
 - Added generated source ownership for `std.view.dialogue` and retained the
   existing generated standard Style ownership in the complete product source
@@ -103,27 +101,38 @@ represented exactly.
   serializable bundle clones canonical sections; compiler/runtime/tooling Arc
   identity remains a later transaction boundary and is not represented as
   pointer identity in bundle bytes.
+- Migrated compiler and CLI View-product tests through `compile_project`, then
+  deleted the test-only `ViewProjectLowerer::for_source` path and its CLI
+  projection. The lowerer and its implementation errors are now crate-owned
+  details rather than a second public compilation surface.
+- Project compilation now parses the exact registration-accepted
+  `SourceDocument`. It no longer parses detached text under a synthetic
+  `memory:` identity and tries to attach the accepted document only after
+  typed View-part spans have been created.
+- Authored View failures now cross the nested lowering boundary as
+  `AuthoredViewLowerFailure { ViewId, ViewSidecarError }`. The project lowerer
+  resolves that nominal owner against the accepted View-source inventory and
+  emits one structured primary label on the exact authored View declaration.
+  Schema/default failures and nested literal-text, boolean, layout, handler,
+  and value-program failures no longer lose their source owner or infer it
+  from error payload text. Product-wide/generated failures remain on the
+  distinct non-authored error path.
 
 ## Explicit remaining work
 
-1. Integrate the AW-AH-009.3 callable-catalog cut. Project compilation currently
-   reaches that independent registration failure before all transaction tests
-   can exercise Image/View admission. After integration, remove the temporary
-   ignore from the typed Image-admission discard test and run the full project
-   compilation suite.
-2. Once AW-AH-009.3 supplies the production project-compilation fixture path,
-   migrate the remaining compiler and CLI tests off the test-only
-   `ViewProjectLowerer::for_source` entry point. Then remove that entry point,
-   narrow the lowerer/error visibility to the owning crate, and delete the
-   corresponding `#[cfg(test)]` CLI projection. There is no production caller
-   or second production View authority left in this cut.
-3. Implement `CheckedDialogueProfile::try_admit` and the later runtime-plan,
-   LSP, reload/save, old-defaults deletion, and profile-product integration
-   steps from the corrected package.
+- Implement `CheckedDialogueProfile::try_admit` and the later runtime-plan,
+  LSP, reload/save, old-defaults deletion, and profile-product integration
+  steps from the corrected package.
+
+The AW-AH-009.3 package/world registration mismatch is no longer a View-cut
+blocker. The accepted-project tests now run through production
+`compile_project`; there is no ignored typed Image-admission transaction test
+or test-only standalone View lowerer left to integrate.
 
 ## Verification
 
-Completed while developing this cut:
+The following focused results established the accepted-product baseline and
+were followed by a settled integrated workspace run:
 
 ```text
 cargo test -p arcweft-lang-syntax --test view_callable
@@ -147,7 +156,8 @@ cargo test -p arcweft-cli --test responsive_stage_placement \
 
 cargo test -p arcweft-cli --lib app::bundle::tests
   PASS — 47 tests; compiler-owned View/Image/Fx products, runtime mount
-  separation, and direct-source package identity are exercised
+  separation, direct-source package identity, and exported-part source
+  provenance are exercised
 
 cargo check -p arcweft-cli --all-targets
 cargo check --workspace --all-targets --all-features
@@ -158,12 +168,6 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 cargo build -p arcweft-cli --bin arcw
   PASS
-
-CARGO_BUILD_JOBS=2 just test-workspace
-  BLOCKED — compilation and all preceding suites completed without the earlier
-  Windows paging-file failure; arcweft-compiler then ran 98 tests, passed 85,
-  and failed 13. Every failure resolves to the already isolated
-  aw.callable.catalog.registration / CorruptCallableCatalog blocker.
 
 just reactive-view-style-sample
   PASS — compiler-owned `.arcw` View/Style authoring produced the AWFB with no
@@ -185,23 +189,40 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . --write \
   `image.glass_bg` missing-asset failure did not recur
 ```
 
-`cargo fmt --all -- --check` and `git diff --check` also pass at this cut. The
-only new changed-file size warning is
-`crates/arcweft-compiler/src/view/lowering.rs` at 1,229 physical LOC. It remains
-the orchestration layer over already separated `content`, `modifiers`,
-`scroll`, and `text_controls` responsibility modules; it introduces no new
-cross-layer dependency or embedded test module. It should be split again when
-the test-only standalone lowerer is removed after AW-AH-009.3 rather than by
-creating a transitional wrapper now. The dependency direction remains compiler
-toward renderer-independent presentation/resource types, never toward runtime
-or tooling.
+The follow-up that removed the standalone test path, made project parsing
+consume the accepted `SourceDocument`, and retained typed authored-View owners
+additionally passed `cargo check -p arcweft-compiler --tests` and
+`cargo test -p arcweft-compiler --test view_product` (6/6), including exact
+source identity, authored declaration range, stable code, and primary-label
+evidence for nested lowering failures. The CLI bundle test group remains
+47/47 from the preceding production-path migration. The settled integration
+then ran the complete gate below:
 
-The full `arcweft-compiler` unit suite currently exposes an independent
-`aw.callable.catalog.registration` / `CorruptCallableCatalog` failure in
-project-compilation tests. This failure is not hidden or counted as
-View-product acceptance. It belongs to the active AW-AH-009.3 callable-catalog
-completion and must pass after that cut is integrated before the overall goal
-can complete.
+```text
+cargo fmt --all -- --check
+git diff --check
+cargo test -p arcweft-compiler
+cargo test -p arcweft-cli --lib app::bundle::tests
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-workspace
+just test-tier2
+cargo +nightly -Zscript tools/structure-audit.rs --root . --write \
+  docs/implementation/structure-audits/lang-01-5-1-1-view-product-compiler-move-2026-07-21
+```
+
+All commands passed. `just test-workspace` completed on the final shared
+checkout. `just test-tier2` passed MCP stdio 22/22 plus Agent observe, native
+capture, auxiliary capture, and visual-golden groups. The regenerated audit
+reported 3,492 files, 1,818 Rust files, 844,870 physical Rust LOC, 94 manifests,
+and 0 errors / 137 warnings. The final all-feature workspace check and Clippy
+with warnings denied, format check, and diff check also passed.
+
+The older `CorruptCallableCatalog` registration blocker and the concurrent CLI
+call-site mismatch are not current View-product remaining work and are not
+carried forward as compatibility conditions. The dependency direction remains
+compiler toward renderer-independent presentation/resource types, never toward
+runtime or tooling.
 
 ## Prohibited tactics retained
 

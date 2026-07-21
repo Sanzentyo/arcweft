@@ -85,15 +85,46 @@ use super::layout::{
 use super::schema::{ViewValueCompileError, ViewValueProgramCompiler};
 
 #[derive(Clone, Debug, Default)]
-pub struct ViewBundleSidecars {
+pub(super) struct ViewBundleSidecars {
     pub(super) program: Option<ViewProgramResource>,
     pub(super) text: Option<ViewTextResource>,
     pub(super) input: Option<ViewInputResource>,
     pub(super) image_objects: Vec<BundleImageObject>,
 }
 
+/// One failure produced while lowering a specific authored View definition.
+///
+/// The owner is attached once at the per-definition transaction boundary so
+/// nested helpers can remain concerned only with their local typed contract.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum ViewSidecarError {
+#[error("View `{view}` lowering failed: {error}")]
+pub(super) struct AuthoredViewLowerFailure {
+    view: ViewId,
+    #[source]
+    error: ViewSidecarError,
+}
+
+impl AuthoredViewLowerFailure {
+    fn new(view: ViewId, error: ViewSidecarError) -> Self {
+        Self { view, error }
+    }
+
+    pub(super) fn into_parts(self) -> (ViewId, ViewSidecarError) {
+        (self.view, self.error)
+    }
+}
+
+/// Failure while assembling authored View sidecars.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub(super) enum ViewBundleLowerError {
+    #[error(transparent)]
+    Authored(#[from] AuthoredViewLowerFailure),
+    #[error(transparent)]
+    Product(#[from] ViewSidecarError),
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub(crate) enum ViewSidecarError {
     #[error(
         "error[AWF0618 view::scroll_axis_both_unsupported]: `{element}` cannot use `{value}` as a Scroll axis in this cut; use `.vertical` or `.horizontal` and keep two-axis scrolling behind a future typed contract"
     )]
@@ -168,10 +199,18 @@ pub enum ViewSidecarError {
 }
 
 impl ViewSidecarError {
-    pub(super) fn authored_view(&self) -> Option<&str> {
+    pub(super) const fn diagnostic_code(&self) -> &'static str {
         match self {
-            Self::UnknownPolicySymbol { view, .. } => Some(view),
-            _ => None,
+            Self::ValueProgram(_) => "compiler.view.value_program",
+            Self::RecoveredViewSyntax { .. } => "compiler.view.recovered_syntax",
+            Self::UnsupportedStaticExpression { .. } => "compiler.view.static_expression",
+            Self::UnsupportedLiteralText { .. } => "compiler.view.literal_text",
+            Self::UnsupportedStaticBoolean { .. } => "compiler.view.static_boolean",
+            Self::UnknownPolicySymbol { .. } => "compiler.view.policy_symbol",
+            Self::UnsupportedLayoutValue { .. } => "compiler.view.layout_value",
+            Self::UnsupportedEventHandler { .. } => "compiler.view.event_handler",
+            Self::UnsupportedStandaloneExpression => "compiler.view.standalone_expression",
+            _ => "compiler.view.lower",
         }
     }
 }
@@ -252,7 +291,7 @@ pub(super) fn view_sidecars(
     fx_definitions: &[FxDefinition],
     view_part_catalog: &CheckedViewPartCatalog,
     source_map: &SourceMapSection,
-) -> Result<ViewBundleSidecars, ViewSidecarError> {
+) -> Result<ViewBundleSidecars, ViewBundleLowerError> {
     let mut state = ViewLoweringState {
         fx_definitions: view_fx_definitions(fx_definitions),
         view_schemas: view_definition_schemas(views, dialogue_view_models)?,
@@ -264,69 +303,15 @@ pub(super) fn view_sidecars(
         return Ok(ViewBundleSidecars::default());
     };
     for view in views {
-        if let Some(declaration) = view.view_body() {
-            let public_id = view_resource_id(view.id().body());
-            if declaration.has_recovery() {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id });
+        let public_id = view_resource_id(view.id().body());
+        let typed_view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
+            ViewSidecarError::InvalidViewIdentity {
+                value: public_id,
+                source,
             }
-            let body = declaration
-                .view()
-                .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
-                    view: public_id.clone(),
-                })?;
-            if body.contains_recovered_syntax() {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id });
-            }
-            let typed_view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
-                ViewSidecarError::InvalidViewIdentity {
-                    value: public_id.clone(),
-                    source,
-                }
-            })?;
-            let typed_public_id = typed_view_id.public_id().clone();
-            let schema = state.view_schemas.get(&public_id).cloned().ok_or_else(|| {
-                ViewSidecarError::UnknownViewCall {
-                    view: public_id.clone(),
-                }
-            })?;
-            let parameter_slots = state.value_compiler.begin_definition(
-                &public_id,
-                schema.parameters.iter().filter_map(|parameter| {
-                    parameter
-                        .value_type
-                        .map(|value_type| (parameter.name.clone(), value_type))
-                }),
-            )?;
-            let parameters =
-                compile_view_parameters(&schema, &parameter_slots, &mut state.value_compiler)?;
-            state.dialogue_parameters = schema
-                .parameters
-                .iter()
-                .filter_map(|parameter| {
-                    parameter
-                        .dialogue_model
-                        .clone()
-                        .map(|model| (parameter.name.clone(), model))
-                })
-                .collect();
-            let root_styles = state
-                .style_applications
-                .root_applications_for(&typed_public_id)
-                .to_vec();
-            let start_instruction = usize_to_u32_saturating(state.instructions.len());
-            state.active_view = Some(typed_public_id.clone());
-            lower_view_body(view.id(), body, &mut state)?;
-            state.active_view = None;
-            state.dialogue_parameters.clear();
-            let end_instruction = usize_to_u32_saturating(state.instructions.len());
-            state.definitions.push(ViewDefinitionResource {
-                public_id: ViewDefinitionRef::new(typed_view_id),
-                styles: root_styles,
-                body: ViewInstructionSpan::new(start_instruction, end_instruction),
-                parameters,
-                state_schema_hash: view_state_schema_hash(&schema, body),
-            });
-        }
+        })?;
+        lower_authored_view(view, typed_view_id.clone(), &mut state)
+            .map_err(|error| AuthoredViewLowerFailure::new(typed_view_id, error))?;
     }
     let emitted_owners = state
         .definitions
@@ -334,8 +319,77 @@ pub(super) fn view_sidecars(
         .map(|definition| definition.public_id.clone())
         .collect::<BTreeSet<_>>();
     (state.source_refs, state.exported_parts) =
-        lower_view_part_exports(view_part_catalog, &emitted_owners, source_map)?.into_parts();
-    finish_view_sidecars(first, state)
+        lower_view_part_exports(view_part_catalog, &emitted_owners, source_map)
+            .map_err(ViewSidecarError::from)?
+            .into_parts();
+    finish_view_sidecars(first, state).map_err(Into::into)
+}
+
+fn lower_authored_view(
+    view: &EntityDeclItem,
+    typed_view_id: ViewId,
+    state: &mut ViewLoweringState,
+) -> Result<(), ViewSidecarError> {
+    let public_id = typed_view_id.as_str().to_owned();
+    let declaration = view
+        .view_body()
+        .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
+            view: public_id.clone(),
+        })?;
+    if declaration.has_recovery() {
+        return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id });
+    }
+    let body = declaration
+        .view()
+        .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
+            view: public_id.clone(),
+        })?;
+    if body.contains_recovered_syntax() {
+        return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id });
+    }
+    let typed_public_id = typed_view_id.public_id().clone();
+    let schema = state.view_schemas.get(&public_id).cloned().ok_or_else(|| {
+        ViewSidecarError::UnknownViewCall {
+            view: public_id.clone(),
+        }
+    })?;
+    let parameter_slots = state.value_compiler.begin_definition(
+        &public_id,
+        schema.parameters.iter().filter_map(|parameter| {
+            parameter
+                .value_type
+                .map(|value_type| (parameter.name.clone(), value_type))
+        }),
+    )?;
+    let parameters = compile_view_parameters(&schema, &parameter_slots, &mut state.value_compiler)?;
+    state.dialogue_parameters = schema
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .dialogue_model
+                .clone()
+                .map(|model| (parameter.name.clone(), model))
+        })
+        .collect();
+    let root_styles = state
+        .style_applications
+        .root_applications_for(&typed_public_id)
+        .to_vec();
+    let start_instruction = usize_to_u32_saturating(state.instructions.len());
+    state.active_view = Some(typed_public_id);
+    lower_view_body(view.id(), body, state)?;
+    state.active_view = None;
+    state.dialogue_parameters.clear();
+    let end_instruction = usize_to_u32_saturating(state.instructions.len());
+    state.definitions.push(ViewDefinitionResource {
+        public_id: ViewDefinitionRef::new(typed_view_id),
+        styles: root_styles,
+        body: ViewInstructionSpan::new(start_instruction, end_instruction),
+        parameters,
+        state_schema_hash: view_state_schema_hash(&schema, body),
+    });
+    Ok(())
 }
 
 fn finish_view_sidecars(
@@ -419,60 +473,79 @@ fn view_fx_definitions(definitions: &[FxDefinition]) -> BTreeMap<String, ViewFxD
 fn view_definition_schemas(
     views: &[&EntityDeclItem],
     dialogue_view_models: &DialogueViewModelRegistry,
-) -> Result<BTreeMap<String, ViewDefinitionSchema>, ViewSidecarError> {
+) -> Result<BTreeMap<String, ViewDefinitionSchema>, ViewBundleLowerError> {
     let mut schemas = BTreeMap::new();
     for view in views {
         let public_id = view_resource_id(view.id().body());
-        let signature = view
-            .view_body()
-            .and_then(arcweft_lang_syntax::ast::items::ViewDeclBody::signature)
-            .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
-                view: public_id.clone(),
-            })?;
-        if signature.return_type().is_some() {
-            return Err(ViewSidecarError::InvalidViewSignature {
-                view: public_id,
-                message: "View declarations cannot declare a return type".to_owned(),
-            });
-        }
-        let parameters = signature
-            .param_groups()
-            .iter()
-            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-            .enumerate()
-            .map(|(ordinal, parameter)| {
-                let name = parameter
-                    .pattern()
-                    .simple_binding_name()
-                    .ok_or_else(|| ViewSidecarError::UnsupportedViewParameter {
-                        view: public_id.clone(),
-                        ordinal,
-                    })?
-                    .to_owned();
-                Ok(ViewParameterSchema {
-                    name,
-                    value_type: view_scalar_type(parameter.ty()),
-                    source_type: parameter.ty().canonical_label(),
-                    default: parameter.default().cloned(),
-                    dialogue_model: match parameter.ty() {
-                        TypeRef::Path(type_name) => dialogue_view_models.model(type_name).cloned(),
-                        _ => None,
-                    },
-                })
-            })
-            .collect::<Result<Vec<_>, ViewSidecarError>>()?;
-        let schema = ViewDefinitionSchema {
-            public_id: public_id.clone(),
-            parameters,
-        };
+        let typed_view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
+            ViewSidecarError::InvalidViewIdentity {
+                value: public_id.clone(),
+                source,
+            }
+        })?;
+        let schema = view_definition_schema(view, &public_id, dialogue_view_models)
+            .map_err(|error| AuthoredViewLowerFailure::new(typed_view_id.clone(), error))?;
         if schemas.insert(public_id.clone(), schema).is_some() {
-            return Err(ViewSidecarError::InvalidViewSignature {
-                view: public_id,
-                message: "duplicate View definition".to_owned(),
-            });
+            return Err(AuthoredViewLowerFailure::new(
+                typed_view_id,
+                ViewSidecarError::InvalidViewSignature {
+                    view: public_id,
+                    message: "duplicate View definition".to_owned(),
+                },
+            )
+            .into());
         }
     }
     Ok(schemas)
+}
+
+fn view_definition_schema(
+    view: &EntityDeclItem,
+    public_id: &str,
+    dialogue_view_models: &DialogueViewModelRegistry,
+) -> Result<ViewDefinitionSchema, ViewSidecarError> {
+    let signature = view
+        .view_body()
+        .and_then(arcweft_lang_syntax::ast::items::ViewDeclBody::signature)
+        .ok_or_else(|| ViewSidecarError::RecoveredViewSyntax {
+            view: public_id.to_owned(),
+        })?;
+    if signature.return_type().is_some() {
+        return Err(ViewSidecarError::InvalidViewSignature {
+            view: public_id.to_owned(),
+            message: "View declarations cannot declare a return type".to_owned(),
+        });
+    }
+    let parameters = signature
+        .param_groups()
+        .iter()
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        .enumerate()
+        .map(|(ordinal, parameter)| {
+            let name = parameter
+                .pattern()
+                .simple_binding_name()
+                .ok_or_else(|| ViewSidecarError::UnsupportedViewParameter {
+                    view: public_id.to_owned(),
+                    ordinal,
+                })?
+                .to_owned();
+            Ok(ViewParameterSchema {
+                name,
+                value_type: view_scalar_type(parameter.ty()),
+                source_type: parameter.ty().canonical_label(),
+                default: parameter.default().cloned(),
+                dialogue_model: match parameter.ty() {
+                    TypeRef::Path(type_name) => dialogue_view_models.model(type_name).cloned(),
+                    _ => None,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, ViewSidecarError>>()?;
+    Ok(ViewDefinitionSchema {
+        public_id: public_id.to_owned(),
+        parameters,
+    })
 }
 
 fn compile_view_parameters(

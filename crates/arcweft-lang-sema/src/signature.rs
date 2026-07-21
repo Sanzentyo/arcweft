@@ -19,6 +19,7 @@ use crate::{
         SemanticSignatureHelp, SignatureLimitExceeded, SignatureQueryLimits, SignatureQueryStep,
         SignatureQueryStepControl, SignatureQueryWorkMeter, SignatureWorkKind,
     },
+    checker::TypeExpressionId,
     checker::module::{
         SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
     },
@@ -314,6 +315,9 @@ fn map_focused_error(error: CallTargetFactError) -> SignatureQueryError {
         | CallTargetFactError::FocusedTargetDuplicate { call } => {
             SignatureSemanticUnavailable::MissingCallableFacts { call }.into()
         }
+        CallTargetFactError::DuplicateExpression { expression } => {
+            SignatureSemanticUnavailable::DuplicateCallableFacts { expression }.into()
+        }
         CallTargetFactError::FocusedModeRequired => {
             SignatureSemanticUnavailable::FocusedModeMismatch.into()
         }
@@ -440,6 +444,8 @@ pub enum SignatureSemanticUnavailable {
     SourceOutsideAcceptedProject { document: SourceDocumentIdentity },
     #[error("signature query has no checked facts for {call:?}")]
     MissingCallableFacts { call: SourceSpan },
+    #[error("signature query retained duplicate facts for {expression:?}")]
+    DuplicateCallableFacts { expression: TypeExpressionId },
     #[error("signature query invoked the focused checker in a non-focused mode")]
     FocusedModeMismatch,
 }

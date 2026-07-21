@@ -183,7 +183,10 @@ impl TypeChecker<'_> {
         path: &str,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
-        let variant = path.strip_prefix('.').unwrap_or(path);
+        let variant = path
+            .strip_prefix('.')
+            .or_else(|| path.strip_prefix('\''))
+            .unwrap_or(path);
         match expected? {
             TypeKind::Choice(alternatives) => {
                 let mut matches = alternatives

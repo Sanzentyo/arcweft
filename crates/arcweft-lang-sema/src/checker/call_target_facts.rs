@@ -1,6 +1,11 @@
-//! Focused retention and caller-owned control for checker-produced call facts.
+//! Whole-module and focused retention with caller-owned control for checker-produced call facts.
 
-use std::{cell::RefCell, rc::Rc, sync::atomic::AtomicBool};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, btree_map::Entry},
+    rc::Rc,
+    sync::atomic::AtomicBool,
+};
 
 use arcweft_lang_syntax::{
     ast::common::TextRange,
@@ -31,7 +36,7 @@ pub(crate) struct SignatureFocusedAnalysis<'a> {
 pub(super) struct CallTargetFactReport {
     pub(super) mode: CallTargetFactMode,
     pub(super) site: Option<FocusedCallSite>,
-    pub(super) fact: Option<CallTargetFacts>,
+    pub(super) facts: BTreeMap<crate::checker::TypeExpressionId, CallTargetFacts>,
     pub(super) error: Option<CallTargetFactError>,
 }
 
@@ -40,7 +45,7 @@ impl Default for CallTargetFactReport {
         Self {
             mode: CallTargetFactMode::Disabled,
             site: None,
-            fact: None,
+            facts: BTreeMap::new(),
             error: None,
         }
     }
@@ -105,7 +110,7 @@ impl FocusedCallSite {
 pub(super) struct CallTargetFactRecorder {
     mode: CallTargetFactMode,
     site: Option<FocusedCallSite>,
-    fact: Option<CallTargetFacts>,
+    facts: BTreeMap<crate::checker::TypeExpressionId, CallTargetFacts>,
     error: Option<CallTargetFactError>,
 }
 
@@ -114,7 +119,7 @@ impl CallTargetFactRecorder {
         Self {
             mode,
             site: None,
-            fact: None,
+            facts: BTreeMap::new(),
             error: None,
         }
     }
@@ -124,7 +129,7 @@ impl CallTargetFactRecorder {
             return;
         }
         match &self.mode {
-            CallTargetFactMode::Disabled => {}
+            CallTargetFactMode::Disabled | CallTargetFactMode::All => {}
             CallTargetFactMode::Focused { call: focused, .. } => {
                 if focused.source() != document.identity() {
                     return;
@@ -154,8 +159,16 @@ impl CallTargetFactRecorder {
     pub(super) fn wants(&self, call_span: Option<&SourceSpan>) -> bool {
         match &self.mode {
             CallTargetFactMode::Disabled => false,
+            CallTargetFactMode::All => call_span.is_some(),
             CallTargetFactMode::Focused { call, .. } => call_span == Some(call),
         }
+    }
+
+    pub(super) fn focuses(&self, call_span: Option<&SourceSpan>) -> bool {
+        matches!(
+            &self.mode,
+            CallTargetFactMode::Focused { call, .. } if call_span == Some(call)
+        )
     }
 
     pub(super) fn active_parameter(
@@ -163,7 +176,7 @@ impl CallTargetFactRecorder {
         checked: &CheckedCallTarget,
     ) -> Option<crate::callable::CallableParameterCoordinate> {
         match &self.mode {
-            CallTargetFactMode::Disabled => None,
+            CallTargetFactMode::Disabled | CallTargetFactMode::All => None,
             CallTargetFactMode::Focused {
                 active_argument,
                 byte_offset,
@@ -176,13 +189,24 @@ impl CallTargetFactRecorder {
         if !self.wants(Some(facts.call_span())) || self.error.is_some() {
             return;
         }
-        if let CallTargetFactMode::Focused { call, .. } = &self.mode
-            && self.fact.is_some()
-        {
-            self.error = Some(CallTargetFactError::FocusedTargetDuplicate { call: call.clone() });
-            return;
+        match &self.mode {
+            CallTargetFactMode::Disabled => return,
+            CallTargetFactMode::Focused { call, .. } if !self.facts.is_empty() => {
+                self.error =
+                    Some(CallTargetFactError::FocusedTargetDuplicate { call: call.clone() });
+                return;
+            }
+            CallTargetFactMode::Focused { .. } | CallTargetFactMode::All => {}
         }
-        self.fact = Some(facts);
+        let expression = facts.expression();
+        match self.facts.entry(expression) {
+            Entry::Vacant(entry) => {
+                entry.insert(facts);
+            }
+            Entry::Occupied(_) => {
+                self.error = Some(CallTargetFactError::DuplicateExpression { expression });
+            }
+        }
     }
 
     pub(super) fn record_unavailable(&mut self, call: &SourceSpan, reason: SemanticSignatureError) {
@@ -240,12 +264,25 @@ impl CallTargetFactRecorder {
         self.error = Some(error);
     }
 
-    pub(super) fn restore_nested_focus_from(&mut self, checked: &Self) {
-        if self.mode != checked.mode || checked.fact.is_none() {
+    pub(super) fn restore_selected_nested_facts_from(&mut self, checked: &Self) {
+        if self.mode != checked.mode || checked.facts.is_empty() {
             return;
         }
         self.site.clone_from(&checked.site);
-        self.fact.clone_from(&checked.fact);
+        for (expression, fact) in &checked.facts {
+            match self.facts.entry(*expression) {
+                Entry::Vacant(entry) => {
+                    entry.insert(fact.clone());
+                }
+                Entry::Occupied(entry) if entry.get() == fact => {}
+                Entry::Occupied(_) => {
+                    self.error = Some(CallTargetFactError::DuplicateExpression {
+                        expression: *expression,
+                    });
+                    return;
+                }
+            }
+        }
         if self.error.is_none() {
             self.error.clone_from(&checked.error);
         }
@@ -255,7 +292,7 @@ impl CallTargetFactRecorder {
         CallTargetFactReport {
             mode: self.mode,
             site: self.site,
-            fact: self.fact,
+            facts: self.facts,
             error: self.error,
         }
     }
@@ -483,7 +520,7 @@ mod tests {
 
         let report = recorder.finish();
         assert_eq!(report.mode, CallTargetFactMode::Disabled);
-        assert!(report.fact.is_none());
+        assert!(report.facts.is_empty());
         assert!(report.error.is_none());
     }
 

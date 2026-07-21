@@ -27,24 +27,24 @@ pub use catalog::{
     ProjectCallableCatalog, RegisteredCallableCatalog, RegisteredProjectModuleCallables,
 };
 pub use dialogue::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
-pub(crate) use error::CallTargetFactError;
 pub use error::{
-    BuiltinIdentityError, CallableBuildLimitError, CallableCatalogBuildError, CallableCatalogError,
-    CallableDiagnosticCode, CallableDocumentationError, CallableFamilyInvariantCode,
-    CallableIdentityError, CallableIndexKind, CallablePathError, CallablePublicationError,
-    CallableQueryLimitError, CallableScalarError, CallableScalarKind, CallableSchemaError,
-    CallableSourceError, CorruptCallableCatalogReason, ResolveCallError, RustProvenanceError,
-    RustProvenanceField, SemanticSignatureError, SignatureLimitConfigurationError,
-    SignatureLimitExceeded, SignatureLimitKind, SignatureWorkKind,
+    BuiltinIdentityError, CallTargetFactError, CallableBuildLimitError, CallableCatalogBuildError,
+    CallableCatalogError, CallableDiagnosticCode, CallableDocumentationError,
+    CallableFamilyInvariantCode, CallableIdentityError, CallableIndexKind, CallablePathError,
+    CallablePublicationError, CallableQueryLimitError, CallableScalarError, CallableScalarKind,
+    CallableSchemaError, CallableSourceError, CorruptCallableCatalogReason, ResolveCallError,
+    RustProvenanceError, RustProvenanceField, SemanticSignatureError,
+    SignatureLimitConfigurationError, SignatureLimitExceeded, SignatureLimitKind,
+    SignatureWorkKind,
 };
 pub use facts::{
-    CallPoison, CallableDiagnostic, CallableDiagnosticRelated, CallableDiagnosticSeverity,
-    CallableDiagnosticSubject, SemanticParameter, SemanticParameterGroup, SemanticSignature,
+    CallPoison, CallTargetFact, CallTargetFacts, CallableDiagnostic, CallableDiagnosticRelated,
+    CallableDiagnosticSeverity, CallableDiagnosticSubject, CheckedCallArgumentFact,
+    CheckedCallArgumentSlotFact, SemanticParameter, SemanticParameterGroup, SemanticSignature,
     SemanticSignatureHelp, SemanticSignatureIndex, SemanticSignatureRecovery,
 };
 pub(crate) use facts::{
-    CallTargetFact, CallTargetFactMode, CallTargetFacts, CheckedCallArgumentFact,
-    CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput, CheckedCallTarget,
+    CallTargetFactMode, CallTargetFactsInput, CheckedCallArgumentSlotInput, CheckedCallTarget,
 };
 pub use identity::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentIndex,
@@ -59,15 +59,16 @@ pub use identity::{
     OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId, ProjectCallablePath,
     ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId, ReceiverMethodKey,
     ReductionConstructorKind, ResultConstructorKind, RustItemPath, SpeakerCallableId,
-    StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitCallableId,
+    StageMethodId, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitCallableId,
     TraitCallableSource, TraitImplementationIndex, VectorDimensions,
 };
 pub use limits::{
-    CallableLimits, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, SignatureQueryLimits,
-    SignatureQueryProjectionWork, SignatureQueryResolutionWork, SignatureQuerySearchWork,
-    SignatureQueryWorkReport, SignatureWorkReport,
+    CallableLimits, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
+    SignatureAccountingError, SignatureQueryLimits, SignatureQueryProjectionWork,
+    SignatureQueryResolutionWork, SignatureQuerySearchWork, SignatureQueryWorkReport,
+    SignatureWorkReport,
 };
-pub(crate) use limits::{ResolverWork, SignatureAccountingError, SignatureQueryWorkMeter};
+pub(crate) use limits::{ResolverWork, SignatureQueryWorkMeter};
 pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamedArgument};
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
@@ -77,10 +78,10 @@ pub(crate) use resolver::{
     resolve_call_target,
 };
 pub use resolver::{
-    CallableInstantiation, CharacterOwnerResolution, CharacterOwnerSource, NonCallableSource,
-    NonEmptyResolvedCandidates, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
-    ResolvedCharacterOwner, ResolvedFunctionValue, ResolvedNonCallableTarget, SignatureOrigin,
-    UnknownCallKind, UnknownCallTarget,
+    CallableInstantiation, CharacterOwnerSource, NonCallableSource, NonEmptyResolvedCandidates,
+    ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable, ResolvedCharacterOwner,
+    ResolvedFunctionValue, ResolvedNonCallableTarget, SignatureOrigin, UnknownCallKind,
+    UnknownCallTarget,
 };
 pub use schema::{
     CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableGroupKind,

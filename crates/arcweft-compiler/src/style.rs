@@ -202,7 +202,7 @@ impl ViewStyleApplicationLookup {
 }
 
 /// Lowers one already typechecked source into canonical Style product data.
-pub fn lower_source_view_styles(
+pub(crate) fn lower_source_view_styles(
     hir: &HirModule,
     catalog: &CheckedViewStyleCatalog,
     source: &SourceDocument,

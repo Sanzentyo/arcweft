@@ -8,8 +8,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-id = { path = "../arcweft-id" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-id = { workspace = true }
+arcweft-source = { workspace = true }
 blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true

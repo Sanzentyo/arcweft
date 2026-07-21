@@ -24,8 +24,8 @@ use crate::callable::{
     EnumVariantSignatureId, FloatWidth, FxCallableSignatureId, IntegerMethodId, MathCallableId,
     OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
     PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
-    ResolvedCharacterOwner, ResultConstructorKind, SpeakerCallableId, StdFloatCallableId,
-    StdFloatOperation, VectorDimensions,
+    ResolvedCharacterOwner, ResultConstructorKind, SpeakerCallableId, StageMethodId,
+    StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 
 impl BuiltinCallableId {
@@ -403,6 +403,49 @@ impl CapacityMethodId {
     }
 }
 
+impl StageMethodId {
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        let validator = CallableValidator::Stage(self);
+        match self {
+            Self::Acquire => schema(
+                vec![parameter(
+                    0,
+                    Some("scope"),
+                    CallableParameterType::Exact(named("PresentationLifetime")),
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                )],
+                named("StageActorHandle"),
+                &[],
+                closed(),
+                validator,
+            ),
+            Self::Look => schema(
+                vec![
+                    parameter(
+                        0,
+                        Some("look"),
+                        CallableParameterType::Unchecked,
+                        CallableParameterPassing::PositionalOrNamed,
+                        CallableParameterPresence::Required,
+                    ),
+                    parameter(
+                        1,
+                        Some("crossfade"),
+                        CallableParameterType::Exact(TypeKind::Duration),
+                        CallableParameterPassing::PositionalOrNamed,
+                        CallableParameterPresence::Optional,
+                    ),
+                ],
+                named("CueHandle"),
+                &[],
+                closed(),
+                validator,
+            ),
+        }
+    }
+}
+
 impl DropCallableId {
     #[allow(
         clippy::unused_self,
@@ -496,7 +539,7 @@ impl FxCallableSignatureId {
                 vec![parameter(
                     0,
                     Some("graphs"),
-                    CallableParameterType::Exact(TypeKind::Seq(Box::new(fx.clone()))),
+                    CallableParameterType::Exact(TypeKind::Vec(Box::new(fx.clone()))),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,
                 )],
@@ -518,10 +561,25 @@ impl FxCallableSignatureId {
                 open_checked(),
                 validator,
             ),
+            Self::Transform => schema(
+                vec![parameter(
+                    0,
+                    Some("sample"),
+                    CallableParameterType::Exact(TypeKind::function(
+                        [named("FxSampleContext")],
+                        named("Transform2D"),
+                    )),
+                    CallableParameterPassing::NamedOnly,
+                    CallableParameterPresence::Optional,
+                )],
+                fx,
+                &[],
+                open_checked(),
+                validator,
+            ),
             Self::Style
             | Self::Text
             | Self::Color
-            | Self::Transform
             | Self::Mask
             | Self::Filter
             | Self::Transition => schema(Vec::new(), fx, &[], open_checked(), validator),
@@ -537,6 +595,11 @@ impl AgentIntrinsicSignatureId {
     pub fn signature_schema(self) -> CallableSignatureSchema {
         let validator = CallableValidator::Agent(self);
         match self {
+            Self::Observe => empty(
+                agent_result(TypeKind::Observation),
+                &["agent.observe"],
+                validator,
+            ),
             Self::Expect | Self::Deny => schema(
                 vec![
                     required(0, "condition", TypeKind::Bool),

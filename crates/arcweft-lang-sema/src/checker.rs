@@ -3,9 +3,9 @@ use crate::borrow::{
     BorrowStateJournalEntry, merge_borrow_local_states,
 };
 use crate::callable::{
-    CallTargetFactMode, CallTargetFacts, CallableDiagnostic, CallableDiagnosticCode,
-    CallableDiagnosticSeverity, CallableDiagnosticSubject, CheckedCallTarget,
-    PRODUCTION_CALLABLE_LIMITS, ResolvedCallable,
+    CallTargetFactMode, CallTargetFacts, CallTargetFactsInput, CallableDiagnostic,
+    CallableDiagnosticCode, CallableDiagnosticRelated, CallableDiagnosticSeverity,
+    CallableDiagnosticSubject, CheckedCallTarget, PRODUCTION_CALLABLE_LIMITS, ResolvedCallable,
 };
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, CheckedSpeakerLine,
@@ -83,11 +83,14 @@ pub mod suspension;
 
 pub use module::{
     analyze_project_types_for_canonicalization, analyze_registered_project_types,
-    analyze_registered_project_types_for_canonicalization, analyze_types,
+    analyze_registered_project_types_for_canonicalization,
+    analyze_registered_project_types_for_focused_call, analyze_types,
 };
 
 pub(crate) use call_target_facts::FocusedCallSite;
-use call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallableWorkOperation};
+use call_target_facts::{
+    CallResolverControl, CallTargetFactRecorder, CallTargetFactReport, CallableWorkOperation,
+};
 use fx::FxCatalog;
 use helpers::{
     await_branch_pattern_type, builtin_path_type, choice_output_type,
@@ -399,6 +402,7 @@ pub struct TypeCheckReport {
     pub project_callable_references: Vec<ProjectCallableReference>,
     /// Exact source ranges of authored absolute entity references.
     pub project_entity_references: Vec<ProjectEntityReference>,
+    call_target_fact_report: CallTargetFactReport,
 }
 
 /// One typed ordinary-call reference selected by the shared callable resolver.
@@ -489,6 +493,42 @@ pub fn typecheck_hir(module: &HirModule, env: &TypeCheckEnv) -> Result<(), Vec<T
 #[derive(Clone, Copy, Debug)]
 struct SignatureWorkChargeState {
     candidate_work: bool,
+}
+
+#[derive(Clone)]
+struct CallableDiagnosticDraft {
+    code: CallableDiagnosticCode,
+    severity: CallableDiagnosticSeverity,
+    span: Option<arcweft_source::SourceSpan>,
+    subject: CallableDiagnosticSubject,
+    related: Vec<CallableDiagnosticRelated>,
+}
+
+impl CallableDiagnosticDraft {
+    fn error(
+        code: CallableDiagnosticCode,
+        span: Option<arcweft_source::SourceSpan>,
+        subject: CallableDiagnosticSubject,
+    ) -> Self {
+        Self {
+            code,
+            severity: CallableDiagnosticSeverity::Error,
+            span,
+            subject,
+            related: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    fn with_related(
+        mut self,
+        subject: CallableDiagnosticSubject,
+        span: Option<arcweft_source::SourceSpan>,
+    ) -> Self {
+        self.related
+            .push(CallableDiagnosticRelated::new(subject, span));
+        self
+    }
 }
 
 struct TypeChecker<'a> {
@@ -989,7 +1029,7 @@ impl<'a> TypeChecker<'a> {
         &self,
         call_span: Option<&arcweft_source::SourceSpan>,
     ) -> bool {
-        self.focused_candidate_depth != 0 || self.records_call_target_facts(call_span)
+        self.focused_candidate_depth != 0 || self.call_target_fact_recorder.focuses(call_span)
     }
 
     pub(super) fn record_call_target_facts(
@@ -998,47 +1038,51 @@ impl<'a> TypeChecker<'a> {
         document: &arcweft_source::SourceDocumentIdentity,
         call_span: &arcweft_source::SourceSpan,
         checked: CheckedCallTarget,
-        diagnostic: Option<(CallableDiagnosticCode, CallableDiagnosticSubject)>,
+        diagnostic_drafts: Vec<CallableDiagnosticDraft>,
     ) {
         if !self.records_call_target_facts(Some(call_span)) {
             return;
         }
         let active_parameter = self.call_target_fact_recorder.active_parameter(&checked);
-        let diagnostics = match diagnostic {
-            Some((code, subject)) => {
-                if !self.charge_callable_work_for_span(
-                    Some(call_span),
-                    true,
-                    CallableWorkOperation::Resolver,
-                ) {
+        let mut diagnostics = Vec::with_capacity(diagnostic_drafts.len());
+        for draft in diagnostic_drafts {
+            if !self.charge_callable_work_for_span(
+                Some(call_span),
+                true,
+                CallableWorkOperation::Resolver,
+            ) {
+                return;
+            }
+            match CallableDiagnostic::try_new(
+                draft.code,
+                draft.severity,
+                draft.span,
+                draft.subject,
+                draft.related,
+                Some(document),
+                &PRODUCTION_CALLABLE_LIMITS,
+            ) {
+                Ok(diagnostic) => diagnostics.push(diagnostic),
+                Err(reason) => {
+                    self.call_target_fact_recorder
+                        .record_unavailable(call_span, reason);
                     return;
                 }
-                match CallableDiagnostic::try_new(
-                    code,
-                    CallableDiagnosticSeverity::Error,
-                    Some(call_span.clone()),
-                    subject,
-                    Vec::new(),
-                    Some(document),
-                    &PRODUCTION_CALLABLE_LIMITS,
-                ) {
-                    Ok(diagnostic) => vec![diagnostic],
-                    Err(reason) => {
-                        self.call_target_fact_recorder
-                            .record_unavailable(call_span, reason);
-                        return;
-                    }
-                }
             }
-            None => Vec::new(),
-        };
+        }
         match CallTargetFacts::try_new(
-            expression,
-            document.clone(),
-            call_span.clone(),
-            checked,
-            active_parameter,
-            diagnostics,
+            CallTargetFactsInput {
+                expression,
+                document: document.clone(),
+                call_span: call_span.clone(),
+                enclosing_callable: self
+                    .typed_lowering_owner
+                    .as_ref()
+                    .map(|owner| owner.declaration.clone()),
+                checked,
+                active_parameter,
+                diagnostics,
+            },
             &PRODUCTION_CALLABLE_LIMITS,
         ) {
             Ok(facts) => self.call_target_fact_recorder.record(facts),

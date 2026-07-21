@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
 use crate::{checker::TypeExpressionId, effect_row::EffectRow, types::TypeKind};
@@ -18,6 +19,7 @@ use super::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CallTargetFactMode {
     Disabled,
+    All,
     Focused {
         call: SourceSpan,
         active_argument: Option<usize>,
@@ -25,11 +27,13 @@ pub(crate) enum CallTargetFactMode {
     },
 }
 
+/// Immutable semantic facts committed for one checked call expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CallTargetFacts {
+pub struct CallTargetFacts {
     expression: TypeExpressionId,
     document: SourceDocumentIdentity,
     call_span: SourceSpan,
+    enclosing_callable: Option<CallableDeclarationId>,
     target: CallTargetFact,
     arguments: Arc<[CheckedCallArgumentFact]>,
     result: Option<TypeKind>,
@@ -42,36 +46,55 @@ pub(crate) struct CallTargetFacts {
     active_parameter: Option<CallableParameterCoordinate>,
 }
 
+/// Typed outcome of resolving a checked call target.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum CallTargetFact {
+pub enum CallTargetFact {
+    /// One callable was selected after considering the retained candidates.
     Selected {
+        /// Callable whose checked transaction was committed.
         selected: Box<ResolvedCallable>,
+        /// Ordered candidates considered for this call.
         considered: Arc<[ResolvedCallable]>,
     },
+    /// Multiple equally viable callable candidates remain.
     Ambiguous {
+        /// Deterministically ordered viable candidates.
         candidates: Arc<[ResolvedCallable]>,
     },
+    /// Resolution found bounded candidates, but none accepted the authored call.
+    Rejected {
+        /// Deterministically ordered candidates retained for diagnostics and tooling.
+        candidates: Arc<[ResolvedCallable]>,
+    },
+    /// Target resolution succeeded to a value that is not callable.
     NonCallable {
+        /// Typed source that established the non-callable target.
         source: NonCallableSource,
+        /// Type of the resolved target value.
         ty: TypeKind,
     },
+    /// No callable target could be resolved.
     Missing {
+        /// Typed classification of the missing target.
         kind: UnknownCallKind,
     },
 }
 
+/// Checked mapping retained for one authored call argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedCallArgumentFact {
+pub struct CheckedCallArgumentFact {
     index: CallableArgumentIndex,
     source: Option<SourceSpan>,
     authored_name: Option<CallableName>,
+    authored_name_source: Option<SourceSpan>,
     spread: bool,
     slots: Arc<[CheckedCallArgumentSlotFact]>,
     poison: CallPoison,
 }
 
+/// Checked mapping retained for one typed slot produced by an argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedCallArgumentSlotFact {
+pub struct CheckedCallArgumentSlotFact {
     slot: CallableArgumentSlotIndex,
     expression: TypeExpressionId,
     source: Option<SourceSpan>,
@@ -91,6 +114,16 @@ pub(crate) struct CheckedCallArgumentSlotInput {
     pub(crate) poison: CallPoison,
 }
 
+pub(crate) struct CallTargetFactsInput {
+    pub(crate) expression: TypeExpressionId,
+    pub(crate) document: SourceDocumentIdentity,
+    pub(crate) call_span: SourceSpan,
+    pub(crate) enclosing_callable: Option<CallableDeclarationId>,
+    pub(crate) checked: CheckedCallTarget,
+    pub(crate) active_parameter: Option<CallableParameterCoordinate>,
+    pub(crate) diagnostics: Vec<CallableDiagnostic>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedCallTarget {
     target: CallTargetFact,
@@ -105,8 +138,11 @@ pub(crate) struct CheckedCallTarget {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallPoison {
+    /// The call or mapping was accepted without recovery.
     Clean,
+    /// The call or mapping was retained through a recoverable issue.
     Recovered,
+    /// The call or mapping was rejected.
     Rejected,
 }
 
@@ -123,14 +159,18 @@ impl CallPoison {
 
 impl CallTargetFacts {
     pub(crate) fn try_new(
-        expression: TypeExpressionId,
-        document: SourceDocumentIdentity,
-        call_span: SourceSpan,
-        checked: CheckedCallTarget,
-        active_parameter: Option<CallableParameterCoordinate>,
-        diagnostics: Vec<CallableDiagnostic>,
+        input: CallTargetFactsInput,
         limits: &CallableLimits,
     ) -> Result<Self, SemanticSignatureError> {
+        let CallTargetFactsInput {
+            expression,
+            document,
+            call_span,
+            enclosing_callable,
+            checked,
+            active_parameter,
+            diagnostics,
+        } = input;
         validate_span(&document, &call_span)?;
         if diagnostics.len() > limits.max_diagnostics() {
             return Err(CallableQueryLimitError::Diagnostics {
@@ -148,6 +188,17 @@ impl CallTargetFacts {
             if let Some(source) = &argument.source {
                 validate_span(&document, source)?;
             }
+            if let Some(source) = &argument.authored_name_source {
+                validate_span(&document, source)?;
+                if argument.authored_name.is_none()
+                    || argument.source.as_ref().is_some_and(|argument_source| {
+                        source.range().start() < argument_source.range().start()
+                            || source.range().end() > argument_source.range().end()
+                    })
+                {
+                    return Err(SemanticSignatureError::InvalidSpan);
+                }
+            }
             for (slot_index, slot) in argument.slots.iter().enumerate() {
                 let expected = CallableArgumentSlotIndex::try_from_usize(slot_index)
                     .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
@@ -157,9 +208,9 @@ impl CallTargetFacts {
                 if let Some(source) = &slot.source {
                     validate_span(&document, source)?;
                 }
-                if let (CallTargetFact::Selected { selected, .. }, Some(coordinate)) =
-                    (&checked.target, slot.mapped)
-                    && selected
+                if let (Some(candidate), Some(coordinate)) =
+                    (checked.active_candidate(), slot.mapped)
+                    && candidate
                         .schema()
                         .group(coordinate.group())
                         .and_then(|group| group.parameters().get(coordinate.parameter().get()))
@@ -198,6 +249,7 @@ impl CallTargetFacts {
             expression,
             document,
             call_span,
+            enclosing_callable,
             target: checked.target,
             arguments: checked.arguments,
             result: checked.result,
@@ -211,45 +263,60 @@ impl CallTargetFacts {
         })
     }
 
-    pub(crate) const fn expression(&self) -> TypeExpressionId {
+    /// Returns the checker expression identity for this call.
+    pub const fn expression(&self) -> TypeExpressionId {
         self.expression
     }
-    pub(crate) const fn document(&self) -> &SourceDocumentIdentity {
+    /// Returns the exact accepted source-document identity.
+    pub const fn document(&self) -> &SourceDocumentIdentity {
         &self.document
     }
-    pub(crate) const fn call_span(&self) -> &SourceSpan {
+    /// Returns the exact authored call span in the accepted document.
+    pub const fn call_span(&self) -> &SourceSpan {
         &self.call_span
     }
-    pub(crate) const fn target(&self) -> &CallTargetFact {
+    /// Returns the exact ordinary project function that lexically owns this call.
+    pub(crate) const fn enclosing_callable(&self) -> Option<&CallableDeclarationId> {
+        self.enclosing_callable.as_ref()
+    }
+    /// Returns the typed target-resolution outcome.
+    pub const fn target(&self) -> &CallTargetFact {
         &self.target
     }
-    #[cfg(test)]
-    pub(crate) fn arguments(&self) -> &[CheckedCallArgumentFact] {
+    /// Returns authored arguments in source order with their checked mappings.
+    pub fn arguments(&self) -> &[CheckedCallArgumentFact] {
         &self.arguments
     }
-    pub(crate) const fn result(&self) -> Option<&TypeKind> {
+    /// Returns the checked result type when one was established.
+    pub const fn result(&self) -> Option<&TypeKind> {
         self.result.as_ref()
     }
-    pub(crate) const fn effects(&self) -> &EffectRow {
+    /// Returns the effect row committed for the selected call.
+    pub const fn effects(&self) -> &EffectRow {
         &self.effects
     }
-    pub(crate) const fn current_group(&self) -> CallableGroupIndex {
+    /// Returns the parameter group consumed by this call expression.
+    pub const fn current_group(&self) -> CallableGroupIndex {
         self.current_group
     }
-    pub(crate) const fn next_group(&self) -> Option<CallableGroupIndex> {
+    /// Returns the next curried parameter group, if this call is partial.
+    pub const fn next_group(&self) -> Option<CallableGroupIndex> {
         self.next_group
     }
-    #[cfg(test)]
-    pub(crate) const fn function_value_type(&self) -> Option<&TypeKind> {
+    /// Returns the exact callable value type when the target was a function value.
+    pub const fn function_value_type(&self) -> Option<&TypeKind> {
         self.function_value_type.as_ref()
     }
-    pub(crate) const fn poison(&self) -> CallPoison {
+    /// Returns the aggregate recovery state for the checked call.
+    pub const fn poison(&self) -> CallPoison {
         self.poison
     }
-    pub(crate) fn diagnostics(&self) -> &[CallableDiagnostic] {
+    /// Returns callable diagnostics committed for this call.
+    pub fn diagnostics(&self) -> &[CallableDiagnostic] {
         &self.diagnostics
     }
-    pub(crate) const fn active_parameter(&self) -> Option<CallableParameterCoordinate> {
+    /// Returns the parameter selected by focused cursor analysis, if available.
+    pub const fn active_parameter(&self) -> Option<CallableParameterCoordinate> {
         self.active_parameter
     }
 }
@@ -259,6 +326,7 @@ impl CheckedCallArgumentFact {
         index: CallableArgumentIndex,
         source: Option<SourceSpan>,
         authored_name: Option<CallableName>,
+        authored_name_source: Option<SourceSpan>,
         spread: bool,
         slots: Vec<CheckedCallArgumentSlotFact>,
         poison: CallPoison,
@@ -267,28 +335,41 @@ impl CheckedCallArgumentFact {
             index,
             source,
             authored_name,
+            authored_name_source,
             spread,
             slots: slots.into(),
             poison,
         }
     }
 
-    pub(crate) const fn index(&self) -> CallableArgumentIndex {
+    /// Returns the zero-based authored argument index.
+    pub const fn index(&self) -> CallableArgumentIndex {
         self.index
     }
-    #[cfg(test)]
-    pub(crate) const fn authored_name(&self) -> Option<&CallableName> {
+    /// Returns the authored argument name for a named argument.
+    pub const fn authored_name(&self) -> Option<&CallableName> {
         self.authored_name.as_ref()
     }
-    #[cfg(test)]
-    pub(crate) const fn spread(&self) -> bool {
+    /// Returns the exact authored name-token span for a named argument.
+    pub const fn authored_name_source(&self) -> Option<&SourceSpan> {
+        self.authored_name_source.as_ref()
+    }
+    /// Returns whether the authored argument used spread syntax.
+    pub const fn spread(&self) -> bool {
         self.spread
     }
-    pub(crate) fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
+    /// Returns typed slots produced by this argument in mapping order.
+    pub fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
         &self.slots
     }
-    pub(crate) const fn poison(&self) -> CallPoison {
+    /// Returns the aggregate recovery state for this argument.
+    pub const fn poison(&self) -> CallPoison {
         self.poison
+    }
+
+    /// Returns the complete authored argument span when source-backed.
+    pub const fn source(&self) -> Option<&SourceSpan> {
+        self.source.as_ref()
     }
 }
 
@@ -305,25 +386,34 @@ impl CheckedCallArgumentSlotFact {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) const fn slot(&self) -> CallableArgumentSlotIndex {
+    /// Returns the zero-based slot index within its authored argument.
+    pub const fn slot(&self) -> CallableArgumentSlotIndex {
         self.slot
     }
-    #[cfg(test)]
-    pub(crate) const fn source(&self) -> Option<&SourceSpan> {
+    /// Returns the exact slot source span when source-backed.
+    pub const fn source(&self) -> Option<&SourceSpan> {
         self.source.as_ref()
     }
-    pub(crate) const fn mapped(&self) -> Option<CallableParameterCoordinate> {
+    /// Returns the checked parameter coordinate mapped to this slot.
+    pub const fn mapped(&self) -> Option<CallableParameterCoordinate> {
         self.mapped
     }
-    pub(crate) const fn inferred(&self) -> Option<&TypeKind> {
+    /// Returns the type inferred for the checked slot expression.
+    pub const fn inferred(&self) -> Option<&TypeKind> {
         self.inferred.as_ref()
     }
-    pub(crate) const fn expected(&self) -> Option<&TypeKind> {
+    /// Returns the mapped parameter's expected type, when checked.
+    pub const fn expected(&self) -> Option<&TypeKind> {
         self.expected.as_ref()
     }
-    pub(crate) const fn poison(&self) -> CallPoison {
+    /// Returns the recovery state for this checked slot.
+    pub const fn poison(&self) -> CallPoison {
         self.poison
+    }
+
+    /// Returns the checker expression identity for this slot.
+    pub const fn expression(&self) -> TypeExpressionId {
+        self.expression
     }
 }
 
@@ -331,7 +421,9 @@ impl CheckedCallTarget {
     fn active_candidate(&self) -> Option<&ResolvedCallable> {
         match &self.target {
             CallTargetFact::Selected { selected, .. } => Some(selected),
-            CallTargetFact::Ambiguous { candidates } => candidates.first(),
+            CallTargetFact::Ambiguous { candidates } | CallTargetFact::Rejected { candidates } => {
+                candidates.first()
+            }
             CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => None,
         }
     }
@@ -455,6 +547,25 @@ impl CheckedCallTarget {
     ) -> Self {
         Self {
             target: CallTargetFact::Ambiguous {
+                candidates: candidates.to_vec().into(),
+            },
+            result: None,
+            arguments: arguments.into(),
+            effects: EffectRow::closed(crate::effects::EffectSet::new()),
+            current_group,
+            next_group: None,
+            function_value_type: None,
+            poison: CallPoison::Rejected,
+        }
+    }
+
+    pub(crate) fn rejected(
+        candidates: &[ResolvedCallable],
+        arguments: Vec<CheckedCallArgumentFact>,
+        current_group: CallableGroupIndex,
+    ) -> Self {
+        Self {
+            target: CallTargetFact::Rejected {
                 candidates: candidates.to_vec().into(),
             },
             result: None,

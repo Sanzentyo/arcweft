@@ -340,12 +340,15 @@ goto @flow.opening
     let project = TestProject::new("entry-nominal-tooling");
     project.write(
         "arcw.toml",
-        r#"[package]
-name = "entry-nominal-tooling"
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.entry-nominal-tooling"
+version = "0.1.0"
 
 [profiles.game]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
 "#,
     );
@@ -698,12 +701,15 @@ impl TestProject {
     }
 
     fn manifest() -> String {
-        r#"[package]
-name = "entry-role-tooling"
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.entry-role-tooling"
+version = "0.1.0"
 
 [profiles.agent]
 kind = "agent"
-entry = "entry.agent.main"
+entry = "@entry.agent.main"
 source = "src/main.arcw"
 "#
         .to_owned()

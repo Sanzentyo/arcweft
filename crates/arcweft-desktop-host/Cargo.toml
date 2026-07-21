@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
+arcweft-desktop-contract = { workspace = true }
 
 [lints]
 workspace = true

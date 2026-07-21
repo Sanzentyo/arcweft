@@ -7,23 +7,23 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-glyphon = { path = "../arcweft-glyphon" }
-arcweft-id = { path = "../arcweft-id" }
+arcweft-glyphon = { workspace = true }
+arcweft-id = { workspace = true }
 arcweft-layout.workspace = true
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-text-layout = { path = "../arcweft-text-layout" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-presentation = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-text-layout = { workspace = true }
+arcweft-view = { workspace = true }
 bytemuck.workspace = true
 glyphon.workspace = true
-num-traits = "0.2.19"
+num-traits.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
-arcweft-core = { path = "../arcweft-core" }
-arcweft-dialogue = { path = "../arcweft-dialogue" }
+arcweft-core = { workspace = true }
+arcweft-dialogue = { workspace = true }
 pollster.workspace = true
 wgpu = { workspace = true, features = ["dx12", "metal", "vulkan"] }
 

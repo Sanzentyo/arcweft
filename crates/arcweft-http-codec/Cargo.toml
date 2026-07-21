@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "HTTP Content-Type and Accept negotiation for Arcweft codecs."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 http.workspace = true
 
 [lints]

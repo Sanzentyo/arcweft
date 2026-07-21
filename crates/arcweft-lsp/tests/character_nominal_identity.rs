@@ -16,15 +16,26 @@ fn tooling_preserves_cross_character_nominal_provenance() {
     let project = TestProject::new("lsp-character-nominal-identity");
     project.write(
         "arcw.toml",
-        r#"
+        r#"schema = 1
+
 [package]
-name = "lsp-character-nominal-identity"
+id = "org.arcweft.tests.lsp-character-nominal-identity"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.akane", "@character.aoi"]
+visibility = "package"
+demand = "required"
 
 [profiles.game]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
-character_manifests = ["assets/akane.awchar", "assets/aoi.awchar"]
+
+[profiles.game.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
 "#,
     );
     project.write("src/main.arcw", "flow @flow.main main { return \"ok\" }\n");

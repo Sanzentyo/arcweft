@@ -588,9 +588,12 @@ impl SignatureQueryWorkReport {
     }
 }
 
+/// Failure while charging caller-owned semantic signature work.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum SignatureAccountingError {
+pub enum SignatureAccountingError {
+    /// A configured signature-query limit was exceeded.
     Limit(SignatureLimitExceeded),
+    /// A checked work counter overflowed without mutating the counter.
     Arithmetic { counter: SignatureWorkKind },
 }
 

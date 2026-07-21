@@ -337,6 +337,7 @@ impl ExprParser {
         let start = self.cursor;
         let mut fallback_items = None;
         let mut int_literals = Vec::new();
+        let mut int_literal_ranges = Vec::new();
         let mut int_suffix = None;
         let mut int_suffix_seen = false;
         let mut all_int = true;
@@ -354,6 +355,7 @@ impl ExprParser {
                         int_suffix_seen = true;
                     }
                     int_literals.push(literal.clone());
+                    int_literal_ranges.push(self.absolute_range(self.peek_lexed())?);
                 }
                 _ => all_int = false,
             }
@@ -370,8 +372,20 @@ impl ExprParser {
                     self.bump();
                     if self.peek() == &Token::RBracket {
                         self.bump();
-                        let expr =
-                            flat_literal_bracket_seq_expr(all_int, int_literals, fallback_items);
+                        let range = self.consumed_range(start)?;
+                        let expr = flat_literal_bracket_seq_expr(
+                            all_int,
+                            int_literals,
+                            int_literal_ranges,
+                            fallback_items,
+                        )
+                        .map_err(|error| {
+                            ExprParseError::at(
+                                "syntax.expr.numeric_bracket_sequence_invariant",
+                                &error.to_string(),
+                                range,
+                            )
+                        })?;
                         if matches!(expr, Expr::NumericBracketSeq(_)) {
                             self.stats.numeric_seq_summaries = self
                                 .stats
@@ -384,7 +398,20 @@ impl ExprParser {
                 }
                 Token::RBracket => {
                     self.bump();
-                    let expr = flat_literal_bracket_seq_expr(all_int, int_literals, fallback_items);
+                    let range = self.consumed_range(start)?;
+                    let expr = flat_literal_bracket_seq_expr(
+                        all_int,
+                        int_literals,
+                        int_literal_ranges,
+                        fallback_items,
+                    )
+                    .map_err(|error| {
+                        ExprParseError::at(
+                            "syntax.expr.numeric_bracket_sequence_invariant",
+                            &error.to_string(),
+                            range,
+                        )
+                    })?;
                     if matches!(expr, Expr::NumericBracketSeq(_)) {
                         self.stats.numeric_seq_summaries = self
                             .stats

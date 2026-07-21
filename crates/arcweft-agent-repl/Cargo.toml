@@ -7,24 +7,24 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-agent-runner = { path = "../arcweft-agent-runner" }
-arcweft-bundle = { path = "../arcweft-bundle" }
-arcweft-compiler = { path = "../arcweft-compiler" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-debug-model = { path = "../arcweft-debug-model" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-manifest-model = { path = "../arcweft-manifest-model" }
-arcweft-project = { path = "../arcweft-project" }
+arcweft-agent-protocol = { workspace = true }
+arcweft-agent-runner = { workspace = true }
+arcweft-bundle = { workspace = true, default-features = true }
+arcweft-compiler = { workspace = true }
+arcweft-core = { workspace = true }
+arcweft-debug-model = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
+arcweft-manifest-model = { workspace = true }
+arcweft-project = { workspace = true }
 arcweft-resource-model.workspace = true
-arcweft-runtime-codegen = { path = "../arcweft-runtime-codegen" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-source = { path = "../arcweft-source" }
-arcweft-tooling = { path = "../arcweft-tooling" }
+arcweft-runtime-codegen = { workspace = true }
+arcweft-runtime-driver = { workspace = true }
+arcweft-runtime-plan = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-tooling = { workspace = true }
 
 blake3.workspace = true
 serde_json.workspace = true

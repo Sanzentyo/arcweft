@@ -5,7 +5,7 @@ use arcweft_bundle::container::{BundleSectionKind, BundleView, ReadBudget};
 use arcweft_bundle::resource_codec::{
     CompactAssetCatalogSection, CompactAudioGraphSection, CompactDisplayCatalogSection, FieldId,
     ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
-    SectionCodecBudget, SourceMapSection,
+    SectionCodecBudget, SectionCodecError, SourceMapSection, product_catalog::ProductCatalogBudget,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
@@ -175,6 +175,40 @@ fn product_catalog_common_budget_failures_are_reported() {
         )
         .is_err(),
         "common section budget must be enforced for product catalog sections"
+    );
+}
+
+#[test]
+fn asset_catalog_budget_bounds_raw_bytes_without_rejecting_canonical_json_expansion() {
+    let section = CompactAssetCatalogSection {
+        virtual_files: vec![BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "fonts/portable-font.bin".to_owned(),
+            bytes: vec![u8::MAX; 4 * 1024 * 1024 + 1],
+        }],
+        image_assets: Vec::new(),
+    };
+
+    let encoded = section
+        .encode_canonical_section()
+        .expect("raw payload within the asset budget encodes after JSON expansion");
+    assert!(
+        encoded.len() > 16 * 1024 * 1024,
+        "fixture must exercise a transcript larger than the previous shared limit"
+    );
+
+    let budget = ProductCatalogBudget::default();
+    let over_budget = CompactAssetCatalogSection {
+        virtual_files: vec![BundleVirtualFile {
+            space: BundleVirtualFileSpace::Asset,
+            path: "fonts/too-large.bin".to_owned(),
+            bytes: vec![0; budget.virtual_file_bytes + 1],
+        }],
+        image_assets: Vec::new(),
+    };
+    assert_eq!(
+        over_budget.encode_canonical_section(),
+        Err(SectionCodecError::BudgetExceeded("virtual_file_bytes"))
     );
 }
 

@@ -16,8 +16,8 @@ web-audioworklet = ["web-output", "cpal/audioworklet"]
 web-microphone = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
 
 [dependencies]
-arcweft-audio-core = { path = "../arcweft-audio-core" }
-arcweft-audio-mixer = { path = "../arcweft-audio-mixer" }
+arcweft-audio-core = { workspace = true }
+arcweft-audio-mixer = { workspace = true }
 arcweft-interaction-model.workspace = true
 cpal = { workspace = true, default-features = false }
 rtrb.workspace = true

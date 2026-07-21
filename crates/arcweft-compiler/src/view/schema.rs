@@ -65,7 +65,7 @@ pub(super) struct ViewValueProgramCompiler {
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum ViewValueCompileError {
+pub(crate) enum ViewValueCompileError {
     #[error("View value expression `{expression}` requires an expected scalar type")]
     MissingExpectedType { expression: String },
     #[error("View value expression `{expression}` is not supported by the closed value program")]

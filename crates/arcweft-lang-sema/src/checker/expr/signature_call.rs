@@ -486,7 +486,7 @@ impl TypeChecker<'_> {
     ) -> Option<TypeKind> {
         match arg {
             FixedLiteralSpreadSlot::Expr(expr) => self.check_expr_with_expected(expr, expected),
-            FixedLiteralSpreadSlot::Int(literal) => {
+            FixedLiteralSpreadSlot::Int { literal, .. } => {
                 Some(self.check_fixed_literal_spread_int_slot(literal, expected))
             }
         }

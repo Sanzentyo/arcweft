@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::symbol::{CallableDeclarationId, ProjectSymbolTargetId};
+use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId, ProjectSymbolTargetId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use thiserror::Error;
@@ -389,26 +389,39 @@ pub enum ResolveCallError {
     SignatureArithmeticOverflow { counter: SignatureWorkKind },
 }
 
+/// Failure to publish or read checker-owned call-target facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum CallTargetFactError {
+pub enum CallTargetFactError {
+    /// Focused facts were requested from a report produced in another mode.
     #[error("focused call-target facts require focused checker mode")]
     FocusedModeRequired,
+    /// The focused source does not belong to the accepted project.
     #[error("focused call source is not part of the accepted project: {document:?}")]
     FocusedSourceUnavailable { document: SourceDocumentIdentity },
+    /// The focused call was not encountered during checking.
     #[error("focused call target {call:?} was not recorded")]
     FocusedTargetMissing { call: SourceSpan },
+    /// The focused call was encountered more than once.
     #[error("focused call target {call:?} was recorded more than once")]
     FocusedTargetDuplicate { call: SourceSpan },
-    #[error("focused call target {call:?} could not retain checked facts: {reason}")]
+    /// Two committed calls reused one checker expression identity.
+    #[error("call-target expression {expression:?} was recorded more than once")]
+    DuplicateExpression {
+        expression: crate::checker::TypeExpressionId,
+    },
+    /// Checked facts could not be retained for a source-backed call.
+    #[error("call target {call:?} could not retain checked facts: {reason}")]
     Unavailable {
         call: SourceSpan,
         reason: SemanticSignatureError,
     },
-    #[error("focused call target {call:?} could not be resolved: {reason}")]
+    /// Resolution failed before a checked fact could be committed.
+    #[error("call target {call:?} could not be resolved: {reason}")]
     Resolve {
         call: SourceSpan,
         reason: Box<ResolveCallError>,
     },
+    /// Focused signature-query accounting failed.
     #[error("focused signature accounting failed: {reason:?}")]
     SignatureAccounting {
         reason: super::SignatureAccountingError,
@@ -449,6 +462,7 @@ pub enum CallableDiagnosticCode {
     DiagnosticsTruncated,
     AmbiguousTraitMethod,
     DuplicateArgument,
+    ParameterAlreadyBound,
     UnknownNamedArgument,
     MissingArgument,
     TooManyPositionalArguments,
@@ -457,12 +471,6 @@ pub enum CallableDiagnosticCode {
     ArgumentTypeMismatch,
     ResultConstructorExpectedType,
     EnumConstructorExpectedType,
-    CharacterOwnerMissing,
-    CharacterOwnerTypeMismatch,
-    CharacterOwnerUnknownExternal,
-    CharacterOwnerUnknownPart,
-    PresentationLookOwnerUnavailable,
-    DialogueLookOwnerUnavailable,
     DataLastAmbiguity,
     DataLastShadowed,
     VirtualPathRejected,
@@ -506,6 +514,13 @@ pub enum CallableCatalogBuildError {
     },
     #[error("project binding target {target:?} has no registered semantic type")]
     MissingProjectBindingType { target: ProjectSymbolTargetId },
+    #[error(
+        "callable symbol world package {actual:?} does not match HIR project package {expected:?}"
+    )]
+    ProjectWorldPackageMismatch {
+        expected: CallablePackageId,
+        actual: CallablePackageId,
+    },
     #[error("project module {module:?} has no source")]
     MissingProjectModuleSource { module: CanonicalModulePath },
     #[error("project callable identity mismatch for {declaration:?}")]
@@ -541,6 +556,7 @@ impl CallableCatalogBuildError {
             | Self::NonContiguousOverloads { .. }
             | Self::ProjectBindingCollision { .. }
             | Self::MissingProjectBindingType { .. }
+            | Self::ProjectWorldPackageMismatch { .. }
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
             | Self::AmbiguousRustExternBinding { .. }

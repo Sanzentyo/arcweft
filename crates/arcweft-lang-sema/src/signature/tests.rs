@@ -15,17 +15,18 @@ use arcweft_source::SourceDocument;
 
 use crate::{
     callable::{
-        AdapterPackageId, CallableArgumentPolicy, CallableCandidateId, CallableDiagnosticCode,
-        CallableDocumentation, CallableEffectSchema, CallableFamily, CallableGroupIndex,
-        CallableGroupKind, CallableLookupKey, CallableName, CallableOverloadIndex,
-        CallableParameter, CallableParameterGroup, CallableParameterIndex,
-        CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
-        CallableSignatureSchema, CallableValidator, EnvironmentCallableKind,
-        EnvironmentCallableOwner, EnvironmentCallablePublication,
-        EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
-        PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, ResolverWork,
-        SemanticSignatureIndex, SignatureOrigin, SignatureQueryLimits, SignatureQueryStep,
-        SignatureQueryWorkMeter, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        AdapterPackageId, CallableArgumentPolicy, CallableCandidateId, CallableDiagnostic,
+        CallableDiagnosticCode, CallableDiagnosticSubject, CallableDocumentation,
+        CallableEffectSchema, CallableFamily, CallableGroupIndex, CallableGroupKind,
+        CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
+        CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
+        CallableParameterPresence, CallableParameterType, CallablePath, CallableSignatureSchema,
+        CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
+        EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
+        EnvironmentDeclarationOrdinal, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
+        ResolverWork, SemanticSignatureIndex, SignatureOrigin, SignatureQueryLimits,
+        SignatureQueryStep, SignatureQueryWorkMeter, SpreadArgumentPolicy,
+        UnknownNamedArgumentPolicy,
     },
     checker::module::{
         SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
@@ -42,9 +43,9 @@ use crate::{
 };
 
 use super::{
-    SignatureFamilySupport, SignaturePositionError, SignatureQuery, SignatureQueryControl,
-    SignatureQueryError, SignatureQueryOutcome, SignatureRecovery, SignatureSemanticStale,
-    query_signature, signature_family_support,
+    SemanticSignatureHelp, SignatureFamilySupport, SignaturePositionError, SignatureQuery,
+    SignatureQueryControl, SignatureQueryError, SignatureQueryOutcome, SignatureRecovery,
+    SignatureSemanticStale, query_signature, signature_family_support,
 };
 
 const SOURCE: &str = r#"
@@ -1554,6 +1555,39 @@ fn main() -> Unit {
 }
 
 #[test]
+fn compact_numeric_spread_focuses_the_exact_element_parameter() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    spread_choice([1i32, 22i32]...)
+    ()
+}
+",
+        publication(
+            "adapter.signature-compact-numeric-spread-focus",
+            "spread_choice",
+            [two_positional_parameter_schema_with_spread(
+                TypeKind::String,
+            )],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("spread_choice([1i32, 22i32]...)", "22i32")
+        .expect("compact numeric-spread query")
+    else {
+        panic!("compact numeric spread must produce help")
+    };
+
+    assert_eq!(
+        help.active_parameter()
+            .expect("the second compact literal has exact source evidence")
+            .parameter()
+            .get(),
+        1
+    );
+}
+
+#[test]
 fn ambiguous_candidates_use_the_first_committed_mapping_for_ui_focus() {
     let fixture = SignatureFixture::with_publication(
         r"
@@ -1628,6 +1662,382 @@ fn main() -> Unit {
 }
 
 #[test]
+fn comma_start_focuses_the_following_semantic_parameter() {
+    let fixture = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = pair_choice(1i32, 2i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-comma-boundary",
+            "pair_choice",
+            [two_positional_parameter_schema(TypeKind::String)],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("pair_choice(1i32, 2i32)", ",")
+        .expect("comma-boundary signature query")
+    else {
+        panic!("comma boundary must produce signature help")
+    };
+
+    assert_eq!(help.active_signature().get(), 0);
+    assert_eq!(
+        help.active_parameter()
+            .expect("comma start belongs to the following parameter")
+            .parameter()
+            .get(),
+        1
+    );
+}
+
+#[test]
+fn a05_duplicate_named_argument_retains_parameter_and_both_exact_spans() {
+    let call = "argument_target(first = 1i32, first = 2i32)";
+    let (fixture, help) = argument_diagnostic_help(
+        call,
+        "2i32",
+        two_positional_parameter_schema(TypeKind::String),
+    );
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::DuplicateArgument);
+
+    assert_eq!(
+        help.active_parameter()
+            .expect("duplicate remains mapped to its parameter")
+            .parameter()
+            .get(),
+        0
+    );
+    assert!(matches!(
+        diagnostic.subject(),
+        CallableDiagnosticSubject::Parameter(coordinate) if coordinate.parameter().get() == 0
+    ));
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("duplicate primary span")
+        ),
+        "first"
+    );
+    assert_eq!(diagnostic.related().len(), 1);
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.related()[0]
+                .span()
+                .expect("first binding related span")
+        ),
+        "first"
+    );
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::DuplicateArgument]
+    );
+}
+
+#[test]
+fn a05_positional_then_named_duplicate_retains_the_first_argument_span() {
+    let call = "argument_target(1i32, first = 2i32)";
+    let (fixture, help) = argument_diagnostic_help(
+        call,
+        "2i32",
+        two_positional_parameter_schema(TypeKind::String),
+    );
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::DuplicateArgument);
+
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("duplicate primary span")
+        ),
+        "first"
+    );
+    assert_eq!(diagnostic.related().len(), 1);
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.related()[0]
+                .span()
+                .expect("first positional binding span")
+        ),
+        "1i32"
+    );
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::DuplicateArgument]
+    );
+}
+
+#[test]
+fn a05_show_positional_then_named_look_duplicate_uses_the_typed_show_mapping() {
+    let call = "show(@character.akane, .normal, look = .normal)";
+    let fixture = SignatureFixture::new(&format!("fn main() -> Unit {{\n    {call}\n    ()\n}}\n"));
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in(call, "look =")
+        .expect("show duplicate query")
+    else {
+        panic!("typed show duplicate must retain signature help")
+    };
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::DuplicateArgument);
+
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("duplicate look name span")
+        ),
+        "look"
+    );
+    assert_eq!(diagnostic.related().len(), 1);
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.related()[0]
+                .span()
+                .expect("first positional look span")
+        ),
+        ".normal"
+    );
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::DuplicateArgument]
+    );
+}
+
+#[test]
+fn a08_unknown_named_argument_is_unmapped_with_an_exact_argument_span() {
+    let call = "argument_target(unknown = 1i32)";
+    let (fixture, help) = argument_diagnostic_help(
+        call,
+        "1i32",
+        one_parameter_schema(
+            CallableParameterType::Exact(TypeKind::I32),
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Optional,
+            TypeKind::String,
+        ),
+    );
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::UnknownNamedArgument);
+
+    assert_eq!(help.active_parameter(), None);
+    assert!(matches!(
+        diagnostic.subject(),
+        CallableDiagnosticSubject::Argument(_)
+    ));
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("unknown named primary span")
+        ),
+        "unknown"
+    );
+    assert!(diagnostic.related().is_empty());
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::UnknownNamedArgument]
+    );
+}
+
+#[test]
+fn a10_unsupported_spread_stops_later_mapping_with_an_exact_argument_span() {
+    let call = "argument_target([1i32]..., 2i32)";
+    let (fixture, help) = argument_diagnostic_help(
+        call,
+        "2i32",
+        two_positional_parameter_schema(TypeKind::String),
+    );
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::UnsupportedSpread);
+
+    assert_eq!(help.active_parameter(), None);
+    assert!(matches!(
+        diagnostic.subject(),
+        CallableDiagnosticSubject::Argument(_)
+    ));
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("spread primary span")
+        ),
+        "[1i32]..."
+    );
+    assert!(diagnostic.related().is_empty());
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::UnsupportedSpread]
+    );
+}
+
+#[test]
+fn a11_extra_positional_argument_is_unmapped_with_an_exact_argument_span() {
+    let call = "argument_target(1i32)";
+    let (fixture, help) =
+        argument_diagnostic_help(call, "1i32", no_parameter_schema(TypeKind::String));
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::TooManyPositionalArguments);
+
+    assert_eq!(help.active_parameter(), None);
+    assert!(matches!(
+        diagnostic.subject(),
+        CallableDiagnosticSubject::Argument(_)
+    ));
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("extra positional primary span")
+        ),
+        "1i32"
+    );
+    assert!(diagnostic.related().is_empty());
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::TooManyPositionalArguments]
+    );
+}
+
+#[test]
+fn a11_fixed_literal_spread_overflow_uses_each_unmapped_element_span() {
+    let empty_call = "argument_target([1i32]...)";
+    let (empty_fixture, empty) = argument_diagnostic_help(
+        empty_call,
+        "1i32",
+        fixed_literal_spread_schema(0, TypeKind::String),
+    );
+    let empty_diagnostic = diagnostic(&empty, CallableDiagnosticCode::TooManyPositionalArguments);
+    assert_eq!(
+        source_text(
+            &empty_fixture.document,
+            empty_diagnostic
+                .span()
+                .expect("unmapped spread element span")
+        ),
+        "1i32"
+    );
+    assert_eq!(
+        diagnostic_codes(&empty),
+        vec![CallableDiagnosticCode::TooManyPositionalArguments]
+    );
+
+    let partial_call = "argument_target([1i32, 2i32]...)";
+    let partial_fixture = SignatureFixture::with_publication(
+        &format!("fn main() -> Unit {{\n    {partial_call}\n    ()\n}}\n"),
+        publication(
+            "adapter.signature-fixed-spread-overflow",
+            "argument_target",
+            [fixed_literal_spread_schema(1, TypeKind::String)],
+        ),
+    );
+    let SignatureQueryOutcome::Help(first) = partial_fixture
+        .query_in(partial_call, "1i32")
+        .expect("first spread element query")
+    else {
+        panic!("first fixed-spread element must retain signature help")
+    };
+    assert_eq!(
+        first
+            .active_parameter()
+            .expect("first fixed-spread element remains mapped")
+            .parameter()
+            .get(),
+        0
+    );
+    let SignatureQueryOutcome::Help(second) = partial_fixture
+        .query_in(partial_call, "2i32")
+        .expect("overflow spread element query")
+    else {
+        panic!("overflow fixed-spread element must retain signature help")
+    };
+    let diagnostic = diagnostic(&second, CallableDiagnosticCode::TooManyPositionalArguments);
+    assert_eq!(
+        source_text(
+            &partial_fixture.document,
+            diagnostic.span().expect("overflow element span")
+        ),
+        "2i32"
+    );
+    assert_eq!(
+        diagnostic_codes(&second),
+        vec![CallableDiagnosticCode::TooManyPositionalArguments]
+    );
+}
+
+#[test]
+fn a12_missing_required_argument_uses_the_exact_insertion_span() {
+    let call = "argument_target(1i32, )";
+    let (fixture, help) = argument_diagnostic_help(
+        call,
+        ")",
+        two_required_positional_parameter_schema(TypeKind::String),
+    );
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::MissingArgument);
+    let span = diagnostic.span().expect("missing argument insertion span");
+    let call_start = unique_offset(fixture.document.text(), call);
+    let close = call.find(')').expect("call close");
+
+    assert_eq!(
+        help.active_parameter()
+            .expect("trailing comma focuses the missing parameter")
+            .parameter()
+            .get(),
+        1
+    );
+    assert!(matches!(
+        diagnostic.subject(),
+        CallableDiagnosticSubject::Parameter(coordinate) if coordinate.parameter().get() == 1
+    ));
+    assert_eq!(span.range().start(), call_start + close);
+    assert_eq!(span.range().end(), call_start + close);
+    assert!(diagnostic.related().is_empty());
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::MissingArgument]
+    );
+}
+
+#[test]
+fn a14_positional_after_named_reports_the_skipped_binding_and_advances() {
+    let call = "argument_target(first = 1i32, 2i32)";
+    let (fixture, help) = argument_diagnostic_help(
+        call,
+        "2i32",
+        two_positional_parameter_schema(TypeKind::String),
+    );
+    let diagnostic = diagnostic(&help, CallableDiagnosticCode::ParameterAlreadyBound);
+
+    assert_eq!(
+        help.active_parameter()
+            .expect("positional value advances to the next unbound parameter")
+            .parameter()
+            .get(),
+        1
+    );
+    assert!(matches!(
+        diagnostic.subject(),
+        CallableDiagnosticSubject::Parameter(coordinate) if coordinate.parameter().get() == 0
+    ));
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.span().expect("positional primary span")
+        ),
+        "2i32"
+    );
+    assert_eq!(diagnostic.related().len(), 1);
+    assert_eq!(
+        source_text(
+            &fixture.document,
+            diagnostic.related()[0]
+                .span()
+                .expect("named binding related span")
+        ),
+        "first"
+    );
+    assert_eq!(
+        diagnostic_codes(&help),
+        vec![CallableDiagnosticCode::ParameterAlreadyBound]
+    );
+}
+
+#[test]
 fn every_callable_family_has_an_explicit_native_query_audit_state() {
     let audited = CallableFamily::ALL.map(|family| (family, signature_family_support(family)));
     assert_eq!(audited.len(), CallableFamily::ALL.len());
@@ -1641,6 +2051,50 @@ fn every_callable_family_has_an_explicit_native_query_audit_state() {
         256,
         "the audit covers the fixed production query policy"
     );
+}
+
+fn argument_diagnostic_help(
+    call: &str,
+    cursor: &str,
+    schema: CallableSignatureSchema,
+) -> (SignatureFixture, SemanticSignatureHelp) {
+    let source = format!(
+        r"
+fn main() -> Unit {{
+    let value = {call}
+    ()
+}}
+"
+    );
+    let fixture = SignatureFixture::with_publication(
+        &source,
+        publication(
+            "adapter.signature-argument-diagnostic",
+            "argument_target",
+            [schema],
+        ),
+    );
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in(call, cursor)
+        .expect("argument diagnostic signature query")
+    else {
+        panic!("argument diagnostic target must produce signature help")
+    };
+    (fixture, help)
+}
+
+fn diagnostic(help: &SemanticSignatureHelp, code: CallableDiagnosticCode) -> &CallableDiagnostic {
+    help.diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == code)
+        .unwrap_or_else(|| panic!("missing callable diagnostic {code:?}"))
+}
+
+fn diagnostic_codes(help: &SemanticSignatureHelp) -> Vec<CallableDiagnosticCode> {
+    help.diagnostics()
+        .iter()
+        .map(CallableDiagnostic::code)
+        .collect()
 }
 
 fn selected_overload_publication() -> EnvironmentCallablePublication {
@@ -1829,6 +2283,26 @@ fn two_positional_parameter_schema(result: TypeKind) -> CallableSignatureSchema 
     schema_with_parameters(parameters, result)
 }
 
+fn two_required_positional_parameter_schema(result: TypeKind) -> CallableSignatureSchema {
+    let parameters = ["first", "second"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, name)| {
+            CallableParameter::try_new(
+                CallableParameterIndex::try_from_usize(index).expect("parameter index"),
+                Some(CallableName::try_new(name).expect("parameter name")),
+                CallableParameterType::Exact(TypeKind::I32),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+                None,
+                None,
+            )
+            .expect("required positional parameter")
+        })
+        .collect();
+    schema_with_parameters(parameters, result)
+}
+
 fn two_positional_parameter_schema_with_spread(result: TypeKind) -> CallableSignatureSchema {
     let parameters = ["first", "second"]
         .into_iter()
@@ -1837,6 +2311,45 @@ fn two_positional_parameter_schema_with_spread(result: TypeKind) -> CallableSign
             CallableParameter::try_new(
                 CallableParameterIndex::try_from_usize(index).expect("parameter index"),
                 Some(CallableName::try_new(name).expect("parameter name")),
+                CallableParameterType::Exact(TypeKind::I32),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+                None,
+                None,
+            )
+            .expect("fixed-spread parameter")
+        })
+        .collect();
+    let group = CallableParameterGroup::try_new(
+        CallableGroupIndex::ZERO,
+        CallableGroupKind::Initial,
+        parameters,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("fixed-spread parameter group");
+    CallableSignatureSchema::try_new(
+        vec![group],
+        result,
+        CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("fixed-spread signature schema")
+}
+
+fn fixed_literal_spread_schema(
+    parameter_count: usize,
+    result: TypeKind,
+) -> CallableSignatureSchema {
+    let parameters = (0..parameter_count)
+        .map(|index| {
+            CallableParameter::try_new(
+                CallableParameterIndex::try_from_usize(index).expect("parameter index"),
+                Some(CallableName::try_new(format!("value{}", index + 1)).expect("parameter name")),
                 CallableParameterType::Exact(TypeKind::I32),
                 CallableParameterPassing::PositionalOrNamed,
                 CallableParameterPresence::Required,

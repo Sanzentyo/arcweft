@@ -16,13 +16,13 @@ macos-text-input = []
 macos-appkit-text-input = ["macos-text-input", "dep:serde", "dep:serde_json"]
 
 [dependencies]
-arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
-arcweft-desktop-host = { path = "../arcweft-desktop-host" }
-arcweft-presentation = { path = "../arcweft-presentation" }
+arcweft-desktop-contract = { workspace = true }
+arcweft-desktop-host = { workspace = true }
+arcweft-presentation = { workspace = true }
 directories = { workspace = true, optional = true }
 enigo = { workspace = true, optional = true }
 getrandom.workspace = true
-num-traits = "0.2.19"
+num-traits.workspace = true
 rfd = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
@@ -41,7 +41,7 @@ windows = { workspace = true, features = [
 windows-core.workspace = true
 
 [dev-dependencies]
-arcweft-id = { path = "../arcweft-id" }
+arcweft-id = { workspace = true }
 
 # Real TSF COM calls are allowed only in the explicitly annotated Windows-only
 # `unsafe_com` module. All other adapter code is compiler-checked as safe Rust.

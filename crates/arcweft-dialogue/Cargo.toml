@@ -7,14 +7,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-character = { path = "../arcweft-character" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-ref = { path = "../arcweft-ref" }
+arcweft-character = { workspace = true }
+arcweft-core = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-ref = { workspace = true }
 arcweft-resource-model.workspace = true
-arcweft-rich-text-schema = { path = "../arcweft-rich-text-schema" }
-arcweft-source = { path = "../arcweft-source" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-rich-text-schema = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-view = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

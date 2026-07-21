@@ -92,8 +92,9 @@ impl RegisteredCallableCatalogBuilder {
         symbols: &ProjectSymbolTable,
     ) -> Result<(), CallableCatalogBuildError> {
         if project.package() != symbols.world().package() {
-            return Err(CallableCatalogBuildError::MissingProjectModuleSource {
-                module: arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
+            return Err(CallableCatalogBuildError::ProjectWorldPackageMismatch {
+                expected: project.package().clone(),
+                actual: symbols.world().package().clone(),
             });
         }
         let module_count = project.modules().len();

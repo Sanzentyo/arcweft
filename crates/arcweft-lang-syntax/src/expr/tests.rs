@@ -10,6 +10,39 @@ fn strict_error(source: &str) -> ExprParseError {
 }
 
 #[test]
+fn compact_numeric_sequence_retains_exact_nonzero_base_literal_ranges() {
+    let source = "[1i32, 22i32, 0xffi32]";
+    let parsed =
+        parse_expr_fragment_recovering_at(source, 37, CallRecoveryBoundarySyntax::EndOfExpression)
+            .expect("compact numeric sequence parses");
+    let Expr::NumericBracketSeq(sequence) = parsed.expr else {
+        panic!("integer-only sequence must use the compact syntax node")
+    };
+
+    assert_eq!(sequence.literal_range(0), Some(TextRange::new(38, 42)));
+    assert_eq!(sequence.literal_range(1), Some(TextRange::new(44, 49)));
+    assert_eq!(sequence.literal_range(2), Some(TextRange::new(51, 58)));
+    assert_eq!(sequence.literal_range(3), None);
+
+    let invalid_authored = super::NumericBracketSeq::authored(
+        sequence.literals().to_vec(),
+        vec![TextRange::new(38, 42)],
+    );
+    assert!(matches!(
+        invalid_authored,
+        Err(super::numeric::AuthoredNumericBracketSeqError::InvalidLiteralRanges)
+    ));
+
+    let synthetic = super::NumericBracketSeq::new(sequence.literals().to_vec())
+        .expect("same-suffix synthetic sequence");
+    assert_eq!(
+        sequence, synthetic,
+        "source coordinates do not change raw AST equality"
+    );
+    assert_eq!(synthetic.literal_range(0), None);
+}
+
+#[test]
 fn await_expression_preserves_semantics_and_exact_source_ranges() {
     let Expr::Await(plain) = parse_expr("await load()").expect("plain await parses") else {
         panic!("expected await expression");

@@ -16,7 +16,7 @@ mp3 = ["symphonia/mp3"]
 aac = ["symphonia/aac", "symphonia/isomp4"]
 
 [dependencies]
-arcweft-audio-core = { path = "../arcweft-audio-core" }
+arcweft-audio-core = { workspace = true }
 symphonia = { workspace = true, default-features = false }
 thiserror.workspace = true
 

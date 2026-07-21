@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "Apache Arrow IPC and Parquet adapters for Arcweft tabular data."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 arrow.workspace = true
 parquet.workspace = true
 bytes.workspace = true

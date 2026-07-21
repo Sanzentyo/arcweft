@@ -7,57 +7,57 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-agent-policy = { path = "../arcweft-agent-policy" }
-arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
-arcweft-agent-mcp-client = { path = "../arcweft-agent-mcp-client" }
-arcweft-agent-runner = { path = "../arcweft-agent-runner" }
-arcweft-agent-repl = { path = "../arcweft-agent-repl" }
-arcweft-content-policy = { path = "../arcweft-content-policy" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
-arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
-arcweft-bundle = { path = "../arcweft-bundle" }
-arcweft-character = { path = "../arcweft-character" }
-arcweft-character-psd = { path = "../arcweft-character-psd" }
-arcweft-compiler = { path = "../arcweft-compiler" }
-arcweft-debug-sqlite = { path = "../arcweft-debug-sqlite" }
-arcweft-debug-model = { path = "../arcweft-debug-model" }
-arcweft-desktop-native = { path = "../arcweft-desktop-native" }
-arcweft-host-adapter = { path = "../arcweft-host-adapter" }
-arcweft-glyphon = { path = "../arcweft-glyphon" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-image = { path = "../arcweft-image" }
+arcweft-agent-protocol = { workspace = true }
+arcweft-agent-policy = { workspace = true }
+arcweft-agent-mcp = { workspace = true }
+arcweft-agent-mcp-client = { workspace = true }
+arcweft-agent-runner = { workspace = true }
+arcweft-agent-repl = { workspace = true }
+arcweft-content-policy = { workspace = true }
+arcweft-core = { workspace = true }
+arcweft-adapter-context = { workspace = true, features = ["sema"] }
+arcweft-adapter-desktop = { workspace = true }
+arcweft-bundle = { workspace = true, default-features = true }
+arcweft-character = { workspace = true }
+arcweft-character-psd = { workspace = true }
+arcweft-compiler = { workspace = true }
+arcweft-debug-sqlite = { workspace = true }
+arcweft-debug-model = { workspace = true }
+arcweft-desktop-native = { workspace = true }
+arcweft-host-adapter = { workspace = true }
+arcweft-glyphon = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-image = { workspace = true }
 arcweft-interaction-model.workspace = true
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift" }
-arcweft-launch = { path = "../arcweft-launch" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-manifest-model = { path = "../arcweft-manifest-model" }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-jit-cranelift = { workspace = true }
+arcweft-launch = { workspace = true }
+arcweft-lang-sema = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
+arcweft-manifest-model = { workspace = true }
 arcweft-layout.workspace = true
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-project = { path = "../arcweft-project" }
-arcweft-project-loader = { path = "../arcweft-project-loader" }
+arcweft-presentation = { workspace = true }
+arcweft-project = { workspace = true }
+arcweft-project-loader = { workspace = true }
 arcweft-resource-model.workspace = true
-arcweft-player-native = { path = "../arcweft-player-native", optional = true }
-arcweft-player-scene = { path = "../arcweft-player-scene", optional = true }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-render-wgpu = { path = "../arcweft-render-wgpu", optional = true }
-arcweft-rag = { path = "../arcweft-rag" }
-arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver", optional = true }
-arcweft-runtime-host = { path = "../arcweft-runtime-host" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
-arcweft-source = { path = "../arcweft-source" }
-arcweft-test = { path = "../arcweft-test" }
-arcweft-text-layout = { path = "../arcweft-text-layout" }
-arcweft-tooling = { path = "../arcweft-tooling" }
-arcweft-view = { path = "../arcweft-view" }
-arcweft-verify = { path = "../arcweft-verify" }
-arcweft-verify-oxiz = { path = "../arcweft-verify-oxiz" }
-arcweft-verify-z3 = { path = "../arcweft-verify-z3" }
+arcweft-player-native = { workspace = true, optional = true }
+arcweft-player-scene = { workspace = true, optional = true }
+arcweft-render-text = { workspace = true }
+arcweft-render-wgpu = { workspace = true, optional = true }
+arcweft-rag = { workspace = true }
+arcweft-runtime-accelerator = { workspace = true, default-features = true }
+arcweft-runtime-driver = { workspace = true, optional = true }
+arcweft-runtime-host = { workspace = true }
+arcweft-runtime-plan = { workspace = true }
+arcweft-runtime-scheduler = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-test = { workspace = true }
+arcweft-text-layout = { workspace = true }
+arcweft-tooling = { workspace = true }
+arcweft-view = { workspace = true }
+arcweft-verify = { workspace = true }
+arcweft-verify-oxiz = { workspace = true }
+arcweft-verify-z3 = { workspace = true }
 anstream.workspace = true
 anstyle.workspace = true
 annotate-snippets.workspace = true
@@ -65,7 +65,7 @@ base64.workspace = true
 blake3.workspace = true
 clap = { workspace = true, features = ["derive"] }
 ed25519-dalek.workspace = true
-num-traits = "0.2.19"
+num-traits.workspace = true
 png.workspace = true
 pollster = { workspace = true, optional = true }
 reedline = { version = "0.48.0", default-features = false, optional = true }
@@ -75,8 +75,8 @@ thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
-arcweft-lsp = { path = "../arcweft-lsp" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
+arcweft-lsp = { workspace = true }
+arcweft-runtime-driver = { workspace = true }
 
 [[bin]]
 name = "arcw"

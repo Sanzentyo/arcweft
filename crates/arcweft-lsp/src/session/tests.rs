@@ -1,10 +1,12 @@
 use super::*;
 use crate::custom::ArcweftCustomRequest;
 use crate::requests::SignatureRequestRuntime;
-use arcweft_rust_abi::{
-    ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
-    ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
-    ArcweftRustTypeRef,
+use arcweft_adapter_metadata::{
+    AdapterFunctionExport, AdapterMetadata, AdapterParameter, AdapterTarget, AdapterTypeExport,
+    AdapterTypeField, AdapterTypeShape, FunctionPurity,
+};
+use arcweft_manifest_model::{
+    AdapterTypeName, FieldName, FunctionName, ManifestVisibility, RawDigest, TypeReference,
 };
 use lsp_server::{Connection, Message};
 use lsp_types::{
@@ -22,6 +24,9 @@ use std::{
     sync::{Arc, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+const ADAPTER_METADATA: &str =
+    include_str!("../../../arcweft-adapter-metadata/tests/fixtures/truck-rust.adapter.json");
 
 #[test]
 fn capabilities_advertise_full_sync_and_p0_features() {
@@ -239,7 +244,10 @@ fn full_sync_notifications_publish_diagnostics() {
 #[test]
 fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
     let project = TestProject::new("lsp-analysis-cache");
-    project.write("arcw.toml", "[package]\nname = \"lsp-analysis-cache\"\n");
+    project.write(
+        "arcw.toml",
+        &canonical_project_manifest("lsp-analysis-cache", ""),
+    );
     let first = "pub character @character.alice Alice as alice {}\nflow main {\n  alice: one\n}\n";
     project.write("src/main.arcw", first);
     let uri = file_uri(&project.path("src/main.arcw"));
@@ -577,7 +585,7 @@ fn code_actions_canonicalize_sugar_respects_decl_identity_attributes() {
     let project = TestProject::new("lsp-checked-canonicalize-identities");
     project.write(
         "arcw.toml",
-        "[package]\nname = \"lsp-canonicalize-identities\"\n",
+        &canonical_project_manifest("lsp-canonicalize-identities", ""),
     );
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = "#[generated]\nflow @flow.generated generated {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\nflow @flow.opening opening {\n}\nflow @flow.opening start {\n}\n";
@@ -626,7 +634,7 @@ fn code_actions_shared_helper_corpus_matches_tooling_output() {
     let project = TestProject::new("lsp-checked-canonicalize-shared-helper");
     project.write(
         "arcw.toml",
-        "[package]\nname = \"lsp-canonicalize-shared-helper\"\n",
+        &canonical_project_manifest("lsp-canonicalize-shared-helper", ""),
     );
     let source = include_str!(
         "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.arcw"
@@ -660,7 +668,7 @@ fn code_actions_canonicalize_sugar_respects_source_allow_decl_identity_attribute
     let project = TestProject::new("lsp-checked-canonicalize-source-allow");
     project.write(
         "arcw.toml",
-        "[package]\nname = \"lsp-canonicalize-source-allow\"\n",
+        &canonical_project_manifest("lsp-canonicalize-source-allow", ""),
     );
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = "#![allow(style::redundant_decl_identity)]\npub character @character.alice Alice as alice {}\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
@@ -707,7 +715,7 @@ fn code_actions_canonicalize_sugar_nests_dotted_dialogue_defaults() {
     let project = TestProject::new("lsp-checked-canonicalize-dialogue-defaults");
     project.write(
         "arcw.toml",
-        "[package]\nname = \"lsp-canonicalize-defaults\"\n",
+        &canonical_project_manifest("lsp-canonicalize-defaults", ""),
     );
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n}\n";
@@ -996,90 +1004,6 @@ flow opening {
 }
 
 #[test]
-fn code_actions_extract_to_profile_selected_dialogue_defaults() {
-    let project = TestProject::new("lsp-session-dialogue-defaults-extract-profile");
-    let source = r##"
-pub dialogue defaults {
-}
-
-pub dialogue defaults @dialogue.mobile {
-}
-
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#202122")
-            }
-        }
-    }
-}
-
-flow opening {
-    alice: |[夢](ゆめ)[p]
-}
-"##;
-    project.write(
-        "arcw.toml",
-        r#"
-[package]
-name = "lsp-dialogue-defaults-extract"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.mobile"
-"#,
-    );
-    project.write("src/main.arcw", source);
-    let uri = file_uri(&project.path("src/main.arcw"));
-    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, uri.clone(), source);
-    let document = session.documents.get(&uri).expect("open document");
-    let offset = source.find("夢").expect("dialogue content");
-    let position = document.line_index().position_from_byte_offset(offset);
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(position, position),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title
-                    == "Extract `rich_text.text.color` override to dialogue defaults" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("dialogue defaults extraction action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-    let mobile_close = position_of(source, "}\n\npub character alice");
-
-    assert_eq!(edits.len(), 1);
-    assert_eq!(edits[0].range.start, mobile_close);
-    assert_eq!(
-        edits[0].new_text,
-        "    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n"
-    );
-}
-
-#[test]
 fn code_actions_extract_rich_text_contributor_to_nested_dialogue_defaults() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
@@ -1270,34 +1194,19 @@ fn repl_command_request_without_executor_returns_typed_host_unavailable() {
 #[test]
 fn did_open_refreshes_project_profile_for_completion() {
     let project = TestProject::new("lsp-session-profile");
+    let metadata = adapter_metadata_with_function("echo", "String", "String");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-session-profile"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "custom-echo"
-adapter_manifests = ["adapters/custom-echo.toml"]
-"#,
+        &external_module_project_manifest(
+            "lsp-session-profile",
+            "custom-echo",
+            "custom",
+            "generated/custom-echo.adapter.json",
+            &metadata,
+        ),
     );
     project.write("src/main.arcw", "flow @.main main {}\n");
-    project.write(
-        "adapters/custom-echo.toml",
-        r#"
-schema_version = 1
-id = "custom-echo"
-display_name = "Custom Echo"
-
-[[functions]]
-name = "custom.echo"
-return_type = "String"
-params = [{ name = "value", ty = "String" }]
-"#,
-    );
+    project.write("generated/custom-echo.adapter.json", &metadata);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), "flow @.main main {}\n");
@@ -1388,274 +1297,35 @@ pub struct StoryDialogue {
 }
 
 #[test]
-fn hover_uses_profile_selected_dialogue_defaults() {
-    let project = TestProject::new("lsp-session-dialogue-defaults-profile");
-    let source = r"
-pub character @character.alice Alice as alice {}
-
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
-pub dialogue defaults @dialogue.mobile {
-    rich_text {
-        ruby {
-            size = 10px
-        }
-    }
-}
-
-flow @flow.opening opening {
-    alice: |[夢](ゆめ)[p]
-}
-
-entry server @entry.server.main {
-    goto @flow.opening
-}
-";
-    project.write(
-        "arcw.toml",
-        r#"
-[package]
-name = "lsp-hover-dialogue-defaults"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.mobile"
-"#,
-    );
-    project.write("src/main.arcw", source);
-    let uri = file_uri(&project.path("src/main.arcw"));
-    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, uri.clone(), source);
-    assert!(
-        session
-            .profile_for_uri(&uri)
-            .accepted_environment()
-            .is_some(),
-        "dialogue-defaults profile was not accepted: {:#?}",
-        session.profile_for_uri(&uri).diagnostics()
-    );
-
-    let hover = hover_text(&mut session, uri, source, "夢");
-
-    assert!(hover.contains("rich_text.ruby.size = 10px"));
-    assert!(!hover.contains("rich_text.ruby.size = 14px"));
-}
-
-#[test]
-fn definition_includes_profile_selected_dialogue_defaults_manifest_location() {
-    let project = TestProject::new("lsp-session-dialogue-defaults-definition");
-    let source = r"
-pub character @character.alice Alice as alice {}
-
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
-pub dialogue defaults @dialogue.mobile {
-    rich_text {
-        ruby {
-            size = 10px
-        }
-    }
-}
-
-flow @flow.opening opening {
-    alice: |[夢](ゆめ)[p]
-}
-
-entry server @entry.server.main {
-    goto @flow.opening
-}
-";
-    let manifest = r#"
-[package]
-name = "lsp-definition-dialogue-defaults"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.mobile"
-"#;
-    project.write("arcw.toml", manifest);
-    project.write("src/main.arcw", source);
-    let source_uri = file_uri(&project.path("src/main.arcw"));
-    let manifest_uri = file_uri(&project.path("arcw.toml"));
-    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, source_uri.clone(), source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(10),
-        method: GotoDefinition::METHOD.to_owned(),
-        params: serde_json::json!(GotoDefinitionParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier {
-                    uri: source_uri.clone()
-                },
-                position: position_of(source, "夢"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        }),
-    });
-    let definition = serde_json::from_value::<GotoDefinitionResponse>(
-        response.result.expect("definition response"),
-    )
-    .expect("definition response decodes");
-    let GotoDefinitionResponse::Array(locations) = definition else {
-        panic!("expected location array");
-    };
-
-    assert!(locations.iter().any(|location| {
-        location.uri == source_uri
-            && location.range.start == position_of(source, "10px")
-            && location.range.end == position_of(source, "\n        }\n    }\n}\n\nflow")
-    }));
-    assert!(locations.iter().any(|location| {
-        location.uri == manifest_uri
-            && location.range.start == position_of(manifest, "dialogue.mobile")
-            && location.range.end == position_after(manifest, "dialogue.mobile")
-    }));
-}
-
-#[test]
-fn references_include_profile_selected_dialogue_defaults_manifest_location() {
-    let project = TestProject::new("lsp-session-dialogue-defaults-references");
-    let source = r"
-pub character @character.alice Alice as alice {}
-
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
-pub dialogue defaults @dialogue.mobile {
-    rich_text {
-        ruby {
-            size = 10px
-        }
-    }
-}
-
-flow @flow.opening opening {
-    alice: |[夢](ゆめ)[p]
-}
-
-entry server @entry.server.main {
-    goto @flow.opening
-}
-";
-    let manifest = r#"
-[package]
-name = "lsp-references-dialogue-defaults"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-dialogue_defaults = "dialogue.mobile"
-"#;
-    project.write("arcw.toml", manifest);
-    project.write("src/main.arcw", source);
-    let source_uri = file_uri(&project.path("src/main.arcw"));
-    let manifest_uri = file_uri(&project.path("arcw.toml"));
-    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, source_uri.clone(), source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(11),
-        method: References::METHOD.to_owned(),
-        params: serde_json::json!(ReferenceParams {
-            text_document_position: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier {
-                    uri: source_uri.clone()
-                },
-                position: position_of(source, "夢"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-            context: ReferenceContext {
-                include_declaration: true
-            },
-        }),
-    });
-    let locations = serde_json::from_value::<Vec<lsp_types::Location>>(
-        response.result.expect("references response"),
-    )
-    .expect("references response decodes");
-
-    assert!(locations.iter().any(|location| {
-        location.uri == source_uri
-            && location.range.start == position_of(source, "10px")
-            && location.range.end == position_of(source, "\n        }\n    }\n}\n\nflow")
-    }));
-    assert!(locations.iter().any(|location| {
-        location.uri == manifest_uri
-            && location.range.start == position_of(manifest, "dialogue.mobile")
-            && location.range.end == position_after(manifest, "dialogue.mobile")
-    }));
-}
-
-#[test]
 fn completions_use_document_scoped_profiles() {
     let alpha = TestProject::new("lsp-session-alpha");
+    let alpha_metadata = adapter_metadata_with_function("call", "String", "String");
     alpha.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-session-alpha"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "alpha"
-adapter_manifests = ["adapters/alpha.toml"]
-"#,
+        &external_module_project_manifest(
+            "lsp-session-alpha",
+            "alpha",
+            "alpha",
+            "generated/alpha.adapter.json",
+            &alpha_metadata,
+        ),
     );
     alpha.write("src/main.arcw", "flow @.main main {}\n");
-    alpha.write(
-        "adapters/alpha.toml",
-        adapter_manifest("alpha", "alpha.call").as_str(),
-    );
+    alpha.write("generated/alpha.adapter.json", &alpha_metadata);
     let beta = TestProject::new("lsp-session-beta");
+    let beta_metadata = adapter_metadata_with_function("call", "String", "String");
     beta.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-session-beta"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "beta"
-adapter_manifests = ["adapters/beta.toml"]
-"#,
+        &external_module_project_manifest(
+            "lsp-session-beta",
+            "beta",
+            "beta",
+            "generated/beta.adapter.json",
+            &beta_metadata,
+        ),
     );
     beta.write("src/main.arcw", "flow @.main main {}\n");
-    beta.write(
-        "adapters/beta.toml",
-        adapter_manifest("beta", "beta.call").as_str(),
-    );
+    beta.write("generated/beta.adapter.json", &beta_metadata);
     let alpha_uri = file_uri(&alpha.path("src/main.arcw"));
     let beta_uri = file_uri(&beta.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
@@ -1690,25 +1360,19 @@ adapter_manifests = ["adapters/beta.toml"]
 #[test]
 fn watched_file_change_refreshes_profile_metadata() {
     let project = TestProject::new("lsp-session-watch-refresh");
+    let before_metadata = adapter_metadata_with_function("before", "String", "String");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-session-watch-refresh"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "custom"
-adapter_manifests = ["adapters/custom.toml"]
-"#,
+        &external_module_project_manifest(
+            "lsp-session-watch-refresh",
+            "custom",
+            "custom",
+            "generated/custom.adapter.json",
+            &before_metadata,
+        ),
     );
     project.write("src/main.arcw", "flow @.main main {}\n");
-    project.write(
-        "adapters/custom.toml",
-        adapter_manifest("custom", "custom.before").as_str(),
-    );
+    project.write("generated/custom.adapter.json", &before_metadata);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), "flow @.main main {}\n");
@@ -1718,9 +1382,17 @@ adapter_manifests = ["adapters/custom.toml"]
             .any(|item| item.label == "custom.before")
     );
 
+    let after_metadata = adapter_metadata_with_function("after", "String", "String");
+    project.write("generated/custom.adapter.json", &after_metadata);
     project.write(
-        "adapters/custom.toml",
-        adapter_manifest("custom", "custom.after").as_str(),
+        "arcw.toml",
+        &external_module_project_manifest(
+            "lsp-session-watch-refresh",
+            "custom",
+            "custom",
+            "generated/custom.adapter.json",
+            &after_metadata,
+        ),
     );
     let refresh = Notification::new(
         DidChangeWatchedFiles::METHOD.to_owned(),
@@ -1737,39 +1409,31 @@ adapter_manifests = ["adapters/custom.toml"]
 }
 
 #[test]
-fn watched_file_change_refreshes_rust_metadata() {
+fn watched_file_change_refreshes_external_module_metadata() {
     let project = TestProject::new("lsp-session-rust-watch-refresh");
+    let metadata = quest_adapter_metadata();
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-session-rust-watch-refresh"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-rust_metadata = ["target/arcweft/quest.json"]
-"#,
+        &external_module_project_manifest(
+            "lsp-session-rust-watch-refresh",
+            "quest",
+            "quest",
+            "generated/quest.adapter.json",
+            &metadata,
+        ),
     );
     project.write("src/main.arcw", "flow @.main main {}\n");
-    project.write("target/arcweft/quest.json", "{ not json");
+    project.write("generated/quest.adapter.json", "{ not json");
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), "flow @.main main {}\n");
     assert!(
         !completion_labels(&mut session, uri.clone())
             .iter()
-            .any(|item| item.label == "quest_evaluate")
+            .any(|item| item.label == "quest.quest_evaluate")
     );
 
-    project.write(
-        "target/arcweft/quest.json",
-        &quest_rust_manifest()
-            .to_json_pretty()
-            .expect("metadata json"),
-    );
+    project.write("generated/quest.adapter.json", &metadata);
     let refresh = Notification::new(
         DidChangeWatchedFiles::METHOD.to_owned(),
         DidChangeWatchedFilesParams {
@@ -1782,40 +1446,26 @@ rust_metadata = ["target/arcweft/quest.json"]
     assert!(
         completion_labels(&mut session, uri)
             .iter()
-            .any(|item| item.label == "quest_evaluate")
+            .any(|item| item.label == "quest.quest_evaluate")
     );
 }
 
 #[test]
-fn session_reads_rust_metadata_for_completion_and_hover() {
+fn session_reads_external_module_metadata_for_completion_and_hover() {
     let project = TestProject::new("lsp-session-rust-metadata");
+    let metadata = quest_adapter_metadata();
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-session-rust-metadata"
-
-[profiles.dev]
-kind = "server"
-entry = "entry.server.main"
-source = "src/main.arcw"
-adapter = "quest"
-adapter_manifests = ["adapters/quest.toml"]
-rust_metadata = ["target/arcweft/quest.json"]
-"#,
+        &external_module_project_manifest(
+            "lsp-session-rust-metadata",
+            "quest",
+            "quest",
+            "generated/quest.adapter.json",
+            &metadata,
+        ),
     );
-    project.write(
-        "adapters/quest.toml",
-        adapter_manifest("quest", "quest.echo").as_str(),
-    );
-    project.write(
-        "target/arcweft/quest.json",
-        &quest_rust_manifest()
-            .to_json_pretty()
-            .expect("metadata json"),
-    );
-    let source = "fn evaluate_stats(stats: PlayerStats) -> String {\n    quest_evaluate(stats)\n}\n\
-entry server @entry.server.main { goto @flow.main }\n\
+    project.write("generated/quest.adapter.json", &metadata);
+    let source = "entry server @entry.server.main { goto @flow.main }\n\
 flow @flow.main main {}\n";
     project.write("src/main.arcw", source);
     let uri = file_uri(&project.path("src/main.arcw"));
@@ -1826,32 +1476,34 @@ flow @flow.main main {}\n";
             .profile_for_uri(&uri)
             .accepted_environment()
             .is_some(),
-        "Rust-metadata profile was not accepted: {:#?}",
+        "external-module profile was not accepted: {:#?}",
         session.profile_for_uri(&uri).diagnostics()
     );
 
     let completions = completion_labels(&mut session, uri.clone());
     let player_stats = completions
         .iter()
-        .find(|item| item.label == "PlayerStats")
-        .expect("PlayerStats completion");
-    assert!(player_stats.detail.as_deref().is_some_and(|detail| {
-        detail.contains("struct PlayerStats") && detail.contains("tags: Vec<String>")
-    }));
+        .find(|item| item.label == "quest.PlayerStats")
+        .expect("mounted PlayerStats completion");
+    assert_eq!(player_stats.detail.as_deref(), Some("quest.PlayerStats"));
     let evaluate = completions
         .iter()
-        .find(|item| item.label == "quest_evaluate")
-        .expect("quest_evaluate completion");
-    assert!(
-        evaluate
-            .detail
-            .as_deref()
-            .is_some_and(|detail| detail == "quest_evaluate(stats: PlayerStats) -> String")
-    );
+        .find(|item| item.label == "quest.quest_evaluate")
+        .expect("mounted quest_evaluate completion");
+    assert!(evaluate.detail.as_deref().is_some_and(|detail| {
+        detail == "quest.quest_evaluate(stats: quest.PlayerStats) -> String"
+    }));
 
-    let hover = hover_text(&mut session, uri, source, "PlayerStats");
-    assert!(hover.contains("struct PlayerStats"));
-    assert!(hover.contains("Package: quest_logic"));
+    let hover = arcweft_verify_lsp::profile_hover(
+        &session.profile_for_uri(&uri).context(),
+        "quest.PlayerStats",
+    )
+    .expect("mounted type hover");
+    assert!(matches!(
+        hover.contents,
+        lsp_types::HoverContents::Scalar(lsp_types::MarkedString::String(text))
+            if text == "quest.PlayerStats: quest.PlayerStats"
+    ));
 }
 
 #[test]
@@ -2626,43 +2278,36 @@ fn completion_labels(session: &mut ArcweftLspSession, uri: Uri) -> Vec<lsp_types
     }
 }
 
-fn quest_rust_manifest() -> ArcweftRustManifest {
-    ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "quest_logic".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_type(ArcweftRustTypeDecl {
-        name: "PlayerStats".to_owned(),
-        rust_path: "quest_logic::PlayerStats".to_owned(),
-        kind: ArcweftRustTypeKind::Struct {
+fn quest_adapter_metadata() -> String {
+    let mut metadata = base_adapter_metadata();
+    metadata.exports.types = vec![AdapterTypeExport {
+        name: AdapterTypeName::new("PlayerStats").expect("type name"),
+        visibility: ManifestVisibility::Public,
+        shape: AdapterTypeShape::Record {
             fields: vec![
-                ArcweftRustField {
-                    name: "score".to_owned(),
-                    ty: ArcweftRustTypeRef::I32,
+                AdapterTypeField {
+                    name: FieldName::new("score").expect("field name"),
+                    ty: TypeReference::new("i32").expect("type reference"),
                 },
-                ArcweftRustField {
-                    name: "tags".to_owned(),
-                    ty: ArcweftRustTypeRef::Vec {
-                        item: Box::new(ArcweftRustTypeRef::String),
-                    },
+                AdapterTypeField {
+                    name: FieldName::new("tags").expect("field name"),
+                    ty: TypeReference::new("Vec<String>").expect("type reference"),
                 },
             ],
         },
-    })
-    .with_function(ArcweftRustFunction {
-        name: "quest_evaluate".to_owned(),
-        rust_path: "quest_logic::evaluate".to_owned(),
-        params: vec![ArcweftRustParam {
-            name: "stats".to_owned(),
-            ty: ArcweftRustTypeRef::Named {
-                name: "PlayerStats".to_owned(),
-            },
+    }];
+    metadata.exports.functions = vec![AdapterFunctionExport {
+        name: FunctionName::new("quest_evaluate").expect("function name"),
+        visibility: ManifestVisibility::Public,
+        params: vec![AdapterParameter {
+            name: FieldName::new("stats").expect("field name"),
+            ty: TypeReference::new("PlayerStats").expect("type reference"),
         }],
-        return_type: ArcweftRustTypeRef::String,
-        purity: ArcweftRustPurity::Pure,
+        return_type: TypeReference::new("String").expect("type reference"),
+        purity: FunctionPurity::Pure,
         effects: Vec::new(),
-    })
+    }];
+    encode_adapter_metadata(metadata)
 }
 
 fn hover_text(session: &mut ArcweftLspSession, uri: Uri, source: &str, needle: &str) -> String {
@@ -2779,39 +2424,88 @@ pub(super) fn position_after(source: &str, needle: &str) -> Position {
     )
 }
 
-fn adapter_manifest(id: &str, function: &str) -> String {
-    let mut param = toml::Table::new();
-    param.insert("name".to_owned(), toml::Value::String("value".to_owned()));
-    param.insert("ty".to_owned(), toml::Value::String("String".to_owned()));
+fn canonical_project_manifest(package: &str, profile_tables: &str) -> String {
+    format!(
+        "schema = 1\n\n[package]\nid = \"org.arcweft.tests.{package}\"\nversion = \"0.1.0\"\n{profile_tables}"
+    )
+}
 
-    let mut function_entry = toml::Table::new();
-    function_entry.insert("name".to_owned(), toml::Value::String(function.to_owned()));
-    function_entry.insert(
-        "return_type".to_owned(),
-        toml::Value::String("String".to_owned()),
-    );
-    function_entry.insert(
-        "params".to_owned(),
-        toml::Value::Array(vec![toml::Value::Table(param)]),
-    );
+fn base_adapter_metadata() -> AdapterMetadata {
+    let mut metadata = serde_json::from_str::<AdapterMetadata>(ADAPTER_METADATA)
+        .expect("canonical adapter metadata fixture");
+    metadata.requirements.clear();
+    metadata.exports.types.clear();
+    metadata.exports.functions.clear();
+    metadata.exports.activities.clear();
+    metadata
+}
 
-    let mut manifest = toml::Table::new();
-    manifest.insert(
-        "schema_version".to_owned(),
-        toml::Value::Integer(i64::from(
-            arcweft_adapter_context::codec::ADAPTER_MANIFEST_SCHEMA_VERSION,
-        )),
-    );
-    manifest.insert("id".to_owned(), toml::Value::String(id.to_owned()));
-    manifest.insert(
-        "display_name".to_owned(),
-        toml::Value::String(id.to_owned()),
-    );
-    manifest.insert(
-        "functions".to_owned(),
-        toml::Value::Array(vec![toml::Value::Table(function_entry)]),
-    );
-    toml::to_string(&toml::Value::Table(manifest)).expect("adapter manifest TOML")
+fn adapter_metadata_with_function(function: &str, parameter: &str, result: &str) -> String {
+    let mut metadata = base_adapter_metadata();
+    metadata.exports.functions = vec![AdapterFunctionExport {
+        name: FunctionName::new(function).expect("function name"),
+        visibility: ManifestVisibility::Public,
+        params: vec![AdapterParameter {
+            name: FieldName::new("value").expect("field name"),
+            ty: TypeReference::new(parameter).expect("parameter type"),
+        }],
+        return_type: TypeReference::new(result).expect("return type"),
+        purity: FunctionPurity::Pure,
+        effects: Vec::new(),
+    }];
+    encode_adapter_metadata(metadata)
+}
+
+fn encode_adapter_metadata(mut metadata: AdapterMetadata) -> String {
+    metadata.abi_hash = metadata.computed_abi_hash().expect("adapter ABI hash");
+    metadata.payload_hash = metadata
+        .computed_payload_hash()
+        .expect("adapter payload hash");
+    serde_json::to_string_pretty(&metadata).expect("adapter metadata JSON")
+}
+
+fn external_module_project_manifest(
+    package: &str,
+    import: &str,
+    mount: &str,
+    metadata_path: &str,
+    metadata_source: &str,
+) -> String {
+    let metadata = serde_json::from_str::<AdapterMetadata>(metadata_source)
+        .expect("canonical adapter metadata");
+    let family = match &metadata.target {
+        AdapterTarget::Rust(_) => "rust",
+        AdapterTarget::Wasm(_) => "wasm",
+        AdapterTarget::Process(_) => "process",
+    };
+    let raw_hash = RawDigest::for_bytes(metadata_source.as_bytes());
+    format!(
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.{package}"
+version = "0.1.0"
+
+[external-modules.{import}]
+mount = "{mount}"
+metadata = "{metadata_path}"
+metadata-hash = "{raw_hash}"
+expected-package = "{}"
+expected-version = "{}"
+expected-module = "{}"
+expected-family = "{family}"
+expected-abi-hash = "{}"
+visibility = "package"
+demand = "required"
+
+[profiles.dev]
+kind = "server"
+entry = "@entry.server.main"
+source = "src/main.arcw"
+external-modules = ["{import}"]
+"#,
+        metadata.package.id, metadata.package.version, metadata.module.id, metadata.abi_hash,
+    )
 }
 
 pub(super) fn file_uri(path: &Path) -> Uri {

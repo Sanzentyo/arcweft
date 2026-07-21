@@ -10,7 +10,7 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
+arcweft-render-wgpu = { workspace = true }
 thiserror.workspace = true
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = ["console"] }

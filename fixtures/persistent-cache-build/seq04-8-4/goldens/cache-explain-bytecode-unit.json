@@ -1,27 +1,27 @@
 {
-  "status": "found",
-  "query": "bytecode-unit:crate",
+  "issues": [],
   "matches": [
     {
-      "kind": "record",
       "artifact_kind": "bytecode_unit",
+      "kind": "record",
       "logical_item": "bytecode-unit:crate",
       "object_status": "present",
       "persistent_query": {
-        "query": "bytecode_unit",
-        "object_kind": "bytecode_unit",
-        "producer_family": "full_build",
-        "producer_classification": "actual_reusable_ready",
-        "payload_kind": "bytecode_unit",
-        "status": "hit",
+        "actual_reuse_policy": "verified_reusable",
+        "bytecode_unit_reuse_policy": "verified_reusable",
         "cache_record_status": {
           "kind": "hit"
         },
-        "bytecode_unit_reuse_policy": "verified_reusable",
-        "actual_reuse_policy": "verified_reusable",
-        "recovery_action": "none_required"
+        "object_kind": "bytecode_unit",
+        "payload_kind": "bytecode_unit",
+        "producer_classification": "actual_reusable_ready",
+        "producer_family": "full_build",
+        "query": "bytecode_unit",
+        "recovery_action": "none_required",
+        "status": "hit"
       }
     }
   ],
-  "issues": []
+  "query": "bytecode-unit:crate",
+  "status": "found"
 }

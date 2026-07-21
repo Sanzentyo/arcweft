@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "Sans-I/O Arcweft save envelope and migration boundary."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 blake3.workspace = true
 serde.workspace = true
 serde_ignored.workspace = true

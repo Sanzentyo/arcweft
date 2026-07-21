@@ -8,10 +8,24 @@ use std::fmt;
 
 use thiserror::Error;
 
+use crate::ast::common::TextRange;
+
 /// Compact representation for integer-only bracket sequence literals.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct NumericBracketSeq {
     literals: Vec<IntLiteral>,
+    source: NumericBracketSource,
+}
+
+#[derive(Clone, Debug)]
+enum NumericBracketSource {
+    Synthetic,
+    Authored(AuthoredNumericBracketSource),
+}
+
+#[derive(Clone, Debug)]
+struct AuthoredNumericBracketSource {
+    literal_ranges: Box<[TextRange]>,
 }
 
 impl NumericBracketSeq {
@@ -19,9 +33,31 @@ impl NumericBracketSeq {
     pub fn new(literals: Vec<IntLiteral>) -> Result<Self, NumericBracketSeqError> {
         let suffix = literals.first().and_then(IntLiteral::suffix);
         if literals.iter().all(|literal| literal.suffix() == suffix) {
-            Ok(Self { literals })
+            Ok(Self {
+                literals,
+                source: NumericBracketSource::Synthetic,
+            })
         } else {
             Err(NumericBracketSeqError)
+        }
+    }
+
+    /// Builds a parser-owned compact sequence with one exact range per literal.
+    pub(super) fn authored(
+        literals: Vec<IntLiteral>,
+        literal_ranges: Vec<TextRange>,
+    ) -> Result<Self, AuthoredNumericBracketSeqError> {
+        let source = AuthoredNumericBracketSource::try_new(literals.len(), literal_ranges)?;
+        let mut sequence = Self::new(literals)?;
+        sequence.source = NumericBracketSource::Authored(source);
+        Ok(sequence)
+    }
+
+    /// Exact authored byte range for one literal, absent for synthetic AST values.
+    pub fn literal_range(&self, index: usize) -> Option<TextRange> {
+        match &self.source {
+            NumericBracketSource::Synthetic => None,
+            NumericBracketSource::Authored(source) => source.literal_range(index),
         }
     }
 
@@ -45,6 +81,39 @@ impl NumericBracketSeq {
         self.literals.is_empty()
     }
 }
+
+impl AuthoredNumericBracketSource {
+    fn try_new(
+        literal_count: usize,
+        literal_ranges: Vec<TextRange>,
+    ) -> Result<Self, AuthoredNumericBracketSeqError> {
+        let ranges_are_valid = literal_ranges.len() == literal_count
+            && literal_ranges
+                .iter()
+                .all(|range| range.start() < range.end())
+            && literal_ranges
+                .windows(2)
+                .all(|ranges| ranges[0].end() <= ranges[1].start());
+        if !ranges_are_valid {
+            return Err(AuthoredNumericBracketSeqError::InvalidLiteralRanges);
+        }
+        Ok(Self {
+            literal_ranges: literal_ranges.into_boxed_slice(),
+        })
+    }
+
+    fn literal_range(&self, index: usize) -> Option<TextRange> {
+        self.literal_ranges.get(index).copied()
+    }
+}
+
+impl PartialEq for NumericBracketSeq {
+    fn eq(&self, other: &Self) -> bool {
+        self.literals == other.literals
+    }
+}
+
+impl Eq for NumericBracketSeq {}
 
 /// Radix used by an integer literal's source spelling.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -229,6 +298,14 @@ pub enum IntLiteralValueError {
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[error("compact integer sequence literals must use one common suffix")]
 pub struct NumericBracketSeqError;
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub(super) enum AuthoredNumericBracketSeqError {
+    #[error(transparent)]
+    Numeric(#[from] NumericBracketSeqError),
+    #[error("compact integer sequence literal ranges must be non-empty, ordered, and complete")]
+    InvalidLiteralRanges,
+}
 
 pub(super) fn split_number_suffix(source: &str) -> (&str, &str) {
     let split = numeric_body_len(source);

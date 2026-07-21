@@ -1,38 +1,38 @@
 {
-  "fixture": "normal-single",
   "corrupted_query": "bytecode_unit",
   "corrupted_record": "<CACHE>/records/bytecode-unit/<ARTIFACT-KEY>.awci",
+  "fixture": "normal-single",
   "third_build": {
+    "cache_record": {
+      "artifact_kind": "bytecode_unit",
+      "key": "<DIGEST>",
+      "logical_item": "bytecode-unit:crate",
+      "object_digest": "<DIGEST>",
+      "query": "bytecode_unit",
+      "reuse_evidence": {
+        "identity": "<DIGEST>",
+        "identity_owner": "full_build_bytecode_unit_artifact",
+        "kind": "actual_reusable",
+        "producer_family": "full_build"
+      },
+      "status": "rebuilt"
+    },
     "report": {
-      "status": "ok",
-      "package": "seq04_8_4_normal_build_cache",
-      "selected_profile": null,
-      "modules": [
-        "crate"
-      ],
       "compile_units": [
         {
+          "cache": "miss",
           "id": 0,
           "modules": [
             "crate"
-          ],
-          "cache": "miss"
+          ]
         }
-      ]
-    },
-    "cache_record": {
-      "query": "bytecode_unit",
-      "artifact_kind": "bytecode_unit",
-      "logical_item": "bytecode-unit:crate",
-      "status": "rebuilt",
-      "key": "<DIGEST>",
-      "object_digest": "<DIGEST>",
-      "reuse_evidence": {
-        "kind": "actual_reusable",
-        "producer_family": "full_build",
-        "identity_owner": "full_build_bytecode_unit_artifact",
-        "identity": "<DIGEST>"
-      }
+      ],
+      "modules": [
+        "crate"
+      ],
+      "package": "org.arcweft.fixtures.seq04-8-4-normal-build-cache",
+      "selected_profile": null,
+      "status": "ok"
     },
     "snapshot_query": {
       "kind": "rebuilt",

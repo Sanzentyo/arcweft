@@ -277,6 +277,13 @@ automated correctness evidence.
 ## Rust conventions
 
 - Use `cargo fmt`.
+- Keep workspace-member dependency locations centralized in the root
+  `[workspace.dependencies]`. Member manifests must inherit another workspace
+  crate with `workspace = true` and may add only their local
+  `optional`/`features`/`default-features` policy. A direct member-to-member
+  `path = "../..."` requires a documented concrete exception such as an
+  excluded standalone fixture that cannot inherit the workspace; do not use
+  local paths merely because they are convenient.
 - Use `cargo clippy --workspace --all-targets --all-features` when feasible.
 - Keep Cargo feature sets stable to avoid unnecessary `target/` growth. Prefer
   the checked-in `just` entrypoints and repeat the same feature combination for
@@ -384,6 +391,28 @@ Use code fences consistently:
 When a user provides a zip design package and asks to set or pursue an
 implementation goal, handle the package as the goal's source of truth before
 writing production code.
+
+Treat ZIP files placed anywhere directly under `docs/reviews/` (including
+`requests/` or `designs/`) as an intake inbox even when the user does not repeat
+their external path. Notice them during related review work, verify their hash
+and internal manifest, compare them with same-sequence packages already
+accepted, and continue the appropriate design or implementation workflow
+autonomously. Do not leave a returned archive mixed with request markdown:
+
+- keep independently throwable request markdown in `docs/reviews/requests/`;
+- place stable extracted design/contract material in a sequence-named path
+  under `docs/reviews/designs/` when repository retention is useful;
+- move an already repository-scoped original archive and its sidecars together
+  under that sequence's design-package path only when retaining the binary is
+  intentional; otherwise record its verified external path and SHA-256 in the
+  implementation intake note rather than copying another archive into Git;
+- never expose an extracted overlay as an active workspace crate or preserve a
+  superseded package as a compatibility implementation.
+
+Package relocation is housekeeping, not a reason to pause unrelated in-scope
+work. After adjudication, connect the selected contract to its implementation
+note, tests, dependency order, and current goal without waiting for a second
+instruction.
 
 Before setting the goal:
 

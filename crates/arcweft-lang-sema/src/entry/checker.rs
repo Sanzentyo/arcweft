@@ -26,7 +26,7 @@ use arcweft_lang_syntax::{
 use arcweft_source::SourceSpan;
 
 use crate::{
-    callable::{CallableRecord, RegisteredCallableCatalog},
+    callable::{CallTargetFact, CallableFamily, CallableRecord, RegisteredCallableCatalog},
     check::TypeCheckReport,
 };
 
@@ -52,6 +52,22 @@ pub struct CheckedEntryDiagnostic {
     message: String,
     primary: SourceSpan,
     related: Vec<SourceSpan>,
+}
+
+/// Exact ordinary-function declarations selected as Agent entry controllers.
+///
+/// This inventory is resolved from typed entry-role references and the accepted
+/// project symbol table. It deliberately does not infer controller roles from
+/// function bodies, effects, names, or attributes.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct SelectedAgentControllerRoles {
+    declarations: BTreeSet<CallableDeclarationId>,
+}
+
+impl SelectedAgentControllerRoles {
+    fn contains(&self, declaration: &CallableDeclarationId) -> bool {
+        self.declarations.contains(declaration)
+    }
 }
 
 impl CheckedEntryDiagnostic {
@@ -172,6 +188,7 @@ impl<'a> EntryCheckContext<'a> {
         let mut ids = BTreeMap::<String, SourceSpan>::new();
         let selected_agent_controllers = self.selected_agent_controllers();
         self.validate_function_role_attributes(&selected_agent_controllers, &mut diagnostics);
+        self.validate_agent_callable_roles(&selected_agent_controllers, &mut diagnostics);
 
         for (module_path, module) in self.project.modules() {
             for declaration in module.declarations() {
@@ -231,8 +248,9 @@ impl<'a> EntryCheckContext<'a> {
         }
     }
 
-    fn selected_agent_controllers(&self) -> BTreeSet<CallableDeclarationId> {
-        self.project
+    fn selected_agent_controllers(&self) -> SelectedAgentControllerRoles {
+        let declarations = self
+            .project
             .modules()
             .flat_map(|(module_path, module)| {
                 module.declarations().iter().filter_map(move |declaration| {
@@ -249,22 +267,18 @@ impl<'a> EntryCheckContext<'a> {
                         else {
                             return None;
                         };
-                        let path = ProjectSymbolPath::from_str(path.as_str()).ok()?;
-                        let path = SymbolPath::try_from(&path).ok()?;
                         let source = source_span(module, *value_range);
-                        self.symbols
-                            .resolve_callable(module_path, &path, &source)
-                            .ok()
-                            .map(|symbol| symbol.declaration().clone())
+                        resolve_selected_agent_controller(self.symbols, module_path, path, &source)
                     })
                 })
             })
-            .collect()
+            .collect();
+        SelectedAgentControllerRoles { declarations }
     }
 
     fn validate_function_role_attributes(
         &self,
-        selected_agent_controllers: &BTreeSet<CallableDeclarationId>,
+        selected_agent_controllers: &SelectedAgentControllerRoles,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) {
         for (declaration, (module, function)) in &self.functions {
@@ -289,6 +303,33 @@ impl<'a> EntryCheckContext<'a> {
                 }
             }
         }
+    }
+
+    fn validate_agent_callable_roles(
+        &self,
+        selected_agent_controllers: &SelectedAgentControllerRoles,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) {
+        // Rejected calls already stop at type checking. Entry policy owns only
+        // successful Agent-family selections whose lexical function lacks the
+        // exact controller role resolved above.
+        diagnostics.extend(self.typecheck.retained_call_target_facts().filter_map(|facts| {
+            let CallTargetFact::Selected { selected, .. } = facts.target() else {
+                return None;
+            };
+            if selected.id().family() != CallableFamily::Agent
+                || facts
+                    .enclosing_callable()
+                    .is_some_and(|owner| selected_agent_controllers.contains(owner))
+            {
+                return None;
+            }
+            Some(CheckedEntryDiagnostic::new(
+                "sema.entry.unbound_agent_intrinsic",
+                "Agent call is only valid inside an ordinary function selected as an Agent entry controller",
+                facts.call_span().clone(),
+            ))
+        }));
     }
 
     fn check_entry(
@@ -976,6 +1017,20 @@ fn unique_initial_flow_target<'a>(
         return None;
     };
     Some(target)
+}
+
+fn resolve_selected_agent_controller(
+    symbols: &ProjectSymbolTable,
+    module: &CanonicalModulePath,
+    path: &DottedPath,
+    source: &SourceSpan,
+) -> Option<CallableDeclarationId> {
+    let path = ProjectSymbolPath::from_str(path.as_str()).ok()?;
+    let path = SymbolPath::try_from(&path).ok()?;
+    symbols
+        .resolve_callable(module, &path, source)
+        .ok()
+        .map(|symbol| symbol.declaration().clone())
 }
 
 fn source_span(module: &HirModule, range: TextRange) -> SourceSpan {

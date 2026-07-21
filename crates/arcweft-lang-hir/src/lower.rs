@@ -315,7 +315,11 @@ fn lower_function(
 #[cfg(test)]
 mod tests {
     use super::lower_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::{
+        ast::flow::Stmt,
+        expr::{CallArg, Expr},
+        parser::parse_source,
+    };
 
     #[test]
     fn lowering_preserves_flow_attributes() {
@@ -358,6 +362,41 @@ flow @flow.opening opening {
         assert_eq!(hir.attributes()[0].name(), "generated");
         assert_eq!(hir.attributes()[0].args(), Some("tool"));
         assert!(hir.has_attribute("generated"));
+    }
+
+    #[test]
+    fn lowering_preserves_compact_numeric_spread_literal_ranges() {
+        let source = r"
+fn main() -> Unit {
+    spread_choice([1i32, 22i32]...)
+    ()
+}
+";
+        let tree = parse_source(source).into_typed_tree();
+        let hir = lower_to_hir(&tree).expect("numeric spread source lowers to HIR");
+        let statement = hir.functions()[0]
+            .statements()
+            .first()
+            .expect("spread call statement");
+        let Stmt::Expr {
+            expr: Expr::Call(call),
+            ..
+        } = statement
+        else {
+            panic!("first statement must remain a typed call")
+        };
+        let [CallArg::Spread { value }] = call.args() else {
+            panic!("call must retain one spread argument")
+        };
+        let Expr::NumericBracketSeq(sequence) = value.as_ref() else {
+            panic!("spread value must retain the compact numeric sequence")
+        };
+
+        let first = sequence.literal_range(0).expect("first literal range");
+        let second = sequence.literal_range(1).expect("second literal range");
+        assert_eq!(&source[first.as_range()], "1i32");
+        assert_eq!(&source[second.as_range()], "22i32");
+        assert!(first.end() < second.start());
     }
 
     #[test]

@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    cell::Cell,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use arcweft_lang_hir::project::HirProject;
@@ -39,8 +42,8 @@ use super::{
     EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, LexicalCallableScope,
     PRODUCTION_CALLABLE_LIMITS, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
     ResolvedCallTarget, ResolverWork, RustCallableProvenance, RustCallablePurity, RustItemPath,
-    RustPackageProvenance, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
-    UnknownNamedArgumentPolicy, resolve_call_target,
+    RustPackageProvenance, SignatureOrigin, SignatureQueryStep, SignatureQueryStepControl,
+    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy, resolve_call_target,
 };
 
 const SOURCE: &str = r#"
@@ -1221,6 +1224,79 @@ fn resolver_cancellation_is_fail_closed() {
     assert!(matches!(request, Err(ResolveCallError::Cancelled)));
 
     cancellation.store(false, Ordering::Relaxed);
+}
+
+struct CancelDuringResolverLoop<'a> {
+    cancellation: &'a AtomicBool,
+    polls_before_cancel: Cell<usize>,
+    observed_polls: Cell<usize>,
+}
+
+impl SignatureQueryStepControl for CancelDuringResolverLoop<'_> {
+    fn check_signature_query_step(&self, step: SignatureQueryStep) -> Result<(), ResolveCallError> {
+        assert_eq!(step, SignatureQueryStep::Resolver);
+        self.observed_polls.set(
+            self.observed_polls
+                .get()
+                .checked_add(1)
+                .expect("poll count"),
+        );
+        let remaining = self.polls_before_cancel.get();
+        if remaining == 0 {
+            self.cancellation.store(true, Ordering::Relaxed);
+        } else {
+            self.polls_before_cancel.set(remaining - 1);
+        }
+        if self.cancellation.load(Ordering::Relaxed) {
+            Err(ResolveCallError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[test]
+fn resolver_observes_caller_cancellation_during_its_bounded_loop() {
+    let fixture = ResolverFixture::new();
+    let path = callable_path(&["adapter_value"]);
+    let lexical = LexicalCallableScope::default();
+    let module = CanonicalModulePath::crate_root();
+    let cancellation = AtomicBool::new(false);
+    let control = CancelDuringResolverLoop {
+        cancellation: &cancellation,
+        polls_before_cancel: Cell::new(1),
+        observed_polls: Cell::new(0),
+    };
+    let traits = TraitCatalog::default();
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let request = CallResolverRequest::try_new(
+        CallCallee::Free {
+            path: &path,
+            enum_variant: None,
+        },
+        &lexical,
+        None,
+        &module,
+        fixture.world.symbols(),
+        &fixture.world,
+        &traits,
+        &[],
+        CallSourceContext::new(fixture.document.identity(), None, None),
+        CallableGroupIndex::ZERO,
+        TypeExpressionId::from_index(0),
+        &cancellation,
+        &mut work,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("request starts before caller cancellation")
+    .with_signature_control(Some(&control));
+
+    assert_eq!(
+        resolve_call_target(request),
+        ResolveCallOutcome::Rejected(ResolveCallError::Cancelled)
+    );
+    assert!(cancellation.load(Ordering::Relaxed));
+    assert_eq!(control.observed_polls.get(), 2);
 }
 
 #[test]

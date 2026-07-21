@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-render-text = { path = "../arcweft-render-text" }
+arcweft-render-text = { workspace = true }
 
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }

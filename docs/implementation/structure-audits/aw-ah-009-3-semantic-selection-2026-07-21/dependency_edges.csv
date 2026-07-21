@@ -75,6 +75,7 @@ arcweft-agent-repl,arcweft-lang-sema,normal,crates/arcweft-agent-repl/Cargo.toml
 arcweft-agent-repl,arcweft-lang-syntax,normal,crates/arcweft-agent-repl/Cargo.toml
 arcweft-agent-repl,arcweft-manifest-model,normal,crates/arcweft-agent-repl/Cargo.toml
 arcweft-agent-repl,arcweft-project,normal,crates/arcweft-agent-repl/Cargo.toml
+arcweft-agent-repl,arcweft-resource-model,normal,crates/arcweft-agent-repl/Cargo.toml
 arcweft-agent-repl,arcweft-runtime-codegen,normal,crates/arcweft-agent-repl/Cargo.toml
 arcweft-agent-repl,arcweft-runtime-driver,normal,crates/arcweft-agent-repl/Cargo.toml
 arcweft-agent-repl,arcweft-runtime-plan,normal,crates/arcweft-agent-repl/Cargo.toml
@@ -203,6 +204,7 @@ arcweft-cli,arcweft-project-loader,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-rag,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-render-text,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-render-wgpu,normal,crates/arcweft-cli/Cargo.toml
+arcweft-cli,arcweft-resource-model,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-runtime-accelerator,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-runtime-driver,normal,crates/arcweft-cli/Cargo.toml
 arcweft-cli,arcweft-runtime-driver,development,crates/arcweft-cli/Cargo.toml
@@ -272,13 +274,18 @@ arcweft-compiler,arcweft-id,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-lang-hir,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-lang-sema,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-lang-syntax,normal,crates/arcweft-compiler/Cargo.toml
-arcweft-compiler,arcweft-manifest-model,development,crates/arcweft-compiler/Cargo.toml
+arcweft-compiler,arcweft-launch,normal,crates/arcweft-compiler/Cargo.toml
+arcweft-compiler,arcweft-layout,normal,crates/arcweft-compiler/Cargo.toml
+arcweft-compiler,arcweft-manifest-model,normal,crates/arcweft-compiler/Cargo.toml
+arcweft-compiler,arcweft-presentation,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-project,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-render-text,normal,crates/arcweft-compiler/Cargo.toml
+arcweft-compiler,arcweft-resource-model,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-runtime-plan,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-source,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,arcweft-view,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,blake3,normal,crates/arcweft-compiler/Cargo.toml
+arcweft-compiler,num-traits,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,thiserror,normal,crates/arcweft-compiler/Cargo.toml
 arcweft-compiler,trybuild,development,crates/arcweft-compiler/Cargo.toml
 arcweft-config,arcweft-data,normal,crates/arcweft-config/Cargo.toml
@@ -331,6 +338,7 @@ arcweft-dialogue,arcweft-character,normal,crates/arcweft-dialogue/Cargo.toml
 arcweft-dialogue,arcweft-core,normal,crates/arcweft-dialogue/Cargo.toml
 arcweft-dialogue,arcweft-id,normal,crates/arcweft-dialogue/Cargo.toml
 arcweft-dialogue,arcweft-ref,normal,crates/arcweft-dialogue/Cargo.toml
+arcweft-dialogue,arcweft-resource-model,normal,crates/arcweft-dialogue/Cargo.toml
 arcweft-dialogue,arcweft-rich-text-schema,normal,crates/arcweft-dialogue/Cargo.toml
 arcweft-dialogue,arcweft-source,normal,crates/arcweft-dialogue/Cargo.toml
 arcweft-dialogue,arcweft-view,normal,crates/arcweft-dialogue/Cargo.toml
@@ -402,6 +410,7 @@ arcweft-layout,num-traits,normal,crates/arcweft-layout/Cargo.toml
 arcweft-layout,serde,normal,crates/arcweft-layout/Cargo.toml
 arcweft-layout,thiserror,normal,crates/arcweft-layout/Cargo.toml
 arcweft-lsp,arcweft-adapter-context,normal,crates/arcweft-lsp/Cargo.toml
+arcweft-lsp,arcweft-adapter-metadata,development,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-agent-repl,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-character,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-compiler,normal,crates/arcweft-lsp/Cargo.toml
@@ -415,7 +424,6 @@ arcweft-lsp,arcweft-project-loader,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-render-text,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-runtime-host,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-runtime-plan,normal,crates/arcweft-lsp/Cargo.toml
-arcweft-lsp,arcweft-rust-abi,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-source,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-tooling,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-verify,normal,crates/arcweft-lsp/Cargo.toml
@@ -427,7 +435,6 @@ arcweft-lsp,lsp-types,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,serde,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,serde_json,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,thiserror,normal,crates/arcweft-lsp/Cargo.toml
-arcweft-lsp,toml,development,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,tracing,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,tracing-subscriber,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-manifest-model,arcweft-id,normal,crates/arcweft-manifest-model/Cargo.toml
@@ -511,6 +518,7 @@ arcweft-player-web,arcweft-runtime-driver,normal,crates/arcweft-player-web/Cargo
 arcweft-player-web,arcweft-runtime-plan,development,crates/arcweft-player-web/Cargo.toml
 arcweft-player-web,arcweft-source,development,crates/arcweft-player-web/Cargo.toml
 arcweft-player-web,arcweft-text-layout,normal,crates/arcweft-player-web/Cargo.toml
+arcweft-player-web,arcweft-view,development,crates/arcweft-player-web/Cargo.toml
 arcweft-player-web,arcweft-view,target,crates/arcweft-player-web/Cargo.toml
 arcweft-player-web,futures-channel,target,crates/arcweft-player-web/Cargo.toml
 arcweft-player-web,js-sys,target,crates/arcweft-player-web/Cargo.toml
@@ -625,7 +633,7 @@ arcweft-runtime-codegen,arcweft-core,normal,crates/arcweft-runtime-codegen/Cargo
 arcweft-runtime-codegen,blake3,normal,crates/arcweft-runtime-codegen/Cargo.toml
 arcweft-runtime-driver,arcweft-bundle,normal,crates/arcweft-runtime-driver/Cargo.toml
 arcweft-runtime-driver,arcweft-core,normal,crates/arcweft-runtime-driver/Cargo.toml
-arcweft-runtime-driver,arcweft-id,development,crates/arcweft-runtime-driver/Cargo.toml
+arcweft-runtime-driver,arcweft-id,normal,crates/arcweft-runtime-driver/Cargo.toml
 arcweft-runtime-driver,arcweft-interaction-model,normal,crates/arcweft-runtime-driver/Cargo.toml
 arcweft-runtime-driver,arcweft-layout,normal,crates/arcweft-runtime-driver/Cargo.toml
 arcweft-runtime-driver,arcweft-presentation,normal,crates/arcweft-runtime-driver/Cargo.toml

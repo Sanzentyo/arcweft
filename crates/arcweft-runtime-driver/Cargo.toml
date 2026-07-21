@@ -7,23 +7,23 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-interaction-model = { path = "../arcweft-interaction-model" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-save = { path = "../arcweft-save" }
+arcweft-bundle = { workspace = true, default-features = false }
+arcweft-core = { workspace = true }
+arcweft-interaction-model = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-save = { workspace = true }
 arcweft-layout.workspace = true
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-presentation = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-view = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-runtime-plan = { workspace = true }
+arcweft-source = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

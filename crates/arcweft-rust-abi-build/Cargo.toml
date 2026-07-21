@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+arcweft-rust-abi = { workspace = true }
 blake3.workspace = true
 thiserror.workspace = true
 

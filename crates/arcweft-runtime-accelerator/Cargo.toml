@@ -16,7 +16,7 @@ arcweft-codec-json.workspace = true
 arcweft-codec-msgpack.workspace = true
 arcweft-codec-toml.workspace = true
 arcweft-codec-yaml.workspace = true
-arcweft-core = { path = "../arcweft-core" }
+arcweft-core = { workspace = true }
 arcweft-data.workspace = true
 bytemuck = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
@@ -30,7 +30,7 @@ thiserror.workspace = true
 num_cpus.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-arcweft-lang-jit-cranelift = { path = "../arcweft-lang-jit-cranelift", optional = true }
+arcweft-lang-jit-cranelift = { workspace = true, optional = true }
 pollster = { workspace = true, optional = true }
 wgpu = { workspace = true, optional = true, features = ["dx12", "vulkan", "metal", "gles"] }
 

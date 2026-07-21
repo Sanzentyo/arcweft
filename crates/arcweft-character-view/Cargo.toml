@@ -8,10 +8,10 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-character = { path = "../arcweft-character" }
-arcweft-image = { path = "../arcweft-image" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-character = { workspace = true }
+arcweft-image = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-view = { workspace = true }
 thiserror.workspace = true
 
 [lib]

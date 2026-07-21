@@ -723,10 +723,10 @@ fn project_source_documents(
 
 fn compile_module(
     source: &ProjectSourceFile,
-    document: &SourceDocument,
+    document: &Arc<SourceDocument>,
     compile_unit: CompileUnitId,
 ) -> Result<CompiledProjectModule, ProjectCompileError> {
-    let parsed = parse::parse_source_text(source.source().to_owned());
+    let parsed = parse::parse_source_document(Arc::clone(document));
     if !parsed.errors().is_empty() {
         return Err(module_parse_error(source, document, parsed.errors()));
     }

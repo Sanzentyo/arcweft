@@ -12,31 +12,31 @@ dev-capture = ["dep:png"]
 macos-appkit-ime-sample = ["arcweft-desktop-native/macos-appkit-text-input"]
 
 [dependencies]
-arcweft-adapter-desktop = { path = "../arcweft-adapter-desktop" }
-arcweft-audio-codec = { path = "../arcweft-audio-codec" }
-arcweft-audio-core = { path = "../arcweft-audio-core" }
-arcweft-audio-device-cpal = { path = "../arcweft-audio-device-cpal", features = ["native-microphone"] }
-arcweft-bundle = { path = "../arcweft-bundle" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
-arcweft-desktop-native = { path = "../arcweft-desktop-native" }
-arcweft-host-adapter = { path = "../arcweft-host-adapter" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-interaction-model = { path = "../arcweft-interaction-model" }
+arcweft-adapter-desktop = { workspace = true }
+arcweft-audio-codec = { workspace = true }
+arcweft-audio-core = { workspace = true }
+arcweft-audio-device-cpal = { workspace = true, features = ["native-microphone"] }
+arcweft-bundle = { workspace = true, default-features = true }
+arcweft-core = { workspace = true }
+arcweft-desktop-contract = { workspace = true }
+arcweft-desktop-native = { workspace = true }
+arcweft-host-adapter = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-interaction-model = { workspace = true }
 arcweft-layout.workspace = true
-arcweft-player-scene = { path = "../arcweft-player-scene" }
-arcweft-player-text-input = { path = "../arcweft-player-text-input" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
-arcweft-runtime-host = { path = "../arcweft-runtime-host" }
+arcweft-player-scene = { workspace = true }
+arcweft-player-text-input = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-render-wgpu = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-runtime-driver = { workspace = true }
+arcweft-runtime-host = { workspace = true }
 arcweft-save.workspace = true
 
 clap = { workspace = true, features = ["derive"] }
 png = { workspace = true, optional = true }
 pollster.workspace = true
-num-traits = "0.2.19"
+num-traits.workspace = true
 raw-window-handle.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -54,8 +54,8 @@ arboard.workspace = true
 windows = { workspace = true, features = ["Win32_Foundation"] }
 
 [dev-dependencies]
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-runtime-plan = { workspace = true }
+arcweft-source = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

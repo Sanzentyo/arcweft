@@ -90,7 +90,7 @@ fn checked_view_part_rejects_call_view_reexport() {
 fn checked_view_part_records_repeat_occurrence_shape() {
     let (catalog, diagnostics) = checked(
         r"pub view List() {
-    for item in items key item.id {
+    for item in items key = item.id {
         Text(item.label).part(row)
     }
 }

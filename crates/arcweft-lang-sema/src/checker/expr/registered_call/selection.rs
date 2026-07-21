@@ -10,7 +10,7 @@ use crate::{
         NonEmptyResolvedCandidates, ResolvedCallable, SignatureQueryStep, SignatureWorkKind,
     },
     checker::{
-        ProjectCallableReference, TypeCheckError, TypeChecker,
+        CallableDiagnosticDraft, ProjectCallableReference, TypeCheckError, TypeChecker,
         call_target_facts::CallableWorkOperation,
     },
     effect_model::EffectSite,
@@ -32,6 +32,27 @@ struct RegisteredCandidateProbe<'a> {
 struct RegisteredCandidateSelection<'a> {
     selected: &'a RegisteredCandidateProbe<'a>,
     tied: Vec<&'a RegisteredCandidateProbe<'a>>,
+}
+
+struct RejectedRegisteredCandidate {
+    arguments: RegisteredArgumentCheck,
+    result: TypeKind,
+    retained_specific_error: bool,
+}
+
+#[derive(Clone, Copy)]
+enum UnselectedRegisteredReason {
+    Rejected,
+    Ambiguous,
+}
+
+struct UnselectedRegisteredCandidates<'a> {
+    candidates: &'a [ResolvedCallable],
+    arguments: Vec<CheckedCallArgumentFact>,
+    argument_diagnostics: Vec<CallableDiagnosticDraft>,
+    fallback_result: TypeKind,
+    reason: UnselectedRegisteredReason,
+    message: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,22 +80,9 @@ impl TypeChecker<'_> {
         site: &RegisteredCallSite<'_>,
         candidates: &NonEmptyResolvedCandidates,
     ) -> TypeKind {
-        let focused_target = self.records_call_target_facts(site.call_span.as_ref());
         let focused_work = self.uses_focused_callable_work(site.call_span.as_ref());
-        for _ in candidates.as_slice() {
-            if focused_work
-                && let Err(error) = self
-                    .call_resolver_control
-                    .check_signature_query_step(SignatureQueryStep::CandidateMaterialization)
-            {
-                self.errors.push(TypeCheckError::new(error.to_string()));
-                self.call_target_fact_recorder
-                    .record_resolve_error(site.call_span.as_ref(), error);
-                return TypeKind::Named("_".to_owned());
-            }
-            if focused_work && !self.charge_signature_work(SignatureWorkKind::Overloads, 1) {
-                return TypeKind::Named("_".to_owned());
-            }
+        if !self.charge_registered_candidate_materialization(site, candidates, focused_work) {
+            return TypeKind::Named("_".to_owned());
         }
         let Some(probes) = self.probe_registered_candidates(site, candidates, focused_work) else {
             return TypeKind::Named("_".to_owned());
@@ -85,41 +93,19 @@ impl TypeChecker<'_> {
         let Some(selection) = selection else {
             return self.finish_unselected_registered_candidates(
                 site,
-                candidates.as_slice(),
-                Vec::new(),
-                TypeKind::Named("_".to_owned()),
-                CallableDiagnosticCode::NoViableSignature,
-                Some(format!("call `{}` has no viable signature", site.label)),
+                UnselectedRegisteredCandidates {
+                    candidates: candidates.as_slice(),
+                    arguments: Vec::new(),
+                    argument_diagnostics: Vec::new(),
+                    fallback_result: TypeKind::Named("_".to_owned()),
+                    reason: UnselectedRegisteredReason::Rejected,
+                    message: Some(format!("call `{}` has no viable signature", site.label)),
+                },
             );
         };
         if !selection.selected.specificity.is_viable() {
-            let (arguments, fallback_result, retained_specific_error) = if probes.len() == 1 {
-                let Some(rejected) =
-                    self.replay_rejected_registered_candidate(site, selection.selected.candidate)
-                else {
-                    return TypeKind::Named("_".to_owned());
-                };
-                rejected
-            } else {
-                (
-                    probes[0].arguments.facts.clone(),
-                    TypeKind::Named("_".to_owned()),
-                    false,
-                )
-            };
-            if !focused_target {
-                self.call_target_fact_recorder
-                    .restore_nested_focus_from(&probes[0].focused_facts);
-            }
-            return self.finish_unselected_registered_candidates(
-                site,
-                candidates.as_slice(),
-                arguments,
-                fallback_result,
-                CallableDiagnosticCode::NoViableSignature,
-                (!retained_specific_error)
-                    .then(|| format!("call `{}` has no viable signature", site.label)),
-            );
+            return self
+                .finish_rejected_registered_candidates(site, candidates, &probes, &selection);
         }
         if selection.tied.len() == 1 {
             return self.replay_registered_candidate(
@@ -135,20 +121,90 @@ impl TypeChecker<'_> {
             .iter()
             .map(|probe| (*probe.candidate).clone())
             .collect::<Vec<_>>();
-        if !focused_target {
-            self.call_target_fact_recorder
-                .restore_nested_focus_from(&selection.selected.focused_facts);
-        }
+        self.call_target_fact_recorder
+            .restore_selected_nested_facts_from(&selection.selected.focused_facts);
         self.finish_unselected_registered_candidates(
             site,
-            &ambiguous,
-            selection.selected.arguments.facts.clone(),
-            TypeKind::Named("_".to_owned()),
-            CallableDiagnosticCode::AmbiguousOverload,
-            Some(format!(
-                "call `{}` is ambiguous between equally specific signatures",
-                site.label
-            )),
+            UnselectedRegisteredCandidates {
+                candidates: &ambiguous,
+                arguments: selection.selected.arguments.facts.clone(),
+                argument_diagnostics: selection.selected.arguments.diagnostics.clone(),
+                fallback_result: TypeKind::Named("_".to_owned()),
+                reason: UnselectedRegisteredReason::Ambiguous,
+                message: Some(format!(
+                    "call `{}` is ambiguous between equally specific signatures",
+                    site.label
+                )),
+            },
+        )
+    }
+
+    fn charge_registered_candidate_materialization(
+        &mut self,
+        site: &RegisteredCallSite<'_>,
+        candidates: &NonEmptyResolvedCandidates,
+        focused_work: bool,
+    ) -> bool {
+        for _ in candidates.as_slice() {
+            if focused_work
+                && let Err(error) = self
+                    .call_resolver_control
+                    .check_signature_query_step(SignatureQueryStep::CandidateMaterialization)
+            {
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                self.call_target_fact_recorder
+                    .record_resolve_error(site.call_span.as_ref(), error);
+                return false;
+            }
+            if focused_work && !self.charge_signature_work(SignatureWorkKind::Overloads, 1) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn finish_rejected_registered_candidates(
+        &mut self,
+        site: &RegisteredCallSite<'_>,
+        candidates: &NonEmptyResolvedCandidates,
+        probes: &[RegisteredCandidateProbe<'_>],
+        selection: &RegisteredCandidateSelection<'_>,
+    ) -> TypeKind {
+        debug_assert!(!selection.selected.specificity.is_viable());
+        let (arguments, argument_diagnostics, fallback_result, retained_specific_error) =
+            if probes.len() == 1 {
+                let Some(rejected) =
+                    self.replay_rejected_registered_candidate(site, selection.selected.candidate)
+                else {
+                    return TypeKind::Named("_".to_owned());
+                };
+                (
+                    rejected.arguments.facts,
+                    rejected.arguments.diagnostics,
+                    rejected.result,
+                    rejected.retained_specific_error,
+                )
+            } else {
+                (
+                    probes[0].arguments.facts.clone(),
+                    probes[0].arguments.diagnostics.clone(),
+                    TypeKind::Named("_".to_owned()),
+                    false,
+                )
+            };
+        self.call_target_fact_recorder
+            .restore_selected_nested_facts_from(&probes[0].focused_facts);
+        self.finish_unselected_registered_candidates(
+            site,
+            UnselectedRegisteredCandidates {
+                candidates: candidates.as_slice(),
+                arguments,
+                argument_diagnostics,
+                fallback_result,
+                reason: UnselectedRegisteredReason::Rejected,
+                message: (!retained_specific_error)
+                    .then(|| format!("call `{}` has no viable signature", site.label)),
+            },
         )
     }
 
@@ -276,26 +332,52 @@ impl TypeChecker<'_> {
     fn finish_unselected_registered_candidates(
         &mut self,
         site: &RegisteredCallSite<'_>,
-        candidates: &[ResolvedCallable],
-        arguments: Vec<CheckedCallArgumentFact>,
-        fallback_result: TypeKind,
-        diagnostic: CallableDiagnosticCode,
-        message: Option<String>,
+        unselected: UnselectedRegisteredCandidates<'_>,
     ) -> TypeKind {
+        let UnselectedRegisteredCandidates {
+            candidates,
+            arguments,
+            mut argument_diagnostics,
+            fallback_result,
+            reason,
+            message,
+        } = unselected;
         if let Some(message) = message {
             self.errors.push(TypeCheckError::new(message));
         }
         let records_facts = self.records_call_target_facts(site.call_span.as_ref());
         if records_facts && let Some(call_span) = &site.call_span {
+            if matches!(reason, UnselectedRegisteredReason::Ambiguous)
+                || argument_diagnostics.is_empty()
+            {
+                let diagnostic = match reason {
+                    UnselectedRegisteredReason::Rejected => {
+                        CallableDiagnosticCode::NoViableSignature
+                    }
+                    UnselectedRegisteredReason::Ambiguous => {
+                        CallableDiagnosticCode::AmbiguousOverload
+                    }
+                };
+                argument_diagnostics.push(CallableDiagnosticDraft::error(
+                    diagnostic,
+                    Some(call_span.clone()),
+                    CallableDiagnosticSubject::Candidate(candidates[0].id().clone()),
+                ));
+            }
+            let checked = match reason {
+                UnselectedRegisteredReason::Rejected => {
+                    CheckedCallTarget::rejected(candidates, arguments, site.group)
+                }
+                UnselectedRegisteredReason::Ambiguous => {
+                    CheckedCallTarget::ambiguous(candidates, arguments, site.group)
+                }
+            };
             self.record_call_target_facts(
                 site.expression,
                 site.document,
                 call_span,
-                CheckedCallTarget::ambiguous(candidates, arguments, site.group),
-                Some((
-                    diagnostic,
-                    CallableDiagnosticSubject::Candidate(candidates[0].id().clone()),
-                )),
+                checked,
+                argument_diagnostics,
             );
         }
         fallback_result
@@ -305,7 +387,7 @@ impl TypeChecker<'_> {
         &mut self,
         site: &RegisteredCallSite<'_>,
         candidate: &ResolvedCallable,
-    ) -> Option<(Vec<CheckedCallArgumentFact>, TypeKind, bool)> {
+    ) -> Option<RejectedRegisteredCandidate> {
         let checkpoint = self.checkpoint_registered_candidate();
         let error_start = self.errors.len();
         let warning_start = self.warnings.len();
@@ -329,11 +411,11 @@ impl TypeChecker<'_> {
         self.errors.extend(errors);
         self.warnings.extend(warnings);
         self.judgments.extend(judgments);
-        Some((
-            checked.arguments.facts,
-            checked.result,
+        Some(RejectedRegisteredCandidate {
+            arguments: checked.arguments,
+            result: checked.result,
             retained_specific_error,
-        ))
+        })
     }
 
     pub(super) fn check_registered_candidate(
@@ -342,8 +424,8 @@ impl TypeChecker<'_> {
         candidate: &ResolvedCallable,
         considered: &[ResolvedCallable],
     ) -> TypeKind {
-        let records_facts = self.records_call_target_facts(site.call_span.as_ref());
-        self.check_registered_candidate_with_work(site, candidate, considered, records_facts)
+        let focused_work = self.uses_focused_callable_work(site.call_span.as_ref());
+        self.check_registered_candidate_with_work(site, candidate, considered, focused_work)
     }
 
     fn check_registered_candidate_with_work(
@@ -396,13 +478,18 @@ impl TypeChecker<'_> {
         }
         let result = checked.result;
         if records_facts && let Some(call_span) = &site.call_span {
+            let RegisteredArgumentCheck {
+                facts,
+                poison,
+                diagnostics,
+            } = checked.arguments;
             let checked_target = CheckedCallTarget::selected(
                 candidate,
                 considered,
-                checked.arguments.facts,
+                facts,
                 result.clone(),
                 site.group,
-                checked.arguments.poison,
+                poison,
             );
             let checked_target = match &site.function_value_type {
                 Some(function_value_type) => {
@@ -415,7 +502,7 @@ impl TypeChecker<'_> {
                 site.document,
                 call_span,
                 checked_target,
-                None,
+                diagnostics,
             );
         }
         let completed_group = match candidate.instantiation() {
@@ -432,7 +519,7 @@ impl TypeChecker<'_> {
         candidate: &ResolvedCallable,
         records_facts: bool,
     ) -> RegisteredCandidateCheck {
-        let focused = self.records_call_target_facts(site.call_span.as_ref());
+        let focused = self.uses_focused_callable_work(site.call_span.as_ref());
         if focused {
             self.focused_candidate_depth += 1;
         }
@@ -508,6 +595,7 @@ impl TypeChecker<'_> {
             | CallableValidator::Integer(_)
             | CallableValidator::Domain(_)
             | CallableValidator::Capacity(_)
+            | CallableValidator::Stage(_)
             | CallableValidator::Trait(_)
             | CallableValidator::Drop
             | CallableValidator::Promotion(_)

@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-agent-mcp = { path = "../arcweft-agent-mcp" }
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-agent-runner = { path = "../arcweft-agent-runner" }
+arcweft-agent-mcp = { workspace = true }
+arcweft-agent-protocol = { workspace = true }
+arcweft-agent-runner = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -114,7 +114,7 @@ fn entry_project(
     )
     .expect("project");
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("compiler-entry").expect("package"),
+        CallablePackageId::try_new(project.package().id.as_str()).expect("package"),
         document.identity().id().clone(),
         "entry-test",
     )
@@ -393,7 +393,7 @@ entry agent @entry.agent.second {
     assert_eq!(artifact.manifest.entry_id.as_str(), "entry.agent.second");
     assert_eq!(
         artifact.manifest.controller_id.as_str(),
-        "compiler-entry::second"
+        "org.arcweft.compiler-entry::second"
     );
     assert_eq!(artifact.bundle.bytecode.program.entries.len(), 1);
     assert_eq!(artifact.bundle.bytecode.program.flows.len(), 1);
@@ -598,10 +598,16 @@ entry agent @entry.agent.controller {
                 .diagnostics()
                 .first()
                 .map(super::ProjectCompileDiagnostic::stage),
-            Some(ProjectCompileStage::Resolve | ProjectCompileStage::TypeCheck)
+            Some(ProjectCompileStage::EntryBinding)
         ),
-        "the unbound function is rejected by ordinary name/effect policy, not selected by body"
+        "the unbound function is rejected by the typed entry-role policy, not selected by body"
     );
+    assert!(error.diagnostics().iter().any(|diagnostic| {
+        diagnostic
+            .diagnostic()
+            .code()
+            .is_some_and(|code| code.as_str() == "sema.entry.unbound_agent_intrinsic")
+    }));
 }
 
 #[test]
@@ -708,7 +714,7 @@ entry agent @entry.agent.controller {
     assert_eq!(manifest.entry_id.as_str(), "entry.agent.controller");
     assert_eq!(
         manifest.controller_id.as_str(),
-        "compiler-entry::controller"
+        "org.arcweft.compiler-entry::controller"
     );
 
     let session = ReplayAgentSession::new(

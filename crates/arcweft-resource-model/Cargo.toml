@@ -7,12 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-core = { path = "../arcweft-core" }
-arcweft-id = { path = "../arcweft-id" }
+arcweft-core = { workspace = true }
+arcweft-id = { workspace = true }
 arcweft-interaction-model.workspace = true
 arcweft-layout.workspace = true
 arcweft-manifest-model.workspace = true
-arcweft-source = { path = "../arcweft-source" }
+arcweft-source = { workspace = true }
 thiserror.workspace = true
 
 [lib]

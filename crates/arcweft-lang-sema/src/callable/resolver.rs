@@ -9,7 +9,7 @@ use std::{
     },
 };
 
-use arcweft_character::id::{CharacterId, CharacterPartId};
+use arcweft_character::id::CharacterId;
 use arcweft_lang_hir::symbol::{CallableDeclarationId, ProjectSymbolTable};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::expr::{CallArg, Expr};
@@ -33,7 +33,7 @@ use super::{
     FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily, LocalCallableId,
     OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath,
     ProjectNameBinding, PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolverWork,
-    ResultConstructorKind, SpeakerCallableId, TraitCallableId, TraitCallableSource,
+    ResultConstructorKind, SpeakerCallableId, StageMethodId, TraitCallableId, TraitCallableSource,
     TraitImplementationIndex, call_shape_is_viable,
 };
 
@@ -583,6 +583,20 @@ fn resolve_selected_call(
             CallableCandidateId::DomainMethod(id),
             LanguageCallableFamily::DomainMethod,
             schema,
+            CallableInstantiation::Receiver {
+                receiver: receiver_type.clone(),
+            },
+        )
+        .map(Some);
+    }
+
+    check_query_step(request)?;
+    if let Some(id) = StageMethodId::resolve(receiver_type, method, arguments.len()) {
+        return resolved_language_method(
+            request,
+            CallableCandidateId::StageMethod(id),
+            LanguageCallableFamily::StageMethod,
+            id.signature_schema(),
             CallableInstantiation::Receiver {
                 receiver: receiver_type.clone(),
             },
@@ -1576,6 +1590,36 @@ impl ResolvedCallable {
             limits,
         )
     }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "the typed resolver error preserves the complete presentation candidate"
+    )]
+    pub(crate) fn try_with_presentation_character_owner(
+        &self,
+        owner: ResolvedCharacterOwner,
+        environment: &crate::registration::RegisteredTypeCheckEnv,
+        limits: &CallableLimits,
+    ) -> Result<Self, ResolveCallError> {
+        let CallableCandidateId::Presentation(id) = &self.id else {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        };
+        let schema = (*id)
+            .signature_schema(super::PresentationSchemaContext {
+                owner: Some(&owner),
+                environment,
+            })
+            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+        Self::try_new(
+            self.id.clone(),
+            self.origin.clone(),
+            Arc::new(schema),
+            CallableInstantiation::Character { owner },
+            self.equivalent_sources.to_vec(),
+            self.authority,
+            limits,
+        )
+    }
 }
 
 fn origin_matches(
@@ -1670,6 +1714,10 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
                 CallableCandidateId::CapacityMethod(_),
                 LanguageCallableFamily::CapacityMethod
             )
+            | (
+                CallableCandidateId::StageMethod(_),
+                LanguageCallableFamily::StageMethod
+            )
             | (CallableCandidateId::Drop(_), LanguageCallableFamily::Drop)
             | (
                 CallableCandidateId::Promotion(
@@ -1714,7 +1762,8 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::IntegerMethod(_)
             | CallableCandidateId::DomainMethod(_)
             | CallableCandidateId::TraitMethod(_)
-            | CallableCandidateId::CapacityMethod(_),
+            | CallableCandidateId::CapacityMethod(_)
+            | CallableCandidateId::StageMethod(_),
             CallableInstantiation::Receiver { .. },
         )
         | (
@@ -1931,20 +1980,7 @@ pub struct ResolvedCharacterOwner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CharacterOwnerSource {
     EntityReference,
-    LexicalBinding { name: CallableName },
-    ProjectBinding { path: ProjectCallablePath },
     ExternalOwner,
-    SpeakerValue,
-    SpeakerPresetValue,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CharacterOwnerResolution {
-    Known(ResolvedCharacterOwner),
-    Missing,
-    NonCharacter { actual: TypeKind },
-    UnknownExternalOwner,
-    UnknownPart { part: CharacterPartId },
-    Poisoned,
 }
 impl ResolvedCharacterOwner {
     pub fn new(character: CharacterId, source: CharacterOwnerSource) -> Self {

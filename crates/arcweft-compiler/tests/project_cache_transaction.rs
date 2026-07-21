@@ -90,7 +90,7 @@ fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrat
     )
     .expect("project");
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new(format!("compiler-cache-{profile}")).expect("package"),
+        CallablePackageId::try_new(package_id).expect("package"),
         document.identity().id().clone(),
         profile,
     )
@@ -195,7 +195,6 @@ fn pending_stores_discard_on_type_error() {
 }
 
 #[test]
-#[ignore = "AW-AH-009.3 callable-catalog registration currently blocks ImageLower"]
 fn pending_stores_discard_when_typed_image_admission_fails() {
     let (project, facts) = fixture(
         r"

@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-content-policy = { path = "../arcweft-content-policy" }
-arcweft-image = { path = "../arcweft-image" }
+arcweft-agent-protocol = { workspace = true }
+arcweft-content-policy = { workspace = true }
+arcweft-image = { workspace = true }
 base64.workspace = true
 blake3.workspace = true
 png.workspace = true

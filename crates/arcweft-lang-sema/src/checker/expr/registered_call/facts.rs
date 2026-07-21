@@ -1,16 +1,37 @@
-//! Allocation-on-demand argument facts for focused registered calls.
+//! Allocation-on-demand argument facts for whole-module and focused registered calls.
 
 use arcweft_lang_syntax::expr::{CallArgumentRecoverySyntax, CallExpr};
+use arcweft_source::SourceSpan;
 
-use super::{ArgumentFactBuilder, RegisteredArgumentSlot};
 use crate::{
     callable::{
         CallPoison, CallableArgumentIndex, CallableArgumentSlotIndex, CallableGroupIndex,
-        CallableName, CallableParameterCoordinate, CallableParameterType, CheckedCallArgumentFact,
-        CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput,
+        CallableName, CallableParameter, CallableParameterCoordinate, CallableParameterType,
+        CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput,
     },
     checker::{TypeCheckError, TypeChecker, TypeExpressionId},
 };
+
+pub(super) struct ArgumentFactBuilder {
+    index: CallableArgumentIndex,
+    pub(super) source: Option<SourceSpan>,
+    authored_name: Option<CallableName>,
+    pub(super) authored_name_source: Option<SourceSpan>,
+    spread: bool,
+    pub(super) slots: Vec<CheckedCallArgumentSlotFact>,
+    authored_poison: CallPoison,
+    poison: CallPoison,
+}
+
+pub(super) struct RegisteredArgumentSlot<'a> {
+    pub(super) argument_index: usize,
+    pub(super) expression: TypeExpressionId,
+    pub(super) source: Option<SourceSpan>,
+    pub(super) group: CallableGroupIndex,
+    pub(super) parameter: Option<&'a CallableParameter>,
+    pub(super) inferred: Option<crate::checker::TypeKind>,
+    pub(super) poison: CallPoison,
+}
 
 impl TypeChecker<'_> {
     pub(super) fn registered_argument_fact_builders(
@@ -37,6 +58,13 @@ impl TypeChecker<'_> {
             let source = argument_syntax
                 .and_then(|argument| self.source_span_for_current_range(argument.range()))
                 .or_else(|| self.source_span_for_expr(argument.value()));
+            let authored_name_source = argument_syntax.and_then(|argument| match argument.form() {
+                arcweft_lang_syntax::expr::CallArgumentFormSyntax::Named { name, .. } => {
+                    self.source_span_for_current_range(*name)
+                }
+                arcweft_lang_syntax::expr::CallArgumentFormSyntax::Positional
+                | arcweft_lang_syntax::expr::CallArgumentFormSyntax::Spread { .. } => None,
+            });
             let authored_poison = if argument_syntax.is_some_and(|argument| {
                 matches!(
                     argument.recovery(),
@@ -53,6 +81,7 @@ impl TypeChecker<'_> {
                 authored_name: argument
                     .name()
                     .and_then(|name| CallableName::try_new(name).ok()),
+                authored_name_source,
                 spread: argument.is_spread(),
                 slots: Vec::new(),
                 authored_poison,
@@ -97,56 +126,6 @@ impl TypeChecker<'_> {
             },
         ));
     }
-
-    pub(super) fn check_unmapped_registered_arguments(
-        &mut self,
-        call: &CallExpr,
-        poison: CallPoison,
-        records_facts: bool,
-    ) -> Vec<CheckedCallArgumentFact> {
-        let mut builders = self.registered_argument_fact_builders(call, records_facts);
-        let focused = self.is_focused_registered_call(call);
-        let syntax = call
-            .syntax()
-            .argument_list()
-            .map(arcweft_lang_syntax::expr::ArgumentListSyntax::arguments);
-        for (argument_index, argument) in call.args().iter().enumerate() {
-            if !self.begin_registered_candidate_argument_probe(call, focused) {
-                break;
-            }
-            let expression = TypeExpressionId::from_index(self.stats.expressions);
-            let source = syntax
-                .and_then(|arguments| arguments.get(argument_index))
-                .and_then(|argument| self.source_span_for_current_range(argument.value_range()))
-                .or_else(|| self.source_span_for_expr(argument.value()));
-            if !self.charge_callable_work(
-                call,
-                focused,
-                crate::checker::call_target_facts::CallableWorkOperation::TypeCheck,
-            ) {
-                break;
-            }
-            let inferred = self.check_expr(argument.value());
-            Self::push_registered_argument_slot(
-                RegisteredArgumentSlot {
-                    argument_index,
-                    expression,
-                    source,
-                    group: CallableGroupIndex::ZERO,
-                    parameter: None,
-                    inferred,
-                    poison,
-                },
-                &mut builders,
-            );
-        }
-        builders.map_or_else(Vec::new, |builders| {
-            builders
-                .into_iter()
-                .map(ArgumentFactBuilder::finish)
-                .collect()
-        })
-    }
 }
 
 impl ArgumentFactBuilder {
@@ -155,6 +134,7 @@ impl ArgumentFactBuilder {
             self.index,
             self.source,
             self.authored_name,
+            self.authored_name_source,
             self.spread,
             self.slots,
             self.poison,

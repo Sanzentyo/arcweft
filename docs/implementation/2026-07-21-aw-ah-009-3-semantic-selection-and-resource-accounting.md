@@ -5,16 +5,17 @@ Date: 2026-07-21
 ## Status and completion boundary
 
 The implementation-ready semantic-selection and resource-accounting slice is
-complete for parser-owned parenthesized `Expr::Call` surfaces on Jujutsu change
-`nxyxxulm`, based on change `xrwkuxsl` / Git commit `888a0c09`. The change is
-not pushed and owns no bookmark or branch.
+implemented and integrally validated for parser-owned parenthesized
+`Expr::Call` surfaces. The implementation began in Jujutsu change `nxyxxulm`;
+the final integrated change and push are recorded at the repository cut that
+contains this note.
 
 This does **not** close the complete historical AW-AH-009.3 sequence. In
 particular, the old S14-S16 dialogue speaker/content-call carriers cannot
 provide the ordered authored arguments, per-argument ranges, recovery facts,
 or focused expression identity required by the signature query. Those
 dialogue-specific clauses were superseded by the CharacterDialogue direction
-and are design-gated by
+and are owned by the separate AW-AH-009.4.2 production slice described by
 `docs/reviews/requests/2026-07-20-aw-ah-009.4.2-dialogue-content-application-syntax-hir-ownership-production-reconciliation.md`.
 The production evidence and supersession boundary are also recorded in
 `docs/implementation/2026-07-20-aw-ah-009-3-1-call-surface-production.md`.
@@ -28,6 +29,7 @@ The completed slice provides:
 - transactional overload probing, deterministic ranking, and atomic selected
   replay;
 - separate callable-internal and outer-query work reports;
+- a public, immutable checker-owned call-target fact model and report read API;
 - public semantic help and typed not-applicable/error outcomes;
 - native LSP projection of the committed active coordinates.
 
@@ -50,12 +52,29 @@ older AW-AH-009.3 sketch. Consequently:
 The result is an in-memory composite of the later contracts, not a
 compatibility reader for the provisional AW-AH-009.3 shape.
 
-One earlier AW-AH-009.3.3 acceptance item is still incomplete: the finalized
-contract requires the immutable target-fact model and `TypeCheckReport` fact
-read APIs to be public. Current production keeps `CallTargetFacts`,
-`CallTargetFact`, checked argument/slot facts, `CallTargetFactError`, and the
-focused report behind crate-owned boundaries. Publishing or reshaping that
-read model is a separate callable-fact API cut; this note does not claim it.
+The finalized AW-AH-009.3.3 immutable fact boundary is now public without
+publishing mutation authority. `CallTargetFacts`, `CallTargetFact`,
+`CheckedCallArgumentFact`, `CheckedCallArgumentSlotFact`, and
+`CallTargetFactError` expose read-only accessors, while their constructors and
+fields remain owned by sema. `TypeCheckReport::call_target_facts` reads a fact
+by `TypeExpressionId`, and the focused report exposes
+`focused_call_target_facts`. Registered whole-module analysis records all
+accepted call facts; standalone checking keeps collection disabled unless a
+caller explicitly enters the focused query path.
+
+The public focused read is backed by the production
+`analyze_registered_project_types_for_focused_call` entry. It accepts an
+exact registered `SourceSpan`, constructs production-bounded non-cancelled
+resolver control internally, and returns the ordinary public
+`TypeCheckReport`. Mutable recorders and caller-injected work/cancellation
+remain crate-private for the interactive signature-query path and tests.
+
+`CallTargetFact::Rejected` is the truthful no-viable-overload state. It retains
+the checked candidate facts needed for deterministic candidate-zero UI focus
+without misreporting a rejected singleton or rejected candidate set as
+`Ambiguous`. `Ambiguous` is reserved for multiple equally viable candidates.
+This is a correction to the provisional closed variant list, not a
+compatibility extension or dual reader.
 
 `SignatureFamilySupport::NativeFacts` describes native resolver/checker fact
 ownership for a `CallableFamily`. It does not assert that every historical
@@ -126,6 +145,11 @@ caller-owned focused resolver/probe work. After the pure scan, the query makes
 one call to the focused checker entry point. Ordinary whole-module checking
 retains its separate resettable work authority and has no deadline authority.
 
+Parser-owned argument syntax also owns the R07 comma boundary: from the start
+offset of a between-argument or trailing comma, focus belongs to the following
+slot. The semantic query consumes that typed slot result; it does not recover
+the boundary by scanning source text.
+
 The scanner traverses ordinary expressions inside dialogue interpolation,
 dialogue option values, and line plans. It does not reinterpret the dialogue
 container itself as an ordinary call. Every dialogue tag range and `goto`
@@ -135,6 +159,33 @@ ordinary callees become the unit public outcomes
 `SignatureNotApplicable::NonCallableCallee`. Internally, missing facts retain
 their `UnknownCallKind`, and non-callable facts retain typed source and type
 evidence.
+
+## Argument diagnostics and projection hardening
+
+The checked argument facts now retain an exact parser-owned name span in
+addition to the complete argument span. Deterministic projection therefore
+binds these stable codes to the authored token or insertion point that owns the
+failure:
+
+- A05 `DuplicateArgument` uses the duplicate name and related first-name span;
+- A08 `UnknownNamedArgument` uses the exact unknown name span;
+- A10 `UnsupportedSpread` stops subsequent positional mapping for the rejected
+  spread shape while subsequent expressions are still semantically checked;
+- A11 `TooManyPositionalArguments` owns the extra argument span;
+- A12 `MissingArgument` uses the zero-width argument-list insertion span;
+- A14 `ParameterAlreadyBound` relates the later positional argument to the
+  earlier named binding.
+
+When one of these specific argument failures explains a rejected candidate,
+projection does not add a duplicate generic `NoViableSignature` diagnostic.
+The retained `Rejected` target fact still exposes the deterministic candidate
+set and candidate-zero UI focus.
+
+L16 projection now performs checked UTF-16 accumulation all the way from a
+wide intermediate count to the LSP `u32` label offsets and returns
+`LabelOffsetOverflow` without publishing a partial result. L18 cancellation is
+polled inside resolver iteration and produces a terminal typed cancellation;
+the surrounding fact transaction publishes no partial candidate set.
 
 ## Resolver and selection accounting
 
@@ -167,9 +218,10 @@ Compatible-match and rest-binding counts are retained specificity metrics but
 are deliberately not comparator stages. Same-authority equality remains
 ambiguous. An ambiguity publishes only tied viable candidates; a rejected
 candidate cannot survive beside a better viable tie. With no viable overload,
-candidate zero owns the deterministic checked argument mapping/UI focus. A
-rejected singleton is replayed only to retain its specific diagnostic instead
-of replacing it with a duplicate generic error.
+`CallTargetFact::Rejected` retains the rejected candidates and candidate zero
+owns the deterministic checked argument mapping/UI focus. A rejected singleton
+is replayed only to retain its specific diagnostic instead of replacing it
+with a duplicate generic error.
 
 `TypeKind::has_open_components` is an inherent recursive rule owned by the
 semantic type. A typed entity reference is open only when it has a payload and
@@ -196,33 +248,74 @@ owns one required active signature and one optional active parameter. Its
 constructor verifies that the active signature exists and that an active
 parameter belongs to the current group of that signature. Fixed expression
 spreads retain per-element source ranges, allowing exact cursor-to-slot focus.
-The LSP bridge always emits `Some(active_signature)` and attaches the single
-top-level parameter coordinate only to that active signature.
+Compact `NumericBracketSeq` literals now do the same: parser construction binds
+each literal to its exact absolute range, including under a non-zero parse
+base; HIR lowering preserves that typed syntax object; and synthetic
+construction has no authored range rather than fabricating one. The LSP bridge
+always emits `Some(active_signature)` and attaches the single top-level
+parameter coordinate only to that active signature.
+
+## Character and callable-family parity
+
+Direct accepted-HIR tests cover canonical, compact, qualified, and alias
+Character references and prove that they resolve to the same nominal
+`CharacterId`, type, and canonical label. The same evidence covers structural
+Look, Variant, and Part paths, overload selection, public fact/query parity,
+label-only edits that preserve nominal identity, exact source spans in the
+presence of same-name comments, and the absence of Rust-symbol-suffix fallback.
+
+The historical C09 corrupt-world premise is not constructible through the
+accepted registration API: invalid alias punctuation is rejected, and an
+owner collision rejects the registration transaction atomically. Production
+does not add an impossible fallback branch or a compatibility world solely to
+manufacture that state.
+
+The final surface matrix is covered directly for S01-S13, S17-S18,
+S20-S27, and S30. Existing semantic-query tests directly retain S19's inline
+tag rejection, S28's second curried group, and S29's non-call `goto` surface.
+S14-S16 are superseded by AW-AH-009.4.2 rather than restored as old
+speaker/content-call carriers.
+
+The old C12 premise is likewise not constructible in the accepted final API.
+Dynamic presentation specialization owns `CharacterId -> CharacterLook`; it
+does not expose a part-bearing dynamic owner. The removed ContentCall route was
+the only proposed carrier for that premise. An unknown-part resolver or
+synthetic accepted callable is therefore not reintroduced merely to preserve
+an obsolete test shape; part-bearing CharacterDialogue semantics remain owned
+by AW-AH-009.4.2. The unused provisional `CharacterOwnerResolution` and its
+unproduced owner-unavailable diagnostic variants were removed with that
+decision instead of being retained as a compatibility-shaped public API.
+
+The shared callable catalog also closes the previously split Agent prelude by
+including `observe` as the typed `AgentIntrinsicSignatureId::Observe` member
+with its `Result<Observation, AgentError>` result and `agent.observe` effect.
+Committed call facts retain their lexical `CallableDeclarationId` privately.
+Entry binding, which owns callable roles, compares a selected Agent-family call
+with the exact ordinary function selected by an Agent entry. A call from a
+selected controller (including its lexically owned closures) is accepted; a
+call from an unselected helper, flow, or other owner is rejected at the exact
+call span with `sema.entry.unbound_agent_intrinsic`. This policy does not infer
+roles from callee spellings, effect strings, attributes, or function bodies,
+and it leaves signature lookup role-neutral.
 
 ## Known gaps and non-goals
 
-The following prevent a claim that all historical AW-AH-009.3 acceptance
-criteria are closed:
+The ordinary-call fact, diagnostic, public read, Character-family parity, and
+compact numeric-coordinate gaps described by the earlier draft are closed in
+the current implementation. Nested speculative evaluation remains governed by
+the transaction/work-accounting contract: only one focused result is
+published, and no acceptance requirement is inferred from the number of
+internal expected-type probes.
 
-1. **CharacterDialogue source surface.** The superseded speaker/content-call
-   syntax/HIR lacks the final argument-list and expression-identity carrier.
-   AW-AH-009.4.2 owns the replacement design and production order.
-2. **Public callable-fact read API.** The finalized AW-AH-009.3.3 public fact
-   visibility/read boundary remains crate-private, as described above.
-3. **Nested focused resolution count.** The outer query invokes the focused
-   checker once, and transactions preserve one published focused result, but a
-   target nested under an enclosing overload can still be evaluated again for
-   different outer speculative expected types. Exact single resolver
-   invocation for that nested target is not yet directly proved.
-4. **Family-specific validator parity.** The focused registered route shares
-   generic schema checking across many families. This cut does not claim
-   complete direct parity evidence for every legacy family-specific
-   value-shape validator.
-5. **Compact numeric spread coordinates.** Ordinary fixed `Expr::BracketSeq`
-   spreads retain exact per-element ranges. The compact
-   `NumericBracketSeq` HIR stores integer values without per-element source
-   coordinates, so active parameter can be absent when expanded elements map
-   to different parameters.
+The remaining surface boundary is **CharacterDialogue application syntax**.
+The superseded speaker/content-call carriers are not repaired or accepted as
+ordinary calls; AW-AH-009.4.2 owns their replacement typed argument-list and
+expression-identity path. That work is outside this ordinary-call cut.
+
+Final integrated workspace, Tier 2, and current-checkout structural validation
+all passed. The workspace run exposed shared Stage/Fx/expected-enum-shorthand
+resolver defects; those were corrected at the registered callable schema and
+typed-environment owners rather than hidden in fixtures or compatibility paths.
 
 This cut intentionally does not redesign CharacterDialogue, restore removed
 syntax, add source gates, or introduce compatibility aliases, deprecated
@@ -230,7 +323,7 @@ fields, duplicate resolvers, or migration shims.
 
 ## Structural audit
 
-The canonical audit was run from Jujutsu change `nxyxxulm`:
+The final audit was regenerated from the settled integrated checkout:
 
 ```bash
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write \
@@ -240,19 +333,20 @@ cargo +nightly -Zscript tools/structure-audit.rs --root . --write \
 Result:
 
 ```text
-files scanned: 3469
-Rust files: 1810
-Rust physical LOC: 834930
+files scanned: 3491
+Rust files: 1818
+Rust physical LOC: 844870
 package manifests: 94
-violations: 0 error(s), 131 warning(s)
+violations: 0 error(s), 137 warning(s)
 ```
 
-Reports are under
-`docs/implementation/structure-audits/aw-ah-009-3-semantic-selection-2026-07-21/`.
-This cut changes no Cargo dependency or feature edge. `arcweft-lang-sema` has
-fan-in 11 and fan-out 12; `arcweft-lsp` has fan-in 1 and fan-out 29.
+The generated reports under
+`docs/implementation/structure-audits/aw-ah-009-3-semantic-selection-2026-07-21/`
+are therefore current-checkout evidence. The detailed measurements below remain
+the decomposition baseline for the semantic-selection files; the generated
+CSV reports are the authority for exact whole-checkout values.
 
-Changed Rust measurements from the final audit:
+Changed Rust measurements from the prior baseline audit:
 
 | Path | Owner / class | Bytes | LOC | Embedded test LOC | Cut responsibility |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -314,50 +408,49 @@ bytes/2,481 LOC), sema `checker/module.rs` (93,106/2,477), core `value.rs`
 
 ## Validation
 
-Passing gates at the time of this note:
+Focused syntax, HIR, sema public-fact, Character parity, resolver-cancellation,
+and LSP overflow tests passed while developing the individual changes. The
+settled semantic-surface follow-up passed the seven-test surface matrix, the
+four-test public-facts suite, the four-test Character parity suite, 44
+signature unit tests, 52 sema entry tests, 98 compiler tests, the focused Agent
+role regression, and Agent identity/schema parity tests.
+
+The settled integration then passed every required gate:
 
 ```text
 cargo fmt --all -- --check
-  passed
-
-cargo clippy -p arcweft-lang-sema -p arcweft-lsp \
-  --all-targets --all-features -- -D warnings
-  passed
-
+git diff --check
+cargo test -p arcweft-lang-syntax --lib
+cargo test -p arcweft-lang-hir --lib
 cargo test -p arcweft-lang-sema --lib --no-fail-fast
-  832 passed; 0 failed
-
-cargo test -p arcweft-lsp signature --lib --no-fail-fast
-  20 passed; 0 failed; 159 filtered out
-
+cargo test -p arcweft-lang-sema --test call_target_facts_public_api
+cargo test -p arcweft-lang-sema --test character_signature_fact_parity
+cargo test -p arcweft-lang-sema --test call_surface_signature_matrix
+cargo test -p arcweft-lsp --lib features::signature
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+just test-workspace
+just test-tier2
 cargo +nightly -Zscript tools/structure-audit.rs --root . --write \
   docs/implementation/structure-audits/aw-ah-009-3-semantic-selection-2026-07-21
-  0 errors; 131 repository-wide warnings
 ```
 
-Workspace-wide validation is blocked by a checkout prerequisite rather than a
-Rust diagnostic from this cut:
+The final results were:
 
 ```text
-cargo check --workspace --all-targets --all-features
-  failed: web/assets/noto-sans-jp-vf.ttf is absent for arcweft-glyphon and
-  arcweft-render-wgpu compile-time test assets
-
-cargo check --workspace --lib --bins --all-features
-  failed: the same absent asset is embedded by arcweft-player-scene
-
+cargo fmt --all -- --check                                    PASS
+git diff --check                                               PASS
+cargo check --workspace --all-targets --all-features          PASS
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-  failed: the same absent asset blocks arcweft-glyphon and
-  arcweft-render-wgpu test compilation
+                                                               PASS
+just test-workspace                                            PASS
+just test-tier2                                                PASS (180.6s)
+  MCP stdio                                                    PASS (22/22)
+  Agent observe/native capture/visual golden groups           PASS
+structure audit                                               PASS (0 errors, 137 warnings)
 ```
 
-The first all-target check attempt timed out after 124 seconds without a
-compiler result; the rerun reached the concrete missing-asset failure above.
-No Rust compiler or Clippy diagnostic preceded the asset error. `just
-test-workspace` was not run after this deterministic prerequisite failure
-because its workspace test compilation requires the same asset. Focused
-all-target/all-feature Clippy and both changed-crate test routes passed.
-
-Tier 2 is not required: although the cut spans sema and LSP and changes public
-semantic results, it does not affect a runtime, render, Agent, MCP, or capture
-path. Native visual suites and ignored Tier 2 suites were not run.
+The 137 structural warnings are ownership-review warnings rather than waived
+errors. No changed file crossed the configured 2,500-LOC production error
+threshold, and no source gate or compatibility surface was introduced to make
+the gates pass.

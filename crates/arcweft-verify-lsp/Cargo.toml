@@ -7,18 +7,18 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-adapter-context = { path = "../arcweft-adapter-context" }
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
-arcweft-runtime-host = { path = "../arcweft-runtime-host" }
-arcweft-source = { path = "../arcweft-source" }
-arcweft-tooling = { path = "../arcweft-tooling" }
-arcweft-verify = { path = "../arcweft-verify" }
+arcweft-adapter-context = { workspace = true }
+arcweft-rust-abi = { workspace = true }
+arcweft-runtime-host = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-tooling = { workspace = true }
+arcweft-verify = { workspace = true }
 lsp-types.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-lang-sema = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

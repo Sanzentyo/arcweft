@@ -1,25 +1,166 @@
 use super::*;
 use arcweft_bundle::{
-    BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
-    BundleImageObjectPlayback, BundleImageObjectTransform,
+    BundleImageObject, BundleImageObjectBounds, BundleImageObjectFit,
     container::{BundleView, ReadBudget},
     patch::{BundlePatchArtifact, encode_patch_bundle},
+    resource_codec::{ViewInputResource, ViewProgramResource, ViewStyleResource},
 };
+use arcweft_compiler::project::{ProjectCompilationContext, compile_project};
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::RuntimeEffectExpr;
 use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow, RuntimeLineId};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
-use arcweft_layout::stage_placement::{StagePlacement, StageRect};
+use arcweft_lang_hir::{
+    model::HirModule,
+    symbol::{CallablePackageId, ProjectSymbolWorldId},
+};
+use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocumentId, SourceName};
-use std::path::Path;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 mod scroll_style;
 mod view_part_recovery;
+
+#[derive(Clone, Debug)]
+struct TestCompiledViewResources {
+    compiled: CompiledViewProduct,
+    program: Option<ViewProgramResource>,
+    style: Option<ViewStyleResource>,
+    text: Option<ViewTextResource>,
+    input: Option<ViewInputResource>,
+    image_objects: Vec<BundleImageObject>,
+}
+
+impl TestCompiledViewResources {
+    fn from_compiled(compiled: CompiledViewProduct) -> Self {
+        let program = compiled
+            .product()
+            .program()
+            .map(|program| program.resource().clone());
+        let style = compiled
+            .product()
+            .style()
+            .map(|style| style.resource().clone());
+        Self {
+            program,
+            style,
+            text: compiled.text().cloned(),
+            input: compiled.input().cloned(),
+            image_objects: compiled.image_objects().to_vec(),
+            compiled,
+        }
+    }
+}
+
+fn collect_bundle_dsl_view_resources(
+    module: &HirModule,
+) -> Result<TestCompiledViewResources, ExitCode> {
+    collect_bundle_dsl_view_resources_for_package(module, "local.test-package")
+}
+
+fn collect_bundle_dsl_view_resources_for_package(
+    module: &HirModule,
+    package: &str,
+) -> Result<TestCompiledViewResources, ExitCode> {
+    let source = module.source_document().ok_or_else(|| {
+        eprintln!("error: test View compilation requires source-bound HIR");
+        ExitCode::FAILURE
+    })?;
+    let document = Arc::new(source.clone());
+    let package_spec = PackageSpec {
+        id: PackageId::new(package).map_err(|error| {
+            eprintln!("error: invalid test package ID: {error}");
+            ExitCode::FAILURE
+        })?,
+        version: PackageVersion::new("0.0.0").map_err(|error| {
+            eprintln!("error: invalid test package version: {error}");
+            ExitCode::FAILURE
+        })?,
+    };
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        package_spec,
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(format!("arcweft-test://{package}/manifest")).map_err(
+                    |error| {
+                        eprintln!("error: invalid test manifest source ID: {error}");
+                        ExitCode::FAILURE
+                    },
+                )?,
+                SourceName::path("arcw.toml"),
+                "",
+            )
+            .map_err(|error| {
+                eprintln!("error: invalid test manifest source: {error}");
+                ExitCode::FAILURE
+            })?,
+        ),
+        [ProjectSourceFile::new(
+            arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
+            PathBuf::from("main.arcw"),
+            Arc::clone(&document),
+            [],
+        )],
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to build test project sources: {error}");
+        ExitCode::FAILURE
+    })?;
+    let package = CallablePackageId::try_new(project.package().id.as_str()).map_err(|error| {
+        eprintln!("error: invalid callable package ID: {error}");
+        ExitCode::FAILURE
+    })?;
+    let world = ProjectSymbolWorldId::try_new(
+        package,
+        document.identity().id().clone(),
+        "cli-view-product-test",
+    )
+    .map_err(|error| {
+        eprintln!("error: invalid test semantic world: {error}");
+        ExitCode::FAILURE
+    })?;
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&document)],
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to build test registration facts: {error:?}");
+        ExitCode::FAILURE
+    })?;
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(ResourceTypeRegistry::empty()),
+        None,
+        None,
+        Vec::new(),
+    );
+    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+        .map_err(|error| {
+            eprintln!("error: failed to compile the test View project: {error:?}");
+            ExitCode::FAILURE
+        })?;
+    Ok(TestCompiledViewResources::from_compiled(
+        compiled.view_product().clone(),
+    ))
+}
 
 fn image_await(id: &str) -> FlowOp {
     FlowOp::Await {
@@ -143,7 +284,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(!program.instructions.is_empty());
@@ -225,7 +366,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     assert_eq!(
@@ -345,7 +486,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources_for_package(&hir, &[], "test-package")
+    let sidecars = collect_bundle_dsl_view_resources_for_package(&hir, "local.test-package")
         .expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let applications = program
@@ -364,7 +505,7 @@ flow test {
         .collect::<Vec<_>>();
 
     assert_eq!(applications.len(), 2);
-    assert_eq!(applications[0].0.package(), "test-package");
+    assert_eq!(applications[0].0.package(), "local.test-package");
     assert_eq!(applications[0].0.function(), "notice");
     assert_eq!(applications[0].1.len(), 1);
     assert_eq!(applications[0].1[0].parameter, "accent");
@@ -455,7 +596,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(
@@ -528,7 +669,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(program.instructions.iter().any(|instruction| matches!(
@@ -613,7 +754,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
@@ -653,7 +794,7 @@ flow test {
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
 
-    assert!(collect_bundle_dsl_view_resources(&hir, &[]).is_err());
+    assert!(collect_bundle_dsl_view_resources(&hir).is_err());
 }
 
 #[test]
@@ -714,7 +855,7 @@ flow test {
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
 
-    assert!(collect_bundle_dsl_view_resources(&hir, &[]).is_err());
+    assert!(collect_bundle_dsl_view_resources(&hir).is_err());
 }
 
 #[test]
@@ -736,7 +877,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
     assert_eq!(
@@ -767,7 +908,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
     let region = &program.scroll_regions[0];
@@ -785,7 +926,16 @@ flow test {
 #[test]
 fn view_scroll_contains_nested_image_element() {
     let parsed = arcweft_lang_syntax::parser::parse_source(
-        r"
+        r#"
+pub image @image.sample.pulse {
+  asset = @asset.bg.pulse
+  x = 12px
+  y = 34px
+  width = 320px
+  height = 180px
+  fit = "cover"
+}
+
 view Gallery() {
   Scroll(id = @scroll:.gallery, width = 120px, height = 72px) {
     Image(@image:.sample.pulse)
@@ -797,35 +947,13 @@ view Gallery() {
 flow test {
   view(@view:.Gallery)
 }
-",
+"#,
     );
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let source_images = vec![BundleImageObject {
-        id: "image.sample.pulse".to_owned(),
-        asset: "asset.bg.pulse".to_owned(),
-        target: Some("target.sample.pulse".to_owned()),
-        layer: Some("layer.foreground".to_owned()),
-        view: None,
-        containing_scroll_region: None,
-        bounds: BundleImageObjectBounds::from_px(12, 34, 320, 180),
-        placement: Some(StagePlacement::absolute(StageRect::new(
-            12_000, 34_000, 320_000, 180_000,
-        ))),
-        fit: BundleImageObjectFit::Cover,
-        alignment: BundleImageObjectAlignment::default(),
-        playback: BundleImageObjectPlayback::default(),
-        transform: BundleImageObjectTransform::default(),
-        depth_milli: 0,
-        opacity_milli: 1_000,
-        actions: Vec::new(),
-        params: BTreeMap::new(),
-        proxies: Vec::new(),
-        visible: true,
-    }];
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &source_images).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     assert_eq!(sidecars.image_objects.len(), 1);
     let image = &sidecars.image_objects[0];
@@ -863,7 +991,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program lowers");
     let text = sidecars.text.expect("text resource lowers");
 
@@ -904,7 +1032,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program lowers");
 
     let status_blocks = view_text_blocks(&program, "view.StatusPanel");
@@ -998,7 +1126,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let branch_count = program
@@ -1127,7 +1255,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let text = sidecars.text.expect("text sidecar");
 
     assert_eq!(
@@ -1177,7 +1305,7 @@ pub dialogue defaults {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let text = sidecars.text.expect("dialogue text sidecar");
     assert!(text.sources.iter().any(|source| {
         source.kind
@@ -1274,8 +1402,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources_from_source(&hir, &[], "test.arcw", source)
-        .expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let [export] = program.exported_parts.as_slice() else {
         panic!("authored export must produce exactly one product record");
@@ -1348,7 +1475,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let product = sidecars.compiled.product();
     let program = product.program().expect("linked View program").resource();
     let style = product.style().expect("linked Style resource").resource();
@@ -1485,7 +1612,7 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("custom dialogue View program");
     let text = sidecars.text.expect("custom dialogue text resource");
     let definition = program
@@ -1590,7 +1717,7 @@ view FeedbackForm() {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let product = sidecars.compiled.product().as_ref().clone();
     let runtime = BundleViewRuntime::try_new(product, sidecars.text.clone())
@@ -1646,7 +1773,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let text = sidecars.text.expect("text sidecar");
     let input = sidecars.input.expect("input sidecar");
@@ -1744,7 +1871,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
 
@@ -1784,7 +1911,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
     let text = sidecars.text.expect("text sidecar");
@@ -1873,7 +2000,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let continue_button = program
@@ -1923,7 +2050,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let button = program

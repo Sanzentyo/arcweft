@@ -1067,7 +1067,21 @@ fn parser_invariant_accepts_parenthesized_utf8_ranges() {
     assert_eq!(list.arguments()[0].range(), range(2, 4));
     assert_eq!(list.arguments()[1].value_range(), range(6, 11));
     assert_eq!(list.separators(), &[range(4, 5)]);
-    assert_eq!(list.active_argument_slot(4), Some(0));
+    assert_eq!(list.active_argument_slot(4), Some(1));
+    assert_eq!(list.active_argument_slot(5), Some(1));
+}
+
+#[test]
+fn comma_start_focuses_the_following_argument_slot() {
+    let call = parsed_call("f(a , b)");
+    let list = call
+        .parenthesized_syntax()
+        .expect("parenthesized call syntax")
+        .argument_list();
+
+    assert_eq!(list.separators(), &[range(4, 5)]);
+    assert_eq!(list.active_argument_slot(3), Some(0));
+    assert_eq!(list.active_argument_slot(4), Some(1));
     assert_eq!(list.active_argument_slot(5), Some(1));
 }
 
@@ -1153,7 +1167,7 @@ fn parenthesized_named_spread_and_trailing_comma_preserve_forms() {
     let list = trailing.argument_list();
     assert_eq!(list.separators(), &[]);
     assert_eq!(list.trailing_comma(), Some(range(4, 5)));
-    assert_eq!(list.active_argument_slot(4), Some(0));
+    assert_eq!(list.active_argument_slot(4), Some(1));
     assert_eq!(list.active_argument_slot(5), Some(1));
 }
 

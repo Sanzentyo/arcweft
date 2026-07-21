@@ -29,10 +29,6 @@ use arcweft_adapter_desktop::{
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
     is_desktop_owned_window_host_call,
 };
-#[cfg(test)]
-use arcweft_bundle::BundleImageObject;
-#[cfg(test)]
-use arcweft_bundle::resource_codec::{ViewInputResource, ViewProgramResource, ViewStyleResource};
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat,
     BundleImageAnimation, BundleImageAsset, BundleImageDimensions, BundleImageFormat,
@@ -46,8 +42,6 @@ use arcweft_bundle::{
     resource_codec::{ViewLocalizedTextResource, ViewTextResource},
 };
 use arcweft_compiler::view::CompiledViewProduct;
-#[cfg(test)]
-use arcweft_compiler::{style::CompiledViewStyleArtifact, view::ViewProjectLowerer};
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
@@ -55,22 +49,14 @@ use arcweft_core::{
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_id::{PublicId, RetainedIdentityFamily};
-#[cfg(test)]
-use arcweft_lang_hir::model::HirModule;
-#[cfg(test)]
-use arcweft_lang_sema::check::TypeCheckReport;
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
-#[cfg(test)]
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
     run_bundle_with_native_adapters,
 };
-#[cfg(test)]
-use arcweft_runtime_plan::fx::lower_fx_definitions_for_package;
 use arcweft_source::SourceDocument;
 use arcweft_verify::{VerificationPolicy, VerificationReport, verify_module_with_env};
 use clap::Args;
@@ -349,171 +335,6 @@ pub(in crate::app) fn compile_bundle_for_selection(
 fn emit_bundle_verification_diagnostics(document: &SourceDocument, report: &VerificationReport) {
     let diagnostics = report.source_diagnostics(document);
     emit_diagnostics(document, &diagnostics);
-}
-
-#[cfg(test)]
-#[derive(Clone, Debug)]
-struct TestCompiledViewResources {
-    compiled: CompiledViewProduct,
-    program: Option<ViewProgramResource>,
-    style: Option<ViewStyleResource>,
-    text: Option<ViewTextResource>,
-    input: Option<ViewInputResource>,
-    image_objects: Vec<BundleImageObject>,
-}
-
-#[cfg(test)]
-impl TestCompiledViewResources {
-    fn from_compiled(compiled: CompiledViewProduct) -> Self {
-        let program = compiled
-            .product()
-            .program()
-            .map(|program| program.resource().clone());
-        let style = compiled
-            .product()
-            .style()
-            .map(|style| style.resource().clone());
-        Self {
-            program,
-            style,
-            text: compiled.text().cloned(),
-            input: compiled.input().cloned(),
-            image_objects: compiled.image_objects().to_vec(),
-            compiled,
-        }
-    }
-}
-
-#[cfg(test)]
-fn collect_bundle_dsl_view_resources(
-    module: &HirModule,
-    image_objects: &[BundleImageObject],
-) -> Result<TestCompiledViewResources, ExitCode> {
-    collect_bundle_dsl_view_resources_for_package(module, image_objects, "test-package")
-}
-
-#[cfg(test)]
-fn collect_bundle_dsl_view_resources_for_package(
-    module: &HirModule,
-    image_objects: &[BundleImageObject],
-    package: &str,
-) -> Result<TestCompiledViewResources, ExitCode> {
-    let source = module.source_document().ok_or_else(|| {
-        eprintln!("error: test View lowering requires source-bound HIR");
-        ExitCode::FAILURE
-    })?;
-    let typecheck = arcweft_compiler::hir::validate_hir_with_env(
-        module,
-        &arcweft_lang_sema::env::TypeCheckEnv::standard(),
-    )
-    .map_err(|error| {
-        eprintln!("error: test View HIR did not typecheck: {error}");
-        ExitCode::FAILURE
-    })?;
-    let style =
-        arcweft_compiler::style::lower_source_view_styles(module, &typecheck.style_catalog, source)
-            .map_err(|error| {
-                eprintln!("error: test View Style lowering failed: {error}");
-                ExitCode::FAILURE
-            })?;
-    collect_bundle_dsl_view_resources_with_style_for_package(
-        module,
-        &style,
-        image_objects,
-        package,
-        &typecheck,
-        source,
-    )
-}
-
-#[cfg(test)]
-fn collect_bundle_dsl_view_resources_from_source(
-    module: &HirModule,
-    image_objects: &[BundleImageObject],
-    source_id: &str,
-    source: &str,
-) -> Result<TestCompiledViewResources, ExitCode> {
-    collect_bundle_dsl_view_resources_from_source_for_package(
-        module,
-        image_objects,
-        "test-package",
-        source_id,
-        source,
-    )
-}
-
-#[cfg(test)]
-fn collect_bundle_dsl_view_resources_from_source_for_package(
-    module: &HirModule,
-    image_objects: &[BundleImageObject],
-    package: &str,
-    source_id: &str,
-    source: &str,
-) -> Result<TestCompiledViewResources, ExitCode> {
-    let bound_source = module.source_document().ok_or_else(|| {
-        eprintln!("error: test View lowering requires source-bound HIR");
-        ExitCode::FAILURE
-    })?;
-    if bound_source.identity().id().as_str() != source_id || bound_source.text() != source {
-        eprintln!("error: test View source does not match the exact HIR-bound document");
-        return Err(ExitCode::FAILURE);
-    }
-    let typecheck = arcweft_compiler::hir::validate_hir_with_env(
-        module,
-        &arcweft_lang_sema::env::TypeCheckEnv::standard(),
-    )
-    .map_err(|error| {
-        eprintln!("error: test View HIR did not typecheck: {error}");
-        ExitCode::FAILURE
-    })?;
-    let style_artifact = arcweft_compiler::style::lower_source_view_styles(
-        module,
-        &typecheck.style_catalog,
-        bound_source,
-    )
-    .map_err(|error| {
-        eprintln!("error: test View Style lowering failed: {error}");
-        ExitCode::FAILURE
-    })?;
-    collect_bundle_dsl_view_resources_with_style_for_package(
-        module,
-        &style_artifact,
-        image_objects,
-        package,
-        &typecheck,
-        bound_source,
-    )
-}
-
-#[cfg(test)]
-fn collect_bundle_dsl_view_resources_with_style_for_package(
-    module: &HirModule,
-    style_artifact: &CompiledViewStyleArtifact,
-    image_objects: &[BundleImageObject],
-    package: &str,
-    typecheck: &TypeCheckReport,
-    source: &SourceDocument,
-) -> Result<TestCompiledViewResources, ExitCode> {
-    let fx_definitions = lower_fx_definitions_for_package(module, package).map_err(|error| {
-        eprintln!("error: failed to compile View-visible Fx definitions: {error}");
-        ExitCode::FAILURE
-    })?;
-    let resource_types = ResourceTypeRegistry::empty();
-    let compiled = ViewProjectLowerer::for_source(
-        module,
-        typecheck,
-        style_artifact,
-        source,
-        image_objects,
-        &fx_definitions,
-        &resource_types,
-    )
-    .and_then(ViewProjectLowerer::lower)
-    .map_err(|error| {
-        eprintln!("error: failed to compile the View product: {error}");
-        ExitCode::FAILURE
-    })?;
-    Ok(TestCompiledViewResources::from_compiled(compiled))
 }
 
 fn attach_compiled_view_product(

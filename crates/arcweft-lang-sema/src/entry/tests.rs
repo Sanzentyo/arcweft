@@ -104,6 +104,19 @@ fn checked_agent(source: &str) -> CheckedEntryBinding {
         .clone()
 }
 
+fn assert_unbound_agent_call(
+    diagnostics: &[super::CheckedEntryDiagnostic],
+    source: &str,
+    call: &str,
+) {
+    let diagnostic = diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "sema.entry.unbound_agent_intrinsic")
+        .expect("typed Agent role diagnostic");
+    let range = diagnostic.primary().range();
+    assert_eq!(&source[range.start()..range.end()], call);
+}
+
 #[test]
 fn bind_001_resolves_stateful_roles_to_original_declarations() {
     let entry = checked(SOURCE);
@@ -275,6 +288,210 @@ entry agent @entry.agent.smoke {{
     assert_eq!(authored.budget().max_vm_steps(), 96);
     assert_ne!(defaults.policy_digest(), authored.policy_digest());
     assert_ne!(defaults.binding_digest, authored.binding_digest);
+}
+
+#[test]
+fn agent_callable_family_is_scoped_to_the_exact_selected_controller() {
+    let selected = r"
+fn controller() -> Result<Unit, AgentError>
+effects { agent.observe }
+{
+    observe()
+    Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    checked_project(&[("", selected)])
+        .expect("selected Agent controller receives Agent callable scope");
+
+    let unselected = r"
+fn stray() -> Result<Unit, AgentError>
+effects { agent.observe }
+{
+    observe()
+    Ok(())
+}
+
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let diagnostics = checked_project(&[("", unselected)])
+        .expect_err("unselected ordinary function must not receive Agent callable scope");
+    assert_unbound_agent_call(&diagnostics, unselected, "observe()");
+}
+
+#[test]
+fn established_agent_intrinsic_is_rejected_in_an_unselected_helper() {
+    let source = r"
+fn stray() -> Unit
+effects {}
+{
+    expect(true)
+}
+
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let diagnostics = checked_project(&[("", source)])
+        .expect_err("the established `expect` intrinsic remains Agent-role scoped");
+
+    assert_unbound_agent_call(&diagnostics, source, "expect(true)");
+}
+
+#[test]
+fn selected_agent_controller_nested_closure_keeps_its_lexical_role() {
+    let source = r"
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    let check = || -> Unit {
+        expect(true)
+    }
+    check()
+    Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+
+    checked_project(&[("", source)])
+        .expect("a nested closure retains its selected controller's lexical declaration owner");
+}
+
+#[test]
+fn selected_controller_does_not_lend_its_role_to_an_ordinary_helper() {
+    let source = r"
+fn helper() -> Unit
+effects {}
+{
+    expect(true)
+}
+
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    helper()
+    Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let diagnostics = checked_project(&[("", source)])
+        .expect_err("controller reachability must not grant an ordinary helper the Agent role");
+
+    assert_unbound_agent_call(&diagnostics, source, "expect(true)");
+}
+
+#[test]
+fn multiple_agent_entries_grant_each_exact_controller_its_own_role() {
+    let source = r"
+fn first() -> Result<Unit, AgentError>
+effects {}
+{
+    expect(true)
+    Ok(())
+}
+
+fn second() -> Result<Unit, AgentError>
+effects {}
+{
+    expect(true)
+    Ok(())
+}
+
+entry agent @entry.agent.first {
+    controller = first
+}
+
+entry agent @entry.agent.second {
+    controller = second
+}
+";
+
+    let catalog = checked_project(&[("", source)])
+        .expect("each exact Agent entry controller receives the Agent callable role");
+    assert!(
+        catalog
+            .get(&CheckedEntryId::try_new("entry.agent.first").unwrap())
+            .is_some()
+    );
+    assert!(
+        catalog
+            .get(&CheckedEntryId::try_new("entry.agent.second").unwrap())
+            .is_some()
+    );
+}
+
+#[test]
+fn same_named_cross_module_function_does_not_inherit_selected_controller_role() {
+    let root = "";
+    let selected = r"
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    expect(true)
+    Ok(())
+}
+
+entry agent @entry.agent.selected {
+    controller = controller
+}
+";
+    let unselected = r"
+fn controller() -> Unit
+effects {}
+{
+    expect(true)
+}
+";
+    let diagnostics = checked_project(&[("", root), ("selected", selected), ("other", unselected)])
+        .expect_err("a same-named declaration in another module has a distinct callable identity");
+
+    assert_unbound_agent_call(&diagnostics, unselected, "expect(true)");
+}
+
+#[test]
+fn agent_intrinsic_in_flow_has_no_controller_owner_and_is_rejected() {
+    let source = r"
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    Ok(())
+}
+
+flow @flow.unbound_agent_call unbound_agent_call {
+    expect(true)
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let diagnostics = checked_project(&[("", source)])
+        .expect_err("a flow cannot acquire an Agent controller function role");
+
+    assert_unbound_agent_call(&diagnostics, source, "expect(true)");
 }
 
 #[test]

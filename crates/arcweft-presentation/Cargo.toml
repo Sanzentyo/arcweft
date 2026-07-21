@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-character = { path = "../arcweft-character" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-rich-text-schema = { path = "../arcweft-rich-text-schema" }
+arcweft-character = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-rich-text-schema = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

@@ -7,26 +7,25 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-adapter-context = { path = "../arcweft-adapter-context", features = ["sema"] }
-arcweft-agent-repl = { path = "../arcweft-agent-repl" }
-arcweft-character = { path = "../arcweft-character" }
-arcweft-compiler = { path = "../arcweft-compiler" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-launch = { path = "../arcweft-launch" }
-arcweft-manifest-model = { path = "../arcweft-manifest-model" }
-arcweft-project-loader = { path = "../arcweft-project-loader" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
-arcweft-runtime-host = { path = "../arcweft-runtime-host" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-source = { path = "../arcweft-source" }
-arcweft-tooling = { path = "../arcweft-tooling" }
-arcweft-verify = { path = "../arcweft-verify" }
-arcweft-verify-lsp = { path = "../arcweft-verify-lsp" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-adapter-context = { workspace = true, features = ["sema"] }
+arcweft-agent-repl = { workspace = true }
+arcweft-character = { workspace = true }
+arcweft-compiler = { workspace = true }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
+arcweft-launch = { workspace = true }
+arcweft-manifest-model = { workspace = true }
+arcweft-project-loader = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-runtime-host = { workspace = true }
+arcweft-runtime-plan = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-tooling = { workspace = true }
+arcweft-verify = { workspace = true }
+arcweft-verify-lsp = { workspace = true }
+arcweft-view = { workspace = true }
 crossbeam-channel.workspace = true
 lsp-server.workspace = true
 lsp-types.workspace = true
@@ -37,7 +36,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
-toml.workspace = true
+arcweft-adapter-metadata.workspace = true
 
 [lib]
 path = "src/lib.rs"

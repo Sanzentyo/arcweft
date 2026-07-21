@@ -215,6 +215,9 @@ pub(super) fn builtin_path_type(path: &str) -> Option<TypeKind> {
         "InlineFailure" | "InlineFallback" | "FallbackStyle" => {
             TypeKind::Named(format!("{path}Namespace"))
         }
+        path if path.strip_prefix('\'').is_some_and(|name| !name.is_empty()) => {
+            TypeKind::Named("PresentationLifetime".to_owned())
+        }
         path if path.starts_with('.') => TypeKind::Named("Variant".to_owned()),
         _ => return None,
     })

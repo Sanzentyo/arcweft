@@ -13,15 +13,26 @@ fn profile_loads_character_manifest_into_completion_type_environment() {
     let project = TestProject::new("lsp-character-manifest");
     project.write(
         "arcw.toml",
-        r#"
+        r#"schema = 1
+
 [package]
-name = "lsp-character-manifest"
+id = "org.arcweft.tests.lsp-character-manifest"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.akane"]
+visibility = "package"
+demand = "required"
 
 [profiles.game]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
-character_manifests = ["assets/akane.awchar"]
+
+[profiles.game.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
 "#,
     );
     project.write("src/main.arcw", "flow @flow.main main { return \"ok\" }\n");

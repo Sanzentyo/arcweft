@@ -390,10 +390,10 @@ Current focused evidence:
   `source-dir = "."` entries in the Zundamon stand-switch and Web samples;
   both sources now live at canonical `src/main.arcw` paths, their manifests
   select those exact files, and exact `arcw check` profile runs pass;
-- the checked-in prebuilt `web/demo.awfb` was not regenerated in this manifest
-  test slice. Current regeneration also changes unrelated bundled font/payload
-  content by more than 5 MiB; deterministic artifact regeneration remains part
-  of the Web fixture and Tier 2 review cut rather than this source-layout fix;
+- the checked-in `web/demo.awfb` was deterministically regenerated through
+  `just fixture-refresh-web-demo-awfb`, inspected through `arcw inspect`, and
+  exercised by the seven-case Web parity suite. The bundle now uses canonical
+  schema 3 and contains 26 virtual files;
 - `cargo check -p arcweft-launch -p arcweft-project
   -p arcweft-project-loader --all-targets` passed;
 - `cargo test -p arcweft-launch` passed all 32 decoder, source-map, strict
@@ -448,6 +448,14 @@ Current focused evidence:
   807,340 physical Rust LOC with zero errors and 129 ownership warnings.
 
 The 22-case MCP stdio group was rerun after the native View-handler correction
-and passed again. `just test-workspace`, the remaining Tier 2 Agent-observe,
-auxiliary-capture, and visual-golden groups, a final workspace format check,
-and `git diff --check` remain final milestone gates.
+and passed again. The settled integrated checkout subsequently passed
+`just test-workspace`; all remaining Tier 2 Agent-observe, auxiliary-capture,
+native-capture, and visual-golden groups; the final all-feature workspace check
+and Clippy run; `cargo fmt --all -- --check`; and `git diff --check`.
+
+The product-catalog boundary was also corrected while regenerating the Web
+fixture. Raw virtual-file bytes are bounded independently at 16 MiB, while the
+canonical JSON transcript has its own 64 MiB limit. This prevents raw payload
+growth from escaping accounting without incorrectly rejecting deterministic
+JSON expansion. Focused bundle tests and the final workspace/Tier 2 gates cover
+the corrected boundary.

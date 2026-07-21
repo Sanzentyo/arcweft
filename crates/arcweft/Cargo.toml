@@ -7,17 +7,17 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-adt = { path = "../arcweft-adt" }
-arcweft-character = { path = "../arcweft-character" }
-arcweft-character-view = { path = "../arcweft-character-view" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-dialogue = { path = "../arcweft-dialogue" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-memory = { path = "../arcweft-memory" }
-arcweft-need = { path = "../arcweft-need" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-ref = { path = "../arcweft-ref" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-adt = { workspace = true }
+arcweft-character = { workspace = true }
+arcweft-character-view = { workspace = true }
+arcweft-core = { workspace = true }
+arcweft-dialogue = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-memory = { workspace = true }
+arcweft-need = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-ref = { workspace = true }
+arcweft-source = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

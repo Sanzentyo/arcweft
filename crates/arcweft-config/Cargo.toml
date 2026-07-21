@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "Arcweft config merge policy and source boundary."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 
 [lints]
 workspace = true

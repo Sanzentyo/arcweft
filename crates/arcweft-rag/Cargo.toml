@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-arcweft-debug-model = { path = "../arcweft-debug-model" }
+arcweft-debug-model = { workspace = true }
 thiserror.workspace = true
 
 [lints]

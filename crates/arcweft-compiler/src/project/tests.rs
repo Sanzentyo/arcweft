@@ -42,7 +42,7 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
     )
     .expect("project sources");
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("removed-role").expect("package"),
+        CallablePackageId::try_new(project.package().id.as_str()).expect("package"),
         document.identity().id().clone(),
         "removed-role-test",
     )
@@ -377,7 +377,7 @@ fn pending_stores_discard_on_registration_error() {
     )
     .expect("external seed");
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("compiler-registration").expect("package"),
+        CallablePackageId::try_new(project.package().id.as_str()).expect("package"),
         document.identity().id().clone(),
         "test",
     )

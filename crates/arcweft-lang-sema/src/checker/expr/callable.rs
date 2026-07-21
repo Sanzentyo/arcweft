@@ -1,4 +1,4 @@
-use super::support::FixedLiteralSpreadSlot;
+use super::support::{FixedLiteralSpreadSlot, fixed_literal_spread_slots};
 use super::{
     CallArg, CallExpr, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
@@ -365,16 +365,11 @@ impl TypeChecker<'_> {
                         ));
                     self.check_expr(value);
                 }
-                CallArg::Spread { value } => match value.as_ref() {
-                    Expr::BracketSeq(items) => {
+                CallArg::Spread { value } => {
+                    if let Some(slots) = fixed_literal_spread_slots(value) {
                         self.reserve_fixed_literal_spread_container_expr(value);
-                        supplied.extend(items.iter().map(FixedLiteralSpreadSlot::Expr));
-                    }
-                    Expr::NumericBracketSeq(seq) => {
-                        self.reserve_fixed_literal_spread_container_expr(value);
-                        supplied.extend(seq.literals().iter().map(FixedLiteralSpreadSlot::Int));
-                    }
-                    _ => {
+                        supplied.extend(slots);
+                    } else {
                         unsupported_arg_syntax = true;
                         self.errors
                             .push(TypeCheckError::unsupported_function_value_call(
@@ -383,7 +378,7 @@ impl TypeChecker<'_> {
                             ));
                         self.check_expr(value);
                     }
-                },
+                }
             }
         }
         FunctionValueArgSlots {

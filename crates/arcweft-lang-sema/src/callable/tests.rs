@@ -555,6 +555,39 @@ fn callable_path_exact_limit_and_one_over() {
 }
 
 #[test]
+fn callable_catalog_rejects_a_symbol_world_from_another_package() {
+    let (project, _) = external_binding_project([]);
+    let root = CanonicalModulePath::crate_root();
+    let source = project.source(&root).expect("root source identity");
+    let expected = project.package().clone();
+    let actual = CallablePackageId::try_new("callable-catalog-other-package")
+        .expect("different callable package");
+    let world = ProjectSymbolWorldId::try_new(
+        actual.clone(),
+        source.id().clone(),
+        "mismatched-callable-catalog",
+    )
+    .expect("symbol world");
+    let revision =
+        ProjectSymbolRevision::try_for_documents([source]).expect("project source revision");
+    let externals = ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+        .expect("empty external declarations");
+    let symbols = ProjectSymbolTable::link(&project, &externals)
+        .expect("linking retains the distinct symbol-world identity")
+        .into_table();
+    let mut builder = RegisteredCallableCatalogBuilder::new(PRODUCTION_CALLABLE_LIMITS);
+
+    let error = builder
+        .add_project(&project, &symbols)
+        .expect_err("a callable catalog cannot span two package identities");
+    assert_eq!(
+        error,
+        CallableCatalogBuildError::ProjectWorldPackageMismatch { expected, actual }
+    );
+    assert_eq!(error.code(), CallableDiagnosticCode::CorruptCallableCatalog);
+}
+
+#[test]
 fn typed_project_binding_path_limit_is_fail_closed() {
     let binding = project_binding_path((0..3).map(|index| format!("segment-{index}")));
     let (project, symbols) = external_binding_project([("adapter.long".to_owned(), binding)]);
@@ -857,6 +890,7 @@ fn fx_identity_table_is_closed() {
 #[test]
 fn agent_identity_table_is_complete() {
     let cases = [
+        (&["observe"][..], AgentIntrinsicSignatureId::Observe),
         (&["expect"][..], AgentIntrinsicSignatureId::Expect),
         (&["deny"][..], AgentIntrinsicSignatureId::Deny),
         (&["checkpoint"][..], AgentIntrinsicSignatureId::Checkpoint),
@@ -933,6 +967,24 @@ fn family_schemas_preserve_validator_result_effect_and_structural_owner() {
     assert_eq!(
         conditional.validator(),
         &CallableValidator::Fx(FxCallableSignatureId::Conditional)
+    );
+
+    let observe = AgentIntrinsicSignatureId::Observe.signature_schema();
+    assert!(observe.groups()[0].parameters().is_empty());
+    assert_eq!(
+        observe.result(),
+        &TypeKind::Result {
+            ok: Box::new(TypeKind::Observation),
+            error: Box::new(TypeKind::Named("AgentError".to_owned())),
+        }
+    );
+    assert_eq!(
+        observe.effects().declared().concrete().to_labels(),
+        ["agent.observe".to_owned()]
+    );
+    assert_eq!(
+        observe.validator(),
+        &CallableValidator::Agent(AgentIntrinsicSignatureId::Observe)
     );
 
     let capture = AgentIntrinsicSignatureId::Capture.signature_schema();

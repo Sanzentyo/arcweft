@@ -7,11 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-source = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

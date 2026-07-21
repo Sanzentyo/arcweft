@@ -18,7 +18,7 @@ use super::{
     EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId, LanguageDocumentationFamily,
     OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
     ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
-    RustProvenanceField, TraitCallableId,
+    RustProvenanceField, StageMethodId, TraitCallableId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -483,6 +483,7 @@ pub enum CallableValidator {
     Domain(DomainMethodId),
     Trait(TraitCallableId),
     Capacity(CapacityMethodId),
+    Stage(StageMethodId),
     Drop,
     Promotion(PromotionCallableId),
     Speaker,
@@ -638,7 +639,14 @@ impl CallableSignatureSchema {
                             limit: limits.max_parameters_per_callable(),
                         }
                     })?,
-                    None,
+                    Some(
+                        CallableName::try_new(format!("arg{}", index + 1)).map_err(|_| {
+                            CallableSchemaError::FamilyInvariant {
+                                family: super::CallableFamily::FunctionValue,
+                                code: super::CallableFamilyInvariantCode::InvalidParameterType,
+                            }
+                        })?,
+                    ),
                     CallableParameterType::Exact(parameter.clone()),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,

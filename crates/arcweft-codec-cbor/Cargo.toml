@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "CBOR codec adapter for Arcweft data."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 ciborium.workspace = true
 ciborium-io.workspace = true
 ciborium-ll.workspace = true

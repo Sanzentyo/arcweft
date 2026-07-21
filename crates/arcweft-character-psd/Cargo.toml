@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-character = { path = "../arcweft-character" }
+arcweft-character = { workspace = true }
 blake3.workspace = true
 png.workspace = true
 psd.workspace = true

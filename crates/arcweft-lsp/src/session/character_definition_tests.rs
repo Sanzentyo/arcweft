@@ -508,14 +508,26 @@ impl CharacterDefinitionProject {
     fn write_project(&self, source: &str, manifest: &str) {
         self.write(
             "arcw.toml",
-            r#"[package]
-name = "character-definition-test"
+            r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.character-definition"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.akane"]
+visibility = "package"
+demand = "required"
 
 [profiles.game]
 kind = "game"
-entry = "entry.game.main"
+entry = "@entry.game.main"
 source = "src/main.arcw"
-character_manifests = ["assets/akane.awchar"]
+
+[profiles.game.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
 "#,
         );
         self.write("src/main.arcw", source);

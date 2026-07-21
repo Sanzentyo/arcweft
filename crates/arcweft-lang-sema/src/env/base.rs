@@ -471,6 +471,7 @@ impl TypeCheckEnv {
     #[must_use]
     pub fn with_standard_builtins(self) -> Self {
         self.with_standard_dialogue_view_types()
+            .with_standard_presentation_lifetimes()
             .with_function("fmt", TypeKind::DisplayText)
             .with_function_signature(
                 "SpeakerPreset.new",
@@ -533,6 +534,25 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
+    }
+
+    #[must_use]
+    fn with_standard_presentation_lifetimes(self) -> Self {
+        self.try_with_enum_variants(
+            TypeKind::Named("PresentationLifetime".to_owned()),
+            [
+                "frame",
+                "tick",
+                "cue",
+                "line",
+                "scene",
+                "flow",
+                "session",
+                "global",
+                "persistent",
+            ],
+        )
+        .expect("presentation lifetime inventory is not character nominal")
     }
 
     /// Installs the finite source-visible runtime callable surface.

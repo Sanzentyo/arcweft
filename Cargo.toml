@@ -103,38 +103,98 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/Sanzentyo/arcweft"
 
 [workspace.dependencies]
+arcweft = { path = "crates/arcweft" }
+arcweft-adapter-context = { path = "crates/arcweft-adapter-context" }
+arcweft-adapter-desktop = { path = "crates/arcweft-adapter-desktop" }
+arcweft-adapter-metadata = { path = "crates/arcweft-adapter-metadata" }
+arcweft-adt = { path = "crates/arcweft-adt" }
+arcweft-agent-mcp = { path = "crates/arcweft-agent-mcp" }
+arcweft-agent-mcp-client = { path = "crates/arcweft-agent-mcp-client" }
+arcweft-agent-policy = { path = "crates/arcweft-agent-policy" }
+arcweft-agent-protocol = { path = "crates/arcweft-agent-protocol" }
+arcweft-agent-repl = { path = "crates/arcweft-agent-repl" }
+arcweft-agent-runner = { path = "crates/arcweft-agent-runner" }
+arcweft-audio-codec = { path = "crates/arcweft-audio-codec" }
+arcweft-audio-core = { path = "crates/arcweft-audio-core" }
+arcweft-audio-device-cpal = { path = "crates/arcweft-audio-device-cpal" }
+arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
+arcweft-browser-bench = { path = "crates/arcweft-browser-bench" }
+arcweft-bundle = { path = "crates/arcweft-bundle", default-features = false }
 arcweft-character = { path = "crates/arcweft-character" }
 arcweft-character-psd = { path = "crates/arcweft-character-psd" }
 arcweft-character-view = { path = "crates/arcweft-character-view" }
-arcweft-data = { path = "crates/arcweft-data" }
-arcweft-data-derive = { path = "crates/arcweft-data-derive" }
-arcweft-codec-json = { path = "crates/arcweft-codec-json" }
-arcweft-codec-yaml = { path = "crates/arcweft-codec-yaml" }
-arcweft-codec-toml = { path = "crates/arcweft-codec-toml" }
-arcweft-codec-msgpack = { path = "crates/arcweft-codec-msgpack" }
-arcweft-codec-cbor = { path = "crates/arcweft-codec-cbor" }
-arcweft-codec-csv = { path = "crates/arcweft-codec-csv" }
+arcweft-cli = { path = "crates/arcweft-cli" }
 arcweft-codec-arrow = { path = "crates/arcweft-codec-arrow" }
 arcweft-codec-avro = { path = "crates/arcweft-codec-avro" }
 arcweft-codec-binary = { path = "crates/arcweft-codec-binary" }
-arcweft-serde-bridge = { path = "crates/arcweft-serde-bridge" }
-arcweft-save = { path = "crates/arcweft-save" }
+arcweft-codec-cbor = { path = "crates/arcweft-codec-cbor" }
+arcweft-codec-csv = { path = "crates/arcweft-codec-csv" }
+arcweft-codec-json = { path = "crates/arcweft-codec-json" }
+arcweft-codec-msgpack = { path = "crates/arcweft-codec-msgpack" }
+arcweft-codec-toml = { path = "crates/arcweft-codec-toml" }
+arcweft-codec-yaml = { path = "crates/arcweft-codec-yaml" }
+arcweft-compiler = { path = "crates/arcweft-compiler" }
 arcweft-config = { path = "crates/arcweft-config" }
+arcweft-content-policy = { path = "crates/arcweft-content-policy" }
+arcweft-core = { path = "crates/arcweft-core" }
+arcweft-data = { path = "crates/arcweft-data" }
+arcweft-data-derive = { path = "crates/arcweft-data-derive" }
+arcweft-debug-model = { path = "crates/arcweft-debug-model" }
+arcweft-debug-sqlite = { path = "crates/arcweft-debug-sqlite" }
+arcweft-desktop-contract = { path = "crates/arcweft-desktop-contract" }
+arcweft-desktop-host = { path = "crates/arcweft-desktop-host" }
+arcweft-desktop-native = { path = "crates/arcweft-desktop-native" }
+arcweft-dialogue = { path = "crates/arcweft-dialogue" }
+arcweft-glyphon = { path = "crates/arcweft-glyphon" }
+arcweft-host-adapter = { path = "crates/arcweft-host-adapter" }
 arcweft-http-codec = { path = "crates/arcweft-http-codec" }
+arcweft-id = { path = "crates/arcweft-id" }
+arcweft-image = { path = "crates/arcweft-image" }
 arcweft-interaction-model = { path = "crates/arcweft-interaction-model" }
+arcweft-lang-hir = { path = "crates/arcweft-lang-hir" }
+arcweft-lang-jit-cranelift = { path = "crates/arcweft-lang-jit-cranelift" }
+arcweft-lang-sema = { path = "crates/arcweft-lang-sema" }
+arcweft-lang-syntax = { path = "crates/arcweft-lang-syntax" }
+arcweft-launch = { path = "crates/arcweft-launch" }
 arcweft-layout = { path = "crates/arcweft-layout" }
+arcweft-lsp = { path = "crates/arcweft-lsp" }
+arcweft-manifest-model = { path = "crates/arcweft-manifest-model" }
+arcweft-memory = { path = "crates/arcweft-memory" }
+arcweft-need = { path = "crates/arcweft-need" }
+arcweft-player-native = { path = "crates/arcweft-player-native" }
+arcweft-player-scene = { path = "crates/arcweft-player-scene" }
+arcweft-player-text-input = { path = "crates/arcweft-player-text-input" }
+arcweft-player-web = { path = "crates/arcweft-player-web" }
+arcweft-presentation = { path = "crates/arcweft-presentation" }
+arcweft-project = { path = "crates/arcweft-project" }
+arcweft-project-loader = { path = "crates/arcweft-project-loader" }
+arcweft-rag = { path = "crates/arcweft-rag" }
+arcweft-ref = { path = "crates/arcweft-ref" }
+arcweft-render-text = { path = "crates/arcweft-render-text" }
+arcweft-render-web = { path = "crates/arcweft-render-web" }
+arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
+arcweft-resource-model = { path = "crates/arcweft-resource-model" }
+arcweft-rich-text-schema = { path = "crates/arcweft-rich-text-schema" }
+arcweft-runtime-accelerator = { path = "crates/arcweft-runtime-accelerator", default-features = false }
 arcweft-runtime-codegen = { path = "crates/arcweft-runtime-codegen" }
 arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }
-arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
-arcweft-render-web = { path = "crates/arcweft-render-web" }
-arcweft-audio-core = { path = "crates/arcweft-audio-core" }
-arcweft-audio-codec = { path = "crates/arcweft-audio-codec" }
-arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
-arcweft-content-policy = { path = "crates/arcweft-content-policy" }
-arcweft-agent-policy = { path = "crates/arcweft-agent-policy" }
-arcweft-manifest-model = { path = "crates/arcweft-manifest-model" }
-arcweft-resource-model = { path = "crates/arcweft-resource-model" }
-arcweft-adapter-metadata = { path = "crates/arcweft-adapter-metadata" }
+arcweft-runtime-host = { path = "crates/arcweft-runtime-host" }
+arcweft-runtime-plan = { path = "crates/arcweft-runtime-plan" }
+arcweft-runtime-scheduler = { path = "crates/arcweft-runtime-scheduler" }
+arcweft-rust-abi = { path = "crates/arcweft-rust-abi" }
+arcweft-rust-abi-build = { path = "crates/arcweft-rust-abi-build" }
+arcweft-rust-abi-macros = { path = "crates/arcweft-rust-abi-macros" }
+arcweft-save = { path = "crates/arcweft-save" }
+arcweft-serde-bridge = { path = "crates/arcweft-serde-bridge" }
+arcweft-source = { path = "crates/arcweft-source" }
+arcweft-test = { path = "crates/arcweft-test" }
+arcweft-text-layout = { path = "crates/arcweft-text-layout" }
+arcweft-tooling = { path = "crates/arcweft-tooling" }
+arcweft-verify = { path = "crates/arcweft-verify" }
+arcweft-verify-lsp = { path = "crates/arcweft-verify-lsp" }
+arcweft-verify-oxiz = { path = "crates/arcweft-verify-oxiz" }
+arcweft-verify-z3 = { path = "crates/arcweft-verify-z3" }
+arcweft-view = { path = "crates/arcweft-view" }
 anstream = "1.0.0"
 anstyle = "1.0.14"
 annotate-snippets = "0.12.16"
@@ -162,6 +222,7 @@ lsp-server = "0.7.9"
 lsp-types = "0.97.0"
 ndarray = "0.17.2"
 num_cpus = "1.17.0"
+num-traits = "0.2.19"
 oxiz-solver = "0.2.1"
 oxifont-webfont = { version = "0.2.0", default-features = false, features = ["woff1", "woff2"] }
 png = "0.18.1"

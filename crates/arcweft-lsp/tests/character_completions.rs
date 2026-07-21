@@ -13,17 +13,7 @@ fn completions_include_loaded_character_manifest_data() {
     let project = TestProject::new("lsp-character-completions");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-character-completions"
-
-[profiles.dev]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-character_manifests = ["assets/zundamon.awchar"]
-"#,
+        &character_project_manifest("lsp-character-completions", "zundamon"),
     );
     project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write(
@@ -54,17 +44,7 @@ fn hover_includes_psd_source_layer_names() {
     let project = TestProject::new("lsp-character-hover");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-character-hover"
-
-[profiles.dev]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-character_manifests = ["assets/zundamon.awchar"]
-"#,
+        &character_project_manifest("lsp-character-hover", "zundamon"),
     );
     project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write(
@@ -87,17 +67,7 @@ fn missing_character_manifest_uses_typed_profile_diagnostic() {
     let project = TestProject::new("lsp-character-missing");
     project.write(
         "arcw.toml",
-        r#"
-[package]
-name = "lsp-character-missing"
-
-[profiles.dev]
-kind = "game"
-entry = "entry.game.main"
-source = "src/main.arcw"
-adapter = "sans-io"
-character_manifests = ["assets/missing.awchar"]
-"#,
+        &character_project_manifest("lsp-character-missing", "missing"),
     );
     project.write("src/main.arcw", "flow @flow.main main {}\n");
 
@@ -110,6 +80,32 @@ character_manifests = ["assets/missing.awchar"]
             .iter()
             .any(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::CharacterManifestRead)
     );
+}
+
+fn character_project_manifest(package: &str, character: &str) -> String {
+    format!(
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.{package}"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.{character}"]
+visibility = "package"
+demand = "required"
+
+[profiles.dev]
+kind = "game"
+entry = "@entry.game.main"
+source = "src/main.arcw"
+
+[profiles.dev.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
+"#
+    )
 }
 
 struct TestProject {

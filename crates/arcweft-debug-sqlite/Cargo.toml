@@ -7,9 +7,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-debug-model = { path = "../arcweft-debug-model" }
-arcweft-rag = { path = "../arcweft-rag" }
+arcweft-agent-protocol = { workspace = true }
+arcweft-debug-model = { workspace = true }
+arcweft-rag = { workspace = true }
 rusqlite.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

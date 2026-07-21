@@ -1,27 +1,27 @@
 {
-  "status": "found",
-  "query": "link-plan:crate",
+  "issues": [],
   "matches": [
     {
-      "kind": "record",
       "artifact_kind": "link_plan",
+      "kind": "record",
       "logical_item": "link-plan:crate",
       "object_status": "present",
       "persistent_query": {
-        "query": "link_plan",
-        "object_kind": "link_plan",
-        "producer_family": "full_build",
-        "producer_classification": "actual_reusable_ready",
-        "payload_kind": "link_plan",
-        "status": "hit",
+        "actual_reuse_policy": "verified_reusable",
         "cache_record_status": {
           "kind": "hit"
         },
         "link_plan_reuse_policy": "verified_reusable",
-        "actual_reuse_policy": "verified_reusable",
-        "recovery_action": "none_required"
+        "object_kind": "link_plan",
+        "payload_kind": "link_plan",
+        "producer_classification": "actual_reusable_ready",
+        "producer_family": "full_build",
+        "query": "link_plan",
+        "recovery_action": "none_required",
+        "status": "hit"
       }
     }
   ],
-  "issues": []
+  "query": "link-plan:crate",
+  "status": "found"
 }

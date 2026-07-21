@@ -7,26 +7,26 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-adapter-context = { path = "../arcweft-adapter-context" }
-arcweft-bundle = { path = "../arcweft-bundle" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-host-adapter = { path = "../arcweft-host-adapter" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-image = { path = "../arcweft-image" }
-arcweft-interaction-model = { path = "../arcweft-interaction-model" }
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-runtime-accelerator = { path = "../arcweft-runtime-accelerator" }
-arcweft-runtime-scheduler = { path = "../arcweft-runtime-scheduler" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-adapter-context = { workspace = true }
+arcweft-bundle = { workspace = true, default-features = true }
+arcweft-core = { workspace = true }
+arcweft-host-adapter = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-image = { workspace = true }
+arcweft-interaction-model = { workspace = true }
+arcweft-presentation = { workspace = true }
+arcweft-runtime-accelerator = { workspace = true, default-features = true }
+arcweft-runtime-scheduler = { workspace = true }
+arcweft-view = { workspace = true }
 num_cpus.workspace = true
 rayon.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-runtime-plan = { path = "../arcweft-runtime-plan" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-render-text = { workspace = true }
+arcweft-runtime-plan = { workspace = true }
+arcweft-source = { workspace = true }
 serde_json.workspace = true
 
 [lib]

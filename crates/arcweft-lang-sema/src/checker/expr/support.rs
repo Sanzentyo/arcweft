@@ -2,6 +2,7 @@ use super::super::helpers::{named_type_label, type_ref_kind};
 use crate::diagnostics::TypeCheckError;
 use crate::env::FunctionParam;
 use crate::types::{EntityKind, MapKind, TypeKind};
+use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::pattern::Pattern;
 use arcweft_lang_syntax::expr::{BinaryOp, CallArg, Expr};
 pub(super) enum ChoicePatternCoverage {
@@ -86,14 +87,24 @@ pub(super) fn spread_item_type(ty: &TypeKind) -> Option<&TypeKind> {
 #[derive(Clone, Copy)]
 pub(super) enum FixedLiteralSpreadSlot<'a> {
     Expr(&'a Expr),
-    Int(&'a arcweft_lang_syntax::expr::IntLiteral),
+    Int {
+        literal: &'a arcweft_lang_syntax::expr::IntLiteral,
+        source_range: Option<TextRange>,
+    },
 }
 
 impl<'a> FixedLiteralSpreadSlot<'a> {
     pub(super) const fn source_expr(self) -> Option<&'a Expr> {
         match self {
             Self::Expr(expr) => Some(expr),
-            Self::Int(_) => None,
+            Self::Int { .. } => None,
+        }
+    }
+
+    pub(super) const fn literal_source_range(self) -> Option<TextRange> {
+        match self {
+            Self::Expr(_) => None,
+            Self::Int { source_range, .. } => source_range,
         }
     }
 }
@@ -104,7 +115,11 @@ pub(super) fn fixed_literal_spread_slots(value: &Expr) -> Option<Vec<FixedLitera
         Expr::NumericBracketSeq(seq) => Some(
             seq.literals()
                 .iter()
-                .map(FixedLiteralSpreadSlot::Int)
+                .enumerate()
+                .map(|(index, literal)| FixedLiteralSpreadSlot::Int {
+                    literal,
+                    source_range: seq.literal_range(index),
+                })
                 .collect(),
         ),
         _ => None,

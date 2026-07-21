@@ -8,7 +8,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-audio-core = { path = "../arcweft-audio-core" }
+arcweft-audio-core = { workspace = true }
 arcweft-interaction-model.workspace = true
 thiserror.workspace = true
 

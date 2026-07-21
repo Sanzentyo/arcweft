@@ -17,7 +17,7 @@ fn assert_scroll_regions_match_unstyled_baseline(
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("baseline HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("baseline sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("baseline sidecars lower");
     let baseline_program = sidecars.program.expect("baseline program sidecar");
     assert_eq!(
         styled_program.scroll_regions,
@@ -70,7 +70,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let program = sidecars.program.as_ref().expect("program sidecar");
     assert_eq!(
@@ -170,7 +170,7 @@ flow test {
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir, &[]).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
 
     let program = sidecars.program.as_ref().expect("program sidecar");
     assert_eq!(

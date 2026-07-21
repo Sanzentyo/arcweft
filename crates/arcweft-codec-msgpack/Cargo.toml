@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "MSGPACK codec adapter for Arcweft data."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 rmp.workspace = true
 rmpv.workspace = true
 

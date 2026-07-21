@@ -7,11 +7,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
-arcweft-lang-sema = { path = "../arcweft-lang-sema", optional = true }
-arcweft-lang-hir = { path = "../arcweft-lang-hir", optional = true }
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax", optional = true }
-arcweft-source = { path = "../arcweft-source", optional = true }
+arcweft-rust-abi = { workspace = true }
+arcweft-lang-sema = { workspace = true, optional = true }
+arcweft-lang-hir = { workspace = true, optional = true }
+arcweft-lang-syntax = { workspace = true, optional = true }
+arcweft-source = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

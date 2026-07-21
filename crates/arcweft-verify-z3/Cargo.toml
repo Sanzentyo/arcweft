@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-verify = { path = "../arcweft-verify" }
+arcweft-verify = { workspace = true }
 thiserror.workspace = true
 
 [lib]

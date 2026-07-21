@@ -7,12 +7,12 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-presentation = { path = "../arcweft-presentation" }
+arcweft-presentation = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-id = { path = "../arcweft-id" }
-arcweft-view = { path = "../arcweft-view" }
+arcweft-id = { workspace = true }
+arcweft-view = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

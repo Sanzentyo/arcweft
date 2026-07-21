@@ -410,6 +410,7 @@ arcweft-layout,num-traits,normal,crates/arcweft-layout/Cargo.toml
 arcweft-layout,serde,normal,crates/arcweft-layout/Cargo.toml
 arcweft-layout,thiserror,normal,crates/arcweft-layout/Cargo.toml
 arcweft-lsp,arcweft-adapter-context,normal,crates/arcweft-lsp/Cargo.toml
+arcweft-lsp,arcweft-adapter-metadata,development,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-agent-repl,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-character,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-compiler,normal,crates/arcweft-lsp/Cargo.toml
@@ -423,7 +424,6 @@ arcweft-lsp,arcweft-project-loader,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-render-text,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-runtime-host,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-runtime-plan,normal,crates/arcweft-lsp/Cargo.toml
-arcweft-lsp,arcweft-rust-abi,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-source,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-tooling,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,arcweft-verify,normal,crates/arcweft-lsp/Cargo.toml
@@ -435,7 +435,6 @@ arcweft-lsp,lsp-types,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,serde,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,serde_json,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,thiserror,normal,crates/arcweft-lsp/Cargo.toml
-arcweft-lsp,toml,development,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,tracing,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-lsp,tracing-subscriber,normal,crates/arcweft-lsp/Cargo.toml
 arcweft-manifest-model,arcweft-id,normal,crates/arcweft-manifest-model/Cargo.toml

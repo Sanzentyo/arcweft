@@ -10,10 +10,10 @@ repository.workspace = true
 default = []
 
 [dependencies]
-arcweft-id = { path = "../arcweft-id" }
+arcweft-id = { workspace = true }
 arcweft-interaction-model.workspace = true
-arcweft-need = { path = "../arcweft-need" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-need = { workspace = true }
+arcweft-source = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true

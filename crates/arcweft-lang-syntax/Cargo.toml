@@ -7,14 +7,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-id = { path = "../arcweft-id" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-id = { workspace = true }
+arcweft-source = { workspace = true }
 blake3.workspace = true
 rowan.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-presentation = { path = "../arcweft-presentation" }
+arcweft-presentation = { workspace = true }
 serde.workspace = true
 trybuild.workspace = true
 

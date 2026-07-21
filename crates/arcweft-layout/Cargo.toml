@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-num-traits = "0.2.19"
+num-traits.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

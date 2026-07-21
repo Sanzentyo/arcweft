@@ -984,6 +984,7 @@ name = "arcweft-lsp"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-adapter-metadata",
  "arcweft-agent-repl",
  "arcweft-character",
  "arcweft-compiler",
@@ -997,7 +998,6 @@ dependencies = [
  "arcweft-render-text",
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
- "arcweft-rust-abi",
  "arcweft-source",
  "arcweft-tooling",
  "arcweft-verify",
@@ -1009,7 +1009,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "toml",
  "tracing",
  "tracing-subscriber",
 ]

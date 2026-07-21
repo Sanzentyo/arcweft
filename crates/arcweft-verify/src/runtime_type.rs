@@ -14,10 +14,6 @@ use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeExpr, RuntimeExprMatchArm, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule, TypeJudgmentSubject};
-#[cfg(test)]
-use arcweft_lang_sema::effect_analysis::EffectAnalysisReport;
-#[cfg(test)]
-use arcweft_lang_sema::traits::TraitCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -794,10 +790,14 @@ mod tests {
         RuntimeEntryTarget, RuntimeFlow,
     };
     use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
+    use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_sema::check::{
         TypeCheckStats, TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
+        analyze_types,
     };
+    use arcweft_lang_sema::env::TypeCheckEnv;
     use arcweft_lang_sema::types::TypeKind;
+    use arcweft_lang_syntax::parser::parse_source;
 
     fn flow_id(value: &str) -> FlowRuntimeId {
         FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -923,24 +923,7 @@ mod tests {
     #[test]
     fn required_type_evidence_checks_report_shape() {
         assert!(has_required_type_evidence(&type_report()));
-        assert!(!has_required_type_evidence(&TypeCheckReport {
-            diagnostics: Vec::new(),
-            warnings: Vec::new(),
-            stats: TypeCheckStats::default(),
-            judgments: Vec::new(),
-            typed_lowering_evidence: Vec::new(),
-            closure_captures: Vec::new(),
-            numeric_fallbacks: Vec::new(),
-            effects: EffectAnalysisReport::default(),
-            for_iteration_evidence: Vec::new(),
-            trait_catalog: TraitCatalog::default(),
-            style_catalog: arcweft_lang_sema::style::CheckedViewStyleCatalog::default(),
-            view_part_catalog: arcweft_lang_sema::view_part::CheckedViewPartCatalog::default(),
-            view_part_diagnostics: Vec::new(),
-            canonicalization_inventories: Vec::new(),
-            project_callable_references: Vec::new(),
-            project_entity_references: Vec::new(),
-        }));
+        assert!(!has_required_type_evidence(&empty_type_report()));
     }
 
     fn type_report() -> TypeCheckReport {
@@ -978,26 +961,18 @@ mod tests {
                 source_range: None,
             },
         ];
-        TypeCheckReport {
-            diagnostics: Vec::new(),
-            warnings: Vec::new(),
-            stats: TypeCheckStats {
-                judgments: judgments.len(),
-                ..TypeCheckStats::default()
-            },
-            judgments,
-            typed_lowering_evidence: Vec::new(),
-            closure_captures: Vec::new(),
-            numeric_fallbacks: Vec::new(),
-            effects: EffectAnalysisReport::default(),
-            for_iteration_evidence: Vec::new(),
-            trait_catalog: TraitCatalog::default(),
-            style_catalog: arcweft_lang_sema::style::CheckedViewStyleCatalog::default(),
-            view_part_catalog: arcweft_lang_sema::view_part::CheckedViewPartCatalog::default(),
-            view_part_diagnostics: Vec::new(),
-            canonicalization_inventories: Vec::new(),
-            project_callable_references: Vec::new(),
-            project_entity_references: Vec::new(),
-        }
+        let mut report = empty_type_report();
+        report.stats = TypeCheckStats {
+            judgments: judgments.len(),
+            ..TypeCheckStats::default()
+        };
+        report.judgments = judgments;
+        report
+    }
+
+    fn empty_type_report() -> TypeCheckReport {
+        let parsed = parse_source("");
+        let hir = lower_to_hir(parsed.typed_tree()).expect("empty type-report fixture lowers");
+        analyze_types(&hir, &TypeCheckEnv::default())
     }
 }

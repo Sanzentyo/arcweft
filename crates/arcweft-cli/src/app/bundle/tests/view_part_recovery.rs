@@ -65,8 +65,7 @@ flow test {
     );
 
     assert!(
-        collect_bundle_dsl_view_resources_from_source(&hir, &[], "recovered-view.arcw", source)
-            .is_err(),
+        collect_bundle_dsl_view_resources(&hir).is_err(),
         "parser-recovered View syntax cannot enter an accepted runtime product"
     );
 }

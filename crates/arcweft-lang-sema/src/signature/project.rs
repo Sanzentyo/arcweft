@@ -68,7 +68,9 @@ pub(super) fn project_signature_help(
             selected,
             considered,
         } => (considered.as_ref(), Some(selected.as_ref())),
-        CallTargetFact::Ambiguous { candidates } => (candidates.as_ref(), None),
+        CallTargetFact::Ambiguous { candidates } | CallTargetFact::Rejected { candidates } => {
+            (candidates.as_ref(), None)
+        }
         CallTargetFact::NonCallable { .. } => {
             return Ok(SignatureQueryOutcome::NotApplicable(
                 SignatureNotApplicable::NonCallableCallee,

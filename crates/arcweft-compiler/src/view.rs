@@ -31,7 +31,7 @@ use arcweft_source::{
 use arcweft_view::{ViewId, ViewIdError, style::ViewStyleSheetId};
 use thiserror::Error;
 
-use self::lowering::{ViewBundleSidecars, view_resource_id, view_sidecars};
+use self::lowering::{ViewBundleLowerError, ViewBundleSidecars, view_resource_id, view_sidecars};
 use crate::{image::CompiledImageCatalog, style::CompiledViewStyleArtifact};
 
 /// One compiler candidate containing the only accepted View/Style catalog.
@@ -48,7 +48,7 @@ pub struct CompiledViewProduct {
 }
 
 /// Compiler-owned context for one source-bound View product candidate.
-pub struct ViewProjectLowerer<'a> {
+pub(crate) struct ViewProjectLowerer<'a> {
     linked_hir: &'a HirModule,
     typecheck: &'a TypeCheckReport,
     style: &'a CompiledViewStyleArtifact,
@@ -62,7 +62,7 @@ pub struct ViewProjectLowerer<'a> {
 
 /// Failure to build one complete compiler-owned View product.
 #[derive(Debug, Error)]
-pub enum ViewProjectLowerError {
+pub(crate) enum ViewProjectLowerError {
     #[error("type checking produced {count} blocking diagnostic(s) before View lowering")]
     UncheckedTypeReport { count: usize },
     #[error("dialogue View model validation failed: {errors:?}")]
@@ -99,19 +99,18 @@ pub enum ViewProjectLowerError {
         expected: Box<SourceDocumentIdentity>,
         actual: Box<SourceDocumentIdentity>,
     },
-    #[error("View lowering requires HIR bound to an exact source document revision")]
-    UnboundHirSource,
-    #[error("View lowering HIR is bound to {actual:?}, not supplied document {expected:?}")]
-    HirSourceMismatch {
-        expected: Box<SourceDocumentIdentity>,
-        actual: Box<SourceDocumentIdentity>,
-    },
     #[error(transparent)]
     Lower(#[from] ViewSidecarError),
     #[error("View `{view}` lowering failed: {error}")]
     AuthoredViewLower {
         view: ViewId,
         span: SourceSpan,
+        #[source]
+        error: ViewSidecarError,
+    },
+    #[error("authored View `{view}` has no accepted source owner while lowering failed: {error}")]
+    MissingAuthoredViewSource {
+        view: ViewId,
         #[source]
         error: ViewSidecarError,
     },
@@ -173,7 +172,7 @@ impl CompiledViewProduct {
 
 impl ViewProjectLowerError {
     /// Converts a View-product failure without discarding typed source owners.
-    pub fn diagnostic(&self) -> Diagnostic {
+    pub(crate) fn diagnostic(&self) -> Diagnostic {
         match self {
             Self::DuplicateImageObject {
                 image,
@@ -204,11 +203,13 @@ impl ViewProjectLowerError {
                 DiagnosticSeverity::Error,
                 format!("View `{view}` lowering failed: {error}"),
             )
-            .with_code("compiler.view.lower")
+            .with_code(error.diagnostic_code())
             .with_label(DiagnosticLabel::primary(
                 span.clone(),
                 Some("this authored View contains the rejected value".to_owned()),
             )),
+            Self::Lower(error) => Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                .with_code(error.diagnostic_code()),
             _ => Diagnostic::new(DiagnosticSeverity::Error, self.to_string())
                 .with_code("compiler.view.lower"),
         }
@@ -216,36 +217,9 @@ impl ViewProjectLowerError {
 }
 
 impl<'a> ViewProjectLowerer<'a> {
-    /// Creates a lowerer for one exact source document and its linked HIR.
-    #[allow(clippy::too_many_arguments)]
-    pub fn for_source(
-        hir: &'a HirModule,
-        typecheck: &'a TypeCheckReport,
-        style: &'a CompiledViewStyleArtifact,
-        source: &SourceDocument,
-        source_image_objects: &'a [BundleImageObject],
-        fx_definitions: &'a [FxDefinition],
-        resource_types: &'a ResourceTypeRegistry,
-    ) -> Result<Self, ViewProjectLowerError> {
-        validate_hir_source(hir, source)?;
-        let source_map = SourceMapSection::try_from_documents(&[source])?;
-        let view_sources = collect_module_view_sources(hir, source)?;
-        Ok(Self {
-            linked_hir: hir,
-            typecheck,
-            style,
-            source_map,
-            source_image_objects,
-            source_image_catalog: None,
-            fx_definitions,
-            resource_types,
-            view_sources,
-        })
-    }
-
     /// Creates a lowerer from the exact module HIR and documents in one project.
     #[allow(clippy::too_many_arguments)]
-    pub fn for_project(
+    pub(crate) fn for_project(
         hir_project: &HirProject,
         linked_hir: &'a HirModule,
         typecheck: &'a TypeCheckReport,
@@ -299,30 +273,64 @@ impl<'a> ViewProjectLowerer<'a> {
     fn validate_authored_views(&self) -> Result<(), ViewProjectLowerError> {
         for view in self.linked_hir.view_declarations() {
             let public_id = view_resource_id(view.id().body());
+            let view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
+                ViewProjectLowerError::InvalidViewIdentity {
+                    value: public_id.clone(),
+                    source,
+                }
+            })?;
             let Some(body) = view.view_body() else {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id }.into());
+                return Err(self.authored_view_failure(
+                    view_id,
+                    ViewSidecarError::RecoveredViewSyntax { view: public_id },
+                ));
             };
             if body.has_recovery() {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id }.into());
+                return Err(self.authored_view_failure(
+                    view_id,
+                    ViewSidecarError::RecoveredViewSyntax { view: public_id },
+                ));
             }
             let Some(signature) = body.signature() else {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id }.into());
+                return Err(self.authored_view_failure(
+                    view_id,
+                    ViewSidecarError::RecoveredViewSyntax { view: public_id },
+                ));
             };
             if signature.return_type().is_some() {
-                return Err(ViewSidecarError::InvalidViewSignature {
-                    view: public_id,
-                    message: "View declarations cannot declare a return type".to_owned(),
-                }
-                .into());
+                return Err(self.authored_view_failure(
+                    view_id,
+                    ViewSidecarError::InvalidViewSignature {
+                        view: public_id,
+                        message: "View declarations cannot declare a return type".to_owned(),
+                    },
+                ));
             }
             let Some(body) = body.view() else {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id }.into());
+                return Err(self.authored_view_failure(
+                    view_id,
+                    ViewSidecarError::RecoveredViewSyntax { view: public_id },
+                ));
             };
             if body.contains_recovered_syntax() {
-                return Err(ViewSidecarError::RecoveredViewSyntax { view: public_id }.into());
+                return Err(self.authored_view_failure(
+                    view_id,
+                    ViewSidecarError::RecoveredViewSyntax { view: public_id },
+                ));
             }
         }
         Ok(())
+    }
+
+    fn authored_view_failure(
+        &self,
+        view: ViewId,
+        error: ViewSidecarError,
+    ) -> ViewProjectLowerError {
+        match self.view_sources.get(&view).cloned() {
+            Some(span) => ViewProjectLowerError::AuthoredViewLower { view, span, error },
+            None => ViewProjectLowerError::MissingAuthoredViewSource { view, error },
+        }
     }
 
     fn lower_authored_sidecars(
@@ -339,22 +347,12 @@ impl<'a> ViewProjectLowerer<'a> {
             &self.typecheck.view_part_catalog,
             &self.source_map,
         )
-        .map_err(|error| {
-            let source = error
-                .authored_view()
-                .and_then(|value| ViewId::try_new(value.to_owned()).ok())
-                .and_then(|view| {
-                    self.view_sources
-                        .get(&view)
-                        .cloned()
-                        .map(|span| (view, span))
-                });
-            match source {
-                Some((view, span)) => {
-                    ViewProjectLowerError::AuthoredViewLower { view, span, error }
-                }
-                None => ViewProjectLowerError::Lower(error),
+        .map_err(|error| match error {
+            ViewBundleLowerError::Authored(failure) => {
+                let (view, error) = failure.into_parts();
+                self.authored_view_failure(view, error)
             }
+            ViewBundleLowerError::Product(error) => ViewProjectLowerError::Lower(error),
         })
     }
 
@@ -365,7 +363,7 @@ impl<'a> ViewProjectLowerer<'a> {
     /// Panics only if an engine-owned standard View/Style identity or its
     /// generated source stops satisfying its compile-time invariants after the
     /// typed standard resources have already been constructed successfully.
-    pub fn lower(self) -> Result<CompiledViewProduct, ViewProjectLowerError> {
+    pub(crate) fn lower(self) -> Result<CompiledViewProduct, ViewProjectLowerError> {
         self.validate_authored_views()?;
         if !self.typecheck.diagnostics.is_empty() {
             return Err(ViewProjectLowerError::UncheckedTypeReport {
@@ -509,7 +507,6 @@ fn collect_module_view_sources(
     hir: &HirModule,
     source: &SourceDocument,
 ) -> Result<BTreeMap<ViewId, SourceSpan>, ViewProjectLowerError> {
-    validate_hir_source(hir, source)?;
     let mut result = BTreeMap::new();
     for view in hir.view_declarations() {
         let value = view_resource_id(view.id().body());
@@ -529,22 +526,6 @@ fn collect_module_view_sources(
     Ok(result)
 }
 
-fn validate_hir_source(
-    hir: &HirModule,
-    source: &SourceDocument,
-) -> Result<(), ViewProjectLowerError> {
-    let actual = hir
-        .source_identity()
-        .ok_or(ViewProjectLowerError::UnboundHirSource)?;
-    if actual != source.identity() {
-        return Err(ViewProjectLowerError::HirSourceMismatch {
-            expected: Box::new(source.identity().clone()),
-            actual: Box::new(actual.clone()),
-        });
-    }
-    Ok(())
-}
-
 fn merge_view_sources(
     target: &mut BTreeMap<ViewId, SourceSpan>,
     sources: BTreeMap<ViewId, SourceSpan>,
@@ -557,8 +538,7 @@ fn merge_view_sources(
     Ok(())
 }
 
-pub use lowering::ViewSidecarError;
-pub use schema::ViewValueCompileError;
+pub(crate) use lowering::ViewSidecarError;
 
 #[cfg(test)]
 mod tests {

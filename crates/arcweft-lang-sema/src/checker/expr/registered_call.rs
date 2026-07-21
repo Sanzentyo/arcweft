@@ -1,82 +1,56 @@
 //! Registered-catalog call checking.
 
 use arcweft_lang_syntax::{
-    ast::module_path::CanonicalModulePath,
+    ast::{
+        module_path::{CanonicalModulePath, ModulePathRoot},
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
+    },
     expr::{CallArg, CallExpr, Expr},
     reference::BorrowKind,
 };
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
+use arcweft_character::id::CharacterId;
+
 use super::{TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
 use crate::{
     callable::{
-        CallCallee, CallPoison, CallResolverRequest, CallSourceContext, CallableArgumentIndex,
+        CallCallee, CallPoison, CallResolverRequest, CallSourceContext, CallableCandidateId,
         CallableDiagnosticCode, CallableDiagnosticSubject, CallableGroupIndex, CallableName,
-        CallableParameter, CallableParameterPassing, CallableParameterPresence,
-        CallableParameterType, CallablePath, CallableSignatureSchema, CallableValidator,
-        CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallTarget,
+        CallableParameter, CallableParameterType, CallablePath, CallableSignatureSchema,
+        CallableValidator, CharacterOwnerSource, CheckedCallArgumentSlotFact, CheckedCallTarget,
         DataLastCallableId, DialogueCallableId, DialogueCalleeIdentity, FunctionValueOrdinal,
         FunctionValueSignatureId, LexicalBindingIndex, LexicalCallBinding, LexicalCallableScope,
-        LocalCallableId, PRODUCTION_CALLABLE_LIMITS, ProjectNominalTypeId, ResolveCallOutcome,
-        ResolvedCallTarget, ResolvedCallable, ResolvedEnumSeed, ResolvedFunctionValueSeed,
-        SignatureQueryStep, SpeakerCallableId, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
-        data_last_unsupported_spread_reason,
+        LocalCallableId, NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS,
+        PresentationCallableId, ProjectNominalTypeId, ResolveCallOutcome, ResolvedCallTarget,
+        ResolvedCallable, ResolvedCharacterOwner, ResolvedEnumSeed, ResolvedFunctionValueSeed,
+        SpeakerCallableId, data_last_unsupported_spread_reason,
     },
     checker::{
-        CurriedSignatureCallValue, DataLastMethodFallbackArg, TypedLoweringEvidence,
-        TypedLoweringEvidenceKind,
+        CallableDiagnosticDraft, CurriedSignatureCallValue, DataLastMethodFallbackArg,
+        TypedLoweringEvidence, TypedLoweringEvidenceKind,
     },
     effect_model::EffectSite,
     effect_row::EffectRow,
 };
 
-use super::support::{FixedLiteralSpreadSlot, fixed_literal_spread_slots, spread_item_type};
+use super::support::FixedLiteralSpreadSlot;
 
+mod arguments;
 mod facts;
+
+use arguments::{RegisteredArgumentCheck, RegisteredArgumentContext};
+use facts::ArgumentFactBuilder;
 
 pub(super) enum RegisteredFreeCallOutcome {
     NotHandled,
+    MissingFactsRetained,
     Checked(Option<TypeKind>),
 }
 
 pub(super) enum RegisteredMethodCallOutcome {
     NotHandled,
     Checked(Option<TypeKind>),
-}
-
-struct ArgumentFactBuilder {
-    index: CallableArgumentIndex,
-    source: Option<arcweft_source::SourceSpan>,
-    authored_name: Option<CallableName>,
-    spread: bool,
-    slots: Vec<CheckedCallArgumentSlotFact>,
-    authored_poison: CallPoison,
-    poison: CallPoison,
-}
-
-#[derive(Clone)]
-struct RegisteredArgumentCheck {
-    facts: Vec<CheckedCallArgumentFact>,
-    poison: CallPoison,
-}
-
-impl RegisteredArgumentCheck {
-    fn new(facts: Vec<CheckedCallArgumentFact>, poison: CallPoison) -> Self {
-        let poison = facts
-            .iter()
-            .fold(poison, |combined, fact| combined.merge(fact.poison()));
-        Self { facts, poison }
-    }
-}
-
-struct RegisteredSpreadResult {
-    poison: CallPoison,
-    shape_rejected: bool,
-}
-
-struct RegisteredSlotCheck {
-    poison: CallPoison,
-    inferred: Option<TypeKind>,
 }
 
 #[derive(Clone)]
@@ -144,53 +118,6 @@ struct RegisteredFreeResolutionSite<'a> {
     call_span: Option<arcweft_source::SourceSpan>,
     expression: TypeExpressionId,
     document: &'a arcweft_source::SourceDocumentIdentity,
-}
-
-#[derive(Clone, Copy)]
-struct RegisteredArgumentContext<'a> {
-    label: &'a str,
-    schema: &'a CallableSignatureSchema,
-    group: CallableGroupIndex,
-    parameters: &'a [CallableParameter],
-    call: &'a CallExpr,
-    focused: bool,
-}
-
-struct RegisteredPositionalCheck<'a> {
-    context: RegisteredArgumentContext<'a>,
-    value: FixedLiteralSpreadSlot<'a>,
-    provided: &'a mut [bool],
-    positional: &'a mut usize,
-    argument_index: usize,
-    fact_builders: &'a mut Option<Vec<ArgumentFactBuilder>>,
-}
-
-struct RegisteredNamedCheck<'a> {
-    context: RegisteredArgumentContext<'a>,
-    name: &'a str,
-    value: &'a Expr,
-    provided: &'a mut [bool],
-    argument_index: usize,
-    fact_builders: &'a mut Option<Vec<ArgumentFactBuilder>>,
-}
-
-struct RegisteredSpreadCheck<'a> {
-    context: RegisteredArgumentContext<'a>,
-    value: &'a Expr,
-    provided: &'a mut [bool],
-    positional: &'a mut usize,
-    argument_index: usize,
-    fact_builders: &'a mut Option<Vec<ArgumentFactBuilder>>,
-}
-
-struct RegisteredArgumentSlot<'a> {
-    argument_index: usize,
-    expression: TypeExpressionId,
-    source: Option<arcweft_source::SourceSpan>,
-    group: CallableGroupIndex,
-    parameter: Option<&'a CallableParameter>,
-    inferred: Option<TypeKind>,
-    poison: CallPoison,
 }
 
 impl TypeChecker<'_> {
@@ -294,6 +221,7 @@ impl TypeChecker<'_> {
                 return RegisteredFreeCallOutcome::Checked(None);
             }
         };
+        let resolved = self.specialize_presentation_character_owner(call, resolved, world);
         self.finish_registered_free_resolution(
             RegisteredFreeResolutionSite {
                 path: &path,
@@ -304,6 +232,121 @@ impl TypeChecker<'_> {
             },
             resolved,
         )
+    }
+
+    fn specialize_presentation_character_owner(
+        &self,
+        call: &CallExpr,
+        resolved: ResolveCallOutcome,
+        world: &crate::registration::RegisteredSemanticWorld,
+    ) -> ResolveCallOutcome {
+        let ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) = resolved
+        else {
+            return resolved;
+        };
+        let Some(id) = candidates
+            .as_slice()
+            .iter()
+            .find_map(|candidate| match candidate.id() {
+                CallableCandidateId::Presentation(
+                    id @ (PresentationCallableId::Show
+                    | PresentationCallableId::RefShow
+                    | PresentationCallableId::Hide),
+                ) => Some(*id),
+                _ => None,
+            })
+        else {
+            return ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates));
+        };
+        let Some(owner) = self.presentation_character_owner(id, call, world) else {
+            return ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates));
+        };
+        let specialized = candidates
+            .as_slice()
+            .iter()
+            .map(|candidate| match candidate.id() {
+                CallableCandidateId::Presentation(
+                    PresentationCallableId::Show
+                    | PresentationCallableId::RefShow
+                    | PresentationCallableId::Hide,
+                ) => candidate.try_with_presentation_character_owner(
+                    owner.clone(),
+                    world.environment(),
+                    &PRODUCTION_CALLABLE_LIMITS,
+                ),
+                _ => Ok(candidate.clone()),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .and_then(|candidates| {
+                NonEmptyResolvedCandidates::try_new(candidates, &PRODUCTION_CALLABLE_LIMITS)
+            });
+        match specialized {
+            Ok(candidates) => {
+                ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates))
+            }
+            Err(error) => ResolveCallOutcome::Rejected(error),
+        }
+    }
+
+    fn presentation_character_owner(
+        &self,
+        id: PresentationCallableId,
+        call: &CallExpr,
+        world: &crate::registration::RegisteredSemanticWorld,
+    ) -> Option<ResolvedCharacterOwner> {
+        if !matches!(
+            id,
+            PresentationCallableId::Show
+                | PresentationCallableId::RefShow
+                | PresentationCallableId::Hide
+        ) {
+            return None;
+        }
+        let value = call.args().iter().find_map(|argument| match argument {
+            CallArg::Positional(value) => Some(value),
+            CallArg::Named { name, value } if name == "character" => Some(value.as_ref()),
+            CallArg::Named { .. } | CallArg::Spread { .. } => None,
+        })?;
+        match value {
+            Expr::EntityRef(reference) => {
+                let reference = reference.as_absolute()?;
+                if crate::checker::entity_kind(reference)
+                    != Some(crate::types::EntityKind::Character)
+                {
+                    return None;
+                }
+                let character = CharacterId::try_new(reference.body()).ok()?;
+                world.environment().character_manifest(&character)?;
+                Some(ResolvedCharacterOwner::new(
+                    character,
+                    CharacterOwnerSource::EntityReference,
+                ))
+            }
+            Expr::Path(path) => {
+                let symbols = self.project_symbols?;
+                let module = self.current_module.as_ref()?;
+                let source = self.source_span_for_expr(value)?;
+                let path = ProjectSymbolPath::new(
+                    ModulePathRoot::ImplicitCrate,
+                    path.segments()
+                        .iter()
+                        .map(|segment| ProjectSymbolSegment::try_new(segment.as_str()))
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()?,
+                )
+                .ok()?;
+                let path = SymbolPath::try_from(&path).ok()?;
+                let character = world
+                    .environment()
+                    .resolve_character_owner(symbols, module, &path, &source)
+                    .ok()?;
+                Some(ResolvedCharacterOwner::new(
+                    character,
+                    CharacterOwnerSource::ExternalOwner,
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn registered_enum_seed(
@@ -386,10 +429,11 @@ impl TypeChecker<'_> {
                             arguments,
                             CallableGroupIndex::ZERO,
                         ),
-                        Some((
+                        vec![CallableDiagnosticDraft::error(
                             CallableDiagnosticCode::NonCallableTarget,
+                            Some(call_span.clone()),
                             CallableDiagnosticSubject::None,
-                        )),
+                        )],
                     );
                 }
                 RegisteredFreeCallOutcome::Checked(None)
@@ -418,6 +462,9 @@ impl TypeChecker<'_> {
                 if !records_facts {
                     return RegisteredFreeCallOutcome::NotHandled;
                 }
+                let focused = self
+                    .call_target_fact_recorder
+                    .focuses(site.call_span.as_ref());
                 let arguments =
                     self.check_unmapped_registered_arguments(site.call, CallPoison::Rejected, true);
                 if let Some(call_span) = site.call_span {
@@ -430,10 +477,14 @@ impl TypeChecker<'_> {
                             arguments,
                             CallableGroupIndex::ZERO,
                         ),
-                        None,
+                        Vec::new(),
                     );
                 }
-                RegisteredFreeCallOutcome::Checked(None)
+                if focused {
+                    RegisteredFreeCallOutcome::Checked(None)
+                } else {
+                    RegisteredFreeCallOutcome::MissingFactsRetained
+                }
             }
             ResolveCallOutcome::Rejected(error) => {
                 self.errors.push(TypeCheckError::new(error.to_string()));
@@ -694,7 +745,7 @@ impl TypeChecker<'_> {
                             arguments,
                             CallableGroupIndex::ZERO,
                         ),
-                        None,
+                        Vec::new(),
                     );
                 }
                 RegisteredMethodCallOutcome::Checked(None)
@@ -999,7 +1050,7 @@ impl TypeChecker<'_> {
                             CallableGroupIndex::ZERO,
                             CallPoison::Clean,
                         ),
-                        None,
+                        Vec::new(),
                     );
                 }
             }
@@ -1333,6 +1384,11 @@ impl TypeChecker<'_> {
         );
         let result = schema_result_type(candidate.schema(), current_group);
         if records_facts && let Some(call_span) = call_span {
+            let RegisteredArgumentCheck {
+                facts,
+                poison,
+                diagnostics,
+            } = argument_check;
             self.record_call_target_facts(
                 expression,
                 document,
@@ -1340,12 +1396,12 @@ impl TypeChecker<'_> {
                 CheckedCallTarget::selected(
                     candidate,
                     std::slice::from_ref(candidate),
-                    argument_check.facts,
+                    facts,
                     result.clone(),
                     current_group,
-                    argument_check.poison,
+                    poison,
                 ),
-                None,
+                diagnostics,
             );
         }
         self.retain_registered_curried_result(
@@ -1386,612 +1442,6 @@ impl TypeChecker<'_> {
             }
             _ => None,
         };
-    }
-
-    fn check_registered_schema_args(
-        &mut self,
-        label: &str,
-        schema: &CallableSignatureSchema,
-        current_group: CallableGroupIndex,
-        call: &CallExpr,
-        records_facts: bool,
-    ) -> RegisteredArgumentCheck {
-        self.check_registered_schema_args_with_implicit(
-            label,
-            schema,
-            current_group,
-            call,
-            records_facts,
-            None,
-        )
-    }
-
-    fn begin_registered_candidate_argument_probe(
-        &mut self,
-        call: &CallExpr,
-        focused: bool,
-    ) -> bool {
-        if focused
-            && let Err(error) = self
-                .call_resolver_control
-                .check_signature_query_step(SignatureQueryStep::CandidateArgumentProbe)
-        {
-            self.errors.push(TypeCheckError::new(error.to_string()));
-            let call_span = self.source_span_for_current_range(call.range());
-            self.call_target_fact_recorder
-                .record_resolve_error(call_span.as_ref(), error);
-            return false;
-        }
-        if !self.charge_callable_work(
-            call,
-            focused,
-            crate::checker::call_target_facts::CallableWorkOperation::ArgumentMapping,
-        ) {
-            return false;
-        }
-        !self.signature_work_charge.candidate_work
-            || self.charge_signature_work(crate::callable::SignatureWorkKind::SpecificityChecks, 1)
-    }
-
-    fn is_focused_registered_call(&self, call: &CallExpr) -> bool {
-        let call_span = self.source_span_for_current_range(call.range());
-        self.uses_focused_callable_work(call_span.as_ref())
-    }
-
-    fn check_registered_schema_args_with_implicit(
-        &mut self,
-        label: &str,
-        schema: &CallableSignatureSchema,
-        current_group: CallableGroupIndex,
-        call: &CallExpr,
-        records_facts: bool,
-        implicit: Option<crate::callable::CallableParameterIndex>,
-    ) -> RegisteredArgumentCheck {
-        let args = call.args();
-        let focused = self.is_focused_registered_call(call);
-        let Some(group) = schema.group(current_group) else {
-            self.errors.push(TypeCheckError::new(format!(
-                "registered callable `{label}` has no parameter group {}",
-                current_group.get()
-            )));
-            return RegisteredArgumentCheck::new(
-                self.check_unmapped_registered_arguments(call, CallPoison::Rejected, records_facts),
-                CallPoison::Rejected,
-            );
-        };
-        let context = RegisteredArgumentContext {
-            label,
-            schema,
-            group: current_group,
-            parameters: group.parameters(),
-            call,
-            focused,
-        };
-        let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
-        let mut provided = vec![false; context.parameters.len()];
-        if let Some(implicit) = implicit
-            && let Some(slot) = provided.get_mut(implicit.get())
-        {
-            *slot = true;
-        }
-        let mut positional = 0usize;
-        let mut poison = CallPoison::Clean;
-        let mut spread_shape_rejected = false;
-        for (argument_index, arg) in args.iter().enumerate() {
-            if !self.begin_registered_candidate_argument_probe(call, focused) {
-                poison = CallPoison::Rejected;
-                break;
-            }
-            match arg {
-                CallArg::Positional(value) => {
-                    poison =
-                        poison.merge(self.check_registered_positional(RegisteredPositionalCheck {
-                            context,
-                            value: FixedLiteralSpreadSlot::Expr(value),
-                            provided: &mut provided,
-                            positional: &mut positional,
-                            argument_index,
-                            fact_builders: &mut fact_builders,
-                        }));
-                }
-                CallArg::Named { name, value } => {
-                    poison = poison.merge(self.check_registered_named(RegisteredNamedCheck {
-                        context,
-                        name,
-                        value,
-                        provided: &mut provided,
-                        argument_index,
-                        fact_builders: &mut fact_builders,
-                    }));
-                }
-                CallArg::Spread { value } => {
-                    let spread = self.check_registered_spread(RegisteredSpreadCheck {
-                        context,
-                        value,
-                        provided: &mut provided,
-                        positional: &mut positional,
-                        argument_index,
-                        fact_builders: &mut fact_builders,
-                    });
-                    spread_shape_rejected |= spread.shape_rejected;
-                    poison = poison.merge(spread.poison);
-                }
-            }
-        }
-        for parameter in context.parameters {
-            if !spread_shape_rejected
-                && !provided[parameter.index().get()]
-                && parameter.presence() == CallableParameterPresence::Required
-                && !matches!(
-                    parameter.passing(),
-                    CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
-                )
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "function `{label}` missing required argument `{}`",
-                    parameter_label(parameter)
-                )));
-                poison = CallPoison::Rejected;
-            }
-        }
-        RegisteredArgumentCheck::new(
-            fact_builders.map_or_else(Vec::new, |builders| {
-                builders
-                    .into_iter()
-                    .map(ArgumentFactBuilder::finish)
-                    .collect()
-            }),
-            poison,
-        )
-    }
-
-    fn check_registered_positional(&mut self, input: RegisteredPositionalCheck<'_>) -> CallPoison {
-        let RegisteredPositionalCheck {
-            context,
-            value,
-            provided,
-            positional,
-            argument_index,
-            fact_builders,
-        } = input;
-        let Some(parameter) =
-            next_registered_positional_parameter(context.parameters, provided, positional)
-        else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{}` received too many positional arguments",
-                context.label
-            )));
-            return self.check_registered_argument_slot(
-                context,
-                None,
-                value,
-                argument_index,
-                fact_builders,
-                CallPoison::Rejected,
-            );
-        };
-        let index = parameter.index().get();
-        if parameter.passing() != CallableParameterPassing::RestPositional {
-            provided[index] = true;
-            *positional = index + 1;
-        }
-        self.check_registered_argument_slot(
-            context,
-            Some(parameter),
-            value,
-            argument_index,
-            fact_builders,
-            CallPoison::Clean,
-        )
-    }
-
-    fn check_registered_named(&mut self, input: RegisteredNamedCheck<'_>) -> CallPoison {
-        let RegisteredNamedCheck {
-            context,
-            name,
-            value,
-            provided,
-            argument_index,
-            fact_builders,
-        } = input;
-        let parameter = registered_named_parameter(context.parameters, name);
-        let Some(parameter) = parameter else {
-            let poison = if context.schema.argument_policy().unknown_named()
-                == UnknownNamedArgumentPolicy::Reject
-            {
-                self.errors.push(TypeCheckError::new(format!(
-                    "function `{}` has no named parameter `{name}`",
-                    context.label
-                )));
-                CallPoison::Rejected
-            } else {
-                CallPoison::Clean
-            };
-            return self.check_registered_argument_slot(
-                context,
-                None,
-                FixedLiteralSpreadSlot::Expr(value),
-                argument_index,
-                fact_builders,
-                poison,
-            );
-        };
-        let index = parameter.index().get();
-        let mut poison = CallPoison::Clean;
-        if parameter.passing() != CallableParameterPassing::RestNamed && provided[index] {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{}` argument `{name}` was provided more than once",
-                context.label
-            )));
-            poison = CallPoison::Rejected;
-        }
-        provided[index] = true;
-        self.check_registered_argument_slot(
-            context,
-            Some(parameter),
-            FixedLiteralSpreadSlot::Expr(value),
-            argument_index,
-            fact_builders,
-            poison,
-        )
-    }
-
-    fn check_registered_spread(
-        &mut self,
-        input: RegisteredSpreadCheck<'_>,
-    ) -> RegisteredSpreadResult {
-        let RegisteredSpreadCheck {
-            context,
-            value,
-            provided,
-            positional,
-            argument_index,
-            fact_builders,
-        } = input;
-        match context.schema.argument_policy().spread() {
-            SpreadArgumentPolicy::Unchecked => RegisteredSpreadResult {
-                poison: self.check_registered_argument_slot(
-                    context,
-                    None,
-                    FixedLiteralSpreadSlot::Expr(value),
-                    argument_index,
-                    fact_builders,
-                    CallPoison::Clean,
-                ),
-                shape_rejected: false,
-            },
-            SpreadArgumentPolicy::Reject => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "function `{}` does not accept spread arguments",
-                    context.label
-                )));
-                RegisteredSpreadResult {
-                    poison: self.check_registered_argument_slot(
-                        context,
-                        None,
-                        FixedLiteralSpreadSlot::Expr(value),
-                        argument_index,
-                        fact_builders,
-                        CallPoison::Rejected,
-                    ),
-                    shape_rejected: true,
-                }
-            }
-            SpreadArgumentPolicy::FixedLiteralOnly => {
-                let Some(slots) = fixed_literal_spread_slots(value) else {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "function `{}` does not accept non-literal spread arguments",
-                        context.label
-                    )));
-                    return RegisteredSpreadResult {
-                        poison: self.check_registered_argument_slot(
-                            context,
-                            None,
-                            FixedLiteralSpreadSlot::Expr(value),
-                            argument_index,
-                            fact_builders,
-                            CallPoison::Rejected,
-                        ),
-                        shape_rejected: true,
-                    };
-                };
-                RegisteredSpreadResult {
-                    poison: self.check_registered_fixed_spread(
-                        RegisteredSpreadCheck {
-                            context,
-                            value,
-                            provided,
-                            positional,
-                            argument_index,
-                            fact_builders,
-                        },
-                        slots,
-                    ),
-                    shape_rejected: false,
-                }
-            }
-            SpreadArgumentPolicy::TypedRest => {
-                if let Some(slots) = fixed_literal_spread_slots(value) {
-                    RegisteredSpreadResult {
-                        poison: self.check_registered_fixed_spread(
-                            RegisteredSpreadCheck {
-                                context,
-                                value,
-                                provided,
-                                positional,
-                                argument_index,
-                                fact_builders,
-                            },
-                            slots,
-                        ),
-                        shape_rejected: false,
-                    }
-                } else {
-                    self.check_registered_typed_rest_spread(
-                        context,
-                        value,
-                        provided,
-                        argument_index,
-                        fact_builders,
-                    )
-                }
-            }
-        }
-    }
-
-    fn check_registered_fixed_spread(
-        &mut self,
-        input: RegisteredSpreadCheck<'_>,
-        slots: Vec<FixedLiteralSpreadSlot<'_>>,
-    ) -> CallPoison {
-        let RegisteredSpreadCheck {
-            context,
-            value,
-            provided,
-            positional,
-            argument_index,
-            fact_builders,
-        } = input;
-        self.reserve_fixed_literal_spread_container_expr(value);
-        let mut poison = CallPoison::Clean;
-        for slot in slots {
-            poison = poison.merge(self.check_registered_positional(RegisteredPositionalCheck {
-                context,
-                value: slot,
-                provided,
-                positional,
-                argument_index,
-                fact_builders,
-            }));
-        }
-        poison
-    }
-
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the typed-rest rule atomically validates placement, sequence item type, and checked facts"
-    )]
-    fn check_registered_typed_rest_spread(
-        &mut self,
-        context: RegisteredArgumentContext<'_>,
-        value: &Expr,
-        provided: &[bool],
-        argument_index: usize,
-        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
-    ) -> RegisteredSpreadResult {
-        let Some(rest) = context
-            .parameters
-            .iter()
-            .find(|parameter| parameter.passing() == CallableParameterPassing::RestPositional)
-        else {
-            return self.reject_registered_typed_rest_spread(
-                format!(
-                    "function `{}` has no positional rest parameter",
-                    context.label
-                ),
-                context,
-                value,
-                argument_index,
-                fact_builders,
-            );
-        };
-        if context.parameters.iter().any(|parameter| {
-            parameter.presence() == CallableParameterPresence::Required
-                && parameter.passing() != CallableParameterPassing::RestPositional
-                && !provided[parameter.index().get()]
-        }) {
-            return self.reject_registered_typed_rest_spread(
-                format!(
-                    "function `{}` spread argument must follow required fixed arguments",
-                    context.label
-                ),
-                context,
-                value,
-                argument_index,
-                fact_builders,
-            );
-        }
-        if self.signature_work_charge.candidate_work
-            && !self.charge_signature_work(crate::callable::SignatureWorkKind::ArgumentBindings, 1)
-        {
-            return RegisteredSpreadResult {
-                poison: CallPoison::Rejected,
-                shape_rejected: false,
-            };
-        }
-        let expression = TypeExpressionId::from_index(self.stats.expressions);
-        let source = self.source_span_for_expr(value);
-        if !self.charge_callable_work(
-            context.call,
-            context.focused,
-            crate::checker::call_target_facts::CallableWorkOperation::TypeCheck,
-        ) {
-            return RegisteredSpreadResult {
-                poison: CallPoison::Rejected,
-                shape_rejected: false,
-            };
-        }
-        let actual = self.check_expr(value);
-        let Some(item) = actual.as_ref().and_then(spread_item_type) else {
-            self.errors.push(TypeCheckError::new(format!(
-                "function `{}` spread argument must have a sequence type",
-                context.label
-            )));
-            Self::push_registered_argument_slot(
-                RegisteredArgumentSlot {
-                    argument_index,
-                    expression,
-                    source,
-                    group: context.group,
-                    parameter: Some(rest),
-                    inferred: actual,
-                    poison: CallPoison::Rejected,
-                },
-                fact_builders,
-            );
-            return RegisteredSpreadResult {
-                poison: CallPoison::Rejected,
-                shape_rejected: false,
-            };
-        };
-        let mut poison = CallPoison::Clean;
-        if let CallableParameterType::Exact(expected) = rest.ty()
-            && !self.types_compatible(expected, item)
-        {
-            self.errors.push(TypeCheckError::argument_type_mismatch(
-                context.label,
-                parameter_label(rest),
-                expected.clone(),
-                item.clone(),
-            ));
-            poison = CallPoison::Rejected;
-        }
-        Self::push_registered_argument_slot(
-            RegisteredArgumentSlot {
-                argument_index,
-                expression,
-                source,
-                group: context.group,
-                parameter: Some(rest),
-                inferred: actual,
-                poison,
-            },
-            fact_builders,
-        );
-        RegisteredSpreadResult {
-            poison,
-            shape_rejected: false,
-        }
-    }
-
-    fn reject_registered_typed_rest_spread(
-        &mut self,
-        message: String,
-        context: RegisteredArgumentContext<'_>,
-        value: &Expr,
-        argument_index: usize,
-        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
-    ) -> RegisteredSpreadResult {
-        self.errors.push(TypeCheckError::new(message));
-        RegisteredSpreadResult {
-            poison: self.check_registered_argument_slot(
-                context,
-                None,
-                FixedLiteralSpreadSlot::Expr(value),
-                argument_index,
-                fact_builders,
-                CallPoison::Rejected,
-            ),
-            shape_rejected: true,
-        }
-    }
-
-    fn check_registered_argument_slot(
-        &mut self,
-        context: RegisteredArgumentContext<'_>,
-        parameter: Option<&CallableParameter>,
-        value: FixedLiteralSpreadSlot<'_>,
-        argument_index: usize,
-        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
-        poison: CallPoison,
-    ) -> CallPoison {
-        self.check_registered_argument_slot_with_inferred(
-            context,
-            parameter,
-            value,
-            argument_index,
-            fact_builders,
-            poison,
-        )
-        .poison
-    }
-
-    fn check_registered_argument_slot_with_inferred(
-        &mut self,
-        context: RegisteredArgumentContext<'_>,
-        parameter: Option<&CallableParameter>,
-        value: FixedLiteralSpreadSlot<'_>,
-        argument_index: usize,
-        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
-        mut poison: CallPoison,
-    ) -> RegisteredSlotCheck {
-        if self.signature_work_charge.candidate_work
-            && !self.charge_signature_work(crate::callable::SignatureWorkKind::ArgumentBindings, 1)
-        {
-            return RegisteredSlotCheck {
-                poison: CallPoison::Rejected,
-                inferred: None,
-            };
-        }
-        let expected = match parameter.map(CallableParameter::ty) {
-            Some(CallableParameterType::Exact(expected)) => Some(expected),
-            Some(CallableParameterType::Unchecked) | None => None,
-        };
-        let expression = TypeExpressionId::from_index(self.stats.expressions);
-        let source = value
-            .source_expr()
-            .and_then(|expr| self.source_span_for_expr(expr));
-        if value.source_expr().is_none() {
-            self.stats.expressions += 1;
-        }
-        if !self.charge_callable_work(
-            context.call,
-            context.focused,
-            crate::checker::call_target_facts::CallableWorkOperation::TypeCheck,
-        ) {
-            return RegisteredSlotCheck {
-                poison: CallPoison::Rejected,
-                inferred: None,
-            };
-        }
-        let actual = self.check_fixed_literal_spread_slot(value, expected);
-        if let (Some(expected), Some(actual)) = (expected, actual.as_ref())
-            && !self.types_compatible(expected, actual)
-        {
-            self.errors.push(TypeCheckError::argument_type_mismatch(
-                context.label,
-                parameter.map_or_else(|| "<unmapped>".to_owned(), parameter_label),
-                expected.clone(),
-                actual.clone(),
-            ));
-            poison = CallPoison::Rejected;
-        }
-        Self::push_registered_argument_slot(
-            RegisteredArgumentSlot {
-                argument_index,
-                expression,
-                source,
-                group: context.group,
-                parameter,
-                inferred: actual.clone(),
-                poison,
-            },
-            fact_builders,
-        );
-        RegisteredSlotCheck {
-            poison,
-            inferred: actual,
-        }
     }
 }
 
@@ -2038,60 +1488,6 @@ fn function_value_effects(ty: &TypeKind) -> EffectRow {
         TypeKind::Function { effects, .. } => effects.clone(),
         _ => EffectRow::unknown(),
     }
-}
-
-fn next_registered_positional_parameter<'a>(
-    parameters: &'a [CallableParameter],
-    provided: &[bool],
-    positional: &mut usize,
-) -> Option<&'a CallableParameter> {
-    while let Some(parameter) = parameters.get(*positional) {
-        if provided[*positional]
-            || matches!(
-                parameter.passing(),
-                CallableParameterPassing::NamedOnly | CallableParameterPassing::RestNamed
-            )
-        {
-            *positional += 1;
-        } else {
-            break;
-        }
-    }
-    parameters.get(*positional).or_else(|| {
-        parameters
-            .iter()
-            .find(|parameter| parameter.passing() == CallableParameterPassing::RestPositional)
-    })
-}
-
-fn registered_named_parameter<'a>(
-    parameters: &'a [CallableParameter],
-    name: &str,
-) -> Option<&'a CallableParameter> {
-    parameters
-        .iter()
-        .find(|parameter| {
-            parameter
-                .name()
-                .is_some_and(|candidate| candidate.as_str() == name)
-                && matches!(
-                    parameter.passing(),
-                    CallableParameterPassing::PositionalOrNamed
-                        | CallableParameterPassing::NamedOnly
-                )
-        })
-        .or_else(|| {
-            parameters
-                .iter()
-                .find(|parameter| parameter.passing() == CallableParameterPassing::RestNamed)
-        })
-}
-
-fn parameter_label(parameter: &CallableParameter) -> String {
-    parameter.name().map_or_else(
-        || format!("#{}", parameter.index().get()),
-        |name| name.as_str().to_owned(),
-    )
 }
 
 fn schema_result_type(

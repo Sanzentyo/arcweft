@@ -141,8 +141,8 @@ SourceSpan,struct,crates/arcweft-source/src/document.rs,226,2
 SourceSpan,struct,crates/arcweft-verify/src/lib.rs,54,2
 StableHash,struct,crates/arcweft-adt/src/lib.rs,633,2
 StableHash,struct,crates/arcweft-agent-protocol/src/ids.rs,32,2
-StoryDialogue,struct,crates/arcweft-cli/src/app/bundle/tests.rs,1452,2
-StoryDialogue,struct,crates/arcweft-lsp/src/session/tests.rs,1369,2
+StoryDialogue,struct,crates/arcweft-cli/src/app/bundle/tests.rs,1579,2
+StoryDialogue,struct,crates/arcweft-lsp/src/session/tests.rs,1278,2
 TextAssistPolicy,enum,crates/arcweft-bundle/src/resource_codec/view/model/input.rs,73,2
 TextAssistPolicy,enum,crates/arcweft-presentation/src/text_input.rs,292,2
 TextCharacterBounds,struct,crates/arcweft-glyphon/src/prepared_text.rs,98,2
@@ -152,7 +152,7 @@ TextRange,struct,crates/arcweft-lang-syntax/src/ast/common.rs,12,3
 TextRange,struct,crates/arcweft-presentation/src/text_input.rs,23,3
 TextRange,struct,docs/implementation/vertical-longterm-design-20260612/crates/glyphon-layout-ext-api/src/glyph.rs,27,3
 TraitMethodCallOutcome,struct,crates/arcweft-core/src/engine/eval/calls.rs,17,2
-TraitMethodCallOutcome,enum,crates/arcweft-lang-sema/src/checker/expr/support.rs,65,2
+TraitMethodCallOutcome,enum,crates/arcweft-lang-sema/src/checker/expr/support.rs,66,2
 ViewAwait,struct,crates/arcweft-lang-syntax/src/ast/view.rs,197,2
 ViewAwait,struct,crates/arcweft-view/src/program.rs,295,2
 ViewAwaitBranch,struct,crates/arcweft-lang-syntax/src/ast/view.rs,204,2
@@ -170,7 +170,7 @@ ViewMask,enum,crates/arcweft-view/src/style/value.rs,600,2
 Visibility,enum,crates/arcweft-lang-sema/src/effect_model.rs,32,2
 Visibility,enum,crates/arcweft-lang-syntax/src/ast/common.rs,90,2
 _compatibility_checks,type,crates/arcweft-cli/src/output.rs,470,2
-_compatibility_checks,type,crates/arcweft-lang-sema/src/checker.rs,143,2
+_compatibility_checks,type,crates/arcweft-lang-sema/src/checker.rs,149,2
 _id,trait,crates/arcweft-core/src/plan.rs,197,2
 _id,trait,crates/arcweft-lang-sema/src/traits.rs,224,2
 _json,type,crates/arcweft-debug-model/src/graph.rs,13,2

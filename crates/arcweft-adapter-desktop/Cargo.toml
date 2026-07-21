@@ -7,16 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-adapter-context = { path = "../arcweft-adapter-context" }
-arcweft-core = { path = "../arcweft-core" }
-arcweft-desktop-contract = { path = "../arcweft-desktop-contract" }
-arcweft-desktop-host = { path = "../arcweft-desktop-host" }
-arcweft-host-adapter = { path = "../arcweft-host-adapter" }
-arcweft-rust-abi = { path = "../arcweft-rust-abi" }
+arcweft-adapter-context = { workspace = true }
+arcweft-core = { workspace = true }
+arcweft-desktop-contract = { workspace = true }
+arcweft-desktop-host = { workspace = true }
+arcweft-host-adapter = { workspace = true }
+arcweft-rust-abi = { workspace = true }
 serde_json.workspace = true
 
 [dev-dependencies]
-arcweft-desktop-native = { path = "../arcweft-desktop-native" }
+arcweft-desktop-native = { workspace = true }
 
 [lints]
 workspace = true

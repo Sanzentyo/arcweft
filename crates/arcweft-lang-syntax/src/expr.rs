@@ -34,6 +34,7 @@ pub use call_syntax::{
 };
 use closure_parse::parse_closure_params;
 use closure_source::ClosureBodySource;
+use numeric::AuthoredNumericBracketSeqError;
 pub use numeric::{
     IntLiteral, IntLiteralValueError, IntRadix, IntSuffix, NumericBracketSeq,
     NumericBracketSeqError,
@@ -1330,15 +1331,13 @@ use pratt::ExprParser;
 fn flat_literal_bracket_seq_expr(
     all_int: bool,
     int_literals: Vec<IntLiteral>,
+    int_literal_ranges: Vec<TextRange>,
     fallback_items: Option<Vec<Expr>>,
-) -> Expr {
+) -> Result<Expr, AuthoredNumericBracketSeqError> {
     if all_int {
-        Expr::NumericBracketSeq(
-            NumericBracketSeq::new(int_literals)
-                .expect("flat integer sequence parser checked the common suffix"),
-        )
+        NumericBracketSeq::authored(int_literals, int_literal_ranges).map(Expr::NumericBracketSeq)
     } else {
-        Expr::BracketSeq(fallback_items.unwrap_or_default())
+        Ok(Expr::BracketSeq(fallback_items.unwrap_or_default()))
     }
 }
 

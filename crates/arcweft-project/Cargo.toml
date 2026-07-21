@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
-arcweft-manifest-model = { path = "../arcweft-manifest-model" }
-arcweft-source = { path = "../arcweft-source" }
+arcweft-lang-syntax = { workspace = true }
+arcweft-manifest-model = { workspace = true }
+arcweft-source = { workspace = true }
 blake3.workspace = true
 serde.workspace = true
 thiserror.workspace = true

@@ -7,15 +7,15 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-agent-runner = { path = "../arcweft-agent-runner" }
-arcweft-lang-hir = { path = "../arcweft-lang-hir" }
+arcweft-agent-protocol = { workspace = true }
+arcweft-agent-runner = { workspace = true }
+arcweft-lang-hir = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-arcweft-lang-syntax = { path = "../arcweft-lang-syntax" }
+arcweft-lang-syntax = { workspace = true }
 
 [lints]
 workspace = true

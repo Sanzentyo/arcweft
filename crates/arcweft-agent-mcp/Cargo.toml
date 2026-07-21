@@ -7,16 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-agent-policy = { path = "../arcweft-agent-policy" }
-arcweft-agent-protocol = { path = "../arcweft-agent-protocol" }
-arcweft-agent-repl = { path = "../arcweft-agent-repl" }
-arcweft-content-policy = { path = "../arcweft-content-policy" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
+arcweft-agent-policy = { workspace = true }
+arcweft-agent-protocol = { workspace = true }
+arcweft-agent-repl = { workspace = true }
+arcweft-content-policy = { workspace = true }
+arcweft-runtime-driver = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
 [dev-dependencies]
-arcweft-lang-sema = { path = "../arcweft-lang-sema" }
+arcweft-lang-sema = { workspace = true }
 
 [lints]
 workspace = true

@@ -7,7 +7,7 @@ version = "0.1.0"
 description = "Apache Avro adapter for Arcweft data."
 
 [dependencies]
-arcweft-data = { path = "../arcweft-data" }
+arcweft-data = { workspace = true }
 apache-avro.workspace = true
 serde_json.workspace = true
 

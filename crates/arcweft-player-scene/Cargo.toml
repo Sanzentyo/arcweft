@@ -7,25 +7,25 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-bundle = { path = "../arcweft-bundle", default-features = false }
-arcweft-character = { path = "../arcweft-character" }
-arcweft-character-view = { path = "../arcweft-character-view" }
-arcweft-id = { path = "../arcweft-id" }
-arcweft-image = { path = "../arcweft-image" }
+arcweft-bundle = { workspace = true, default-features = false }
+arcweft-character = { workspace = true }
+arcweft-character-view = { workspace = true }
+arcweft-id = { workspace = true }
+arcweft-image = { workspace = true }
 arcweft-layout.workspace = true
-arcweft-presentation = { path = "../arcweft-presentation" }
-arcweft-render-text = { path = "../arcweft-render-text" }
-arcweft-render-wgpu = { path = "../arcweft-render-wgpu" }
-arcweft-runtime-driver = { path = "../arcweft-runtime-driver" }
-arcweft-text-layout = { path = "../arcweft-text-layout" }
-arcweft-view = { path = "../arcweft-view" }
-num-traits = "0.2.19"
+arcweft-presentation = { workspace = true }
+arcweft-render-text = { workspace = true }
+arcweft-render-wgpu = { workspace = true }
+arcweft-runtime-driver = { workspace = true }
+arcweft-text-layout = { workspace = true }
+arcweft-view = { workspace = true }
+num-traits.workspace = true
 oxifont-webfont.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-core = { path = "../arcweft-core" }
+arcweft-core = { workspace = true }
 serde_json.workspace = true
 
 [lib]

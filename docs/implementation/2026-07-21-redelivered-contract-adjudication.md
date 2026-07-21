@@ -32,10 +32,14 @@ diagnostics. References to removed `task fn`, `dialogue fn`, or `stream fn`
 surface forms are interpreted through the already-selected ordinary-function
 role and generator model; they do not authorize restoring those declarations.
 
-The existing
+The follow-up
 `docs/reviews/requests/2026-07-20-lang-01.1.1.2-project-nominal-type-resolution-production-reconciliation.md`
-still assumes the superseded return-target shape. It is not an independently
-throwable implementation authority until rewritten against this contract.
+has now been rewritten against this selected archive. It preserves
+`TryExprSource`, `PropagationBoundaryEvidence`, and
+`CheckedReturnType::{Known, Unconstrained}` and asks the returned contract to
+define project-aware type-failure/poison evidence without restoring the older
+`CheckedReturnTarget` model. It is independently throwable in that corrected
+form.
 
 ### Lang-01.4.1
 

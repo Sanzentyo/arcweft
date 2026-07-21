@@ -805,10 +805,12 @@ impl TypeChecker<'_> {
             self.check_untyped_function_args(args);
             return Some(ty);
         }
-        match self.check_registered_catalog_free_call(call, expected, expression_id) {
-            registered_call::RegisteredFreeCallOutcome::NotHandled => {}
-            registered_call::RegisteredFreeCallOutcome::Checked(result) => return result,
-        }
+        let registered_arguments_checked =
+            match self.check_registered_catalog_free_call(call, expected, expression_id) {
+                registered_call::RegisteredFreeCallOutcome::NotHandled => false,
+                registered_call::RegisteredFreeCallOutcome::MissingFactsRetained => true,
+                registered_call::RegisteredFreeCallOutcome::Checked(result) => return result,
+            };
         if self.registered_world.is_none()
             && let Some(name) = expr_path_label(callee)
             && let Some(ty) = self.function_type(&name).cloned()
@@ -864,7 +866,8 @@ impl TypeChecker<'_> {
                     callee_curried_signature_call.as_ref(),
                 ) {
                     registered_call::RegisteredFreeCallOutcome::Checked(result) => result,
-                    registered_call::RegisteredFreeCallOutcome::NotHandled => {
+                    registered_call::RegisteredFreeCallOutcome::NotHandled
+                    | registered_call::RegisteredFreeCallOutcome::MissingFactsRetained => {
                         Some(self.check_known_function_value_call(
                             expression_id,
                             callee_label.as_deref(),
@@ -878,8 +881,10 @@ impl TypeChecker<'_> {
                 }
             }
             other => {
-                for arg in args {
-                    self.check_expr(arg.value());
+                if !registered_arguments_checked {
+                    for arg in args {
+                        self.check_expr(arg.value());
+                    }
                 }
                 other
             }

@@ -130,16 +130,18 @@ impl SignatureLabelBuilder {
     }
 
     fn push(&mut self, text: &str) -> Result<(), SignatureProjectionError> {
-        let added = text.encode_utf16().try_fold(0u32, |units, _| {
+        let added = text.encode_utf16().try_fold(0u64, |units, _| {
             units
                 .checked_add(1)
                 .ok_or(SignatureProjectionError::LabelOffsetOverflow)
         })?;
-        self.utf16_units = self
-            .utf16_units
-            .checked_add(added)
-            .ok_or(SignatureProjectionError::LabelOffsetOverflow)?;
+        self.advance_utf16(added)?;
         self.text.push_str(text);
+        Ok(())
+    }
+
+    fn advance_utf16(&mut self, added: u64) -> Result<(), SignatureProjectionError> {
+        self.utf16_units = checked_label_offset(self.utf16_units, added)?;
         Ok(())
     }
 
@@ -152,6 +154,17 @@ impl SignatureLabelBuilder {
     fn finish(self) -> String {
         self.text
     }
+}
+
+fn checked_label_offset(
+    current: u32,
+    added_utf16_units: u64,
+) -> Result<u32, SignatureProjectionError> {
+    let added = u32::try_from(added_utf16_units)
+        .map_err(|_| SignatureProjectionError::LabelOffsetOverflow)?;
+    current
+        .checked_add(added)
+        .ok_or(SignatureProjectionError::LabelOffsetOverflow)
 }
 
 fn callable_documentation(documentation: &CallableDocumentation) -> Option<Documentation> {
@@ -249,5 +262,21 @@ mod tests {
                 documentation: None,
             }])
         );
+    }
+
+    #[test]
+    fn label_projection_rejects_utf16_counts_outside_the_lsp_u32_range() {
+        let overflowing_units = u64::from(u32::MAX) + 1;
+        let mut label = SignatureLabelBuilder {
+            text: String::new(),
+            utf16_units: 0,
+        };
+
+        assert_eq!(
+            label.advance_utf16(overflowing_units),
+            Err(SignatureProjectionError::LabelOffsetOverflow)
+        );
+        assert_eq!(label.utf16_units, 0);
+        assert!(label.text.is_empty());
     }
 }
