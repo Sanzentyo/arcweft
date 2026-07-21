@@ -164,7 +164,6 @@ pub(crate) struct SyntaxSnapshotData {
     root_id: SyntaxNodeId,
     records: HashMap<SyntaxNodeId, AttachedNodeRecord>,
     by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
-    by_node: HashMap<GrammarSyntaxNode, SyntaxNodeId>,
 }
 
 impl SyntaxSnapshotData {
@@ -175,7 +174,6 @@ impl SyntaxSnapshotData {
         root_id: SyntaxNodeId,
         records: HashMap<SyntaxNodeId, AttachedNodeRecord>,
         by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
-        by_node: HashMap<GrammarSyntaxNode, SyntaxNodeId>,
     ) -> Self {
         Self {
             snapshot,
@@ -184,7 +182,6 @@ impl SyntaxSnapshotData {
             root_id,
             records,
             by_path,
-            by_node,
         }
     }
 
@@ -239,18 +236,30 @@ impl SyntaxSnapshotData {
         self: &Arc<Self>,
         node: &GrammarSyntaxNode,
     ) -> Result<SyntaxNodeHandle, SyntaxLookupError> {
-        if node.ancestors().last().as_ref() != Some(&self.root) {
+        // Rowan equality cannot distinguish same-kind zero-width recovery
+        // nodes at one offset. Their exact child-index event paths can.
+        let mut current = node.clone();
+        let mut elements = Vec::new();
+        while let Some(parent) = current.parent() {
+            elements.push(u32::try_from(current.index()).map_err(|_| {
+                SyntaxLookupError::ForeignRowanRoot {
+                    expected: self.snapshot.clone(),
+                }
+            })?);
+            current = parent;
+        }
+        if current != self.root {
             return Err(SyntaxLookupError::ForeignRowanRoot {
                 expected: self.snapshot.clone(),
             });
         }
-        let id =
-            self.by_node
-                .get(node)
-                .copied()
-                .ok_or_else(|| SyntaxLookupError::ForeignRowanRoot {
-                    expected: self.snapshot.clone(),
-                })?;
+        elements.reverse();
+        let path = GrammarEventPath::from_elements(elements.into_boxed_slice());
+        let id = self.by_path.get(&path).copied().ok_or_else(|| {
+            SyntaxLookupError::ForeignRowanRoot {
+                expected: self.snapshot.clone(),
+            }
+        })?;
         self.syntax_node(id)
     }
 

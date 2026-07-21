@@ -5,11 +5,15 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
-use arcweft_source::{SourceDocument, SourceEdit, SourceName};
+use arcweft_source::{SourceDocument, SourceEdit, SourceName, SourceSpan};
 use core::num::NonZeroU64;
 use thiserror::Error;
 
-use super::bound::{BoundExpressionFragment, BoundParsedSource};
+use super::bound::{
+    BoundExpressionFragment, BoundFragment, BoundFragmentKind, BoundParsedSource,
+    BoundPatternFragment, BoundStatementFragment, BoundTypeFragment, ExpressionFragment,
+    PatternFragment, StatementFragment, TypeFragment,
+};
 use crate::ast::items::TypedSyntaxTree;
 #[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
@@ -254,27 +258,93 @@ impl SyntaxDatabase {
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &SourceDocument,
+        span: &SourceSpan,
     ) -> Result<BoundExpressionFragment, ParseFailure> {
-        self.parse_bound_expression_fragment_with_shadow_fault(
+        self.parse_bound_fragment_with_shadow_fault::<ExpressionFragment>(
             snapshot,
             document,
+            span,
             transaction::ShadowFault::None,
         )
     }
 
-    fn parse_bound_expression_fragment_with_shadow_fault(
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
+        )
+    )]
+    pub(crate) fn parse_bound_type_fragment(
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &SourceDocument,
+        span: &SourceSpan,
+    ) -> Result<BoundTypeFragment, ParseFailure> {
+        self.parse_bound_fragment_with_shadow_fault::<TypeFragment>(
+            snapshot,
+            document,
+            span,
+            transaction::ShadowFault::None,
+        )
+    }
+
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
+        )
+    )]
+    pub(crate) fn parse_bound_pattern_fragment(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &SourceDocument,
+        span: &SourceSpan,
+    ) -> Result<BoundPatternFragment, ParseFailure> {
+        self.parse_bound_fragment_with_shadow_fault::<PatternFragment>(
+            snapshot,
+            document,
+            span,
+            transaction::ShadowFault::None,
+        )
+    }
+
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
+        )
+    )]
+    pub(crate) fn parse_bound_statement_fragment(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &SourceDocument,
+        span: &SourceSpan,
+    ) -> Result<BoundStatementFragment, ParseFailure> {
+        self.parse_bound_fragment_with_shadow_fault::<StatementFragment>(
+            snapshot,
+            document,
+            span,
+            transaction::ShadowFault::None,
+        )
+    }
+
+    fn parse_bound_fragment_with_shadow_fault<K: BoundFragmentKind>(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &SourceDocument,
+        span: &SourceSpan,
         shadow_fault: transaction::ShadowFault,
-    ) -> Result<BoundExpressionFragment, ParseFailure> {
-        if snapshot.name() != document.display_name() {
+    ) -> Result<BoundFragment<K>, ParseFailure> {
+        if snapshot.name() != document.display_name() || span.validate_for(document).is_err() {
             return Err(ParseFailure::SourceMismatch);
         }
         let staged = self
             .shadow
-            .stage_expression_fragment(snapshot, document, shadow_fault)?;
-        Ok(self.shadow.commit_expression_fragment(staged))
+            .stage_fragment::<K>(snapshot, document, span, shadow_fault)?;
+        Ok(self.shadow.commit_fragment(staged))
     }
 
     #[expect(
@@ -426,14 +496,16 @@ impl SyntaxDatabase {
     }
 
     #[cfg(test)]
-    fn parse_bound_expression_fragment_with_attachment_failure(
+    fn parse_bound_fragment_with_attachment_failure<K: BoundFragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &SourceDocument,
-    ) -> Result<BoundExpressionFragment, ParseFailure> {
-        self.parse_bound_expression_fragment_with_shadow_fault(
+        span: &SourceSpan,
+    ) -> Result<BoundFragment<K>, ParseFailure> {
+        self.parse_bound_fragment_with_shadow_fault::<K>(
             snapshot,
             document,
+            span,
             transaction::ShadowFault::MissingAttachment,
         )
     }

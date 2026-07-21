@@ -15,12 +15,16 @@ use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use super::expression::emit_expression;
 use super::item::{classify_top_level_item, is_declaration_item_kind};
 use super::lexer::{DocumentLexer, LexToken};
+use super::pattern::emit_pattern;
+use super::statement::emit_statement_fragment;
+use super::type_ref::emit_type;
 
 /// Shared cursor and event sink for every private shadow grammar parser.
 pub(super) struct ShadowDocumentParser<'source, 'events> {
     source: &'source str,
     tokens: &'source [LexToken],
     cursor: usize,
+    empty_offset: usize,
     events: &'events mut Vec<SyntaxEvent>,
     budget: &'events mut GrammarBudget,
 }
@@ -36,6 +40,24 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
             source,
             tokens,
             cursor: 0,
+            empty_offset: 0,
+            events,
+            budget,
+        }
+    }
+
+    fn for_fragment(
+        source: &'source str,
+        tokens: &'source [LexToken],
+        empty_offset: usize,
+        events: &'events mut Vec<SyntaxEvent>,
+        budget: &'events mut GrammarBudget,
+    ) -> Self {
+        Self {
+            source,
+            tokens,
+            cursor: 0,
+            empty_offset,
             events,
             budget,
         }
@@ -60,7 +82,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 
     pub(super) fn current_offset(&self) -> usize {
         self.current().map_or_else(
-            || self.tokens.last().map_or(0, |token| token.range().end()),
+            || {
+                self.tokens
+                    .last()
+                    .map_or(self.empty_offset, |token| token.range().end())
+            },
             |token| token.range().start(),
         )
     }
@@ -178,7 +204,8 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 pub(crate) fn parse_shadow_document(
     document: &SourceDocument,
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    build_shadow_root(document, |tokens, events, budget| {
+    let tokens = DocumentLexer::new(document.text()).lex();
+    build_shadow_root(document, &tokens, |tokens, events, budget| {
         start_event(events, budget, SyntaxKind::ItemList, SyntaxRole::Element(0));
         emit_logical_lines(document.text(), tokens, events, budget)?;
         finish_event(events, budget);
@@ -186,29 +213,84 @@ pub(crate) fn parse_shadow_document(
     })
 }
 
-/// Parses one standalone expression through the same lexer, event budget, and
-/// lossless root transaction as a complete source document.
-pub(crate) fn parse_shadow_expression_fragment(
+/// Typed fragment family accepted by the private bound-fragment transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ShadowFragmentKind {
+    Expression,
+    Type,
+    Pattern,
+    Statement,
+}
+
+/// Parses one standalone fragment through the shared lexer, grammar emitters,
+/// event budget, recovery, and lossless root transaction.
+pub(crate) fn parse_shadow_fragment(
     document: &SourceDocument,
+    span: SourceRange,
+    kind: ShadowFragmentKind,
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    build_shadow_root(document, |tokens, events, budget| {
-        let mut parser = ShadowDocumentParser::new(document.text(), tokens, events, budget);
+    document
+        .span(span)
+        .map_err(|_| GrammarBuildError::InvalidFragmentRange {
+            start: span.start(),
+            end: span.end(),
+            source_len: document.text().len(),
+        })?;
+    let tokens = DocumentLexer::for_range(document.text(), span).lex();
+    build_shadow_root(document, &tokens, |tokens, events, budget| {
+        if span.start() > 0 {
+            push_event(
+                events,
+                budget,
+                SyntaxEvent::token(SyntaxKind::TextToken, SourceRange::new(0, span.start())),
+            );
+        }
+        let mut parser = ShadowDocumentParser::for_fragment(
+            document.text(),
+            tokens,
+            span.start(),
+            events,
+            budget,
+        );
         parser.bump_trivia();
-        emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
+        match kind {
+            ShadowFragmentKind::Expression => {
+                emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
+            }
+            ShadowFragmentKind::Type => {
+                emit_type(&mut parser, tokens.len(), SyntaxRole::Element(0));
+            }
+            ShadowFragmentKind::Pattern => {
+                emit_pattern(&mut parser, tokens.len(), SyntaxRole::Element(0));
+            }
+            ShadowFragmentKind::Statement => {
+                emit_statement_fragment(&mut parser, tokens.len(), SyntaxRole::Element(0));
+            }
+        }
         while parser.bump().is_some() {}
+        if span.end() < document.text().len() {
+            push_event(
+                events,
+                budget,
+                SyntaxEvent::token(
+                    SyntaxKind::TextToken,
+                    SourceRange::new(span.end(), document.text().len()),
+                ),
+            );
+        }
         Ok(())
     })
 }
 
 fn build_shadow_root(
     document: &SourceDocument,
+    tokens: &[LexToken],
     emit_body: impl FnOnce(
         &[LexToken],
         &mut Vec<SyntaxEvent>,
         &mut GrammarBudget,
     ) -> Result<(), GrammarBuildError>,
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    let tokens = DocumentLexer::new(document.text()).lex();
     let mut events = Vec::with_capacity(tokens.len() + 8);
     let mut budget = GrammarBudget::default();
     start_event(
@@ -217,7 +299,7 @@ fn build_shadow_root(
         SyntaxKind::SourceFile,
         SyntaxRole::Root,
     );
-    emit_body(&tokens, &mut events, &mut budget)?;
+    emit_body(tokens, &mut events, &mut budget)?;
     push_event(
         &mut events,
         &mut budget,

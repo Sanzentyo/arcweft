@@ -29,6 +29,7 @@ enum BlockCommentKind {
 pub(super) struct DocumentLexer<'a> {
     source: &'a str,
     cursor: usize,
+    end: usize,
     block_comment: Option<BlockCommentKind>,
 }
 
@@ -37,6 +38,18 @@ impl<'a> DocumentLexer<'a> {
         Self {
             source,
             cursor: 0,
+            end: source.len(),
+            block_comment: None,
+        }
+    }
+
+    /// Lexes one already validated UTF-8 range as an independent fragment
+    /// while retaining document-absolute token ranges.
+    pub(super) const fn for_range(source: &'a str, range: SourceRange) -> Self {
+        Self {
+            source,
+            cursor: range.start(),
+            end: range.end(),
             block_comment: None,
         }
     }
@@ -50,11 +63,11 @@ impl<'a> DocumentLexer<'a> {
     }
 
     fn next_token(&mut self) -> Option<LexToken> {
-        if self.cursor == self.source.len() {
+        if self.cursor == self.end {
             return None;
         }
         let start = self.cursor;
-        let rest = &self.source[start..];
+        let rest = &self.source[start..self.end];
         let (kind, len) = if let Some(comment) = self.block_comment {
             self.block_comment_token(rest, comment)
         } else {

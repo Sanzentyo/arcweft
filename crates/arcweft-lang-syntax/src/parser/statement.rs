@@ -126,13 +126,33 @@ fn emit_statement(
     item_kind: SyntaxKind,
     ordinal: u32,
 ) {
+    emit_statement_with_role(parser, end, item_kind, SyntaxRole::Statement(ordinal));
+}
+
+/// Emits one ordinary statement fragment without inventing a declaration
+/// owner. Proof/predicate restrictions remain owned by their document item.
+pub(super) fn emit_statement_fragment(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) {
+    let end = trimmed_end(parser, parser.cursor(), end);
+    emit_statement_with_role(parser, end, SyntaxKind::FunctionItem, role);
+}
+
+fn emit_statement_with_role(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+    role: SyntaxRole,
+) {
     let child_end = if end > parser.cursor() && token_text(parser, end - 1) == Some(";") {
         end - 1
     } else {
         end
     };
     let kind = classify_statement(parser, child_end, item_kind);
-    parser.start(kind, SyntaxRole::Statement(ordinal));
+    parser.start(kind, role);
     match kind {
         SyntaxKind::LetStatement
         | SyntaxKind::LetElseStatement

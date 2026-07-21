@@ -92,7 +92,6 @@ pub(crate) fn attach_typed_tree(
         root_id,
         inventory.records,
         inventory.by_path,
-        inventory.by_node,
     ));
     validate_snapshot(&attached)?;
     Ok(attached)
@@ -102,7 +101,6 @@ pub(crate) fn attach_typed_tree(
 struct AttachmentInventory {
     records: HashMap<SyntaxNodeId, snapshot::AttachedNodeRecord>,
     by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
-    by_node: HashMap<GrammarSyntaxNode, SyntaxNodeId>,
 }
 
 #[derive(Debug)]
@@ -111,7 +109,6 @@ struct AttachmentInventoryBuilder<'a> {
     identities: &'a GrammarIdentityMap,
     expected_count: usize,
     by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
-    by_node: HashMap<GrammarSyntaxNode, SyntaxNodeId>,
     seen_ids: HashSet<SyntaxNodeId>,
     ancestry: Vec<(GrammarEventPath, SyntaxNodeId)>,
     pending: Vec<PendingAttachment>,
@@ -130,7 +127,6 @@ impl<'a> AttachmentInventoryBuilder<'a> {
             identities,
             expected_count,
             by_path: BTreeMap::new(),
-            by_node: HashMap::with_capacity(expected_count),
             seen_ids: HashSet::with_capacity(expected_count),
             ancestry: Vec::new(),
             pending: Vec::with_capacity(expected_count),
@@ -188,10 +184,7 @@ impl<'a> AttachmentInventoryBuilder<'a> {
                 .or_default()
                 .push(id);
         }
-        if !self.seen_ids.insert(id)
-            || self.by_path.insert(entry.path().clone(), id).is_some()
-            || self.by_node.insert(node.clone(), id).is_some()
-        {
+        if !self.seen_ids.insert(id) || self.by_path.insert(entry.path().clone(), id).is_some() {
             return Err(AttachmentFailure::DuplicateAttachment { id });
         }
         self.pending.push(PendingAttachment {
@@ -244,7 +237,6 @@ impl<'a> AttachmentInventoryBuilder<'a> {
         Ok(AttachmentInventory {
             records,
             by_path: self.by_path,
-            by_node: self.by_node,
         })
     }
 }

@@ -142,6 +142,12 @@ pub(crate) enum GrammarBuildError {
     UnclosedNodes { open_nodes: usize },
     #[error("grammar stream has no source-file root")]
     MissingRoot,
+    #[error("fragment range {start}..{end} is invalid for {source_len} source bytes")]
+    InvalidFragmentRange {
+        start: usize,
+        end: usize,
+        source_len: usize,
+    },
     #[error("token event {event} has invalid range {start}..{end} for {source_len} bytes")]
     InvalidTokenRange {
         event: usize,
