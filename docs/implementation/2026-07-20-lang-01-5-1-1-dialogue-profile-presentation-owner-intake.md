@@ -1,109 +1,154 @@
 # Lang-01.5.1.1 dialogue profile presentation-owner intake
 
-## Package and status
+## Selected package
 
-The source package is
-`arcweft-lang-01.5.1.1-dialogue-profile-presentation-owner-contract-correction-final-contract.zip`
+The authoritative package is the corrected redelivery
+`arcweft-lang-01.5.1.1-dialogue-profile-presentation-owner-contract-correction-final-contract(1).zip`
 with SHA-256
-`0bd3e0f5ba462c523aef62aca99beeeb196603b7733057933d33beb0308fa0ed`.
-The package is design-only, reports `READY_FOR_IMPLEMENTATION`, and has no
-result-changing open questions.
+`58bcc3a8b03414e7cca2b08cdd3770517a22b7b09b568a1f34fa2dc34956d506`.
+All 18 payload entries in `MANIFEST.txt` were checked for both SHA-256 and
+byte size. The package reports `READY_FOR_IMPLEMENTATION`, contains
+`OPEN_QUESTIONS.md` as exactly `none\n`, and was designed against Git revision
+`c957a61e4a0b9abf094165c41ef4038ce25324c0`.
 
-The implementation goal is one atomic owner migration:
+The earlier archive with SHA-256
+`0bd3e0f5ba462c523aef62aca99beeeb196603b7733057933d33beb0308fa0ed`
+is superseded. Its useful semantic decision—replace the orphan
+`@dialogue.*` owner with real View, Style, and inline-failure types—is retained,
+but its physical ownership and wire details are not authoritative.
 
-- profile dialogue presentation is the typed tuple of `ViewId`, optional
-  `ViewStyleSheetId`, and `InlineFailurePolicy`;
-- source `dialogue defaults`, `@dialogue.*`, and every executable
-  `DialogueDefaultsItem` path are deleted;
-- the sole revision-bound manifest decoder owns the exact accepted TOML shape
-  and ranges;
-- accepted topology admission validates View, dialogue capability, Style,
-  resources, and source/View revisions before publication; and
-- runtime, LSP, Agent/MCP, save/reload, and command consumers borrow the same
-  accepted topology without reparsing the manifest.
+## Why the corrected redelivery wins
+
+The corrected package matches the accepted repository layering and fixes four
+material defects in the earlier result:
+
+1. `DialogueProfileSpec`, the sole schema-1 decoder, and the revision-bound
+   generic `ManifestSourceMap` remain in `arcweft-launch`; presentation
+   dependencies are not pulled into the neutral `arcweft-manifest-model`.
+2. View/Style/resource admission occurs in the compiler transaction after the
+   validated product exists. Project-loader does not depend on runtime-driver
+   or manufacture a second catalog.
+3. Dialogue token paths extend the existing manifest source map instead of
+   introducing a separately revisioned dialogue source map.
+4. The existing `inline-failure` wire and strict nested
+   `InlineFailurePolicy` representation are preserved. The earlier
+   `inline_failure`/flattened fallback spelling is discarded with no alias or
+   dual reader.
+
+The redelivery also adds the missing nominal-family hardening, typed HIR View
+inventory, compiler-owned View lowering, one shared
+`Arc<ValidatedViewProduct>`, a complete checked revision tuple, and 64 required
+behavioral test rows.
+
+The follow-up
+[Lang-01.5.1.1.1](../reviews/requests/2026-07-20-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation.md)
+is therefore resolved by this corrected redelivery and must not be dispatched
+again.
+
+## Final semantic contract
+
+The implementation goal is one compatibility-free authority cut:
+
+- `profiles.<id>.dialogue` owns only optional nominal `view`, optional nominal
+  `style`, and optional typed `inline-failure` policy;
+- pure launch-profile resolution fills only `std.view.dialogue` and
+  `InlineFailurePolicy::FailLine` fallbacks;
+- `DialoguePresentationProfile` remains the small dialogue-owned resolved
+  value;
+- the compiler admits the selected profile against the exact shared
+  `ValidatedViewProduct`, resource registry digest, manifest identity, source
+  revisions, and View-program revision;
+- runtime-plan lines contain the final View, profile native Style sheet,
+  Character/line rich-text values, inline-failure policy, and accepted revision;
+- source `dialogue defaults`, `@dialogue.*`, raw defaults strings, the source
+  defaults cascade, and all executable `DialogueDefaultsItem` paths are deleted;
+- native/Web/headless/Agent/MCP consumers observe the same mounted View and
+  prepared-text result; and
+- rejected overlay candidates leave the previous complete generation intact.
 
 No compatibility alias, dual reader, removed-spelling recognizer, source gate,
-CSS path, Takumi path, generic property bag, or second dialogue/View/Style
-registry is permitted.
+CSS route, Takumi route, raw TOML reader, generic property bag, or second
+dialogue/View/Style/resource registry is permitted.
 
 ## Current checkout reconciliation
 
-The current `main` already contains part of the final substrate:
+The current checkout already contains useful final-direction substrate:
 
-- `ViewId::standard_dialogue()` owns `std.view.dialogue`;
-- `arcweft-dialogue::DialoguePresentationProfile` owns the resolved typed
-  presentation policy;
-- `ResolvedLaunchProfile::dialogue()` exposes that typed value;
-- the launch decoder accepts the final `[profiles.<id>.dialogue]` table and
-  strict inline-failure variants, and rejects the removed manifest
-  `dialogue.defaults` field; and
-- the manifest selection path now uses one containing project manifest for
-  direct source launches.
+- launch-owned `DialogueProfileSpec` with `view`, `style`, and
+  `inline_failure` fields;
+- dialogue-owned `DialoguePresentationProfile` and
+  `ViewId::standard_dialogue()`;
+- one `SourceBackedManifest`, decoder, and generic source map;
+- the established `ValidatedViewProduct`, native Style resolver, View mount,
+  prepared-text, rendering, capture, and observation paths; and
+- typed Character dialogue patches and runtime-owned dialogue lifecycle state.
 
-The atomic correction is not complete:
+The authority cut is not complete:
 
-- `DialogueProfileSpec` and its decode ownership still sit in the launch
-  layer rather than the package's final authored-manifest owner;
-- `DialogueDefaultsItem`, its parser, AST/HIR/sema paths, tooling and LSP
-  features, runtime-plan selection, and source-default cascade still execute;
-- `RuntimePlanLowerOptions` still carries a raw `dialogue_defaults` string;
-- maintained source fixtures and tests still author `@dialogue.*`; and
-- accepted project topology does not yet own the package's
-  `CheckedDialogueProfile` revision tuple.
+- `ViewId` and `ViewStyleSheetId` do not yet prove their public-ID families,
+  and unchecked public `from_public_id` paths remain;
+- `ViewDefinitionRef` still stores a generic `PublicId`;
+- compiler-owned typed View lowering and checked profile admission are absent;
+- `RuntimePlanLowerOptions` still contains raw `dialogue_defaults` and a
+  separately optional inline policy;
+- source `DialogueDefaultsItem` and its syntax/HIR/sema/tooling/runtime
+  consumers still exist; and
+- maintained content has not yet completed the final profile/View/Style
+  migration.
 
-The existing typed launch fields are final-direction substrate, not a reason
-to preserve the old source owner.
+## Cycle-free physical ownership correction
 
-## Required implementation transaction
+The package places `CheckedDialogueProfile` and `DialogueProfileRevision` in
+`arcweft-compiler`, then requires `arcweft-runtime-plan` to carry the revision.
+The checkout proves that `arcweft-compiler` already depends on
+`arcweft-runtime-plan`; making runtime-plan import a compiler-owned value would
+create a dependency cycle.
 
-The package's migration order remains authoritative:
+The semantic six-field revision tuple is authoritative, but its reusable value
+type must live on a lower, cycle-free dialogue/presentation boundary reachable
+by both compiler and runtime-plan. `CheckedDialogueProfile`, admission, source
+labels, and the shared product remain compiler-owned. This is a physical owner
+correction only: it must not duplicate the tuple, weaken equality, or create a
+conversion shim. The final dependency audit must record the selected lower
+owner and prove there is no compiler back-edge.
 
-1. finish the exact authored manifest types and source-map diagnostics in the
-   sole decoder owner;
-2. retain one resolved `DialoguePresentationProfile`;
-3. add checked topology admission and exact source/View/Style revision
-   evidence;
-4. move compiler, project index, runtime-plan, command, LSP, Agent/MCP,
-   save/reload, and overlay consumers to that accepted value;
-5. migrate maintained manifests, Arcweft source fixtures, and Tier 2
+## Implementation order
+
+1. harden `ViewId`, `ViewStyleSheetId`, and `ViewDefinitionRef` nominal
+   ownership and migrate serde/callers;
+2. finish final manifest source paths, exact family diagnostics, and canonical
+   serialization in the sole decoder;
+3. establish the shared revision value and compiler-owned accepted profile
+   input;
+4. expose the typed HIR View inventory and move the established View lowerer
+   from CLI to compiler without source reparsing;
+5. admit the profile against the one compiled product and retain the same
+   product `Arc` in `CompiledProject`;
+6. materialize typed profile/revision data into runtime-plan, View mount,
+   save/reload, CLI, LSP, Agent, and MCP;
+7. migrate maintained manifests, samples, and current authored-View Tier 2
    expectations;
-6. delete the complete source `dialogue defaults` family and raw runtime
-   selection path in the same public cut; and
-7. run every TM-001 through TM-064 behavior plus workspace, doc, parity,
-   Tier 2, and structural gates before claiming completion.
+8. delete the entire source defaults family and raw runtime path in the same
+   public authority switch; and
+9. satisfy TM-001 through TM-064 plus format, check, strict Clippy, workspace,
+   doc, Tier 2, structural, and dependency gates.
 
-## Coordination boundary
+## Coordination and evidence
 
-This transaction directly overlaps the active Proof typed-AST/HIR public
-switch, AW-AH-007/008 rich-text HIR/runtime migration, and AW-AH-009.3 LSP
-request cut. It must therefore not publish a second temporary AST/HIR reader
-or retain `DialogueDefaultsItem` behind a compatibility carrier. The safe
-order is:
+The package depends on the active typed syntax/HIR and rich-text migrations but
+does not block their non-overlapping implementation. It must consume the final
+typed authority directly rather than add an intermediate reader.
 
-1. complete Proof Stage 2 private identity/attachment without changing the
-   public reader;
-2. land the AW-AH-007/008 lossless syntax slice;
-3. complete the Proof atomic public syntax/HIR switch;
-4. port the final dialogue-profile owner directly onto that typed surface; and
-5. perform the source-default deletion and downstream migration as one
-   compile-clean transaction.
-
-This dependency order does not block the other active implementations. It
-prevents this package from creating an intermediate public model that Proof
-would immediately delete.
-
-## Validation already relevant
-
-The current accepted launch path has direct decoder and native-launch
-evidence. The MCP stdio Tier 2 group was rerun on `main` after the containing
-manifest and View-handler ownership corrections and passed 22/22. This is
-baseline evidence only; the final dialogue-profile transaction must rerun the
-complete `just test-tier2` recipe and the package's native/Web/headless parity
-matrix.
+Tier 2 was revalidated on production revision `118a9870` before this migration:
+MCP 22/22, Agent observe 1/1, native auxiliary 16/16, and visual 7/7 all
+passed. That is baseline evidence only. The complete Tier 2 suite must run again
+after the final dialogue-profile authority cut because the package changes the
+selected View/Style/revision path.
 
 ## Completion boundary
 
-This package remains implementation-ready and active. It is not complete until
-the old source owner and all raw selectors are absent, the checked topology
-revision tuple is published atomically, all 64 matrix rows pass, and the
-required broad validation is recorded.
+This package is selected and implementation-ready, not implemented. Completion
+requires the old source owner and raw selectors to be absent, one admitted
+profile/product/revision generation to reach every consumer, all 64 matrix rows
+to pass, and every required broad gate to be recorded without compatibility
+behavior.

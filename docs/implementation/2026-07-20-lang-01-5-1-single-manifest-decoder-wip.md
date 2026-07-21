@@ -67,27 +67,24 @@ Still required before completion:
 - run the package test matrix, workspace check/Clippy, Tier 2, and structural
   audit at the final reviewable gate.
 
-Dialogue presentation-profile admission remains incomplete. The returned
+Dialogue presentation-profile admission remains incomplete in production. The
+corrected
 [Lang-01.5.1.1](../reviews/requests/2026-07-20-lang-01.5.1.1-dialogue-profile-presentation-owner-contract-correction.md)
-correctly selects real typed `ViewId`, `ViewStyleSheetId`, and
-`InlineFailurePolicy` owners and directly removes source `dialogue defaults`
-and orphan `@dialogue.*` identities. It is not implementation-ready against
-the accepted Lang-01.5.1 crate graph, however: it moves the sole decoder,
-`ProfileSpec`, and source-map ownership from `arcweft-launch` into the neutral
-`arcweft-manifest-model`, and asks project-loader to validate against a
-`ViewProgramCatalog` that is currently constructed later in runtime-driver
-from a compiler/bundle-validated product. The returned package also specifies
-a parallel dialogue source map and changes `inline-failure` to
-`inline_failure` without reconciling the previous final schema.
+redelivery is now implementation-ready against the accepted Lang-01.5.1 crate
+graph. It keeps the sole decoder, `ProfileSpec`, and generic source-map owner in
+`arcweft-launch`, preserves `inline-failure`, and assigns catalog-aware
+admission to the compiler transaction after the one validated View product
+exists.
 
 The non-conflicting owner substrate has been implemented in the existing
 owners: `ViewId::standard_dialogue()`, dialogue-owned
 `DialoguePresentationProfile`, launch-owned nominal profile fields, exact
 source-map entries, and field-wise profile resolution. This does not claim
 that a selected View or Style has been admitted into a validated runtime
-catalog or cascade. Those result-changing conflicts are isolated in
-[Lang-01.5.1.1.1](../reviews/requests/2026-07-20-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation.md).
-Until that contract returns, the current public source-map projection exposes
+catalog or cascade. The former result-changing conflicts recorded in
+[Lang-01.5.1.1.1](../reviews/requests/2026-07-20-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation.md)
+are resolved by the corrected redelivery. The current public source-map
+projection exposes
 exact `dialogue.view`, `dialogue.style`, and `dialogue.inline-failure` spans,
 but the selected presentation is not yet published into a catalog-validated
 runtime plan. There is no `dialogue.defaults` field or orphan `@dialogue.*`
@@ -117,11 +114,12 @@ written, the CharacterDialogue migration moved the production policy to
 strict tagged Serde contract themselves with `deny_unknown_fields`; no parallel
 decode DTO, bridge enum, or field-by-field conversion is retained.
 
-The package's dialogue-default selection rows F-07 and H-03 are superseded by
+The package's original dialogue-default selection rows F-07 and H-03 are superseded by
 the user-directed removal of manifest `dialogue.defaults` and the orphan
 `@dialogue.*` presentation owner. Lang-01.5.1.1 supplies their nominal
-View/Style/profile owner substrate; catalog admission and complete runtime
-publication remain assigned to Lang-01.5.1.1.1.
+View/Style/profile owner substrate. The corrected Lang-01.5.1.1 contract now
+owns catalog admission and complete runtime publication; Lang-01.5.1.1.1 is
+resolved and must not be dispatched again.
 
 ## Generated metadata and semantic projection boundary
 
@@ -167,11 +165,11 @@ that removed owner and must be reconciled in the same cut:
 - `tests/fixtures/arcw/spec_should_pass/check/053_dialogue_rich_text_full_grammar.arcw`.
 
 No replacement presentation owner is inferred in this cut. A fixture whose
-purpose can be expressed solely through an already accepted authored View or
-Character contract may be rewritten to that existing contract. A fixture that
-only tests the orphan defaults owner must be removed with its assertions and
-listed as Lang-01.5.1.1.1 evidence to restore after catalog admission is
-specified.
+  purpose can be expressed solely through an already accepted authored View or
+  Character contract may be rewritten to that existing contract. A fixture that
+  only tests the orphan defaults owner must be removed with its assertions and
+  replaced by the corrected Lang-01.5.1.1 admitted View/Style behavior, never
+  by restoring the old owner.
 
 ## Package matrix coverage snapshot
 
@@ -184,7 +182,7 @@ new and migrated tests below still require the post-integration Cargo gate.
   `InlineFailurePolicy` variant, strict unknown members/kinds, and exact
   round-trips. A-18's orphan `@dialogue.*` reference is superseded. Its
   replacement nominal View/Style decode and source-map evidence exists, while
-  catalog admission remains a Lang-01.5.1.1.1 gap.
+  catalog admission remains implementation work under corrected Lang-01.5.1.1.
 - B-01 through B-20 have direct index/source-map evidence. The added cases
   cover all typed root-map duplicate IDs, nested table/field collisions,
   profile array and Activity-binding duplicates, non-empty applied style
@@ -219,16 +217,16 @@ new and migrated tests below still require the post-integration Cargo gate.
   direct `toml` dependency; the final structured Cargo-graph review and
   cross-crate consumer evidence in F-11 remain to be completed. F-12 is the
   final workspace compile gate. F-07's replacement profile is decoded and
-  resolved, but catalog admission and runtime publication remain blocked on
-  Lang-01.5.1.1.1.
+  resolved; catalog admission and runtime publication remain implementation
+  work under the corrected Lang-01.5.1.1 contract.
 - G-01 through G-03 and G-07 through G-11 have typed candidate/CAS/cache
   ownership and focused state tests. Failure injection for every metadata,
   character, and source-overlay construction stage (G-04 through G-06), plus
   the explicit no-LKG-report assertion in G-12, still needs final LSP evidence
   after the shared call-surface cut lands.
 - H-01, H-02, and H-04 through H-08 are migrated. H-03's obsolete
-  `@dialogue.*` sample is removed; its View/Style replacement waits for
-  catalog-admission ownership from Lang-01.5.1.1.1. H-09 still requires the
+  `@dialogue.*` sample is removed; its View/Style replacement belongs to the
+  corrected Lang-01.5.1.1 admission cut. H-09 still requires the
   remaining LSP inline fixtures; H-10 through H-14 are the final
   format/test/Clippy/workspace, structure-audit, diff, and archive gates.
 - D-01 through D-14's permanent removed-spelling diagnostics are superseded by
@@ -284,8 +282,8 @@ turn an unresolved design topic into an inferred production contract.
    supplies the binary carrier.
 6. Delete LSP assertions whose only subject is the removed
    `dialogue.defaults` manifest field or orphan `@dialogue.*` owner. Record the
-   replacement coverage under Lang-01.5.1.1.1 rather than translating those
-   assertions to an invented View or Style owner.
+  replacement coverage under corrected Lang-01.5.1.1 rather than translating
+  those assertions to an invented View or Style owner.
 7. Complete G-03 through G-12 failure-injection evidence against final
    metadata, Character, and source-overlay candidate construction. Each failure
    must leave the prior accepted environment, generation, world, catalog, and
@@ -312,16 +310,12 @@ The final parser evidence is ordinary current-grammar rejection and absence of
 an executable typed node. No spelling-specific diagnostic, deprecated node,
 alias, or compatibility import is permitted.
 
-### Dialogue defaults removal: typed owner selected, admission stage blocked
+### Dialogue defaults removal: typed owner and admission stage selected
 
-Full source removal waits for
-[Lang-01.5.1.1.1](../reviews/requests/2026-07-20-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation.md).
-Lang-01.5.1.1 selected the nominal View, Style, and inline-failure owners, but
-its decoder ownership and project-loader catalog-admission order conflict with
-the already accepted sole-decoder and layer graph. Do not implement those
-placements speculatively.
-
-When that contract is implementation-ready, the atomic deletion inventory is:
+The corrected Lang-01.5.1.1 redelivery keeps the accepted sole-decoder owner
+and places catalog-aware admission in the compiler after typed View lowering.
+The former Lang-01.5.1.1.1 blocker is resolved. The atomic deletion inventory
+is:
 
 - `DialogueDefaultsItem` and its assignment/path types in
   `arcweft-lang-syntax`, including CST classification, grammar budget, parser,
