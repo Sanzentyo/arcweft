@@ -42,6 +42,7 @@ members = [
     "crates/arcweft-layout",
     "crates/arcweft-need",
     "crates/arcweft-presentation",
+    "crates/arcweft-rich-text-schema",
     "crates/arcweft-view",
     "crates/arcweft-render-text",
     "crates/arcweft-text-layout",
