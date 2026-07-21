@@ -1,5 +1,13 @@
 //! Renderer-independent rich-text tag and built-in effect vocabulary.
 
+mod authoring_schema;
+
+pub use authoring_schema::{
+    RichTextDirectStyle, RichTextDirectStyleProperty, RichTextLayoutProperty,
+    RichTextLayoutSelector, RichTextObjectProperty, RichTextObjectSelector, RichTextStyleProperty,
+    RichTextStyleSelector, RichTextTransformProperty, RichTextTransformSelector,
+};
+
 /// Canonical family of an inferred dot-selector rich-text tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RichTextTagFamily {

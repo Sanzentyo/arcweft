@@ -5,6 +5,7 @@ mod character_dialogue;
 pub mod character_presentation;
 mod inline_failure;
 mod presentation_profile;
+pub mod rich_text;
 
 pub use character_dialogue::{
     CharacterDialogue, CharacterDialogueCleanupValue, CharacterDialogueConfig,

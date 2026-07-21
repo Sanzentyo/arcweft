@@ -827,6 +827,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-ref",
+ "arcweft-rich-text-schema",
  "arcweft-source",
  "arcweft-view",
  "serde",
@@ -1144,6 +1145,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-character",
  "arcweft-id",
+ "arcweft-rich-text-schema",
  "blake3",
  "serde",
  "serde_json",
