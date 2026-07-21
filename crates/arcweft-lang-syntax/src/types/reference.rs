@@ -1,6 +1,6 @@
 //! Reference-type prefix grammar and exact recovery ranges.
 
-use super::{TypeParseError, parse_lifetime_name, parse_type_ref};
+use super::{TypeParseError, parse_lifetime_name, parse_type_ref_value};
 use crate::ast::common::TextRange;
 use crate::cst::{split_leading_ident, split_leading_lifetime};
 use crate::reference::{BorrowKind, ReferenceType, RegionSyntax};
@@ -13,7 +13,7 @@ pub(super) fn parse_reference_type(source: &str) -> Result<ReferenceType, TypePa
         let range = TextRange::new(cursor, cursor + lifetime.len());
         cursor = skip_trivia(source, range.end())?;
         RegionSyntax::Named {
-            name: parse_lifetime_name(lifetime),
+            name: parse_lifetime_name(lifetime, range),
             range,
         }
     } else {
@@ -47,7 +47,8 @@ pub(super) fn parse_reference_type(source: &str) -> Result<ReferenceType, TypePa
         ));
     }
 
-    let mut referent = parse_type_ref(&source[cursor..]).map_err(|error| error.rebased(cursor))?;
+    let mut referent =
+        parse_type_ref_value(&source[cursor..]).map_err(|error| error.rebased(cursor))?;
     referent.rebase_reference_ranges(cursor);
     Ok(ReferenceType::new(
         kind,
@@ -57,6 +58,19 @@ pub(super) fn parse_reference_type(source: &str) -> Result<ReferenceType, TypePa
         mut_range,
         TextRange::new(0, source.len()),
     ))
+}
+
+pub(super) fn reference_referent_start(source: &str) -> Result<usize, TypeParseError> {
+    debug_assert!(source.starts_with('&'));
+    let amp_end = '&'.len_utf8();
+    let mut cursor = skip_trivia(source, amp_end)?;
+    if let Some((lifetime, _)) = split_leading_lifetime(&source[cursor..]) {
+        cursor = skip_trivia(source, cursor + lifetime.len())?;
+    }
+    if matches!(split_leading_ident(&source[cursor..]), Some(("mut", _))) {
+        cursor = skip_trivia(source, cursor + "mut".len())?;
+    }
+    Ok(cursor)
 }
 
 fn skip_trivia(source: &str, mut cursor: usize) -> Result<usize, TypeParseError> {
@@ -113,7 +127,9 @@ mod tests {
             ),
         ];
         for (source, kind, lifetime, mut_range) in fixtures {
-            let TypeRef::Reference(reference) = parse_type_ref(source).expect("reference parses")
+            let TypeRef::Reference(reference) = parse_type_ref(source)
+                .expect("reference parses")
+                .into_value()
             else {
                 panic!("expected reference type");
             };
@@ -134,13 +150,17 @@ mod tests {
     #[test]
     fn trivia_does_not_change_reference_mutability() {
         for source in ["& mut T", "&/* ownership */mut T", "&\nmut T"] {
-            let TypeRef::Reference(reference) = parse_type_ref(source).expect("reference parses")
+            let TypeRef::Reference(reference) = parse_type_ref(source)
+                .expect("reference parses")
+                .into_value()
             else {
                 panic!("expected reference type");
             };
             assert_eq!(reference.kind(), BorrowKind::Mutable);
         }
-        let TypeRef::Reference(reference) = parse_type_ref("&mutable").expect("reference parses")
+        let TypeRef::Reference(reference) = parse_type_ref("&mutable")
+            .expect("reference parses")
+            .into_value()
         else {
             panic!("expected reference type");
         };
@@ -149,7 +169,9 @@ mod tests {
 
     #[test]
     fn nested_reference_ranges_use_original_type_offsets() {
-        let TypeRef::Reference(outer) = parse_type_ref("  &&mut T  ").expect("nested reference")
+        let TypeRef::Reference(outer) = parse_type_ref("  &&mut T  ")
+            .expect("nested reference")
+            .into_value()
         else {
             panic!("expected outer reference");
         };
@@ -166,7 +188,9 @@ mod tests {
 
     #[test]
     fn references_inside_composite_types_keep_parent_offsets() {
-        let TypeRef::Generic { args, .. } = parse_type_ref("Vec<&mut T>").expect("generic") else {
+        let TypeRef::Generic { args, .. } =
+            parse_type_ref("Vec<&mut T>").expect("generic").into_value()
+        else {
             panic!("expected generic");
         };
         let TypeRef::Reference(generic_reference) = &args[0] else {
@@ -175,7 +199,8 @@ mod tests {
         assert_eq!(generic_reference.amp_range(), TextRange::new(4, 5));
         assert_eq!(generic_reference.range(), TextRange::new(4, 10));
 
-        let TypeRef::Tuple(items) = parse_type_ref("(&A, &mut B)").expect("tuple") else {
+        let TypeRef::Tuple(items) = parse_type_ref("(&A, &mut B)").expect("tuple").into_value()
+        else {
             panic!("expected tuple");
         };
         let TypeRef::Reference(first) = &items[0] else {
@@ -191,7 +216,9 @@ mod tests {
             params,
             return_type,
             ..
-        } = parse_type_ref("&A -> &mut B").expect("function type")
+        } = parse_type_ref("&A -> &mut B")
+            .expect("function type")
+            .into_value()
         else {
             panic!("expected function type");
         };
@@ -223,14 +250,19 @@ mod tests {
 
     #[test]
     fn reference_prefix_binds_tighter_than_type_choice() {
-        let TypeRef::Choice(items) = parse_type_ref("&T | U").expect("choice parses") else {
+        let TypeRef::Choice(items) = parse_type_ref("&T | U")
+            .expect("choice parses")
+            .into_value()
+        else {
             panic!("expected outer type choice");
         };
         assert!(
-            matches!(items.as_slice(), [TypeRef::Reference(_), TypeRef::Path(path)] if path == "U")
+            matches!(items.as_slice(), [TypeRef::Reference(_), TypeRef::Path(path)] if path.canonical_string() == "U")
         );
 
-        let TypeRef::Reference(reference) = parse_type_ref("&(T | U)").expect("reference parses")
+        let TypeRef::Reference(reference) = parse_type_ref("&(T | U)")
+            .expect("reference parses")
+            .into_value()
         else {
             panic!("expected outer reference");
         };

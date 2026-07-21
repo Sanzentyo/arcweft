@@ -3,11 +3,11 @@ use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::items::{
     CapabilityFn, ContentDeclBody, EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem,
     EntryItem, EntryKind, EntryRoleKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem,
-    EnumVariant, ExternCapabilityItem, ExternModActivity, ExternModFunction, ExternModItem,
-    ExternModMember, ExternModType, ExternModTypeKind, FunctionInit, FunctionItem,
+    EnumItemInit, EnumVariant, ExternCapabilityItem, ExternModActivity, ExternModFunction,
+    ExternModItem, ExternModMember, ExternModType, ExternModTypeKind, FunctionInit, FunctionItem,
     FunctionParameterSource, FunctionSignatureSource, ImageDeclBody, ImageDeclField, ImplItem,
-    ImplItemInit, ImplMember, StructField, StructItem, TraitItem, TraitMember, TypeAliasItem,
-    ViewDeclBody,
+    ImplItemInit, ImplMember, StructField, StructItem, StructItemInit, TraitItem, TraitMember,
+    TypeAliasItem, TypeAliasItemInit, ViewDeclBody,
 };
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
@@ -16,15 +16,15 @@ use crate::cst::{
     split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::expr::DottedPath;
-use crate::types::{parse_fn_signature, parse_generic_params, parse_where_clause_list};
+use crate::types::{parse_fn_signature_at, parse_generic_params_at, parse_where_clauses_at};
 use std::collections::BTreeMap;
 
 use super::headers::{
     parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
-    parse_extern_mod_head, parse_function_kind_and_signature, parse_name_and_tail,
-    parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
-    parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
-    simple_error, split_function_header_lines, split_supertraits,
+    parse_extern_mod_head, parse_function_kind_and_signature, parse_optional_angle_head,
+    parse_required_decl_entity_ref_without_name_marker, parse_required_entity_ref,
+    parse_required_entity_ref_syntax, parse_visibility_prefix, simple_error,
+    split_function_header_lines,
 };
 use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::view::parse_view_body;
@@ -63,7 +63,10 @@ impl Parser<'_> {
         let (visibility, signature_text) = parse_visibility_prefix(&signature_head);
         let (kind, signature_text) = parse_function_kind_and_signature(signature_text.trim());
         let signature_text = signature_text.to_owned();
-        let signature = match parse_fn_signature(&signature_text) {
+        let head_range = block.head_range.as_ref()?;
+        let head_source = self.source.get(head_range.clone())?;
+        let signature_base = head_range.start + find_fn_token(head_source)?;
+        let signature = match parse_fn_signature_at(&signature_text, signature_base) {
             Ok(signature) => signature,
             Err(error) => {
                 self.push_error(
@@ -77,8 +80,6 @@ impl Parser<'_> {
             }
         };
         let contracts = parse_contract_clauses(&contract_lines);
-        let head_range = block.head_range.as_ref()?;
-        let head_source = self.source.get(head_range.clone())?;
         let signature_source = function_signature_source(
             head_source,
             head_range.start,
@@ -113,8 +114,8 @@ impl Parser<'_> {
     pub(super) fn parse_enum_item(&mut self) -> Option<EnumItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing enum",
@@ -124,44 +125,46 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
+        let body = &block.body;
+        let end = block.end;
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(start_line.end, |range| range.start);
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let declaration = rest.trim_start().strip_prefix("enum")?.trim();
-        let (name, tail) = parse_name_and_tail(declaration);
-        let name = name.unwrap_or_default();
-        let name_start = start_line.start
-            + head.find(declaration).unwrap_or_default()
-            + declaration.find(&name).unwrap_or_default();
-        let (generic_source, trailing) = parse_optional_angle_head(&tail);
-        let declaration_base = start_line.start + head.find(declaration).unwrap_or_default();
-        let generic_base = generic_source
-            .as_deref()
-            .map_or(declaration_base, |generic| {
-                declaration_base + declaration.find(generic).unwrap_or_default()
-            });
-        let generic_params = parse_nominal_generic_params(
-            generic_source.as_deref(),
-            generic_base,
+        let declaration_base = start_line.start + subslice_offset(head, declaration)?;
+        let (name, tail) = split_leading_ident(declaration)?;
+        let name_start = declaration_base + subslice_offset(declaration, name)?;
+        let tail = tail.trim();
+        let (generic_source, trailing) = parse_optional_angle_head(tail);
+        let generic_base = generic_source.map_or(name_start + name.len(), |generic| {
+            declaration_base
+                + subslice_offset(declaration, generic)
+                    .expect("enum generic group remains in the declaration source")
+        });
+        let generic_params =
+            parse_nominal_generic_params(generic_source, generic_base, &mut self.errors)?;
+        let generic_range = generic_source
+            .map(|generic| TextRange::new(generic_base, generic_base + generic.len()));
+        let where_clauses = parse_nominal_where_tail(
+            trailing,
+            declaration_base + subslice_offset(declaration, trailing)?,
+            "enum",
             &mut self.errors,
         )?;
-        if !trailing.is_empty() {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unexpected tokens after enum generic parameters",
-                ["{"],
-                Some(trailing),
-                ["remove the trailing declaration text"],
-            );
-            return None;
-        }
-        Some(EnumItem::new(
+        Some(EnumItem::new(EnumItemInit {
             attrs,
             visibility,
-            name.clone(),
-            TextRange::new(name_start, name_start + name.len()),
+            name: name.to_owned(),
+            name_range: TextRange::new(name_start, name_start + name.len()),
             generic_params,
-            parse_enum_variants(&body),
-            TextRange::new(start_line.start, end),
-        ))
+            generic_range,
+            where_clauses,
+            variants: parse_enum_variants(body, body_base, &mut self.errors),
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     pub(super) fn parse_trait_item(&mut self) -> Option<TraitItem> {
@@ -184,11 +187,27 @@ impl Parser<'_> {
         let rest = rest.trim_start().strip_prefix("trait")?.trim();
         let (name, supertraits) = split_top_level_punctuation_once(rest, ':')
             .map_or((rest, ""), |(name, traits)| (name.trim(), traits.trim()));
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let mut parsed_supertraits = Vec::new();
+        for supertrait in split_top_level_punctuation(supertraits, '+')
+            .into_iter()
+            .map(str::trim)
+            .filter(|supertrait| !supertrait.is_empty())
+        {
+            parsed_supertraits.push(parse_type_ref_or_error(
+                supertrait,
+                head_base + subslice_offset(head, supertrait)?,
+                &mut self.errors,
+            ));
+        }
         Some(TraitItem::new(
             attrs,
             visibility,
             name.to_owned(),
-            split_supertraits(supertraits),
+            parsed_supertraits,
             parse_trait_members(
                 body,
                 block.body_range.as_ref().map_or(0, |range| range.start),
@@ -213,23 +232,67 @@ impl Parser<'_> {
         }
         let head = &block.head;
         let body = &block.body;
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let rest = rest.trim_start().strip_prefix("impl")?.trim();
-        let (generics, rest) = parse_optional_angle_head(rest);
+        let (generic_source, rest) = parse_optional_angle_head(rest);
+        let generic_base = generic_source.map_or(head_base, |generics| {
+            head_base
+                + subslice_offset(head, generics)
+                    .expect("impl generics remain in the declaration source")
+        });
+        let generics =
+            parse_nominal_generic_params(generic_source, generic_base, &mut self.errors)?;
         let (impl_head, where_part) = crate::cst::split_top_level_keyword_once(rest, "where");
         let (maybe_trait, target) = crate::cst::split_top_level_keyword_once(impl_head, "for");
-        let (trait_name, target) = target.map_or((None, impl_head.trim()), |target| {
-            (Some(maybe_trait.trim().to_owned()), target.trim())
+        let (trait_source, target_source) = target.map_or((None, impl_head.trim()), |target| {
+            (Some(maybe_trait.trim()), target.trim())
         });
-        let where_clauses = where_part
-            .map(parse_where_clause_list)
-            .and_then(Result::ok)
-            .unwrap_or_default();
+        let trait_ref = trait_source.map(|source| {
+            parse_type_ref_or_error(
+                source,
+                head_base
+                    + subslice_offset(head, source)
+                        .expect("impl trait remains in the declaration source"),
+                &mut self.errors,
+            )
+        });
+        let target = parse_type_ref_or_error(
+            target_source,
+            head_base
+                + subslice_offset(head, target_source)
+                    .expect("impl target remains in the declaration source"),
+            &mut self.errors,
+        );
+        let where_clauses = if let Some(where_source) = where_part {
+            let where_source = where_source.trim();
+            let where_base = head_base
+                + subslice_offset(head, where_source)
+                    .expect("impl predicate remains in the declaration source");
+            match parse_where_clauses_at(where_source, where_base) {
+                Ok(clauses) => clauses,
+                Err(error) => {
+                    self.push_error(
+                        TextRange::new(where_base, where_base + where_source.len()),
+                        &format!("invalid impl where clause: {error}"),
+                        ["Type: Bound"],
+                        Some(where_source),
+                        ["write typed where predicates"],
+                    );
+                    return None;
+                }
+            }
+        } else {
+            Vec::new()
+        };
         Some(ImplItem::new(ImplItemInit {
             visibility,
             generics,
-            trait_name,
-            target: target.to_owned(),
+            trait_ref,
+            target,
             where_clauses,
             members: parse_impl_members(
                 body,
@@ -244,8 +307,8 @@ impl Parser<'_> {
     pub(super) fn parse_struct_item(&mut self) -> Option<StructItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
+        let block = self.take_brace_block_event();
+        if !block.ok {
             self.push_error(
                 TextRange::new(start_line.start, start_line.end),
                 "unclosed block while parsing struct",
@@ -255,50 +318,52 @@ impl Parser<'_> {
             );
             return None;
         }
+        let head = &block.head;
+        let body = &block.body;
+        let end = block.end;
+        let body_base = block
+            .body_range
+            .as_ref()
+            .map_or(start_line.end, |range| range.start);
         let (visibility, rest) = parse_visibility_prefix(head.trim());
         let declaration = rest.trim_start().strip_prefix("struct")?.trim();
-        let (name, tail) = parse_name_and_tail(declaration);
-        let name = name.unwrap_or_default();
-        let name_start = start_line.start
-            + head.find(declaration).unwrap_or_default()
-            + declaration.find(&name).unwrap_or_default();
-        let (generic_source, trailing) = parse_optional_angle_head(&tail);
-        let declaration_base = start_line.start + head.find(declaration).unwrap_or_default();
-        let generic_base = generic_source
-            .as_deref()
-            .map_or(declaration_base, |generic| {
-                declaration_base + declaration.find(generic).unwrap_or_default()
-            });
-        let generic_params = parse_nominal_generic_params(
-            generic_source.as_deref(),
-            generic_base,
+        let declaration_base = start_line.start + subslice_offset(head, declaration)?;
+        let (name, tail) = split_leading_ident(declaration)?;
+        let name_start = declaration_base + subslice_offset(declaration, name)?;
+        let tail = tail.trim();
+        let (generic_source, trailing) = parse_optional_angle_head(tail);
+        let generic_base = generic_source.map_or(name_start + name.len(), |generic| {
+            declaration_base
+                + subslice_offset(declaration, generic)
+                    .expect("struct generic group remains in the declaration source")
+        });
+        let generic_params =
+            parse_nominal_generic_params(generic_source, generic_base, &mut self.errors)?;
+        let generic_range = generic_source
+            .map(|generic| TextRange::new(generic_base, generic_base + generic.len()));
+        let where_clauses = parse_nominal_where_tail(
+            trailing,
+            declaration_base + subslice_offset(declaration, trailing)?,
+            "struct",
             &mut self.errors,
         )?;
-        if !trailing.is_empty() {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unexpected tokens after struct generic parameters",
-                ["{"],
-                Some(trailing),
-                ["remove the trailing declaration text"],
-            );
-            return None;
-        }
-        Some(StructItem::new(
+        Some(StructItem::new(StructItemInit {
             attrs,
             visibility,
-            name.clone(),
-            TextRange::new(name_start, name_start + name.len()),
+            name: name.to_owned(),
+            name_range: TextRange::new(name_start, name_start + name.len()),
             generic_params,
-            parse_struct_fields(&body, start_line.start, &mut self.errors),
-            TextRange::new(start_line.start, end),
-        ))
+            generic_range,
+            where_clauses,
+            fields: parse_struct_fields(body, body_base, &mut self.errors),
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     pub(super) fn parse_type_alias(&mut self) -> Option<TypeAliasItem> {
         let attrs = self.take_pending_attrs();
         let start_line = self.current().clone();
-        let mut raw = start_line.text().to_owned();
+        let mut where_lines = Vec::new();
         let mut end = start_line.end;
         self.index += 1;
         while self.index < self.events.len() {
@@ -307,34 +372,76 @@ impl Parser<'_> {
             if !trimmed.starts_with("where ") {
                 break;
             }
-            raw.push('\n');
-            raw.push_str(&line.text);
+            where_lines.push((line.text().to_owned(), line.start));
             end = line.end;
             self.index += 1;
         }
 
-        let mut lines = raw.lines().map(str::trim).filter(|line| !line.is_empty());
-        let first = lines.next()?;
+        let first_source = start_line.text();
+        let first = first_source.trim();
+        let first_base = start_line.start + subslice_offset(first_source, first)?;
         let (visibility, rest) = parse_visibility_prefix(first);
         let rest = rest.trim_start().strip_prefix("type")?.trim();
-        let (name, target) = split_top_level_binding(rest)?;
+        let (name_source, target) = split_top_level_binding(rest)?;
+        let name_source = name_source.trim();
+        let (name, tail) = split_leading_ident(name_source)?;
+        let declaration_base = first_base + subslice_offset(first, rest)?;
+        let name_start = declaration_base + subslice_offset(rest, name)?;
+        let tail = tail.trim();
+        let (generic_source, trailing) = parse_optional_angle_head(tail);
+        if !trailing.is_empty() {
+            self.push_error(
+                TextRange::new(first_base, first_base + first.len()),
+                "unexpected tokens after type alias generic parameters",
+                ["="],
+                Some(trailing),
+                ["remove the trailing declaration text"],
+            );
+            return None;
+        }
+        let generic_base = generic_source.map_or(name_start + name.len(), |generic| {
+            declaration_base
+                + subslice_offset(rest, generic)
+                    .expect("alias generic group remains in the declaration source")
+        });
+        let generic_params =
+            parse_nominal_generic_params(generic_source, generic_base, &mut self.errors)?;
+        let generic_range = generic_source
+            .map(|generic| TextRange::new(generic_base, generic_base + generic.len()));
         let target_source = target.trim();
-        let target_base = start_line.start + raw.find(target_source).unwrap_or_default();
-        let target = parse_type_ref_or_error(target_source, target_base, &mut self.errors)?;
-        let where_clauses = lines
-            .filter_map(|line| line.strip_prefix("where "))
-            .map(str::trim)
-            .map(parse_expr_lossy)
-            .collect();
+        let target_base = first_base + subslice_offset(first, target_source)?;
+        let target = parse_type_ref_or_error(target_source, target_base, &mut self.errors);
+        let mut where_clauses = Vec::new();
+        for (line_source, line_base) in where_lines {
+            let trimmed = line_source.trim();
+            let predicates = trimmed.strip_prefix("where ")?.trim();
+            let predicates_base = line_base + subslice_offset(&line_source, predicates)?;
+            match parse_where_clauses_at(predicates, predicates_base) {
+                Ok(mut clauses) => where_clauses.append(&mut clauses),
+                Err(error) => {
+                    self.push_error(
+                        TextRange::new(predicates_base, predicates_base + predicates.len()),
+                        &format!("invalid type alias where clause: {error}"),
+                        ["Type: Bound"],
+                        Some(predicates),
+                        ["write typed where predicates"],
+                    );
+                    return None;
+                }
+            }
+        }
 
-        Some(TypeAliasItem::new(
+        Some(TypeAliasItem::new(TypeAliasItemInit {
             attrs,
             visibility,
-            name.trim().to_owned(),
+            name: name.to_owned(),
+            name_range: TextRange::new(name_start, name_start + name.len()),
+            generic_params,
+            generic_range,
             target,
             where_clauses,
-            TextRange::new(start_line.start, end),
-        ))
+            range: TextRange::new(start_line.start, end),
+        }))
     }
 
     pub(super) fn parse_entity_decl_item(&mut self) -> Option<EntityDeclItem> {
@@ -375,9 +482,17 @@ impl Parser<'_> {
             self.current_module_path.as_deref(),
             &mut self.errors,
         )?;
+        let signature_name = name.as_deref().unwrap_or("view");
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let signature_name_base = head_base + head.find(signature_name).unwrap_or_default();
         let structured_body = parse_structured_entity_decl_body(
             kind,
             &StructuredEntityBodyContext {
+                signature_name,
+                signature_name_base,
                 signature_tail: &signature_tail,
                 body: &body,
                 base: start_line.start,
@@ -413,11 +528,15 @@ impl Parser<'_> {
             self.current_module_path.as_deref(),
             &mut self.errors,
         )?;
+        let signature_name = name.as_deref().unwrap_or("view");
+        let signature_name_base = line.start + line.text.find(signature_name).unwrap_or_default();
         let structured_body = (kind == EntityDeclKind::View)
             .then(|| {
                 parse_structured_entity_decl_body(
                     kind,
                     &StructuredEntityBodyContext {
+                        signature_name,
+                        signature_name_base,
                         signature_tail: &signature_tail,
                         body: "",
                         base: line.start,
@@ -542,13 +661,19 @@ impl Parser<'_> {
     }
 }
 
-pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
+pub(super) fn parse_enum_variants(
+    body: &str,
+    body_base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Vec<EnumVariant> {
     let mut docs = PendingDocLines::default();
-    collect_logical_block_items(body)
+    collect_logical_block_items_with_base(body, body_base)
         .into_iter()
         .enumerate()
         .filter_map(|(line_index, item)| {
-            let line = item.trim();
+            let item_source = item.source.trim();
+            let item_base = item.base + subslice_offset(&item.source, item_source)?;
+            let line = item_source;
             if line.is_empty() {
                 return None;
             }
@@ -557,10 +682,23 @@ pub(super) fn parse_enum_variants(body: &str) -> Vec<EnumVariant> {
             }
             let line = line.trim_end_matches(',').trim();
             let (name, payload) = split_leading_ident(line)?;
+            let name_start = item_base + subslice_offset(item_source, name)?;
+            let payload_source = payload.trim();
+            let payload_range = (!payload_source.is_empty()).then(|| {
+                let start = item_base
+                    + subslice_offset(item_source, payload_source)
+                        .expect("enum payload remains a source subslice");
+                TextRange::new(start, start + payload_source.len())
+            });
+            let payload = payload_range
+                .map(|range| parse_type_ref_or_error(payload_source, range.start(), errors));
             Some(EnumVariant::new(
                 docs.take(),
                 name.to_owned(),
-                (!payload.is_empty()).then(|| payload.to_owned()),
+                payload,
+                TextRange::new(name_start, name_start + name.len()),
+                payload_range,
+                TextRange::new(item_base, item_base + line.len()),
             ))
         })
         .collect()
@@ -595,17 +733,33 @@ pub(super) fn parse_struct_fields(
                 continue;
             };
             let doc = if part_index == 0 { docs.take() } else { None };
+            let part_base = item.base
+                + subslice_offset(&item.source, part)
+                    .expect("struct field fragment remains a source subslice");
+            let line_base = part_base
+                + subslice_offset(part, line).expect("trimmed field remains a source subslice");
+            let name = name.trim();
+            let name_start = line_base
+                + subslice_offset(line, name).expect("field name remains a source subslice");
             let ty_source = ty.trim();
-            let ty_base = item.base + item.source.find(ty_source).unwrap_or_default();
-            if let Some(ty) = parse_type_ref_or_error(ty_source, ty_base, errors) {
-                fields.push(StructField::new(doc, name.trim().to_owned(), ty));
-            }
+            let ty_base = line_base
+                + subslice_offset(line, ty_source).expect("field type remains a source subslice");
+            let ty = parse_type_ref_or_error(ty_source, ty_base, errors);
+            fields.push(StructField::new(
+                doc,
+                name.to_owned(),
+                ty,
+                TextRange::new(name_start, name_start + name.len()),
+                TextRange::new(line_base, line_base + line.len()),
+            ));
         }
     }
     fields
 }
 
 struct StructuredEntityBodyContext<'a> {
+    signature_name: &'a str,
+    signature_name_base: usize,
     signature_tail: &'a str,
     body: &'a str,
     base: usize,
@@ -627,9 +781,14 @@ fn parse_structured_entity_decl_body(
             parse_image_decl_fields(context.body, context.body_base, errors),
         ))),
         EntityDeclKind::View => {
-            let signature_source = format!("fn view{}", context.signature_tail);
+            let signature_source =
+                format!("fn {}{}", context.signature_name, context.signature_tail);
+            let signature_base = context
+                .signature_name_base
+                .checked_sub("fn ".len())
+                .unwrap_or(context.base);
             let signature_error_count = errors.len();
-            let signature = match parse_fn_signature(&signature_source) {
+            let signature = match parse_fn_signature_at(&signature_source, signature_base) {
                 Ok(signature) => Some(signature),
                 Err(error) => {
                     errors.push(simple_error(
@@ -1019,6 +1178,47 @@ fn parse_entry_body(
     items
 }
 
+fn parse_nominal_where_tail(
+    source: &str,
+    base: usize,
+    owner: &str,
+    errors: &mut Vec<ParseError>,
+) -> Option<Vec<crate::types::WhereClause>> {
+    if source.is_empty() {
+        return Some(Vec::new());
+    }
+    let predicates = source
+        .strip_prefix("where")
+        .filter(|_| {
+            source
+                .get("where".len()..)
+                .is_some_and(|tail| tail.chars().next().is_none_or(char::is_whitespace))
+        })
+        .map(str::trim_start);
+    let Some(predicates) = predicates else {
+        errors.push(simple_error(
+            base,
+            source.len(),
+            &format!("unexpected tokens after {owner} generic parameters"),
+            "where Type: Bound",
+        ));
+        return None;
+    };
+    let predicate_base = base + subslice_offset(source, predicates)?;
+    match parse_where_clauses_at(predicates, predicate_base) {
+        Ok(clauses) => Some(clauses),
+        Err(error) => {
+            errors.push(simple_error(
+                predicate_base,
+                predicates.len(),
+                &format!("invalid {owner} where clause: {error}"),
+                "Type: Bound",
+            ));
+            None
+        }
+    }
+}
+
 fn parse_nominal_generic_params(
     source: Option<&str>,
     generic_base: usize,
@@ -1031,7 +1231,7 @@ fn parse_nominal_generic_params(
         .strip_prefix('<')
         .and_then(|value| value.strip_suffix('>'))
         .expect("the angle-head parser returns one complete angle group");
-    match parse_generic_params(contents) {
+    match parse_generic_params_at(contents, generic_base + '<'.len_utf8()) {
         Ok(params) => Some(params),
         Err(error) => {
             errors.push(ParseError::new_with_kind(
@@ -1150,26 +1350,16 @@ fn parse_entry_role_member(
         return Some(EntryItem::Raw(item.to_owned()));
     }
     match role {
-        EntryRoleKind::State => parse_type_ref_or_error(value, value_range.start(), errors).map_or(
-            Some(EntryItem::Raw(item.to_owned())),
-            |ty| {
-                Some(EntryItem::StateType {
-                    ty,
-                    value_range,
-                    range: member_range,
-                })
-            },
-        ),
-        EntryRoleKind::Event => parse_type_ref_or_error(value, value_range.start(), errors).map_or(
-            Some(EntryItem::Raw(item.to_owned())),
-            |ty| {
-                Some(EntryItem::EventType {
-                    ty,
-                    value_range,
-                    range: member_range,
-                })
-            },
-        ),
+        EntryRoleKind::State => Some(EntryItem::StateType {
+            ty: parse_type_ref_or_error(value, value_range.start(), errors),
+            value_range,
+            range: member_range,
+        }),
+        EntryRoleKind::Event => Some(EntryItem::EventType {
+            ty: parse_type_ref_or_error(value, value_range.start(), errors),
+            value_range,
+            range: member_range,
+        }),
         EntryRoleKind::Initializer | EntryRoleKind::Reducer | EntryRoleKind::Controller => {
             let Some(path) = parse_entry_role_path(value, value_range, role, errors) else {
                 return Some(EntryItem::Raw(item.to_owned()));
@@ -1388,9 +1578,11 @@ fn parse_capability_fns(
     starts
         .windows(2)
         .filter_map(|window| {
+            let fragment = &body[window[0]..window[1]];
+            let item = fragment.trim();
             parse_capability_fn(
-                body[window[0]..window[1]].trim(),
-                body_base + window[0],
+                item,
+                body_base + window[0] + subslice_offset(fragment, item).unwrap_or_default(),
                 errors,
             )
         })
@@ -1405,7 +1597,12 @@ fn parse_capability_fn(
     let (signature_source, effects_source) =
         crate::cst::split_top_level_keyword_once(item, "effects");
     let signature_source = signature_source.trim();
-    let signature = match parse_fn_signature(signature_source) {
+    let signature = match parse_fn_signature_at(
+        signature_source,
+        item_base
+            + subslice_offset(item, signature_source)
+                .expect("capability signature remains in the member source"),
+    ) {
         Ok(signature) => signature,
         Err(error) => {
             errors.push(simple_error(
@@ -1437,7 +1634,11 @@ fn parse_extern_mod_members(
 ) -> Vec<ExternModMember> {
     super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .map(|item| parse_extern_mod_member(item.source.trim(), item.base, errors))
+        .map(|item| {
+            let source = item.source.trim();
+            let base = item.base + subslice_offset(&item.source, source).unwrap_or_default();
+            parse_extern_mod_member(source, base, errors)
+        })
         .collect()
 }
 
@@ -1470,7 +1671,13 @@ fn parse_extern_mod_member(
         ));
     }
     if rest.starts_with("fn ") {
-        return parse_fn_signature(rest).map_or_else(
+        return parse_fn_signature_at(
+            rest,
+            item_base
+                + subslice_offset(item, rest)
+                    .expect("external function remains in the member source"),
+        )
+        .map_or_else(
             |error| {
                 errors.push(simple_error(
                     item_base,
@@ -1489,10 +1696,11 @@ fn parse_extern_mod_member(
         && tail.trim().is_empty()
     {
         let ty_source = ty.trim();
-        let ty_base = item_base + item.find(ty_source).unwrap_or_default();
-        if let Some(ty) = parse_type_ref_or_error(ty_source, ty_base, errors) {
-            return ExternModMember::Activity(ExternModActivity::new(visibility, name, ty));
-        }
+        let ty_base = item_base
+            + subslice_offset(item, ty_source)
+                .expect("external activity type remains in the member source");
+        let ty = parse_type_ref_or_error(ty_source, ty_base, errors);
+        return ExternModMember::Activity(ExternModActivity::new(visibility, name, ty));
     }
     ExternModMember::Raw(item.to_owned())
 }
@@ -1505,7 +1713,11 @@ pub(super) fn parse_trait_members(
     super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
         .filter(|item| !item.source.trim().is_empty())
-        .map(|item| parse_trait_member(item.source.trim(), item.base, errors))
+        .map(|item| {
+            let source = item.source.trim();
+            let base = item.base + subslice_offset(&item.source, source).unwrap_or_default();
+            parse_trait_member(source, base, errors)
+        })
         .collect()
 }
 
@@ -1518,10 +1730,12 @@ fn parse_trait_member(
     if let Some(rest) = item.strip_prefix("type ") {
         let (name, value) = split_top_level_binding(rest).map_or((rest, None), |(name, value)| {
             let value_source = value.trim();
-            let value_base = item_base + item.find(value_source).unwrap_or_default();
+            let value_base = item_base
+                + subslice_offset(item, value_source)
+                    .expect("associated type value remains in the member source");
             (
                 name,
-                parse_type_ref_or_error(value_source, value_base, errors),
+                Some(parse_type_ref_or_error(value_source, value_base, errors)),
             )
         });
         let (name, params) = parse_associated_type_head(name.trim());
@@ -1536,7 +1750,12 @@ fn parse_trait_member(
             .map_or((item, None), |(head, body, body_base)| {
                 (head, Some((body, body_base)))
             });
-        return match parse_fn_signature(signature_source) {
+        return match parse_fn_signature_at(
+            signature_source,
+            item_base
+                + subslice_offset(item, signature_source)
+                    .expect("trait signature remains in the member source"),
+        ) {
             Err(error) => {
                 errors.push(simple_error(
                     item_base,
@@ -1576,7 +1795,11 @@ pub(super) fn parse_impl_members(
 ) -> Vec<ImplMember> {
     super::collect_logical_block_items_with_base(body, body_base)
         .into_iter()
-        .map(|item| parse_impl_member(item.source.trim(), item.base, errors))
+        .map(|item| {
+            let source = item.source.trim();
+            let base = item.base + subslice_offset(&item.source, source).unwrap_or_default();
+            parse_impl_member(source, base, errors)
+        })
         .collect()
 }
 
@@ -1589,10 +1812,10 @@ fn parse_impl_member(
     if let Some(rest) = item.strip_prefix("type ") {
         if let Some((name, value)) = split_top_level_binding(rest) {
             let value_source = value.trim();
-            let value_base = item_base + item.find(value_source).unwrap_or_default();
-            let Some(value) = parse_type_ref_or_error(value_source, value_base, errors) else {
-                return ImplMember::Raw(item.to_owned());
-            };
+            let value_base = item_base
+                + subslice_offset(item, value_source)
+                    .expect("associated type value remains in the member source");
+            let value = parse_type_ref_or_error(value_source, value_base, errors);
             let (name, params) = parse_associated_type_head(name);
             return ImplMember::AssociatedType {
                 name,
@@ -1609,7 +1832,11 @@ fn parse_impl_member(
     if let Some((head, body, body_base)) = split_brace_item_with_body_base(item, item_base)
         && head.starts_with("fn ")
     {
-        return match parse_fn_signature(head) {
+        return match parse_fn_signature_at(
+            head,
+            item_base
+                + subslice_offset(item, head).expect("impl signature remains in the member source"),
+        ) {
             Err(error) => {
                 errors.push(simple_error(
                     item_base,
@@ -1632,7 +1859,7 @@ fn parse_impl_member(
         };
     }
     if item.starts_with("fn ") {
-        return parse_fn_signature(item).map_or_else(
+        return parse_fn_signature_at(item, item_base).map_or_else(
             |error| {
                 errors.push(simple_error(
                     item_base,

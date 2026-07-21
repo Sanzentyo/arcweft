@@ -6,7 +6,10 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::SourceSpan;
 
-use super::{CallableDeclarationIdError, ProjectSymbolLimitKind, ProjectSymbolTargetId};
+use super::{
+    CallableDeclarationIdError, ProjectSymbolLimitKind, ProjectSymbolTargetId,
+    nominal::ProjectNominalDeclarationError,
+};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ProjectSymbolLinkError {
@@ -41,6 +44,26 @@ pub enum ProjectSymbolLinkError {
         source: SourceSpan,
         reason: CallableDeclarationIdError,
     },
+    UnknownImport {
+        module: CanonicalModulePath,
+        import: SymbolPath,
+        source: SourceSpan,
+    },
+    CyclicImport {
+        module: CanonicalModulePath,
+        import: SymbolPath,
+        source: SourceSpan,
+        related: Box<[SourceSpan]>,
+    },
+    ReservedTypeName {
+        module: CanonicalModulePath,
+        name: String,
+        source: SourceSpan,
+    },
+    InvalidNominalDeclaration {
+        source: SourceSpan,
+        reason: Box<ProjectNominalDeclarationError>,
+    },
     Limit {
         kind: ProjectSymbolLimitKind,
         observed: u64,
@@ -69,6 +92,10 @@ pub enum ProjectSymbolDiagnosticCode {
     AmbiguousImport,
     InvalidImportPath,
     InvalidDeclaration,
+    UnknownImport,
+    CyclicImport,
+    ReservedTypeName,
+    InvalidNominalDeclaration,
     Limit,
     WorkOverflow,
 }
@@ -106,6 +133,10 @@ impl ProjectSymbolDiagnosticCode {
             Self::AmbiguousImport => "aw.project.symbol.ambiguous_import",
             Self::InvalidImportPath => "aw.project.symbol.invalid_import_path",
             Self::InvalidDeclaration => "aw.project.symbol.invalid_declaration",
+            Self::UnknownImport => "aw.project.symbol.unknown_import",
+            Self::CyclicImport => "aw.project.symbol.cyclic_import",
+            Self::ReservedTypeName => "aw.project.symbol.reserved_type_name",
+            Self::InvalidNominalDeclaration => "aw.project.symbol.invalid_nominal_declaration",
             Self::Limit => "aw.project.symbol.limit",
             Self::WorkOverflow => "aw.project.symbol.work_overflow",
         }
@@ -121,6 +152,12 @@ impl ProjectSymbolLinkError {
             Self::AmbiguousImport { .. } => ProjectSymbolDiagnosticCode::AmbiguousImport,
             Self::InvalidImportPath { .. } => ProjectSymbolDiagnosticCode::InvalidImportPath,
             Self::InvalidDeclaration { .. } => ProjectSymbolDiagnosticCode::InvalidDeclaration,
+            Self::UnknownImport { .. } => ProjectSymbolDiagnosticCode::UnknownImport,
+            Self::CyclicImport { .. } => ProjectSymbolDiagnosticCode::CyclicImport,
+            Self::ReservedTypeName { .. } => ProjectSymbolDiagnosticCode::ReservedTypeName,
+            Self::InvalidNominalDeclaration { .. } => {
+                ProjectSymbolDiagnosticCode::InvalidNominalDeclaration
+            }
             Self::Limit { .. } => ProjectSymbolDiagnosticCode::Limit,
             Self::WorkOverflow { .. } => ProjectSymbolDiagnosticCode::WorkOverflow,
         }
@@ -133,7 +170,11 @@ impl ProjectSymbolLinkError {
             | Self::VisibilityEscalation { source, .. }
             | Self::AmbiguousImport { source, .. }
             | Self::InvalidImportPath { source, .. }
-            | Self::InvalidDeclaration { source, .. } => Some(source),
+            | Self::InvalidDeclaration { source, .. }
+            | Self::UnknownImport { source, .. }
+            | Self::CyclicImport { source, .. }
+            | Self::ReservedTypeName { source, .. }
+            | Self::InvalidNominalDeclaration { source, .. } => Some(source),
             Self::Limit { source, .. } | Self::WorkOverflow { source, .. } => source.as_ref(),
         }
     }
@@ -168,6 +209,27 @@ impl fmt::Display for ProjectSymbolLinkError {
             }
             Self::InvalidDeclaration { .. } => {
                 formatter.write_str("callable declaration identity is invalid")
+            }
+            Self::UnknownImport { module, import, .. } => {
+                write!(
+                    formatter,
+                    "module `{module}` cannot resolve import `{import}`"
+                )
+            }
+            Self::CyclicImport { module, import, .. } => {
+                write!(
+                    formatter,
+                    "module `{module}` has an unanchored import cycle through `{import}`"
+                )
+            }
+            Self::ReservedTypeName { module, name, .. } => {
+                write!(
+                    formatter,
+                    "module `{module}` declares reserved type name `{name}`"
+                )
+            }
+            Self::InvalidNominalDeclaration { .. } => {
+                formatter.write_str("nominal declaration is invalid")
             }
             Self::Limit { .. } => formatter.write_str("project symbol limit exceeded"),
             Self::WorkOverflow { .. } => {

@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::model::HirFunction;
 
-use super::qualified_name;
+use super::{nominal::ProjectNominalDeclaration, qualified_name};
 
 /// Canonical package component of a source declaration identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -137,6 +137,7 @@ pub struct ExternalSymbol {
 pub enum ProjectDeclarationId {
     Callable(CallableDeclarationId),
     External(ExternalDeclarationId),
+    Nominal(super::nominal::ProjectNominalDeclarationId),
 }
 
 /// Unified project declaration.
@@ -144,6 +145,7 @@ pub enum ProjectDeclarationId {
 pub enum ProjectSymbol {
     Callable(CallableSymbol),
     External(ExternalSymbol),
+    Nominal(Box<ProjectNominalDeclaration>),
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

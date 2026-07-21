@@ -1968,7 +1968,9 @@ fn lower_strict_block_statement(
                 .simple_binding_name()
                 .ok_or_else(|| format!("unsupported runtime let pattern `{pattern:?}`"))?
                 .to_owned();
-            let expr = if ty.as_ref().is_some_and(single_param_function_type)
+            let expr = if ty
+                .as_ref()
+                .is_some_and(|ty| single_param_function_type(ty.value()))
                 && expr_contains_partial_placeholder(expr)
             {
                 lower_partial_placeholder_function_expr(expr, helpers)?

@@ -757,10 +757,10 @@ fn record_fn_signature(
             }
             GenericParam::Type(param) => {
                 put_str(bytes, "type")?;
-                put_str(bytes, param.name())?;
+                put_str(bytes, param.name().as_str())?;
                 put_len(bytes, "type bounds", param.bounds().len())?;
                 for bound in param.bounds() {
-                    record_type_ref(bound, bytes)?;
+                    record_type_ref(bound.value(), bytes)?;
                 }
             }
         }
@@ -777,24 +777,31 @@ fn record_fn_signature(
                     FnParamKind::Rest => "rest",
                 },
             )?;
-            record_type_ref(param.ty(), bytes)?;
+            if let Some(ty) = param.ty() {
+                record_type_ref(ty.value(), bytes)?;
+            } else {
+                // Receivers now omit a redundant authored `Self` annotation.
+                // Keep their pre-migration persistent representation unchanged.
+                put_str(bytes, "path")?;
+                put_str(bytes, "Self")?;
+            }
             put_bool(bytes, param.default().is_some());
         }
     }
 
     if let Some(return_type) = signature.return_type() {
         put_bool(bytes, true);
-        record_type_ref(return_type, bytes)?;
+        record_type_ref(return_type.value(), bytes)?;
     } else {
         put_bool(bytes, false);
     }
 
     put_len(bytes, "where clauses", signature.where_clauses().len())?;
     for clause in signature.where_clauses() {
-        record_type_ref(clause.subject(), bytes)?;
+        record_type_ref(clause.subject().value(), bytes)?;
         put_len(bytes, "where bounds", clause.bounds().len())?;
         for bound in clause.bounds() {
-            record_type_ref(bound, bytes)?;
+            record_type_ref(bound.value(), bytes)?;
         }
     }
     Ok(())
@@ -809,7 +816,7 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
         }
         TypeRef::Path(path) => {
             put_str(bytes, "path")?;
-            put_str(bytes, path)?;
+            put_str(bytes, &path.canonical_string())?;
         }
         TypeRef::Tuple(items) => {
             put_str(bytes, "tuple")?;
@@ -849,7 +856,7 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
         }
         TypeRef::Generic { base, args } => {
             put_str(bytes, "generic")?;
-            put_str(bytes, base)?;
+            put_str(bytes, &base.canonical_string())?;
             put_len(bytes, "generic args", args.len())?;
             for arg in args {
                 record_type_ref(arg, bytes)?;
@@ -857,25 +864,21 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
         }
         TypeRef::TraitBound(bound) => {
             put_str(bytes, "trait-bound")?;
-            put_str(bytes, bound.path())?;
+            put_str(bytes, &bound.path().canonical_string())?;
             put_len(bytes, "trait bound args", bound.args().len())?;
             for arg in bound.args() {
                 record_type_ref(arg, bytes)?;
             }
-            put_len(
-                bytes,
-                "associated type bindings",
-                bound.assoc_bindings().len(),
-            )?;
-            for binding in bound.assoc_bindings() {
-                put_str(bytes, binding.name())?;
+            put_len(bytes, "associated type bindings", bound.associated().len())?;
+            for binding in bound.associated() {
+                put_str(bytes, binding.name().as_str())?;
                 record_type_ref(binding.value(), bytes)?;
             }
         }
         TypeRef::Projection { subject, assoc } => {
             put_str(bytes, "projection")?;
             record_type_ref(subject, bytes)?;
-            put_str(bytes, assoc)?;
+            put_str(bytes, assoc.as_str())?;
         }
         TypeRef::Reference(reference) => {
             put_str(bytes, "ref")?;
@@ -892,6 +895,10 @@ fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFa
         TypeRef::Slice(inner) => {
             put_str(bytes, "slice")?;
             record_type_ref(inner, bytes)?;
+        }
+        TypeRef::Recovery(id) => {
+            put_str(bytes, "recovery")?;
+            put_u32(bytes, id.index());
         }
     }
     Ok(())

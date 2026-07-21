@@ -8,7 +8,7 @@ use arcweft_lang_syntax::{
         module_path::CanonicalModulePath,
     },
     expr::{DottedPath, Expr},
-    types::TypeRef,
+    types::AuthoredTypeRef,
 };
 
 /// HIR-owned entry declaration.
@@ -30,7 +30,7 @@ pub struct HirEntryDecl {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirEntryItem {
     StateType {
-        ty: TypeRef,
+        ty: AuthoredTypeRef,
         value_range: TextRange,
         range: TextRange,
     },
@@ -40,7 +40,7 @@ pub enum HirEntryItem {
         range: TextRange,
     },
     EventType {
-        ty: TypeRef,
+        ty: AuthoredTypeRef,
         value_range: TextRange,
         range: TextRange,
     },

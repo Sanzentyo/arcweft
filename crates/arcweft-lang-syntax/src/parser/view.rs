@@ -14,7 +14,7 @@ use crate::cst::{
     split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
 };
 use crate::expr::{CallArg, Expr, Literal};
-use crate::pattern::parse_pattern;
+use crate::pattern::parse_pattern_at;
 
 use super::headers::{normalize_decl_id_ref, parse_required_id_ref, simple_error};
 use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
@@ -458,7 +458,11 @@ fn parse_view_let_line(
         return ViewExpr::Raw(line.to_owned());
     };
     ViewExpr::Let(ViewLet::new(
-        parse_pattern(pattern.trim()),
+        parse_pattern_at(
+            pattern.trim(),
+            source_map.mapped_location(line).start()
+                + (pattern.trim().as_ptr() as usize - line.as_ptr() as usize),
+        ),
         source_map.parse_owned_expr(value.trim(), errors),
         source_map.mapped_location(line),
     ))
@@ -572,7 +576,11 @@ fn parse_view_await_branch(
     };
     Some(ViewAwaitBranch::new(
         kind,
-        parse_pattern(pattern),
+        parse_pattern_at(
+            pattern,
+            source_map.mapped_location(line).start()
+                + (pattern.as_ptr() as usize - line.as_ptr() as usize),
+        ),
         parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
         source_map.mapped_location(line),
     ))
@@ -706,7 +714,11 @@ fn parse_view_match_arm(
     };
     let (pattern, guard) = split_top_level_keyword_once(head, "when");
     Some(ViewMatchArm::new(
-        parse_pattern(pattern.trim()),
+        parse_pattern_at(
+            pattern.trim(),
+            source_map.mapped_location(line).start()
+                + (pattern.trim().as_ptr() as usize - line.as_ptr() as usize),
+        ),
         guard.map(|guard| source_map.parse_owned_expr(guard.trim(), errors)),
         parse_view_exprs(&[value.trim()], base, module_path, source_map, errors),
         source_map.mapped_location(line),
@@ -772,7 +784,11 @@ fn parse_view_for_block(
     let body = parse_view_exprs(&lines[1..end], base, module_path, source_map, errors);
     (
         ViewExpr::ForEach(ViewForEach::new(
-            parse_pattern(pattern.trim()),
+            parse_pattern_at(
+                pattern.trim(),
+                source_map.mapped_location(lines[0]).start()
+                    + (pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+            ),
             source_map.parse_owned_expr(source.trim(), errors),
             key,
             Box::new(body),

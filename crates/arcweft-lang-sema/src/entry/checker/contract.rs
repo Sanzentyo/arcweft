@@ -204,7 +204,10 @@ impl<'a> EntryContractBuilder<'a> {
         let parameter_type = self.canonical_type_ref(
             module_path,
             module,
-            parameter.ty(),
+            parameter
+                .ty()
+                .ok_or_else(|| "initial flow State parameter must declare a type".to_owned())?
+                .value(),
             &generic_names,
             &mut BTreeSet::new(),
         )?;
@@ -231,7 +234,7 @@ impl<'a> EntryContractBuilder<'a> {
                 Some(result) => self.canonical_type_ref(
                     module_path,
                     module,
-                    result,
+                    result.value(),
                     &generic_names,
                     &mut BTreeSet::new(),
                 )?,
@@ -269,7 +272,7 @@ impl<'a> EntryContractBuilder<'a> {
             .generic_params()
             .iter()
             .filter_map(GenericParam::as_type)
-            .map(str::to_owned)
+            .map(|name| name.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         let mut groups = Vec::with_capacity(schema.groups().len());
         for (schema_group, source_group) in schema.groups().iter().zip(surface.param_groups()) {
@@ -293,7 +296,12 @@ impl<'a> EntryContractBuilder<'a> {
                         ty: self.canonical_type_ref(
                             module_path,
                             module,
-                            source_parameter.ty(),
+                            source_parameter
+                                .ty()
+                                .ok_or_else(|| {
+                                    "entry role parameter must declare a type".to_owned()
+                                })?
+                                .value(),
                             &generic_names,
                             &mut BTreeSet::new(),
                         )?,
@@ -313,7 +321,7 @@ impl<'a> EntryContractBuilder<'a> {
                     lifetime.name().to_owned(),
                 )),
                 GenericParam::Type(parameter) => Ok(CanonicalGenericParameter::Type {
-                    name: parameter.name().to_owned(),
+                    name: parameter.name().as_str().to_owned(),
                     bounds: parameter
                         .bounds()
                         .iter()
@@ -321,7 +329,7 @@ impl<'a> EntryContractBuilder<'a> {
                             self.canonical_type_ref(
                                 module_path,
                                 module,
-                                bound,
+                                bound.value(),
                                 &generic_names,
                                 &mut BTreeSet::new(),
                             )
@@ -338,7 +346,7 @@ impl<'a> EntryContractBuilder<'a> {
                     subject: self.canonical_type_ref(
                         module_path,
                         module,
-                        predicate.subject(),
+                        predicate.subject().value(),
                         &generic_names,
                         &mut BTreeSet::new(),
                     )?,
@@ -349,7 +357,7 @@ impl<'a> EntryContractBuilder<'a> {
                             self.canonical_type_ref(
                                 module_path,
                                 module,
-                                bound,
+                                bound.value(),
                                 &generic_names,
                                 &mut BTreeSet::new(),
                             )
@@ -362,7 +370,7 @@ impl<'a> EntryContractBuilder<'a> {
             Some(result) => self.canonical_type_ref(
                 module_path,
                 module,
-                result,
+                result.value(),
                 &generic_names,
                 &mut BTreeSet::new(),
             )?,
@@ -457,15 +465,24 @@ impl<'a> EntryContractBuilder<'a> {
             TypeRef::ConstInt(value) => u64::try_from(*value)
                 .map(CanonicalType::ConstInt)
                 .map_err(|_| "const type argument does not fit canonical u64".to_owned()),
-            TypeRef::Path(path) if generic_names.contains(path) => {
-                Ok(CanonicalType::Named(path.clone()))
+            TypeRef::Path(path)
+                if crate::types::direct_type_name(path)
+                    .is_some_and(|name| generic_names.contains(name)) =>
+            {
+                Ok(CanonicalType::Named(
+                    crate::types::direct_type_name(path)
+                        .expect("guard requires a direct generic name")
+                        .to_owned(),
+                ))
             }
             TypeRef::Path(path) => {
-                if let Ok(record) = self.nominals.resolve_nominal(current, module, path) {
+                let path_label = path.canonical_string();
+                if let Ok(record) = self.nominals.resolve_nominal(current, module, &path_label) {
                     return Ok(CanonicalType::Nominal(record.key.clone()));
                 }
-                if let Some((alias_module, alias_source, target, alias_name)) =
-                    self.nominals.resolve_alias_target(current, module, path)?
+                if let Some((alias_module, alias_source, target, alias_name)) = self
+                    .nominals
+                    .resolve_alias_target(current, module, &path_label)?
                 {
                     let key = (alias_module.clone(), alias_name.clone());
                     if !alias_stack.insert(key.clone()) {
@@ -474,17 +491,19 @@ impl<'a> EntryContractBuilder<'a> {
                     let canonical = self.canonical_type_ref(
                         alias_module,
                         alias_source,
-                        target,
+                        target.value(),
                         generic_names,
                         alias_stack,
                     );
                     alias_stack.remove(&key);
                     return canonical;
                 }
-                if let Some(atomic) = canonical_atomic(path) {
+                if let Some(atomic) =
+                    crate::types::direct_type_name(path).and_then(canonical_atomic)
+                {
                     return Ok(CanonicalType::Atomic(atomic));
                 }
-                Err(format!("unresolved canonical type `{path}`"))
+                Err(format!("unresolved canonical type `{path_label}`"))
             }
             TypeRef::Tuple(items) => items
                 .iter()
@@ -542,18 +561,25 @@ impl<'a> EntryContractBuilder<'a> {
                 Ok(CanonicalType::Choice(alternatives))
             }
             TypeRef::Generic { base, args } => {
-                if self.nominals.resolve_nominal(current, module, base).is_ok()
+                let base_label = base.canonical_string();
+                if self
+                    .nominals
+                    .resolve_nominal(current, module, &base_label)
+                    .is_ok()
                     || self
                         .nominals
-                        .resolve_alias_target(current, module, base)?
+                        .resolve_alias_target(current, module, &base_label)?
                         .is_some()
                 {
                     return Err(format!(
-                        "project type `{base}` cannot be interpreted as a prelude constructor"
+                        "project type `{base_label}` cannot be interpreted as a prelude constructor"
                     ));
                 }
-                let constructor = canonical_constructor(base)
-                    .ok_or_else(|| format!("unresolved canonical type constructor `{base}`"))?;
+                let constructor = crate::types::direct_type_name(base)
+                    .and_then(canonical_constructor)
+                    .ok_or_else(|| {
+                        format!("unresolved canonical type constructor `{base_label}`")
+                    })?;
                 Ok(CanonicalType::Applied {
                     constructor,
                     args: args
@@ -604,6 +630,10 @@ impl<'a> EntryContractBuilder<'a> {
                     alias_stack,
                 )?],
             }),
+            TypeRef::Recovery(id) => Err(format!(
+                "recovered type node {} is not an accepted entry contract",
+                id.index()
+            )),
         }
     }
 }

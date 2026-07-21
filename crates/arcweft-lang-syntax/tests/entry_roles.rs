@@ -85,16 +85,16 @@ fn stateful_entry_roles_are_typed_and_keep_value_and_member_ranges() {
     else {
         panic!("expected state role");
     };
-    assert_eq!(ty, &TypeRef::Path("GameState".to_owned()));
+    assert!(matches!(ty.value(), TypeRef::Path(path) if path.canonical_string() == "GameState"));
     assert_eq!(value_range.as_range(), source_range(source, "GameState"));
     assert_eq!(range.as_range(), source_range(source, "state = GameState"));
     assert_eq!(target.body(), "flow.opening");
     assert!(matches!(
         event,
         EntryItem::EventType {
-            ty: TypeRef::Path(name),
+            ty,
             ..
-        } if name == "GameEvent"
+        } if matches!(ty.value(), TypeRef::Path(name) if name.canonical_string() == "GameEvent")
     ));
     assert!(matches!(
         initializer,

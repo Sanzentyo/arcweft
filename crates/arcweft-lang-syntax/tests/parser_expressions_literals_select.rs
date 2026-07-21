@@ -98,11 +98,13 @@ fn select_and_index_are_structured_for_later_typechecking() {
     assert!(matches!(index.as_ref(), Expr::EntityRef(_)));
 
     assert!(matches!(
-        parse_type_ref("!").expect("never type parses"),
+        parse_type_ref("!").expect("never type parses").value(),
         TypeRef::Never
     ));
     assert!(matches!(
-        parse_type_ref("Never").expect("canonical never type parses"),
+        parse_type_ref("Never")
+            .expect("canonical never type parses")
+            .value(),
         TypeRef::Never
     ));
 }
@@ -110,9 +112,9 @@ fn select_and_index_are_structured_for_later_typechecking() {
 #[test]
 fn array_types_and_repeat_literals_are_structured() {
     assert!(matches!(
-        parse_type_ref("Array<i32, 3>").expect("array type parses"),
+        parse_type_ref("Array<i32, 3>").expect("array type parses").value(),
         TypeRef::Generic { base, args }
-            if base == "Array"
+            if base.canonical_string() == "Array"
                 && args.len() == 2
                 && matches!(&args[1], TypeRef::ConstInt(3))
     ));

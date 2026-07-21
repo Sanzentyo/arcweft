@@ -199,7 +199,7 @@ fn runtime_function_value_context<'helpers, 'functions>(
         .iter()
         .flat_map(|group| group.params().iter())
         .filter_map(|param| {
-            let signature = function_local_signature_from_type(param.ty())?;
+            let signature = function_local_signature_from_type(param.ty()?.value())?;
             let name = binding_pattern_name(param.pattern())?;
             Some((name, signature))
         })
@@ -691,8 +691,14 @@ fn runtime_function_value_expr_function_signature(
             params,
             return_type,
             body,
-        } => runtime_function_value_closure_supported(params, body, context)
-            .then(|| function_local_signature_from_closure(params, return_type.as_ref())),
+        } => runtime_function_value_closure_supported(params, body, context).then(|| {
+            function_local_signature_from_closure(
+                params,
+                return_type
+                    .as_ref()
+                    .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+            )
+        }),
         Expr::Call(call)
             if runtime_function_value_local_function_call_supported(
                 call.callee(),

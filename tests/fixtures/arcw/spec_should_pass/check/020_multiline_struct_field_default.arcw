@@ -1,8 +1,10 @@
+pub struct Config {
+    text_speed: f32,
+    volume: f32,
+}
+
 pub struct GameState {
-    pub config: Config = Config {
-        text_speed = 1.0f32,
-        volume = 0.8f32,
-    }
+    config: Config,
 }
 
 flow @flow.main main { return "done" }

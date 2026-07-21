@@ -20,13 +20,10 @@ fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {
 #[test]
 fn nominal_type_families_emit_typed_fields_payloads_targets_and_constraints() {
     let source = r"#[derive(Clone, Debug, Format, Serialize, Eq)]
-pub enum GameEvent {
+pub enum GameEvent<T> where T: Format {
     StartGame,
-    ChoiceSelected { id: Ref<ChoiceOption> },
-    Detailed {
-        id: Ref<ChoiceOption>,
-        label: TextKey,
-    },
+    ChoiceSelected Ref<ChoiceOption>,
+    Detailed Result<T, ParseError>,
 }
 
 pub struct SettingsInput {
@@ -34,9 +31,9 @@ pub struct SettingsInput {
     master_volume: f32,
 }
 
-pub type PlayerName = String
-where len(self) >= 1
-where len(self) <= 16
+pub type PlayerName<T> = Result<T, ParseError>
+where T: Format
+where ParseError: Error
 ";
     let built = parse_shadow_document(&document(source)).unwrap();
     let entries = built.index().entries();
@@ -44,9 +41,9 @@ where len(self) <= 16
     assert_eq!(kind_count(entries, SyntaxKind::EnumItem), 1);
     assert_eq!(kind_count(entries, SyntaxKind::StructItem), 1);
     assert_eq!(kind_count(entries, SyntaxKind::TypeAliasItem), 1);
-    assert_eq!(kind_count(entries, SyntaxKind::RecordField), 8);
-    assert_eq!(kind_count(entries, SyntaxKind::WherePredicate), 2);
-    assert_eq!(kind_count(entries, SyntaxKind::GenericApplicationType), 2);
+    assert_eq!(kind_count(entries, SyntaxKind::RecordField), 5);
+    assert_eq!(kind_count(entries, SyntaxKind::WherePredicate), 3);
+    assert_eq!(kind_count(entries, SyntaxKind::GenericApplicationType), 3);
     assert!(
         entries
             .iter()
@@ -99,7 +96,7 @@ fn malformed_fields_and_missing_alias_target_recover_before_following_items() {
 fn missing_enum_payload_and_body_closes_do_not_consume_the_next_declaration() {
     let source = concat!(
         "enum Broken {\n",
-        "    Detailed { id: String\n",
+        "    Detailed Result<String\n",
         "proof next() = ()\n",
     );
     let next = source.find("proof next").unwrap();

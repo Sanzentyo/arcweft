@@ -1,5 +1,5 @@
 use crate::expr::Expr;
-use crate::types::TypeRef;
+use crate::types::AuthoredTypeRef;
 
 use super::ids::EntityRef;
 
@@ -32,7 +32,7 @@ pub enum Pattern {
     },
     Typed {
         name: String,
-        ty: TypeRef,
+        ty: AuthoredTypeRef,
     },
     Raw(String),
 }

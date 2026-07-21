@@ -18,6 +18,7 @@ use crate::cst::{
     ArcweftPunctuation, CstPunctuationScan, split_top_level_arcweft_punctuation_once,
     strip_suffix_arcweft_punctuation,
 };
+use crate::pattern::parse_pattern_at;
 use std::ops::Range;
 
 impl Parser<'_> {
@@ -44,7 +45,10 @@ impl Parser<'_> {
         }
 
         Some(Stmt::LetLoop {
-            pattern: parse_pattern(pattern.trim()),
+            pattern: parse_pattern_at(
+                pattern.trim(),
+                start_line.start + (pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+            ),
             block: LoopBlock::new(
                 label,
                 self.parse_flow_body_from_block(&block, start_line.start + head.len()),
@@ -79,7 +83,14 @@ impl Parser<'_> {
         let (pattern, if_head) = split_top_level_binding(rest)?;
         let condition = if_head.trim().strip_prefix("if")?.trim();
 
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let (pattern, ty) = parse_binding_pattern(
+            pattern,
+            head_base + (pattern.as_ptr() as usize - head.as_ptr() as usize),
+        );
         let if_head = if_head.trim();
         let (expr_source, expr_range) = braced_expr_source(
             &block,
@@ -127,7 +138,14 @@ impl Parser<'_> {
         let (binding_pattern, value_and_guard) = split_top_level_binding(if_let_head)?;
         let (value, guard) = split_if_let_guard(value_and_guard);
 
-        let (target_pattern, ty) = parse_binding_pattern(target_pattern);
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let (target_pattern, ty) = parse_binding_pattern(
+            target_pattern,
+            head_base + (target_pattern.as_ptr() as usize - head.as_ptr() as usize),
+        );
         let if_head = if_head.trim();
         let (expr_source, expr_range) = braced_expr_source(
             &block,
@@ -138,7 +156,10 @@ impl Parser<'_> {
             pattern: target_pattern,
             ty,
             expr: crate::expr::Expr::IfLet {
-                pattern: Box::new(parse_pattern(binding_pattern.trim())),
+                pattern: Box::new(parse_pattern_at(
+                    binding_pattern.trim(),
+                    head_base + (binding_pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+                )),
                 expr: Box::new(parse_expr_lossy(value.trim())),
                 guard: guard.map(|guard| Box::new(parse_expr_lossy(guard.trim()))),
                 then_branch: Box::new(parse_block_expr(&then_body)),
@@ -168,7 +189,14 @@ impl Parser<'_> {
         let match_head = match_head.trim();
         let scrutinee = match_head.strip_prefix("match")?.trim();
 
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let (pattern, ty) = parse_binding_pattern(
+            pattern,
+            head_base + (pattern.as_ptr() as usize - head.as_ptr() as usize),
+        );
         let (expr_source, expr_range) = braced_expr_source(
             &block,
             binding_value_start_in_line(&start_line.text, start_line.start, match_head)?,
@@ -243,7 +271,10 @@ impl Parser<'_> {
         let rest = head.trim().strip_prefix("let")?.trim();
         let (pattern, rhs) = split_top_level_binding(rest)?;
         let expr = rhs.trim().strip_suffix("else")?.trim();
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let (pattern, ty) = parse_binding_pattern(
+            pattern,
+            head_base + (pattern.as_ptr() as usize - head.as_ptr() as usize),
+        );
         Some(Stmt::LetElse {
             pattern,
             ty,
@@ -343,7 +374,10 @@ impl Parser<'_> {
                 )
             };
         Some(IfLetBlock::new(
-            parse_pattern(pattern.trim()),
+            parse_pattern_at(
+                pattern.trim(),
+                head_base + (pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+            ),
             authored_expr_in_source(head, expr, head_base),
             guard.map(|guard| authored_expr_in_source(head, guard, head_base)),
             body_items,
@@ -470,7 +504,10 @@ impl Parser<'_> {
             .take_optional_statement_else_items()
             .unwrap_or_default();
         Some(IfLetBlock::new(
-            parse_pattern(pattern.trim()),
+            parse_pattern_at(
+                pattern.trim(),
+                head_base + (pattern.trim().as_ptr() as usize - block.head.as_ptr() as usize),
+            ),
             authored_expr_in_source(&block.head, expr, head_base),
             guard.map(|guard| authored_expr_in_source(&block.head, guard, head_base)),
             self.parse_flow_body_from_block(&block, body_base),
@@ -554,7 +591,10 @@ impl Parser<'_> {
         let body_items = self.parse_flow_body_from_block(&block, head_base + head.len());
         let source = source.trim();
         Some(ForBlock::new(
-            parse_pattern(pattern.trim()),
+            parse_pattern_at(
+                pattern.trim(),
+                head_base + (pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+            ),
             authored_expr_in_source(head, source, head_base),
             body_items,
             TextRange::new(start_line.start, block.end),
@@ -605,7 +645,10 @@ impl Parser<'_> {
         let expr = expr.trim();
         let guard = guard.map(str::trim);
         Some(WhileLetBlock::new(
-            parse_pattern(pattern.trim()),
+            parse_pattern_at(
+                pattern.trim(),
+                head_base + (pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+            ),
             authored_expr_in_source(head, expr, head_base),
             guard.map(|guard| authored_expr_in_source(head, guard, head_base)),
             self.parse_flow_body_from_block(&block, head_base + head.len()),
@@ -748,7 +791,10 @@ fn parse_match_arms(body: &str, body_base: usize, errors: &mut Vec<ParseError>) 
                 parsed
             };
             Some(MatchArm::new(
-                parse_pattern(pattern.trim()),
+                parse_pattern_at(
+                    pattern.trim(),
+                    line.base + (pattern.trim().as_ptr() as usize - line_source.as_ptr() as usize),
+                ),
                 guard.map(|guard| authored_expr_in_source(head, guard.trim(), line.base)),
                 parsed,
             ))

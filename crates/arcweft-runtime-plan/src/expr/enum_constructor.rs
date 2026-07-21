@@ -71,19 +71,19 @@ fn expected_enum_record_constructor_path(
     let (path, name) = constructor_path(constructor)?;
     if path
         .as_deref()
-        .is_some_and(|path| !same_type_path(path, expected))
+        .is_some_and(|path| !same_type_path(path, &expected))
     {
         return None;
     }
-    if path.is_none() && same_type_path(&name, expected) {
+    if path.is_none() && same_type_path(&name, &expected) {
         return None;
     }
     Some((path, name))
 }
 
-fn expected_type_path(ty: &TypeRef) -> Option<&str> {
+fn expected_type_path(ty: &TypeRef) -> Option<String> {
     match ty {
-        TypeRef::Path(path) => Some(path.as_str()),
+        TypeRef::Path(path) => Some(path.canonical_string()),
         TypeRef::Reference(reference) => expected_type_path(reference.referent()),
         _ => None,
     }

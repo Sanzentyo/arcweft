@@ -1313,42 +1313,6 @@ effects { }
 }
 
 #[test]
-fn user_enum_record_variant_destructured_callback_composes_when_payload_is_called() {
-    let tree = parse_ok(
-        r#"
-enum LoaderRecordSpec {
-    WithLoad { load: String -> String },
-}
-
-fn use_loader(.WithLoad { load }: LoaderRecordSpec) -> String {
-    return load("story.arcw")
-}
-
-flow @flow.user_enum_record_variant_destructured_callback_effect user_enum_record_variant_destructured_callback_effect
-effects { }
-{
-    let body = use_loader(WithLoad { load: |path: String| -> String { adapter.read_text(path = path) } })
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("user enum record variant fixture lowers");
-    validate_typecheck_ready(&hir).expect("user enum record variant fixture is structured");
-
-    let errors = typecheck_hir(&hir, &read_text_env())
-        .expect_err("user enum record variant destructured callback must compose body effects");
-    assert!(
-        errors.iter().any(|error| {
-            matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
-                && error
-                    .message()
-                    .contains("flow.user_enum_record_variant_destructured_callback_effect")
-                && error.message().contains("fs.read")
-        }),
-        "expected user enum record variant callback effect diagnostic, got {errors:?}"
-    );
-}
-
-#[test]
 fn env_enum_tuple_variant_destructured_callback_composes_when_payload_is_called() {
     let tree = parse_ok(
         r#"

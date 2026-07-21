@@ -1,7 +1,10 @@
 use thiserror::Error;
 
-use crate::ast::common::{DocBlock, TextRange};
 use crate::ast::pattern::Pattern;
+use crate::ast::{
+    common::{DocBlock, TextRange},
+    module_path::ModuleSegment,
+};
 use crate::cst::{
     ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
     find_top_level_matching_punctuation, find_top_level_punctuation, split_leading_ident,
@@ -10,17 +13,23 @@ use crate::cst::{
     strip_prefix_arcweft_punctuation, take_doc_comment_prefix,
 };
 use crate::expr::{Expr, parse_expr};
-use crate::pattern::parse_pattern;
+use crate::pattern::parse_pattern_at;
 use crate::reference::{BorrowKind, ReferenceType};
 
 mod reference;
+mod source;
 
 use self::reference::parse_reference_type;
+pub use self::source::{
+    AuthoredTypeRef, TypePath, TypeRecoveryId, TypeRefHeadKind, TypeRefHeadSource, TypeRefNodePath,
+    TypeRefNodeSource, TypeRefNodeStep, TypeRefSourceMap, TypeRefSourceMapError,
+};
 
 /// Lifetime name used in Arcweft type syntax.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LifetimeName {
     name: String,
+    range: TextRange,
 }
 
 /// Type syntax preserved for later borrow and suspension-boundary checks.
@@ -28,7 +37,7 @@ pub struct LifetimeName {
 pub enum TypeRef {
     Never,
     ConstInt(usize),
-    Path(String),
+    Path(TypePath),
     Tuple(Vec<TypeRef>),
     Function {
         params: Vec<TypeRef>,
@@ -37,16 +46,17 @@ pub enum TypeRef {
     },
     Choice(Vec<TypeRef>),
     Generic {
-        base: String,
+        base: TypePath,
         args: Vec<TypeRef>,
     },
     TraitBound(TraitBound),
     Projection {
         subject: Box<TypeRef>,
-        assoc: String,
+        assoc: ModuleSegment,
     },
     Reference(ReferenceType),
     Slice(Box<TypeRef>),
+    Recovery(TypeRecoveryId),
 }
 
 /// Closed effect row attached to a function type.
@@ -61,7 +71,7 @@ pub struct FnSignature {
     name: String,
     generic_params: Vec<GenericParam>,
     param_groups: Vec<FnParamGroup>,
-    return_type: Option<TypeRef>,
+    return_type: Option<AuthoredTypeRef>,
     where_clauses: Vec<WhereClause>,
 }
 
@@ -75,23 +85,25 @@ pub enum GenericParam {
 /// Generic type parameter with inline trait bounds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GenericTypeParam {
-    name: String,
-    bounds: Vec<TypeRef>,
+    name: ModuleSegment,
+    bounds: Vec<AuthoredTypeRef>,
+    name_range: TextRange,
+    range: TextRange,
 }
 
 /// Associated type equality inside a trait bound, such as `Iterator<Item = T>`.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AssocTypeBinding {
-    name: String,
+pub struct AssociatedTypeBinding {
+    name: ModuleSegment,
     value: TypeRef,
 }
 
 /// Trait bound syntax preserving associated type equality constraints.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraitBound {
-    path: String,
+    path: TypePath,
     args: Vec<TypeRef>,
-    assoc_bindings: Vec<AssocTypeBinding>,
+    associated: Vec<AssociatedTypeBinding>,
 }
 
 /// One parenthesized parameter group.
@@ -105,7 +117,7 @@ pub struct FnParamGroup {
 pub struct FnParam {
     doc: Option<DocBlock>,
     pattern: Pattern,
-    ty: TypeRef,
+    ty: Option<AuthoredTypeRef>,
     kind: FnParamKind,
     default: Option<Expr>,
     receiver_kind: Option<FnReceiverKind>,
@@ -142,8 +154,9 @@ impl FnReceiverKind {
 /// One `where` clause predicate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WhereClause {
-    subject: TypeRef,
-    bounds: Vec<TypeRef>,
+    subject: AuthoredTypeRef,
+    bounds: Vec<AuthoredTypeRef>,
+    range: TextRange,
 }
 
 /// Type syntax parse failure.
@@ -155,8 +168,17 @@ pub struct TypeParseError {
     message: String,
 }
 
-/// Parses an Arcweft type expression.
-pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
+/// Parses an Arcweft type expression together with exact source evidence.
+pub fn parse_type_ref(source: &str) -> Result<AuthoredTypeRef, TypeParseError> {
+    let parsed = parse_type_ref_value(source)?;
+    validate_type_ref_limits(&parsed)?;
+    let source_map = source::build_type_source_map(source, &parsed)?;
+    AuthoredTypeRef::try_new(parsed, source_map).map_err(|error| {
+        TypeParseError::new_owned(format!("invalid parser-owned type source map: {error:?}"))
+    })
+}
+
+fn parse_type_ref_value(source: &str) -> Result<TypeRef, TypeParseError> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
         return Err(TypeParseError::new("expected type"));
@@ -164,6 +186,61 @@ pub fn parse_type_ref(source: &str) -> Result<TypeRef, TypeParseError> {
     let mut parsed = parse_function_type(trimmed)?;
     parsed.rebase_reference_ranges(subslice_offset(source, trimmed));
     Ok(parsed)
+}
+
+const MAX_TYPE_GENERIC_ARGUMENTS: usize = 256;
+const MAX_TYPE_NODES: usize = 4_096;
+
+fn validate_type_ref_limits(root: &TypeRef) -> Result<(), TypeParseError> {
+    let mut pending = vec![root];
+    let mut nodes = 0usize;
+    while let Some(ty) = pending.pop() {
+        nodes = nodes
+            .checked_add(1)
+            .ok_or_else(|| TypeParseError::new("type node count overflow"))?;
+        if nodes > MAX_TYPE_NODES {
+            return Err(TypeParseError::new("type exceeds the 4096 node limit"));
+        }
+        match ty {
+            TypeRef::Tuple(items) | TypeRef::Choice(items) => pending.extend(items.iter().rev()),
+            TypeRef::Function {
+                params,
+                return_type,
+                ..
+            } => {
+                pending.push(return_type);
+                pending.extend(params.iter().rev());
+            }
+            TypeRef::Generic { args, .. } => {
+                if args.len() > MAX_TYPE_GENERIC_ARGUMENTS {
+                    return Err(TypeParseError::new(
+                        "type constructor exceeds the 256 argument limit",
+                    ));
+                }
+                pending.extend(args.iter().rev());
+            }
+            TypeRef::TraitBound(bound) => {
+                let argument_count = bound
+                    .args
+                    .len()
+                    .checked_add(bound.associated.len())
+                    .ok_or_else(|| TypeParseError::new("trait argument count overflow"))?;
+                if argument_count > MAX_TYPE_GENERIC_ARGUMENTS {
+                    return Err(TypeParseError::new(
+                        "trait bound exceeds the 256 argument limit",
+                    ));
+                }
+                pending.extend(bound.associated.iter().rev().map(|binding| &binding.value));
+                pending.extend(bound.args.iter().rev());
+            }
+            TypeRef::Projection { subject, .. } | TypeRef::Slice(subject) => {
+                pending.push(subject);
+            }
+            TypeRef::Reference(reference) => pending.push(reference.referent()),
+            TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) | TypeRef::Recovery(_) => {}
+        }
+    }
+    Ok(())
 }
 
 impl TypeRef {
@@ -198,7 +275,7 @@ impl TypeRef {
                 for arg in &mut bound.args {
                     arg.rebase_reference_ranges(base);
                 }
-                for binding in &mut bound.assoc_bindings {
+                for binding in &mut bound.associated {
                     binding.value.rebase_reference_ranges(base);
                 }
             }
@@ -206,7 +283,7 @@ impl TypeRef {
                 subject.rebase_reference_ranges(base);
             }
             Self::Reference(reference) => reference.rebase(base),
-            Self::Never | Self::ConstInt(_) | Self::Path(_) => {}
+            Self::Never | Self::ConstInt(_) | Self::Path(_) | Self::Recovery(_) => {}
         }
     }
 }
@@ -217,7 +294,16 @@ fn subslice_offset(source: &str, fragment: &str) -> usize {
 
 /// Parses the head of a function signature, including generics and curried parameter groups.
 pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
-    let source = source.trim();
+    parse_fn_signature_at(source, 0)
+}
+
+pub(crate) fn parse_fn_signature_at(
+    source: &str,
+    base: usize,
+) -> Result<FnSignature, TypeParseError> {
+    let trimmed = source.trim();
+    let base = base + subslice_offset(source, trimmed);
+    let source = trimmed;
     let after_fn = source
         .strip_prefix("fn ")
         .ok_or_else(|| TypeParseError::new("expected `fn` signature"))?;
@@ -226,11 +312,12 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
     let name = name.to_owned();
     let generic_params = if let Some((params, tail)) = take_angle_group(rest) {
         rest = tail.trim_start();
-        parse_generic_params(params)?
+        parse_generic_params_at(params, base + subslice_offset(source, params))?
     } else {
         Vec::new()
     };
-    let (param_groups, mut rest) = parse_fn_param_groups(rest)?;
+    let (param_groups, mut rest) =
+        parse_fn_param_groups(rest, base + subslice_offset(source, rest))?;
     let (before_where, where_part) = split_top_level_keyword_once(rest.trim_start(), "where");
     rest = before_where.trim_start();
     let return_type =
@@ -239,11 +326,12 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
             if ty.is_empty() {
                 return Err(TypeParseError::new("expected return type after `->`"));
             }
-            let ty = parse_type_ref(ty)?;
-            if type_ref_has_whitespace_path(&ty) {
+            let mut parsed = parse_type_ref(ty)?;
+            if type_ref_has_whitespace_path(parsed.value()) {
                 return Err(TypeParseError::new("unexpected tokens after return type"));
             }
-            Some(ty)
+            parsed.rebase(base + subslice_offset(source, ty));
+            Some(parsed)
         } else if rest.is_empty() {
             None
         } else {
@@ -251,7 +339,12 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
                 "unexpected tokens after parameter list",
             ));
         };
-    let where_clauses = where_part.map_or_else(|| Ok(Vec::new()), parse_where_clauses)?;
+    let where_clauses = where_part.map_or_else(
+        || Ok(Vec::new()),
+        |where_source| {
+            parse_where_clauses_at(where_source, base + subslice_offset(source, where_source))
+        },
+    )?;
     Ok(FnSignature {
         name,
         generic_params,
@@ -261,16 +354,26 @@ pub fn parse_fn_signature(source: &str) -> Result<FnSignature, TypeParseError> {
     })
 }
 
-fn parse_fn_param_groups(source: &str) -> Result<(Vec<FnParamGroup>, &str), TypeParseError> {
+fn parse_fn_param_groups(
+    source: &str,
+    base: usize,
+) -> Result<(Vec<FnParamGroup>, &str), TypeParseError> {
     let mut rest = source.trim_start();
     let mut groups = Vec::new();
     while rest.starts_with('(') {
         let close = find_matching_punctuation(rest, 0, '(', ')')
             .ok_or_else(|| TypeParseError::new("unclosed parameter list"))?;
-        let params = split_top_level_punctuation(&rest[1..close], ',')
+        let param_source = &rest[1..close];
+        let param_source_base = base + subslice_offset(source, param_source);
+        let params = split_top_level_punctuation(param_source, ',')
             .into_iter()
             .filter(|param| !param.is_empty())
-            .map(parse_fn_param)
+            .map(|param| {
+                parse_fn_param(
+                    param,
+                    param_source_base + subslice_offset(param_source, param),
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         groups.push(FnParamGroup { params });
         rest = rest[close + 1..].trim_start();
@@ -282,18 +385,20 @@ fn parse_fn_param_groups(source: &str) -> Result<(Vec<FnParamGroup>, &str), Type
     Ok((groups, rest))
 }
 
-fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
-    if let Some(receiver_kind) = receiver_kind(source.trim()) {
+fn parse_fn_param(source: &str, base: usize) -> Result<FnParam, TypeParseError> {
+    let trimmed = source.trim();
+    let base = base + subslice_offset(source, trimmed);
+    if let Some(receiver_kind) = receiver_kind(trimmed) {
         return Ok(FnParam {
             doc: None,
             pattern: Pattern::Ident("self".to_owned()),
-            ty: TypeRef::Path("Self".to_owned()),
+            ty: None,
             kind: FnParamKind::Fixed,
             default: None,
             receiver_kind: Some(receiver_kind),
         });
     }
-    let (doc, source) = take_param_doc(source);
+    let (doc, source) = take_param_doc(trimmed);
     let (pattern, ty) = split_top_level_punctuation_once(source, ':')
         .ok_or_else(|| TypeParseError::new("expected `pattern: Type` parameter"))?;
     let (ty, default) = if let Some((ty, default)) = split_top_level_punctuation_once(ty, '=') {
@@ -325,10 +430,18 @@ fn parse_fn_param(source: &str) -> Result<FnParam, TypeParseError> {
             "rest parameter cannot declare a default value",
         ));
     }
+    let pattern_source = pattern.trim();
+    let pattern = parse_pattern_at(
+        pattern_source,
+        base + subslice_offset(trimmed, pattern_source),
+    );
+    let type_source = ty;
+    let mut ty = parse_type_ref(type_source)?;
+    ty.rebase(base + subslice_offset(trimmed, type_source));
     Ok(FnParam {
         doc,
-        pattern: parse_pattern(pattern),
-        ty: parse_type_ref(ty)?,
+        pattern,
+        ty: Some(ty),
         kind,
         default,
         receiver_kind: None,
@@ -536,24 +649,28 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let mut type_args = Vec::new();
-        let mut assoc_bindings = Vec::new();
+        let mut associated = Vec::new();
         for arg in parsed_args {
             match arg {
                 TypeArg::Type(ty) => type_args.push(ty),
-                TypeArg::Assoc(binding) => assoc_bindings.push(binding),
+                TypeArg::Assoc(binding) => associated.push(binding),
             }
         }
-        if !assoc_bindings.is_empty() {
+        if !associated.is_empty() {
             let mut result = TypeRef::TraitBound(TraitBound {
-                path: base.to_owned(),
+                path: TypePath::parse(base).map_err(|error| {
+                    TypeParseError::new_owned(format!("invalid trait path `{base}`: {error}"))
+                })?,
                 args: type_args,
-                assoc_bindings,
+                associated,
             });
             result.rebase_reference_ranges(subslice_offset(source, args));
             return Ok(result);
         }
         let mut result = TypeRef::Generic {
-            base: base.to_owned(),
+            base: TypePath::parse(base).map_err(|error| {
+                TypeParseError::new_owned(format!("invalid type constructor `{base}`: {error}"))
+            })?,
             args: type_args,
         };
         result.rebase_reference_ranges(subslice_offset(source, args));
@@ -564,11 +681,17 @@ fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
         if !assoc.is_empty() && assoc.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
             return Ok(TypeRef::Projection {
                 subject: Box::new(parse_nested_type(source, subject)?),
-                assoc: assoc.to_owned(),
+                assoc: ModuleSegment::new(assoc.to_owned()).map_err(|error| {
+                    TypeParseError::new_owned(format!(
+                        "invalid associated type name `{assoc}`: {error}"
+                    ))
+                })?,
             });
         }
     }
-    Ok(TypeRef::Path(source.to_owned()))
+    TypePath::parse(source).map(TypeRef::Path).map_err(|error| {
+        TypeParseError::new_owned(format!("invalid type path `{source}`: {error}"))
+    })
 }
 
 fn split_type_effect_row_suffix(
@@ -607,7 +730,7 @@ fn split_type_effect_row_suffix(
 
 enum TypeArg {
     Type(TypeRef),
-    Assoc(AssocTypeBinding),
+    Assoc(AssociatedTypeBinding),
 }
 
 impl TypeArg {
@@ -662,8 +785,10 @@ fn parse_type_arg(source: &str) -> Result<TypeArg, TypeParseError> {
                 "expected associated type name before `=`",
             ));
         }
-        return Ok(TypeArg::Assoc(AssocTypeBinding {
-            name: name.to_owned(),
+        return Ok(TypeArg::Assoc(AssociatedTypeBinding {
+            name: ModuleSegment::new(name.to_owned()).map_err(|error| {
+                TypeParseError::new_owned(format!("invalid associated type name `{name}`: {error}"))
+            })?,
             value: parse_nested_type(source, value)?,
         }));
     }
@@ -672,7 +797,7 @@ fn parse_type_arg(source: &str) -> Result<TypeArg, TypeParseError> {
 
 fn parse_nested_type(parent: &str, fragment: &str) -> Result<TypeRef, TypeParseError> {
     let fragment = fragment.trim();
-    let mut parsed = parse_type_ref(fragment)?;
+    let mut parsed = parse_type_ref_value(fragment)?;
     parsed.rebase_reference_ranges(subslice_offset(parent, fragment));
     Ok(parsed)
 }
@@ -719,19 +844,37 @@ fn take_angle_group(source: &str) -> Option<(&str, &str)> {
 /// The surrounding `<` and `>` are owned by the declaration parser. Keeping
 /// this parser shared ensures nominal declarations and function signatures
 /// retain the same typed generic-parameter model.
-pub(crate) fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, TypeParseError> {
+pub(crate) fn parse_generic_params_at(
+    source: &str,
+    base: usize,
+) -> Result<Vec<GenericParam>, TypeParseError> {
     split_top_level_punctuation(source, ',')
         .into_iter()
         .map(|param| {
-            let param = param.trim();
+            let trimmed = param.trim();
+            let param_base = base + subslice_offset(source, trimmed);
+            let param = trimmed;
             if param.is_empty() {
                 return Err(TypeParseError::new("empty generic parameter"));
             }
             if param.starts_with('\'') {
-                Ok(GenericParam::Lifetime(parse_lifetime_name(param)))
+                Ok(GenericParam::Lifetime(parse_lifetime_name(
+                    param,
+                    TextRange::new(param_base, param_base + param.len()),
+                )))
             } else {
                 let (name, bounds) =
                     split_top_level_punctuation_once(param, ':').map_or((param, ""), |parts| parts);
+                let name = name.trim();
+                let name_range = TextRange::new(
+                    param_base + subslice_offset(param, name),
+                    param_base + subslice_offset(param, name) + name.len(),
+                );
+                let name = ModuleSegment::new(name.to_owned()).map_err(|error| {
+                    TypeParseError::new_owned(format!(
+                        "invalid generic type parameter name `{name}`: {error}"
+                    ))
+                })?;
                 let bounds = if bounds.trim().is_empty() {
                     Vec::new()
                 } else {
@@ -739,12 +882,18 @@ pub(crate) fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, Ty
                         .into_iter()
                         .map(str::trim)
                         .filter(|bound| !bound.is_empty())
-                        .map(parse_type_ref)
+                        .map(|bound| {
+                            let mut parsed = parse_type_ref(bound)?;
+                            parsed.rebase(param_base + subslice_offset(param, bound));
+                            Ok(parsed)
+                        })
                         .collect::<Result<Vec<_>, _>>()?
                 };
                 Ok(GenericParam::Type(GenericTypeParam {
-                    name: name.trim().to_owned(),
+                    name,
                     bounds,
+                    name_range,
+                    range: TextRange::new(param_base, param_base + param.len()),
                 }))
             }
         })
@@ -752,39 +901,51 @@ pub(crate) fn parse_generic_params(source: &str) -> Result<Vec<GenericParam>, Ty
 }
 
 pub fn parse_where_clause_list(source: &str) -> Result<Vec<WhereClause>, TypeParseError> {
+    parse_where_clauses_at(source, 0)
+}
+
+pub(crate) fn parse_where_clauses_at(
+    source: &str,
+    base: usize,
+) -> Result<Vec<WhereClause>, TypeParseError> {
     if source.trim().is_empty() {
         return Err(TypeParseError::new("expected where clause predicate"));
     }
     split_top_level_punctuation(source, ',')
         .into_iter()
         .map(|clause| {
+            let clause = clause.trim();
+            let clause_base = base + subslice_offset(source, clause);
             let (subject, bounds) = split_top_level_punctuation_once(clause, ':')
                 .ok_or_else(|| TypeParseError::new("expected `Type: Bound` where predicate"))?;
+            let subject_source = subject.trim();
+            let mut subject = parse_type_ref(subject_source)?;
+            subject.rebase(clause_base + subslice_offset(clause, subject_source));
             let bounds = split_top_level_punctuation(bounds, '+')
                 .into_iter()
                 .map(str::trim)
                 .filter(|bound| !bound.is_empty())
-                .map(parse_type_ref)
+                .map(|bound| {
+                    let mut parsed = parse_type_ref(bound)?;
+                    parsed.rebase(clause_base + subslice_offset(clause, bound));
+                    Ok(parsed)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             if bounds.is_empty() {
                 return Err(TypeParseError::new("expected where clause bound"));
             }
             Ok(WhereClause {
-                subject: parse_type_ref(subject.trim())?,
+                subject,
                 bounds,
+                range: TextRange::new(clause_base, clause_base + clause.len()),
             })
         })
         .collect()
 }
 
-fn parse_where_clauses(source: &str) -> Result<Vec<WhereClause>, TypeParseError> {
-    parse_where_clause_list(source)
-}
-
 fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
     match ty {
-        TypeRef::Never | TypeRef::ConstInt(_) => false,
-        TypeRef::Path(path) => path.chars().any(char::is_whitespace),
+        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Recovery(_) | TypeRef::Path(_) => false,
         TypeRef::Tuple(items) => items.iter().any(type_ref_has_whitespace_path),
         TypeRef::Function {
             params,
@@ -801,20 +962,15 @@ fn type_ref_has_whitespace_path(ty: &TypeRef) -> bool {
                 })
         }
         TypeRef::Choice(alternatives) => alternatives.iter().any(type_ref_has_whitespace_path),
-        TypeRef::Generic { base, args } => {
-            base.chars().any(char::is_whitespace) || args.iter().any(type_ref_has_whitespace_path)
-        }
+        TypeRef::Generic { args, .. } => args.iter().any(type_ref_has_whitespace_path),
         TypeRef::TraitBound(bound) => {
-            bound.path.chars().any(char::is_whitespace)
-                || bound.args.iter().any(type_ref_has_whitespace_path)
+            bound.args.iter().any(type_ref_has_whitespace_path)
                 || bound
-                    .assoc_bindings
+                    .associated
                     .iter()
                     .any(|binding| type_ref_has_whitespace_path(&binding.value))
         }
-        TypeRef::Projection { subject, assoc } => {
-            assoc.chars().any(char::is_whitespace) || type_ref_has_whitespace_path(subject)
-        }
+        TypeRef::Projection { subject, .. } => type_ref_has_whitespace_path(subject),
         TypeRef::Reference(reference) => type_ref_has_whitespace_path(reference.referent()),
         TypeRef::Slice(inner) => type_ref_has_whitespace_path(inner),
     }
@@ -869,7 +1025,7 @@ fn type_ref_unparenthesized_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
-        TypeRef::Path(path) => path.clone(),
+        TypeRef::Path(path) => path.canonical_string(),
         TypeRef::Tuple(items) => format!(
             "({})",
             items
@@ -921,7 +1077,7 @@ fn type_ref_unparenthesized_label(ty: &TypeRef) -> String {
                 .iter()
                 .map(|arg| type_ref_label_in(arg, TypeLabelContext::Delimited))
                 .collect::<Vec<_>>();
-            args.extend(bound.assoc_bindings.iter().map(|binding| {
+            args.extend(bound.associated.iter().map(|binding| {
                 format!(
                     "{} = {}",
                     binding.name,
@@ -952,6 +1108,7 @@ fn type_ref_unparenthesized_label(ty: &TypeRef) -> String {
             "[{}]",
             type_ref_label_in(inner, TypeLabelContext::Delimited)
         ),
+        TypeRef::Recovery(id) => format!("<recovered-type:{}>", id.index()),
     }
 }
 
@@ -965,9 +1122,10 @@ fn type_effect_row_label(effects: Option<&TypeEffectRow>) -> Option<String> {
     })
 }
 
-fn parse_lifetime_name(source: &str) -> LifetimeName {
+fn parse_lifetime_name(source: &str, range: TextRange) -> LifetimeName {
     LifetimeName {
         name: source.trim_start_matches('\'').to_owned(),
+        range,
     }
 }
 
@@ -975,6 +1133,11 @@ impl LifetimeName {
     /// Lifetime name without the leading apostrophe.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Exact source range including the leading apostrophe.
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 
@@ -995,7 +1158,7 @@ impl FnSignature {
     }
 
     /// Declared return type, if present.
-    pub const fn return_type(&self) -> Option<&TypeRef> {
+    pub const fn return_type(&self) -> Option<&AuthoredTypeRef> {
         self.return_type.as_ref()
     }
 
@@ -1026,7 +1189,7 @@ impl GenericParam {
     }
 
     /// Generic parameter as a type name, when applicable.
-    pub fn as_type(&self) -> Option<&str> {
+    pub const fn as_type(&self) -> Option<&ModuleSegment> {
         match self {
             Self::Type(param) => Some(param.name()),
             Self::Lifetime(_) => None,
@@ -1044,19 +1207,29 @@ impl GenericParam {
 
 impl GenericTypeParam {
     /// Generic type parameter name.
-    pub fn name(&self) -> &str {
+    pub const fn name(&self) -> &ModuleSegment {
         &self.name
     }
 
     /// Inline bounds declared on the parameter.
-    pub fn bounds(&self) -> &[TypeRef] {
+    pub fn bounds(&self) -> &[AuthoredTypeRef] {
         &self.bounds
+    }
+
+    /// Exact source range of the parameter name.
+    pub const fn name_range(&self) -> TextRange {
+        self.name_range
+    }
+
+    /// Exact source range of the complete generic parameter.
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 
-impl AssocTypeBinding {
+impl AssociatedTypeBinding {
     /// Associated type name constrained by this binding.
-    pub fn name(&self) -> &str {
+    pub const fn name(&self) -> &ModuleSegment {
         &self.name
     }
 
@@ -1068,7 +1241,7 @@ impl AssocTypeBinding {
 
 impl TraitBound {
     /// Trait path used by this bound.
-    pub fn path(&self) -> &str {
+    pub const fn path(&self) -> &TypePath {
         &self.path
     }
 
@@ -1078,8 +1251,8 @@ impl TraitBound {
     }
 
     /// Associated type equalities supplied to the trait.
-    pub fn assoc_bindings(&self) -> &[AssocTypeBinding] {
-        &self.assoc_bindings
+    pub fn associated(&self) -> &[AssociatedTypeBinding] {
+        &self.associated
     }
 }
 
@@ -1092,13 +1265,18 @@ impl FnParamGroup {
 
 impl WhereClause {
     /// Type constrained by this predicate.
-    pub const fn subject(&self) -> &TypeRef {
+    pub const fn subject(&self) -> &AuthoredTypeRef {
         &self.subject
     }
 
     /// Bounds that the subject must satisfy.
-    pub fn bounds(&self) -> &[TypeRef] {
+    pub fn bounds(&self) -> &[AuthoredTypeRef] {
         &self.bounds
+    }
+
+    /// Exact source range of the complete predicate.
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 
@@ -1114,8 +1292,8 @@ impl FnParam {
     }
 
     /// Parameter type annotation.
-    pub const fn ty(&self) -> &TypeRef {
-        &self.ty
+    pub const fn ty(&self) -> Option<&AuthoredTypeRef> {
+        self.ty.as_ref()
     }
 
     /// Parameter arity role.

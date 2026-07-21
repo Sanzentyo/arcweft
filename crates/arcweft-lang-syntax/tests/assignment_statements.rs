@@ -19,7 +19,8 @@ fn parses_impl_assignment_tail_if_without_raw_fallback() {
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::Impl(item) if item.target() == "CounterIter" => {
+            Item::Impl(item)
+                if matches!(item.target().value(), arcweft_lang_syntax::types::TypeRef::Path(path) if path.canonical_string() == "CounterIter") => {
                 item.members().iter().find_map(|member| match member {
                     ImplMember::Function {
                         signature,

@@ -228,7 +228,7 @@ impl DialogueViewModel {
                     field: projection.field(),
                 });
             };
-            let actual = type_ref_kind(field.ty());
+            let actual = type_ref_kind(field.ty().value());
             let expected = projection.value_type();
             if actual != expected {
                 return Err(DialogueViewModelError::FieldType {

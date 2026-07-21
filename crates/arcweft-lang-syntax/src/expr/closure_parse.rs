@@ -7,12 +7,12 @@ use super::{
 };
 use crate::ast::common::TextRange;
 use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
-use crate::pattern::parse_pattern;
-use crate::types::{TypeRef, parse_type_ref};
+use crate::pattern::parse_pattern_at;
+use crate::types::{AuthoredTypeRef, parse_type_ref};
 
 #[derive(Default)]
 struct ClosureReturnParse {
-    return_type: Option<TypeRef>,
+    return_type: Option<AuthoredTypeRef>,
     block_body: Option<ClosureBlockBody>,
 }
 
@@ -51,7 +51,17 @@ impl ExprParser {
         } else {
             required_token_span_source(&param_tokens, &self.source, self.base, "closure parameter")?
         };
-        let params = parse_closure_params(params_source)?;
+        let params_base = token_absolute_range(
+            param_tokens
+                .first()
+                .ok_or_else(|| ExprParseError::new("expected closure parameter"))?,
+            param_tokens
+                .last()
+                .ok_or_else(|| ExprParseError::new("expected closure parameter"))?,
+            self.base,
+        )?
+        .start();
+        let params = parse_closure_params(params_source, params_base)?;
         let closure_return = self.parse_closure_return_type()?;
         let body = self.parse_closure_body(closure_return.block_body)?;
         Ok(Expr::Closure {
@@ -139,8 +149,18 @@ impl ExprParser {
             self.base,
             "closure return type",
         )?;
-        let return_type =
+        let mut return_type =
             parse_type_ref(type_source).map_err(|error| ExprParseError::new(&error.to_string()))?;
+        let type_range = token_absolute_range(
+            type_tokens
+                .first()
+                .ok_or_else(|| ExprParseError::new("expected closure return type"))?,
+            type_tokens
+                .last()
+                .ok_or_else(|| ExprParseError::new("expected closure return type"))?,
+            self.base,
+        )?;
+        return_type.rebase(type_range.start());
         if self.peek() != &Token::LBrace {
             return Err(ExprParseError::new(
                 "closure return type annotation requires a block body",
@@ -531,7 +551,7 @@ fn callback_parameter_syntax_entry(
     let parameter_source = source
         .get(first.start..last.end)
         .ok_or_else(|| ExprParseError::new("callback parameter range is outside source"))?;
-    parse_closure_param(parameter_source)?;
+    parse_closure_param(parameter_source, range.start())?;
     Ok(CallbackParameterSyntaxInit {
         range,
         pattern,
@@ -601,22 +621,38 @@ fn callback_block_params(
             "callback block parameter list must appear before `=>`",
         ));
     }
-    parse_closure_params(params_source)
+    let params_range = token_absolute_range(
+        tokens
+            .first()
+            .ok_or_else(|| ExprParseError::new("expected callback parameter"))?,
+        tokens
+            .last()
+            .ok_or_else(|| ExprParseError::new("expected callback parameter"))?,
+        base,
+    )?;
+    parse_closure_params(params_source, params_range.start())
 }
 
-pub(super) fn parse_closure_params(source: &str) -> Result<Vec<ClosureParam>, ExprParseError> {
-    let source = source.trim();
+pub(super) fn parse_closure_params(
+    source: &str,
+    base: usize,
+) -> Result<Vec<ClosureParam>, ExprParseError> {
+    let trimmed = source.trim();
+    let base = base + subslice_offset(source, trimmed);
+    let source = trimmed;
     if source.is_empty() {
         return Ok(Vec::new());
     }
     split_top_level_punctuation(source, ',')
         .into_iter()
-        .map(parse_closure_param)
+        .map(|param| parse_closure_param(param, base + subslice_offset(source, param)))
         .collect()
 }
 
-fn parse_closure_param(source: &str) -> Result<ClosureParam, ExprParseError> {
-    let source = source.trim();
+fn parse_closure_param(source: &str, base: usize) -> Result<ClosureParam, ExprParseError> {
+    let trimmed = source.trim();
+    let base = base + subslice_offset(source, trimmed);
+    let source = trimmed;
     if source.is_empty() {
         return Err(ExprParseError::new("expected closure parameter"));
     }
@@ -626,12 +662,25 @@ fn parse_closure_param(source: &str) -> Result<ClosureParam, ExprParseError> {
         });
     let ty = ty
         .filter(|ty| !ty.is_empty())
-        .map(parse_type_ref)
+        .map(|type_source| {
+            let mut parsed = parse_type_ref(type_source)?;
+            parsed.rebase(base + subslice_offset(source, type_source));
+            Ok::<AuthoredTypeRef, crate::types::TypeParseError>(parsed)
+        })
         .transpose()
         .map_err(|error| {
             ExprParseError::new(&format!("invalid closure parameter type: {error}"))
         })?;
-    Ok(ClosureParam::new(parse_pattern(pattern), ty))
+    let pattern_source = pattern;
+    let pattern = parse_pattern_at(
+        pattern_source,
+        base + subslice_offset(source, pattern_source),
+    );
+    Ok(ClosureParam::new(pattern, ty))
+}
+
+fn subslice_offset(source: &str, fragment: &str) -> usize {
+    (fragment.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 
 fn required_token_span_source<'a>(

@@ -226,7 +226,7 @@ fn method_impl(trait_id: TraitId, source: &str) -> TraitMethodImpl {
         panic!("invalid built-in iterator impl signature `{source}`: {error}")
     });
     let return_type = signature.return_type().map_or(TypeKind::Unit, |ty| {
-        trait_type_ref_kind(ty, &HashSet::new())
+        trait_type_ref_kind(ty.value(), &HashSet::new())
     });
     TraitMethodImpl {
         trait_id: Some(trait_id),

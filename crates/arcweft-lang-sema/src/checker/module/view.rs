@@ -50,10 +50,10 @@ impl TypeChecker<'_> {
             .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
             .filter_map(|parameter| {
                 let name = parameter.pattern().simple_binding_name()?;
-                let TypeRef::Path(type_name) = parameter.ty() else {
+                let TypeRef::Path(type_name) = parameter.ty()?.value() else {
                     return None;
                 };
-                Some((name, type_name.as_str()))
+                crate::types::direct_type_name(type_name).map(|type_name| (name, type_name))
             })
             .collect::<HashMap<_, _>>();
 
@@ -294,9 +294,12 @@ fn action_param_from_fn_param(param: &FnParam) -> Result<ActionParam, String> {
     let Some(name) = ident_pattern_name(param.pattern()) else {
         return Err("action payload parameters must use identifier patterns".to_owned());
     };
+    let ty = param
+        .ty()
+        .ok_or_else(|| "action payload parameters must declare a type".to_owned())?;
     Ok(ActionParam::new(
         name,
-        type_ref_kind(param.ty()),
+        type_ref_kind(ty.value()),
         param.default().is_some(),
     ))
 }

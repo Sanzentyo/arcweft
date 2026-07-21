@@ -105,7 +105,7 @@ impl TypeChecker<'_> {
             let expected_param = expected.and_then(|expected| expected.params.get(index));
             let ty = param
                 .ty()
-                .map(type_ref_kind)
+                .map(|ty| type_ref_kind(ty.value()))
                 .or_else(|| expected_param.cloned())
                 .unwrap_or(TypeKind::I64);
             if let Some(expected_param) = expected_param

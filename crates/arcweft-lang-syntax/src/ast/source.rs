@@ -3,7 +3,7 @@ use super::flow::{AuthoredExpr, Stmt};
 use super::ids::EntityRef;
 use super::items::Attribute;
 use super::pattern::Pattern;
-use crate::types::TypeRef;
+use crate::types::AuthoredTypeRef;
 use thiserror::Error;
 
 /// Declarative `source` stream declaration.
@@ -18,7 +18,7 @@ pub struct SourceItem {
     id: Option<EntityRef>,
     name: Option<String>,
     signature_tail: String,
-    source_ty: Option<TypeRef>,
+    source_ty: Option<AuthoredTypeRef>,
     headers: Vec<SourceHeader>,
     handlers: Vec<SourceHandler>,
     body: String,
@@ -32,7 +32,7 @@ pub(crate) struct SourceItemParts {
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
     pub(crate) signature_tail: String,
-    pub(crate) source_ty: Option<TypeRef>,
+    pub(crate) source_ty: Option<AuthoredTypeRef>,
     pub(crate) headers: Vec<SourceHeader>,
     pub(crate) handlers: Vec<SourceHandler>,
     pub(crate) body: String,
@@ -287,7 +287,7 @@ impl SourceItem {
         &self.signature_tail
     }
 
-    pub const fn source_ty(&self) -> Option<&TypeRef> {
+    pub const fn source_ty(&self) -> Option<&AuthoredTypeRef> {
         self.source_ty.as_ref()
     }
 

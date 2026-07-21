@@ -460,7 +460,7 @@ impl<'a> EntryCheckContext<'a> {
             self.resolve_nominal(
                 module_path,
                 module,
-                ty,
+                ty.value(),
                 *value_range,
                 "state",
                 &mut diagnostics,
@@ -493,7 +493,7 @@ impl<'a> EntryCheckContext<'a> {
             self.resolve_nominal(
                 module_path,
                 module,
-                ty,
+                ty.value(),
                 *value_range,
                 "event",
                 &mut diagnostics,
@@ -719,7 +719,10 @@ impl<'a> EntryCheckContext<'a> {
             ));
             return None;
         };
-        match self.nominals.resolve_nominal(module_path, module, path) {
+        match self
+            .nominals
+            .resolve_nominal(module_path, module, &path.canonical_string())
+        {
             Ok(record) if record.is_generic() => {
                 diagnostics.push(
                     CheckedEntryDiagnostic::new(
@@ -789,6 +792,34 @@ impl<'a> EntryCheckContext<'a> {
         }
     }
 
+    fn callable_resolution_sources(&self, error: &ProjectSymbolResolutionError) -> Vec<SourceSpan> {
+        let declaration_source = |target: &ProjectSymbolTargetId| match target {
+            ProjectSymbolTargetId::Callable(id) => self
+                .symbols
+                .callable(id.clone())
+                .map(|symbol| symbol.source().clone()),
+            ProjectSymbolTargetId::External(id) => self
+                .symbols
+                .external(*id)
+                .map(|symbol| symbol.declaration_span().clone()),
+            ProjectSymbolTargetId::Nominal(id) => self
+                .symbols
+                .nominal(id)
+                .map(|symbol| symbol.source().whole().clone()),
+            ProjectSymbolTargetId::Module(_) => None,
+        };
+        match error {
+            ProjectSymbolResolutionError::Ambiguous { candidates, .. } => {
+                candidates.iter().filter_map(declaration_source).collect()
+            }
+            ProjectSymbolResolutionError::NotCallable { actual, .. } => {
+                declaration_source(actual).into_iter().collect()
+            }
+            ProjectSymbolResolutionError::Unknown { .. }
+            | ProjectSymbolResolutionError::InvalidPath { .. } => Vec::new(),
+        }
+    }
+
     fn resolve_callable<'b>(
         &'b self,
         module_path: &CanonicalModulePath,
@@ -827,37 +858,7 @@ impl<'a> EntryCheckContext<'a> {
         {
             Ok(symbol) => symbol,
             Err(error) => {
-                let related = match &error {
-                    ProjectSymbolResolutionError::Ambiguous { candidates, .. } => candidates
-                        .iter()
-                        .filter_map(|candidate| match candidate {
-                            ProjectSymbolTargetId::Callable(id) => self
-                                .symbols
-                                .callable(id.clone())
-                                .map(|symbol| symbol.source().clone()),
-                            ProjectSymbolTargetId::External(id) => self
-                                .symbols
-                                .external(*id)
-                                .map(|symbol| symbol.declaration_span().clone()),
-                            ProjectSymbolTargetId::Module(_) => None,
-                        })
-                        .collect::<Vec<_>>(),
-                    ProjectSymbolResolutionError::NotCallable { actual, .. } => match actual {
-                        ProjectSymbolTargetId::Callable(id) => self
-                            .symbols
-                            .callable(id.clone())
-                            .map(|symbol| vec![symbol.source().clone()])
-                            .unwrap_or_default(),
-                        ProjectSymbolTargetId::External(id) => self
-                            .symbols
-                            .external(*id)
-                            .map(|symbol| vec![symbol.declaration_span().clone()])
-                            .unwrap_or_default(),
-                        ProjectSymbolTargetId::Module(_) => Vec::new(),
-                    },
-                    ProjectSymbolResolutionError::Unknown { .. }
-                    | ProjectSymbolResolutionError::InvalidPath { .. } => Vec::new(),
-                };
+                let related = self.callable_resolution_sources(&error);
                 diagnostics.push(
                     CheckedEntryDiagnostic::new(
                         "sema.entry.unresolved_callable",

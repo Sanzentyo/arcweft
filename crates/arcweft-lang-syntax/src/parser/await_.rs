@@ -9,6 +9,7 @@ use crate::cst::{
     ArcweftPunctuation, nonempty_trimmed_source_lines, source_line_count,
     split_top_level_arcweft_punctuation_once,
 };
+use crate::pattern::parse_pattern_at;
 use std::ops::Range;
 
 enum AwaitBody {
@@ -22,7 +23,7 @@ impl Parser<'_> {
         let trimmed = start_line.text.trim();
         let line_range = TextRange::new(start_line.start, start_line.end);
         let authored_rest = trimmed.strip_prefix("let")?.trim();
-        let (_, authored_await_head) = split_top_level_binding(authored_rest)?;
+        let (authored_pattern, authored_await_head) = split_top_level_binding(authored_rest)?;
         let authored_await_head = authored_await_head.trim();
         let authored_start = start_line.start + slice_offset(&start_line.text, authored_await_head);
         let authored_range =
@@ -57,7 +58,7 @@ impl Parser<'_> {
         };
 
         let rest = head.trim().strip_prefix("let")?.trim();
-        let (pattern, await_head) = split_top_level_binding(rest)?;
+        let (_, await_head) = split_top_level_binding(rest)?;
         let await_head = normalize_let_await_source(await_head.trim(), None);
         let await_with = match body {
             Some(AwaitBody::Lines(body_range)) => {
@@ -75,7 +76,10 @@ impl Parser<'_> {
         };
 
         Some(Stmt::LetAwait {
-            pattern: parse_pattern(pattern.trim()),
+            pattern: parse_pattern_at(
+                authored_pattern.trim(),
+                start_line.start + slice_offset(&start_line.text, authored_pattern.trim()),
+            ),
             await_with,
         })
     }

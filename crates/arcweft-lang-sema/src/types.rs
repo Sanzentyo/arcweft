@@ -4,9 +4,10 @@ use crate::{
 };
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_syntax::{
+    ast::module_path::ModulePathRoot,
     expr::{IntSuffix, LifetimeScopeKind},
     reference::BorrowKind,
-    types::TypeRef,
+    types::{TypePath, TypeRef},
 };
 use core::fmt::{self, Write as _};
 
@@ -270,9 +271,9 @@ impl From<&TypeRef> for TypeKind {
         match ty {
             TypeRef::Never => Self::Never,
             TypeRef::ConstInt(value) => Self::Named(value.to_string()),
-            TypeRef::Path(path) => {
-                Self::primitive_name(path).unwrap_or_else(|| Self::Named(path.clone()))
-            }
+            TypeRef::Path(path) => direct_type_name(path)
+                .and_then(Self::primitive_name)
+                .unwrap_or_else(|| Self::Named(path.canonical_string())),
             TypeRef::Tuple(items) => Self::Tuple(items.iter().map(Self::from).collect()),
             TypeRef::Function {
                 params,
@@ -302,67 +303,95 @@ impl From<&TypeRef> for TypeKind {
                     _ => Self::Choice(flattened),
                 }
             }
-            TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Vec") && args.len() == 1 =>
+            {
                 Self::Vec(Box::new(Self::from(&args[0])))
             }
-            TypeRef::Generic { base, args } if base == "Array" && args.len() == 2 => Self::Array {
-                item: Box::new(Self::from(&args[0])),
-                len: canonical_type_ref_label(&args[1]),
-            },
-            TypeRef::Generic { base, args } if base == "Seq" && args.len() == 1 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Array") && args.len() == 2 =>
+            {
+                Self::Array {
+                    item: Box::new(Self::from(&args[0])),
+                    len: canonical_type_ref_label(&args[1]),
+                }
+            }
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Seq") && args.len() == 1 =>
+            {
                 Self::Seq(Box::new(Self::from(&args[0])))
             }
             TypeRef::Generic { base, args }
-                if matches!(base.as_str(), "OrderedMap" | "SortedMap" | "BTreeMap")
-                    && args.len() == 2 =>
+                if matches!(
+                    direct_type_name(base),
+                    Some("OrderedMap" | "SortedMap" | "BTreeMap")
+                ) && args.len() == 2 =>
             {
                 Self::Map {
-                    kind: match base.as_str() {
-                        "OrderedMap" => MapKind::Ordered,
-                        "SortedMap" => MapKind::Sorted,
-                        "BTreeMap" => MapKind::BTree,
+                    kind: match direct_type_name(base) {
+                        Some("OrderedMap") => MapKind::Ordered,
+                        Some("SortedMap") => MapKind::Sorted,
+                        Some("BTreeMap") => MapKind::BTree,
                         _ => unreachable!("map names are filtered by the match guard"),
                     },
                     key: Box::new(Self::from(&args[0])),
                     value: Box::new(Self::from(&args[1])),
                 }
             }
-            TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Result") && args.len() == 2 =>
+            {
                 Self::Result {
                     ok: Box::new(Self::from(&args[0])),
                     error: Box::new(Self::from(&args[1])),
                 }
             }
-            TypeRef::Generic { base, args } if base == "ArcResult" && args.len() == 1 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("ArcResult") && args.len() == 1 =>
+            {
                 Self::Result {
                     ok: Box::new(Self::from(&args[0])),
                     error: Box::new(Self::Named("ArcError".to_owned())),
                 }
             }
-            TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Option") && args.len() == 1 =>
+            {
                 Self::Option(Box::new(Self::from(&args[0])))
             }
-            TypeRef::Generic { base, args } if base == "Speaker" && args.len() == 1 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Speaker") && args.len() == 1 =>
+            {
                 entity_kind_from_type_ref(&args[0])
                     .map_or_else(|| Self::Named(canonical_type_ref_label(ty)), Self::Speaker)
             }
-            TypeRef::Generic { base, args } if base == "SpeakerPreset" && args.len() == 1 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("SpeakerPreset") && args.len() == 1 =>
+            {
                 entity_kind_from_type_ref(&args[0]).map_or_else(
                     || Self::Named(canonical_type_ref_label(ty)),
                     Self::SpeakerPreset,
                 )
             }
-            TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => Self::Need {
-                ready: Box::new(Self::from(&args[0])),
-                error: Box::new(Self::from(&args[1])),
-            },
-            TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Need") && args.len() == 2 =>
+            {
+                Self::Need {
+                    ready: Box::new(Self::from(&args[0])),
+                    error: Box::new(Self::from(&args[1])),
+                }
+            }
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Stream") && args.len() == 2 =>
+            {
                 Self::Stream {
                     item: Box::new(Self::from(&args[0])),
                     error: Box::new(Self::from(&args[1])),
                 }
             }
-            TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+            TypeRef::Generic { base, args }
+                if direct_type_name(base) == Some("Source") && args.len() == 2 =>
+            {
                 Self::Source {
                     item: Box::new(Self::from(&args[0])),
                     error: Box::new(Self::from(&args[1])),
@@ -371,10 +400,11 @@ impl From<&TypeRef> for TypeKind {
             TypeRef::Projection { subject, assoc } => Self::Projection {
                 subject: Box::new(Self::from(subject.as_ref())),
                 trait_name: None,
-                assoc: assoc.clone(),
+                assoc: assoc.as_str().to_owned(),
             },
-            TypeRef::TraitBound(bound) => Self::primitive_name(bound.path())
-                .unwrap_or_else(|| Self::Named(bound.path().to_owned())),
+            TypeRef::TraitBound(bound) => direct_type_name(bound.path())
+                .and_then(Self::primitive_name)
+                .unwrap_or_else(|| Self::Named(bound.path().canonical_string())),
             TypeRef::Reference(reference) => Self::BorrowRef {
                 kind: reference.kind(),
                 lifetime: reference
@@ -383,37 +413,30 @@ impl From<&TypeRef> for TypeKind {
                     .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
                 inner: Box::new(Self::from(reference.referent())),
             },
-            TypeRef::Slice(inner) => {
-                if let TypeRef::Path(path) = inner.as_ref()
-                    && let Some((item, len)) = path.split_once(';')
-                {
-                    return Self::Array {
-                        item: Box::new(
-                            Self::primitive_name(item.trim())
-                                .unwrap_or_else(|| Self::Named(item.trim().to_owned())),
-                        ),
-                        len: len.trim().to_owned(),
-                    };
-                }
-                Self::Slice(Box::new(Self::from(inner.as_ref())))
-            }
+            TypeRef::Slice(inner) => Self::Slice(Box::new(Self::from(inner.as_ref()))),
+            TypeRef::Recovery(id) => Self::Named(format!("<recovered-type:{}>", id.index())),
             TypeRef::Generic { .. } => Self::Named(canonical_type_ref_label(ty)),
         }
     }
 }
 
 fn entity_kind_from_type_ref(ty: &TypeRef) -> Option<EntityKind> {
-    let TypeRef::Path(name) = ty else {
+    let TypeRef::Path(path) = ty else {
         return None;
     };
-    EntityKind::from_type_name(name)
+    direct_type_name(path).and_then(EntityKind::from_type_name)
+}
+
+pub(crate) fn direct_type_name(path: &TypePath) -> Option<&str> {
+    (path.root() == ModulePathRoot::ImplicitCrate && path.segments().len() == 1)
+        .then(|| path.path().last_segment().as_str())
 }
 
 fn canonical_type_ref_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
-        TypeRef::Path(path) => path.clone(),
+        TypeRef::Path(path) => path.canonical_string(),
         TypeRef::Tuple(items) => format!(
             "({})",
             items
@@ -457,7 +480,8 @@ fn canonical_type_ref_label(ty: &TypeRef) -> String {
             .collect::<Vec<_>>()
             .join(" | "),
         TypeRef::Generic { base, args } => format!(
-            "{base}<{}>",
+            "{}<{}>",
+            base.canonical_string(),
             args.iter()
                 .map(canonical_type_ref_label)
                 .collect::<Vec<_>>()
@@ -469,17 +493,17 @@ fn canonical_type_ref_label(ty: &TypeRef) -> String {
                 .iter()
                 .map(canonical_type_ref_label)
                 .collect::<Vec<_>>();
-            args.extend(bound.assoc_bindings().iter().map(|binding| {
+            args.extend(bound.associated().iter().map(|binding| {
                 format!(
                     "{} = {}",
-                    binding.name(),
+                    binding.name().as_str(),
                     canonical_type_ref_label(binding.value())
                 )
             }));
             format!("{}<{}>", bound.path(), args.join(", "))
         }
         TypeRef::Projection { subject, assoc } => {
-            format!("{}::{assoc}", canonical_type_ref_label(subject))
+            format!("{}::{}", canonical_type_ref_label(subject), assoc.as_str())
         }
         TypeRef::Reference(reference) => {
             let lifetime = reference
@@ -494,6 +518,7 @@ fn canonical_type_ref_label(ty: &TypeRef) -> String {
             )
         }
         TypeRef::Slice(inner) => format!("[{}]", canonical_type_ref_label(inner)),
+        TypeRef::Recovery(id) => format!("<recovered-type:{}>", id.index()),
     }
 }
 

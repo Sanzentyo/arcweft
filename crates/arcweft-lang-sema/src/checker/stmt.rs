@@ -63,7 +63,15 @@ impl TypeChecker<'_> {
                 ty,
                 expr,
                 else_body,
-            } => self.check_let_else_stmt(pattern, ty.as_ref(), expr, else_body),
+            } => {
+                self.check_let_else_stmt(
+                    pattern,
+                    ty.as_ref()
+                        .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
+                    expr,
+                    else_body,
+                );
+            }
             Stmt::LetChoice { .. }
             | Stmt::LetScope { .. }
             | Stmt::LetLoop { .. }
@@ -151,7 +159,8 @@ impl TypeChecker<'_> {
         };
         self.check_let_stmt(
             pattern,
-            ty.as_ref(),
+            ty.as_ref()
+                .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
             expr,
             expr_source.as_deref(),
             *expr_range,

@@ -141,7 +141,7 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
-        TypeRef::Path(path) => path.clone(),
+        TypeRef::Path(path) => path.canonical_string(),
         TypeRef::Tuple(items) => format!(
             "({})",
             items.iter().map(type_label).collect::<Vec<_>>().join(", ")
@@ -177,13 +177,15 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
             let mut args = bound.args().iter().map(type_label).collect::<Vec<_>>();
             args.extend(
                 bound
-                    .assoc_bindings()
+                    .associated()
                     .iter()
                     .map(|binding| format!("{} = {}", binding.name(), type_label(binding.value()))),
             );
             format!("{}<{}>", bound.path(), args.join(", "))
         }
-        TypeRef::Projection { subject, assoc } => format!("{}::{assoc}", type_label(subject)),
+        TypeRef::Projection { subject, assoc } => {
+            format!("{}::{}", type_label(subject), assoc.as_str())
+        }
         TypeRef::Reference(reference) => {
             let lifetime = reference
                 .region()
@@ -197,6 +199,7 @@ pub(crate) fn type_label(ty: &TypeRef) -> String {
             )
         }
         TypeRef::Slice(inner) => format!("[{}]", type_label(inner)),
+        TypeRef::Recovery(_) => "<recovery>".to_owned(),
     }
 }
 

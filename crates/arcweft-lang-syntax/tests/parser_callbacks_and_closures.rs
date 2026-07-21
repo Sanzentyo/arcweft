@@ -1,7 +1,7 @@
 use arcweft_lang_syntax::{
     ast::{flow::Stmt, pattern::Pattern},
     expr::{CallArg, Expr, parse_expr},
-    types::TypeRef,
+    types::{AuthoredTypeRef, TypeRef},
 };
 
 fn select_path(expr: &Expr) -> Option<String> {
@@ -129,7 +129,7 @@ fn closures_keep_pattern_and_type_ascription_parameters() {
     ));
     assert!(matches!(
         params[0].ty(),
-        Some(TypeRef::Path(path)) if path == "Pair"
+        Some(ty) if matches!(ty.value(), TypeRef::Path(path) if path.canonical_string() == "Pair")
     ));
     assert!(matches!(
         body.as_ref(),
@@ -159,7 +159,7 @@ fn closures_keep_explicit_return_type_and_block_body() {
     assert_eq!(params[0].simple_ident(), Some("score"));
     assert!(matches!(
         return_type,
-        Some(TypeRef::Path(path)) if path == "bool"
+        Some(ty) if matches!(ty.value(), TypeRef::Path(path) if path.canonical_string() == "bool")
     ));
     assert!(matches!(body.as_ref(), Expr::Block { .. }));
 }
@@ -186,7 +186,7 @@ fn zero_arg_closure_keeps_explicit_return_type() {
     assert!(params.is_empty());
     assert!(matches!(
         return_type,
-        Some(TypeRef::Path(path)) if path == "String"
+        Some(ty) if matches!(ty.value(), TypeRef::Path(path) if path.canonical_string() == "String")
     ));
     assert!(matches!(body.as_ref(), Expr::Block { .. }));
 }
@@ -210,7 +210,7 @@ fn call_arg_closure_keeps_explicit_return_type() {
     assert_eq!(params[0].simple_ident(), Some("choice"));
     assert!(matches!(
         return_type,
-        Some(TypeRef::Path(path)) if path == "bool"
+        Some(ty) if matches!(ty.value(), TypeRef::Path(path) if path.canonical_string() == "bool")
     ));
     assert!(matches!(body.as_ref(), Expr::Block { .. }));
 }
@@ -229,7 +229,7 @@ fn parenthesized_closure_can_be_called_immediately() {
             return_type,
             body,
         } if params.len() == 1
-            && matches!(return_type, Some(TypeRef::Path(path)) if path == "String")
+            && matches!(return_type.as_ref().map(AuthoredTypeRef::value), Some(TypeRef::Path(path)) if path.canonical_string() == "String")
             && matches!(body.as_ref(), Expr::Block { .. })
     ));
     assert!(matches!(
@@ -258,7 +258,7 @@ fn parenthesized_zero_arg_closure_can_be_called_immediately() {
             return_type,
             body,
         } if params.is_empty()
-            && matches!(return_type, Some(TypeRef::Path(path)) if path == "String")
+            && matches!(return_type.as_ref().map(AuthoredTypeRef::value), Some(TypeRef::Path(path)) if path.canonical_string() == "String")
             && matches!(body.as_ref(), Expr::Block { .. })
     ));
     assert!(call.args().is_empty());
@@ -288,7 +288,7 @@ fn callback_block_closure_keeps_typed_parameters() {
     assert_eq!(params[0].simple_ident(), Some("item"));
     assert!(matches!(
         params[0].ty(),
-        Some(TypeRef::Path(path)) if path == "Label"
+        Some(ty) if matches!(ty.value(), TypeRef::Path(path) if path.canonical_string() == "Label")
     ));
     assert!(matches!(body.as_ref(), Expr::Block { .. }));
 }

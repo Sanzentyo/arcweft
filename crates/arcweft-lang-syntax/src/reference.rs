@@ -258,7 +258,11 @@ mod tests {
             region: RegionSyntax::Elided {
                 anchor: TextRange::new(1, 1),
             },
-            referent: Box::new(TypeRef::Path("State".to_owned())),
+            referent: Box::new(
+                crate::types::parse_type_ref("State")
+                    .expect("type path parses")
+                    .into_value(),
+            ),
             amp_range: TextRange::new(0, 1),
             mut_range: None,
             range: TextRange::new(0, 6),
@@ -266,7 +270,9 @@ mod tests {
         assert_eq!(reference.kind(), BorrowKind::Shared);
         assert_eq!(reference.region().range(), TextRange::new(1, 1));
         assert_eq!(reference.region().name(), None);
-        assert_eq!(reference.referent(), &TypeRef::Path("State".to_owned()));
+        assert!(
+            matches!(reference.referent(), TypeRef::Path(path) if path.canonical_string() == "State")
+        );
         assert_eq!(reference.amp_range(), TextRange::new(0, 1));
         assert_eq!(reference.mut_range(), None);
         assert_eq!(reference.range(), TextRange::new(0, 6));

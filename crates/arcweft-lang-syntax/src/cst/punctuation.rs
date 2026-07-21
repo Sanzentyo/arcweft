@@ -435,12 +435,13 @@ pub(crate) fn split_top_level_punctuation_once(
     source: &str,
     delimiter: char,
 ) -> Option<(&str, &str)> {
+    let tokens = lex_cst(source);
     let mut paren = 0usize;
     let mut square = 0usize;
     let mut brace = 0usize;
     let mut angle = 0usize;
 
-    for token in lex_cst(source) {
+    for (index, token) in tokens.iter().enumerate() {
         if token.kind() != SyntaxKind::Punctuation {
             continue;
         }
@@ -453,7 +454,9 @@ pub(crate) fn split_top_level_punctuation_once(
             "{" => brace += 1,
             "}" => brace = brace.saturating_sub(1),
             "<" => angle += 1,
-            ">" => angle = angle.saturating_sub(1),
+            ">" if !is_multi_token_punctuation_tail(&tokens, index) => {
+                angle = angle.saturating_sub(1);
+            }
             text if token_text_is(text, delimiter)
                 && paren == 0
                 && square == 0
@@ -470,6 +473,7 @@ pub(crate) fn split_top_level_punctuation_once(
 
 /// Splits at every top-level punctuation token.
 pub(crate) fn split_top_level_punctuation(source: &str, delimiter: char) -> Vec<&str> {
+    let tokens = lex_cst(source);
     let mut paren = 0usize;
     let mut square = 0usize;
     let mut brace = 0usize;
@@ -477,7 +481,7 @@ pub(crate) fn split_top_level_punctuation(source: &str, delimiter: char) -> Vec<
     let mut parts = Vec::new();
     let mut start = 0usize;
 
-    for token in lex_cst(source) {
+    for (index, token) in tokens.iter().enumerate() {
         if token.kind() != SyntaxKind::Punctuation {
             continue;
         }
@@ -490,7 +494,9 @@ pub(crate) fn split_top_level_punctuation(source: &str, delimiter: char) -> Vec<
             "{" => brace += 1,
             "}" => brace = brace.saturating_sub(1),
             "<" => angle += 1,
-            ">" => angle = angle.saturating_sub(1),
+            ">" if !is_multi_token_punctuation_tail(&tokens, index) => {
+                angle = angle.saturating_sub(1);
+            }
             text if token_text_is(text, delimiter)
                 && paren == 0
                 && square == 0

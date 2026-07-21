@@ -4,7 +4,7 @@ use arcweft_lang_syntax::{
         flow::{FlowItem, Stmt},
         items::{Item, RawSyntaxFamily},
     },
-    types::TypeRef,
+    types::{AuthoredTypeRef, TypeRef},
 };
 
 fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
@@ -403,7 +403,10 @@ pub fn open_route(
         "Current game state."
     );
     assert!(matches!(
-        function.signature().return_type(),
+        function
+            .signature()
+            .return_type()
+            .map(AuthoredTypeRef::value),
         Some(TypeRef::Never)
     ));
 }

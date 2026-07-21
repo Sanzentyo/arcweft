@@ -21,7 +21,10 @@ impl TypeChecker<'_> {
                 "function-like `source name() -> Source<T, E>` is not canonical; use `source @source.id: Source<T, E> { ... }`".to_owned(),
             ));
         }
-        let Some((item_ty, error_ty)) = item.source_ty().and_then(source_return_types) else {
+        let Some((item_ty, error_ty)) = item
+            .source_ty()
+            .and_then(|ty| source_return_types(ty.value()))
+        else {
             self.errors.push(TypeCheckError::new(
                 "`source` must declare `: Source<T, E>`".to_owned(),
             ));

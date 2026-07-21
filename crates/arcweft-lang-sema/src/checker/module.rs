@@ -43,10 +43,10 @@ use arcweft_lang_syntax::ast::items::{
     TypeAliasItem,
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
-use arcweft_lang_syntax::types::{FnParam, FnSignature, TypeRef, parse_type_ref};
+use arcweft_lang_syntax::types::{FnParam, FnSignature, GenericParam, TypeRef};
 use arcweft_source::SourceDocumentId;
 use arcweft_source::SourceDocumentIdentity;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 #[cfg(test)]
 use std::sync::atomic::AtomicBool;
 
@@ -651,7 +651,7 @@ impl TypeChecker<'_> {
             let expected_return = flow
                 .signature()
                 .and_then(|signature| signature.return_type())
-                .map(type_ref_kind);
+                .map(|ty| type_ref_kind(ty.value()));
             if let Some(id) = flow.id() {
                 self.expect_entity_kind(id, &EntityKind::Flow, "flow id");
             }
@@ -699,7 +699,7 @@ impl TypeChecker<'_> {
             let expected_return = function
                 .signature()
                 .return_type()
-                .map(|ty| type_ref_kind_with_generics(ty, &generic_names));
+                .map(|ty| type_ref_kind_with_generics(ty.value(), &generic_names));
             let execution = Self::classify_callable_execution(function, expected_return.as_ref());
             for contract in function.contracts() {
                 self.check_function_contract_clause(contract, expected_return.as_ref());
@@ -1074,19 +1074,21 @@ impl TypeChecker<'_> {
         }
         for group in function.signature().param_groups() {
             for param in group.params() {
-                self.warn_public_type_ref_anonymous_sum(
-                    param.ty(),
-                    &format!(
-                        "public function `{}` parameter `{}`",
-                        function.name(),
-                        pattern_public_label(param.pattern())
-                    ),
-                );
+                if let Some(ty) = param.ty() {
+                    self.warn_public_type_ref_anonymous_sum(
+                        ty.value(),
+                        &format!(
+                            "public function `{}` parameter `{}`",
+                            function.name(),
+                            pattern_public_label(param.pattern())
+                        ),
+                    );
+                }
             }
         }
         if let Some(return_type) = function.signature().return_type() {
             self.warn_public_type_ref_anonymous_sum(
-                return_type,
+                return_type.value(),
                 &format!("public function `{}` return type", function.name()),
             );
         }
@@ -1143,7 +1145,7 @@ impl TypeChecker<'_> {
                 continue;
             };
             self.global_type_aliases
-                .insert(item.name().to_owned(), type_ref_kind(item.target()));
+                .insert(item.name().to_owned(), type_ref_kind(item.target().value()));
         }
     }
 
@@ -1473,7 +1475,7 @@ impl TypeChecker<'_> {
                     }
                 }
                 ExternModMember::Activity(activity) => {
-                    self.check_type_ref_shape(activity.ty());
+                    self.check_type_ref_shape(activity.ty().value());
                 }
                 ExternModMember::Raw(raw) => {
                     self.errors.push(TypeCheckError::new(format!(
@@ -1487,15 +1489,18 @@ impl TypeChecker<'_> {
     fn check_type_alias_decl(&mut self, item: &TypeAliasItem) {
         if item.visibility() == Some(Visibility::Public) {
             self.warn_public_type_ref_anonymous_sum(
-                item.target(),
+                item.target().value(),
                 &format!("public type alias `{}`", item.name()),
             );
         }
-        self.check_type_ref_shape(item.target());
+        self.check_type_ref_shape(item.target().value());
         self.with_local_mutation_scope(|this| {
-            this.bind_local("self".to_owned(), type_ref_kind(item.target()));
+            this.bind_local("self".to_owned(), type_ref_kind(item.target().value()));
             for clause in item.where_clauses() {
-                this.check_expr(clause);
+                this.check_type_ref_shape(clause.subject().value());
+                for bound in clause.bounds() {
+                    this.check_type_ref_shape(bound.value());
+                }
             }
         });
     }
@@ -1526,7 +1531,7 @@ impl TypeChecker<'_> {
             }
             let expected_return = signature
                 .return_type()
-                .map(|ty| type_ref_kind_for_impl(ty, &self_ty, &generic_names));
+                .map(|ty| type_ref_kind_for_impl(ty.value(), &self_ty, &generic_names));
             let predicates = self.trait_catalog.predicates_for_signature(signature);
             self.trait_predicate_stack.push(predicates);
             let actual = self.with_expected_return(expected_return.as_ref(), |this| {
@@ -1568,7 +1573,9 @@ impl TypeChecker<'_> {
         let ty = if name == "self" {
             self_ty.clone()
         } else {
-            let ty = type_ref_kind_for_impl(param.ty(), self_ty, generic_names);
+            let ty = param.ty().map_or(TypeKind::Unit, |ty| {
+                type_ref_kind_for_impl(ty.value(), self_ty, generic_names)
+            });
             if param.is_rest() {
                 TypeKind::Vec(Box::new(ty))
             } else {
@@ -1659,7 +1666,7 @@ impl TypeChecker<'_> {
         let Some((item_ty, error_ty)) = function
             .signature()
             .return_type()
-            .and_then(stream_return_types)
+            .and_then(|ty| stream_return_types(ty.value()))
         else {
             self.errors.push(TypeCheckError::new(format!(
                 "`stream fn {}` must declare `-> Stream<T, E>`",
@@ -1795,15 +1802,17 @@ impl TypeChecker<'_> {
             .iter()
             .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         {
-            self.check_type_ref_shape(param.ty());
+            if let Some(ty) = param.ty() {
+                self.check_type_ref_shape(ty.value());
+            }
         }
         if let Some(return_type) = signature.return_type() {
-            self.check_type_ref_shape(return_type);
+            self.check_type_ref_shape(return_type.value());
         }
         for clause in signature.where_clauses() {
-            self.check_type_ref_shape(clause.subject());
+            self.check_type_ref_shape(clause.subject().value());
             for bound in clause.bounds() {
-                self.check_type_ref_shape(bound);
+                self.check_type_ref_shape(bound.value());
             }
         }
     }
@@ -1857,13 +1866,17 @@ impl TypeChecker<'_> {
                 for arg in bound.args() {
                     self.check_type_ref_shape(arg);
                 }
-                for binding in bound.assoc_bindings() {
+                for binding in bound.associated() {
                     self.check_type_ref_shape(binding.value());
                 }
             }
             TypeRef::Projection { subject, .. } => self.check_type_ref_shape(subject),
             TypeRef::Reference(reference) => self.check_type_ref_shape(reference.referent()),
             TypeRef::Slice(inner) => self.check_type_ref_shape(inner),
+            TypeRef::Recovery(id) => self.errors.push(TypeCheckError::new(format!(
+                "recovered type node {} is not type-checkable",
+                id.index()
+            ))),
             TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
         }
     }
@@ -2129,14 +2142,14 @@ fn type_ref_contains_choice(ty: &TypeRef) -> bool {
         TypeRef::TraitBound(bound) => {
             bound.args().iter().any(type_ref_contains_choice)
                 || bound
-                    .assoc_bindings()
+                    .associated()
                     .iter()
                     .any(|binding| type_ref_contains_choice(binding.value()))
         }
         TypeRef::Projection { subject, .. } => type_ref_contains_choice(subject),
         TypeRef::Reference(reference) => type_ref_contains_choice(reference.referent()),
         TypeRef::Slice(inner) => type_ref_contains_choice(inner),
-        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => false,
+        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) | TypeRef::Recovery(_) => false,
     }
 }
 
@@ -2301,7 +2314,7 @@ fn declared_effect_set_from_contracts(
 fn struct_field_types(item: &StructItem) -> HashMap<String, TypeKind> {
     item.fields()
         .iter()
-        .map(|field| (field.name().to_owned(), type_ref_kind(field.ty())))
+        .map(|field| (field.name().to_owned(), type_ref_kind(field.ty().value())))
         .collect()
 }
 
@@ -2319,148 +2332,38 @@ fn enum_variant_payload_types(
 }
 
 fn enum_variant_payload_type(
-    enum_name: &str,
+    _enum_name: &str,
     variant: &EnumVariant,
-    errors: &mut Vec<TypeCheckError>,
+    _errors: &mut Vec<TypeCheckError>,
 ) -> EnumVariantPayload {
     let Some(payload) = variant.payload() else {
         return EnumVariantPayload::Unit;
     };
-    parse_enum_variant_payload(payload).unwrap_or_else(|message| {
-        errors.push(TypeCheckError::new(format!(
-            "enum `{enum_name}` variant `{}` has invalid payload type: {message}",
-            variant.name()
-        )));
-        EnumVariantPayload::Unit
-    })
+    enum_variant_tuple_payload_from_type_ref(payload.value())
 }
 
-fn parse_enum_variant_payload(payload: &str) -> Result<EnumVariantPayload, String> {
-    let payload = payload.trim();
-    if payload.is_empty() {
-        return Ok(EnumVariantPayload::Unit);
-    }
-    if let Some(record) = payload
-        .strip_prefix('{')
-        .and_then(|inner| inner.strip_suffix('}'))
-    {
-        return parse_enum_variant_record_payload(record);
-    }
-    parse_type_ref(payload)
-        .map(enum_variant_tuple_payload_from_type_ref)
-        .map_err(|error| error.to_string())
-}
-
-fn enum_variant_tuple_payload_from_type_ref(ty: TypeRef) -> EnumVariantPayload {
+fn enum_variant_tuple_payload_from_type_ref(ty: &TypeRef) -> EnumVariantPayload {
     match ty {
         TypeRef::Tuple(items) => {
             EnumVariantPayload::Tuple(items.iter().map(type_ref_kind).collect())
         }
-        ty => EnumVariantPayload::Tuple(vec![type_ref_kind(&ty)]),
-    }
-}
-
-fn parse_enum_variant_record_payload(record: &str) -> Result<EnumVariantPayload, String> {
-    let mut fields = BTreeMap::new();
-    for field in split_top_level_commas(record) {
-        let field = field.trim();
-        if field.is_empty() {
-            continue;
-        }
-        let (name, ty) = split_top_level_colon(field)
-            .ok_or_else(|| format!("record payload field `{field}` must use `name: Type`"))?;
-        let ty = parse_type_ref(ty.trim()).map_err(|error| error.to_string())?;
-        fields.insert(name.trim().to_owned(), type_ref_kind(&ty));
-    }
-    Ok(EnumVariantPayload::Record(fields))
-}
-
-fn split_top_level_commas(source: &str) -> Vec<&str> {
-    split_top_level_char(source, ',')
-}
-
-fn split_top_level_colon(source: &str) -> Option<(&str, &str)> {
-    let index = top_level_char_index(source, ':')?;
-    Some((&source[..index], &source[index + ':'.len_utf8()..]))
-}
-
-fn split_top_level_char(source: &str, delimiter: char) -> Vec<&str> {
-    let mut parts = Vec::new();
-    let mut start = 0;
-    let mut depth = DelimiterDepth::default();
-    for (index, ch) in source.char_indices() {
-        if ch == delimiter && depth.is_top_level() {
-            parts.push(&source[start..index]);
-            start = index + ch.len_utf8();
-            continue;
-        }
-        depth.update(ch);
-    }
-    parts.push(&source[start..]);
-    parts
-}
-
-fn top_level_char_index(source: &str, delimiter: char) -> Option<usize> {
-    let mut depth = DelimiterDepth::default();
-    source.char_indices().find_map(|(index, ch)| {
-        if ch == delimiter && depth.is_top_level() {
-            return Some(index);
-        }
-        depth.update(ch);
-        None
-    })
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct DelimiterDepth {
-    paren: i32,
-    brace: i32,
-    bracket: i32,
-    angle: i32,
-}
-
-impl DelimiterDepth {
-    fn update(&mut self, ch: char) {
-        match ch {
-            '(' => self.paren += 1,
-            ')' => self.paren -= 1,
-            '{' => self.brace += 1,
-            '}' => self.brace -= 1,
-            '[' => self.bracket += 1,
-            ']' => self.bracket -= 1,
-            '<' => self.angle += 1,
-            '>' if self.angle > 0 => self.angle -= 1,
-            _ => {}
-        }
-    }
-
-    const fn is_top_level(self) -> bool {
-        self.paren == 0 && self.brace == 0 && self.bracket == 0 && self.angle == 0
+        ty => EnumVariantPayload::Tuple(vec![type_ref_kind(ty)]),
     }
 }
 
 fn impl_target_type(item: &ImplItem) -> TypeKind {
-    parse_type_ref(item.target()).map_or_else(
-        |_| TypeKind::Named(item.target().to_owned()),
-        |ty| type_ref_kind_for_impl(&ty, &TypeKind::Named("Self".to_owned()), &HashSet::new()),
+    type_ref_kind_for_impl(
+        item.target().value(),
+        &TypeKind::Named("Self".to_owned()),
+        &HashSet::new(),
     )
 }
 
-fn impl_generic_names(generics: Option<&str>) -> HashSet<String> {
+fn impl_generic_names(generics: &[GenericParam]) -> HashSet<String> {
     generics
-        .into_iter()
-        .flat_map(|source| source.split(','))
-        .filter_map(|item| {
-            let name = item
-                .trim()
-                .trim_start_matches('<')
-                .trim_end_matches('>')
-                .split(':')
-                .next()
-                .unwrap_or_default()
-                .trim();
-            (!name.is_empty()).then_some(name.to_owned())
-        })
+        .iter()
+        .filter_map(GenericParam::as_type)
+        .map(|name| name.as_str().to_owned())
         .collect()
 }
 
@@ -2470,14 +2373,30 @@ fn type_ref_kind_for_impl(
     generic_names: &HashSet<String>,
 ) -> TypeKind {
     match ty {
-        TypeRef::Path(path) if path == "Self" => self_ty.clone(),
-        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => TypeKind::Option(
-            Box::new(type_ref_kind_for_impl(&args[0], self_ty, generic_names)),
-        ),
-        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => TypeKind::Vec(
-            Box::new(type_ref_kind_for_impl(&args[0], self_ty, generic_names)),
-        ),
-        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+        TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self") => {
+            self_ty.clone()
+        }
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Option") && args.len() == 1 =>
+        {
+            TypeKind::Option(Box::new(type_ref_kind_for_impl(
+                &args[0],
+                self_ty,
+                generic_names,
+            )))
+        }
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Vec") && args.len() == 1 =>
+        {
+            TypeKind::Vec(Box::new(type_ref_kind_for_impl(
+                &args[0],
+                self_ty,
+                generic_names,
+            )))
+        }
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Result") && args.len() == 2 =>
+        {
             TypeKind::Result {
                 ok: Box::new(type_ref_kind_for_impl(&args[0], self_ty, generic_names)),
                 error: Box::new(type_ref_kind_for_impl(&args[1], self_ty, generic_names)),

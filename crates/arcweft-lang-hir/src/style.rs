@@ -13,7 +13,7 @@ use arcweft_lang_syntax::{
         },
     },
     expr::Expr,
-    types::TypeRef,
+    types::AuthoredTypeRef,
 };
 
 /// Stable caller-assigned identity for one lowered Style declaration.
@@ -152,7 +152,7 @@ pub struct HirStyleEnvironmentClauseRanges {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirStyleTokenDecl {
     public_id: String,
-    value_type: Option<TypeRef>,
+    value_type: Option<AuthoredTypeRef>,
     value: HirStyleExpr,
     range: TextRange,
 }
@@ -646,7 +646,7 @@ impl HirStyleTokenDecl {
         &self.public_id
     }
 
-    pub const fn value_type(&self) -> Option<&TypeRef> {
+    pub const fn value_type(&self) -> Option<&AuthoredTypeRef> {
         self.value_type.as_ref()
     }
 

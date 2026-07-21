@@ -69,7 +69,13 @@ fn compile_definition(
     let parameter_declarations = function_params(function)?;
     let mut parameters = Vec::with_capacity(parameter_declarations.len());
     for (name, parameter) in &parameter_declarations {
-        let ty = runtime_type(parameter.ty())?;
+        let authored_ty = parameter.ty().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Fx function `{}` parameter `{name}` requires a type",
+                function.name()
+            ))
+        })?;
+        let ty = runtime_type(authored_ty.value())?;
         let default = parameter
             .default()
             .map(|expr| lower_closed_runtime_value(expr, ty))
@@ -360,7 +366,13 @@ fn bind_call(
     }
     let mut result = BTreeMap::new();
     for (name, param) in function_params(function)? {
-        let ty = runtime_type(param.ty())?;
+        let authored_ty = param.ty().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Fx function `{}` parameter `{name}` requires a type",
+                function.name()
+            ))
+        })?;
+        let ty = runtime_type(authored_ty.value())?;
         let expr = supplied.remove(&name).map_or_else(
             || {
                 param.default().map_or_else(

@@ -9,7 +9,6 @@ pub struct RouteInfo {
 }
 
 pub type RouteLabel = String
-where len(self) >= 1
 
 flow @flow.main main {
     return "done"

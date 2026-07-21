@@ -56,6 +56,7 @@ use arcweft_lang_syntax::{
         common::TextRange,
         ids::{EntityRef, EntityRefSyntax},
         items::EntityDeclItem,
+        module_path::ModulePathRoot,
         view::{
             ViewAction, ViewActionPayload, ViewArg, ViewAwait, ViewAwaitBranchKind, ViewBody,
             ViewButton, ViewButtonLabel, ViewCall, ViewElement, ViewExpr, ViewForEach,
@@ -530,15 +531,20 @@ fn view_definition_schema(
                     ordinal,
                 })?
                 .to_owned();
+            let ty = parameter
+                .ty()
+                .ok_or_else(|| ViewSidecarError::InvalidViewSignature {
+                    view: public_id.to_owned(),
+                    message: format!("parameter `{name}` requires an explicit type"),
+                })?;
             Ok(ViewParameterSchema {
                 name,
-                value_type: view_scalar_type(parameter.ty()),
-                source_type: parameter.ty().canonical_label(),
+                value_type: view_scalar_type(ty.value()),
+                source_type: ty.value().canonical_label(),
                 default: parameter.default().cloned(),
-                dialogue_model: match parameter.ty() {
-                    TypeRef::Path(type_name) => dialogue_view_models.model(type_name).cloned(),
-                    _ => None,
-                },
+                dialogue_model: direct_type_name(ty.value())
+                    .and_then(|type_name| dialogue_view_models.model(type_name))
+                    .cloned(),
             })
         })
         .collect::<Result<Vec<_>, ViewSidecarError>>()?;
@@ -595,10 +601,7 @@ fn compile_view_parameters(
 }
 
 fn view_scalar_type(ty: &TypeRef) -> Option<FxRuntimeType> {
-    let TypeRef::Path(path) = ty else {
-        return None;
-    };
-    Some(match path.as_str() {
+    Some(match direct_type_name(ty)? {
         "bool" => FxRuntimeType::Bool,
         "i32" => FxRuntimeType::I32,
         "f32" => FxRuntimeType::F32,
@@ -610,6 +613,16 @@ fn view_scalar_type(ty: &TypeRef) -> Option<FxRuntimeType> {
         "Transform2D" => FxRuntimeType::Transform2D,
         _ => return None,
     })
+}
+
+fn direct_type_name(ty: &TypeRef) -> Option<&str> {
+    let TypeRef::Path(path) = ty else {
+        return None;
+    };
+    let [name] = path.segments() else {
+        return None;
+    };
+    matches!(path.root(), ModulePathRoot::ImplicitCrate).then(|| name.as_str())
 }
 
 fn view_state_schema_hash(schema: &ViewDefinitionSchema, body: &ViewBody) -> u64 {

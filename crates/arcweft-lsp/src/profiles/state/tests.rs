@@ -19,7 +19,8 @@ use arcweft_lang_hir::{
     lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
     symbol::{
-        CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
+        CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolLinkError,
+        ProjectSymbolWorldId,
     },
 };
 use arcweft_lang_sema::{
@@ -826,9 +827,10 @@ fn failed_typed_binding_collision_preserves_accepted_pointer_and_caches() {
     assert!(
         report.diagnostics().iter().any(|diagnostic| matches!(
             diagnostic.kind(),
-            CharacterRegistrationDiagnosticKind::CallableCatalog {
-                code: arcweft_lang_sema::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+            CharacterRegistrationDiagnosticKind::ProjectSymbol {
+                error: ProjectSymbolLinkError::DuplicateDeclaration { name, .. },
             }
+                if name == "shared"
         )),
         "{:?}",
         report.diagnostics()

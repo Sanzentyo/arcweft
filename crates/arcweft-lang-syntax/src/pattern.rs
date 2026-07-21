@@ -14,7 +14,13 @@ use crate::types::parse_type_ref;
 /// line-plan outputs, and function parameters so later binding and lowering
 /// passes do not need a separate parameter-only pattern model.
 pub(crate) fn parse_pattern(source: &str) -> Pattern {
-    let source = source.trim();
+    parse_pattern_at(source, 0)
+}
+
+pub(crate) fn parse_pattern_at(source: &str, base: usize) -> Pattern {
+    let trimmed = source.trim();
+    let base = base + subslice_offset(source, trimmed);
+    let source = trimmed;
     if source == "_" {
         return Pattern::Discard;
     }
@@ -27,22 +33,24 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
     }
     if let Some((name, ty)) = split_top_level_punctuation_once(source, ':') {
         let name = name.trim();
+        let ty_source = ty.trim();
         if is_pattern_ident(name)
-            && let Ok(ty) = parse_type_ref(ty.trim())
+            && let Ok(mut ty) = parse_type_ref(ty_source)
         {
+            ty.rebase(base + subslice_offset(source, ty_source));
             return Pattern::Typed {
                 name: name.to_owned(),
                 ty,
             };
         }
     }
-    if let Some(pattern) = parse_variant_pattern(source) {
+    if let Some(pattern) = parse_variant_pattern(source, base) {
         return pattern;
     }
     if let Ok(Expr::EntityRef(EntityRefSyntax::Absolute(entity))) = parse_expr(source) {
         return Pattern::Entity(entity);
     }
-    if let Some(entity) = parse_entity_pattern(source) {
+    if let Some(entity) = parse_entity_pattern(source, base) {
         return Pattern::Entity(entity);
     }
     if let Ok(expr @ Expr::Literal(_)) = parse_expr(source) {
@@ -55,7 +63,7 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
         return Pattern::Tuple(
             split_pattern_items(inner)
                 .into_iter()
-                .map(parse_pattern)
+                .map(|item| parse_pattern_at(item, base + subslice_offset(source, item)))
                 .collect(),
         );
     }
@@ -63,15 +71,15 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        return parse_bracket_seq_pattern(inner);
+        return parse_bracket_seq_pattern(inner, base + subslice_offset(source, inner));
     }
-    if let Some(pattern) = parse_record_pattern(source) {
+    if let Some(pattern) = parse_record_pattern(source, base) {
         return pattern;
     }
     if let Some((name, rest)) = split_whole_pattern(source) {
         return Pattern::Whole {
             name: name.to_owned(),
-            pattern: Box::new(parse_pattern(rest)),
+            pattern: Box::new(parse_pattern_at(rest, base + subslice_offset(source, rest))),
         };
     }
     if is_pattern_ident(source) {
@@ -80,7 +88,7 @@ pub(crate) fn parse_pattern(source: &str) -> Pattern {
     Pattern::Raw(source.to_owned())
 }
 
-fn parse_entity_pattern(source: &str) -> Option<EntityRef> {
+fn parse_entity_pattern(source: &str, base: usize) -> Option<EntityRef> {
     let body = if let Some(body) = source
         .strip_prefix("@<")
         .and_then(|value| value.strip_suffix('>'))
@@ -93,7 +101,7 @@ fn parse_entity_pattern(source: &str) -> Option<EntityRef> {
         EntityRef::new(
             body.trim().to_owned(),
             source.starts_with("@<"),
-            TextRange::new(0, source.len()),
+            TextRange::new(base, base + source.len()),
         )
     })
 }
@@ -107,7 +115,7 @@ fn split_whole_pattern(source: &str) -> Option<(&str, &str)> {
     .then_some((name, rest))
 }
 
-fn parse_bracket_seq_pattern(inner: &str) -> Pattern {
+fn parse_bracket_seq_pattern(inner: &str, base: usize) -> Pattern {
     let mut rest = None;
     let items = split_pattern_items(inner)
         .into_iter()
@@ -119,15 +127,15 @@ fn parse_bracket_seq_pattern(inner: &str) -> Pattern {
                 rest = Some(name.trim().to_owned());
                 None
             } else {
-                Some(parse_pattern(item))
+                Some(parse_pattern_at(item, base + subslice_offset(inner, item)))
             }
         })
         .collect();
     Pattern::BracketSeq { items, rest }
 }
 
-fn parse_variant_pattern(source: &str) -> Option<Pattern> {
-    let (head, payload) = split_variant_payload(source);
+fn parse_variant_pattern(source: &str, base: usize) -> Option<Pattern> {
+    let (head, payload) = split_variant_payload(source, base);
     let (path, name) = if let Some(name) = head.strip_prefix('.') {
         (None, name.trim())
     } else if let Some((path, name)) =
@@ -149,7 +157,7 @@ fn parse_variant_pattern(source: &str) -> Option<Pattern> {
     })
 }
 
-fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) {
+fn split_variant_payload(source: &str, base: usize) -> (&str, Option<VariantPatternPayload>) {
     if let Some((open, close)) = find_top_level_matching_punctuation(source, '(', ')')
         && source[close + ')'.len_utf8()..].trim().is_empty()
     {
@@ -159,7 +167,7 @@ fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) 
             Some(VariantPatternPayload::Tuple(
                 split_pattern_items(inner)
                     .into_iter()
-                    .map(parse_pattern)
+                    .map(|item| parse_pattern_at(item, base + subslice_offset(source, item)))
                     .collect(),
             )),
         );
@@ -174,8 +182,12 @@ fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) 
                     return None;
                 }
                 let (name, pattern) = split_pattern_field(field);
-                is_pattern_ident(name)
-                    .then(|| RecordPatternField::new(name, parse_pattern(pattern)))
+                is_pattern_ident(name).then(|| {
+                    RecordPatternField::new(
+                        name,
+                        parse_pattern_at(pattern, base + subslice_offset(source, pattern)),
+                    )
+                })
             })
             .collect();
         return (
@@ -186,7 +198,7 @@ fn split_variant_payload(source: &str) -> (&str, Option<VariantPatternPayload>) 
     (source, None)
 }
 
-fn parse_record_pattern(source: &str) -> Option<Pattern> {
+fn parse_record_pattern(source: &str, base: usize) -> Option<Pattern> {
     let (head, body) = split_brace_item(source)?;
     if head.split_whitespace().count() > 1 {
         return None;
@@ -203,7 +215,12 @@ fn parse_record_pattern(source: &str) -> Option<Pattern> {
                 return None;
             }
             let (name, pattern) = split_pattern_field(field);
-            is_pattern_ident(name).then(|| RecordPatternField::new(name, parse_pattern(pattern)))
+            is_pattern_ident(name).then(|| {
+                RecordPatternField::new(
+                    name,
+                    parse_pattern_at(pattern, base + subslice_offset(source, pattern)),
+                )
+            })
         })
         .collect();
     Some(Pattern::Record {
@@ -238,4 +255,8 @@ fn split_brace_item(source: &str) -> Option<(&str, &str)> {
     let (open, close) = find_top_level_matching_punctuation(source, '{', '}')?;
     (source[close + '}'.len_utf8()..].trim().is_empty())
         .then(|| (source[..open].trim(), source[open + 1..close].trim()))
+}
+
+fn subslice_offset(source: &str, fragment: &str) -> usize {
+    (fragment.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }

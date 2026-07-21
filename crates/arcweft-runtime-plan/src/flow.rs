@@ -1509,14 +1509,17 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
                 expr,
                 expr_range,
                 ..
-            } => Some(self.lower_let_stmt(
-                flow_id,
-                flow_index,
-                pattern,
-                ty.as_ref(),
-                expr,
-                *expr_range,
-            )),
+            } => Some(
+                self.lower_let_stmt(
+                    flow_id,
+                    flow_index,
+                    pattern,
+                    ty.as_ref()
+                        .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+                    expr,
+                    *expr_range,
+                ),
+            ),
             Stmt::LetScope { pattern, scope } => {
                 Some(self.lower_let_scope_stmt(flow_id, flow_index, pattern, scope))
             }
@@ -1540,7 +1543,11 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
                 let pattern = self.lower_stmt_pattern(stmt, pattern, "binding");
                 Some(vec![FlowOp::LetElse {
                     pattern,
-                    expr: self.lower_runtime_expr_with_expected_type(ty.as_ref(), expr.expr()),
+                    expr: self.lower_runtime_expr_with_expected_type(
+                        ty.as_ref()
+                            .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+                        expr.expr(),
+                    ),
                     else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
                 }])
             }

@@ -14,7 +14,7 @@ use crate::cst::{
     split_top_level_punctuation_once,
 };
 use crate::expr::Expr;
-use crate::pattern::parse_pattern;
+use crate::pattern::{parse_pattern, parse_pattern_at};
 
 use super::headers::simple_error;
 use super::helpers::LogicalBlockItem;
@@ -166,7 +166,10 @@ fn parse_line_plan_body_inner(
                 LinePlanChildProjection::WithIndent,
             );
             items.push(LinePlanItem::Let {
-                pattern: parse_pattern(pattern.trim()),
+                pattern: parse_pattern_at(
+                    pattern.trim(),
+                    line.base + (pattern.trim().as_ptr() as usize - line_source.as_ptr() as usize),
+                ),
                 expr: parse_named_block_expr(head, &body_lines.join("\n")),
             });
             continue;
@@ -425,7 +428,15 @@ fn parse_line_plan_item(
         && let Some((pattern, expr)) = split_top_level_binding(rest)
     {
         return LinePlanItem::Let {
-            pattern: parse_pattern(pattern.trim()),
+            pattern: base.map_or_else(
+                || parse_pattern(pattern.trim()),
+                |base| {
+                    parse_pattern_at(
+                        pattern.trim(),
+                        base + (pattern.trim().as_ptr() as usize - line.as_ptr() as usize),
+                    )
+                },
+            ),
             expr: parse_line_plan_expr(line, expr.trim(), base, errors),
         };
     }

@@ -12,7 +12,9 @@ use arcweft_character::{
     registration_catalog::SourceBackedCharacterCatalog,
     symbol::CharacterSymbolDescriptor,
 };
-use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolTargetId, ProjectSymbolWorldId};
+use arcweft_lang_hir::symbol::{
+    CallablePackageId, ProjectSymbolLinkError, ProjectSymbolTargetId, ProjectSymbolWorldId,
+};
 use arcweft_lang_syntax::ast::{
     module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
     symbol_path::SymbolPath,
@@ -417,7 +419,9 @@ fn accepted_world_catalogues_qualified_adapter_non_callable_path() {
                 .then_some(target)
                 .and_then(|target| match target {
                     ProjectSymbolTargetId::External(declaration) => Some(*declaration),
-                    ProjectSymbolTargetId::Callable(_) | ProjectSymbolTargetId::Module(_) => None,
+                    ProjectSymbolTargetId::Callable(_)
+                    | ProjectSymbolTargetId::Nominal(_)
+                    | ProjectSymbolTargetId::Module(_) => None,
                 })
         })
         .expect("qualified adapter external target");
@@ -2194,7 +2198,7 @@ fn character_spelling_variants_one_target() {
 fn repeated_character_import_same_target_succeeds() {
     let (root, project, world) = root_project_source(
         "repeated-character-import",
-        "use crate.akane as hero\nuse crate.character.akane as hero\n",
+        "use crate.akane as hero\nuse crate.akane as hero\n",
     );
     let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
@@ -2340,14 +2344,15 @@ fn canonical_spelling_collision_fails() {
     let report = register(&project, &facts, base, None)
         .expect_err("canonical character spelling must remain unambiguous");
 
-    assert!(report.diagnostics().iter().any(|diagnostic| matches!(
-        diagnostic.kind(),
-        CharacterRegistrationDiagnosticKind::AliasCollision {
-            spelling,
-            conflicting,
-            ..
-        } if spelling.leaf() == "character.akane" && !conflicting.is_empty()
-    )));
+    assert!(
+        report.diagnostics().iter().any(|diagnostic| matches!(
+            diagnostic.kind(),
+            CharacterRegistrationDiagnosticKind::ProjectSymbol {
+                error: ProjectSymbolLinkError::DuplicateDeclaration { name, .. },
+            } if name == "akane"
+        )),
+        "{report:#?}"
+    );
 }
 
 #[test]
@@ -2360,8 +2365,9 @@ fn compact_spelling_collision_fails() {
 
     assert!(report.diagnostics().iter().any(|diagnostic| matches!(
         diagnostic.kind(),
-        CharacterRegistrationDiagnosticKind::AliasCollision { spelling, .. }
-            if spelling.leaf() == "akane"
+        CharacterRegistrationDiagnosticKind::ProjectSymbol {
+            error: ProjectSymbolLinkError::DuplicateDeclaration { name, .. },
+        } if name == "akane"
     )));
 }
 

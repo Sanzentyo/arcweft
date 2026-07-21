@@ -7,6 +7,7 @@ use arcweft_lang_syntax::{
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
     parser::parse_source,
+    types::{TypePath, TypeRef, TypeRefNodePath, parse_type_ref},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
@@ -19,7 +20,8 @@ use super::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectDirectBindingError,
     ProjectExternalDeclarations, ProjectSymbolDiagnosticCode, ProjectSymbolLinkError,
     ProjectSymbolResolutionError, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolTargetId,
-    ProjectSymbolWorldId, ResolvedProjectSymbol,
+    ProjectSymbolWorldId, ProjectTypeLookupError, ProjectTypeTarget, ResolvedProjectSymbol,
+    nominal::{ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationKind},
 };
 
 const PACKAGE: &str = "project-symbol-tests";
@@ -148,6 +150,117 @@ fn binding_path<const N: usize>(segments: [&str; N]) -> ProjectSymbolPath {
         }),
     )
     .expect("test project binding path is non-empty")
+}
+
+fn type_path(source: &str) -> TypePath {
+    let authored = parse_type_ref(source).expect("valid test type path");
+    let TypeRef::Path(path) = authored.value() else {
+        panic!("`{source}` must parse as a plain type path");
+    };
+    path.clone()
+}
+
+fn assert_nominal_source_records(
+    model_source: &str,
+    model_document: &SourceDocument,
+    record: &ProjectNominalDeclaration,
+    choice: &ProjectNominalDeclaration,
+    alias: &ProjectNominalDeclaration,
+) {
+    let alias_target = "Result<T, Missing>";
+    let alias_target_start = model_source
+        .rfind(alias_target)
+        .expect("alias target source");
+    let ProjectNominalBody::TypeAlias { target } = alias.body() else {
+        panic!("Alias body must retain its parsed target")
+    };
+    assert_eq!(
+        target
+            .spans()
+            .source_at(&TypeRefNodePath::root())
+            .expect("alias root type source")
+            .whole()
+            .range(),
+        SourceRange::new(alias_target_start, alias_target_start + alias_target.len())
+    );
+
+    let ProjectNominalBody::Enum { variants } = choice.body() else {
+        panic!("Choice body must retain source-backed variants")
+    };
+    assert_eq!(variants.len(), 2);
+    assert_eq!(variants[0].name().as_str(), "Value");
+    assert!(variants[0].payload().is_some());
+    assert_eq!(variants[1].name().as_str(), "Empty");
+    assert!(variants[1].payload().is_none());
+
+    let record_name = model_source.find("Record").expect("record name");
+    assert_eq!(
+        record.source().name().range(),
+        SourceRange::new(record_name, record_name + "Record".len())
+    );
+    assert_eq!(record.source().name().source(), model_document.identity());
+    assert_eq!(record.type_parameters().len(), 1);
+    assert_eq!(record.where_predicates().len(), 1);
+    let ProjectNominalBody::Struct { fields } = record.body() else {
+        panic!("Record body must remain a source-backed struct")
+    };
+    assert_eq!(fields.len(), 1);
+    let field_text = "value: Result<T, Missing>";
+    let field_start = model_source.find(field_text).expect("field source");
+    assert_eq!(
+        fields[0].source().whole().range(),
+        SourceRange::new(field_start, field_start + field_text.len())
+    );
+    assert_eq!(
+        fields[0]
+            .ty()
+            .spans()
+            .source_at(&TypeRefNodePath::root())
+            .expect("field root type source")
+            .whole()
+            .range(),
+        SourceRange::new(
+            field_start + "value: ".len(),
+            field_start + field_text.len(),
+        )
+    );
+}
+
+fn assert_visible_nominal_bindings(
+    table: &ProjectSymbolTable,
+    root: &CanonicalModulePath,
+    record: &ProjectNominalDeclaration,
+    choice: &ProjectNominalDeclaration,
+    alias: &ProjectNominalDeclaration,
+) {
+    let visible = table
+        .visible_type_bindings(root)
+        .map(|binding| {
+            (
+                binding.spelling().to_string(),
+                match binding.target() {
+                    ProjectTypeTarget::Nominal(declaration) => declaration.id().clone(),
+                    ProjectTypeTarget::External(_) => panic!("fixture has no external type"),
+                },
+                binding.binding_sites().len(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        visible
+            .iter()
+            .any(|(name, id, sites)| { name == "Record" && id == record.id() && *sites >= 2 })
+    );
+    assert!(
+        visible
+            .iter()
+            .any(|(name, id, _)| { name == "Pick" && id == choice.id() })
+    );
+    assert!(
+        visible
+            .iter()
+            .any(|(name, id, _)| { name == "Alias" && id == alias.id() })
+    );
 }
 
 fn scope_rows(
@@ -600,6 +713,172 @@ fn ordinary_projection_matches_callable_golden() {
 }
 
 #[test]
+fn nominal_records_publish_once_and_resolve_through_every_import_form() {
+    let root_source = concat!(
+        "use crate.models.Record\n",
+        "use crate.models.Choice as Pick\n",
+        "use crate.facade.*\n",
+    );
+    let model_source = concat!(
+        "pub struct Record<T: Bound> where T: Bound {\n",
+        "    value: Result<T, Missing>,\n",
+        "}\n",
+        "pub enum Choice<T> where T: Bound {\n",
+        "    Value Result<T, Missing>,\n",
+        "    Empty,\n",
+        "}\n",
+        "pub type Alias<T> = Result<T, Missing>\n",
+        "where T: Bound\n",
+    );
+    let (documents, project) = project_modules(&[
+        ("", root_source),
+        ("models", model_source),
+        ("facade", "pub use crate.models.Alias\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "nominal-import-publication"),
+    )
+    .expect("nominals and imports publish atomically")
+    .into_table();
+    let models = module_path("models");
+    let root = CanonicalModulePath::crate_root();
+    let reference_source = documents[0]
+        .span(SourceRange::new(0, root_source.len()))
+        .expect("reference source");
+    let resolve_nominal = |module: &CanonicalModulePath, spelling: &str| {
+        let ProjectTypeTarget::Nominal(declaration) = table
+            .resolve_type_target(module, &type_path(spelling), reference_source.clone())
+            .expect("nominal type target")
+        else {
+            panic!("`{spelling}` must resolve to a project nominal")
+        };
+        declaration
+    };
+
+    let local_record = resolve_nominal(&models, "Record");
+    let qualified_record = resolve_nominal(&root, "crate.models.Record");
+    let imported_record = resolve_nominal(&root, "Record");
+    assert_eq!(local_record.id(), qualified_record.id());
+    assert_eq!(local_record.id(), imported_record.id());
+    assert_eq!(
+        local_record.id().kind(),
+        ProjectNominalDeclarationKind::Struct
+    );
+    assert_eq!(local_record.id().module(), &models);
+    assert!(local_record.id().owner_path().is_empty());
+    assert_eq!(local_record.id().name().as_str(), "Record");
+
+    let choice = resolve_nominal(&root, "Pick");
+    assert_eq!(choice.id().kind(), ProjectNominalDeclarationKind::Enum);
+    assert_eq!(
+        choice.id(),
+        resolve_nominal(&root, "crate.models.Choice").id()
+    );
+
+    let alias = resolve_nominal(&root, "Alias");
+    assert_eq!(alias.id().kind(), ProjectNominalDeclarationKind::TypeAlias);
+    assert_eq!(
+        alias.id(),
+        resolve_nominal(&root, "crate.facade.Alias").id()
+    );
+    assert_eq!(alias.id(), resolve_nominal(&models, "Alias").id());
+
+    assert_eq!(table.nominal_symbols().count(), 3);
+    assert_eq!(table.nominal(local_record.id()), Some(local_record));
+    assert_nominal_source_records(model_source, &documents[1], local_record, choice, alias);
+    assert_visible_nominal_bindings(&table, &root, local_record, choice, alias);
+}
+
+#[test]
+fn reserved_type_names_and_cross_family_duplicates_block_publication() {
+    let (document, reserved_project) = project("struct Result {\n    value: i32,\n}\n");
+    let report = ProjectSymbolTable::link(
+        &reserved_project,
+        &declarations(&document, Vec::new(), "reserved-type-name"),
+    )
+    .expect_err("reserved built-in type names cannot be shadowed");
+    assert!(matches!(
+        report.diagnostics(),
+        [ProjectSymbolLinkError::ReservedTypeName { module, name, source }]
+            if module == &CanonicalModulePath::crate_root()
+                && name == "Result"
+                && &document.text()[source.range().start()..source.range().end()] == "Result"
+    ));
+
+    let (document, project) = project(concat!(
+        "fn Widget() -> Unit { () }\n",
+        "struct Widget {\n    value: i32,\n}\n",
+    ));
+    let report = ProjectSymbolTable::link(
+        &project,
+        &declarations(&document, Vec::new(), "cross-family-duplicate"),
+    )
+    .expect_err("callable and nominal cannot publish the same direct name");
+    assert!(report.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic,
+        ProjectSymbolLinkError::DuplicateDeclaration { name, .. } if name == "Widget"
+    )));
+}
+
+#[test]
+fn type_lookup_reports_wrong_kind_inaccessible_and_ambiguous_candidates() {
+    let (documents, project) = project_modules(&[
+        (
+            "",
+            concat!(
+                "use crate.a.ProjectRecord as Both\n",
+                "use crate.b.ProjectRecord as Both\n",
+                "fn work() -> Unit { () }\n",
+            ),
+        ),
+        (
+            "a",
+            "pub struct ProjectRecord {\n    left: i32,\n}\nstruct Hidden {\n    value: i32,\n}\n",
+        ),
+        ("b", "pub enum ProjectRecord {\n    Right,\n}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "typed-type-lookup-errors"),
+    )
+    .expect("ordinary same-spelling ambiguity remains a lookup result")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("reference source");
+
+    assert!(matches!(
+        table.resolve_type_target(&root, &type_path("work"), source.clone()),
+        Err(ProjectTypeLookupError::WrongKind { actual, .. })
+            if matches!(actual.target(), ProjectSymbolTargetId::Callable(_))
+                && actual.declaration().is_some()
+                && !actual.binding_sites().is_empty()
+    ));
+    assert!(matches!(
+        table.resolve_type_target(
+            &root,
+            &type_path("crate.a.Hidden"),
+            source.clone(),
+        ),
+        Err(ProjectTypeLookupError::Inaccessible { candidates, .. })
+            if candidates.len() == 1
+                && matches!(candidates[0].target(), ProjectSymbolTargetId::Nominal(_))
+                && candidates[0].declaration().is_some()
+    ));
+    assert!(matches!(
+        table.resolve_type_target(&root, &type_path("Both"), source),
+        Err(ProjectTypeLookupError::Ambiguous { candidates, .. })
+            if candidates.len() == 2
+                && candidates.windows(2).all(|pair| pair[0].target() < pair[1].target())
+                && candidates.iter().all(|candidate| {
+                    candidate.declaration().is_some() && !candidate.binding_sites().is_empty()
+                })
+    ));
+}
+
+#[test]
 fn table_retains_source_identity_for_every_module() {
     let (documents, project) = project_modules(&[("", ""), ("empty", "")]);
     let table = ProjectSymbolTable::link(
@@ -710,24 +989,23 @@ fn callable_filter_rejects_external() {
 }
 
 #[test]
-fn missing_import_preserves_callable_table_behavior() {
+fn missing_import_is_a_typed_link_diagnostic() {
     let (document, project) = project("use crate.missing.symbol\nfn main() -> Unit { () }\n");
     let declarations = declarations(&document, Vec::new(), "missing-import");
-    let table = ProjectSymbolTable::link(&project, &declarations)
-        .expect("unknown imports are not link diagnostics")
-        .into_table();
-    let reference = SymbolPath::try_new(
-        ModulePathRoot::ImplicitCrate,
-        vec![ModuleSegment::new("missing").expect("segment")],
-        "symbol",
-    )
-    .expect("reference");
-    let source = document.span(SourceRange::new(0, 24)).expect("use span");
+    let report = ProjectSymbolTable::link(&project, &declarations)
+        .expect_err("unknown imports are rejected during atomic publication");
 
     assert!(matches!(
-        table.resolve(&CanonicalModulePath::crate_root(), &reference, &source),
-        Err(ProjectSymbolResolutionError::Unknown { source: actual, .. }) if actual == source
+        report.diagnostics(),
+        [ProjectSymbolLinkError::UnknownImport { module, import, source }]
+            if module == &CanonicalModulePath::crate_root()
+                && import.to_string() == "crate.missing.symbol"
+                && source.range() == SourceRange::new(0, 24)
     ));
+    assert_eq!(
+        report.diagnostics()[0].code().as_str(),
+        "aw.project.symbol.unknown_import"
+    );
 }
 
 #[test]
@@ -753,9 +1031,9 @@ fn generated_character_spellings_do_not_consume_alias_limit() {
     assert_eq!(link.table().external_symbols().count(), 512);
 }
 
-fn aliased_missing_imports(count: usize) -> String {
+fn aliased_target_imports(count: usize) -> String {
     (0..count).fold(String::new(), |mut source, index| {
-        writeln!(source, "use crate.missing.item{index} as alias{index}")
+        writeln!(source, "use crate.origin.target as alias{index}")
             .expect("writing to a String cannot fail");
         source
     })
@@ -784,19 +1062,25 @@ fn assert_symbol_limit(
 fn limit_aliases_per_module_exact_and_one_over() {
     let maximum = usize::try_from(super::ProjectSymbolLimits::PRODUCTION.aliases_per_module())
         .expect("alias limit fits usize");
-    let (document, exact_project) = project(&aliased_missing_imports(maximum));
+    let exact_source = aliased_target_imports(maximum);
+    let (documents, exact_project) = project_modules(&[
+        ("", exact_source.as_str()),
+        ("origin", "pub fn target() -> Unit { () }\n"),
+    ]);
     ProjectSymbolTable::link(
         &exact_project,
-        &declarations(&document, Vec::new(), "alias-exact"),
+        &empty_declarations(&documents, "alias-exact"),
     )
     .expect("exact per-module alias limit is accepted");
 
-    let (document, project) = project(&aliased_missing_imports(maximum + 1));
-    let report = ProjectSymbolTable::link(
-        &project,
-        &declarations(&document, Vec::new(), "alias-one-over"),
-    )
-    .expect_err("one-over per-module alias limit is rejected");
+    let one_over_source = aliased_target_imports(maximum + 1);
+    let (documents, project) = project_modules(&[
+        ("", one_over_source.as_str()),
+        ("origin", "pub fn target() -> Unit { () }\n"),
+    ]);
+    let report =
+        ProjectSymbolTable::link(&project, &empty_declarations(&documents, "alias-one-over"))
+            .expect_err("one-over per-module alias limit is rejected");
     assert_symbol_limit(
         &report,
         super::ProjectSymbolLimitKind::AliasesPerModule,
@@ -819,8 +1103,12 @@ fn limit_aliases_world_exact_and_one_over() {
             } else {
                 format!("module{index}")
             };
-            (path, aliased_missing_imports(per_module))
+            (path, aliased_target_imports(per_module))
         })
+        .chain([(
+            "origin".to_owned(),
+            "pub fn target() -> Unit { () }\n".to_owned(),
+        )])
         .collect::<Vec<_>>();
     let exact_refs = exact_sources
         .iter()
@@ -834,7 +1122,7 @@ fn limit_aliases_world_exact_and_one_over() {
     .expect("exact world alias limit is accepted");
 
     let mut one_over_sources = exact_sources;
-    one_over_sources.push((format!("module{module_count}"), aliased_missing_imports(1)));
+    one_over_sources.push((format!("module{module_count}"), aliased_target_imports(1)));
     let one_over_refs = one_over_sources
         .iter()
         .map(|(path, source)| (path.as_str(), source.as_str()))
@@ -854,28 +1142,33 @@ fn limit_aliases_world_exact_and_one_over() {
 }
 
 fn grouped_missing_import(count: usize) -> String {
-    let names = (0..count)
-        .map(|index| format!("item{index}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("use crate.missing.{{{names}}}\n")
+    let names = (0..count).map(|_| "target").collect::<Vec<_>>().join(", ");
+    format!("use crate.origin.{{{names}}}\n")
 }
 
 #[test]
 fn group_imports_consume_terminal_import_budget() {
     let maximum = usize::try_from(super::ProjectSymbolLimits::PRODUCTION.imports())
         .expect("import limit fits usize");
-    let (document, exact_project) = project(&grouped_missing_import(maximum));
+    let exact_source = grouped_missing_import(maximum);
+    let (documents, exact_project) = project_modules(&[
+        ("", exact_source.as_str()),
+        ("origin", "pub fn target() -> Unit { () }\n"),
+    ]);
     ProjectSymbolTable::link(
         &exact_project,
-        &declarations(&document, Vec::new(), "imports-exact"),
+        &empty_declarations(&documents, "imports-exact"),
     )
     .expect("exact terminal import limit is accepted");
 
-    let (document, project) = project(&grouped_missing_import(maximum + 1));
+    let one_over_source = grouped_missing_import(maximum + 1);
+    let (documents, project) = project_modules(&[
+        ("", one_over_source.as_str()),
+        ("origin", "pub fn target() -> Unit { () }\n"),
+    ]);
     let report = ProjectSymbolTable::link(
         &project,
-        &declarations(&document, Vec::new(), "imports-one-over"),
+        &empty_declarations(&documents, "imports-one-over"),
     )
     .expect_err("one-over terminal import limit is rejected");
     assert_symbol_limit(
@@ -896,6 +1189,10 @@ fn project_symbol_error_codes_are_exhaustive() {
             ProjectSymbolDiagnosticCode::AmbiguousImport,
             ProjectSymbolDiagnosticCode::InvalidImportPath,
             ProjectSymbolDiagnosticCode::InvalidDeclaration,
+            ProjectSymbolDiagnosticCode::UnknownImport,
+            ProjectSymbolDiagnosticCode::CyclicImport,
+            ProjectSymbolDiagnosticCode::ReservedTypeName,
+            ProjectSymbolDiagnosticCode::InvalidNominalDeclaration,
             ProjectSymbolDiagnosticCode::Limit,
             ProjectSymbolDiagnosticCode::WorkOverflow,
         ]
@@ -907,6 +1204,10 @@ fn project_symbol_error_codes_are_exhaustive() {
             "aw.project.symbol.ambiguous_import",
             "aw.project.symbol.invalid_import_path",
             "aw.project.symbol.invalid_declaration",
+            "aw.project.symbol.unknown_import",
+            "aw.project.symbol.cyclic_import",
+            "aw.project.symbol.reserved_type_name",
+            "aw.project.symbol.invalid_nominal_declaration",
             "aw.project.symbol.limit",
             "aw.project.symbol.work_overflow",
         ]
@@ -937,7 +1238,21 @@ fn same_target_imports_coalesce() {
         .expect("target binding");
 
     assert_eq!(bindings.len(), 1);
-    assert_eq!(bindings[0].sites.len(), 2);
+    assert_eq!(bindings[0].sites.len(), 4);
+    assert_eq!(
+        documents
+            .iter()
+            .map(|document| {
+                bindings[0]
+                    .sites
+                    .iter()
+                    .filter(|site| site.source() == document.identity())
+                    .count()
+            })
+            .collect::<Vec<_>>(),
+        vec![2, 1, 1],
+        "both root import sites and every upstream declaration/re-export site survive coalescing"
+    );
     let reference = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "target")
         .expect("reference");
     let source = documents[0]
@@ -1058,24 +1373,84 @@ fn reachable_import_cycle_resolves() {
 }
 
 #[test]
-fn pure_import_cycle_has_no_binding_and_resolution_is_unknown() {
+fn pure_import_cycle_is_rejected_with_related_cycle_sources() {
     let (documents, project) = project_modules(&[
         ("", "use crate.a.target\n"),
         ("a", "pub use crate.b.target\n"),
         ("b", "pub use crate.a.target\n"),
     ]);
-    let table = ProjectSymbolTable::link(&project, &empty_declarations(&documents, "pure-cycle"))
-        .expect("pure unresolved cycle terminates without link error")
-        .into_table();
-    let reference = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "target")
-        .expect("reference");
-    let source = documents[0]
-        .span(SourceRange::new(0, 3))
-        .expect("reference source");
-    assert!(matches!(
-        table.resolve(&CanonicalModulePath::crate_root(), &reference, &source),
-        Err(ProjectSymbolResolutionError::Unknown { .. })
-    ));
+    let report = ProjectSymbolTable::link(&project, &empty_declarations(&documents, "pure-cycle"))
+        .expect_err("unanchored import cycles cannot publish a partial symbol table");
+    let cyclic = report
+        .diagnostics()
+        .iter()
+        .filter_map(|diagnostic| match diagnostic {
+            ProjectSymbolLinkError::CyclicImport {
+                source, related, ..
+            } => Some((source, related.as_ref())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(cyclic.len(), 2);
+    assert!(
+        cyclic.iter().all(|(source, related)| {
+            related.len() == 1 && related[0].source() != source.source()
+        })
+    );
+    assert!(report.diagnostics().iter().all(|diagnostic| matches!(
+        diagnostic.code(),
+        ProjectSymbolDiagnosticCode::CyclicImport | ProjectSymbolDiagnosticCode::UnknownImport
+    )));
+}
+
+#[test]
+fn three_module_unanchored_cycle_reports_every_edge_with_related_sources() {
+    let (documents, project) = project_modules(&[
+        ("", ""),
+        ("a", "pub use crate.b.target\n"),
+        ("b", "pub use crate.c.target\n"),
+        ("c", "pub use crate.a.target\n"),
+    ]);
+    let report = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "three-module-pure-cycle"),
+    )
+    .expect_err("an unanchored three-node cycle is rejected");
+    let cyclic = report
+        .diagnostics()
+        .iter()
+        .filter_map(|diagnostic| match diagnostic {
+            ProjectSymbolLinkError::CyclicImport {
+                module,
+                source,
+                related,
+                ..
+            } => Some((module, source, related.as_ref())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(cyclic.len(), 3);
+    assert!(cyclic.iter().all(|(_, source, related)| {
+        related.len() == 2
+            && related.iter().all(|site| site.source() != source.source())
+            && related.windows(2).all(|pair| pair[0] < pair[1])
+    }));
+    assert_eq!(
+        cyclic
+            .iter()
+            .map(|(module, _, _)| module.to_string())
+            .collect::<Vec<_>>(),
+        ["crate.a", "crate.b", "crate.c"]
+    );
+    assert!(cyclic.iter().all(|(_, _, related)| {
+        related.iter().all(|site| {
+            documents[1..]
+                .iter()
+                .any(|document| site.source() == document.identity())
+        })
+    }));
 }
 
 #[test]

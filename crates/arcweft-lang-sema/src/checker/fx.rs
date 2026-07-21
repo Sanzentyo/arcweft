@@ -372,7 +372,12 @@ fn validate_fx_signature(function: &HirFunction, errors: &mut Vec<TypeCheckError
             function.name()
         )));
     }
-    if !matches!(signature.return_type(), Some(TypeRef::Path(path)) if path == "Fx") {
+    if !matches!(
+        signature
+            .return_type()
+            .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
+        Some(TypeRef::Path(path)) if crate::types::direct_type_name(path) == Some("Fx")
+    ) {
         errors.push(TypeCheckError::new(format!(
             "Fx function `{}` must declare return type `Fx`",
             function.name()
@@ -415,7 +420,9 @@ fn validate_fx_signature(function: &HirFunction, errors: &mut Vec<TypeCheckError
         }
         params.push(FxParameter {
             name: name.to_owned(),
-            ty: type_ref_kind(param.ty()),
+            ty: param
+                .ty()
+                .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value())),
             has_default: param.default().is_some(),
         });
     }

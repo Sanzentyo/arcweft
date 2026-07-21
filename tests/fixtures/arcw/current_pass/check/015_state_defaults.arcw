@@ -1,6 +1,6 @@
 pub struct GameState {
-    pub route: Ref<Flow> = @flow.main
-    pub current_bg: Option<ImageHandle> = None
+    route: Ref<Flow>
+    current_bg: Option<ImageHandle>
 }
 
 flow @flow.main main {

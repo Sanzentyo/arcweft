@@ -159,17 +159,13 @@ impl SurfaceScanner<'_> {
                     }
                 }
             }
-            HirTopLevelDecl::TypeAlias(item) => {
-                for clause in item.where_clauses() {
-                    self.scan_expr(clause)?;
-                }
-            }
             HirTopLevelDecl::Source(source) => {
                 if self.owns_module(source.module_path()) {
                     self.scan_stmts(source.item().body_statements())?;
                 }
             }
-            HirTopLevelDecl::Trait(_)
+            HirTopLevelDecl::TypeAlias(_)
+            | HirTopLevelDecl::Trait(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::EntityDecl(_)
             | HirTopLevelDecl::ExternCapability(_)

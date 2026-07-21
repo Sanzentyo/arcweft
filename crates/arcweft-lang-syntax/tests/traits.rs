@@ -1,6 +1,6 @@
 use arcweft_lang_syntax::ast::items::{ImplMember, Item, TraitMember};
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_lang_syntax::types::TypeRef;
+use arcweft_lang_syntax::types::{AuthoredTypeRef, TypeRef};
 
 #[test]
 fn trait_item_preserves_associated_type_and_method_requirement() {
@@ -40,7 +40,10 @@ where T: SourceLike<Item = ChapterId>
         panic!("function item expected")
     };
     assert!(matches!(
-        function.signature().return_type(),
+        function
+            .signature()
+            .return_type()
+            .map(AuthoredTypeRef::value),
         Some(TypeRef::Projection { .. })
     ));
     assert_eq!(function.signature().where_clauses().len(), 1);
@@ -62,7 +65,10 @@ where T: Copyable
     let Item::Impl(item) = &parsed.items()[0] else {
         panic!("impl item expected")
     };
-    assert_eq!(item.trait_name(), Some("SourceLike"));
+    assert!(matches!(
+        item.trait_ref().map(AuthoredTypeRef::value),
+        Some(TypeRef::Path(path)) if path.canonical_string() == "SourceLike"
+    ));
     assert_eq!(item.where_clauses().len(), 1);
     assert!(matches!(
         item.members()[0],

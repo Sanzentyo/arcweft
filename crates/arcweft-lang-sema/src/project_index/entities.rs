@@ -706,7 +706,7 @@ pub(super) fn view_callable_contract_label(
                 parameter
                     .bounds()
                     .iter()
-                    .map(TypeRef::canonical_label)
+                    .map(|ty| ty.value().canonical_label())
                     .collect::<Vec<_>>()
                     .join("+")
             ),
@@ -733,11 +733,11 @@ pub(super) fn view_callable_contract_label(
         .map(|clause| {
             format!(
                 "{}:{}",
-                clause.subject().canonical_label(),
+                clause.subject().value().canonical_label(),
                 clause
                     .bounds()
                     .iter()
-                    .map(TypeRef::canonical_label)
+                    .map(|ty| ty.value().canonical_label())
                     .collect::<Vec<_>>()
                     .join("+")
             )
@@ -746,7 +746,7 @@ pub(super) fn view_callable_contract_label(
         .join(",");
     let return_type = signature
         .return_type()
-        .map_or_else(|| "_".to_owned(), TypeRef::canonical_label);
+        .map_or_else(|| "_".to_owned(), |ty| ty.value().canonical_label());
     let authored_contract = canonical_callable_surface_label(signature_tail);
     format!(
         "generics[{generics}]:params[{parameter_groups}]:where[{where_clauses}]:return[{return_type}]:surface[{authored_contract}]",
@@ -770,7 +770,9 @@ fn view_parameter_contract_label(parameter: &SyntaxFnParam) -> String {
     let binding = callable_param_name(parameter.pattern()).unwrap_or("_");
     format!(
         "{arity}:{receiver}:{binding}:{}",
-        parameter.ty().canonical_label()
+        parameter
+            .ty()
+            .map_or_else(|| "_".to_owned(), |ty| ty.value().canonical_label())
     )
 }
 
@@ -843,7 +845,9 @@ fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSign
 
 fn project_function_param(param: &SyntaxFnParam) -> FunctionParam {
     let name = callable_param_name(param.pattern()).unwrap_or("_");
-    let ty = project_type_ref_kind(param.ty());
+    let ty = param
+        .ty()
+        .map_or(TypeKind::Unit, |ty| project_type_ref_kind(ty.value()));
     if param.is_rest() {
         FunctionParam::rest(name, ty)
     } else if param.default().is_some() {
@@ -854,9 +858,10 @@ fn project_function_param(param: &SyntaxFnParam) -> FunctionParam {
 }
 
 fn curried_project_signature_return_type(signature: &SyntaxFnSignature) -> TypeKind {
-    let return_type = signature
-        .return_type()
-        .map_or_else(|| TypeKind::Named("_".to_owned()), project_type_ref_kind);
+    let return_type = signature.return_type().map_or_else(
+        || TypeKind::Named("_".to_owned()),
+        |ty| project_type_ref_kind(ty.value()),
+    );
     signature
         .param_groups()
         .iter()
@@ -864,10 +869,11 @@ fn curried_project_signature_return_type(signature: &SyntaxFnSignature) -> TypeK
         .rev()
         .fold(return_type, |return_type, group| {
             TypeKind::function(
-                group
-                    .params()
-                    .iter()
-                    .map(|param| project_type_ref_kind(param.ty())),
+                group.params().iter().map(|param| {
+                    param
+                        .ty()
+                        .map_or(TypeKind::Unit, |ty| project_type_ref_kind(ty.value()))
+                }),
                 return_type,
             )
         })
@@ -896,12 +902,14 @@ pub(super) fn signal_value_type(
             message: error.to_string(),
         }
     })?;
-    Ok(Some(signal_declared_value_type(&type_ref)))
+    Ok(Some(signal_declared_value_type(type_ref.value())))
 }
 
 fn signal_declared_value_type(ty: &TypeRef) -> TypeKind {
     match ty {
-        TypeRef::Generic { base, args } if base == "Watch" && args.len() == 1 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Watch") && args.len() == 1 =>
+        {
             project_type_ref_kind(&args[0])
         }
         _ => project_type_ref_kind(ty),
@@ -910,18 +918,25 @@ fn signal_declared_value_type(ty: &TypeRef) -> TypeKind {
 
 fn project_type_ref_kind(ty: &TypeRef) -> TypeKind {
     match ty {
-        TypeRef::Generic { base, args } if base == "Ref" && args.len() == 1 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Ref") && args.len() == 1 =>
+        {
             if let TypeRef::Path(name) = &args[0] {
-                entity_kind_from_type_name(name)
+                crate::types::direct_type_name(name)
+                    .and_then(entity_kind_from_type_name)
                     .map_or_else(|| type_ref_kind(ty), TypeKind::entity_ref)
             } else {
                 type_ref_kind(ty)
             }
         }
-        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Option") && args.len() == 1 =>
+        {
             TypeKind::Option(Box::new(project_type_ref_kind(&args[0])))
         }
-        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Vec") && args.len() == 1 =>
+        {
             TypeKind::Vec(Box::new(project_type_ref_kind(&args[0])))
         }
         _ => type_ref_kind(ty),

@@ -7,8 +7,8 @@ use crate::ast::items::{EntityDeclKind, ExternModSource, FunctionKind};
 use crate::ast::symbol_path::ProjectSymbolPath;
 use crate::cst::{
     split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
-    split_leading_relative_id, split_top_level_keyword_once, split_top_level_punctuation,
-    starts_leading_entity_ref, starts_leading_relative_entity_ref, starts_leading_relative_id,
+    split_leading_relative_id, split_top_level_keyword_once, starts_leading_entity_ref,
+    starts_leading_relative_entity_ref, starts_leading_relative_id,
 };
 use crate::types::parse_fn_signature;
 
@@ -379,12 +379,17 @@ pub(super) fn parse_flow_head(input: &str) -> Option<&str> {
 pub(super) fn parse_flow_signature(
     name: Option<&str>,
     signature_tail: &str,
+    signature_tail_base: usize,
 ) -> Result<Option<crate::types::FnSignature>, crate::types::TypeParseError> {
     let tail = signature_tail.trim();
     if !(tail.starts_with('(') || tail.starts_with('<')) {
         return Ok(None);
     }
-    parse_fn_signature(&format!("fn {}{}", name.unwrap_or("flow"), tail)).map(Some)
+    let name = name.unwrap_or("flow");
+    let prefix = format!("fn {name}");
+    let source = format!("{prefix}{tail}");
+    crate::types::parse_fn_signature_at(&source, signature_tail_base.saturating_sub(prefix.len()))
+        .map(Some)
 }
 
 pub(super) fn implicit_flow_name_from_id(id: Option<&IdRef>) -> Option<String> {
@@ -995,23 +1000,14 @@ pub(super) fn parse_contract_expr_list(source: &str) -> Vec<crate::expr::Expr> {
         .collect()
 }
 
-pub(super) fn split_supertraits(source: &str) -> Vec<String> {
-    split_top_level_punctuation(source, '+')
-        .into_iter()
-        .map(str::trim)
-        .filter(|trait_name| !trait_name.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-pub(super) fn parse_optional_angle_head(source: &str) -> (Option<String>, &str) {
+pub(super) fn parse_optional_angle_head(source: &str) -> (Option<&str>, &str) {
     let source = source.trim_start();
     if !source.starts_with('<') {
         return (None, source);
     }
     if let Some(close) = crate::cst::find_matching_angle_group(source, 0) {
         return (
-            Some(source[..=close].to_owned()),
+            Some(&source[..=close]),
             source[close + '>'.len_utf8()..].trim_start(),
         );
     }

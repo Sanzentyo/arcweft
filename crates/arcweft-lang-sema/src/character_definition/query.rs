@@ -39,7 +39,7 @@ fn query_character_definition_inner(
 
     let fact = match select_cursor_fact(inventory, cursor, budget)? {
         CursorSelection::Selected(fact) => fact,
-        CursorSelection::Outcome(outcome) => return Ok(outcome),
+        CursorSelection::Outcome(outcome) => return Ok(*outcome),
     };
     let descriptor = match fact.resolution() {
         CharacterReferenceResolution::Resolved(descriptor) => descriptor,
@@ -54,7 +54,7 @@ fn query_character_definition_inner(
 
 enum CursorSelection<'a> {
     Selected(&'a super::CharacterReferenceFact),
-    Outcome(CharacterDefinitionQueryResult),
+    Outcome(Box<CharacterDefinitionQueryResult>),
 }
 
 fn select_cursor_fact<'a>(
@@ -83,24 +83,24 @@ fn select_cursor_fact<'a>(
             }
             let Some(selection_width) = selection.end().checked_sub(selection.start()) else {
                 admit_nonresource_error(budget, 0)?;
-                return Ok(CursorSelection::Outcome(
+                return Ok(CursorSelection::Outcome(Box::new(
                     CharacterDefinitionQueryResult::Integrity(
                         CharacterDefinitionIntegrityError::InvalidSourceRange {
                             source: fact.selection_span().clone(),
                         },
                     ),
-                ));
+                )));
             };
             let reference = fact.reference_span().range();
             let Some(reference_width) = reference.end().checked_sub(reference.start()) else {
                 admit_nonresource_error(budget, 0)?;
-                return Ok(CursorSelection::Outcome(
+                return Ok(CursorSelection::Outcome(Box::new(
                     CharacterDefinitionQueryResult::Integrity(
                         CharacterDefinitionIntegrityError::InvalidSourceRange {
                             source: fact.reference_span().clone(),
                         },
                     ),
-                ));
+                )));
             };
             selected.push((fact, selection_width, reference_width));
         }
@@ -123,17 +123,19 @@ fn select_cursor_fact<'a>(
             .collect::<std::collections::BTreeSet<_>>();
         admit_nonresource_error(budget, 0)?;
         let candidates = admit_error_payload(budget, candidate_refs.into_iter())?;
-        return Ok(CursorSelection::Outcome(
+        return Ok(CursorSelection::Outcome(Box::new(
             CharacterDefinitionQueryResult::Integrity(
                 CharacterDefinitionIntegrityError::AmbiguousCursorFacts {
                     source: selected[0].0.selection_span().clone(),
                     candidates,
                 },
             ),
-        ));
+        )));
     }
     let Some((fact, _, _)) = selected.first().copied() else {
-        return classify_unselected_cursor(inventory, cursor, budget).map(CursorSelection::Outcome);
+        return classify_unselected_cursor(inventory, cursor, budget)
+            .map(Box::new)
+            .map(CursorSelection::Outcome);
     };
     Ok(CursorSelection::Selected(fact))
 }

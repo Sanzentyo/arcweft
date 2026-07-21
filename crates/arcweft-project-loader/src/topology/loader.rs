@@ -2,10 +2,10 @@ use super::{
     LoadedCharacterPackage, LoadedDocumentAccess, LoadedDocumentOwnership,
     LoadedExternalModuleMetadata, LoadedProfileTopology, LoadedProfileTopologyResource,
     LoadedProfileTopologyResourcePayload, ProfileDependencyBinaryResourceSeed,
-    ProfileDependencyResourceSeed, ProfileTopologyLimits, ProfileTopologyLoadError,
-    ProfileTopologyLoadRequest, ProfileTopologyLogicalPath, ProfileTopologyOwnerId,
-    ProfileTopologyResourceId, ProfileTopologyResourceKind, ProfileTopologyResourceOrigin,
-    ProfileTopologySeedError,
+    ProfileDependencyResourceSeed, ProfileTopologyBinaryOverlaySeed, ProfileTopologyLimits,
+    ProfileTopologyLoadError, ProfileTopologyLoadRequest, ProfileTopologyLogicalPath,
+    ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, ProfileTopologyResourceId,
+    ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, ProfileTopologySeedError,
     budget::ProfileTopologyBudget,
     external::{extend_selected_adapter, validate_activity_bindings},
     model::{slash_relative_path, validate_absolute_normalized_path},
@@ -87,10 +87,118 @@ struct BoundBinary {
     origin: ProfileTopologyResourceOrigin,
 }
 
+struct NormalizedRequestPaths {
+    requested_project_root: PathBuf,
+    project_root: PathBuf,
+    manifest_path: PathBuf,
+}
+
+fn normalize_request_paths(
+    manifest_path: &Path,
+) -> Result<NormalizedRequestPaths, ProfileTopologyLoadError> {
+    validate_absolute_normalized_path(manifest_path, "manifest path")
+        .map_err(|source| ProfileTopologyLoadError::DependencySeed { source })?;
+    let requested_project_root =
+        manifest_path
+            .parent()
+            .ok_or_else(|| ProfileTopologyLoadError::ManifestNotFound {
+                path: manifest_path.to_path_buf(),
+            })?;
+    let project_root = canonical_project_root(requested_project_root)
+        .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
+    let normalized_manifest_path = manifest_path
+        .strip_prefix(requested_project_root)
+        .map(|relative| project_root.join(relative))
+        .map_err(|_| ProfileTopologyLoadError::ManifestNotFound {
+            path: manifest_path.to_path_buf(),
+        })?;
+    Ok(NormalizedRequestPaths {
+        requested_project_root: requested_project_root.to_path_buf(),
+        project_root,
+        manifest_path: normalized_manifest_path,
+    })
+}
+
+fn normalized_overlay_path(
+    path: &Path,
+    requested_project_root: &Path,
+    project_root: &Path,
+) -> PathBuf {
+    path.strip_prefix(requested_project_root).map_or_else(
+        |_| path.to_path_buf(),
+        |relative| project_root.join(relative),
+    )
+}
+
+fn collect_text_overlays(
+    seeds: &[ProfileTopologyOverlaySeed],
+    requested_project_root: &Path,
+    project_root: &Path,
+) -> Result<BTreeMap<PathBuf, Arc<str>>, ProfileTopologyLoadError> {
+    let mut overlays = BTreeMap::new();
+    for overlay in seeds {
+        let path = normalized_overlay_path(overlay.path(), requested_project_root, project_root);
+        if overlays
+            .insert(path.clone(), Arc::clone(overlay.source()))
+            .is_some()
+        {
+            return Err(ProfileTopologyLoadError::DependencySeed {
+                source: ProfileTopologySeedError::DuplicateOverlayPath { path },
+            });
+        }
+    }
+    Ok(overlays)
+}
+
+fn collect_binary_overlays(
+    seeds: &[ProfileTopologyBinaryOverlaySeed],
+    requested_project_root: &Path,
+    project_root: &Path,
+    text_overlays: &BTreeMap<PathBuf, Arc<str>>,
+) -> Result<BTreeMap<PathBuf, Arc<[u8]>>, ProfileTopologyLoadError> {
+    let mut overlays = BTreeMap::new();
+    for overlay in seeds {
+        let path = normalized_overlay_path(overlay.path(), requested_project_root, project_root);
+        if text_overlays.contains_key(&path) {
+            return Err(ProfileTopologyLoadError::DependencySeed {
+                source: ProfileTopologySeedError::OverlayKindConflict { path },
+            });
+        }
+        if overlays
+            .insert(path.clone(), Arc::clone(overlay.bytes()))
+            .is_some()
+        {
+            return Err(ProfileTopologyLoadError::DependencySeed {
+                source: ProfileTopologySeedError::DuplicateOverlayPath { path },
+            });
+        }
+    }
+    Ok(overlays)
+}
+
+fn validate_dependency_seed_uniqueness(
+    text_seeds: &[ProfileDependencyResourceSeed],
+    binary_seeds: &[ProfileDependencyBinaryResourceSeed],
+) -> Result<(), ProfileTopologyLoadError> {
+    let mut keys = BTreeSet::new();
+    for (path, kind) in text_seeds
+        .iter()
+        .map(|seed| (seed.path(), seed.kind()))
+        .chain(binary_seeds.iter().map(|seed| (seed.path(), seed.kind())))
+    {
+        if !keys.insert((path.to_path_buf(), kind.clone())) {
+            return Err(ProfileTopologyLoadError::DependencySeed {
+                source: ProfileTopologySeedError::DuplicateDependencySeed {
+                    path: path.to_path_buf(),
+                },
+            });
+        }
+    }
+    Ok(())
+}
+
 impl<'a> TopologyBuilder<'a> {
     fn new(request: ProfileTopologyLoadRequest<'a>) -> Result<Self, ProfileTopologyLoadError> {
-        validate_absolute_normalized_path(request.manifest_path, "manifest path")
-            .map_err(|source| ProfileTopologyLoadError::DependencySeed { source })?;
         if !matches!(
             request.workspace_owner,
             ProfileTopologyOwnerId::Workspace { .. }
@@ -99,85 +207,25 @@ impl<'a> TopologyBuilder<'a> {
                 source: ProfileTopologySeedError::DependencyOwnerRequired,
             });
         }
-        let requested_project_root = request.manifest_path.parent().ok_or_else(|| {
-            ProfileTopologyLoadError::ManifestNotFound {
-                path: request.manifest_path.to_path_buf(),
-            }
-        })?;
-        let project_root = canonical_project_root(requested_project_root)
-            .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
-        let manifest_path = request
-            .manifest_path
-            .strip_prefix(requested_project_root)
-            .map(|relative| project_root.join(relative))
-            .map_err(|_| ProfileTopologyLoadError::ManifestNotFound {
-                path: request.manifest_path.to_path_buf(),
-            })?;
-        let mut overlays = BTreeMap::new();
-        for overlay in request.overlays {
-            let path = overlay
-                .path()
-                .strip_prefix(requested_project_root)
-                .map_or_else(
-                    |_| overlay.path().to_path_buf(),
-                    |relative| project_root.join(relative),
-                );
-            if overlays
-                .insert(path.clone(), Arc::clone(overlay.source()))
-                .is_some()
-            {
-                return Err(ProfileTopologyLoadError::DependencySeed {
-                    source: ProfileTopologySeedError::DuplicateOverlayPath { path },
-                });
-            }
-        }
-        let mut binary_overlays = BTreeMap::new();
-        for overlay in request.binary_overlays {
-            let path = overlay
-                .path()
-                .strip_prefix(requested_project_root)
-                .map_or_else(
-                    |_| overlay.path().to_path_buf(),
-                    |relative| project_root.join(relative),
-                );
-            if overlays.contains_key(&path) {
-                return Err(ProfileTopologyLoadError::DependencySeed {
-                    source: ProfileTopologySeedError::OverlayKindConflict { path },
-                });
-            }
-            if binary_overlays
-                .insert(path.clone(), Arc::clone(overlay.bytes()))
-                .is_some()
-            {
-                return Err(ProfileTopologyLoadError::DependencySeed {
-                    source: ProfileTopologySeedError::DuplicateOverlayPath { path },
-                });
-            }
-        }
-        let mut dependency_keys = BTreeSet::new();
-        for seed in request.dependency_resources {
-            let key = (seed.path().to_path_buf(), seed.kind().clone());
-            if !dependency_keys.insert(key) {
-                return Err(ProfileTopologyLoadError::DependencySeed {
-                    source: ProfileTopologySeedError::DuplicateDependencySeed {
-                        path: seed.path().to_path_buf(),
-                    },
-                });
-            }
-        }
-        for seed in request.dependency_binary_resources {
-            let key = (seed.path().to_path_buf(), seed.kind().clone());
-            if !dependency_keys.insert(key) {
-                return Err(ProfileTopologyLoadError::DependencySeed {
-                    source: ProfileTopologySeedError::DuplicateDependencySeed {
-                        path: seed.path().to_path_buf(),
-                    },
-                });
-            }
-        }
+        let paths = normalize_request_paths(request.manifest_path)?;
+        let overlays = collect_text_overlays(
+            request.overlays,
+            &paths.requested_project_root,
+            &paths.project_root,
+        )?;
+        let binary_overlays = collect_binary_overlays(
+            request.binary_overlays,
+            &paths.requested_project_root,
+            &paths.project_root,
+            &overlays,
+        )?;
+        validate_dependency_seed_uniqueness(
+            request.dependency_resources,
+            request.dependency_binary_resources,
+        )?;
         Ok(Self {
-            manifest_path,
-            project_root,
+            manifest_path: paths.manifest_path,
+            project_root: paths.project_root,
             workspace_owner: request.workspace_owner,
             selection: request.selection,
             overlays,
@@ -291,105 +339,125 @@ impl<'a> TopologyBuilder<'a> {
                 let Some(owner) = reference.strip_prefix("@character.") else {
                     continue;
                 };
-                let character = CharacterId::try_new(&reference[1..]).map_err(|source| {
-                    ProfileTopologyLoadError::CharacterReference {
-                        reference: reference.to_owned(),
-                        source,
-                    }
-                })?;
-                if self.character_packages.contains_key(&character) {
-                    continue;
-                }
-                let mut package_path = layout.asset_root().as_path().to_path_buf();
-                for segment in owner.split('.') {
-                    package_path.push(segment);
-                }
-                package_path.set_extension("awchar");
-                let path = character_manifest::manifest_path(&package_path);
-                let resource = self.acquire_document(
-                    package,
-                    ProfileTopologyResourceKind::CharacterPackageManifest {
-                        character: character.clone(),
-                    },
-                    &path,
-                )?;
-                self.budget.charge_work(1)?;
-                let document = Arc::clone(resource.text_document().ok_or_else(|| {
-                    ProfileTopologyLoadError::ResourceUtf8 {
-                        id: Box::new(resource.id().clone()),
-                        kind: resource.kind().clone(),
-                        path: path.clone(),
-                    }
-                })?);
-                let loaded = character_manifest::decode(path.clone(), Arc::clone(&document))
-                    .map_err(|source| ProfileTopologyLoadError::CharacterManifest {
-                        id: resource.id().clone(),
-                        path: path.clone(),
-                        source: Box::new(source),
-                    })?;
-                if loaded.manifest().manifest().character() != &character {
-                    return Err(ProfileTopologyLoadError::CharacterIdentityMismatch {
-                        path,
-                        expected: character,
-                        actual: loaded.manifest().manifest().character().clone(),
-                    });
-                }
-                let source_manifest = Arc::new(loaded.manifest().clone());
-                let mut payloads = Vec::new();
-                let mut layer_paths = BTreeMap::new();
-                for asset in source_manifest
-                    .manifest()
-                    .parts()
-                    .iter()
-                    .flat_map(|part| part.variants().iter().map(|variant| variant.asset()))
-                {
-                    let layer_path = package_path.join(asset.as_str());
-                    let layer = self.acquire_binary_resource(
-                        package,
-                        ProfileTopologyResourceKind::CharacterLayerPayload {
-                            character: character.clone(),
-                            asset: asset.clone(),
-                        },
-                        &layer_path,
-                    )?;
-                    let binary = layer.binary_resource().ok_or_else(|| {
-                        ProfileTopologyLoadError::UnownedResourcePath {
-                            path: layer_path.clone(),
-                            kind: layer.kind().clone(),
-                        }
-                    })?;
-                    payloads.push(CharacterLayerPayload::new(
-                        asset.clone(),
-                        binary.shared_bytes(),
-                    ));
-                    layer_paths.insert(asset.clone(), layer_path);
-                }
-                let package_model = Arc::new(
-                    CharacterPackage::from_source_backed_manifest(
-                        &document,
-                        &source_manifest,
-                        payloads,
-                    )
-                    .map_err(|source| {
-                        ProfileTopologyLoadError::CharacterPackage {
-                            path: package_path.clone(),
-                            source,
-                        }
-                    })?,
-                );
-                self.character_packages.insert(
-                    character,
-                    LoadedCharacterPackage::new(
-                        package_model,
-                        source_manifest,
-                        package_path,
-                        path,
-                        layer_paths,
-                    ),
-                );
+                self.load_character_package(package, layout, reference, owner)?;
             }
         }
         Ok(())
+    }
+
+    fn load_character_package(
+        &mut self,
+        package: &str,
+        layout: &ContainedProjectLayout,
+        reference: &str,
+        owner: &str,
+    ) -> Result<(), ProfileTopologyLoadError> {
+        let character = CharacterId::try_new(&reference[1..]).map_err(|source| {
+            ProfileTopologyLoadError::CharacterReference {
+                reference: reference.to_owned(),
+                source,
+            }
+        })?;
+        if self.character_packages.contains_key(&character) {
+            return Ok(());
+        }
+        let mut package_path = layout.asset_root().as_path().to_path_buf();
+        package_path.extend(owner.split('.'));
+        package_path.set_extension("awchar");
+        let manifest_path = character_manifest::manifest_path(&package_path);
+        let resource = self.acquire_document(
+            package,
+            ProfileTopologyResourceKind::CharacterPackageManifest {
+                character: character.clone(),
+            },
+            &manifest_path,
+        )?;
+        self.budget.charge_work(1)?;
+        let document = Arc::clone(resource.text_document().ok_or_else(|| {
+            ProfileTopologyLoadError::ResourceUtf8 {
+                id: Box::new(resource.id().clone()),
+                kind: resource.kind().clone(),
+                path: manifest_path.clone(),
+            }
+        })?);
+        let loaded = character_manifest::decode(manifest_path.clone(), Arc::clone(&document))
+            .map_err(|source| ProfileTopologyLoadError::CharacterManifest {
+                id: resource.id().clone(),
+                path: manifest_path.clone(),
+                source: Box::new(source),
+            })?;
+        if loaded.manifest().manifest().character() != &character {
+            return Err(ProfileTopologyLoadError::CharacterIdentityMismatch {
+                path: manifest_path,
+                expected: character,
+                actual: loaded.manifest().manifest().character().clone(),
+            });
+        }
+        let source_manifest = Arc::new(loaded.manifest().clone());
+        let (payloads, layer_paths) =
+            self.load_character_layers(package, &character, &package_path, &source_manifest)?;
+        let package_model = Arc::new(
+            CharacterPackage::from_source_backed_manifest(&document, &source_manifest, payloads)
+                .map_err(|source| ProfileTopologyLoadError::CharacterPackage {
+                    path: package_path.clone(),
+                    source: Box::new(source),
+                })?,
+        );
+        self.character_packages.insert(
+            character,
+            LoadedCharacterPackage::new(
+                package_model,
+                source_manifest,
+                package_path,
+                manifest_path,
+                layer_paths,
+            ),
+        );
+        Ok(())
+    }
+
+    fn load_character_layers(
+        &mut self,
+        package: &str,
+        character: &CharacterId,
+        package_path: &Path,
+        source_manifest: &arcweft_character::manifest::registration::SourceBackedCharacterManifest,
+    ) -> Result<
+        (
+            Vec<CharacterLayerPayload>,
+            BTreeMap<arcweft_character::manifest::CharacterAssetPath, PathBuf>,
+        ),
+        ProfileTopologyLoadError,
+    > {
+        let mut payloads = Vec::new();
+        let mut layer_paths = BTreeMap::new();
+        for asset in source_manifest.manifest().parts().iter().flat_map(|part| {
+            part.variants()
+                .iter()
+                .map(arcweft_character::manifest::CharacterVariant::asset)
+        }) {
+            let layer_path = package_path.join(asset.as_str());
+            let layer = self.acquire_binary_resource(
+                package,
+                ProfileTopologyResourceKind::CharacterLayerPayload {
+                    character: character.clone(),
+                    asset: asset.clone(),
+                },
+                &layer_path,
+            )?;
+            let binary = layer.binary_resource().ok_or_else(|| {
+                ProfileTopologyLoadError::UnownedResourcePath {
+                    path: layer_path.clone(),
+                    kind: layer.kind().clone(),
+                }
+            })?;
+            payloads.push(CharacterLayerPayload::new(
+                asset.clone(),
+                binary.shared_bytes(),
+            ));
+            layer_paths.insert(asset.clone(), layer_path);
+        }
+        Ok((payloads, layer_paths))
     }
 
     fn load_external_module_metadata(

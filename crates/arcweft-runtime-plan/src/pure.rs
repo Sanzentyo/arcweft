@@ -285,7 +285,12 @@ fn lower_pure_helper_candidate_with_input_policy(
         name: function.name().to_owned(),
         input_names,
         input_types,
-        output_type: pure_helper_output_type(function.signature().return_type()),
+        output_type: pure_helper_output_type(
+            function
+                .signature()
+                .return_type()
+                .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+        ),
         expr,
         shape,
         origin,
@@ -535,7 +540,9 @@ fn pure_helper_param(
             parameter,
         }
     })?;
-    pure_helper_input_type(param.ty(), input_policy)
+    param
+        .ty()
+        .and_then(|ty| pure_helper_input_type(ty.value(), input_policy))
         .map(|ty| (name.clone(), ty))
         .ok_or_else(|| PureHelperLowerError::UnsupportedParameterType {
             name: function_name.to_owned(),
@@ -557,7 +564,7 @@ fn pure_helper_input_type(
     input_policy: PureHelperInputPolicy,
 ) -> Option<RuntimePureInputType> {
     match ty {
-        TypeRef::Path(name) => match name.as_str() {
+        TypeRef::Path(name) => match name.canonical_string().as_str() {
             "i8" => Some(RuntimePureInputType::I8),
             "i16" => Some(RuntimePureInputType::I16),
             "i32" => Some(RuntimePureInputType::I32),
@@ -588,7 +595,7 @@ fn pure_helper_input_type(
 
 fn pure_helper_output_type(ty: Option<&TypeRef>) -> RuntimePureOutputType {
     match ty {
-        Some(TypeRef::Path(name)) => match name.as_str() {
+        Some(TypeRef::Path(name)) => match name.canonical_string().as_str() {
             "bool" => RuntimePureOutputType::Bool,
             "i8" => RuntimePureOutputType::I8,
             "i16" => RuntimePureOutputType::I16,

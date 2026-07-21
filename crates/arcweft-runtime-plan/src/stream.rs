@@ -24,7 +24,7 @@ pub(crate) fn lower_stream_function(
     let Some((item_ty, error_ty)) = function
         .signature()
         .return_type()
-        .and_then(stream_type_labels)
+        .and_then(|ty| stream_type_labels(ty.value()))
     else {
         return Err(vec![RuntimePlanLowerError::new(format!(
             "{owner} requires `Stream<T, E>` return type"
@@ -176,7 +176,8 @@ fn lower_stream_let(
             statement,
             "initializer",
             expr,
-            ty.as_ref(),
+            ty.as_ref()
+                .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
             *expr_range,
             pure_helpers,
             location,
@@ -310,10 +311,14 @@ fn lower_stream_expr_with_expected_type(
 
 fn stream_type_labels(ty: &TypeRef) -> Option<(String, String)> {
     match ty {
-        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => Some((
-            crate::labels::type_label(&args[0]),
-            crate::labels::type_label(&args[1]),
-        )),
+        TypeRef::Generic { base, args }
+            if base.canonical_string() == "Stream" && args.len() == 2 =>
+        {
+            Some((
+                crate::labels::type_label(&args[0]),
+                crate::labels::type_label(&args[1]),
+            ))
+        }
         _ => None,
     }
 }

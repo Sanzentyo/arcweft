@@ -491,7 +491,7 @@ effects { }
     };
     let [
         FlowItem::Stmt(Stmt::Let {
-            ty: Some(TypeRef::Function { effects, .. }),
+            ty: Some(ty),
             expr_source: Some(expr_source),
             ..
         }),
@@ -500,6 +500,9 @@ effects { }
         panic!("expected one typed let flow statement: {:?}", flow.body());
     };
 
+    let TypeRef::Function { effects, .. } = ty.value() else {
+        panic!("expected function type annotation");
+    };
     let effects = effects.as_ref().expect("function type effect row");
     assert_eq!(effects.effects(), &["fs.read".to_owned()]);
     assert!(

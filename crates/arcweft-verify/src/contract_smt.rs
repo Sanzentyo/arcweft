@@ -12,7 +12,7 @@ use crate::{
 };
 use arcweft_lang_hir::model::{HirFunction, HirModule};
 use arcweft_lang_hir::syntax::{
-    ast::{flow::ContractClause, items::FunctionKind},
+    ast::{flow::ContractClause, items::FunctionKind, module_path::ModulePathRoot},
     expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp},
     types::{FnParamGroup, TypeRef},
 };
@@ -179,7 +179,7 @@ impl FunctionContractLowerer {
                 function: function.name().to_owned(),
             }
         })?;
-        let result_sort = SmtSort::from_arcweft_type(return_type).ok_or_else(|| {
+        let result_sort = SmtSort::from_arcweft_type(return_type.value()).ok_or_else(|| {
             ContractLoweringError::UnsupportedType {
                 label: "result".to_owned(),
                 ty: format!("{return_type:?}"),
@@ -199,10 +199,16 @@ impl FunctionContractLowerer {
                     pattern: format!("{:?}", parameter.pattern()),
                 }
             })?;
-            let sort = SmtSort::from_arcweft_type(parameter.ty()).ok_or_else(|| {
+            let ty = parameter
+                .ty()
+                .ok_or_else(|| ContractLoweringError::UnsupportedType {
+                    label: name.to_owned(),
+                    ty: "<missing>".to_owned(),
+                })?;
+            let sort = SmtSort::from_arcweft_type(ty.value()).ok_or_else(|| {
                 ContractLoweringError::UnsupportedType {
                     label: name.to_owned(),
-                    ty: format!("{:?}", parameter.ty()),
+                    ty: format!("{:?}", ty.value()),
                 }
             })?;
             let id = SmtSymbolId::new(name);
@@ -271,29 +277,23 @@ impl FunctionContractLowerer {
 impl SmtSort {
     /// Maps the scalar Arcweft types supported by solver-backed contracts.
     fn from_arcweft_type(ty: &TypeRef) -> Option<Self> {
-        match ty {
-            TypeRef::Path(path) if path == "bool" => Some(Self::Bool),
-            TypeRef::Path(path)
-                if matches!(
-                    path.as_str(),
-                    "i8" | "i16"
-                        | "i32"
-                        | "i64"
-                        | "i128"
-                        | "isize"
-                        | "u8"
-                        | "u16"
-                        | "u32"
-                        | "u64"
-                        | "u128"
-                        | "usize"
-                ) =>
-            {
-                Some(Self::Int)
-            }
+        match direct_type_name(ty)? {
+            "bool" => Some(Self::Bool),
+            "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
+            | "u128" | "usize" => Some(Self::Int),
             _ => None,
         }
     }
+}
+
+fn direct_type_name(ty: &TypeRef) -> Option<&str> {
+    let TypeRef::Path(path) = ty else {
+        return None;
+    };
+    let [name] = path.segments() else {
+        return None;
+    };
+    matches!(path.root(), ModulePathRoot::ImplicitCrate).then(|| name.as_str())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

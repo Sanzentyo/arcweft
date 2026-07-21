@@ -33,7 +33,7 @@ fn package() -> CharacterPackage {
                 };
                 CharacterLayerPayload::new(
                     CharacterAssetPath::try_new(variant.asset().as_str()).expect("asset path"),
-                    bytes.as_ref(),
+                    bytes,
                 )
             })
         })

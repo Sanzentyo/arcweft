@@ -15,7 +15,7 @@ use arcweft_lang_syntax::ast::flow::{AuthoredExpr, Stmt};
 use arcweft_lang_syntax::ast::items::{ImplItem, ImplMember, TraitItem, TraitMember};
 use arcweft_lang_syntax::ast::pattern::Pattern;
 use arcweft_lang_syntax::types::{
-    AssocTypeBinding, FnParam, FnSignature, GenericParam, TypeRef, parse_type_ref,
+    AssociatedTypeBinding, FnParam, FnSignature, GenericParam, TypeRef,
 };
 use format::{label_has_generic, type_head, type_kind_label};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -486,18 +486,18 @@ impl TraitCatalog {
                     .iter()
                     .filter_map(|bound| {
                         self.predicate_from_bound(
-                            TypeKind::GenericParam(param.name().to_owned()),
-                            bound,
+                            TypeKind::GenericParam(param.name().as_str().to_owned()),
+                            bound.value(),
                         )
                     })
                     .collect::<Vec<_>>(),
             });
         let where_bounds = signature.where_clauses().iter().flat_map(|clause| {
-            let subject = trait_type_ref_kind(clause.subject(), &HashSet::new());
+            let subject = trait_type_ref_kind(clause.subject().value(), &HashSet::new());
             clause
                 .bounds()
                 .iter()
-                .filter_map(move |bound| self.predicate_from_bound(subject.clone(), bound))
+                .filter_map(move |bound| self.predicate_from_bound(subject.clone(), bound.value()))
                 .collect::<Vec<_>>()
         });
         generic_bounds.chain(where_bounds).collect()
@@ -546,7 +546,7 @@ impl TraitCatalog {
                     .signature
                     .return_type()
                     .map_or(TypeKind::Unit, |ty| {
-                        substitute_trait_self(ty, receiver, predicate.assoc_equalities())
+                        substitute_trait_self(ty.value(), receiver, predicate.assoc_equalities())
                     });
                 candidates.push((
                     None,
@@ -691,7 +691,7 @@ impl TraitCatalog {
                 .iter()
                 .map(|binding| {
                     AssocEquality::new(
-                        binding.name(),
+                        binding.name().as_str(),
                         trait_type_ref_kind(binding.value(), &HashSet::new()),
                     )
                 })
@@ -837,7 +837,11 @@ impl TraitMethodImpl {
                         .params()
                         .iter()
                         .filter(|param| !is_trait_receiver_param(param))
-                        .map(|param| crate::checker::helpers::type_ref_kind(param.ty())),
+                        .map(|param| {
+                            param.ty().map_or(TypeKind::Unit, |ty| {
+                                crate::checker::helpers::type_ref_kind(ty.value())
+                            })
+                        }),
                     return_type,
                 )
             },
@@ -1045,18 +1049,17 @@ impl TraitCatalogBuilder {
             ));
         }
 
-        let trait_id = item
-            .trait_name()
-            .and_then(|name| self.resolve_trait_name(name));
-        if item.trait_name().is_some() && trait_id.is_none() {
+        let trait_name = item
+            .trait_ref()
+            .and_then(|reference| trait_bound_parts(reference.value()))
+            .map(|(name, _)| name);
+        let trait_id = trait_name.and_then(|name| self.resolve_trait_name(name));
+        if item.trait_ref().is_some() && trait_id.is_none() {
             return;
         }
 
         let generic_params = impl_generic_names(item.generics());
-        let target = parse_type_ref(item.target()).map_or_else(
-            |_| TypeKind::Named(item.target().to_owned()),
-            |ty| trait_type_ref_kind(&ty, &generic_params),
-        );
+        let target = trait_type_ref_kind(item.target().value(), &generic_params);
 
         if let Some(trait_id) = trait_id
             && !self.impl_satisfies_orphan_rule(trait_id, &target)
@@ -1103,7 +1106,9 @@ impl TraitCatalogBuilder {
     fn resolve_supertraits(&mut self, item: &TraitItem) -> Vec<TraitId> {
         item.supertraits()
             .iter()
-            .filter_map(|name| self.resolve_trait_name(name))
+            .filter_map(|bound| {
+                trait_bound_parts(bound.value()).and_then(|(name, _)| self.resolve_trait_name(name))
+            })
             .collect()
     }
 
@@ -1215,7 +1220,7 @@ impl TraitCatalogBuilder {
                     if !params.is_empty() {
                         self.diagnostics.push(TypeCheckError::trait_diagnostic(
                             TraitDiagnostic::associated_type_constructor_unsupported(
-                                item.trait_name().unwrap_or("<inherent>"),
+                                impl_trait_name(item).unwrap_or("<inherent>"),
                                 name,
                             ),
                         ));
@@ -1223,7 +1228,7 @@ impl TraitCatalogBuilder {
                     if !assoc_seen.insert(name.clone()) {
                         self.diagnostics.push(TypeCheckError::trait_diagnostic(
                             TraitDiagnostic::duplicate_associated_type_assignment(
-                                item.trait_name().unwrap_or("<inherent>"),
+                                impl_trait_name(item).unwrap_or("<inherent>"),
                                 name,
                             ),
                         ));
@@ -1232,7 +1237,7 @@ impl TraitCatalogBuilder {
                         name.clone(),
                         AssociatedTypeAssignment {
                             name: name.clone(),
-                            value: trait_type_ref_kind(value, generic_params),
+                            value: trait_type_ref_kind(value.value(), generic_params),
                         },
                     );
                 }
@@ -1245,13 +1250,18 @@ impl TraitCatalogBuilder {
                     if !method_seen.insert(signature.name().to_owned()) {
                         self.diagnostics.push(TypeCheckError::trait_diagnostic(
                             TraitDiagnostic::duplicate_method(
-                                item.trait_name().unwrap_or("<inherent>"),
+                                impl_trait_name(item).unwrap_or("<inherent>"),
                                 signature.name(),
                             ),
                         ));
                     }
                     let return_type = signature.return_type().map_or(TypeKind::Unit, |ty| {
-                        substitute_self_type(ty, &impl_decl.target, impl_decl, generic_params)
+                        substitute_self_type(
+                            ty.value(),
+                            &impl_decl.target,
+                            impl_decl,
+                            generic_params,
+                        )
                     });
                     impl_decl.methods.insert(
                         signature.name().to_owned(),
@@ -1762,18 +1772,11 @@ fn collect_local_nominals(module: &HirModule) -> HashSet<String> {
         .collect()
 }
 
-fn impl_generic_names(generics: Option<&str>) -> HashSet<String> {
+fn impl_generic_names(generics: &[GenericParam]) -> HashSet<String> {
     generics
-        .into_iter()
-        .flat_map(|source| source.split(','))
-        .filter_map(|param| {
-            param
-                .trim()
-                .split_once(':')
-                .map_or(Some(param.trim()), |(name, _)| Some(name.trim()))
-        })
-        .filter(|name| !name.is_empty() && !name.starts_with('\''))
-        .map(ToOwned::to_owned)
+        .iter()
+        .filter_map(GenericParam::as_type)
+        .map(|name| name.as_str().to_owned())
         .collect()
 }
 
@@ -1808,10 +1811,10 @@ fn signatures_compatible(
         }
     }
     let expected = required.return_type().map_or(TypeKind::Unit, |ty| {
-        substitute_self_type(ty, &impl_decl.target, impl_decl, &generic_params)
+        substitute_self_type(ty.value(), &impl_decl.target, impl_decl, &generic_params)
     });
     let actual = actual.return_type().map_or(TypeKind::Unit, |ty| {
-        substitute_self_type(ty, &impl_decl.target, impl_decl, &generic_params)
+        substitute_self_type(ty.value(), &impl_decl.target, impl_decl, &generic_params)
     });
     expected == actual
 }
@@ -1822,7 +1825,9 @@ fn function_param_type(
     impl_decl: &TraitImpl,
     generic_params: &HashSet<String>,
 ) -> TypeKind {
-    substitute_self_type(param.ty(), self_ty, impl_decl, generic_params)
+    param.ty().map_or(TypeKind::Unit, |ty| {
+        substitute_self_type(ty.value(), self_ty, impl_decl, generic_params)
+    })
 }
 
 fn substitute_self_type(
@@ -1832,9 +1837,11 @@ fn substitute_self_type(
     generic_params: &HashSet<String>,
 ) -> TypeKind {
     match ty {
-        TypeRef::Path(path) if path == "Self" => self_ty.clone(),
-        TypeRef::Projection { subject, assoc } if matches!(subject.as_ref(), TypeRef::Path(path) if path == "Self") => {
-            impl_decl.associated_types.get(assoc).map_or_else(
+        TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self") => {
+            self_ty.clone()
+        }
+        TypeRef::Projection { subject, assoc } if matches!(subject.as_ref(), TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self")) => {
+            impl_decl.associated_types.get(assoc.as_str()).map_or_else(
                 || trait_type_ref_kind(ty, generic_params),
                 |assignment| assignment.value.clone(),
             )
@@ -1880,16 +1887,18 @@ fn substitute_trait_self(
     assoc_equalities: &[AssocEquality],
 ) -> TypeKind {
     match ty {
-        TypeRef::Path(path) if path == "Self" => self_ty.clone(),
-        TypeRef::Projection { subject, assoc } if matches!(subject.as_ref(), TypeRef::Path(path) if path == "Self") => {
+        TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self") => {
+            self_ty.clone()
+        }
+        TypeRef::Projection { subject, assoc } if matches!(subject.as_ref(), TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self")) => {
             assoc_equalities
                 .iter()
-                .find(|equality| equality.name() == assoc)
+                .find(|equality| equality.name() == assoc.as_str())
                 .map_or_else(
                     || TypeKind::Projection {
                         subject: Box::new(self_ty.clone()),
                         trait_name: None,
-                        assoc: assoc.clone(),
+                        assoc: assoc.as_str().to_owned(),
                     },
                     |equality| equality.ty().clone(),
                 )
@@ -1902,8 +1911,15 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
     match ty {
         TypeRef::Never => TypeKind::Never,
         TypeRef::ConstInt(value) => TypeKind::Named(value.to_string()),
-        TypeRef::Path(path) if path == "Self" || generic_params.contains(path) => {
-            TypeKind::GenericParam(path.clone())
+        TypeRef::Path(path)
+            if crate::types::direct_type_name(path)
+                .is_some_and(|name| name == "Self" || generic_params.contains(name)) =>
+        {
+            TypeKind::GenericParam(
+                crate::types::direct_type_name(path)
+                    .expect("guard requires a direct generic name")
+                    .to_owned(),
+            )
         }
         TypeRef::Path(path) => primitive_or_named(path),
         TypeRef::Tuple(items) => TypeKind::Tuple(
@@ -1926,7 +1942,7 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
         TypeRef::Projection { subject, assoc } => TypeKind::Projection {
             subject: Box::new(trait_type_ref_kind(subject, generic_params)),
             trait_name: None,
-            assoc: assoc.clone(),
+            assoc: assoc.as_str().to_owned(),
         },
         TypeRef::Generic { base, args } => {
             let arg_types = args
@@ -1950,6 +1966,7 @@ fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKi
         TypeRef::Slice(inner) => {
             TypeKind::Slice(Box::new(trait_type_ref_kind(inner, generic_params)))
         }
+        TypeRef::Recovery(id) => TypeKind::Named(format!("<recovered-type:{}>", id.index())),
     }
 }
 
@@ -1960,31 +1977,42 @@ fn trait_method_param(param: &FnParam) -> FunctionParam {
         }
         _ => "_",
     };
+    let ty = param.ty().map_or(TypeKind::Unit, |ty| {
+        crate::checker::helpers::type_ref_kind(ty.value())
+    });
     if param.is_rest() {
-        FunctionParam::rest(name, crate::checker::helpers::type_ref_kind(param.ty()))
+        FunctionParam::rest(name, ty)
     } else if param.default().is_some() {
-        FunctionParam::defaulted(name, crate::checker::helpers::type_ref_kind(param.ty()))
+        FunctionParam::defaulted(name, ty)
     } else {
-        FunctionParam::required(name, crate::checker::helpers::type_ref_kind(param.ty()))
+        FunctionParam::required(name, ty)
     }
 }
 
 fn is_trait_receiver_param(param: &FnParam) -> bool {
-    param.receiver_kind().is_some() || matches!(param.ty(), TypeRef::Path(path) if path == "Self")
+    param.receiver_kind().is_some()
+        || matches!(
+            param
+                .ty()
+                .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
+            Some(TypeRef::Path(path)) if crate::types::direct_type_name(path) == Some("Self")
+        )
 }
 
-fn generic_type_kind(base: &str, args: &[TypeKind]) -> TypeKind {
-    match (base, args) {
-        ("Vec", [item]) => TypeKind::Vec(Box::new(item.clone())),
-        ("Seq", [item]) => TypeKind::Seq(Box::new(item.clone())),
-        ("Range", [item]) => TypeKind::Range(Box::new(item.clone())),
-        ("Option", [item]) => TypeKind::Option(Box::new(item.clone())),
-        ("Result", [ok, error]) => TypeKind::Result {
+fn generic_type_kind(base: &arcweft_lang_syntax::types::TypePath, args: &[TypeKind]) -> TypeKind {
+    let direct = crate::types::direct_type_name(base);
+    match (direct, args) {
+        (Some("Vec"), [item]) => TypeKind::Vec(Box::new(item.clone())),
+        (Some("Seq"), [item]) => TypeKind::Seq(Box::new(item.clone())),
+        (Some("Range"), [item]) => TypeKind::Range(Box::new(item.clone())),
+        (Some("Option"), [item]) => TypeKind::Option(Box::new(item.clone())),
+        (Some("Result"), [ok, error]) => TypeKind::Result {
             ok: Box::new(ok.clone()),
             error: Box::new(error.clone()),
         },
         _ => TypeKind::Named(format!(
-            "{base}<{}>",
+            "{}<{}>",
+            base.canonical_string(),
             args.iter()
                 .map(type_kind_label)
                 .collect::<Vec<_>>()
@@ -1993,30 +2021,54 @@ fn generic_type_kind(base: &str, args: &[TypeKind]) -> TypeKind {
     }
 }
 
-fn primitive_or_named(path: &str) -> TypeKind {
-    TypeKind::primitive_name(path).unwrap_or_else(|| {
-        if path.chars().next().is_some_and(char::is_uppercase) && path.chars().count() == 1 {
-            TypeKind::GenericParam(path.to_owned())
-        } else {
-            TypeKind::Named(path.to_owned())
-        }
-    })
+fn primitive_or_named(path: &arcweft_lang_syntax::types::TypePath) -> TypeKind {
+    let direct = crate::types::direct_type_name(path);
+    direct
+        .and_then(TypeKind::primitive_name)
+        .unwrap_or_else(|| {
+            if direct.is_some_and(|name| {
+                name.chars().next().is_some_and(char::is_uppercase) && name.chars().count() == 1
+            }) {
+                TypeKind::GenericParam(
+                    direct
+                        .expect("guard requires a direct type name")
+                        .to_owned(),
+                )
+            } else {
+                TypeKind::Named(path.canonical_string())
+            }
+        })
 }
 
-fn trait_bound_parts(bound: &TypeRef) -> Option<(&str, &[AssocTypeBinding])> {
+fn trait_bound_parts(bound: &TypeRef) -> Option<(&str, &[AssociatedTypeBinding])> {
     match bound {
-        TypeRef::Path(path) => Some((path.as_str(), &[])),
-        TypeRef::TraitBound(bound) => Some((bound.path(), bound.assoc_bindings())),
-        TypeRef::Generic { base, .. } => Some((base.as_str(), &[])),
+        TypeRef::Path(path) => crate::types::direct_type_name(path).map(|name| (name, &[][..])),
+        TypeRef::TraitBound(bound) => {
+            crate::types::direct_type_name(bound.path()).map(|name| (name, bound.associated()))
+        }
+        TypeRef::Generic { base, .. } => {
+            crate::types::direct_type_name(base).map(|name| (name, &[][..]))
+        }
         _ => None,
     }
 }
 
 fn impl_head_label(item: &ImplItem) -> String {
-    item.trait_name().map_or_else(
-        || format!("impl {}", item.target()),
-        |trait_name| format!("impl {trait_name} for {}", item.target()),
+    impl_trait_name(item).map_or_else(
+        || format!("impl {}", item.target().value().canonical_label()),
+        |trait_name| {
+            format!(
+                "impl {trait_name} for {}",
+                item.target().value().canonical_label()
+            )
+        },
     )
+}
+
+fn impl_trait_name(item: &ImplItem) -> Option<&str> {
+    item.trait_ref()
+        .and_then(|reference| trait_bound_parts(reference.value()))
+        .map(|(name, _)| name)
 }
 
 fn local_type_name(ty: &TypeKind) -> Option<&str> {

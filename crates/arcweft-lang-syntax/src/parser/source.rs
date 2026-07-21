@@ -107,7 +107,12 @@ impl Parser<'_> {
             (None, name, tail)
         };
 
-        let source_ty = parse_source_type_from_tail(&signature_tail);
+        let signature_tail_source = signature_tail.trim();
+        let signature_tail_base = head_base
+            + head_trimmed
+                .find(signature_tail_source)
+                .unwrap_or(head_trimmed.len());
+        let source_ty = parse_source_type_from_tail(&signature_tail, signature_tail_base);
         let (header_body, header_body_base) = block
             .body_range
             .as_ref()
@@ -150,12 +155,17 @@ pub(super) fn parse_source_stmt_lines(body: &str, body_base: usize) -> Vec<Stmt>
         .collect()
 }
 
-pub(super) fn parse_source_type_from_tail(tail: &str) -> Option<crate::types::TypeRef> {
+pub(super) fn parse_source_type_from_tail(
+    tail: &str,
+    base: usize,
+) -> Option<crate::types::AuthoredTypeRef> {
     let tail = tail.trim();
     let type_source = tail.strip_prefix(':').map(str::trim).or_else(|| {
         strip_prefix_arcweft_punctuation(tail, ArcweftPunctuation::ThinArrow).map(str::trim)
     })?;
-    parse_type_ref(type_source).ok()
+    let mut parsed = parse_type_ref(type_source).ok()?;
+    parsed.rebase(base + slice_offset(tail, type_source));
+    Some(parsed)
 }
 
 pub(super) fn parse_source_headers(body: &str, body_base: usize) -> Vec<SourceHeader> {

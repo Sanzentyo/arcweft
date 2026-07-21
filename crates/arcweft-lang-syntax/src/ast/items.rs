@@ -1,5 +1,5 @@
 use crate::expr::{DottedPath, Expr};
-use crate::types::{FnSignature, GenericParam, TypeRef, WhereClause};
+use crate::types::{AuthoredTypeRef, FnSignature, GenericParam, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
 use super::flow::{AuthoredExpr, ContractClause, Flow, Stmt};
@@ -25,7 +25,7 @@ pub struct TypedSyntaxTree {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Item {
     Flow(Flow),
-    Function(FunctionItem),
+    Function(Box<FunctionItem>),
     Trait(TraitItem),
     Impl(ImplItem),
     Enum(EnumItem),
@@ -437,7 +437,7 @@ pub enum EntryRoleKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryItem {
     StateType {
-        ty: TypeRef,
+        ty: AuthoredTypeRef,
         value_range: TextRange,
         range: TextRange,
     },
@@ -447,7 +447,7 @@ pub enum EntryItem {
         range: TextRange,
     },
     EventType {
-        ty: TypeRef,
+        ty: AuthoredTypeRef,
         value_range: TextRange,
         range: TextRange,
     },
@@ -542,7 +542,7 @@ pub struct ExternModFunction {
 pub struct ExternModActivity {
     visibility: Option<Visibility>,
     name: String,
-    ty: TypeRef,
+    ty: AuthoredTypeRef,
 }
 
 /// Host capability declaration such as `extern capability cli { fn stdout(...) }`.
@@ -591,7 +591,7 @@ pub struct TraitItem {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
-    supertraits: Vec<String>,
+    supertraits: Vec<AuthoredTypeRef>,
     members: Vec<TraitMember>,
     range: TextRange,
 }
@@ -602,7 +602,7 @@ pub enum TraitMember {
     AssociatedType {
         name: String,
         params: Vec<String>,
-        value: Option<TypeRef>,
+        value: Option<AuthoredTypeRef>,
     },
     Function {
         signature: FnSignature,
@@ -619,7 +619,7 @@ pub enum ImplMember {
     AssociatedType {
         name: String,
         params: Vec<String>,
-        value: TypeRef,
+        value: AuthoredTypeRef,
     },
     Function {
         signature: FnSignature,
@@ -634,9 +634,9 @@ pub enum ImplMember {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImplItem {
     visibility: Option<Visibility>,
-    generics: Option<String>,
-    trait_name: Option<String>,
-    target: String,
+    generics: Vec<GenericParam>,
+    trait_ref: Option<AuthoredTypeRef>,
+    target: AuthoredTypeRef,
     where_clauses: Vec<WhereClause>,
     members: Vec<ImplMember>,
     body: String,
@@ -647,9 +647,9 @@ pub struct ImplItem {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ImplItemInit {
     pub(crate) visibility: Option<Visibility>,
-    pub(crate) generics: Option<String>,
-    pub(crate) trait_name: Option<String>,
-    pub(crate) target: String,
+    pub(crate) generics: Vec<GenericParam>,
+    pub(crate) trait_ref: Option<AuthoredTypeRef>,
+    pub(crate) target: AuthoredTypeRef,
     pub(crate) where_clauses: Vec<WhereClause>,
     pub(crate) members: Vec<ImplMember>,
     pub(crate) body: String,
@@ -664,8 +664,24 @@ pub struct EnumItem {
     name: String,
     name_range: TextRange,
     generic_params: Vec<GenericParam>,
+    generic_range: Option<TextRange>,
+    where_clauses: Vec<WhereClause>,
     variants: Vec<EnumVariant>,
     range: TextRange,
+}
+
+/// Internal initializer for an enum declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EnumItemInit {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) name: String,
+    pub(crate) name_range: TextRange,
+    pub(crate) generic_params: Vec<GenericParam>,
+    pub(crate) generic_range: Option<TextRange>,
+    pub(crate) where_clauses: Vec<WhereClause>,
+    pub(crate) variants: Vec<EnumVariant>,
+    pub(crate) range: TextRange,
 }
 
 /// One enum variant row, preserving payload syntax for later lowering.
@@ -673,7 +689,10 @@ pub struct EnumItem {
 pub struct EnumVariant {
     doc: Option<DocBlock>,
     name: String,
-    payload: Option<String>,
+    payload: Option<AuthoredTypeRef>,
+    name_range: TextRange,
+    payload_range: Option<TextRange>,
+    range: TextRange,
 }
 
 /// Top-level struct declaration with typed fields.
@@ -684,8 +703,24 @@ pub struct StructItem {
     name: String,
     name_range: TextRange,
     generic_params: Vec<GenericParam>,
+    generic_range: Option<TextRange>,
+    where_clauses: Vec<WhereClause>,
     fields: Vec<StructField>,
     range: TextRange,
+}
+
+/// Internal initializer for a struct declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StructItemInit {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) name: String,
+    pub(crate) name_range: TextRange,
+    pub(crate) generic_params: Vec<GenericParam>,
+    pub(crate) generic_range: Option<TextRange>,
+    pub(crate) where_clauses: Vec<WhereClause>,
+    pub(crate) fields: Vec<StructField>,
+    pub(crate) range: TextRange,
 }
 
 /// One `name: Type` struct field.
@@ -693,7 +728,9 @@ pub struct StructItem {
 pub struct StructField {
     doc: Option<DocBlock>,
     name: String,
-    ty: TypeRef,
+    ty: AuthoredTypeRef,
+    name_range: TextRange,
+    range: TextRange,
 }
 
 /// Newtype/type alias declaration with optional `where` contracts.
@@ -702,9 +739,26 @@ pub struct TypeAliasItem {
     attrs: Vec<Attribute>,
     visibility: Option<Visibility>,
     name: String,
-    target: TypeRef,
-    where_clauses: Vec<Expr>,
+    name_range: TextRange,
+    generic_params: Vec<GenericParam>,
+    generic_range: Option<TextRange>,
+    target: AuthoredTypeRef,
+    where_clauses: Vec<WhereClause>,
     range: TextRange,
+}
+
+/// Internal initializer for a type-alias declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TypeAliasItemInit {
+    pub(crate) attrs: Vec<Attribute>,
+    pub(crate) visibility: Option<Visibility>,
+    pub(crate) name: String,
+    pub(crate) name_range: TextRange,
+    pub(crate) generic_params: Vec<GenericParam>,
+    pub(crate) generic_range: Option<TextRange>,
+    pub(crate) target: AuthoredTypeRef,
+    pub(crate) where_clauses: Vec<WhereClause>,
+    pub(crate) range: TextRange,
 }
 
 impl FunctionItem {
@@ -1354,7 +1408,7 @@ impl ExternModActivity {
     pub(crate) fn new(
         visibility: Option<Visibility>,
         name: impl Into<String>,
-        ty: TypeRef,
+        ty: AuthoredTypeRef,
     ) -> Self {
         Self {
             visibility,
@@ -1371,7 +1425,7 @@ impl ExternModActivity {
         &self.name
     }
 
-    pub const fn ty(&self) -> &TypeRef {
+    pub const fn ty(&self) -> &AuthoredTypeRef {
         &self.ty
     }
 }
@@ -1458,7 +1512,7 @@ impl TraitItem {
         attrs: Vec<Attribute>,
         visibility: Option<Visibility>,
         name: String,
-        supertraits: Vec<String>,
+        supertraits: Vec<AuthoredTypeRef>,
         members: Vec<TraitMember>,
         range: TextRange,
     ) -> Self {
@@ -1484,7 +1538,7 @@ impl TraitItem {
         &self.name
     }
 
-    pub fn supertraits(&self) -> &[String] {
+    pub fn supertraits(&self) -> &[AuthoredTypeRef] {
         &self.supertraits
     }
 
@@ -1502,7 +1556,7 @@ impl ImplItem {
         Self {
             visibility: init.visibility,
             generics: init.generics,
-            trait_name: init.trait_name,
+            trait_ref: init.trait_ref,
             target: init.target,
             where_clauses: init.where_clauses,
             members: init.members,
@@ -1515,15 +1569,15 @@ impl ImplItem {
         self.visibility
     }
 
-    pub fn generics(&self) -> Option<&str> {
-        self.generics.as_deref()
+    pub fn generics(&self) -> &[GenericParam] {
+        &self.generics
     }
 
-    pub fn trait_name(&self) -> Option<&str> {
-        self.trait_name.as_deref()
+    pub const fn trait_ref(&self) -> Option<&AuthoredTypeRef> {
+        self.trait_ref.as_ref()
     }
 
-    pub fn target(&self) -> &str {
+    pub const fn target(&self) -> &AuthoredTypeRef {
         &self.target
     }
 
@@ -1545,23 +1599,17 @@ impl ImplItem {
 }
 
 impl EnumItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        name: String,
-        name_range: TextRange,
-        generic_params: Vec<GenericParam>,
-        variants: Vec<EnumVariant>,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: EnumItemInit) -> Self {
         Self {
-            attrs,
-            visibility,
-            name,
-            name_range,
-            generic_params,
-            variants,
-            range,
+            attrs: init.attrs,
+            visibility: init.visibility,
+            name: init.name,
+            name_range: init.name_range,
+            generic_params: init.generic_params,
+            generic_range: init.generic_range,
+            where_clauses: init.where_clauses,
+            variants: init.variants,
+            range: init.range,
         }
     }
 
@@ -1585,6 +1633,14 @@ impl EnumItem {
     /// Structured generic parameters declared by this nominal type.
     pub fn generic_params(&self) -> &[GenericParam] {
         &self.generic_params
+    }
+
+    pub const fn generic_range(&self) -> Option<TextRange> {
+        self.generic_range
+    }
+
+    pub fn where_clauses(&self) -> &[WhereClause] {
+        &self.where_clauses
     }
 
     pub fn variants(&self) -> &[EnumVariant] {
@@ -1597,8 +1653,22 @@ impl EnumItem {
 }
 
 impl EnumVariant {
-    pub(crate) const fn new(doc: Option<DocBlock>, name: String, payload: Option<String>) -> Self {
-        Self { doc, name, payload }
+    pub(crate) const fn new(
+        doc: Option<DocBlock>,
+        name: String,
+        payload: Option<AuthoredTypeRef>,
+        name_range: TextRange,
+        payload_range: Option<TextRange>,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            doc,
+            name,
+            payload,
+            name_range,
+            payload_range,
+            range,
+        }
     }
 
     pub const fn doc(&self) -> Option<&DocBlock> {
@@ -1609,29 +1679,35 @@ impl EnumVariant {
         &self.name
     }
 
-    pub fn payload(&self) -> Option<&str> {
-        self.payload.as_deref()
+    pub const fn payload(&self) -> Option<&AuthoredTypeRef> {
+        self.payload.as_ref()
+    }
+
+    pub const fn name_range(&self) -> TextRange {
+        self.name_range
+    }
+
+    pub const fn payload_range(&self) -> Option<TextRange> {
+        self.payload_range
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 
 impl StructItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        name: String,
-        name_range: TextRange,
-        generic_params: Vec<GenericParam>,
-        fields: Vec<StructField>,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: StructItemInit) -> Self {
         Self {
-            attrs,
-            visibility,
-            name,
-            name_range,
-            generic_params,
-            fields,
-            range,
+            attrs: init.attrs,
+            visibility: init.visibility,
+            name: init.name,
+            name_range: init.name_range,
+            generic_params: init.generic_params,
+            generic_range: init.generic_range,
+            where_clauses: init.where_clauses,
+            fields: init.fields,
+            range: init.range,
         }
     }
 
@@ -1657,6 +1733,14 @@ impl StructItem {
         &self.generic_params
     }
 
+    pub const fn generic_range(&self) -> Option<TextRange> {
+        self.generic_range
+    }
+
+    pub fn where_clauses(&self) -> &[WhereClause] {
+        &self.where_clauses
+    }
+
     pub fn fields(&self) -> &[StructField] {
         &self.fields
     }
@@ -1667,8 +1751,20 @@ impl StructItem {
 }
 
 impl StructField {
-    pub(crate) const fn new(doc: Option<DocBlock>, name: String, ty: TypeRef) -> Self {
-        Self { doc, name, ty }
+    pub(crate) const fn new(
+        doc: Option<DocBlock>,
+        name: String,
+        ty: AuthoredTypeRef,
+        name_range: TextRange,
+        range: TextRange,
+    ) -> Self {
+        Self {
+            doc,
+            name,
+            ty,
+            name_range,
+            range,
+        }
     }
 
     pub const fn doc(&self) -> Option<&DocBlock> {
@@ -1679,27 +1775,31 @@ impl StructField {
         &self.name
     }
 
-    pub const fn ty(&self) -> &TypeRef {
+    pub const fn ty(&self) -> &AuthoredTypeRef {
         &self.ty
+    }
+
+    pub const fn name_range(&self) -> TextRange {
+        self.name_range
+    }
+
+    pub const fn range(&self) -> TextRange {
+        self.range
     }
 }
 
 impl TypeAliasItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        name: String,
-        target: TypeRef,
-        where_clauses: Vec<Expr>,
-        range: TextRange,
-    ) -> Self {
+    pub(crate) fn new(init: TypeAliasItemInit) -> Self {
         Self {
-            attrs,
-            visibility,
-            name,
-            target,
-            where_clauses,
-            range,
+            attrs: init.attrs,
+            visibility: init.visibility,
+            name: init.name,
+            name_range: init.name_range,
+            generic_params: init.generic_params,
+            generic_range: init.generic_range,
+            target: init.target,
+            where_clauses: init.where_clauses,
+            range: init.range,
         }
     }
 
@@ -1715,11 +1815,23 @@ impl TypeAliasItem {
         &self.name
     }
 
-    pub const fn target(&self) -> &TypeRef {
+    pub const fn name_range(&self) -> TextRange {
+        self.name_range
+    }
+
+    pub fn generic_params(&self) -> &[GenericParam] {
+        &self.generic_params
+    }
+
+    pub const fn generic_range(&self) -> Option<TextRange> {
+        self.generic_range
+    }
+
+    pub const fn target(&self) -> &AuthoredTypeRef {
         &self.target
     }
 
-    pub fn where_clauses(&self) -> &[Expr] {
+    pub fn where_clauses(&self) -> &[WhereClause] {
         &self.where_clauses
     }
 

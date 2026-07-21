@@ -22,6 +22,7 @@ use arcweft_lang_syntax::expr::{
     Placeholder, SelectExpr, UnaryOp,
 };
 use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
+use arcweft_lang_syntax::types::AuthoredTypeRef;
 
 mod agent;
 mod binary;
@@ -217,7 +218,7 @@ impl TypeChecker<'_> {
                 body,
             } => Some(self.check_closure_expr(
                 params,
-                return_type.as_ref(),
+                return_type.as_ref().map(AuthoredTypeRef::value),
                 body,
                 expected,
                 expression_id,

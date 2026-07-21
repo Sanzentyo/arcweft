@@ -89,8 +89,10 @@ fn reduction_state_type(ty: &TypeKind) -> Option<TypeKind> {
     let TypeKind::Named(label) = ty else {
         return None;
     };
-    let TypeRef::Generic { base, args } = parse_type_ref(label).ok()? else {
+    let authored = parse_type_ref(label).ok()?;
+    let TypeRef::Generic { base, args } = authored.value() else {
         return None;
     };
-    (base == "Reduction" && args.len() == 1).then(|| TypeKind::from(&args[0]))
+    (crate::types::direct_type_name(base) == Some("Reduction") && args.len() == 1)
+        .then(|| TypeKind::from(&args[0]))
 }

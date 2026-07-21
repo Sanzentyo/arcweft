@@ -68,7 +68,10 @@ impl Parser<'_> {
             return None;
         }
 
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let (pattern, ty) = parse_binding_pattern(
+            pattern,
+            start.start + line_leading + text.find(pattern).unwrap_or_default(),
+        );
         let expr_start = start.start + line_leading + expr_offset + expr_leading;
         let (expr_source, expr_range) = plan_end
             .and_then(|end| {

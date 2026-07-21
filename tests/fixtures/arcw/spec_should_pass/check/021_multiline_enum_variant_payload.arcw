@@ -1,8 +1,10 @@
+pub struct ChoiceSelectedEvent {
+    id: Ref<ChoiceOption>,
+    label: String,
+}
+
 pub enum GameEvent {
-    ChoiceSelected {
-        id: Ref<ChoiceOption>,
-        label: String,
-    },
+    ChoiceSelected ChoiceSelectedEvent,
 }
 
 flow @flow.main main { return "done" }

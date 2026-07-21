@@ -306,9 +306,13 @@ fn corrupt_binary_overlay_does_not_fall_back_to_valid_disk_layer() {
     assert!(matches!(
         error,
         super::ProfileTopologyLoadError::CharacterPackage {
-            source: arcweft_character::package::CharacterPackageError::InvalidLayerPng { path, .. },
+            source,
             ..
-        } if path.as_str() == "layers/eyes--normal.png"
+        } if matches!(
+            source.as_ref(),
+            arcweft_character::package::CharacterPackageError::InvalidLayerPng { path, .. }
+                if path.as_str() == "layers/eyes--normal.png"
+        )
     ));
 }
 

@@ -2,6 +2,7 @@
 
 mod error;
 mod identity;
+pub mod nominal;
 mod table;
 #[cfg(test)]
 mod tests;
@@ -20,7 +21,8 @@ pub use identity::{
 };
 pub use table::{
     ProjectSymbolBindingCollision, ProjectSymbolLimitKind, ProjectSymbolLimits,
-    ProjectSymbolLinkOutput, ProjectSymbolTable, ProjectSymbolTargetId, ResolvedProjectSymbol,
+    ProjectSymbolLinkOutput, ProjectSymbolTable, ProjectSymbolTargetId, ProjectTypeCandidate,
+    ProjectTypeLookupError, ProjectTypeTarget, ResolvedProjectSymbol, VisibleProjectTypeBinding,
 };
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;

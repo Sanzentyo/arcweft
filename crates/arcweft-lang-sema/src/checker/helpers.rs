@@ -283,7 +283,7 @@ pub(super) fn let_else_bindings(
             bindings.extend(let_else_bindings(pattern, expr_type));
             bindings
         }
-        Pattern::Typed { name, ty } => vec![(name.to_owned(), type_ref_kind(ty))],
+        Pattern::Typed { name, ty } => vec![(name.to_owned(), type_ref_kind(ty.value()))],
         Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => Vec::new(),
     }
 }
@@ -867,7 +867,9 @@ pub(super) fn function_param_local_type_with_generics(
     param: &FnParam,
     generic_names: &HashSet<String>,
 ) -> TypeKind {
-    let ty = type_ref_kind_with_generics(param.ty(), generic_names);
+    let ty = param.ty().map_or(TypeKind::Unit, |ty| {
+        type_ref_kind_with_generics(ty.value(), generic_names)
+    });
     if param.is_rest() {
         TypeKind::Vec(Box::new(ty))
     } else {
@@ -880,7 +882,7 @@ pub(crate) fn signature_generic_names(signature: &FnSignature) -> HashSet<String
         .generic_params()
         .iter()
         .filter_map(|param| param.as_type())
-        .map(ToOwned::to_owned)
+        .map(|name| name.as_str().to_owned())
         .collect()
 }
 
@@ -889,28 +891,53 @@ pub(crate) fn type_ref_kind_with_generics(
     generic_names: &HashSet<String>,
 ) -> TypeKind {
     match ty {
-        TypeRef::Path(path) if generic_names.contains(path) => TypeKind::GenericParam(path.clone()),
+        TypeRef::Path(path)
+            if crate::types::direct_type_name(path)
+                .is_some_and(|name| generic_names.contains(name)) =>
+        {
+            TypeKind::GenericParam(
+                crate::types::direct_type_name(path)
+                    .expect("guard requires one direct type name")
+                    .to_owned(),
+            )
+        }
         TypeRef::Projection { subject, assoc } => TypeKind::Projection {
             subject: Box::new(type_ref_kind_with_generics(subject, generic_names)),
             trait_name: None,
-            assoc: assoc.clone(),
+            assoc: assoc.as_str().to_owned(),
         },
-        TypeRef::Generic { base, args } if base == "Vec" && args.len() == 1 => TypeKind::Vec(
-            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-        ),
-        TypeRef::Generic { base, args } if base == "Option" && args.len() == 1 => TypeKind::Option(
-            Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-        ),
-        TypeRef::Generic { base, args } if base == "Result" && args.len() == 2 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Vec") && args.len() == 1 =>
+        {
+            TypeKind::Vec(Box::new(type_ref_kind_with_generics(
+                &args[0],
+                generic_names,
+            )))
+        }
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Option") && args.len() == 1 =>
+        {
+            TypeKind::Option(Box::new(type_ref_kind_with_generics(
+                &args[0],
+                generic_names,
+            )))
+        }
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Result") && args.len() == 2 =>
+        {
             TypeKind::Result {
                 ok: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
                 error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
             }
         }
-        TypeRef::Generic { base, args } if base == "Need" && args.len() == 2 => TypeKind::Need {
-            ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-            error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
-        },
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Need") && args.len() == 2 =>
+        {
+            TypeKind::Need {
+                ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
+                error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
+            }
+        }
         TypeRef::Reference(reference) => TypeKind::BorrowRef {
             kind: reference.kind(),
             lifetime: reference
@@ -937,17 +964,23 @@ pub(crate) fn type_ref_kind_with_generics(
 
 pub(super) fn stream_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
     match ty {
-        TypeRef::Generic { base, args } if base == "Stream" && args.len() == 2 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Stream") && args.len() == 2 =>
+        {
             Some((type_ref_kind(&args[0]), type_ref_kind(&args[1])))
         }
-        TypeRef::Generic { base, .. } if base == "Source" => None,
+        TypeRef::Generic { base, .. } if crate::types::direct_type_name(base) == Some("Source") => {
+            None
+        }
         _ => None,
     }
 }
 
 pub(super) fn source_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
     match ty {
-        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+        TypeRef::Generic { base, args }
+            if crate::types::direct_type_name(base) == Some("Source") && args.len() == 2 =>
+        {
             Some((type_ref_kind(&args[0]), type_ref_kind(&args[1])))
         }
         _ => None,
@@ -958,7 +991,7 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
     match ty {
         TypeRef::Never => "Never".to_owned(),
         TypeRef::ConstInt(value) => value.to_string(),
-        TypeRef::Path(path) => path.clone(),
+        TypeRef::Path(path) => path.canonical_string(),
         TypeRef::Tuple(items) => format!(
             "({})",
             items
@@ -995,7 +1028,8 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
             .collect::<Vec<_>>()
             .join(" | "),
         TypeRef::Generic { base, args } => format!(
-            "{base}<{}>",
+            "{}<{}>",
+            base.canonical_string(),
             args.iter()
                 .map(type_ref_label)
                 .collect::<Vec<_>>()
@@ -1003,13 +1037,17 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
         ),
         TypeRef::TraitBound(bound) => {
             let mut args = bound.args().iter().map(type_ref_label).collect::<Vec<_>>();
-            args.extend(bound.assoc_bindings().iter().map(|binding| {
-                format!("{} = {}", binding.name(), type_ref_label(binding.value()))
+            args.extend(bound.associated().iter().map(|binding| {
+                format!(
+                    "{} = {}",
+                    binding.name().as_str(),
+                    type_ref_label(binding.value())
+                )
             }));
             format!("{}<{}>", bound.path(), args.join(", "))
         }
         TypeRef::Projection { subject, assoc } => {
-            format!("{}::{assoc}", type_ref_label(subject))
+            format!("{}::{}", type_ref_label(subject), assoc.as_str())
         }
         TypeRef::Reference(reference) => {
             let lifetime = reference
@@ -1024,6 +1062,7 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
             )
         }
         TypeRef::Slice(inner) => format!("[{}]", type_ref_label(inner)),
+        TypeRef::Recovery(id) => format!("<recovered-type:{}>", id.index()),
     }
 }
 

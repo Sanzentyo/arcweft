@@ -195,7 +195,7 @@ impl Parser<'_> {
             }
             CstTopLevelItemKind::Function => {
                 if let Some(function) = self.parse_function_item() {
-                    items.push(Item::Function(function));
+                    items.push(Item::Function(Box::new(function)));
                 }
             }
             CstTopLevelItemKind::Unrecognized => {

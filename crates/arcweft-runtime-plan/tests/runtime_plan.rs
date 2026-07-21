@@ -1733,16 +1733,20 @@ flow @flow.main main {
 fn runtime_plan_lowers_user_enum_shorthand_payloads_to_variants() {
     let tree = parse_ok(
         r#"
+struct MoodMeta {
+    label: String,
+}
+
 enum Mood {
     Alert,
     WithScore(i64),
-    WithMeta { label: String },
+    WithMeta(MoodMeta),
 }
 
 flow @flow.main main {
     let mood: Mood = .Alert
     let scored: Mood = .WithScore(7i64)
-    let meta: Mood = WithMeta { label = "ready" }
+    let meta: Mood = .WithMeta(MoodMeta { label = "ready" })
 }
 "#,
     );

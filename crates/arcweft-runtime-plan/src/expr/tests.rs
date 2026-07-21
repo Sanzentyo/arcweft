@@ -6,7 +6,10 @@ use crate::typed_evidence::{
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
-use arcweft_lang_hir::syntax::expr::{IntSuffix, Placeholder};
+use arcweft_lang_hir::syntax::{
+    expr::{IntSuffix, Placeholder},
+    types::parse_type_ref,
+};
 
 fn int(value: u128, suffix: Option<IntSuffix>) -> Expr {
     Expr::Literal(Literal::Int(int_literal(value, suffix)))
@@ -195,17 +198,14 @@ fn strict_runtime_lowers_expected_partial_placeholder_to_function_expr() {
         op: BinaryOp::Gt,
         rhs: Box::new(int(80, Some(IntSuffix::I64))),
     };
-    let expected = TypeRef::Function {
-        params: vec![TypeRef::Path("i64".to_owned())],
-        return_type: Box::new(TypeRef::Path("bool".to_owned())),
-        effects: None,
-    };
+    let expected =
+        parse_type_ref("i64 -> bool").expect("test fixture must use valid authored type syntax");
     let ids = BTreeMap::new();
     let helpers = Vec::new();
 
     let lowered = lower_runtime_expr_strict_with_expected_type(
         &expr,
-        Some(&expected),
+        Some(expected.value()),
         RuntimePureHelperLookup::new(&ids, &helpers),
     )
     .expect("expected placeholder function lowers");

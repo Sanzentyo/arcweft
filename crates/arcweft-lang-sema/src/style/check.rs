@@ -567,7 +567,9 @@ fn check_tokens(
                 continue;
             }
         };
-        let annotated = token.value_type().and_then(annotation_kind);
+        let annotated = token
+            .value_type()
+            .and_then(|ty| annotation_kind(ty.value()));
         if token.value_type().is_some() && annotated.is_none() {
             diagnostics.push(
                 StyleDiagnostic::new(

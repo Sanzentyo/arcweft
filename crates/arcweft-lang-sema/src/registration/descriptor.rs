@@ -140,6 +140,11 @@ impl RegisteredTypeCheckEnv {
                     actual: ProjectSymbolTargetId::Callable(symbol.declaration().clone()),
                 });
             }
+            ResolvedProjectSymbol::Nominal(symbol) => {
+                return Err(RegisteredCharacterResolutionError::NotExternal {
+                    actual: ProjectSymbolTargetId::Nominal(symbol.id().clone()),
+                });
+            }
             ResolvedProjectSymbol::Module(module) => {
                 return Err(RegisteredCharacterResolutionError::NotExternal {
                     actual: ProjectSymbolTargetId::Module(module.clone()),

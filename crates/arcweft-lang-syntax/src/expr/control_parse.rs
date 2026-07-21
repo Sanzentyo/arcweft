@@ -1,5 +1,5 @@
 use super::{Expr, ExprOp, ExprParseError, ExprParser, MatchExprArm, Token, parse_expr};
-use crate::pattern::parse_pattern;
+use crate::pattern::parse_pattern_at;
 
 impl ExprParser {
     pub(super) fn parse_if_expr_after_keyword(&mut self) -> Result<Expr, ExprParseError> {
@@ -25,6 +25,7 @@ impl ExprParser {
         let pattern_end = self.cursor;
         self.expect(&Token::Op(ExprOp::Assign))?;
         let pattern_source = self.token_range_source(pattern_start, pattern_end);
+        let pattern_base = self.absolute_offset(self.tokens[pattern_start].start)?;
         let expr = self.parse_control_head_expr()?;
         let guard = if self.peek_ident("when") {
             self.bump();
@@ -35,7 +36,7 @@ impl ExprParser {
         let then_branch = self.parse_braced_value_expr()?;
         let else_branch = self.parse_optional_else_expr()?;
         Ok(Expr::IfLet {
-            pattern: Box::new(parse_pattern(pattern_source.trim())),
+            pattern: Box::new(parse_pattern_at(pattern_source.trim(), pattern_base)),
             expr: Box::new(expr),
             guard,
             then_branch: Box::new(then_branch),
@@ -92,6 +93,7 @@ impl ExprParser {
         self.expect(&Token::Op(ExprOp::FatArrow))?;
         let pattern_end = guard_start.unwrap_or(head_end);
         let pattern_source = self.token_range_source(head_start, pattern_end);
+        let pattern_base = self.absolute_offset(self.tokens[head_start].start)?;
         let guard = guard_start.map(|guard_start| {
             Box::new(
                 parse_expr(self.token_range_source(guard_start + 1, head_end).trim())
@@ -106,7 +108,7 @@ impl ExprParser {
             self.parse_expr_bp(0)?
         };
         Ok(MatchExprArm::new(
-            parse_pattern(pattern_source.trim()),
+            parse_pattern_at(pattern_source.trim(), pattern_base),
             guard,
             Box::new(value),
         ))

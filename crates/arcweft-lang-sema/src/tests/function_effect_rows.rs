@@ -49,8 +49,9 @@ effects { fs.read }
     );
     assert_eq!(
         crate::checker::helpers::type_ref_kind(
-            &parse_type_ref("String -> String effects { fs.read }")
+            parse_type_ref("String -> String effects { fs.read }")
                 .expect("function type effect row parses")
+                .value()
         )
         .source_label(),
         "String -> String effects { fs.read }"

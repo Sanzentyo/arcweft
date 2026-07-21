@@ -49,7 +49,7 @@ pub(super) fn function_signature_type_with_nominal_types(
 fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
     let return_type = signature
         .return_type()
-        .map_or(TypeKind::Unit, type_ref_kind);
+        .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value()));
     signature
         .param_groups()
         .iter()
@@ -57,14 +57,20 @@ fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
         .rev()
         .fold(return_type, |return_type, group| {
             TypeKind::function(
-                group.params().iter().map(|param| type_ref_kind(param.ty())),
+                group.params().iter().map(|param| {
+                    param
+                        .ty()
+                        .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value()))
+                }),
                 return_type,
             )
         })
 }
 
 fn function_param_type(param: &FnParam, nominal_types: NominalTypeContext<'_>) -> FunctionParam {
-    let ty = type_ref_kind(param.ty());
+    let ty = param
+        .ty()
+        .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value()));
     FunctionParam::new(
         pattern_param_name(param.pattern()),
         ty.clone(),
@@ -505,7 +511,7 @@ fn variant_constructor_matches(path: &str, variant: &str) -> bool {
 
 fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {
     match pattern {
-        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty)),
+        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty.value())),
         Pattern::Tuple(items) => items
             .iter()
             .map(pattern_type_hint)

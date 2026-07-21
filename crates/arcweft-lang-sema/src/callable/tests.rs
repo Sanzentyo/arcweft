@@ -7,7 +7,8 @@ use arcweft_lang_hir::{
     symbol::{
         CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
         ExternalDeclarationSeed, ProjectDirectBinding, ProjectExternalDeclarations,
-        ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+        ProjectSymbolLinkError, ProjectSymbolLinkReport, ProjectSymbolRevision, ProjectSymbolTable,
+        ProjectSymbolWorldId,
     },
 };
 use arcweft_lang_syntax::{
@@ -43,7 +44,7 @@ use super::{
     FunctionValueSignatureId, FxCallableSignatureId, FxResolution, LanguageCallableFamily,
     LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates,
     PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, PresentationCallableId,
-    ProjectCallablePath, ProjectNameBinding, ReceiverMethodKey, ReductionConstructorKind,
+    ProjectCallablePath, ReceiverMethodKey, ReductionConstructorKind,
     RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable, ResolvedCharacterOwner,
     ResolvedFunctionValue, RustItemPath, SemanticParameter, SemanticParameterGroup,
     SemanticSignature, SemanticSignatureError, SemanticSignatureHelp, SemanticSignatureIndex,
@@ -104,6 +105,17 @@ fn project_binding_path(segments: impl IntoIterator<Item = String>) -> ProjectSy
 fn external_binding_project(
     bindings: impl IntoIterator<Item = (String, ProjectSymbolPath)>,
 ) -> (HirProject, ProjectSymbolTable) {
+    let (project, symbols) = try_external_binding_project(bindings);
+    let symbols = symbols.expect("typed project bindings link");
+    (project, symbols)
+}
+
+fn try_external_binding_project(
+    bindings: impl IntoIterator<Item = (String, ProjectSymbolPath)>,
+) -> (
+    HirProject,
+    Result<ProjectSymbolTable, ProjectSymbolLinkReport>,
+) {
     let source = " ";
     let document = Arc::new(
         SourceDocument::try_new(
@@ -163,8 +175,7 @@ fn external_binding_project(
     let externals = ProjectExternalDeclarations::try_new(world, revision, seeds)
         .expect("external declarations");
     let symbols = ProjectSymbolTable::link(&project, &externals)
-        .expect("typed project bindings link")
-        .into_table();
+        .map(arcweft_lang_hir::symbol::ProjectSymbolLinkOutput::into_table);
     (project, symbols)
 }
 
@@ -653,69 +664,17 @@ fn typed_project_binding_without_registered_type_is_fail_closed() {
 }
 
 #[test]
-fn typed_project_binding_collision_rejects_the_complete_catalog() {
+fn distinct_external_targets_at_one_direct_path_are_rejected_by_the_project_linker() {
     let shared = project_binding_path(["shared".to_owned()]);
-    let (project, symbols) = external_binding_project([
+    let (_, symbols) = try_external_binding_project([
         ("adapter.first".to_owned(), shared.clone()),
         ("adapter.second".to_owned(), shared),
     ]);
-    let mut types = [TypeKind::I32, TypeKind::I64].into_iter();
-    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
-    builder
-        .add_project_bindings(&project, &symbols, |_| types.next())
-        .expect("typed rows stage before collision validation");
-
-    let error = builder
-        .finish()
-        .expect_err("different targets at one typed path reject the catalog");
-    let CallableCatalogBuildError::ProjectBindingCollision {
-        path,
-        first: ProjectNameBinding::NonCallable { ty: first_type, .. },
-        second: ProjectNameBinding::NonCallable {
-            ty: second_type, ..
-        },
-    } = error
-    else {
-        panic!("unexpected catalog error: {error:?}");
-    };
-    assert_eq!(
-        path.path()
-            .segments()
-            .iter()
-            .map(CallableName::as_str)
-            .collect::<Vec<_>>(),
-        ["shared"]
-    );
-    assert_ne!(first_type, second_type);
-}
-
-#[test]
-fn identical_typed_project_bindings_at_the_same_path_are_accepted() {
-    let shared = project_binding_path(["shared".to_owned()]);
-    let (project, symbols) = external_binding_project([
-        ("adapter.first".to_owned(), shared.clone()),
-        ("adapter.second".to_owned(), shared),
-    ]);
-    let key = ProjectCallablePath::new(
-        project.package().clone(),
-        CanonicalModulePath::crate_root(),
-        path(&["shared"]),
-    );
-    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
-    builder
-        .add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32))
-        .expect("identical typed rows stage successfully");
-
-    let catalog = builder
-        .finish()
-        .expect("identical bindings at one typed path are idempotent");
-    assert!(matches!(
-        catalog.project().binding(&key),
-        Some(ProjectNameBinding::NonCallable {
-            ty: TypeKind::I32,
-            ..
-        })
-    ));
+    let report = symbols.expect_err("one direct path cannot name distinct declarations");
+    assert!(report.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic,
+        ProjectSymbolLinkError::DuplicateDeclaration { name, .. } if name == "shared"
+    )));
 }
 
 #[test]

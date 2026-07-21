@@ -4,7 +4,7 @@
 //! language, so the syntax tree does not carry a language discriminator or raw
 //! foreign source.
 
-use crate::{expr::Expr, types::TypeRef};
+use crate::{expr::Expr, types::AuthoredTypeRef};
 
 use super::{
     common::{TextRange, Visibility},
@@ -138,7 +138,7 @@ pub enum StyleEnvironmentUnsupportedValueKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StyleTokenDecl {
     public_id: String,
-    value_type: Option<TypeRef>,
+    value_type: Option<AuthoredTypeRef>,
     value: StyleExpr,
     range: TextRange,
 }
@@ -480,7 +480,7 @@ impl StyleEnvironmentUnsupportedValue {
 impl StyleTokenDecl {
     pub(crate) fn new(
         public_id: impl Into<String>,
-        value_type: Option<TypeRef>,
+        value_type: Option<AuthoredTypeRef>,
         value: StyleExpr,
         range: TextRange,
     ) -> Self {
@@ -496,7 +496,7 @@ impl StyleTokenDecl {
         &self.public_id
     }
 
-    pub const fn value_type(&self) -> Option<&TypeRef> {
+    pub const fn value_type(&self) -> Option<&AuthoredTypeRef> {
         self.value_type.as_ref()
     }
 

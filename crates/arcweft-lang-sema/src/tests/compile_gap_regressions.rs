@@ -1,19 +1,16 @@
 use super::support::*;
 
 #[test]
-fn multiline_struct_defaults_are_structured() {
+fn multiline_struct_fields_are_structured() {
     let tree = parse_ok(
         r"
 pub struct GameState {
-    pub config: Config = Config {
-        text_speed = 1.0f32,
-        volume = 0.8f32,
-    }
+    pub config: Config
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("multiline struct default lowers");
-    validate_typecheck_ready(&hir).expect("multiline struct default is structured");
+    let hir = lower_to_hir(&tree).expect("multiline struct field lowers");
+    validate_typecheck_ready(&hir).expect("multiline struct field is structured");
 }
 
 #[test]

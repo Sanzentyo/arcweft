@@ -13,7 +13,8 @@ use crate::cst::{
     split_top_level_arcweft_punctuation_once,
 };
 use crate::expr::parse_expr_with_stats;
-use crate::{ast::pattern::Pattern, types::TypeRef};
+use crate::pattern::parse_pattern_at;
+use crate::{ast::pattern::Pattern, types::AuthoredTypeRef};
 
 mod expr_context;
 
@@ -43,7 +44,10 @@ impl Parser<'_> {
         let (statements, value) = parse_scope_expr_body(&body);
 
         Some(Stmt::LetScope {
-            pattern: parse_pattern(pattern.trim()),
+            pattern: parse_pattern_at(
+                pattern.trim(),
+                start_line.start + (pattern.trim().as_ptr() as usize - head.as_ptr() as usize),
+            ),
             scope: ScopeExprBlock::new(
                 name.as_option().map(str::to_owned),
                 statements,
@@ -73,7 +77,14 @@ impl Parser<'_> {
             return None;
         }
 
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let (pattern, ty) = parse_binding_pattern(
+            pattern,
+            head_base + (pattern.as_ptr() as usize - block.head.as_ptr() as usize),
+        );
         let (expr_source, expr_range) = braced_expr_source(&block, block_expr_start(&block)?, "");
         Some(Stmt::Let {
             pattern,
@@ -104,7 +115,14 @@ impl Parser<'_> {
         let kind = super::parse_computation_block_kind(block_head)?;
         let (statements, value) = parse_scope_expr_body(&block.body);
 
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let head_base = block
+            .head_range
+            .as_ref()
+            .map_or(start_line.start, |range| range.start);
+        let (pattern, ty) = parse_binding_pattern(
+            pattern,
+            head_base + (pattern.as_ptr() as usize - block.head.as_ptr() as usize),
+        );
         let (expr_source, expr_range) = braced_expr_source(
             &block,
             binding_value_start_in_line(&start_line.text, start_line.start, block_head)?,
@@ -260,7 +278,9 @@ fn parse_let_stmt(
         return raw_stmt(trimmed);
     };
     if let Some((pattern, expr)) = split_top_level_binding(rest) {
-        let (pattern, ty) = parse_binding_pattern(pattern);
+        let pattern_base =
+            base.unwrap_or_default() + (pattern.as_ptr() as usize - trimmed.as_ptr() as usize);
+        let (pattern, ty) = parse_binding_pattern(pattern, pattern_base);
         let expr = expr.trim();
         let expr_start = authored_subslice_range(trimmed, expr, base).map(|range| range.start());
         if let Some(value_expr) = expressions.parse_final_block(expr) {
@@ -338,7 +358,7 @@ fn parse_let_stmt(
 fn parse_inline_let_else_stmt(
     stmt_source: &str,
     pattern: Pattern,
-    ty: Option<TypeRef>,
+    ty: Option<AuthoredTypeRef>,
     expr: &str,
     expressions: &mut StmtExprContext<'_>,
     base: Option<usize>,
@@ -598,7 +618,15 @@ fn parse_braced_stmt(
         };
         let source = source.trim();
         return Some(Stmt::For {
-            pattern: parse_pattern(pattern.trim()),
+            pattern: base.map_or_else(
+                || parse_pattern(pattern.trim()),
+                |base| {
+                    parse_pattern_at(
+                        pattern.trim(),
+                        base + (pattern.trim().as_ptr() as usize - trimmed.as_ptr() as usize),
+                    )
+                },
+            ),
             source: authored_expr_in_stmt(trimmed, source, base, expressions),
             body: parse_stmt_lines_with_optional_base(body, expressions, body_base),
         });
@@ -627,7 +655,15 @@ fn parse_braced_while_let_stmt_with_context(
     let (expr, guard) = split_pattern_guard(expr_and_guard.trim());
     let expr = expr.trim();
     Some(Stmt::WhileLet {
-        pattern: parse_pattern(pattern.trim()),
+        pattern: base.map_or_else(
+            || parse_pattern(pattern.trim()),
+            |base| {
+                parse_pattern_at(
+                    pattern.trim(),
+                    base + (pattern.trim().as_ptr() as usize - stmt_source.as_ptr() as usize),
+                )
+            },
+        ),
         expr: authored_expr_in_stmt(stmt_source, expr, base, expressions),
         guard: guard
             .map(str::trim)
@@ -670,7 +706,16 @@ fn parse_stmt_match_arms_with_context(
                 )],
             };
             Some(crate::ast::flow::StmtMatchArm::new(
-                parse_pattern(pattern.trim()),
+                line_base.map_or_else(
+                    || parse_pattern(pattern.trim()),
+                    |base| {
+                        parse_pattern_at(
+                            pattern.trim(),
+                            base + (pattern.trim().as_ptr() as usize
+                                - line_source.as_ptr() as usize),
+                        )
+                    },
+                ),
                 guard
                     .map(str::trim)
                     .map(|guard| authored_expr_in_stmt(line_source, guard, line_base, expressions)),

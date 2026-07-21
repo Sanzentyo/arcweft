@@ -1,6 +1,6 @@
 use crate::assertion::AssertionStmt;
 use crate::expr::Expr;
-use crate::types::TypeRef;
+use crate::types::AuthoredTypeRef;
 
 use super::choice::ChoiceBlock;
 use super::common::{DocBlock, TextRange, Visibility};
@@ -276,7 +276,7 @@ pub enum Stmt {
     Assertion(AssertionStmt),
     Let {
         pattern: Pattern,
-        ty: Option<TypeRef>,
+        ty: Option<AuthoredTypeRef>,
         expr: Expr,
         expr_source: Option<String>,
         expr_range: Option<TextRange>,
@@ -289,7 +289,7 @@ pub enum Stmt {
     /// `let PAT = EXPR else { ... }` binding whose else block must diverge.
     LetElse {
         pattern: Pattern,
-        ty: Option<TypeRef>,
+        ty: Option<AuthoredTypeRef>,
         expr: AuthoredExpr,
         else_body: Vec<Stmt>,
     },

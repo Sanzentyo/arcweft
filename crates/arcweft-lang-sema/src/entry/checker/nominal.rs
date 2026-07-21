@@ -16,7 +16,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
     },
-    types::{TypeRef, parse_type_ref},
+    types::{AuthoredTypeRef, TypeRef},
 };
 use arcweft_source::SourceSpan;
 
@@ -214,7 +214,7 @@ impl<'a> NominalSchemaResolver<'a> {
                     self.type_shape(
                         &record.module_path,
                         record.module,
-                        field.ty(),
+                        field.ty().value(),
                         stack,
                         &mut BTreeSet::new(),
                     )
@@ -231,14 +231,10 @@ impl<'a> NominalSchemaResolver<'a> {
                     let Some(payload) = variant.payload() else {
                         return Ok(unit);
                     };
-                    let payload = parse_type_ref(payload).map_err(|error| {
-                        NominalSchemaError::new(error.to_string())
-                            .within(format!("variant `{}` payload", variant.name()))
-                    })?;
                     self.type_shape(
                         &record.module_path,
                         record.module,
-                        &payload,
+                        payload.value(),
                         stack,
                         &mut BTreeSet::new(),
                     )
@@ -263,11 +259,12 @@ impl<'a> NominalSchemaResolver<'a> {
         alias_stack: &mut BTreeSet<(CanonicalModulePath, String)>,
     ) -> Result<TypeShape, NominalSchemaError> {
         if let TypeRef::Path(path) = ty {
-            if let Ok(nominal) = self.resolve_nominal(current, module, path) {
+            let path_label = path.canonical_string();
+            if let Ok(nominal) = self.resolve_nominal(current, module, &path_label) {
                 return self.schema_with_stack(nominal, nominal_stack);
             }
             if let Some(alias) = self
-                .resolve_alias(current, module, path)
+                .resolve_alias(current, module, &path_label)
                 .map_err(NominalSchemaError::new)?
             {
                 let key = (alias.module_path.clone(), alias.item.name().to_owned());
@@ -280,7 +277,7 @@ impl<'a> NominalSchemaResolver<'a> {
                 let shape = self.type_shape(
                     &alias.module_path,
                     alias.module,
-                    alias.item.target(),
+                    alias.item.target().value(),
                     nominal_stack,
                     alias_stack,
                 );
@@ -359,7 +356,7 @@ impl<'a> NominalSchemaResolver<'a> {
                     let shape = self.type_shape(
                         &alias.module_path,
                         alias.module,
-                        alias.item.target(),
+                        alias.item.target().value(),
                         nominal_stack,
                         alias_stack,
                     );
@@ -385,7 +382,7 @@ impl<'a> NominalSchemaResolver<'a> {
         current: &CanonicalModulePath,
         module: &HirModule,
         raw: &str,
-    ) -> Result<Option<(&CanonicalModulePath, &HirModule, &TypeRef, String)>, String> {
+    ) -> Result<Option<(&CanonicalModulePath, &HirModule, &AuthoredTypeRef, String)>, String> {
         self.resolve_alias(current, module, raw).map(|alias| {
             alias.map(|alias| {
                 (

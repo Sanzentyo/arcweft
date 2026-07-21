@@ -31,8 +31,8 @@ use crate::expr::{
     CallRecoveryBoundarySyntax, ComputationBlockKind, Expr, ExprRecoveryDiagnostic, parse_expr,
     parse_expr_fragment_recovering_at, parse_expr_with_stats,
 };
-use crate::pattern::parse_pattern;
-use crate::types::{TypeRef, parse_type_ref};
+use crate::pattern::parse_pattern_at;
+use crate::types::{AuthoredTypeRef, parse_type_ref};
 
 pub(super) enum OptionalLabel {
     None,
@@ -141,33 +141,59 @@ pub(super) fn collect_wiki_links(source: &str) -> Vec<WikiLink> {
         .collect()
 }
 
-pub(super) fn parse_binding_pattern(source: &str) -> (Pattern, Option<crate::types::TypeRef>) {
-    split_top_level_punctuation_once(source, ':').map_or_else(
-        || (parse_pattern(source.trim()), None),
+pub(super) fn parse_binding_pattern(
+    source: &str,
+    base: usize,
+) -> (Pattern, Option<AuthoredTypeRef>) {
+    let trimmed = source.trim();
+    let base = base + source.len().saturating_sub(source.trim_start().len());
+    split_top_level_punctuation_once(trimmed, ':').map_or_else(
+        || (parse_pattern_at(trimmed, base), None),
         |(pattern, ty)| {
-            let parsed_ty = parse_type_ref(ty.trim()).ok();
-            (parse_pattern(pattern.trim()), parsed_ty)
+            let pattern_source = pattern.trim();
+            let pattern = parse_pattern_at(
+                pattern_source,
+                base + subslice_offset(trimmed, pattern_source),
+            );
+            let type_source = ty.trim();
+            let parsed_ty = parse_type_ref(type_source).ok().map(|mut ty| {
+                ty.rebase(base + subslice_offset(trimmed, type_source));
+                ty
+            });
+            (pattern, parsed_ty)
         },
     )
+}
+
+fn subslice_offset(source: &str, fragment: &str) -> usize {
+    (fragment.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }
 
 pub(super) fn parse_type_ref_or_error(
     source: &str,
     base: usize,
     errors: &mut Vec<ParseError>,
-) -> Option<TypeRef> {
+) -> AuthoredTypeRef {
     let trimmed = source.trim();
     let leading = source.len().saturating_sub(source.trim_start().len());
     match parse_type_ref(trimmed) {
-        Ok(ty) => Some(ty),
+        Ok(mut ty) => {
+            ty.rebase(base + leading);
+            ty
+        }
         Err(error) => {
+            let recovery_index = u32::try_from(errors.len())
+                .expect("syntax diagnostic count is bounded below u32::MAX");
             errors.push(simple_error(
                 base + leading,
                 trimmed.len(),
                 &error.to_string(),
                 "a canonical Arcweft type",
             ));
-            None
+            let mut recovery =
+                AuthoredTypeRef::recovery(recovery_index, TextRange::new(0, trimmed.len()));
+            recovery.rebase(base + leading);
+            recovery
         }
     }
 }

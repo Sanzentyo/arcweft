@@ -116,7 +116,10 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
         }
         HirTopLevelDecl::TypeAlias(item) => {
             for clause in item.where_clauses() {
-                collect_expr(clause, uses);
+                collect_type_ref(clause.subject().value(), uses);
+                for bound in clause.bounds() {
+                    collect_type_ref(bound.value(), uses);
+                }
             }
         }
         HirTopLevelDecl::Source(source) => {
@@ -129,6 +132,52 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
             }
         }
         HirTopLevelDecl::Style(item) => collect_style_decl(item, uses),
+    }
+}
+
+fn collect_type_ref(ty: &arcweft_lang_syntax::types::TypeRef, uses: &mut Vec<SymbolUse>) {
+    use arcweft_lang_syntax::types::TypeRef;
+    match ty {
+        TypeRef::Path(path) => {
+            uses.push(SymbolUse::new(SymbolUseKind::Path, path.canonical_string()));
+        }
+        TypeRef::Tuple(items) | TypeRef::Choice(items) => {
+            for item in items {
+                collect_type_ref(item, uses);
+            }
+        }
+        TypeRef::Function {
+            params,
+            return_type,
+            ..
+        } => {
+            for parameter in params {
+                collect_type_ref(parameter, uses);
+            }
+            collect_type_ref(return_type, uses);
+        }
+        TypeRef::Generic { base, args } => {
+            uses.push(SymbolUse::new(SymbolUseKind::Path, base.canonical_string()));
+            for argument in args {
+                collect_type_ref(argument, uses);
+            }
+        }
+        TypeRef::TraitBound(bound) => {
+            uses.push(SymbolUse::new(
+                SymbolUseKind::Path,
+                bound.path().canonical_string(),
+            ));
+            for argument in bound.args() {
+                collect_type_ref(argument, uses);
+            }
+            for binding in bound.associated() {
+                collect_type_ref(binding.value(), uses);
+            }
+        }
+        TypeRef::Projection { subject, .. } => collect_type_ref(subject, uses),
+        TypeRef::Reference(reference) => collect_type_ref(reference.referent(), uses),
+        TypeRef::Slice(item) => collect_type_ref(item, uses),
+        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Recovery(_) => {}
     }
 }
 

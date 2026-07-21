@@ -6,7 +6,6 @@ use super::declaration::{
     emit_generic_parameters, emit_name, emit_outer_prefixes, emit_visibility, emit_where_clause,
 };
 use super::document::ShadowDocumentParser;
-use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
@@ -94,47 +93,10 @@ fn emit_type_alias_tail(parser: &mut ShadowDocumentParser<'_, '_>) {
 }
 
 fn emit_alias_where_clauses(parser: &mut ShadowDocumentParser<'_, '_>) {
-    if !parser.at("where") {
-        return;
-    }
-
-    parser.start(SyntaxKind::WhereClause, SyntaxRole::WhereClause);
-    parser.start(SyntaxKind::WherePredicateList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u16;
     while parser.at("where") {
-        parser.start(
-            SyntaxKind::WherePredicate,
-            SyntaxRole::WherePredicate(ordinal),
-        );
-        parser.bump();
-        parser.bump_trivia();
-        let end = next_alias_where(parser, parser.cursor());
-        emit_expression(parser, end, SyntaxRole::Condition);
-        bump_until(parser, end);
-        parser.finish();
-        ordinal = ordinal.saturating_add(1);
+        emit_where_clause(parser);
         parser.bump_trivia();
     }
-    parser.finish();
-    parser.finish();
-}
-
-fn next_alias_where(parser: &ShadowDocumentParser<'_, '_>, start: usize) -> usize {
-    let mut depth = 0_usize;
-    let mut index = start;
-    while let Some(token) = parser.token_at(index) {
-        let text = parser.text_of(token);
-        if depth == 0 && text == "where" {
-            return index;
-        }
-        match text {
-            "(" | "[" | "{" | "<" => depth += 1,
-            ")" | "]" | "}" | ">" => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-        index += 1;
-    }
-    index
 }
 
 fn emit_nominal_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind) {
@@ -227,49 +189,9 @@ fn emit_enum_variant(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordi
     parser.bump_trivia();
 
     if parser.cursor() < significant_end {
-        if parser.at("{") {
-            emit_record_payload(parser, significant_end);
-        } else {
-            emit_type(parser, significant_end, SyntaxRole::Type);
-        }
+        emit_type(parser, significant_end, SyntaxRole::Type);
     }
     bump_until(parser, significant_end);
-    parser.finish();
-}
-
-fn emit_record_payload(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
-    parser.start(SyntaxKind::DelimitedGroup, SyntaxRole::Type);
-    emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
-    let close = find_matching_close(parser, parser.cursor(), "{")
-        .unwrap_or(end)
-        .min(end);
-    parser.start(SyntaxKind::FieldList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u16;
-    while parser.cursor() < close {
-        parser.bump_trivia();
-        if parser.cursor() >= close {
-            break;
-        }
-        if parser.at(",") {
-            parser.bump();
-            continue;
-        }
-        let field_end = field_boundary(parser, parser.cursor(), close);
-        emit_named_field(parser, field_end, ordinal);
-        bump_until(parser, field_end);
-        if parser.at(",") {
-            parser.bump();
-        }
-        ordinal = ordinal.saturating_add(1);
-    }
-    bump_until(parser, close);
-    parser.finish();
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseBraceNode,
-        "}",
-        "syntax.enum.missing_payload_close",
-    );
     parser.finish();
 }
 

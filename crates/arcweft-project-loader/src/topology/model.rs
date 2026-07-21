@@ -973,7 +973,7 @@ pub enum ProfileTopologyLoadError {
     CharacterPackage {
         path: PathBuf,
         #[source]
-        source: arcweft_character::package::CharacterPackageError,
+        source: Box<arcweft_character::package::CharacterPackageError>,
     },
     #[error("selected adapter `{id}` was not found in the complete checked registry")]
     AdapterSelection { id: String },

@@ -1198,7 +1198,7 @@ enum Mood {
     Calm,
     Alert,
     WithScore(i64),
-    WithMeta { label: String },
+    WithMeta(String),
 }
 
 fn echo_mood(mood: Mood) -> Mood {
@@ -1210,7 +1210,7 @@ flow @flow.enum_shorthand enum_shorthand {
     let echoed: Mood = echo_mood(.Calm)
     let nested: Mood = { .Alert }
     let scored: Mood = .WithScore(7i64)
-    let meta: Mood = WithMeta { label = "ready" }
+    let meta: Mood = .WithMeta("ready")
     let _ = (mood, echoed, nested, scored, meta)
 }
 "#,
@@ -1420,11 +1420,13 @@ fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::Unit.source_label(), "Unit");
     assert_eq!(TypeKind::Never.source_label(), "Never");
     assert_eq!(
-        crate::checker::helpers::type_ref_kind(&parse_type_ref("!").expect("! parses")),
+        crate::checker::helpers::type_ref_kind(parse_type_ref("!").expect("! parses").value()),
         TypeKind::Never
     );
     assert_eq!(
-        crate::checker::helpers::type_ref_kind(&parse_type_ref("Never").expect("Never parses")),
+        crate::checker::helpers::type_ref_kind(
+            parse_type_ref("Never").expect("Never parses").value()
+        ),
         TypeKind::Never
     );
     assert_eq!(
@@ -3620,13 +3622,19 @@ flow @flow.opening opening {
 #[test]
 fn type_ref_keeps_explicit_map_kind() {
     let ordered = crate::checker::helpers::type_ref_kind(
-        &parse_type_ref("OrderedMap<Ref<Character>, i64>").expect("ordered map type parses"),
+        parse_type_ref("OrderedMap<Ref<Character>, i64>")
+            .expect("ordered map type parses")
+            .value(),
     );
     let sorted = crate::checker::helpers::type_ref_kind(
-        &parse_type_ref("SortedMap<Ref<Character>, i64>").expect("sorted map type parses"),
+        parse_type_ref("SortedMap<Ref<Character>, i64>")
+            .expect("sorted map type parses")
+            .value(),
     );
     let btree = crate::checker::helpers::type_ref_kind(
-        &parse_type_ref("BTreeMap<Ref<Character>, i64>").expect("btree map type parses"),
+        parse_type_ref("BTreeMap<Ref<Character>, i64>")
+            .expect("btree map type parses")
+            .value(),
     );
     assert!(matches!(
         ordered,

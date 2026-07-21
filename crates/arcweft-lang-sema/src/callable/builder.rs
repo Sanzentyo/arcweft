@@ -247,16 +247,16 @@ impl RegisteredCallableCatalogBuilder {
                 ProjectSymbolTargetId::Callable(declaration) => {
                     ProjectNameBinding::Callable(declaration.clone())
                 }
-                ProjectSymbolTargetId::External(_) | ProjectSymbolTargetId::Module(_) => {
-                    ProjectNameBinding::NonCallable {
-                        path: path.clone(),
-                        ty: non_callable_type(target).ok_or_else(|| {
-                            CallableCatalogBuildError::MissingProjectBindingType {
-                                target: target.clone(),
-                            }
-                        })?,
-                    }
-                }
+                ProjectSymbolTargetId::External(_)
+                | ProjectSymbolTargetId::Nominal(_)
+                | ProjectSymbolTargetId::Module(_) => ProjectNameBinding::NonCallable {
+                    path: path.clone(),
+                    ty: non_callable_type(target).ok_or_else(|| {
+                        CallableCatalogBuildError::MissingProjectBindingType {
+                            target: target.clone(),
+                        }
+                    })?,
+                },
             };
             self.project_bindings.push((path, binding));
         }
@@ -381,7 +381,7 @@ fn project_record(
             .signature()
             .return_type()
             .map_or(TypeKind::Unit, |ty| {
-                type_ref_kind_with_generics(ty, &generic_names)
+                type_ref_kind_with_generics(ty.value(), &generic_names)
             }),
         effects,
         CallableArgumentPolicy::new(
@@ -477,10 +477,9 @@ fn project_parameters(
                 CallableParameter::try_new(
                     parameter_id,
                     parameter_name(parameter).map_err(|_| identity_mismatch(source))?,
-                    CallableParameterType::Exact(type_ref_kind_with_generics(
-                        parameter.ty(),
-                        generic_names,
-                    )),
+                    CallableParameterType::Exact(parameter.ty().map_or(TypeKind::Unit, |ty| {
+                        type_ref_kind_with_generics(ty.value(), generic_names)
+                    })),
                     parameter_passing(parameter),
                     if parameter.default().is_some() {
                         CallableParameterPresence::Defaulted

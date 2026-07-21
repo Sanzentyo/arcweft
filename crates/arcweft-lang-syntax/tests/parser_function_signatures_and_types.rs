@@ -2,28 +2,30 @@ use arcweft_lang_syntax::{
     ast::{common::TextRange, items::Item},
     parser::parse_source,
     reference::BorrowKind,
-    types::{FnParamKind, GenericParam, TypeRef, parse_fn_signature, parse_type_ref},
+    types::{
+        AuthoredTypeRef, FnParamKind, GenericParam, TypeRef, parse_fn_signature, parse_type_ref,
+    },
 };
 
 #[test]
 fn reference_types_preserve_shared_and_mutable_borrow_kinds() {
     assert!(matches!(
-        parse_type_ref("&State").expect("shared reference parses"),
+        parse_type_ref("&State").expect("shared reference parses").value(),
         TypeRef::Reference(reference)
             if reference.kind() == BorrowKind::Shared
                 && reference.region().name().is_none()
-                && reference.referent() == &TypeRef::Path("State".to_owned())
+                && matches!(reference.referent(), TypeRef::Path(path) if path.canonical_string() == "State")
     ));
     assert!(matches!(
-        parse_type_ref("&'asset mut [Rgba8]").expect("mutable reference parses"),
+        parse_type_ref("&'asset mut [Rgba8]").expect("mutable reference parses").value(),
         TypeRef::Reference(reference)
             if reference.kind() == BorrowKind::Mutable
             && reference.region().name().is_some_and(|lifetime| lifetime.name() == "asset")
             && matches!(reference.referent(), TypeRef::Slice(item)
-                if item.as_ref() == &TypeRef::Path("Rgba8".to_owned()))
+                if matches!(item.as_ref(), TypeRef::Path(path) if path.canonical_string() == "Rgba8"))
     ));
     assert!(matches!(
-        parse_type_ref("& mut State").expect("token-separated mutable reference parses"),
+        parse_type_ref("& mut State").expect("token-separated mutable reference parses").value(),
         TypeRef::Reference(reference) if reference.kind() == BorrowKind::Mutable
     ));
     let missing_referent =
@@ -34,15 +36,14 @@ fn reference_types_preserve_shared_and_mutable_borrow_kinds() {
     );
     assert_eq!(missing_referent.range(), Some(TextRange::new(4, 4)));
     assert!(matches!(
-        parse_type_ref("&mutable").expect("identifier prefix remains a shared referent"),
+        parse_type_ref("&mutable").expect("identifier prefix remains a shared referent").value(),
         TypeRef::Reference(reference)
             if reference.kind() == BorrowKind::Shared
-                && reference.referent() == &TypeRef::Path("mutable".to_owned())
+                && matches!(reference.referent(), TypeRef::Path(path) if path.canonical_string() == "mutable")
     ));
 
-    let TypeRef::Reference(reference) =
-        parse_type_ref("&'asset mut State").expect("ranged reference parses")
-    else {
+    let authored = parse_type_ref("&'asset mut State").expect("ranged reference parses");
+    let TypeRef::Reference(reference) = authored.value() else {
         panic!("expected reference type");
     };
     assert_eq!(reference.amp_range().as_range(), 0..1);
@@ -80,14 +81,14 @@ fn function_signatures_keep_generics_curried_groups_and_where_clauses() {
     ));
     assert!(matches!(
         &signature.generic_params()[1],
-        GenericParam::Type(param) if param.name() == "T"
+        GenericParam::Type(param) if param.name().as_str() == "T"
     ));
     assert_eq!(signature.param_groups().len(), 2);
     assert_eq!(signature.param_groups()[0].params().len(), 1);
     assert_eq!(signature.param_groups()[1].params().len(), 1);
     assert!(matches!(
-        signature.return_type(),
-        Some(TypeRef::Generic { base, args }) if base == "ArcResult" && args.len() == 1
+        signature.return_type().map(AuthoredTypeRef::value),
+        Some(TypeRef::Generic { base, args }) if base.canonical_string() == "ArcResult" && args.len() == 1
     ));
     assert_eq!(signature.where_clauses().len(), 1);
     assert_eq!(signature.where_clauses()[0].bounds().len(), 2);
@@ -95,15 +96,17 @@ fn function_signatures_keep_generics_curried_groups_and_where_clauses() {
 
 #[test]
 fn function_types_are_right_associative_and_preserve_call_groups() {
+    let authored = parse_type_ref("A -> B -> C").expect("function type parses");
     let TypeRef::Function {
         params,
         return_type,
         ..
-    } = parse_type_ref("A -> B -> C").expect("function type parses")
+    } = authored.value()
     else {
         panic!("expected function type");
     };
-    assert_eq!(params, vec![TypeRef::Path("A".to_owned())]);
+    assert!(matches!(params.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "A"));
+    let authored = parse_type_ref("(A, B) -> C").expect("call-group function type parses");
     let TypeRef::Function {
         params,
         return_type,
@@ -112,53 +115,55 @@ fn function_types_are_right_associative_and_preserve_call_groups() {
     else {
         panic!("expected right-associative return function");
     };
-    assert_eq!(params, &[TypeRef::Path("B".to_owned())]);
-    assert_eq!(return_type.as_ref(), &TypeRef::Path("C".to_owned()));
+    assert!(matches!(params.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "B"));
+    assert!(matches!(return_type.as_ref(), TypeRef::Path(path) if path.canonical_string() == "C"));
 
     let TypeRef::Function {
         params,
         return_type,
         ..
-    } = parse_type_ref("(A, B) -> C").expect("call-group function type parses")
+    } = authored.value()
     else {
         panic!("expected function type");
     };
-    assert_eq!(
-        params,
-        vec![TypeRef::Path("A".to_owned()), TypeRef::Path("B".to_owned())]
-    );
-    assert_eq!(return_type.as_ref(), &TypeRef::Path("C".to_owned()));
+    assert!(matches!(
+        params.as_slice(),
+        [TypeRef::Path(first), TypeRef::Path(second)]
+            if first.canonical_string() == "A" && second.canonical_string() == "B"
+    ));
+    assert!(matches!(return_type.as_ref(), TypeRef::Path(path) if path.canonical_string() == "C"));
 
     assert!(matches!(
-        parse_type_ref("(A, B)").expect("tuple type parses"),
+        parse_type_ref("(A, B)").expect("tuple type parses").value(),
         TypeRef::Tuple(items) if items.len() == 2
     ));
 
+    let authored = parse_type_ref("Pair<A -> B, C -> D> -> E")
+        .expect("outer function arrow ignores generic argument function arrows");
     let TypeRef::Function {
         params,
         return_type,
         ..
-    } = parse_type_ref("Pair<A -> B, C -> D> -> E")
-        .expect("outer function arrow ignores generic argument function arrows")
+    } = authored.value()
     else {
         panic!("expected outer function type");
     };
     assert!(matches!(
         params.as_slice(),
         [TypeRef::Generic { base, args }]
-            if base == "Pair"
+            if base.canonical_string() == "Pair"
                 && matches!(
                     args.as_slice(),
                     [
                         TypeRef::Function { params: first_params, return_type: first_return, .. },
                         TypeRef::Function { params: second_params, return_type: second_return, .. },
-                    ] if first_params == &[TypeRef::Path("A".to_owned())]
-                        && first_return.as_ref() == &TypeRef::Path("B".to_owned())
-                        && second_params == &[TypeRef::Path("C".to_owned())]
-                        && second_return.as_ref() == &TypeRef::Path("D".to_owned())
+                    ] if matches!(first_params.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "A")
+                        && matches!(first_return.as_ref(), TypeRef::Path(path) if path.canonical_string() == "B")
+                        && matches!(second_params.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "C")
+                        && matches!(second_return.as_ref(), TypeRef::Path(path) if path.canonical_string() == "D")
                 )
     ));
-    assert_eq!(return_type.as_ref(), &TypeRef::Path("E".to_owned()));
+    assert!(matches!(return_type.as_ref(), TypeRef::Path(path) if path.canonical_string() == "E"));
 }
 
 #[test]
@@ -173,12 +178,16 @@ fn canonical_type_labels_round_trip_precedence_sensitive_structure() {
         "Vec<(A -> B) | C>",
     ] {
         let parsed = parse_type_ref(source).expect("precedence-sensitive type parses");
-        let label = parsed.canonical_label();
+        let label = parsed.value().canonical_label();
         let reparsed = parse_type_ref(&label).unwrap_or_else(|error| {
             panic!("canonical label `{label}` for `{source}` must parse: {error}")
         });
-        assert_eq!(reparsed, parsed, "canonical label changed `{source}`");
-        assert_eq!(reparsed.canonical_label(), label);
+        assert_eq!(
+            reparsed.value(),
+            parsed.value(),
+            "canonical label changed `{source}`"
+        );
+        assert_eq!(reparsed.value().canonical_label(), label);
     }
 }
 
@@ -196,10 +205,14 @@ fn canonical_type_labels_do_not_collapse_distinct_type_trees() {
     ] {
         let left = parse_type_ref(left).expect("left type parses");
         let right = parse_type_ref(right).expect("right type parses");
-        assert_ne!(left, right, "fixtures must describe distinct type trees");
         assert_ne!(
-            left.canonical_label(),
-            right.canonical_label(),
+            left.value(),
+            right.value(),
+            "fixtures must describe distinct type trees"
+        );
+        assert_ne!(
+            left.value().canonical_label(),
+            right.value().canonical_label(),
             "distinct type trees need distinct canonical labels"
         );
     }
@@ -212,28 +225,31 @@ fn function_signatures_keep_function_typed_parameters() {
 
     assert_eq!(signature.param_groups().len(), 2);
     assert!(matches!(
-        signature.param_groups()[0].params()[0].ty(),
-        TypeRef::Function { params, return_type, .. }
+        signature.param_groups()[0].params()[0]
+            .ty()
+            .map(AuthoredTypeRef::value),
+        Some(TypeRef::Function { params, return_type, .. })
             if params.len() == 1
-                && matches!(&params[0], TypeRef::Path(path) if path == "A")
-                && matches!(return_type.as_ref(), TypeRef::Path(path) if path == "B")
+                && matches!(&params[0], TypeRef::Path(path) if path.canonical_string() == "A")
+                && matches!(return_type.as_ref(), TypeRef::Path(path) if path.canonical_string() == "B")
     ));
 }
 
 #[test]
 fn type_parser_preserves_unregistered_names_as_nominal_type_paths() {
     assert!(matches!(
-        parse_type_ref("ProjectFlag").expect("nominal type path parses"),
-        TypeRef::Path(path) if path == "ProjectFlag"
+        parse_type_ref("ProjectFlag").expect("nominal type path parses").value(),
+        TypeRef::Path(path) if path.canonical_string() == "ProjectFlag"
     ));
     assert!(matches!(
-        parse_type_ref("Vec<ProjectFlag>").expect("nominal generic argument parses"),
+        parse_type_ref("Vec<ProjectFlag>").expect("nominal generic argument parses").value(),
         TypeRef::Generic { base, args }
-            if base == "Vec" && args == vec![TypeRef::Path("ProjectFlag".to_owned())]
+            if base.canonical_string() == "Vec"
+                && matches!(args.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "ProjectFlag")
     ));
     assert!(matches!(
-        parse_type_ref("domain.ProjectFlag").expect("qualified nominal type parses"),
-        TypeRef::Path(path) if path == "domain.ProjectFlag"
+        parse_type_ref("domain.ProjectFlag").expect("qualified nominal type parses").value(),
+        TypeRef::Path(path) if path.canonical_string() == "domain.ProjectFlag"
     ));
 }
 
@@ -261,37 +277,48 @@ fn source_parser_uses_the_same_open_nominal_grammar_on_owned_type_surfaces() {
 
 #[test]
 fn function_types_keep_closed_effect_rows() {
+    let authored = parse_type_ref("String -> String effects { fs.read, state.write('flow) }")
+        .expect("function type effect row parses");
     let TypeRef::Function {
         params,
         return_type,
         effects,
-    } = parse_type_ref("String -> String effects { fs.read, state.write('flow) }")
-        .expect("function type effect row parses")
+    } = authored.value()
     else {
         panic!("expected function type");
     };
 
-    assert_eq!(params, vec![TypeRef::Path("String".to_owned())]);
-    assert_eq!(return_type.as_ref(), &TypeRef::Path("String".to_owned()));
+    assert!(
+        matches!(params.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "String")
+    );
+    assert!(
+        matches!(return_type.as_ref(), TypeRef::Path(path) if path.canonical_string() == "String")
+    );
     assert_eq!(
-        effects.expect("effect row is present").effects(),
+        effects.as_ref().expect("effect row is present").effects(),
         &["fs.read".to_owned(), "state.write('flow)".to_owned()]
     );
 
+    let authored = parse_type_ref("(String -> String) effects { fs.read }")
+        .expect("parenthesized function type effect row parses");
     let TypeRef::Function {
         effects,
         return_type,
         ..
-    } = parse_type_ref("(String -> String) effects { fs.read }")
-        .expect("parenthesized function type effect row parses")
+    } = authored.value()
     else {
         panic!("expected function type");
     };
     assert_eq!(
-        effects.expect("outer effect row is present").effects(),
+        effects
+            .as_ref()
+            .expect("outer effect row is present")
+            .effects(),
         &["fs.read".to_owned()]
     );
-    assert_eq!(return_type.as_ref(), &TypeRef::Path("String".to_owned()));
+    assert!(
+        matches!(return_type.as_ref(), TypeRef::Path(path) if path.canonical_string() == "String")
+    );
 
     assert!(
         parse_type_ref("String effects { fs.read }")
@@ -300,8 +327,8 @@ fn function_types_keep_closed_effect_rows() {
             .contains("function type")
     );
     assert!(matches!(
-        parse_type_ref("effects").expect("plain path named effects parses"),
-        TypeRef::Path(path) if path == "effects"
+        parse_type_ref("effects").expect("plain path named effects parses").value(),
+        TypeRef::Path(path) if path.canonical_string() == "effects"
     ));
 }
 
@@ -338,8 +365,10 @@ flow health(req: HttpRequest) -> HttpResponse effects { http.respond } {
         panic!("expected flow");
     };
     assert!(matches!(
-        flow.signature().and_then(|signature| signature.return_type()),
-        Some(TypeRef::Path(path)) if path == "HttpResponse"
+        flow.signature()
+            .and_then(|signature| signature.return_type())
+            .map(AuthoredTypeRef::value),
+        Some(TypeRef::Path(path)) if path.canonical_string() == "HttpResponse"
     ));
     assert_eq!(flow.contracts().len(), 1);
 }
@@ -360,7 +389,9 @@ fn function_signatures_keep_rest_parameters() {
 
     assert_eq!(params[0].kind(), FnParamKind::Fixed);
     assert_eq!(params[1].kind(), FnParamKind::Rest);
-    assert!(matches!(params[1].ty(), TypeRef::Path(path) if path == "LogField"));
+    assert!(
+        matches!(params[1].ty().map(AuthoredTypeRef::value), Some(TypeRef::Path(path)) if path.canonical_string() == "LogField")
+    );
 }
 
 #[test]
@@ -375,4 +406,72 @@ fn function_signatures_reject_misplaced_rest_parameters() {
     assert!(in_middle.to_string().contains("last parameter"));
     assert!(curried.to_string().contains("final group"));
     assert!(defaulted.to_string().contains("default"));
+}
+
+#[test]
+fn source_function_annotations_keep_document_absolute_type_ranges() {
+    let source = concat!(
+        "// UTF-8 prefix 名前\n",
+        "fn inspect<T: Missing>(名前: Missing, pair: (Missing, Missing)) -> Missing where T: Missing + Bound {\n",
+        "    pair\n",
+        "}\n",
+    );
+    let parsed = parse_source(source);
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let Item::Function(function) = &parsed.typed_tree().items()[0] else {
+        panic!("fixture must parse as a function")
+    };
+    let signature = function.signature();
+    let params = signature.param_groups()[0].params();
+
+    let slice = |range: TextRange| &source[range.start()..range.end()];
+    assert_eq!(
+        slice(
+            *params[0]
+                .ty()
+                .expect("first annotation")
+                .root_source()
+                .whole()
+        ),
+        "Missing"
+    );
+    assert_eq!(
+        slice(
+            *params[1]
+                .ty()
+                .expect("second annotation")
+                .root_source()
+                .whole()
+        ),
+        "(Missing, Missing)"
+    );
+    assert_eq!(
+        slice(
+            *signature
+                .return_type()
+                .expect("return annotation")
+                .root_source()
+                .whole(),
+        ),
+        "Missing"
+    );
+    let GenericParam::Type(type_parameter) = &signature.generic_params()[0] else {
+        panic!("fixture generic must be a type parameter")
+    };
+    assert_eq!(slice(type_parameter.name_range()), "T");
+    assert_eq!(slice(type_parameter.range()), "T: Missing");
+    assert_eq!(
+        slice(*type_parameter.bounds()[0].root_source().whole()),
+        "Missing"
+    );
+    let predicate = &signature.where_clauses()[0];
+    assert_eq!(slice(predicate.range()), "T: Missing + Bound");
+    assert_eq!(
+        predicate
+            .bounds()
+            .iter()
+            .map(|bound| slice(*bound.root_source().whole()))
+            .collect::<Vec<_>>(),
+        vec!["Missing", "Bound"]
+    );
 }

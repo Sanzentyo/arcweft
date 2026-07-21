@@ -436,14 +436,24 @@ impl<'a, 'errors> NativeStyleParser<'a, 'errors> {
         }
         let (name, value_type) = head.split_once(':').map_or((head, None), |(name, ty)| {
             let ty = ty.trim();
-            let parsed = parse_type_ref(ty).map_err(|error| {
-                self.errors.push(simple_error(
-                    self.base + body_start + head.find(':').unwrap_or_default() + 1,
-                    ty.len(),
-                    &format!("invalid style token type: {error}"),
-                    "Color | Length | ShadowList | FilterList",
-                ));
-            });
+            let parsed = parse_type_ref(ty)
+                .map(|mut parsed| {
+                    parsed.rebase(
+                        self.base
+                            + body_start
+                            + body.find(head).unwrap_or_default()
+                            + head.find(ty).unwrap_or_default(),
+                    );
+                    parsed
+                })
+                .map_err(|error| {
+                    self.errors.push(simple_error(
+                        self.base + body_start + head.find(':').unwrap_or_default() + 1,
+                        ty.len(),
+                        &format!("invalid style token type: {error}"),
+                        "Color | Length | ShadowList | FilterList",
+                    ));
+                });
             (name.trim(), parsed.ok())
         });
         let value_offset = body.find(value_source)?;

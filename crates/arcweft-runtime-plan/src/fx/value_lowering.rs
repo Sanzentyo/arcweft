@@ -19,7 +19,7 @@ pub(super) fn runtime_type(ty: &TypeRef) -> Result<FxRuntimeType, RuntimePlanLow
             "Fx parameters require a closed runtime type, found `{ty:?}`"
         )));
     };
-    match path.as_str() {
+    match path.canonical_string().as_str() {
         "bool" => Ok(FxRuntimeType::Bool),
         "i32" => Ok(FxRuntimeType::I32),
         "f32" => Ok(FxRuntimeType::F32),

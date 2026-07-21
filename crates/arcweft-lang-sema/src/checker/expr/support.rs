@@ -19,7 +19,7 @@ pub(super) struct AgentInvokeArgs<'a> {
 
 pub(super) fn choice_pattern_coverage(pattern: &Pattern) -> ChoicePatternCoverage {
     match pattern {
-        Pattern::Typed { ty, .. } => ChoicePatternCoverage::Type(type_ref_kind(ty)),
+        Pattern::Typed { ty, .. } => ChoicePatternCoverage::Type(type_ref_kind(ty.value())),
         Pattern::Whole { pattern, .. } => choice_pattern_coverage(pattern),
         Pattern::Ident(_) | Pattern::MutIdent(_) | Pattern::Discard => ChoicePatternCoverage::All,
         Pattern::Literal(_)

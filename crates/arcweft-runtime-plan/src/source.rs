@@ -69,7 +69,7 @@ pub(crate) fn lower_source_plan(
     };
     let (item_ty, error_ty) = source_item
         .source_ty()
-        .and_then(source_type_labels)
+        .and_then(|ty| source_type_labels(ty.value()))
         .unwrap_or_else(|| {
             errors.push(RuntimePlanLowerError::new(
                 "source plan requires `Source<T, E>` type".to_owned(),
@@ -292,7 +292,9 @@ fn source_event_label(event: &SourceEventPattern) -> &'static str {
 
 fn source_type_labels(ty: &TypeRef) -> Option<(String, String)> {
     match ty {
-        TypeRef::Generic { base, args } if base == "Source" && args.len() == 2 => {
+        TypeRef::Generic { base, args }
+            if base.canonical_string() == "Source" && args.len() == 2 =>
+        {
             Some((type_label(&args[0]), type_label(&args[1])))
         }
         _ => None,

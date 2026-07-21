@@ -29,7 +29,7 @@ pub(crate) fn annotation_kind(value: &TypeRef) -> Option<ViewStyleValueKind> {
     let TypeRef::Path(name) = value else {
         return None;
     };
-    ViewStyleValueKind::from_source_name(name.as_str())
+    crate::types::direct_type_name(name).and_then(ViewStyleValueKind::from_source_name)
 }
 
 pub(crate) fn infer_value_kind(

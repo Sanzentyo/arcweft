@@ -1,4 +1,5 @@
 use super::support::*;
+use arcweft_lang_syntax::types::GenericParam;
 
 #[test]
 fn removed_scaffold_declarations_do_not_reach_typechecked_hir() {
@@ -161,11 +162,8 @@ fn parses_documented_adt_items() {
 #[derive(Clone, Debug, Format, Serialize, Eq)]
 pub enum GameEvent {
     StartGame,
-    ChoiceSelected { id: Ref<ChoiceOption> },
-    Detailed {
-        id: Ref<ChoiceOption>,
-        label: TextKey,
-    },
+    ChoiceSelected(Ref<ChoiceOption>),
+    Detailed((Ref<ChoiceOption>, TextKey)),
 }
 
 pub struct SettingsInput {
@@ -174,8 +172,8 @@ pub struct SettingsInput {
 }
 
 pub type PlayerName = String
-where len(self) >= 1
-where len(self) <= 16
+where PlayerName: Display
+where PlayerName: Clone
 ",
     );
 
@@ -189,14 +187,16 @@ where len(self) <= 16
     assert_eq!(event.variants().len(), 3);
     assert_eq!(event.variants()[1].name(), "ChoiceSelected");
     assert_eq!(
-        event.variants()[1].payload(),
-        Some("{ id: Ref<ChoiceOption> }")
+        event.variants()[1]
+            .payload()
+            .map(|payload| payload.value().canonical_label()),
+        Some("Ref<ChoiceOption>".to_owned())
     );
     assert_eq!(event.variants()[2].name(), "Detailed");
     assert!(
-        event.variants()[2]
-            .payload()
-            .is_some_and(|payload| payload.contains("label: TextKey"))
+        event.variants()[2].payload().is_some_and(
+            |payload| payload.value().canonical_label() == "(Ref<ChoiceOption>, TextKey)"
+        )
     );
 
     let Item::Struct(settings) = &tree.items()[1] else {
@@ -209,7 +209,9 @@ where len(self) <= 16
         panic!("expected type alias item");
     };
     assert_eq!(alias.name(), "PlayerName");
-    assert!(matches!(alias.target(), TypeRef::Path(path) if path == "String"));
+    assert!(
+        matches!(alias.target().value(), TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("String"))
+    );
     assert_eq!(alias.where_clauses().len(), 2);
 
     let hir = lower_to_hir(&tree).expect("syntax-only adt items do not block lowering");
@@ -416,9 +418,9 @@ fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
     let choice = parse_type_ref("Result<Payload, FsError | ParseError>")
         .expect("anonymous sum in generic argument parses");
     assert!(matches!(
-        choice,
+        choice.value(),
         TypeRef::Generic { base, args }
-            if base == "Result"
+            if crate::types::direct_type_name(base) == Some("Result")
                 && matches!(args.as_slice(), [_, TypeRef::Choice(alternatives)] if alternatives.len() == 2)
     ));
 
@@ -428,8 +430,9 @@ fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
     let rest = &rest_signature.param_groups()[0].params()[1];
     assert!(rest.is_rest());
     assert!(matches!(
-        rest.ty(),
-        TypeRef::Choice(alternatives) if alternatives.len() == 3
+        rest.ty()
+            .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
+        Some(TypeRef::Choice(alternatives)) if alternatives.len() == 3
     ));
 
     let duplicate = parse_type_ref("String | String").expect_err("duplicate branch is rejected");
@@ -612,7 +615,7 @@ fn parses_documented_trait_and_impl_items() {
 pub trait Mappable {
     type Item
     type Mapped<B>
-    fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>
+    fn map<B>(self, f: Self::Item -> B) -> Self.Mapped<B>
 }
 
 pub trait Ord: Eq {}
@@ -636,7 +639,13 @@ pub impl<T> Mappable for Option<T> {
     let Item::Trait(ord) = &tree.items()[1] else {
         panic!("expected second trait item");
     };
-    assert_eq!(ord.supertraits(), &["Eq".to_owned()]);
+    assert_eq!(
+        ord.supertraits()
+            .iter()
+            .map(|bound| bound.value().canonical_label())
+            .collect::<Vec<_>>(),
+        ["Eq".to_owned()]
+    );
 
     assert_mappable_impl(&tree.items()[2]);
 
@@ -686,21 +695,32 @@ fn assert_mappable_impl(item: &Item) {
         panic!("expected impl item");
     };
     assert_eq!(impl_item.visibility(), Some(Visibility::Public));
-    assert_eq!(impl_item.generics(), Some("<T>"));
-    assert_eq!(impl_item.trait_name(), Some("Mappable"));
-    assert_eq!(impl_item.target(), "Option<T>");
+    assert_eq!(
+        impl_item
+            .generics()
+            .iter()
+            .filter_map(GenericParam::as_type)
+            .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str)
+            .collect::<Vec<_>>(),
+        ["T"]
+    );
+    assert_eq!(
+        impl_item.trait_ref().map(|ty| ty.value().canonical_label()),
+        Some("Mappable".to_owned())
+    );
+    assert_eq!(impl_item.target().value().canonical_label(), "Option<T>");
     assert_eq!(impl_item.members().len(), 3);
     assert!(matches!(
         &impl_item.members()[0],
         ImplMember::AssociatedType { name, params, value }
-            if name == "Item" && params.is_empty() && matches!(value, TypeRef::Path(path) if path == "T")
+            if name == "Item" && params.is_empty() && matches!(value.value(), TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("T"))
     ));
     assert!(matches!(
         &impl_item.members()[1],
         ImplMember::AssociatedType { name, params, value }
             if name == "Mapped"
                 && params == &["B".to_owned()]
-                && matches!(value, TypeRef::Generic { base, args } if base == "Option" && args.len() == 1)
+                && matches!(value.value(), TypeRef::Generic { base, args } if crate::types::direct_type_name(base) == Some("Option") && args.len() == 1)
     ));
     assert!(matches!(
         &impl_item.members()[2],
@@ -730,7 +750,7 @@ fn assert_mappable_impl(item: &Item) {
 fn parses_lifetime_type_syntax_for_borrow_checks() {
     let borrowed_slice = parse_type_ref("&'asset [Rgba8]").expect("borrowed slice type parses");
     assert!(matches!(
-        borrowed_slice,
+        borrowed_slice.value(),
         TypeRef::Reference(reference)
             if reference
                 .region()
@@ -741,7 +761,7 @@ fn parses_lifetime_type_syntax_for_borrow_checks() {
 
     let option_borrow =
         parse_type_ref("Option<&'a ChoiceView>").expect("generic borrowed type parses");
-    assert!(matches!(option_borrow, TypeRef::Generic { .. }));
+    assert!(matches!(option_borrow.value(), TypeRef::Generic { .. }));
 
     let signature =
         parse_fn_signature("fn first<'a>(xs: &'a [ChoiceView]) -> Option<&'a ChoiceView>")
@@ -796,7 +816,7 @@ fn summarize(TruckResult { score, rank, .. }: TruckResult, [first, ..rest]: Vec<
 
 #[test]
 fn parses_self_receiver_and_function_type_parameters() {
-    let signature = parse_fn_signature("fn map<B>(self, f: Self::Item -> B) -> Self::Mapped<B>")
+    let signature = parse_fn_signature("fn map<B>(self, f: Self::Item -> B) -> Self.Mapped<B>")
         .expect("trait method signature parses");
     assert_eq!(signature.name(), "map");
     assert!(ident_pattern(
@@ -808,7 +828,7 @@ fn parses_self_receiver_and_function_type_parameters() {
         "f"
     ));
     assert!(
-        matches!(signature.return_type(), Some(TypeRef::Generic { base, .. }) if base == "Self::Mapped")
+        matches!(signature.return_type().map(arcweft_lang_syntax::types::AuthoredTypeRef::value), Some(TypeRef::Generic { base, .. }) if base.canonical_string() == "Self.Mapped")
     );
 }
 
@@ -1002,8 +1022,10 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     assert!(source.id().is_some());
     assert!(source.signature_tail().contains("Source<VideoFrameHandle"));
     assert!(matches!(
-        source.source_ty(),
-        Some(TypeRef::Generic { base, args }) if base == "Source" && args.len() == 2
+        source
+            .source_ty()
+            .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
+        Some(TypeRef::Generic { base, args }) if crate::types::direct_type_name(base) == Some("Source") && args.len() == 2
     ));
     assert!(source.headers().iter().any(|header| matches!(
         header,

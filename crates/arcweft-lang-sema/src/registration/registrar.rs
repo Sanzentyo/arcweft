@@ -200,6 +200,9 @@ impl CharacterRegistrar {
                         None => None,
                     },
                     ProjectSymbolTargetId::Module(_) => Some(TypeKind::Named("Module".to_owned())),
+                    ProjectSymbolTargetId::Nominal(declaration) => {
+                        Some(TypeKind::Named(declaration.name().as_str().to_owned()))
+                    }
                     ProjectSymbolTargetId::Callable(_) => None,
                 }
             })
@@ -665,6 +668,17 @@ fn audit_character_spellings(
                         [symbol.source().clone()],
                     ));
                 }
+                Ok(ResolvedProjectSymbol::Nominal(symbol)) => {
+                    diagnostics.push(CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::AliasCollision {
+                            spelling: path,
+                            expected: *declaration,
+                            conflicting: vec![ProjectSymbolTargetId::Nominal(symbol.id().clone())],
+                        },
+                        record.primary_source().clone(),
+                        [symbol.source().whole().clone()],
+                    ));
+                }
                 Ok(ResolvedProjectSymbol::Module(module)) => {
                     diagnostics.push(CharacterRegistrationDiagnostic::new(
                         CharacterRegistrationDiagnosticKind::AliasCollision {
@@ -928,7 +942,11 @@ fn link_error_source(error: &ProjectSymbolLinkError) -> Option<SourceSpan> {
         | ProjectSymbolLinkError::VisibilityEscalation { source, .. }
         | ProjectSymbolLinkError::AmbiguousImport { source, .. }
         | ProjectSymbolLinkError::InvalidImportPath { source, .. }
-        | ProjectSymbolLinkError::InvalidDeclaration { source, .. } => Some(source.clone()),
+        | ProjectSymbolLinkError::InvalidDeclaration { source, .. }
+        | ProjectSymbolLinkError::UnknownImport { source, .. }
+        | ProjectSymbolLinkError::CyclicImport { source, .. }
+        | ProjectSymbolLinkError::ReservedTypeName { source, .. }
+        | ProjectSymbolLinkError::InvalidNominalDeclaration { source, .. } => Some(source.clone()),
         ProjectSymbolLinkError::Limit { source, .. }
         | ProjectSymbolLinkError::WorkOverflow { source, .. } => source.clone(),
     }

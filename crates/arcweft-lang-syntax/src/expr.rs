@@ -8,7 +8,7 @@ use crate::ast::line_plan::LinePlan;
 use crate::ast::pattern::Pattern;
 use crate::cst::{split_leading_entity_ref_parts, split_leading_relative_entity_ref};
 use crate::reference::{BorrowExpr, DerefExpr};
-use crate::types::{TypeRef, parse_type_ref};
+use crate::types::{AuthoredTypeRef, parse_type_ref};
 use std::{fmt, ops::Deref};
 use thiserror::Error;
 
@@ -552,7 +552,7 @@ pub enum Expr {
     Deref(DerefExpr),
     Closure {
         params: Vec<ClosureParam>,
-        return_type: Option<TypeRef>,
+        return_type: Option<AuthoredTypeRef>,
         body: Box<Expr>,
     },
     Unary {
@@ -802,12 +802,12 @@ pub enum Placeholder {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClosureParam {
     pattern: Pattern,
-    ty: Option<TypeRef>,
+    ty: Option<AuthoredTypeRef>,
 }
 
 impl ClosureParam {
     /// Creates a parsed closure parameter from a pattern and optional type ascription.
-    pub fn new(pattern: Pattern, ty: Option<TypeRef>) -> Self {
+    pub fn new(pattern: Pattern, ty: Option<AuthoredTypeRef>) -> Self {
         Self { pattern, ty }
     }
 
@@ -817,7 +817,7 @@ impl ClosureParam {
     }
 
     /// Optional type ascription written after the parameter pattern.
-    pub const fn ty(&self) -> Option<&TypeRef> {
+    pub const fn ty(&self) -> Option<&AuthoredTypeRef> {
         self.ty.as_ref()
     }
 
@@ -1224,36 +1224,7 @@ fn parse_expr_fragment_with_owner_and_dialogue(
         ));
     }
     if let Some(closure) = closure_source::split(trimmed)? {
-        let params = parse_closure_params(closure.params)?;
-        let return_type = closure
-            .return_type
-            .map(parse_type_ref)
-            .transpose()
-            .map_err(|error| ExprParseError::new(&error.to_string()))?;
-        let parsed_body = match closure.body {
-            ClosureBodySource::Expr(body) => parse_expr_fragment_with_owner(
-                body,
-                checked_source_offset(base, trimmed, body)?,
-                owner_source,
-                owner_base,
-                CallRecoveryBoundarySyntax::EndOfExpression,
-            )?,
-            ClosureBodySource::Block(body) => {
-                let body_base = checked_source_offset(base, trimmed, body)?;
-                crate::parser::parse_callback_block_expr_body_recovering_at(body, body_base)?
-            }
-        };
-        let diagnostics = parsed_body.diagnostics;
-        return Ok(ParsedExpr {
-            expr: Expr::Closure {
-                params,
-                return_type,
-                body: Box::new(parsed_body.expr),
-            },
-            range: TextRange::new(base, end),
-            diagnostics,
-            stats: parsed_body.stats,
-        });
+        return parse_closure_fragment(&closure, trimmed, base, end, owner_source, owner_base);
     }
     let parsed = ExprParser::new_scoped(pratt::ExprParserScope {
         source: trimmed,
@@ -1291,6 +1262,52 @@ fn parse_expr_fragment_with_owner_and_dialogue(
         return Err(ExprParseError::at(code, &message, range));
     }
     Ok(parsed)
+}
+
+fn parse_closure_fragment(
+    closure: &closure_source::ClosureSource<'_>,
+    source: &str,
+    base: usize,
+    end: usize,
+    owner_source: &str,
+    owner_base: usize,
+) -> Result<ParsedExpr, ExprParseError> {
+    let params = parse_closure_params(
+        closure.params,
+        checked_source_offset(base, source, closure.params)?,
+    )?;
+    let return_type = if let Some(return_source) = closure.return_type {
+        let mut parsed = parse_type_ref(return_source)
+            .map_err(|error| ExprParseError::new(&error.to_string()))?;
+        parsed.rebase(checked_source_offset(base, source, return_source)?);
+        Some(parsed)
+    } else {
+        None
+    };
+    let parsed_body = match &closure.body {
+        ClosureBodySource::Expr(body) => parse_expr_fragment_with_owner(
+            body,
+            checked_source_offset(base, source, body)?,
+            owner_source,
+            owner_base,
+            CallRecoveryBoundarySyntax::EndOfExpression,
+        )?,
+        ClosureBodySource::Block(body) => {
+            let body_base = checked_source_offset(base, source, body)?;
+            crate::parser::parse_callback_block_expr_body_recovering_at(body, body_base)?
+        }
+    };
+    let diagnostics = parsed_body.diagnostics;
+    Ok(ParsedExpr {
+        expr: Expr::Closure {
+            params,
+            return_type,
+            body: Box::new(parsed_body.expr),
+        },
+        range: TextRange::new(base, end),
+        diagnostics,
+        stats: parsed_body.stats,
+    })
 }
 
 fn checked_source_offset(
