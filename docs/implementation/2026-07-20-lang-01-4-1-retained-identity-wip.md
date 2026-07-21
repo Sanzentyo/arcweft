@@ -2,12 +2,14 @@
 
 ## Package evidence
 
-The implementation source is
-`arcweft-lang-01.4.1-resource-reference-and-retained-identity-schema-contract-correction-final-contract.zip`.
+The current implementation source is
+`arcweft-lang-01.4.1-resource-reference-and-retained-identity-schema-contract-correction-final-contract-main-a8361377.zip`.
 Its external SHA-256 is
-`2ff03e6c97d29783244ee8b6fbc7f8fb60261f1922634d81e8f3fba17a4e563a`.
-All 19 payload entries match the archive's `MANIFEST.txt`; the package reports
-`READY_FOR_IMPLEMENTATION` and zero open questions.
+`d0839b2ecafd7d77f033100c620fc1459966060ad18ada3087a71307f48c8881`.
+All 20 payload entries match the archive's `MANIFEST.txt`; the package reports
+`READY_FOR_IMPLEMENTATION`, zero open questions, eight ordered cuts, and 80
+normative behavior rows. It supersedes the earlier returned archive recorded
+by this note without changing the already accepted generic substrate.
 
 ## Accepted correction
 
@@ -65,13 +67,28 @@ The largest file in the new crate is the 1,014-LOC integration test
 at 714 LOC. No production, facade, or integration-test warning threshold is
 crossed.
 
-## Latest-main intake audit
+## Final-contract intake audit
 
-The implementation-ready package was re-audited on `main` at
-`163281b6089c269d7132941a3ee8fd52710b9b2f`. Its external SHA-256 remains
-`2ff03e6c97d29783244ee8b6fbc7f8fb60261f1922634d81e8f3fba17a4e563a`,
-and the current focused `arcweft-resource-model` suite still passes all 36
-unit/integration tests plus doc-tests.
+The final implementation-ready package is pinned to `main` at
+`a83613775abebb9574e9c8cee549e7ede798574e`. The affected resource-model,
+accepted-owner registration, and retained owner-product files have no diff
+between that revision and current `main` at `118a987065f7334c1e271c519df09f46f68ffce1`.
+The package therefore confirms, rather than replaces, the implemented generic
+substrate and the dependency boundary below.
+
+The selected final consumer model is also fixed:
+
+- extend the existing `RegisteredExternalOwner` and
+  `RegisteredExternalOwnerKind` in place, with an inherent
+  `retained_identity` projection;
+- resolve through the sole `ProjectSymbolTable` and sole revision-bound
+  `ExternalOwnerRegistry`;
+- retain exact `AssetRef<P>`, `ResourceRef<T>`, and
+  `RetainedIdentityRef<K>` category separation;
+- publish exactly the nine corrected Image/Voice/Rig retained-reference
+  leaves only with their complete built-in registries; and
+- keep retained targets out of `BundleResourceDirectory` and
+  `SavedResourceRef`, while preserving typed occurrence dependencies.
 
 No additional isolated production cut exists after the generic substrate:
 
