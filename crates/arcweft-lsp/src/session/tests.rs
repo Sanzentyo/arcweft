@@ -711,65 +711,8 @@ fn code_actions_canonicalize_sugar_respects_source_allow_decl_identity_attribute
 }
 
 #[test]
-fn code_actions_canonicalize_sugar_nests_dotted_dialogue_defaults() {
-    let project = TestProject::new("lsp-checked-canonicalize-dialogue-defaults");
-    project.write(
-        "arcw.toml",
-        &canonical_project_manifest("lsp-canonicalize-defaults", ""),
-    );
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n}\n";
-    project.write("src/main.arcw", source);
-    let uri = file_uri(&project.path("src/main.arcw"));
-    open_text(&mut session, uri.clone(), source);
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(Position::new(0, 0), Position::new(3, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title == "Canonicalize Arcweft sugar" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("expand sugar action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    let rewritten = &edits[0].new_text;
-    assert!(rewritten.contains("rich_text {\n        ruby {\n            size = 14px"));
-    assert!(!rewritten.contains("rich_text.ruby.size"));
-}
-
-#[test]
 fn code_actions_extract_active_style_contributor_to_line_options() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
 pub character alice {
     dialogue_style {
         rich_text {
@@ -784,7 +727,7 @@ flow opening {
     alice: |[夢](ゆめ)[p]
 }
 "##;
-    open_text(&mut session, uri.clone(), source);
+    let (_project, session, uri) = accepted_dialogue_session("action-line-style", source);
     let document = session.documents.get(&uri).expect("open document");
     let offset = source.find("夢").expect("dialogue content");
     let position = document.line_index().position_from_byte_offset(offset);
@@ -822,78 +765,16 @@ flow opening {
 }
 
 #[test]
-fn code_actions_extract_active_style_contributor_to_character_dialogue_style() {
+fn unaccepted_profile_does_not_offer_speaker_preset_cascade_action() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
-pub character alice {}
-
-flow @flow.opening opening {
-    alice: |[夢](ゆめ)[p]
-}
-
-entry server @entry.server.main {
-    goto @flow.opening
-}
-";
-    open_text(&mut session, uri.clone(), source);
-    let document = session.documents.get(&uri).expect("open document");
-    let offset = source.find("夢").expect("dialogue content");
-    let position = document.line_index().position_from_byte_offset(offset);
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(position, position),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title
-                    == "Extract `rich_text.ruby.size` override to character dialogue_style" =>
-            {
-                Some(action)
+pub character alice {
+    dialogue_style {
+        rich_text {
+            ruby {
+                size = 14px
             }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("character extraction action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert_eq!(
-        edits[0].new_text,
-        "\n    dialogue_style {\n        rich_text {\n            ruby {\n                size = 14px\n            }\n        }\n    }"
-    );
-}
-
-#[test]
-fn code_actions_extract_active_style_contributor_to_speaker_preset() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = r"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
         }
     }
 }
@@ -918,156 +799,15 @@ flow opening {
         })
         .expect("open document actions");
 
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title == "Extract `rich_text.ruby.size` override to speaker preset" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("speaker preset extraction action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert_eq!(edits[0].new_text, ", rich_text.ruby.size=14px");
-}
-
-#[test]
-fn code_actions_extract_active_style_contributor_to_dialogue_defaults() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = r##"
-pub dialogue defaults {
-}
-
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#202122")
-            }
+    let action = actions.iter().find_map(|action| match action {
+        CodeActionOrCommand::CodeAction(action)
+            if action.title == "Extract `rich_text.ruby.size` override to speaker preset" =>
+        {
+            Some(action)
         }
-    }
-}
-
-flow opening {
-    alice: |[夢](ゆめ)[p]
-}
-"##;
-    open_text(&mut session, uri.clone(), source);
-    let document = session.documents.get(&uri).expect("open document");
-    let offset = source.find("夢").expect("dialogue content");
-    let position = document.line_index().position_from_byte_offset(offset);
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(position, position),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title
-                    == "Extract `rich_text.text.color` override to dialogue defaults" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("dialogue defaults extraction action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert_eq!(
-        edits[0].new_text,
-        "    rich_text {\n        text {\n            color = rgb(\"#202122\")\n        }\n    }\n"
-    );
-}
-
-#[test]
-fn code_actions_extract_rich_text_contributor_to_nested_dialogue_defaults() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    let source = r"
-pub dialogue defaults {
-}
-
-pub character alice {
-    dialogue_style {
-        rich_text {
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow @flow.opening opening {
-    alice: |[夢](ゆめ)[p]
-}
-
-entry server @entry.server.main {
-    goto @flow.opening
-}
-";
-    open_text(&mut session, uri.clone(), source);
-    let document = session.documents.get(&uri).expect("open document");
-    let offset = source.find("夢").expect("dialogue content");
-    let position = document.line_index().position_from_byte_offset(offset);
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(position, position),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title
-                    == "Extract `rich_text.ruby.size` override to dialogue defaults" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("dialogue defaults extraction action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert_eq!(
-        edits[0].new_text,
-        "    rich_text {\n        ruby {\n            size = 14px\n        }\n    }\n"
-    );
+        CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
+    });
+    assert!(action.is_none());
 }
 
 #[test]
@@ -1818,33 +1558,26 @@ flow @flow.expression_inlays expression_inlays {
 
 #[test]
 fn definition_request_returns_effective_style_contributor_ranges() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-
 pub character alice {
     dialogue_style {
         rich_text {
             text {
                 color = rgb("#202122")
             }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
 
 flow opening {
-    let alice_side = alice(rich_text=rich_text_style(ruby=ruby_style(gap=1px)))
-    alice_side: hi[p]
+    alice(rich_text=rich_text_style(ruby=ruby_style(gap=1px))): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) =
+        accepted_dialogue_session("definition-effective-style", source);
 
     let response = session.handle_request(Request {
         id: RequestId::from(5),
@@ -1867,33 +1600,25 @@ flow opening {
     };
 
     assert!(locations.iter().all(|location| location.uri == uri));
+    assert!(
+        locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "14px") })
+    );
+    assert!(
+        locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "rgb(\"#202122\")") })
+    );
     assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "14px")
-            && location.range.end == position_of(source, "\n        }\n")
-    }));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#202122\")")
-            && location.range.end
-                == position_of(source, "\n            }\n        }\n    }\n}\n\nflow")
-    }));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rich_text_style")
-            && location.range.end == position_of(source, ")\n    alice_side")
+        location.range.start == position_of(source, "1px")
+            && location.range.end == position_of(source, "))): hi[p]")
     }));
 }
 
 #[test]
 fn references_request_returns_all_effective_style_contributors() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-    }
-}
-
 pub character alice {
     dialogue_style {
         rich_text {
@@ -1905,11 +1630,11 @@ pub character alice {
 }
 
 flow opening {
-    @<character.alice>.say[hi[p]]
+    alice(rich_text.text.color=rgb("#303132")): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) =
+        accepted_dialogue_session("references-effective-style", source);
 
     let response = session.handle_request(Request {
         id: RequestId::from(6),
@@ -1932,28 +1657,30 @@ flow opening {
     .expect("references response decodes");
 
     assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#101112\")")
-            && location.range.end == position_of(source, "\n        }\n    }\n}\n\npub character")
-    }));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#202122\")")
-            && location.range.end
-                == position_of(source, "\n            }\n        }\n    }\n}\n\nflow")
-    }));
+    assert!(
+        locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "rgb(\"#202122\")") })
+    );
+    assert!(
+        locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "rgb(\"#303132\")") })
+    );
 }
 
 #[test]
 fn definition_request_on_line_option_returns_matching_style_path() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#101112")
+            }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
@@ -1962,8 +1689,7 @@ flow opening {
     alice(rich_text.text.color=rgb("#202122")): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("definition-line-option", source);
 
     let response = session.handle_request(Request {
         id: RequestId::from(7),
@@ -1990,23 +1716,25 @@ flow opening {
         location.range.start == position_of(source, "rgb(\"#202122\")")
             && location.range.end == position_of(source, "): hi[p]")
     }));
-    assert!(!locations.iter().any(|location| {
-        location.range.start == position_of(source, "14px")
-            && location.range.end == position_of(source, "\n        }\n")
-    }));
+    assert!(
+        !locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "14px") })
+    );
 }
 
 #[test]
 fn references_request_on_line_option_filters_to_matching_style_path() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#101112")
+            }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
@@ -2015,8 +1743,7 @@ flow opening {
     alice(rich_text.text.color=rgb("#202122")): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("references-line-option", source);
 
     let response = session.handle_request(Request {
         id: RequestId::from(8),
@@ -2039,31 +1766,34 @@ flow opening {
     .expect("references response decodes");
 
     assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#101112\")")
-            && location.range.end == position_of(source, "\n        }\n        ruby")
-    }));
+    assert!(
+        locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "rgb(\"#101112\")") })
+    );
     assert!(locations.iter().any(|location| {
         location.range.start == position_of(source, "rgb(\"#202122\")")
             && location.range.end == position_of(source, "): hi[p]")
     }));
-    assert!(!locations.iter().any(|location| {
-        location.range.start == position_of(source, "14px")
-            && location.range.end == position_of(source, "\n        }\n")
-    }));
+    assert!(
+        !locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "14px") })
+    );
 }
 
 #[test]
 fn hover_on_line_option_filters_effective_style_path() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#101112")
+            }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
@@ -2072,8 +1802,7 @@ flow opening {
     alice(rich_text.text.color=rgb("#202122")): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("hover-line-option", source);
     let hover = hover_text(&mut session, uri, source, "202122");
 
     assert!(hover.contains("effective dialogue style `rich_text.text.color` for `alice`"));
@@ -2084,15 +1813,16 @@ flow opening {
 
 #[test]
 fn hover_on_nested_rich_text_line_option_filters_to_leaf_path() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#101112")
+            }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
@@ -2101,8 +1831,8 @@ flow opening {
     alice(rich_text=rich_text_style(ruby=ruby_style(size=11px))): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) =
+        accepted_dialogue_session("hover-nested-line-option", source);
     let hover = hover_text(&mut session, uri, source, "11px");
 
     assert!(hover.contains("effective dialogue style `rich_text.ruby.size` for `alice`"));
@@ -2113,15 +1843,16 @@ flow opening {
 
 #[test]
 fn hover_on_inline_rich_text_span_filters_to_leaf_path() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#101112")
+            }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
@@ -2130,8 +1861,7 @@ flow opening {
     alice: [.ruby_over ruby_size=11px]|[夢](ゆめ)[/][p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("hover-inline-span", source);
     let hover = hover_text(&mut session, uri, source, "11px");
 
     assert!(hover.contains("effective dialogue style `rich_text.ruby.size` for `alice`"));
@@ -2142,15 +1872,16 @@ flow opening {
 
 #[test]
 fn definition_on_nested_rich_text_line_option_returns_leaf_path_winner() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
+pub character alice {
+    dialogue_style {
+        rich_text {
+            text {
+                color = rgb("#101112")
+            }
+            ruby {
+                size = 14px
+            }
         }
     }
 }
@@ -2159,8 +1890,8 @@ flow opening {
     alice(rich_text=rich_text_style(ruby=ruby_style(size=11px))): hi[p]
 }
 "##;
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) =
+        accepted_dialogue_session("definition-nested-line-option", source);
 
     let response = session.handle_request(Request {
         id: RequestId::from(9),
@@ -2187,10 +1918,33 @@ flow opening {
         location.range.start == position_of(source, "11px")
             && location.range.end == position_of(source, "))): hi[p]")
     }));
-    assert!(!locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#101112\")")
-            && location.range.end == position_of(source, "\n        }\n        ruby")
-    }));
+    assert!(
+        !locations
+            .iter()
+            .any(|location| { location.range.start == position_of(source, "rgb(\"#101112\")") })
+    );
+}
+
+fn accepted_dialogue_session(name: &str, source: &str) -> (TestProject, ArcweftLspSession, Uri) {
+    let project = TestProject::new(name);
+    project.write(
+        "arcw.toml",
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.dialogue.cascade"
+version = "0.1.0"
+
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+"#,
+    );
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
+    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+    open_text(&mut session, uri.clone(), source);
+    (project, session, uri)
 }
 
 fn open_fixture(session: &mut ArcweftLspSession, uri: Uri) {

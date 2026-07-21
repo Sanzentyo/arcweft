@@ -19,6 +19,7 @@ use arcweft_core::{
     plan::EntryRuntimeId,
     value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
 };
+use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
@@ -27,6 +28,7 @@ use arcweft_presentation::fx::{
     FxInstanceId, FxParameter, FxRuntimeType, FxRuntimeValue,
 };
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::{
     clock::RuntimeClockStep,
     presentation_handles::{
@@ -41,7 +43,28 @@ use arcweft_runtime_driver::{
     },
     swap::GenerationId,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-awbc-product-session-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-awbc-product-session-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 #[test]
 fn awbc_product_bundle_session_from_awfb_requires_and_uses_product_awbc() {
@@ -702,7 +725,7 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
         },
         source_map(source_label, ""),
         BytecodeProgram::default(),
-        LineDisplayCatalog::default(),
+        LineDisplayCatalog::new(test_dialogue_revision()),
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program(entry))

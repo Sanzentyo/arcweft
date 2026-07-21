@@ -63,12 +63,34 @@ use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
     sink::{DebugEventSink, NullDebugEventSink},
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_dialogue::DialogueProfileRevision;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("agent-runner-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.agent-runner-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn agent_entry_id(agent_id: &str) -> EntryRuntimeId {
@@ -546,7 +568,7 @@ fn agent_controller_test_bundle(
         panic!("test Agent entry targets a controller");
     };
     let roles = entry.roles.agent().expect("test Agent roles exist");
-    let display = arcweft_render_text::LineDisplayCatalog::default();
+    let display = arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision());
     let declared_effects = effects
         .iter()
         .copied()

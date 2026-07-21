@@ -5,18 +5,41 @@ use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeS
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, WindowedPatchEvent, WindowedPatchState,
 };
 use arcweft_player_native::{WindowedRuntimeOutcome, WindowedRuntimeOwner};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("player-native-windowed-ingress-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.player-native-windowed-ingress-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 #[test]
 fn malformed_sidecar_reaches_owner_retained_report_without_session_mutation() {
@@ -189,23 +212,29 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         ),
         roles: arcweft_core::entry::RuntimeEntryRoles::None,
     }]);
-    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line,
-        callee: "alice".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_bundle::standard_view::dialogue_view_id(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: display_text.to_owned(),
-        }]),
-    }]);
+    let display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line,
+            callee: "alice".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: display_text.to_owned(),
+            }]),
+        }],
+    )
+    .expect("test display catalog is revision-consistent");
     let product_awbc = AwbcLowerer::new(&plan, &display, "windowed-ingress.arcw")
         .lower()
         .expect("product AWBC lowers")

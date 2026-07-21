@@ -169,11 +169,6 @@ impl SurfaceScanner<'_> {
                     self.scan_stmts(source.item().body_statements())?;
                 }
             }
-            HirTopLevelDecl::DialogueDefaults(item) => {
-                for assignment in item.assignments() {
-                    self.scan_expr(assignment.value())?;
-                }
-            }
             HirTopLevelDecl::Trait(_)
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::EntityDecl(_)

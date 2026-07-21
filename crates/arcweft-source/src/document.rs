@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use thiserror::Error;
 
 use crate::{SourceName, SourceRange};
@@ -58,13 +59,12 @@ impl SourceRevision {
 
     /// Lowercase hexadecimal spelling used by content-addressed identities.
     pub fn to_hex(self) -> String {
-        self.0
-            .iter()
-            .fold(String::with_capacity(64), |mut output, byte| {
-                use std::fmt::Write as _;
-                write!(&mut output, "{byte:02x}").expect("writing to String cannot fail");
-                output
-            })
+        encode_revision(self.0)
+    }
+
+    /// Parses the canonical lowercase hexadecimal wire spelling.
+    pub fn try_from_hex(encoded: &str) -> Result<Self, SourceRevisionParseError> {
+        decode_revision(encoded).map(Self)
     }
 }
 
@@ -121,6 +121,16 @@ impl SourceSetRevision {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Lowercase hexadecimal spelling used by persisted source-set identities.
+    pub fn to_hex(self) -> String {
+        encode_revision(self.0)
+    }
+
+    /// Parses the canonical lowercase hexadecimal wire spelling.
+    pub fn try_from_hex(encoded: &str) -> Result<Self, SourceRevisionParseError> {
+        decode_revision(encoded).map(Self)
+    }
 }
 
 /// Revision-bound identity shared by every span into one source document.
@@ -142,6 +152,60 @@ impl SourceDocumentIdentity {
 
     pub const fn source_len(&self) -> u64 {
         self.source_len
+    }
+}
+
+impl Serialize for SourceDocumentIdentity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut identity = serializer.serialize_struct("SourceDocumentIdentity", 3)?;
+        identity.serialize_field("id", self.id.as_str())?;
+        identity.serialize_field("revision", &self.revision.to_hex())?;
+        identity.serialize_field("source_len", &self.source_len)?;
+        identity.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceDocumentIdentity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct WireIdentity {
+            id: String,
+            revision: String,
+            source_len: u64,
+        }
+
+        let wire = WireIdentity::deserialize(deserializer)?;
+        Ok(Self {
+            id: SourceDocumentId::try_new(wire.id).map_err(serde::de::Error::custom)?,
+            revision: SourceRevision::try_from_hex(&wire.revision)
+                .map_err(serde::de::Error::custom)?,
+            source_len: wire.source_len,
+        })
+    }
+}
+
+impl Serialize for SourceSetRevision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_hex())
+    }
+}
+
+impl<'de> Deserialize<'de> for SourceSetRevision {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::try_from_hex(&String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -268,6 +332,11 @@ pub enum SourceDocumentIdError {
     Control { byte: usize },
 }
 
+/// Invalid canonical source-revision wire spelling.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("source revision must be exactly 64 lowercase hexadecimal digits")]
+pub struct SourceRevisionParseError;
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SourceDocumentError {
     #[error("source length does not fit the revision-bound identity")]
@@ -317,13 +386,51 @@ pub enum SourceSpanValidationError {
     },
 }
 
+fn encode_revision(bytes: [u8; 32]) -> String {
+    const LOWER_HEX: &[u8; 16] = b"0123456789abcdef";
+
+    bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut encoded, byte| {
+            encoded.push(char::from(LOWER_HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(LOWER_HEX[usize::from(byte & 0x0f)]));
+            encoded
+        },
+    )
+}
+
+fn decode_revision(encoded: &str) -> Result<[u8; 32], SourceRevisionParseError> {
+    if encoded.len() != 64
+        || !encoded
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err(SourceRevisionParseError);
+    }
+
+    let mut bytes = [0; 32];
+    for (index, pair) in encoded.as_bytes().chunks_exact(2).enumerate() {
+        bytes[index] = (hex_value(pair[0]) << 4) | hex_value(pair[1]);
+    }
+    Ok(bytes)
+}
+
+const fn hex_value(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        _ => unreachable!(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fmt::Write as _;
 
     use super::{
-        SourceDocument, SourceDocumentId, SourceDocumentIdError, SourceRevision, SourceSetRevision,
-        SourceSetRevisionError, SourceSpanError, SourceSpanValidationError,
+        SourceDocument, SourceDocumentId, SourceDocumentIdError, SourceDocumentIdentity,
+        SourceRevision, SourceSetRevision, SourceSetRevisionError, SourceSpanError,
+        SourceSpanValidationError,
     };
     use crate::{SourceName, SourceRange};
 
@@ -515,6 +622,61 @@ mod tests {
                 .expect("generated span")
         );
         assert_ne!(path.display_name(), generated.display_name());
+    }
+
+    #[test]
+    fn source_identity_wire_round_trip_retains_exact_revision_and_length() {
+        let source = document("arcweft-project://game/main.arcw", "aéz");
+        let encoded = serde_json::to_string(source.identity()).expect("encode identity");
+
+        assert_eq!(
+            serde_json::from_str::<SourceDocumentIdentity>(&encoded).expect("decode identity"),
+            *source.identity()
+        );
+        assert_eq!(
+            encoded,
+            format!(
+                r#"{{"id":"arcweft-project://game/main.arcw","revision":"{}","source_len":4}}"#,
+                source.identity().revision().to_hex()
+            )
+        );
+    }
+
+    #[test]
+    fn source_identity_wire_rejects_invalid_id_revision_and_shape() {
+        let canonical_revision = "ab".repeat(32);
+        for invalid in [
+            format!(r#"{{"id":"","revision":"{canonical_revision}","source_len":1}}"#),
+            format!(
+                r#"{{"id":"manifest","revision":"{}","source_len":1}}"#,
+                "AB".repeat(32)
+            ),
+            format!(
+                r#"{{"id":"manifest","revision":"{canonical_revision}","source_len":1,"extra":true}}"#
+            ),
+        ] {
+            assert!(serde_json::from_str::<SourceDocumentIdentity>(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn source_set_revision_wire_requires_exact_lowercase_hex() {
+        let source = document("manifest", "schema = 1\n");
+        let revision = SourceSetRevision::try_for_identities([source.identity()])
+            .expect("source-set revision");
+        let encoded = serde_json::to_string(&revision).expect("encode source-set revision");
+
+        assert_eq!(
+            serde_json::from_str::<SourceSetRevision>(&encoded)
+                .expect("decode source-set revision"),
+            revision
+        );
+        assert_eq!(encoded, format!(r#""{}""#, revision.to_hex()));
+        assert!(
+            serde_json::from_str::<SourceSetRevision>(&format!(r#""{}""#, "AB".repeat(32)))
+                .is_err()
+        );
+        assert!(serde_json::from_str::<SourceSetRevision>(r#""00""#).is_err());
     }
 
     fn hex(bytes: &[u8]) -> String {

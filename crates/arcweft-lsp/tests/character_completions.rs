@@ -16,10 +16,7 @@ fn completions_include_loaded_character_manifest_data() {
         &character_project_manifest("lsp-character-completions", "zundamon"),
     );
     project.write("src/main.arcw", "flow @flow.main main {}\n");
-    project.write(
-        "assets/zundamon.awchar/character.awchar.json",
-        include_str!("fixtures/zundamon.awchar/character.awchar.json"),
-    );
+    write_character_fixture(&project);
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
     let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
@@ -47,10 +44,7 @@ fn hover_includes_psd_source_layer_names() {
         &character_project_manifest("lsp-character-hover", "zundamon"),
     );
     project.write("src/main.arcw", "flow @flow.main main {}\n");
-    project.write(
-        "assets/zundamon.awchar/character.awchar.json",
-        include_str!("fixtures/zundamon.awchar/character.awchar.json"),
-    );
+    write_character_fixture(&project);
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
     let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
@@ -108,6 +102,37 @@ compression = "none"
     )
 }
 
+fn write_character_fixture(project: &TestProject) {
+    project.write(
+        "assets/zundamon.awchar/character.awchar.json",
+        include_str!("fixtures/zundamon.awchar/character.awchar.json"),
+    );
+    for (path, bytes) in [
+        (
+            "body--default.png",
+            include_bytes!("fixtures/zundamon.awchar/layers/body--default.png").as_slice(),
+        ),
+        (
+            "eyes--normal.png",
+            include_bytes!("fixtures/zundamon.awchar/layers/eyes--normal.png").as_slice(),
+        ),
+        (
+            "eyes--smile.png",
+            include_bytes!("fixtures/zundamon.awchar/layers/eyes--smile.png").as_slice(),
+        ),
+        (
+            "mouth--neutral.png",
+            include_bytes!("fixtures/zundamon.awchar/layers/mouth--neutral.png").as_slice(),
+        ),
+        (
+            "mouth--smile.png",
+            include_bytes!("fixtures/zundamon.awchar/layers/mouth--smile.png").as_slice(),
+        ),
+    ] {
+        project.write_bytes(&format!("assets/zundamon.awchar/layers/{path}"), bytes);
+    }
+}
+
 struct TestProject {
     root: PathBuf,
 }
@@ -128,6 +153,14 @@ impl TestProject {
     }
 
     fn write(&self, path: &str, contents: &str) {
+        let path = self.path(path);
+        if let Some(parent) = path.parent() {
+            create_dir_all(parent).expect("create parent");
+        }
+        write(path, contents).expect("write fixture");
+    }
+
+    fn write_bytes(&self, path: &str, contents: &[u8]) {
         let path = self.path(path);
         if let Some(parent) = path.parent() {
             create_dir_all(parent).expect("create parent");

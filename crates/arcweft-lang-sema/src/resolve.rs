@@ -1,3 +1,4 @@
+use crate::callable::{CallableName, CallablePath, ProjectCallablePath, ProjectNameBinding};
 use crate::env::TypeCheckEnv;
 use crate::project_index::ProjectSemanticIndex;
 use crate::registration::RegisteredSemanticWorld;
@@ -96,7 +97,33 @@ pub fn registry_from_hir_and_registered(
     module: &HirModule,
     registered: &RegisteredSemanticWorld,
 ) -> NameRegistry {
-    registry_from_hir_and_env(module, registered.environment().typecheck_env())
+    let mut registry = registry_from_hir_and_env(module, registered.environment().typecheck_env());
+    let symbols = registered.symbols();
+    let catalog = registered.environment().callable_catalog();
+    for (binding_module, binding_path, _) in symbols.scope_bindings() {
+        let Some(callable_path) = binding_path
+            .segments()
+            .iter()
+            .map(|segment| CallableName::try_new(segment.as_str()).ok())
+            .collect::<Option<Vec<_>>>()
+            .and_then(|segments| CallablePath::try_new(segments).ok())
+        else {
+            continue;
+        };
+        let key = ProjectCallablePath::new(
+            symbols.world().package().clone(),
+            binding_module.clone(),
+            callable_path,
+        );
+        if let Some(ProjectNameBinding::NonCallable {
+            ty: TypeKind::Ref(entity),
+            ..
+        }) = catalog.project_binding(&key)
+        {
+            registry.insert(binding_path.to_string(), entity.kind().clone());
+        }
+    }
+    registry
 }
 
 /// Builds a registry from one HIR module plus an Agent project semantic index.

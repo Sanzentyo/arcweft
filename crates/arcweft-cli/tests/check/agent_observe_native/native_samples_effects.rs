@@ -242,7 +242,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
 #[test]
 #[ignore = "milestone-only rich-text effects animation sample; runs many native object captures"]
 fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample() {
-    let source_path = workspace_root().join("samples/rich-text-effects-animation.arcw");
+    let source_path = workspace_root().join("samples/rich-text-effects-animation/src/main.arcw");
     let json = observe_native_rich_text_layer_report(&source_path);
 
     assert_native_rich_text_layer_image_has_content(&json);
@@ -265,12 +265,6 @@ fn agent_observe_native_renderer_captures_combined_typewriter_animation_sample()
     assert_effects_animation_function_motion_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_source_local_effect_run_changes_over_time(&source_path, &json, &dir);
     assert_effects_animation_source_local_effect_post_process_run_is_tinted(
-        &source_path,
-        &json,
-        &dir,
-    );
-    assert_effects_animation_source_local_shader_run_is_tinted(&source_path, &json, &dir);
-    assert_effects_animation_source_local_shader_post_process_run_is_tinted(
         &source_path,
         &json,
         &dir,
@@ -613,76 +607,6 @@ fn assert_effects_animation_warm_glow_shader_run_is_tinted(
                 && pixel[3] > 0
         }),
         "registered warm_glow shader should tint the object crop with warm pixels: {capture}"
-    );
-}
-
-fn assert_effects_animation_source_local_shader_run_is_tinted(
-    source_path: &Path,
-    json: &serde_json::Value,
-    dir: &Path,
-) {
-    let shader_run = find_rich_text_run_object(json, "source shader");
-    let shader = assert_rich_text_run_object_has_shader(shader_run, "source_glow");
-    assert_eq!(
-        shader["phase"], "glyph_color",
-        "source-local shader should keep its glyph_color phase: {shader_run}"
-    );
-    let object_id = shader_run["id"]
-        .as_str()
-        .expect("source-local shader run object id is reported");
-    let color_path = dir.join("source-local-shader-rgba-4000.rgba");
-    let (capture, bytes) = observe_full_grammar_run_color_at(
-        source_path,
-        &color_path,
-        object_id,
-        &["--capture-step", "3", "--capture-time", "4"],
-    );
-    assert!(
-        capture["diagnostics"].as_array().is_some_and(Vec::is_empty),
-        "source-local text shader should register before native capture: {capture}"
-    );
-    assert!(
-        bytes.chunks_exact(4).any(|pixel| {
-            pixel[2] > pixel[0].saturating_add(15)
-                && pixel[2] > pixel[1].saturating_add(10)
-                && pixel[3] > 0
-        }),
-        "source-local shader should tint the object crop with blue/purple pixels: {capture}"
-    );
-}
-
-fn assert_effects_animation_source_local_shader_post_process_run_is_tinted(
-    source_path: &Path,
-    json: &serde_json::Value,
-    dir: &Path,
-) {
-    let shader_run = find_rich_text_run_object(json, "source post shader");
-    let shader = assert_rich_text_run_object_has_shader(shader_run, "source_glow");
-    assert_eq!(
-        shader["phase"], "post_process",
-        "source-local shader should keep its post_process phase: {shader_run}"
-    );
-    let object_id = shader_run["id"]
-        .as_str()
-        .expect("source-local post-process shader run object id is reported");
-    let color_path = dir.join("source-local-shader-post-process-rgba-4000.rgba");
-    let (capture, bytes) = observe_full_grammar_run_color_at(
-        source_path,
-        &color_path,
-        object_id,
-        &["--capture-step", "3", "--capture-time", "4"],
-    );
-    assert!(
-        capture["diagnostics"].as_array().is_some_and(Vec::is_empty),
-        "source-local post-process text shader should register before native capture: {capture}"
-    );
-    assert!(
-        bytes.chunks_exact(4).any(|pixel| {
-            pixel[2] > pixel[0].saturating_add(20)
-                && pixel[1] > pixel[0].saturating_add(15)
-                && pixel[3] > 0
-        }),
-        "source-local post-process shader should tint the object crop with cyan/blue pixels: {capture}"
     );
 }
 

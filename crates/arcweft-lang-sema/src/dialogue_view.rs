@@ -19,7 +19,7 @@ pub const DIALOGUE_VIEW_ATTRIBUTE: &str = "dialogue_view";
 /// Canonical standard-prelude dialogue View input record.
 pub const STANDARD_DIALOGUE_VIEW_TYPE: &str = "DialogueView";
 
-/// Reserved bundle resource used when dialogue defaults omit an authored View.
+/// Reserved engine-owned dialogue View resource.
 pub const STANDARD_DIALOGUE_VIEW_RESOURCE: &str = "std.view.dialogue";
 
 /// Canonical rich dialogue content value exposed by the standard prelude.
@@ -362,19 +362,5 @@ pub view DialoguePanel(dialogue: DialogueView) {
                 .iter()
                 .any(|error| { error.to_string().contains("std.view.dialogue` is reserved") })
         );
-    }
-
-    #[test]
-    fn dialogue_defaults_require_a_typed_view_reference() {
-        let parsed = parse_source("pub dialogue defaults {\n view = @style.wrong\n}\n");
-        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower invalid defaults fixture");
-        let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
-            .expect_err("non-View dialogue default must fail");
-        assert!(errors.iter().any(|error| {
-            error
-                .to_string()
-                .contains("dialogue defaults `view` must be a typed View reference")
-        }));
     }
 }

@@ -7,11 +7,10 @@ mod scan;
 mod thread_body;
 
 use scan::{
-    absolute_source_slice, braced_block_inner, delimited_inner, find_binary_operator,
-    find_last_top_level_char, find_last_top_level_operator, find_top_level_char,
-    find_top_level_keyword, find_top_level_operator, matching_delimiter_end,
-    postfix_delimiter_bounds, push_trimmed_segment, split_top_level_lines,
-    split_top_level_segments, trim_source_with_base,
+    braced_block_inner, delimited_inner, find_binary_operator, find_last_top_level_char,
+    find_last_top_level_operator, find_top_level_char, find_top_level_keyword,
+    find_top_level_operator, matching_delimiter_end, owned_source_slice, postfix_delimiter_bounds,
+    push_trimmed_segment, split_top_level_lines, split_top_level_segments, trim_source_with_base,
 };
 
 /// Source range for one parsed expression node.
@@ -203,11 +202,14 @@ fn collect_call_source_ranges<'a>(
     base: usize,
     ranges: &mut Vec<ExprSourceRange<'a>>,
 ) {
-    if let Some(callee_source) = absolute_source_slice(source, base, call.callee_range()) {
+    let owner_range = call.range();
+    if let Some((callee_source, callee_range)) =
+        owned_source_slice(source, base, owner_range, call.callee_range())
+    {
         collect_expr_source_ranges_inner(
             call.callee(),
             callee_source,
-            call.callee_range().start(),
+            callee_range.start(),
             ranges,
         );
     }
@@ -217,11 +219,13 @@ fn collect_call_source_ranges<'a>(
             .iter()
             .zip(parenthesized.argument_list().arguments())
         {
-            if let Some(value_source) = absolute_source_slice(source, base, syntax.value_range()) {
+            if let Some((value_source, value_range)) =
+                owned_source_slice(source, base, owner_range, syntax.value_range())
+            {
                 collect_expr_source_ranges_inner(
                     arg.value(),
                     value_source,
-                    syntax.value_range().start(),
+                    value_range.start(),
                     ranges,
                 );
             }
@@ -234,16 +238,24 @@ fn collect_call_source_ranges<'a>(
     let [CallArg::Positional(closure @ Expr::Closure { body, .. })] = call.args() else {
         return;
     };
-    ranges.push(ExprSourceRange {
-        expr: closure,
-        range: callback.callback().closure_range(),
-    });
-    if let Some(body_source) = absolute_source_slice(source, base, callback.callback().body_range())
+    if let Some((_, closure_range)) = owned_source_slice(
+        source,
+        base,
+        owner_range,
+        callback.callback().closure_range(),
+    ) {
+        ranges.push(ExprSourceRange {
+            expr: closure,
+            range: closure_range,
+        });
+    }
+    if let Some((body_source, body_range)) =
+        owned_source_slice(source, base, owner_range, callback.callback().body_range())
     {
         thread_body::collect_callback_body_expr_source_ranges(
             body,
             body_source,
-            callback.callback().body_range().start(),
+            body_range.start(),
             ranges,
         );
     }
@@ -484,8 +496,11 @@ fn collect_operator_expr_source_ranges<'a>(
             true
         }
         Expr::Try(try_expr) => {
+            let owner_range = try_expr.source().whole();
             let operand_range = try_expr.source().operand();
-            if let Some(operand_source) = absolute_source_slice(source, base, operand_range) {
+            if let Some((operand_source, operand_range)) =
+                owned_source_slice(source, base, owner_range, operand_range)
+            {
                 collect_expr_source_ranges_inner(
                     try_expr.operand(),
                     operand_source,
@@ -496,8 +511,11 @@ fn collect_operator_expr_source_ranges<'a>(
             true
         }
         Expr::Await(awaited) => {
+            let owner_range = awaited.source().whole();
             let operand_range = awaited.source().operand();
-            if let Some(operand_source) = absolute_source_slice(source, base, operand_range) {
+            if let Some((operand_source, operand_range)) =
+                owned_source_slice(source, base, owner_range, operand_range)
+            {
                 collect_expr_source_ranges_inner(
                     awaited.operand(),
                     operand_source,

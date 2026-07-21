@@ -388,11 +388,30 @@ impl BundleViewRuntime {
             }
             if handle.is_render_visible() {
                 evaluated_handles.insert(handle.id.clone());
+                let profile_style = evaluator
+                    .dialogue_inputs
+                    .get(&handle.id)
+                    .and_then(|input| input.frame.profile_style.clone());
+                let mut style_scopes = ViewStyleScopeStack::default();
+                if let Some(profile_style) = profile_style
+                    && let Err(error) = style_scopes.enter_dialogue_profile(
+                        &profile_style,
+                        &mut evaluator.style_scope_allocator,
+                    )
+                {
+                    evaluator.record_failure(
+                        &key,
+                        &view,
+                        None,
+                        EvaluationFailure::style_scope(None, error),
+                    );
+                    continue;
+                }
                 output.extend(evaluator.evaluate_occurrence(
                     key,
                     definition_index,
                     0,
-                    ViewStyleScopeStack::default(),
+                    style_scopes,
                 ));
             }
         }

@@ -4,7 +4,7 @@ use arcweft_compiler::project::{
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_launch::{LaunchProfileSelection, accepted::SourceBackedManifest};
+use arcweft_launch::{LaunchProfileSelection, ProfileId, accepted::SourceBackedManifest};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
@@ -38,11 +38,11 @@ style = "style.Mobile"
         true,
     );
     let compiled = fixture.compile().expect("checked dialogue profile");
-    let checked = compiled.dialogue_profile().expect("profile admission");
+    let checked = compiled.dialogue_profile();
     let product = compiled.view_product();
     let program = product.product().program().expect("View program");
 
-    assert_eq!(checked.profile_id().as_str(), "dev");
+    assert_eq!(checked.profile_id().map(ProfileId::as_str), Some("dev"));
     assert_eq!(checked.presentation().view().as_str(), "view.Mobile");
     assert_eq!(
         checked
@@ -86,13 +86,35 @@ style = "style.Mobile"
 fn omitted_dialogue_fields_admit_the_engine_standard_view() {
     let fixture = Fixture::new(DIALOGUE_SOURCE, "", true);
     let compiled = fixture.compile().expect("standard dialogue profile");
-    let checked = compiled.dialogue_profile().expect("profile admission");
+    let checked = compiled.dialogue_profile();
 
     assert_eq!(checked.presentation().view().as_str(), "std.view.dialogue");
     assert!(checked.presentation().style().is_none());
     assert_eq!(
         checked.selected_view_source().source().id().as_str(),
         arcweft_bundle::standard_view::DIALOGUE_VIEW_SOURCE_ID
+    );
+}
+
+#[test]
+fn direct_project_compilation_admits_a_revision_bound_project_default() {
+    let fixture = Fixture::new_without_launch_profile(DIALOGUE_SOURCE);
+    let compiled = fixture.compile().expect("project-default dialogue profile");
+    let checked = compiled.dialogue_profile();
+
+    assert_eq!(
+        checked.owner(),
+        &arcweft_compiler::project::DialogueProfileOwner::ProjectDefault
+    );
+    assert_eq!(checked.profile_id(), None);
+    assert_eq!(checked.presentation().view().as_str(), "std.view.dialogue");
+    assert_eq!(
+        checked.revision().manifest_document(),
+        fixture.manifest_document.identity()
+    );
+    assert_eq!(
+        checked.revision().topology_sources(),
+        fixture.topology_revision
     );
 }
 
@@ -166,6 +188,14 @@ struct Fixture {
 
 impl Fixture {
     fn new(source: &str, dialogue: &str, share_registry: bool) -> Self {
+        Self::build(source, dialogue, share_registry, true)
+    }
+
+    fn new_without_launch_profile(source: &str) -> Self {
+        Self::build(source, "", true, false)
+    }
+
+    fn build(source: &str, dialogue: &str, share_registry: bool, launch_profile: bool) -> Self {
         let manifest_text = format!(
             r#"schema = 1
 [package]
@@ -253,8 +283,12 @@ source = "main.arcw"
             None,
             None,
             Vec::new(),
-        )
-        .with_accepted_launch_profile(input);
+        );
+        let context = if launch_profile {
+            context.with_accepted_launch_profile(input)
+        } else {
+            context
+        };
         Self {
             project,
             context,

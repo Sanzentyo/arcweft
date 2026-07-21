@@ -10,7 +10,7 @@ use arcweft_launch::{
 use arcweft_manifest_model::ProfileId;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{
-    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSetRevision, SourceSpan,
+    Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceDocument, SourceSetRevision, SourceSpan,
 };
 use arcweft_view::{ViewId, style::ViewStyleSheetId};
 use std::sync::Arc;
@@ -20,12 +20,29 @@ use thiserror::Error;
 /// compiler View/Style product.
 #[derive(Clone, Debug)]
 pub struct CheckedDialogueProfile {
-    profile_id: ProfileId,
+    owner: DialogueProfileOwner,
     presentation: DialoguePresentationProfile,
     revision: DialogueProfileRevision,
     product: Arc<ValidatedViewProduct>,
     selected_view_source: SourceSpan,
     selected_style_source: Option<SourceSpan>,
+}
+
+/// Typed owner of a compiler-admitted dialogue presentation selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DialogueProfileOwner {
+    Launch(ProfileId),
+    ProjectDefault,
+}
+
+/// Exact pre-catalog selection supplied to the single admission operation.
+#[derive(Clone, Copy)]
+pub(crate) enum DialogueProfileAdmissionInput<'a> {
+    Launch(&'a AcceptedLaunchProfileInput),
+    ProjectDefault {
+        manifest: &'a SourceDocument,
+        topology_sources: SourceSetRevision,
+    },
 }
 
 /// Failure to join one accepted manifest profile with the compiler product.
@@ -66,29 +83,44 @@ struct AdmittedDialogueProduct<'a> {
     style_source: Option<SourceSpan>,
 }
 
+struct AdmittedDialogueSelection<'a> {
+    owner: DialogueProfileOwner,
+    presentation: DialoguePresentationProfile,
+    manifest: &'a SourceDocument,
+    topology_sources: SourceSetRevision,
+    primary: SourceSpan,
+    view_primary: SourceSpan,
+    style_primary: Option<SourceSpan>,
+}
+
 impl CheckedDialogueProfile {
     /// Admits one already-resolved profile against the exact compiler-owned
     /// View/Style product. This method performs no I/O and does not read source
     /// text or a second manifest representation.
-    pub fn try_admit(
-        input: &AcceptedLaunchProfileInput,
+    pub(crate) fn try_admit(
+        input: DialogueProfileAdmissionInput<'_>,
         views: &CompiledViewProduct,
         compiler_resource_types: &Arc<ResourceTypeRegistry>,
     ) -> Result<Self, DialogueProfileAdmissionError> {
-        let (presentation, profile_primary) =
-            admit_presentation(input, views, compiler_resource_types)?;
-        let admitted = admit_product(input, views, &presentation, &profile_primary)?;
+        let selection = admit_presentation(input, views, compiler_resource_types)?;
+        let admitted = admit_product(
+            views,
+            &selection.presentation,
+            &selection.primary,
+            &selection.view_primary,
+            selection.style_primary.as_ref(),
+        )?;
         let revision = DialogueProfileRevision::from_admitted_parts(
-            input.manifest().document().identity().clone(),
-            input.topology_source_revision(),
+            selection.manifest.identity().clone(),
+            selection.topology_sources,
             admitted.complete_sources,
             admitted.program.program_id().clone(),
             admitted.program.accepted_revision(),
             views.resource_type_registry_digest(),
         );
         Ok(Self {
-            profile_id: input.profile_id().clone(),
-            presentation,
+            owner: selection.owner,
+            presentation: selection.presentation,
             revision,
             product: Arc::clone(admitted.product),
             selected_view_source: admitted.view_source,
@@ -96,8 +128,15 @@ impl CheckedDialogueProfile {
         })
     }
 
-    pub const fn profile_id(&self) -> &ProfileId {
-        &self.profile_id
+    pub const fn owner(&self) -> &DialogueProfileOwner {
+        &self.owner
+    }
+
+    pub const fn profile_id(&self) -> Option<&ProfileId> {
+        match &self.owner {
+            DialogueProfileOwner::Launch(id) => Some(id),
+            DialogueProfileOwner::ProjectDefault => None,
+        }
     }
 
     pub const fn presentation(&self) -> &DialoguePresentationProfile {
@@ -122,45 +161,79 @@ impl CheckedDialogueProfile {
     }
 }
 
-fn admit_presentation(
-    input: &AcceptedLaunchProfileInput,
+fn admit_presentation<'a>(
+    input: DialogueProfileAdmissionInput<'a>,
     views: &CompiledViewProduct,
     compiler_resource_types: &Arc<ResourceTypeRegistry>,
-) -> Result<(DialoguePresentationProfile, SourceSpan), DialogueProfileAdmissionError> {
-    let primary = profile_primary(input.manifest(), input.profile_id());
-    let resolved = input
-        .manifest()
-        .resolve_profile(LaunchProfileSelection::Explicit(
-            input.profile_id().as_str(),
-        ))
-        .map_err(
-            |report| DialogueProfileAdmissionError::ResolvedProfileMismatch {
-                detail: report.to_string(),
+) -> Result<AdmittedDialogueSelection<'a>, DialogueProfileAdmissionError> {
+    match input {
+        DialogueProfileAdmissionInput::Launch(input) => {
+            let primary = profile_primary(input.manifest(), input.profile_id());
+            let resolved = input
+                .manifest()
+                .resolve_profile(LaunchProfileSelection::Explicit(
+                    input.profile_id().as_str(),
+                ))
+                .map_err(
+                    |report| DialogueProfileAdmissionError::ResolvedProfileMismatch {
+                        detail: report.to_string(),
+                        primary: primary.clone(),
+                    },
+                )?;
+            if &resolved != input.resolved_profile() || resolved.id() != input.profile_id() {
+                return Err(DialogueProfileAdmissionError::ResolvedProfileMismatch {
+                    detail: "the retained resolved value differs from a pure resolution of the accepted manifest"
+                        .to_owned(),
+                    primary,
+                });
+            }
+            if !Arc::ptr_eq(input.resource_types(), compiler_resource_types)
+                || input.resource_types().digest() != views.resource_type_registry_digest()
+            {
+                return Err(DialogueProfileAdmissionError::ResourceRegistryMismatch { primary });
+            }
+            let presentation = resolved.dialogue().clone();
+            Ok(AdmittedDialogueSelection {
+                owner: DialogueProfileOwner::Launch(input.profile_id().clone()),
+                presentation,
+                manifest: input.manifest().document(),
+                topology_sources: input.topology_source_revision(),
                 primary: primary.clone(),
-            },
-        )?;
-    if &resolved != input.resolved_profile() || resolved.id() != input.profile_id() {
-        return Err(DialogueProfileAdmissionError::ResolvedProfileMismatch {
-            detail: "the retained resolved value differs from a pure resolution of the accepted manifest"
-                .to_owned(),
-            primary,
-        });
+                view_primary: view_primary(input.manifest(), input.profile_id()),
+                style_primary: resolved
+                    .dialogue()
+                    .style()
+                    .map(|_| style_primary(input.manifest(), input.profile_id())),
+            })
+        }
+        DialogueProfileAdmissionInput::ProjectDefault {
+            manifest,
+            topology_sources,
+        } => {
+            let primary = manifest.start_span();
+            if compiler_resource_types.digest() != views.resource_type_registry_digest() {
+                return Err(DialogueProfileAdmissionError::ResourceRegistryMismatch { primary });
+            }
+            Ok(AdmittedDialogueSelection {
+                owner: DialogueProfileOwner::ProjectDefault,
+                presentation: DialoguePresentationProfile::engine_default(),
+                manifest,
+                topology_sources,
+                primary: primary.clone(),
+                view_primary: primary,
+                style_primary: None,
+            })
+        }
     }
-    if !Arc::ptr_eq(input.resource_types(), compiler_resource_types)
-        || input.resource_types().digest() != views.resource_type_registry_digest()
-    {
-        return Err(DialogueProfileAdmissionError::ResourceRegistryMismatch { primary });
-    }
-    Ok((resolved.dialogue().clone(), primary))
 }
 
 fn admit_product<'a>(
-    input: &AcceptedLaunchProfileInput,
     views: &'a CompiledViewProduct,
     presentation: &DialoguePresentationProfile,
     profile_primary: &SourceSpan,
+    view_primary: &SourceSpan,
+    style_primary: Option<&SourceSpan>,
 ) -> Result<AdmittedDialogueProduct<'a>, DialogueProfileAdmissionError> {
-    let view_primary = view_primary(input.manifest(), input.profile_id());
     let product = views.product();
     let program =
         product
@@ -201,11 +274,16 @@ fn admit_product<'a>(
     if !definition.accepts_dialogue_input() {
         return Err(DialogueProfileAdmissionError::ViewIsNotDialogue {
             view: presentation.view().clone(),
-            primary: view_primary,
+            primary: view_primary.clone(),
             definition: view_source,
         });
     }
-    let style_source = admit_style(input, views, product, presentation.style())?;
+    let style_source = admit_style(
+        views,
+        product,
+        presentation.style(),
+        style_primary.unwrap_or(profile_primary),
+    )?;
     Ok(AdmittedDialogueProduct {
         product,
         program,
@@ -216,14 +294,13 @@ fn admit_product<'a>(
 }
 
 fn admit_style(
-    input: &AcceptedLaunchProfileInput,
     views: &CompiledViewProduct,
     product: &ValidatedViewProduct,
     style: Option<&ViewStyleSheetId>,
+    primary: &SourceSpan,
 ) -> Result<Option<SourceSpan>, DialogueProfileAdmissionError> {
     style
         .map(|style_id| {
-            let primary = style_primary(input.manifest(), input.profile_id());
             if product
                 .style()
                 .and_then(|style| style.program().sheet(style_id))
@@ -231,13 +308,13 @@ fn admit_style(
             {
                 return Err(DialogueProfileAdmissionError::MissingStyle {
                     style: style_id.clone(),
-                    primary,
+                    primary: primary.clone(),
                 });
             }
             views.style_source(style_id).cloned().ok_or_else(|| {
                 DialogueProfileAdmissionError::MissingSourceProvenance {
                     owner: style_id.as_str().to_owned(),
-                    primary,
+                    primary: primary.clone(),
                 }
             })
         })

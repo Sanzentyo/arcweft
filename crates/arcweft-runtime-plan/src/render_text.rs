@@ -1,9 +1,9 @@
 //! Rich-text display lowering for runtime-plan sidecars.
 
 mod attrs;
+mod character_profile;
 mod contributions;
-mod defaults;
-mod entity_defaults;
+mod dialogue_context;
 mod fx;
 mod helpers;
 mod inline_failure;
@@ -17,7 +17,7 @@ mod tag;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use defaults::{DialogueDisplayDefaults, DialogueSpeakerPreset};
+pub(crate) use dialogue_context::{DialogueDisplayDefaults, DialogueSpeakerPreset};
 pub(crate) use fx::FxCatalog;
 pub(crate) use fx::builtins::builtin_rich_text_fx_definitions;
 pub(crate) use line::lower_dialogue_display_with_speaker_presets_and_fx;

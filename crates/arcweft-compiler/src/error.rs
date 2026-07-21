@@ -1,23 +1,19 @@
-use crate::effect_manifest;
+use crate::{effect_manifest, project::ProjectCompileError};
 use thiserror::Error;
 
 /// Source compiler diagnostics for the shared driver.
 #[derive(Debug, Error)]
 pub enum CompileSourceError {
-    #[error("parse errors: {0:?}")]
-    Parse(Vec<arcweft_lang_syntax::parser::recovery::ParseError>),
-    #[error("HIR lowering errors: {0:?}")]
-    Hir(Vec<arcweft_lang_hir::model::HirLowerError>),
-    #[error("reference resolution errors: {0:?}")]
-    Resolve(Vec<arcweft_lang_sema::resolve::NameResolutionError>),
-    #[error("type-check readiness errors: {0:?}")]
-    Readiness(Vec<arcweft_lang_sema::diagnostics::TypeCheckReadinessError>),
-    #[error("type errors: {0:?}")]
-    Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
-    #[error("View Style lowering error: {0}")]
-    Style(#[from] crate::style::ViewStyleLowerError),
-    #[error("runtime-plan lowering errors: {0:?}")]
-    RuntimePlan(Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>),
+    #[error(transparent)]
+    Project(#[from] ProjectCompileError),
+}
+
+impl CompileSourceError {
+    pub const fn project(&self) -> &ProjectCompileError {
+        match self {
+            Self::Project(error) => error,
+        }
+    }
 }
 
 /// Agent controller compiler diagnostics.

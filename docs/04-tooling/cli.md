@@ -60,8 +60,14 @@ source = "src/server.arcw"
 entry = "http"
 adapter = "native-http"
 listen = "127.0.0.1:8787"
-dialogue_defaults = "dialogue.debug"
 rust_metadata = ["target/arcweft/truck_game.json"]
+
+[profiles."server.dev".dialogue]
+view = "view.server_dialogue"
+style = "style.server_dialogue"
+
+[profiles."server.dev".dialogue.inline-failure]
+kind = "fail_line"
 
 [profiles."server.dev".pure]
 backend = "auto"
@@ -76,13 +82,12 @@ Direct path and `--profile` are mutually exclusive. This keeps core source mode
 reproducible for verifier, formatter, LSP, and CI use while still allowing
 profile-aware checks for adapter-backed entries.
 
-`dialogue_defaults` optionally selects the `dialogue defaults` profile used by
-runtime lowering, `run`/`cli`/`serve`/`test`/`bench`, bundle builds, and Agent
-observe. It stores the canonical entity body without the `@` sigil, for example
-`dialogue.mobile`. When omitted, runtime lowering uses the ID-free project-wide
-public defaults declaration or the standard profile. Multiple applicable named
-profiles without a selected profile are reported as an ambiguity instead of
-being merged by source order.
+`[profiles.<id>.dialogue]` owns the dialogue presentation used by runtime
+lowering, `run`/`cli`/`serve`/`test`/`bench`, bundle builds, and Agent observe.
+It selects a typed View, optionally a typed base Style, and a structured
+`inline-failure` policy. When no View is selected, runtime lowering uses the
+reserved `std.view.dialogue` resource. Source declarations never supply an
+implicit project-wide dialogue owner.
 
 Profiles may register project-local adapter manifests through
 `adapter_manifests`. These paths are resolved relative to `arcw.toml` and are
@@ -772,8 +777,8 @@ for immediate readback or recapture. If `source` is supplied to
 observation, the server first runs the bounded observation and updates the
 latest resource set, so a client can request a layer/object image in one tool
 call without a separate `arcweft.observe`. `arcweft.observe` accepts the same
-direct-source or launch-profile selection model, keeping profile-selected
-dialogue defaults available to MCP debuggers. `arcweft.observe` and
+direct-source or launch-profile selection model, keeping the profile-owned
+dialogue presentation available to MCP debuggers. `arcweft.observe` and
 `arcweft.capture` use the same native full-viewport,
 layer-crop, and object-crop PNG/raw RGBA capture path exposed by the CLI flag.
 `arcweft.action` dispatches one enabled semantic action from the latest native
@@ -1458,9 +1463,9 @@ Semantic canonicalization must preserve the callee kind. A lexical
 Dialogue-text authoring sugar is preserved by default and normalized only when
 `arcw canonicalize` is requested; `fmt --canonical-rich-text` changes only the
 inferred rich-text tag family described above.
-Dialogue defaults may be authored with dotted assignment paths, but semantic
-canonicalization rewrites them to nested blocks so CLI and LSP edits converge on
-the same structure that semantic defaults and provenance reporting use.
+Dialogue presentation is canonical manifest data. CLI canonicalization preserves
+the selected profile dialogue table and its structured inline-failure policy so
+CLI and LSP edits converge on the same accepted project contract and provenance.
 
 Both edit commands must preserve IDs, source anchors where possible, comments,
 and stable child entity slots. They must never renumber dialogue or choice IDs

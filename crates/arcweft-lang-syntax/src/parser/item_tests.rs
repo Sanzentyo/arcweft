@@ -38,7 +38,6 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         "entry cli @entry.cli.main { goto @flow.main }\n",
         "extern capability audio {}\n",
         "extern mod native\n",
-        "dialogue defaults {}\n",
         "test @test.smoke scenario {}\n",
         "bench @bench.speed {}\n",
         "source data {}\n",
@@ -81,7 +80,6 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             SyntaxKind::EntryDeclarationItem,
             SyntaxKind::ExternCapabilityItem,
             SyntaxKind::ErrorItem,
-            SyntaxKind::ErrorItem,
             SyntaxKind::TestItem,
             SyntaxKind::BenchItem,
             SyntaxKind::ErrorItem,
@@ -97,7 +95,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             .iter()
             .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
             .count(),
-        6,
+        5,
         "{:?}",
         built.diagnostics()
     );

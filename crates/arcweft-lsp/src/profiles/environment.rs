@@ -1,14 +1,11 @@
 use arcweft_character::catalog::CharacterCatalog;
-use arcweft_lang_hir::{
-    lower::lower_document_to_hir,
-    project::{HirProject, HirProjectModule},
+use arcweft_compiler::project::{
+    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompileError, compile_project,
 };
+use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_lang_sema::{
-    callable::PRODUCTION_CALLABLE_LIMITS,
-    env::TypeCheckEnv,
-    registration::{CharacterRegistrar, CharacterRegistrationRequest, RegisteredTypeCheckEnv},
+    callable::PRODUCTION_CALLABLE_LIMITS, env::TypeCheckEnv, registration::RegisteredTypeCheckEnv,
 };
-use arcweft_lang_syntax::parser::parse_source;
 use arcweft_launch::{LaunchProfileSelection, ProfileId};
 use arcweft_project_loader::{
     environment::{ProfileRegistrationLoadRequest, load_profile_registration},
@@ -17,6 +14,8 @@ use arcweft_project_loader::{
         ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, load_profile_topology,
     },
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use std::{collections::BTreeSet, path::Path, sync::Arc};
 use thiserror::Error;
 
@@ -35,13 +34,6 @@ pub(crate) struct RegisteredProfileCandidate {
     topology: LoadedProfileTopology,
 }
 
-pub(crate) struct LoadedEnvironmentRequest<'a> {
-    pub(crate) topology: &'a LoadedProfileTopology,
-    pub(crate) project: &'a Arc<HirProject>,
-    pub(crate) overlays: AcceptedOverlaySet,
-    pub(crate) previous: Option<&'a RegisteredTypeCheckEnv>,
-}
-
 #[derive(Debug, Error)]
 pub(crate) enum RegisterProfileEnvironmentError {
     #[error("failed to load exact launch-profile topology: {0}")]
@@ -50,6 +42,12 @@ pub(crate) enum RegisterProfileEnvironmentError {
     ProjectAssembly(String),
     #[error("failed to load registration facts: {0}")]
     RegistrationLoad(#[source] arcweft_project_loader::environment::ProjectRegistrationLoadError),
+    #[error("project compilation was rejected: {details}")]
+    Compile {
+        details: String,
+        #[source]
+        source: Box<ProjectCompileError>,
+    },
     #[error("project registration was rejected: {0}")]
     Registration(String),
     #[error("registered character catalog was rejected: {0}")]
@@ -104,53 +102,7 @@ pub(crate) fn register_profile_environment(
         arcweft_adapter_context::standard::standard_registry(),
     ))
     .map_err(|error| RegisterProfileEnvironmentError::Topology(Box::new(error)))?;
-    let modules = topology
-        .loaded_project()
-        .sources()
-        .modules()
-        .map(|source| {
-            let document = topology
-                .loaded_project()
-                .module_document(source.module())
-                .ok_or_else(|| {
-                    RegisterProfileEnvironmentError::ProjectAssembly(format!(
-                        "exact topology omitted module document `{}`",
-                        source.module()
-                    ))
-                })?;
-            let parsed = parse_source(document.text());
-            if !parsed.errors().is_empty() {
-                return Err(RegisterProfileEnvironmentError::ProjectAssembly(format!(
-                    "source `{}` has syntax errors: {:?}",
-                    source.path().display(),
-                    parsed.errors()
-                )));
-            }
-            let hir = lower_document_to_hir(document, parsed.typed_tree()).map_err(|errors| {
-                RegisterProfileEnvironmentError::ProjectAssembly(format!(
-                    "HIR lowering failed for `{}`: {errors:?}",
-                    source.path().display()
-                ))
-            })?;
-            HirProjectModule::try_new(source.module().clone(), document.identity().clone(), hir)
-                .map_err(|error| {
-                    RegisterProfileEnvironmentError::ProjectAssembly(error.to_string())
-                })
-        })
-        .collect::<Result<Vec<_>, RegisterProfileEnvironmentError>>()?;
-    let project = Arc::new(
-        HirProject::new(
-            topology.loaded_project().sources().package().id.as_str(),
-            modules,
-        )
-        .map_err(|error| RegisterProfileEnvironmentError::ProjectAssembly(error.to_string()))?,
-    );
-    let (candidate, characters) = register_loaded_environment(LoadedEnvironmentRequest {
-        topology: &topology,
-        project: &project,
-        overlays,
-        previous,
-    })?;
+    let (candidate, characters) = register_loaded_environment(&topology, overlays, previous)?;
     Ok(RegisteredProfileCandidate {
         candidate,
         characters,
@@ -159,17 +111,14 @@ pub(crate) fn register_profile_environment(
 }
 
 pub(crate) fn register_loaded_environment(
-    request: LoadedEnvironmentRequest<'_>,
+    topology: &LoadedProfileTopology,
+    overlays: AcceptedOverlaySet,
+    previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<(AcceptedProfileCandidate, CharacterCatalog), RegisterProfileEnvironmentError> {
-    let LoadedEnvironmentRequest {
-        topology,
-        project,
-        overlays,
-        previous,
-    } = request;
     let registration = load_profile_registration(&ProfileRegistrationLoadRequest::new(topology))
         .map_err(RegisterProfileEnvironmentError::RegistrationLoad)?;
     let (facts, file_documents) = registration.into_parts();
+    let facts = Arc::new(facts);
     let base = topology.adapter().apply_to_env(TypeCheckEnv::standard());
     let mut callable_publications =
         arcweft_adapter_context::standard::callable_publications(&PRODUCTION_CALLABLE_LIMITS)
@@ -200,54 +149,65 @@ pub(crate) fn register_loaded_environment(
                 })?,
         );
     }
-    let world = register_semantic_world(
-        base,
-        project.as_ref(),
-        &facts,
-        previous,
-        callable_publications,
-    )?;
     let characters = registered_character_catalog(&facts)?;
     let source_seeds = accepted_source_seeds(&facts, file_documents);
+    let resource_types = Arc::new(ResourceTypeRegistry::empty());
+    let accepted_launch = AcceptedLaunchProfileInput::new(
+        Arc::clone(topology.manifest()),
+        topology.selected_profile().id().clone(),
+        topology.selected_profile().clone(),
+        topology.source_documents_revision(),
+        Arc::clone(&resource_types),
+    );
+    let context = ProjectCompilationContext::new(
+        Arc::new(base),
+        Arc::clone(&facts),
+        resource_types,
+        previous.cloned().map(Arc::new),
+        None,
+        callable_publications,
+    )
+    .with_accepted_launch_profile(accepted_launch);
+    let compiled = Arc::new(
+        compile_project(
+            topology.loaded_project().sources(),
+            &context,
+            &RuntimePlanLowerOptions::default()
+                .with_package_identity(topology.loaded_project().sources().package().id.as_str())
+                .with_command_policy(RuntimeCommandPolicy::deny_all(
+                    RootExecutionLimits::engine_default(),
+                )),
+        )
+        .map_err(|error| {
+            let details = error
+                .diagnostics()
+                .iter()
+                .map(|diagnostic| diagnostic.diagnostic().message())
+                .collect::<Vec<_>>()
+                .join("; ");
+            RegisterProfileEnvironmentError::Compile {
+                details,
+                source: Box::new(error),
+            }
+        })?,
+    );
+    let world = compiled.registered_world_arc();
     let project = Arc::new(
-        AcceptedProjectSnapshot::try_new(Arc::clone(project), world.as_ref(), source_seeds)
-            .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
+        AcceptedProjectSnapshot::try_new(
+            Arc::new(compiled.hir_project().clone()),
+            world.as_ref(),
+            source_seeds,
+        )
+        .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
     );
     let candidate = AcceptedProfileCandidate::try_new(
         accepted_profile_key(topology)?,
-        world,
+        compiled,
         project,
         overlays,
     )
     .map_err(|error| RegisterProfileEnvironmentError::Candidate(Box::new(error)))?;
     Ok((candidate, characters))
-}
-
-fn register_semantic_world(
-    base: TypeCheckEnv,
-    project: &HirProject,
-    facts: &arcweft_lang_sema::registration::ProjectRegistrationFacts,
-    previous: Option<&RegisteredTypeCheckEnv>,
-    callable_publications: Vec<arcweft_lang_sema::callable::EnvironmentCallablePublication>,
-) -> Result<
-    Arc<arcweft_lang_sema::registration::RegisteredSemanticWorld>,
-    RegisterProfileEnvironmentError,
-> {
-    let request = callable_publications.into_iter().fold(
-        CharacterRegistrationRequest::new(Arc::new(base), project, facts, previous),
-        CharacterRegistrationRequest::with_callable_publication,
-    );
-    CharacterRegistrar::register(request)
-        .map(Arc::new)
-        .map_err(|report| {
-            let details = report
-                .diagnostics()
-                .iter()
-                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
-                .collect::<Vec<_>>()
-                .join("; ");
-            RegisterProfileEnvironmentError::Registration(details)
-        })
 }
 
 fn registered_character_catalog(

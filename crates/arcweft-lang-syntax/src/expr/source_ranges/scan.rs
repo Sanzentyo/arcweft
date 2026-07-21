@@ -8,10 +8,22 @@ pub(super) fn trim_source_with_base(source: &str, base: usize) -> (&str, usize) 
     (&source[..end], base + start_trim)
 }
 
-pub(super) fn absolute_source_slice(source: &str, base: usize, range: TextRange) -> Option<&str> {
-    let start = range.start().checked_sub(base)?;
-    let end = range.end().checked_sub(base)?;
-    source.get(start..end)
+pub(super) fn owned_source_slice(
+    source: &str,
+    base: usize,
+    owner: TextRange,
+    range: TextRange,
+) -> Option<(&str, TextRange)> {
+    let owner_len = owner.end().checked_sub(owner.start())?;
+    let start = range.start().checked_sub(owner.start())?;
+    let end = range.end().checked_sub(owner.start())?;
+    if owner_len != source.len() || end > owner_len {
+        return None;
+    }
+    Some((
+        source.get(start..end)?,
+        TextRange::new(base.checked_add(start)?, base.checked_add(end)?),
+    ))
 }
 
 pub(super) fn delimited_inner(

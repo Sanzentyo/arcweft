@@ -1,0 +1,14 @@
+schema = 1
+default-profile = "main"
+
+[package]
+id = "org.arcweft.samples.native-style-parity"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+entry = "@entry.native_style_parity"
+source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.StylePanel"

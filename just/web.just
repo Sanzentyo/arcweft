@@ -12,7 +12,7 @@ webgpu-parity:
 
 native-style-parity:
     @New-Item -ItemType Directory -Force -Path web\local,target\native-style-parity | Out-Null
-    @cargo run -p arcweft-cli -- bundle samples/native-style-parity/main.arcw --output web/local/native-style-parity.awfb
+    @cargo run -p arcweft-cli -- bundle --manifest-path samples/native-style-parity/arcw.toml --profile main --output web/local/native-style-parity.awfb
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
     @cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle web/local/native-style-parity.awfb --checkpoint default --font web\assets\arcweft-demo.ttf --output target\native-style-parity\native-default.png --frame-report target\native-style-parity\native-default.frame.json --viewport default --visual-time-millis 9000 --target-format rgba8unorm
@@ -23,7 +23,7 @@ native-style-parity:
 
 unified-text-visual-parity:
     @New-Item -ItemType Directory -Force -Path web\local,target\unified-text-visual-parity | Out-Null
-    @cargo run -p arcweft-cli -- bundle samples/unified-text-visual-parity/main.arcw --output web/local/unified-text-visual-parity.awfb
+    @cargo run -p arcweft-cli -- bundle --manifest-path samples/unified-text-visual-parity/arcw.toml --profile main --output web/local/unified-text-visual-parity.awfb
     @cargo build -p arcweft-player-web --target wasm32-unknown-unknown
     @wasm-bindgen --target web --out-dir web\pkg --out-name arcweft_player_web target\wasm32-unknown-unknown\debug\arcweft_player_web.wasm
     @$cases = @([pscustomobject]@{ Name = "vertical-rl"; Advance = 0; Time = 9000; Scope = $true }, [pscustomobject]@{ Name = "vertical-lr"; Advance = 1; Time = 9000; Scope = $true }, [pscustomobject]@{ Name = "jlreq-loose"; Advance = 2; Time = 9000; Scope = $false }, [pscustomobject]@{ Name = "jlreq-strict"; Advance = 3; Time = 9000; Scope = $false }, [pscustomobject]@{ Name = "fx-4000"; Advance = 4; Time = 4000; Scope = $false }, [pscustomobject]@{ Name = "fx-4500"; Advance = 4; Time = 4500; Scope = $true }, [pscustomobject]@{ Name = "reveal-20000"; Advance = 4; Time = 20000; Scope = $false }, [pscustomobject]@{ Name = "reveal-20500"; Advance = 4; Time = 20500; Scope = $false }); foreach ($case in $cases) { $captureArgs = @("+nightly", "-Zscript", "tools\capture-text-parity-frame.rs", "--bundle", "web\local\unified-text-visual-parity.awfb", "--checkpoint", $case.Name, "--font", "web\assets\arcweft-demo.ttf", "--no-additional-fonts", "--additional-font", "web\assets\noto-sans-jp-unified-text-parity.ttf", "--output", "target\unified-text-visual-parity\native-$($case.Name).png", "--frame-report", "target\unified-text-visual-parity\native-$($case.Name).frame.json", "--viewport", "default", "--advance-count", $case.Advance, "--visual-time-millis", $case.Time, "--target-format", "rgba8unorm"); if ($case.Scope) { $captureArgs += @("--scope-capture-prefix", "target\unified-text-visual-parity\native-$($case.Name).body") }; cargo @captureArgs; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
@@ -34,8 +34,8 @@ unified-text-visual-parity:
 
 vertical-writing-style-sample:
     @New-Item -ItemType Directory -Force -Path target\vertical-writing-style | Out-Null
-    @cargo run -p arcweft-cli -- check samples\vertical-writing-style\main.arcw
-    @cargo run -p arcweft-cli -- bundle samples\vertical-writing-style\main.arcw --output target\vertical-writing-style\vertical-writing-style.awfb
+    @cargo run -p arcweft-cli -- check --manifest-path samples\vertical-writing-style\arcw.toml --profile main
+    @cargo run -p arcweft-cli -- bundle --manifest-path samples\vertical-writing-style\arcw.toml --profile main --output target\vertical-writing-style\vertical-writing-style.awfb
     @$cases = @([pscustomobject]@{ Name = "vertical-rl"; Advance = 0 }, [pscustomobject]@{ Name = "vertical-lr"; Advance = 1 }, [pscustomobject]@{ Name = "jlreq-loose"; Advance = 2 }, [pscustomobject]@{ Name = "jlreq-strict"; Advance = 3 }); foreach ($case in $cases) { cargo +nightly -Zscript tools\capture-text-parity-frame.rs --bundle target\vertical-writing-style\vertical-writing-style.awfb --checkpoint $case.Name --font web\assets\arcweft-demo.ttf --no-additional-fonts --additional-font web\assets\noto-sans-jp-unified-text-parity.ttf --output "target\vertical-writing-style\native-$($case.Name).png" --frame-report "target\vertical-writing-style\native-$($case.Name).frame.json" --viewport default --advance-count $case.Advance --visual-time-millis 9000 --target-format rgba8unorm; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
     @Add-Type -AssemblyName System.Drawing; foreach ($name in @("vertical-rl", "vertical-lr", "jlreq-loose", "jlreq-strict")) { $bitmap = [System.Drawing.Bitmap]::FromFile((Resolve-Path "target\vertical-writing-style\native-$name.png")); try { $panel = $bitmap.GetPixel(150, 180); if ($panel.R -ne 69 -or $panel.G -ne 81 -or $panel.B -ne 101 -or $panel.A -ne 255) { throw "$name did not render the authored panel background" } } finally { $bitmap.Dispose() } }
     @$expectedModes = @{ "vertical-rl" = "vertical_rl"; "vertical-lr" = "vertical_lr"; "jlreq-loose" = "vertical_rl"; "jlreq-strict" = "vertical_rl" }; $expectedRuby = @{ "vertical-rl" = 1; "vertical-lr" = 2 }; foreach ($name in $expectedModes.Keys) { $report = Get-Content "target\vertical-writing-style\native-$name.frame.json" -Encoding UTF8 -Raw | ConvertFrom-Json; $speaker = @($report.text | Where-Object { $_.owner.kind -like "view:*" })[0]; $content = @($report.text | Where-Object { $_.owner.kind -like "dialogue:*" })[0]; $modes = @($content.lines | ForEach-Object { $_.writing_mode } | Select-Object -Unique); if ($modes -notcontains $expectedModes[$name]) { throw "$name did not observe writing mode $($expectedModes[$name])" }; if (($speaker.glyphs[0].rgba -join ",") -ne "139,211,255,255" -or $speaker.runs[0].style.font_size_milli -ne 18000 -or $speaker.runs[0].style.font_families -notcontains "Noto Sans JP") { throw "$name did not apply the speaker style part" }; if (($content.glyphs[0].rgba -join ",") -ne "244,248,255,255" -or $content.runs[0].style.font_families -notcontains "Noto Sans JP") { throw "$name did not apply the content style part" }; if ($expectedRuby.ContainsKey($name) -and ($content.ruby_count -ne $expectedRuby[$name] -or @($content.glyphs | Where-Object { $_.orientation -eq "text_combine_upright" }).Count -eq 0)) { throw "$name did not preserve ruby and text-combine-upright observations" } }
@@ -48,8 +48,8 @@ native-style-parity-profile:
 
 native-style-layout-coverage:
     @New-Item -ItemType Directory -Force -Path target\native-style-layout-coverage | Out-Null
-    @cargo run -p arcweft-cli -- check samples\native-style-layout-coverage\main.arcw
-    @cargo run -p arcweft-cli -- bundle samples\native-style-layout-coverage\main.arcw --output target\native-style-layout-coverage\native-style-layout-coverage.awfb
+    @cargo run -p arcweft-cli -- check --manifest-path samples\native-style-layout-coverage\arcw.toml --profile main
+    @cargo run -p arcweft-cli -- bundle --manifest-path samples\native-style-layout-coverage\arcw.toml --profile main --output target\native-style-layout-coverage\native-style-layout-coverage.awfb
 
 reactive-view-style-sample:
     @New-Item -ItemType Directory -Force -Path web\local | Out-Null

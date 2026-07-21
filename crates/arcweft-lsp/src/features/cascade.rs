@@ -1,22 +1,22 @@
-use crate::documents::DocumentSnapshot;
-use arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options;
-use arcweft_lang_hir::lower::lower_to_hir;
+use crate::{documents::DocumentSnapshot, profiles::LspProfile, uri_key::LspUriKey};
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
 use arcweft_lang_syntax::ast::common::TextRange;
+#[cfg(test)]
+use arcweft_lang_syntax::ast::dialogue::LineOptions;
 use arcweft_lang_syntax::ast::dialogue::{
-    DialogueContent, DialogueTag, DialogueTagArg, DialogueToken, LineOptions,
+    DialogueContent, DialogueTag, DialogueTagArg, DialogueToken,
 };
+#[cfg(test)]
 use arcweft_lang_syntax::ast::flow::{
     AwaitWith, FlowItem, ForBlock, IfBlock, IfLetBlock, LoopBlock, ScopeBlock, SourceLocaleBlock,
     Stmt, WhileBlock, WhileLetBlock,
 };
+#[cfg(test)]
 use arcweft_lang_syntax::ast::items::Item;
-use arcweft_lang_syntax::parser::parse_source;
 use arcweft_presentation::rich_text::{RichTextTagFamily, inferred_tag_family};
 use arcweft_render_text::{
     LineDisplaySpec, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use std::ops::Range;
 
 /// Effective dialogue display context at a document byte offset.
@@ -48,89 +48,92 @@ impl EffectiveDialogueCascade {
 }
 
 pub(crate) fn effective_dialogue_cascade_at(
+    profile: &LspProfile,
     document: &DocumentSnapshot,
     offset: usize,
 ) -> Option<EffectiveDialogueCascade> {
-    let parsed = parse_source(document.text());
-    if !parsed.errors().is_empty() {
+    let accepted = profile.accepted_environment()?;
+    let uri = LspUriKey::from_uri(document.uri());
+    let accepted_identity = accepted.project().source_identity_by_uri(&uri)?;
+    let overlay = accepted.overlays().get(&uri)?;
+    if overlay.version() != document.version()
+        || overlay.logical_identity() != accepted_identity
+        || accepted
+            .project()
+            .source(accepted_identity)?
+            .document()
+            .text()
+            != document.text()
+    {
         return None;
     }
-    let selected_path = style_path_at(parsed.typed_tree().items(), offset);
-    let syntax_ranges = collect_syntax_dialogue_ranges(parsed.typed_tree().items());
-    let hir = lower_to_hir(parsed.typed_tree()).ok()?;
-    let dialogues = collect_dialogues(&hir);
-    let dialogue_index = syntax_ranges
-        .iter()
-        .position(|range| range_contains(range, offset))
-        .or_else(|| {
-            dialogues
-                .iter()
-                .position(|dialogue| dialogue_content_contains_offset(dialogue, offset))
-        })?;
-    if dialogue_index >= dialogues.len() {
+    let module = accepted.project().module_key(accepted_identity)?;
+    // Prove this source/module pair is still present in the accepted HIR before
+    // using the compiler-owned linked order that indexes the runtime catalog.
+    accepted.project().hir(&module).ok()?;
+    let dialogues = collect_dialogues(accepted.compiled().linked_hir());
+    let (dialogue_index, dialogue) = dialogues.iter().enumerate().find(|(_, dialogue)| {
+        dialogue.source_module() == Some(module.module())
+            && dialogue_contains_offset(dialogue, offset)
+    })?;
+    let report = accepted.compiled().runtime_plan();
+    if report.line_display_catalog.dialogue_revision()
+        != accepted.compiled().dialogue_profile().revision()
+    {
         return None;
     }
-    let runtime_options = RuntimePlanLowerOptions::default();
-    let report = lower_source_runtime_plan_with_stats_and_options(&hir, &runtime_options).ok()?;
     let spec = report.line_display_catalog.lines().get(dialogue_index)?;
+    let selected_path = hir_dialogue_style_path(dialogue, offset);
     Some(EffectiveDialogueCascade {
         spec: spec.clone(),
         selected_path,
     })
 }
 
-fn collect_syntax_dialogue_ranges(items: &[Item]) -> Vec<TextRange> {
-    let mut ranges = Vec::new();
-    for item in items {
-        if let Item::Flow(flow) = item {
-            collect_syntax_dialogue_ranges_from_flow(flow.body(), &mut ranges);
-        }
-    }
-    ranges
+fn dialogue_contains_offset(dialogue: &HirDialogue, offset: usize) -> bool {
+    dialogue_content_contains_offset(dialogue, offset)
+        || dialogue
+            .speaker_surface()
+            .is_some_and(|surface| range_contains(&surface.source_line_range(), offset))
+        || dialogue
+            .style_range()
+            .is_some_and(|range| range_contains(range, offset))
+        || dialogue
+            .rich_text_range()
+            .is_some_and(|range| range_contains(range, offset))
+        || dialogue
+            .args()
+            .iter()
+            .any(|arg| range_contains(arg.value_range(), offset))
 }
 
-fn collect_syntax_dialogue_ranges_from_flow(items: &[FlowItem], ranges: &mut Vec<TextRange>) {
-    for item in items {
-        match item {
-            FlowItem::SpeakerLine(line) => ranges.push(*line.range()),
-            FlowItem::ContentCall(call) => ranges.push(*call.range()),
-            FlowItem::If(block) => collect_syntax_dialogue_ranges_from_flow(block.body(), ranges),
-            FlowItem::IfLet(block) => {
-                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
-                collect_syntax_dialogue_ranges_from_flow(block.else_body(), ranges);
-            }
-            FlowItem::Match(block) => {
-                for arm in block.arms() {
-                    collect_syntax_dialogue_ranges_from_flow(arm.body(), ranges);
-                }
-            }
-            FlowItem::Loop(block) => collect_syntax_dialogue_ranges_from_flow(block.body(), ranges),
-            FlowItem::While(block) => {
-                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
-            }
-            FlowItem::WhileLet(block) => {
-                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
-            }
-            FlowItem::For(block) => collect_syntax_dialogue_ranges_from_flow(block.body(), ranges),
-            FlowItem::Select(block) => {
-                for branch in block.branches() {
-                    collect_syntax_dialogue_ranges_from_flow(branch.body(), ranges);
-                }
-            }
-            FlowItem::SourceLocale(block) => {
-                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
-            }
-            FlowItem::Scope(block) => {
-                collect_syntax_dialogue_ranges_from_flow(block.body(), ranges);
-            }
-            FlowItem::AwaitWith(await_with) => {
-                for branch in await_with.branches() {
-                    collect_syntax_dialogue_ranges_from_flow(branch.body(), ranges);
-                }
-            }
-            FlowItem::Stmt(_) | FlowItem::Choice(_) | FlowItem::Include(_) | FlowItem::Raw(_) => {}
-        }
+fn hir_dialogue_style_path(dialogue: &HirDialogue, offset: usize) -> Option<String> {
+    if let Some(range) = dialogue.style_range()
+        && range_contains(range, offset)
+    {
+        return dialogue
+            .style_raw()
+            .and_then(|raw| style_value_path_at("style", raw, *range, offset))
+            .or_else(|| Some("style".to_owned()));
     }
+    if let Some(range) = dialogue.rich_text_range()
+        && range_contains(range, offset)
+    {
+        return dialogue
+            .rich_text_raw()
+            .and_then(|raw| style_value_path_at("rich_text", raw, *range, offset))
+            .or_else(|| Some("rich_text".to_owned()));
+    }
+    dialogue
+        .args()
+        .iter()
+        .find_map(|arg| {
+            range_contains(arg.value_range(), offset).then(|| {
+                style_value_path_at(arg.name(), arg.raw_value(), *arg.value_range(), offset)
+                    .unwrap_or_else(|| arg.name().to_owned())
+            })
+        })
+        .or_else(|| inline_content_style_path(dialogue.content(), offset))
 }
 
 fn collect_dialogues(module: &HirModule) -> Vec<&HirDialogue> {
@@ -152,18 +155,15 @@ pub(crate) fn source_range(source: &RichTextSettingSource) -> Option<RichTextSou
     }
 }
 
+#[cfg(test)]
 pub(crate) fn style_path_at(items: &[Item], offset: usize) -> Option<String> {
     items.iter().find_map(|item| match item {
-        Item::DialogueDefaults(defaults) => defaults
-            .assignments()
-            .iter()
-            .find(|assignment| range_contains(assignment.range(), offset))
-            .map(|assignment| assignment.path().dotted()),
         Item::Flow(flow) => style_path_from_flow_items(flow.body(), offset),
         _ => None,
     })
 }
 
+#[cfg(test)]
 fn style_path_from_flow_items(items: &[FlowItem], offset: usize) -> Option<String> {
     items.iter().find_map(|item| match item {
         FlowItem::SpeakerLine(line) => line_options_style_path(line.options(), offset)
@@ -192,62 +192,73 @@ fn style_path_from_flow_items(items: &[FlowItem], offset: usize) -> Option<Strin
     })
 }
 
+#[cfg(test)]
 trait HasFlowBody {
     fn body(&self) -> &[FlowItem];
 }
 
+#[cfg(test)]
 impl HasFlowBody for IfBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for IfLetBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for LoopBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for WhileBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for WhileLetBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for ForBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for SourceLocaleBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 impl HasFlowBody for ScopeBlock {
     fn body(&self) -> &[FlowItem] {
         self.body()
     }
 }
 
+#[cfg(test)]
 fn nested_style_path(block: &impl HasFlowBody, offset: usize) -> Option<String> {
     style_path_from_flow_items(block.body(), offset)
 }
 
+#[cfg(test)]
 fn style_path_from_await_with(await_with: &AwaitWith, offset: usize) -> Option<String> {
     await_with
         .branches()
@@ -255,6 +266,7 @@ fn style_path_from_await_with(await_with: &AwaitWith, offset: usize) -> Option<S
         .find_map(|branch| style_path_from_flow_items(branch.body(), offset))
 }
 
+#[cfg(test)]
 fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
     match stmt {
         Stmt::Let {
@@ -318,12 +330,14 @@ fn style_path_from_stmt(stmt: &Stmt, offset: usize) -> Option<String> {
     }
 }
 
+#[cfg(test)]
 fn style_path_from_stmts(statements: &[Stmt], offset: usize) -> Option<String> {
     statements
         .iter()
         .find_map(|stmt| style_path_from_stmt(stmt, offset))
 }
 
+#[cfg(test)]
 fn line_options_style_path(options: &LineOptions, offset: usize) -> Option<String> {
     if let Some(range) = options.style_range()
         && range_contains(&range, offset)
@@ -519,6 +533,7 @@ fn effect_selector_path(selector: &str, name: &str, _value: &str) -> Option<Stri
     }
 }
 
+#[cfg(test)]
 fn call_option_style_path(source: &str, range: &TextRange, offset: usize) -> Option<String> {
     if !range_contains(range, offset) {
         return None;
@@ -663,6 +678,7 @@ fn split_top_level_range_indices(source: &str, delimiter: char) -> Vec<Range<usi
     ranges
 }
 
+#[cfg(test)]
 fn split_top_level_ranges(source: &str, delimiter: char) -> Vec<(usize, &str)> {
     let mut ranges = Vec::new();
     let mut start = 0usize;

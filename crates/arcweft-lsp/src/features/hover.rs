@@ -14,9 +14,6 @@ use arcweft_lang_sema::{
     resolve::{registry_from_hir, validate_hir_references},
     types::TypeKind,
 };
-use arcweft_lang_syntax::ast::dialogue::{
-    DialogueDefaultAssignOp, DialogueDefaultAssignment, DialogueDefaultsItem,
-};
 use arcweft_lang_syntax::ast::{
     common::TextRange,
     items::{Item, TypedSyntaxTree},
@@ -50,10 +47,7 @@ pub fn hover(
             range: None,
         });
     }
-    if let Some(hover) = dialogue_defaults_hover(document, offset) {
-        return Some(hover);
-    }
-    if let Some(hover) = effective_dialogue_style_hover(document, offset) {
+    if let Some(hover) = effective_dialogue_style_hover(profile, document, offset) {
         return Some(hover);
     }
     let word = word_at_position_range(document, position);
@@ -399,8 +393,12 @@ fn effect_row_has_visible_forbidden_value(row: &EffectRow) -> bool {
     }
 }
 
-fn effective_dialogue_style_hover(document: &DocumentSnapshot, offset: usize) -> Option<Hover> {
-    let cascade = effective_dialogue_cascade_at(document, offset)?;
+fn effective_dialogue_style_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<Hover> {
+    let cascade = effective_dialogue_cascade_at(profile, document, offset)?;
     let contributions = cascade.selected_contributions();
     if contributions.is_empty() {
         return None;
@@ -490,14 +488,13 @@ fn unset_cascade_layers(spec: &LineDisplaySpec) -> Vec<&'static str> {
         .collect()
 }
 
-fn all_cascade_layers() -> [RichTextCascadeLayer; 7] {
+fn all_cascade_layers() -> [RichTextCascadeLayer; 6] {
     [
         RichTextCascadeLayer::InlineSpan,
         RichTextCascadeLayer::LineOptions,
         RichTextCascadeLayer::SpeakerPreset,
         RichTextCascadeLayer::CharacterDialogueStyle,
         RichTextCascadeLayer::DialogueViewStyle,
-        RichTextCascadeLayer::DialogueDefaults,
         RichTextCascadeLayer::EngineDefaults,
     ]
 }
@@ -509,7 +506,6 @@ fn cascade_layer_label(layer: RichTextCascadeLayer) -> &'static str {
         RichTextCascadeLayer::SpeakerPreset => "speaker_preset",
         RichTextCascadeLayer::CharacterDialogueStyle => "character_dialogue_style",
         RichTextCascadeLayer::DialogueViewStyle => "dialogue_view_style",
-        RichTextCascadeLayer::DialogueDefaults => "dialogue_defaults",
         RichTextCascadeLayer::EngineDefaults => "engine_defaults",
     }
 }
@@ -539,56 +535,6 @@ fn setting_source_label(source: &RichTextSettingSource) -> String {
         }
         RichTextSettingSource::EngineDefault { key } => format!("engine_default:{key}"),
     }
-}
-
-fn dialogue_defaults_hover(document: &DocumentSnapshot, offset: usize) -> Option<Hover> {
-    parse_source(document.text())
-        .typed_tree()
-        .items()
-        .iter()
-        .filter_map(|item| match item {
-            Item::DialogueDefaults(defaults) => Some(defaults),
-            _ => None,
-        })
-        .flat_map(DialogueDefaultsItem::assignments)
-        .find(|assignment| {
-            let range = assignment.range();
-            range.start() <= offset && offset <= range.end()
-        })
-        .map(|assignment| dialogue_default_assignment_hover(document, assignment))
-}
-
-fn dialogue_default_assignment_hover(
-    document: &DocumentSnapshot,
-    assignment: &DialogueDefaultAssignment,
-) -> Hover {
-    Hover {
-        contents: HoverContents::Scalar(MarkedString::String(format!(
-            "dialogue default\npath: {}\nop: {}\nvalue: {}",
-            assignment.path().dotted(),
-            dialogue_default_op_label(assignment.op()),
-            document_value_label(document, assignment)
-        ))),
-        range: None,
-    }
-}
-
-fn dialogue_default_op_label(op: DialogueDefaultAssignOp) -> &'static str {
-    match op {
-        DialogueDefaultAssignOp::Replace => "=",
-        DialogueDefaultAssignOp::Append => "+=",
-    }
-}
-
-fn document_value_label(
-    document: &DocumentSnapshot,
-    assignment: &DialogueDefaultAssignment,
-) -> String {
-    document
-        .text()
-        .get(assignment.value_range().as_range())
-        .map_or("", str::trim)
-        .to_owned()
 }
 
 fn word_at_position_range(
@@ -625,59 +571,8 @@ mod tests {
     use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem};
 
     #[test]
-    fn hover_describes_dialogue_default_assignment() {
-        let source = r"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-        }
-    }
-}
-";
-        let mut store = DocumentStore::default();
-        let uri = "file:///story.arcw".parse().expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
-        let offset = source.find("14px").expect("value offset");
-        let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let hover = hover(&profile, &document, position).expect("dialogue default hover");
-
-        match hover.contents {
-            HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("dialogue default"));
-                assert!(text.contains("path: rich_text.ruby.size"));
-                assert!(text.contains("op: ="));
-                assert!(text.contains("value: 14px"));
-            }
-            other => panic!("unexpected hover contents: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hover_describes_effective_dialogue_style_cascade() {
+    fn unaccepted_profile_does_not_synthesize_dialogue_style_cascade() {
         let source = r##"
-pub dialogue defaults {
-    rich_text {
-        text {
-            color = rgb("#101112")
-        }
-        ruby {
-            size = 14px
-        }
-    }
-}
-
 pub character alice {
     dialogue_style {
         rich_text {
@@ -708,25 +603,11 @@ flow opening {
         let offset = source.find("夢").expect("dialogue content offset");
         let position = document.line_index().position_from_byte_offset(offset);
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let hover = hover(&profile, &document, position).expect("effective style hover");
-
-        match hover.contents {
-            HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("effective dialogue style for `alice`"));
-                assert!(text.contains("active contributors:"));
-                assert!(text.contains("rich_text.ruby.size = 14px"));
-                assert!(text.contains("rich_text.text.color = rgb(\"#202122\")"));
-                assert!(text.contains("shadowed contributors:"));
-                assert!(text.contains("rich_text.text.color = rgb(\"#101112\")"));
-                assert!(text.contains("unset layers:"));
-                assert!(text.contains("line_options"));
-            }
-            other => panic!("unexpected hover contents: {other:?}"),
-        }
+        assert!(hover(&profile, &document, position).is_none());
     }
 
     #[test]
-    fn hover_includes_expanded_fx_style_contributions() {
+    fn unaccepted_profile_does_not_locally_lower_fx_for_dialogue_hover() {
         let source = r##"
 #[fx]
 fn red(value: Color = rgb("#a8b5ff")) -> Fx {
@@ -755,20 +636,7 @@ flow opening {
         let offset = source.find("colored").expect("Fx content offset");
         let position = document.line_index().position_from_byte_offset(offset);
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let hover = hover(&profile, &document, position).expect("effective style hover");
-
-        match hover.contents {
-            HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("effective dialogue style for `alice`"));
-                assert!(text.contains("active contributors:"));
-                assert!(
-                    text.contains("rich_text.text.color = #a8b5ff"),
-                    "unexpected Fx hover:\n{text}"
-                );
-                assert!(text.contains("inline_span"));
-            }
-            other => panic!("unexpected hover contents: {other:?}"),
-        }
+        assert!(hover(&profile, &document, position).is_none());
     }
 
     #[test]

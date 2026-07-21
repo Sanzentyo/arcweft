@@ -113,8 +113,8 @@ impl TestProject {
   "format": "arcweft.character",
   "version": 1,
   "character": "character.{local}",
-  "canvas": {{ "width": 8, "height": 8 }},
-  "anchor": {{ "x": 4, "y": 8 }},
+  "canvas": {{ "width": 96, "height": 128 }},
+  "anchor": {{ "x": 48, "y": 128 }},
   "default_look": "normal",
   "parts": [{{
     "id": "body",
@@ -122,7 +122,7 @@ impl TestProject {
     "variants": [{{
       "id": "smile",
       "asset": "layers/{local}-body.png",
-      "rect": {{ "x": 0, "y": 0, "width": 8, "height": 8 }},
+      "rect": {{ "x": 0, "y": 0, "width": 96, "height": 128 }},
       "opacity": 255,
       "blend": "normal",
       "clipping": false
@@ -135,6 +135,20 @@ impl TestProject {
 }}"#
             ),
         );
+        self.write_bytes(
+            &format!("assets/{local}.awchar/layers/{local}-body.png"),
+            include_bytes!(
+                "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/body--default.png"
+            ),
+        );
+    }
+
+    fn write_bytes(&self, path: &str, contents: &[u8]) {
+        let path = self.path(path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent");
+        }
+        fs::write(path, contents).expect("write");
     }
 }
 

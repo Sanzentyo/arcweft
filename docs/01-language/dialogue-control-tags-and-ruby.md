@@ -369,7 +369,7 @@ inline [.ruby_over ruby_size=... ruby_gap=...]
   -> line / speaker preset rich_text.ruby
   -> character dialogue_style.rich_text.ruby
   -> authored dialogue View style rich_text.ruby
-  -> selected dialogue defaults rich_text.ruby
+  -> selected profile dialogue Style rich_text.ruby
   -> engine defaults
 ```
 
@@ -434,7 +434,7 @@ Built-in implementations include common scalar types, `String`, `LocalizedText`,
 ```
 
 Inline function calls inside `#[...]` must declare how interpolation failures are
-handled, unless the line, speaker preset, character state, or dialogue defaults
+ handled, unless the line, speaker preset, character state, or selected profile
 supplies an inline failure policy. Canonical values use the `InlineFailure` enum
 namespace. Contextual shorthand such as `.fail` and `.discard` is valid only
 where an `InlineFailure` value is expected. For ordinary display text, prefer a
@@ -648,19 +648,8 @@ pub character alice {
 }
 ```
 
-Built-in read/unread policy:
-
-```arcw
-pub dialogue defaults {
-    read_state_style = builtin.read_state_color(
-        unread = rgb("#ffffff"),
-        read = rgb("#b8b8c0"),
-    )
-}
-```
-
-Custom read-state presentation belongs in dialogue defaults, character-local
-style policy, or the selected dialogue View rather than a global callback.
+Custom read-state presentation belongs in the selected dialogue View and its
+Style, or in character-local style policy, rather than a global callback.
 
 ---
 

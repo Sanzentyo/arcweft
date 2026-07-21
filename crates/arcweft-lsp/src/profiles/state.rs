@@ -8,6 +8,7 @@ use std::{
     },
 };
 
+use arcweft_compiler::project::CompiledProject;
 use arcweft_lang_hir::symbol::{ProjectSymbolRevision, ProjectSymbolWorldId};
 use arcweft_lang_sema::character_definition::{
     CharacterDefinitionQueryResult, CharacterDefinitionRequestBudget,
@@ -68,6 +69,7 @@ pub(crate) enum AcceptedOverlaySetError {
 #[derive(Debug)]
 pub struct AcceptedProfileCandidate {
     profile: AcceptedProfileKey,
+    compiled: Arc<CompiledProject>,
     world: Arc<RegisteredSemanticWorld>,
     project: Arc<AcceptedProjectSnapshot>,
     overlays: AcceptedOverlaySet,
@@ -91,6 +93,8 @@ pub(crate) enum AcceptedProfileCandidateError {
         expected: SourceSetRevision,
         actual: SourceSetRevision,
     },
+    #[error("candidate compiled HIR differs from the accepted project snapshot")]
+    CompiledHirMismatch,
     #[error("candidate overlay URI is absent from accepted sources")]
     UnknownOverlayUri { uri: LspUriKey },
     #[error("candidate overlay identity differs from accepted URI identity")]
@@ -171,10 +175,14 @@ impl AcceptedProfileCandidate {
     )]
     pub(crate) fn try_new(
         profile: AcceptedProfileKey,
-        world: Arc<RegisteredSemanticWorld>,
+        compiled: Arc<CompiledProject>,
         project: Arc<AcceptedProjectSnapshot>,
         overlays: AcceptedOverlaySet,
     ) -> Result<Self, AcceptedProfileCandidateError> {
+        if compiled.hir_project() != project.hir_project().as_ref() {
+            return Err(AcceptedProfileCandidateError::CompiledHirMismatch);
+        }
+        let world = compiled.registered_world_arc();
         let symbols = world.symbols();
         let index = world.character_definition_index();
         let sources = project.sources();
@@ -212,6 +220,7 @@ impl AcceptedProfileCandidate {
         }
         Ok(Self {
             profile,
+            compiled,
             world,
             project,
             overlays,
@@ -228,7 +237,7 @@ impl AcceptedProfileCandidate {
     ) -> Result<Self, AcceptedProfileCandidateError> {
         Self::try_new(
             current.profile.clone(),
-            Arc::clone(&current.world),
+            Arc::clone(&current.compiled),
             Arc::clone(&current.project),
             overlays,
         )
@@ -291,6 +300,7 @@ pub enum ProfileEnvironmentLifecycle {
 pub struct AcceptedProfileEnvironment {
     generation: AcceptedEnvironmentGeneration,
     profile: AcceptedProfileKey,
+    compiled: Arc<CompiledProject>,
     world: Arc<RegisteredSemanticWorld>,
     project: Arc<AcceptedProjectSnapshot>,
     overlays: AcceptedOverlaySet,
@@ -304,6 +314,10 @@ impl AcceptedProfileEnvironment {
 
     pub const fn world(&self) -> &Arc<RegisteredSemanticWorld> {
         &self.world
+    }
+
+    pub(crate) const fn compiled(&self) -> &Arc<CompiledProject> {
+        &self.compiled
     }
 
     pub const fn profile(&self) -> &AcceptedProfileKey {
@@ -522,6 +536,7 @@ impl LspProfileState {
         before_swap(accepted.as_ref());
         let AcceptedProfileCandidate {
             profile,
+            compiled,
             world,
             project,
             overlays,
@@ -529,6 +544,7 @@ impl LspProfileState {
         let candidate = Arc::new(AcceptedProfileEnvironment {
             generation: AcceptedEnvironmentGeneration(generation),
             profile,
+            compiled,
             world,
             project,
             overlays,

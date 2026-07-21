@@ -2,20 +2,27 @@
 
 This example shows Arcweft's flow-integrated dialogue surface. There is no separate `script` item: concise dialogue and typed logic coexist inside `flow`. Ordinary lines use `character:` sugar, while complex lines use the canonical `character.say()[...]` form.
 
+The paired project manifest owns the dialogue presentation used by this module:
+
+```toml
+[profiles.game]
+kind = "game"
+source = "src/opening.arcw"
+
+[profiles.game.dialogue]
+view = "view.main_dialogue"
+style = "style.main_dialogue"
+
+[profiles.game.dialogue.inline-failure]
+kind = "fail_line"
+```
+
 ```arcw
 mod game.routes.opening
 
 use game.prelude.*
 use game.characters.{alice}
 use tag game.fx.{flash}
-
-pub dialogue defaults {
-    view = @view.MainDialogue
-    hooks {
-        before_text_style += @hook.dialogue.read_state_color
-        before_voice_resolve += @hook.dialogue.auto_voice_key
-    }
-}
 
 preload next @flow.alice_intro {
     alice.prefetch(flow=@flow.alice_intro, lines=6)

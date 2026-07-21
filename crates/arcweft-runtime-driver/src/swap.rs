@@ -22,6 +22,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::source::SourcePlan;
 use arcweft_core::stream::StreamPlan;
+use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_render_text::LineDisplayCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -57,6 +58,7 @@ pub struct CodeSlot {
 pub struct ProgramGeneration {
     pub id: GenerationId,
     pub content_root: BundleDigest,
+    pub dialogue_revision: DialogueProfileRevision,
     pub bytecode_abi: u32,
     pub code_slots: BTreeMap<CodeSlotId, CodeSlot>,
     pub state_layouts: BTreeMap<StateId, TypeLayoutHash>,
@@ -179,10 +181,15 @@ impl Default for RuntimeSignature {
 }
 
 impl ProgramGeneration {
-    pub fn empty(id: GenerationId, content_root: BundleDigest) -> Self {
+    pub fn empty(
+        id: GenerationId,
+        content_root: BundleDigest,
+        dialogue_revision: DialogueProfileRevision,
+    ) -> Self {
         Self {
             id,
             content_root,
+            dialogue_revision,
             bytecode_abi: BYTECODE_ABI_VERSION,
             code_slots: BTreeMap::new(),
             state_layouts: BTreeMap::new(),
@@ -211,6 +218,7 @@ impl ProgramGeneration {
                 product_awbc.program(),
                 content_root(bundle)?,
                 adapter_requirements(bundle)?,
+                bundle.display.dialogue_revision().clone(),
             );
         }
         bundle
@@ -222,6 +230,7 @@ impl ProgramGeneration {
             &bundle.bytecode.program,
             content_root(bundle)?,
             adapter_requirements(bundle)?,
+            bundle.display.dialogue_revision().clone(),
         )
     }
 
@@ -230,11 +239,13 @@ impl ProgramGeneration {
         bytecode: &BytecodeProgram,
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
+        dialogue_revision: DialogueProfileRevision,
     ) -> Result<Self, GenerationBuildError> {
         let (state_layouts, entry_compatibility) = bytecode_entry_compatibility(bytecode);
         Ok(Self {
             id,
             content_root,
+            dialogue_revision,
             bytecode_abi: bytecode.abi_version,
             code_slots: code_slots(bytecode)?,
             state_layouts,
@@ -248,11 +259,13 @@ impl ProgramGeneration {
         program: &AwbcProgram,
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
+        dialogue_revision: DialogueProfileRevision,
     ) -> Result<Self, GenerationBuildError> {
         let (state_layouts, entry_compatibility) = awbc_entry_compatibility(program)?;
         Ok(Self {
             id,
             content_root,
+            dialogue_revision,
             bytecode_abi: program.header.abi_version,
             code_slots: awbc_code_slots(program)?,
             state_layouts,
@@ -671,7 +684,13 @@ pub fn classify_swap(active: &ProgramGeneration, next: &ProgramGeneration) -> Sw
         return SwapCompatibility::RestartRequired;
     }
     if active.code_slots == next.code_slots {
-        return SwapCompatibility::ContentOnly;
+        return if active.dialogue_revision == next.dialogue_revision {
+            SwapCompatibility::ContentOnly
+        } else {
+            // A different accepted profile/product generation may not retain
+            // dialogue frames or mounted Style state from the old revision.
+            SwapCompatibility::CodeCompatible
+        };
     }
     let signatures_compatible = active.code_slots.iter().all(|(id, active_slot)| {
         next.code_slots

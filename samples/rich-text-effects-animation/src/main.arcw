@@ -8,6 +8,19 @@ pub character lumi {
                 color = rgb("#eaf6ff")
                 size = 32px
             }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 12px
+                gap = 0px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
     }
 }
@@ -21,6 +34,19 @@ pub character iris {
                 font = "Meiryo"
                 color = rgb("#ffe6f1")
                 size = 30px
+            }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 12px
+                gap = 0px
+                overhang = 3px
+                collision_gap = 2px
             }
         }
     }
@@ -57,23 +83,6 @@ pub view AnimationPanel(dialogue: DialogueView) {
     }
 }
 
-pub dialogue defaults {
-    view = @view.AnimationPanel
-    rich_text {
-        layout {
-            writing_mode = horizontal_tb
-            jlreq = normal
-            vertical_latin = mixed
-        }
-        ruby {
-            size = 12px
-            gap = 0px
-            overhang = 3px
-            collision_gap = 2px
-        }
-    }
-}
-
 #[fx]
 fn breath_orbit(
     amplitude: Length = 5px,
@@ -102,37 +111,13 @@ fn source_drift(
     )
 }
 
-#[fx]
-fn source_glow(
-    amount: f32 = 0.9,
-    color: Color = rgb("#6040ff"),
-) -> Fx {
-    Fx.shader(
-        @shader.source_glow,
-        stage = .glyph_color,
-        uniforms = { amount, color },
-    )
-}
-
-#[fx]
-fn source_post_glow(
-    amount: f32 = 0.65,
-    color: Color = rgb("#40b0ff"),
-) -> Fx {
-    Fx.shader(
-        @shader.source_glow,
-        stage = .post_process,
-        uniforms = { amount, color },
-    )
-}
-
 entry cli @entry.rich_text_effects_animation {
     goto @flow.rich_text_effects_animation
 }
 
 flow rich_text_effects_animation {
     lumi.say(id=@say.effects.shader, voice=auto, look=.focus)[
-        Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect]、[effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm glow shader[/color][/effect]、[fx source_glow(amount=0.9, color=rgb("#6040ff"))]source shader[/fx]、[fx source_post_glow(amount=0.65, color=rgb("#40b0ff"))]source post shader[/fx]、[effect .shader id=soft_glow amount=1 phase=glyph_color]glyph color shader[/effect]、[effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post process shader[/effect] と、[.sparkle amp=1.5px seed=shader-demo]sparkle[/]、[.sparkle phase=glyph_color seed=color-demo]色sparkle[/] を同時に表示する。[p]
+        Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect]、[effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm glow shader[/color][/effect]、[effect .shader id=soft_glow amount=1 phase=glyph_color]glyph color shader[/effect]、[effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post process shader[/effect] と、[.sparkle amp=1.5px seed=shader-demo]sparkle[/]、[.sparkle phase=glyph_color seed=color-demo]色sparkle[/] を同時に表示する。[p]
     ]
 
     lumi.say(id=@say.effects.post, voice=auto, look=.focus)[
@@ -144,7 +129,7 @@ flow rich_text_effects_animation {
     ]
 
     lumi.say(id=@say.effects.reveal, voice=auto, look=.smile)[
-        Reveal: [.typewriter cps=5 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask]遅れて一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo]重ね掛けtypewriter[/][/][/][/]。[r]さらに [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/][/]ABC2026[/font][/]。[p]
+        Reveal: [.typewriter cps=5 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask]遅れて一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo]重ね掛けtypewriter[/][/][/][/]。[r]さらに [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/]ABC2026[/font][/]。[p]
     ]
 
     return "rich_text_effects_animation"

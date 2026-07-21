@@ -25,7 +25,7 @@ fn character_definition_cache_hit_replays_identical_shared_work() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, uri.clone(), source);
+    open(&mut session, &uri, source);
 
     let document = session.documents.get(&uri).expect("open source");
     let profile = session.profile_for_uri(&uri);
@@ -111,7 +111,7 @@ fn character_owner_definition_returns_exact_manifest_location_link() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, uri.clone(), source);
+    open(&mut session, &uri, source);
 
     let response = definition_request(&mut session, uri, position_of(source, "akane"));
     assert!(response.error.is_none(), "{:?}", response.error);
@@ -150,7 +150,7 @@ fn character_definition_rejects_changed_target_without_partial_location() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, uri.clone(), source);
+    open(&mut session, &uri, source);
     fs::write(
         project.path("assets/akane.awchar/character.awchar.json"),
         manifest.replace("character.akane", "character.aoi"),
@@ -180,7 +180,7 @@ fn stale_target_request_schedules_a_complete_profile_rebuild() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, uri.clone(), source);
+    open(&mut session, &uri, source);
     let before = session
         .profile_for_uri(&uri)
         .accepted_environment()
@@ -229,7 +229,7 @@ fn valid_open_manifest_overlay_rebuilds_one_complete_definition_generation() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, source_uri.clone(), source);
+    open(&mut session, &source_uri, source);
     let before = session
         .profile_for_uri(&source_uri)
         .accepted_environment()
@@ -237,7 +237,7 @@ fn valid_open_manifest_overlay_rebuilds_one_complete_definition_generation() {
         .generation();
 
     let overlay_manifest = format!("\n\n{disk_manifest}");
-    open(&mut session, manifest_uri.clone(), &overlay_manifest);
+    open(&mut session, &manifest_uri, &overlay_manifest);
     let after = session
         .profile_for_uri(&source_uri)
         .accepted_environment()
@@ -274,8 +274,8 @@ fn invalid_manifest_overlay_preserves_the_last_accepted_generation() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, source_uri.clone(), source);
-    open(&mut session, manifest_uri.clone(), disk_manifest);
+    open(&mut session, &source_uri, source);
+    open(&mut session, &manifest_uri, disk_manifest);
     let accepted = session
         .profile_for_uri(&source_uri)
         .accepted_environment()
@@ -312,9 +312,9 @@ fn closing_manifest_overlay_rebuilds_remaining_profiles_from_disk() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, source_uri.clone(), source);
+    open(&mut session, &source_uri, source);
     let overlay_manifest = format!("\n\n{disk_manifest}");
-    open(&mut session, manifest_uri.clone(), &overlay_manifest);
+    open(&mut session, &manifest_uri, &overlay_manifest);
     let overlay_generation = session
         .profile_for_uri(&source_uri)
         .accepted_environment()
@@ -355,7 +355,7 @@ fn globally_unique_local_member_resolves_through_typed_member_index() {
         &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
             .with_profile_id("game"),
     );
-    open(&mut session, uri.clone(), source);
+    open(&mut session, &uri, source);
 
     let response = definition_request(&mut session, uri, position_of(source, "normal"));
     assert!(response.error.is_none(), "{:?}", response.error);
@@ -388,13 +388,13 @@ fn definition_request(session: &mut ArcweftLspSession, uri: Uri, position: Posit
     })
 }
 
-fn open(session: &mut ArcweftLspSession, uri: Uri, source: &str) {
+fn open(session: &mut ArcweftLspSession, uri: &Uri, source: &str) {
     session
         .handle_notification(Notification::new(
             DidOpenTextDocument::METHOD.to_owned(),
             DidOpenTextDocumentParams {
                 text_document: TextDocumentItem {
-                    uri,
+                    uri: uri.clone(),
                     language_id: "arcweft".to_owned(),
                     version: 1,
                     text: source.to_owned(),
@@ -402,6 +402,11 @@ fn open(session: &mut ArcweftLspSession, uri: Uri, source: &str) {
             },
         ))
         .expect("open source");
+    assert!(
+        session.profile_for_uri(uri).diagnostics().is_empty(),
+        "profile diagnostics: {:?}",
+        session.profile_for_uri(uri).diagnostics(),
+    );
 }
 
 fn change(session: &mut ArcweftLspSession, uri: Uri, version: i32, source: &str) {
@@ -467,8 +472,8 @@ fn character_manifest() -> &'static str {
   "format": "arcweft.character",
   "version": 1,
   "character": "character.akane",
-  "canvas": { "width": 8, "height": 8 },
-  "anchor": { "x": 4, "y": 8 },
+  "canvas": { "width": 96, "height": 128 },
+  "anchor": { "x": 48, "y": 128 },
   "default_look": "normal",
   "parts": [{
     "id": "body",
@@ -476,7 +481,7 @@ fn character_manifest() -> &'static str {
     "variants": [{
       "id": "default",
       "asset": "layers/body.png",
-      "rect": { "x": 0, "y": 0, "width": 8, "height": 8 },
+      "rect": { "x": 0, "y": 0, "width": 96, "height": 128 },
       "opacity": 255,
       "blend": "normal",
       "clipping": false
@@ -532,9 +537,23 @@ compression = "none"
         );
         self.write("src/main.arcw", source);
         self.write("assets/akane.awchar/character.awchar.json", manifest);
+        self.write_bytes(
+            "assets/akane.awchar/layers/body.png",
+            include_bytes!(
+                "../../../arcweft-character/tests/fixtures/zundamon.awchar/layers/body--default.png"
+            ),
+        );
     }
 
     fn write(&self, relative: &str, contents: &str) {
+        let path = self.path(relative);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("fixture parent");
+        }
+        fs::write(path, contents).expect("fixture write");
+    }
+
+    fn write_bytes(&self, relative: &str, contents: &[u8]) {
         let path = self.path(relative);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("fixture parent");

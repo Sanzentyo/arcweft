@@ -11,6 +11,7 @@ use arcweft_core::{
     time::LogicalDuration,
     value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue},
 };
+use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_lang_hir::{
     lower::{lower_document_to_hir, lower_to_hir},
     model::HirModule,
@@ -26,16 +27,74 @@ use arcweft_lang_syntax::{
     expr::{Expr, parse_expr},
     parser::parse_source,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::{
     assertion::RuntimeAssertionBuildProfile,
     errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext, RuntimePlanLowerErrorKind},
     flow::{
-        RuntimePlanLowerOptions, lower_runtime_plan, lower_runtime_plan_with_options,
-        lower_runtime_plan_with_stats,
+        RuntimePlanLowerOptions, lower_runtime_plan as lower_runtime_plan_admitted,
+        lower_runtime_plan_with_stats as lower_runtime_plan_with_stats_admitted,
     },
     line_task::lower_line_task_groups,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn admitted_options(
+    base: RuntimePlanLowerOptions,
+) -> arcweft_runtime_plan::flow::AdmittedRuntimePlanLowerOptions {
+    base.with_dialogue_profile(
+        DialoguePresentationProfile::engine_default(),
+        test_dialogue_revision(),
+    )
+}
+
+fn lower_runtime_plan(
+    hir: &HirModule,
+) -> Result<arcweft_core::plan::RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>>
+{
+    lower_runtime_plan_admitted(hir, &admitted_options(RuntimePlanLowerOptions::default()))
+}
+
+fn lower_runtime_plan_with_options(
+    hir: &HirModule,
+    options: &RuntimePlanLowerOptions,
+) -> Result<arcweft_core::plan::RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>>
+{
+    lower_runtime_plan_admitted(hir, &admitted_options(options.clone()))
+}
+
+fn lower_runtime_plan_with_stats(
+    hir: &HirModule,
+) -> Result<
+    arcweft_runtime_plan::flow::RuntimePlanLowerReport,
+    Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>,
+> {
+    lower_runtime_plan_with_stats_admitted(
+        hir,
+        &admitted_options(RuntimePlanLowerOptions::default()),
+    )
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-plan-integration-test-revision").expect("source ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("source document");
+    let sources =
+        SourceSetRevision::try_for_identities([source.identity()]).expect("source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-plan-integration-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x29; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn parse_ok(source: impl Into<String>) -> TypedSyntaxTree {
     let parsed = parse_source(source);
@@ -643,7 +702,7 @@ fn lowers_dialogue_result_let_and_bound_timed_cue() {
     let tree = parse_ok(
         r#"
 flow @flow.line_handles line_handles {
-    let (_, cue) = alice.say(voice=auto)[聞いて。[p]]
+    let (_, cue) = alice(voice=auto)[聞いて。[p]]
     with:
         let actor = alice.stage.acquire(scope=line)
         let cue = at(0.42s):

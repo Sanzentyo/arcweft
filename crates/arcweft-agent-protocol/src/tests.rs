@@ -33,6 +33,7 @@ use crate::view::{
     AgentScrollRegionRole, AgentScrollViewportPart, AgentViewTree,
 };
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_layout::{
     CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
     CaptureRendererKind, CaptureScope, ContentRect, LayoutCoordinateSpace, LayoutPoint, LayoutRect,
@@ -43,6 +44,9 @@ use arcweft_render_text::{
     RichTextParam, RichTextPresentation, RichTextRange, RichTextSettingSource,
     RichTextStyleContribution, RichTextTextSource,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::collections::BTreeMap;
 
 fn test_capture_refs() -> AgentObjectCaptureRefs {
@@ -103,11 +107,13 @@ fn test_line_display_frame() -> LineDisplayFrame {
         callee: "alice".to_owned(),
         speaker_label: None,
         text: "Hello".to_owned(),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: vec![RichTextStyleContribution {
             path: "rich_text.ruby.size".to_owned(),
-            layer: RichTextCascadeLayer::DialogueDefaults,
+            layer: RichTextCascadeLayer::EngineDefaults,
             source: RichTextSettingSource::EngineDefault {
                 key: "dialogue.rich_text.ruby.size".to_owned(),
             },
@@ -123,6 +129,25 @@ fn test_line_display_frame() -> LineDisplayFrame {
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
     }
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("agent-protocol-test-revision").expect("source ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("source document");
+    let sources =
+        SourceSetRevision::try_for_identities([source.identity()]).expect("source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.agent-protocol-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x4d; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn test_raw_mask_image_resource() -> AgentImageResource {
@@ -566,7 +591,7 @@ fn observation_report_serializes_stable_snake_case_enums() {
     );
     assert_eq!(
         json["objects"][0]["content"]["frame"]["style_contributions"][0]["layer"],
-        "dialogue_defaults"
+        "engine_defaults"
     );
     assert_eq!(
         json["objects"][0]["rich_text_ref"]["hit_regions"][0]["kind"],

@@ -211,7 +211,6 @@ impl Parser<'_> {
                         | CstTopLevelItemKind::TypeAlias
                         | CstTopLevelItemKind::EntityDecl
                         | CstTopLevelItemKind::ExternCapability
-                        | CstTopLevelItemKind::DialogueDefaults
                         | CstTopLevelItemKind::Proof
                         | CstTopLevelItemKind::Source
                         | CstTopLevelItemKind::Style
@@ -241,9 +240,6 @@ impl Parser<'_> {
                 .parse_extern_capability_item()
                 .map(Item::ExternCapability),
             CstTopLevelItemKind::ExternMod => self.parse_extern_mod_item().map(Item::ExternMod),
-            CstTopLevelItemKind::DialogueDefaults => {
-                self.parse_dialogue_defaults().map(Item::DialogueDefaults)
-            }
             CstTopLevelItemKind::Proof => self.parse_proof_item().map(Item::Proof),
             CstTopLevelItemKind::Test => self.parse_test_item().map(Item::Test),
             CstTopLevelItemKind::Bench => self.parse_bench_item().map(Item::Bench),

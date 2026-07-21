@@ -180,7 +180,7 @@ fn agent_script_native_project_index_path() -> PathBuf {
 }
 
 fn rich_text_showcase_path() -> PathBuf {
-    workspace_path("samples/rich-text-showcase.arcw")
+    workspace_path("samples/rich-text-showcase/src/main.arcw")
 }
 
 fn image_animation_sample_path() -> PathBuf {

@@ -606,7 +606,9 @@ impl<'a> LineDisplayStage<'a> {
             speaker_label: self.frame.speaker_label.clone(),
             text: self.text().to_owned(),
             base_styles: self.frame.base_styles.clone(),
-            default_inline_failure_policy: self.frame.default_inline_failure_policy.clone(),
+            profile_style: self.frame.profile_style.clone(),
+            dialogue_revision: self.frame.dialogue_revision.clone(),
+            inline_failure: self.frame.inline_failure.clone(),
             style_contributions: self.frame.style_contributions.clone(),
             nodes: Vec::new(),
             display_map: RichTextDisplayMap {
@@ -775,6 +777,30 @@ mod tests {
         RuntimeLineContext,
     };
     use arcweft_core::plan::RuntimeLineId;
+    use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+    fn test_dialogue_revision() -> DialogueProfileRevision {
+        let manifest = SourceDocument::try_new(
+            SourceDocumentId::try_new("render-text-playback-test").expect("document ID"),
+            SourceName::Memory,
+            "test manifest",
+        )
+        .expect("test document");
+        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
+            .expect("test source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            manifest.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.render-text-playback-test")
+                .expect("View program ID"),
+            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
+    }
 
     fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
         LineDisplaySpec {
@@ -783,11 +809,13 @@ mod tests {
             speaker_label: None,
             text_key: None,
             view: arcweft_view::ViewId::try_new("view.playback.test").unwrap(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
             voice: None,
             look: None,
             style: None,
             base_styles: Vec::new(),
-            default_inline_failure_policy: None,
+            inline_failure: InlineFailurePolicy::FailLine,
             style_contributions: Vec::new(),
             args: Vec::new(),
             content: RichTextDocument::new(nodes),
@@ -1014,7 +1042,9 @@ mod tests {
             speaker_label: None,
             text: String::new(),
             base_styles: Vec::new(),
-            default_inline_failure_policy: None,
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            inline_failure: InlineFailurePolicy::FailLine,
             style_contributions: Vec::new(),
             nodes: Vec::new(),
             display_map: RichTextDisplayMap::default(),

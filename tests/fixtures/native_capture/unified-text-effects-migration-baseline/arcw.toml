@@ -1,0 +1,14 @@
+schema = 1
+default-profile = "main"
+
+[package]
+id = "org.arcweft.fixtures.native-capture.unified-text-effects-migration-baseline"
+version = "0.1.0"
+
+[profiles.main]
+kind = "cli"
+entry = "@entry.unified_text_effects_migration_baseline"
+source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.MigrationEffectsPanel"

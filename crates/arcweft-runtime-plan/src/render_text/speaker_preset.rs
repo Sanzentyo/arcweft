@@ -8,7 +8,7 @@ use arcweft_render_text::{
 
 use crate::labels::expr_label;
 
-use super::defaults::{
+use super::dialogue_context::{
     DEFAULT_DIALOGUE_VIEW, DialogueDisplayDefaults, DialogueSpeakerPreset, DialogueStyleDefaults,
 };
 use super::helpers::entity_ref_label;
@@ -150,13 +150,7 @@ fn push_speaker_preset_chain<'a>(
 }
 
 fn preset_names(callee: &str) -> impl Iterator<Item = &str> {
-    std::iter::once(callee.trim()).chain(
-        callee
-            .trim()
-            .strip_suffix(".say")
-            .into_iter()
-            .map(str::trim),
-    )
+    std::iter::once(callee.trim())
 }
 
 pub(crate) fn effective_dialogue_view(

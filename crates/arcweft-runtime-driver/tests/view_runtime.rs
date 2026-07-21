@@ -15,12 +15,14 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
 use arcweft_render_text::{
     LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode, RuntimeLineContext,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::dialogue::{
     DialoguePageIndex, DialoguePresentationOperation, DialoguePresentationStore,
     DialogueViewDefinition, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
@@ -37,7 +39,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewTextValue, SavedViewOwner, ViewOwnerEvidence, ViewProgramReplacementError,
     ViewProgramReplacementOutcome,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::{
     AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
     DialogueStageIndex, EventKind, RustViewId, ViewDescriptor, ViewId, ViewImplementation,
@@ -48,6 +50,26 @@ use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use std::collections::BTreeSet;
 
 struct BundleViewRuntime;
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-view-runtime-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-view-runtime-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 impl BundleViewRuntime {
     fn try_new(
@@ -2232,11 +2254,13 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         speaker_label: None,
         text_key: None,
         view: view_id("view.TypedText"),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: display_document,
@@ -2330,7 +2354,8 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
         .clone()
         .resolve_frame(&RuntimeLineContext::new(Vec::new()))
         .unwrap();
-    let display = LineDisplayCatalog::new(vec![display_spec]);
+    let display = LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
+        .expect("test display catalog is revision-consistent");
     let dialogue_view = view_id("view.Dialogue");
     let first_handle = PresentationHandleId::try_new("dialogue.40").unwrap();
     let first_inputs = [DialogueViewInput {
@@ -2412,7 +2437,8 @@ fn replacement_cannot_remove_or_retype_a_live_dialogue_view_owner() {
     let mut runtime = AcceptedBundleViewRuntime::try_new_with_dialogue_display(
         validated_product(program.clone()),
         Some(text),
-        &LineDisplayCatalog::new(vec![display_spec]),
+        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
+            .expect("test display catalog is revision-consistent"),
     )
     .expect("dialogue View runtime builds");
     let dialogue_view = view_id("view.Dialogue");
@@ -2537,11 +2563,13 @@ fn typed_dialogue_display_spec() -> LineDisplaySpec {
         speaker_label: Some("Hero".to_owned()),
         text_key: None,
         view: view_id("view.Dialogue"),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![RichTextNode::Ruby {
@@ -2577,11 +2605,13 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
         speaker_label: Some("Narrator".to_owned()),
         text_key: None,
         view: view_id(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![RichTextNode::Text {
@@ -2608,7 +2638,8 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
         Some(arcweft_bundle::standard_view::dialogue_program()),
         Some(arcweft_bundle::standard_view::dialogue_text()),
         Some(&arcweft_bundle::standard_view::dialogue_style()),
-        &LineDisplayCatalog::new(vec![display_spec]),
+        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
+            .expect("test display catalog is revision-consistent"),
     )
     .unwrap();
     let output = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);

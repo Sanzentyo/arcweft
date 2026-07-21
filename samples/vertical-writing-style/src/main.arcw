@@ -1,6 +1,16 @@
 pub character vertical_guide {
     display = "Vertical Writing"
     default_voice = auto
+    dialogue_style {
+        rich_text {
+            ruby {
+                size = 14px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
+        }
+    }
 }
 
 pub style vertical_writing_showcase {
@@ -43,18 +53,6 @@ pub view VerticalWritingShowcase(dialogue: DialogueView) {
     }
         .part(vertical_writing_panel)
         .style(@style.vertical_writing_showcase)
-}
-
-pub dialogue defaults {
-    view = @view.VerticalWritingShowcase
-    rich_text {
-        ruby {
-            size = 14px
-            gap = 1px
-            overhang = 3px
-            collision_gap = 2px
-        }
-    }
 }
 
 struct GameState {

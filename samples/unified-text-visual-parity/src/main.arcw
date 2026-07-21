@@ -8,6 +8,13 @@ pub character parity {
                 color = rgb("#eef7ff")
                 size = 30px
             }
+
+            ruby {
+                size = 14px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
     }
 }
@@ -53,18 +60,6 @@ pub view UnifiedTextPanel(dialogue: DialogueView) {
             .on_click { dialogue.primary_action }
     }
         .part(unified_text_panel)
-}
-
-pub dialogue defaults {
-    view = @view.UnifiedTextPanel
-    rich_text {
-        ruby {
-            size = 14px
-            gap = 1px
-            overhang = 3px
-            collision_gap = 2px
-        }
-    }
 }
 
 #[fx]

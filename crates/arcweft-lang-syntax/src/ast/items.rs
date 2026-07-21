@@ -2,7 +2,6 @@ use crate::expr::{DottedPath, Expr};
 use crate::types::{FnSignature, GenericParam, TypeRef, WhereClause};
 
 use super::common::{DocBlock, ModuleDecl, TextRange, UseItem, Visibility};
-use super::dialogue::DialogueDefaultsItem;
 use super::flow::{AuthoredExpr, ContractClause, Flow, Stmt};
 use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem};
@@ -36,7 +35,6 @@ pub enum Item {
     Entry(EntryDeclItem),
     ExternCapability(ExternCapabilityItem),
     ExternMod(ExternModItem),
-    DialogueDefaults(DialogueDefaultsItem),
     Proof(ProofItem),
     Test(TestItem),
     Bench(BenchItem),
@@ -150,7 +148,6 @@ impl Item {
             Self::Entry(item) => Some(*item.range()),
             Self::ExternCapability(item) => Some(*item.range()),
             Self::ExternMod(item) => Some(*item.range()),
-            Self::DialogueDefaults(item) => Some(*item.range()),
             Self::Proof(item) => Some(*item.range()),
             Self::Test(item) => Some(*item.range()),
             Self::Bench(item) => Some(*item.range()),

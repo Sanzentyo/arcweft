@@ -201,17 +201,6 @@ impl ViewStyleApplicationLookup {
     }
 }
 
-/// Lowers one already typechecked source into canonical Style product data.
-pub(crate) fn lower_source_view_styles(
-    hir: &HirModule,
-    catalog: &CheckedViewStyleCatalog,
-    source: &SourceDocument,
-) -> Result<CompiledViewStyleArtifact, ViewStyleLowerError> {
-    let origins = StyleSourceOrigins::for_source(hir, source)?;
-    let module = CanonicalModulePath::crate_root();
-    lower_view_styles(&[(module, hir)], hir, catalog, &origins)
-}
-
 /// Lowers a linked project while retaining each module's source identity.
 pub fn lower_project_view_styles(
     hir_project: &HirProject,
@@ -280,13 +269,6 @@ impl StyleSourceDocument {
 }
 
 impl StyleSourceOrigins {
-    fn for_source(hir: &HirModule, source: &SourceDocument) -> Result<Self, ViewStyleLowerError> {
-        let document = StyleSourceDocument::new(source)?;
-        let mut origins = Self::default();
-        origins.register_module(hir, &document)?;
-        Ok(origins)
-    }
-
     fn for_project(
         hir_project: &HirProject,
         project: &ProjectSources,

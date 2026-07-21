@@ -26,8 +26,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-lang-hir = { workspace = true }
-arcweft-lang-syntax = { workspace = true }
+arcweft-compiler = { workspace = true }
+arcweft-lang-sema = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }

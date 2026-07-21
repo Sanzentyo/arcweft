@@ -11,6 +11,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
 };
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_player_scene::{
     fonts::{DEFAULT_PLAYER_FONT_BYTES, PlayerFontSet},
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
@@ -27,14 +28,36 @@ use arcweft_render_text::{
 };
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::view_scene::ViewPrimitive;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
     BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
-use arcweft_view::{ViewId, ViewMountId};
+use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewMountId, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("player-scene-scroll-regions-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.player-scene-scroll-regions-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn assert_px(actual: f32, expected: f32) {
     assert!(
@@ -610,11 +633,13 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         speaker_label: None,
         text_key: None,
         view: arcweft_bundle::standard_view::dialogue_view_id(),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![

@@ -156,7 +156,6 @@ where
             | Item::ExternCapability(_)
             | Item::ExternMod(_)
             | Item::Style(_)
-            | Item::DialogueDefaults(_)
             | Item::Proof(_)
             | Item::Test(_)
             | Item::Bench(_)

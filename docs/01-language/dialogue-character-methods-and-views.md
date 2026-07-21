@@ -248,7 +248,7 @@ inline rich-text span
   -> speaker preset options
   -> character dialogue_style
   -> authored dialogue View style
-  -> selected dialogue defaults
+  -> selected profile dialogue Style
   -> engine defaults
 ```
 
@@ -305,15 +305,16 @@ Preload is a hint, not a hidden blocking operation. If the resource is not ready
 
 ## Dialogue View target
 
-A dialogue line always targets an authored persistent View. If no `view` is
-specified, Arcweft resolves the selected defaults profile and then the standard
-library's minimal dialogue View resource.
+A dialogue line always targets an authored persistent View. If no line or
+speaker-preset `view` override is specified, Arcweft uses the typed View selected
+by the accepted launch or project profile, then the standard library's minimal
+dialogue View resource.
 
 ```arcw
 alice.say()[おはよう。[p]]
 ```
 
-resolves to the reserved `std.view.dialogue` resource when no project default
+resolves to the reserved `std.view.dialogue` resource when no accepted profile
 selects another View. The reserved identity is not written as a source
 `EntityRef` and cannot be redeclared.
 
@@ -323,11 +324,15 @@ The standard resource has the same contract as a project View:
 |---|---|
 | `std.view.dialogue` | Reserved minimal standard speaker/content View resource |
 
-Project default:
+Project profile ownership:
 
 ```toml
-[dialogue]
-view = "std.view.dialogue"
+[profiles.game.dialogue]
+view = "view.phone_message"
+style = "style.phone_message"
+
+[profiles.game.dialogue.inline-failure]
+kind = "fail_line"
 ```
 
 Projects normally declare a style and a typed View:
@@ -350,9 +355,9 @@ pub view PhoneMessage(dialogue: DialogueView) {
 
 `DialogueView` is a standard-prelude nominal record and is visible to the type
 checker and LSP. The View body chooses the exact `Text` or `RichText` consumer;
-its style participates in the same effective RichText cascade as dialogue
-defaults, character `dialogue_style`, speaker presets, line options, and inline
-spans.
+its style participates in the same effective RichText cascade as the selected
+profile dialogue Style, character `dialogue_style`, speaker presets, line
+options, and inline spans.
 
 Use it from dialogue:
 
@@ -403,7 +408,7 @@ inline rich-text span
   -> speaker preset options
   -> character dialogue_style
   -> authored dialogue View style
-  -> selected dialogue defaults
+  -> selected profile dialogue Style
   -> engine defaults
 ```
 
@@ -417,58 +422,34 @@ alice.say(color=rgb("#ff8080"))[
 
 ---
 
-## Dialogue defaults resolution
+## Profile dialogue presentation
 
-`dialogue defaults` declares a named defaults profile for dialogue lines. It is
-not an implicit source-order macro and `pub` does not make the profile apply by
-itself. `pub` only makes the defaults profile visible to project manifests,
-other modules, tooling, and build profiles.
+The accepted launch or project profile owns the base dialogue presentation. It
+is neither inferred from source order nor selected by a source declaration.
 
-The conventional project-wide profile omits a redundant ID:
+```toml
+[profiles.mobile.dialogue]
+view = "view.phone_message"
+style = "style.phone_message"
 
-```arcw
-pub dialogue defaults {
-    view = @view.MainDialogue
-    reveal = typewriter(speed=normal)
-}
+[profiles.mobile.dialogue.inline-failure]
+kind = "fallback"
+
+[profiles.mobile.dialogue.inline-failure.fallback]
+kind = "text"
+text = "?"
+
+[profiles.mobile.dialogue.inline-failure.fallback.style]
+kind = "inherit_surrounding"
 ```
 
-Resolution is:
+`view` is a typed View identity. `style`, when present, is a typed base Style
+identity. The inline-failure table is the profile-wide policy for interpolation
+failures not handled by a more local line, preset, or character policy. A
+profile without a View selection uses `std.view.dialogue`; it does not search
+source declarations for a default.
 
-1. A project or build profile may explicitly select a defaults profile by ID.
-2. If none is selected, the visible unqualified `pub dialogue defaults`
-   declaration is the project-wide profile.
-3. If no project-wide declaration exists, the standard dialogue defaults and
-   reserved `std.view.dialogue` resource are selected through the ordinary
-   linker path.
-4. If multiple visible profiles exist and none is selected, product/test
-   lowering reports an ambiguity diagnostic instead of merging them by source
-   order.
-
-Additional defaults profiles are inert until selected:
-
-```arcw
-pub dialogue defaults @dialogue.debug {
-    view = @view.DebugDialogue
-    reveal = instant
-}
-
-pub dialogue defaults @dialogue.mobile {
-    view = @view.PhoneMessage
-    rich_text {
-        text {
-            size = 24px
-        }
-
-        ruby {
-            size = 11px
-            gap = 1px
-        }
-    }
-}
-```
-
-A selected defaults profile is the base of the dialogue cascade:
+The selected profile Style is the base of the dialogue cascade:
 
 ```text
 inline rich-text span
@@ -476,57 +457,38 @@ inline rich-text span
   -> speaker preset options
   -> character dialogue_style
   -> authored dialogue View style
-  -> selected dialogue defaults
+  -> selected profile dialogue Style
   -> engine defaults
 ```
 
-Scalar fields use nearest-wins semantics. Structured style records such as
-`rich_text`, `rich_text.text`, `rich_text.layout`, and `rich_text.ruby` deep
-merge by field, so a character can override only ruby size while inheriting the
-global ruby gap. Lists and hook collections must use explicit operators:
-`=` replaces the collection, `+=` appends, and future removal operators must be
-spelled explicitly rather than inferred.
-
-`dialogue defaults` should carry dialogue policy, not arbitrary renderer state.
-View choice, reveal behavior, voice policy, hooks, localization policy, and
-RichText typography are appropriate. Per-scene state, temporary line-plan
-variables, and stage handles belong in flows, speaker presets, or line plans.
+Scalar fields use nearest-wins semantics. Structured style records deep-merge by
+field, so a character can override only ruby size while inheriting the selected
+profile Style's ruby gap. Per-scene state, temporary line-plan variables, and
+stage handles belong in flows, speaker presets, or line plans.
 
 ---
 
 ## RichText typography defaults
 
-RichText defaults are grouped under `rich_text` instead of flattening every
-text parameter into `dialogue defaults`. This keeps ruby, vertical writing,
-font choice, wrapping, effects, and future typography parameters in one
-namespace that can also be reused by choices, View text, logs, and HUD text.
+RichText typography is authored in a reusable Style and selected as the
+profile's optional base Style. This keeps ruby, vertical writing, font choice,
+wrapping, effects, and future typography parameters reusable by choices, View
+text, logs, and HUD text.
 
 ```arcw
-pub dialogue defaults {
-    rich_text {
-        text {
-            font = "Yu Gothic"
-            size = 30px
-            color = rgb("#f5f5f5")
-        }
-
-        layout {
-            writing_mode = horizontal_tb
-            jlreq = normal
-            vertical_latin = mixed
-            wrap = container
-            overflow = page
-        }
-
-        ruby {
-            position = over
-            size = 14px
-            gap = 2px
-            overhang = 7px
-            collision_gap = 2px
-        }
+pub style dialogue_typography {
+    .dialogue_content {
+        font-family = text("Yu Gothic")
+        font-size = 30px
+        color = rgb("#f5f5f5")
+        writing-mode = horizontal_tb
     }
 }
+```
+
+```toml
+[profiles.game.dialogue]
+style = "style.dialogue_typography"
 ```
 
 Character defaults use the same structure and override only the fields they
@@ -577,17 +539,9 @@ record path already disambiguates the field.
 
 ## Built-in read/unread style policy
 
-Common visual-novel patterns are built in.
-
-```arcw
-pub dialogue defaults {
-    read_state_style = builtin.read_state_color(
-        unread = rgb("#ffffff"),
-        read = rgb("#b8b8c0"),
-    )
-    auto_mark_read = on_page_advance
-}
-```
+Common visual-novel read-state patterns are owned by the selected dialogue View
+and its Style, with local character policy available when a speaker needs a
+different treatment.
 
 Character-level override:
 
@@ -604,9 +558,8 @@ pub character alice {
 }
 ```
 
-Custom behavior is expressed through dialogue defaults, character-local style
-policy, or the selected dialogue View. It is not installed as a global
-callback.
+Custom behavior is expressed through character-local style policy or the
+selected dialogue View. It is not installed as a global callback.
 
 Built-in style policies:
 
@@ -682,7 +635,7 @@ match state.player_nickname {
 ```
 
 Inline function calls in `#[...]` must declare failure handling for that call, or
-the surrounding line, speaker preset, character state, or dialogue defaults must
+ the surrounding line, speaker preset, character state, or selected profile must
 provide an inline failure policy. Canonical values use the `InlineFailure` enum
 namespace; contextual `.fail` and `.discard` shorthands are accepted where
 `InlineFailure` is expected. For ordinary display text, prefer a default

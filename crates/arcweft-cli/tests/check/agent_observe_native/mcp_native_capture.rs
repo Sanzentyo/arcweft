@@ -244,11 +244,11 @@ fn agent_mcp_stdio_observes_and_reads_rich_text_child_image() {
     let path = temp_mcp_arcw(
         "agent-mcp-rich-text-image",
         r#"
-pub dialogue defaults {
-    font = serif
+character @character.alice Alice as alice {
+    dialogue_style {
+        font = serif
+    }
 }
-
-character @character.alice Alice as alice {}
 
 flow @flow.main main {
     let player = "Aoi"
@@ -672,7 +672,7 @@ fn agent_mcp_source_rag_requests(db_path: &Path) -> Vec<serde_json::Value> {
                 "arguments": {
                     "sources": [
                         workspace_path("samples/agent-script/native-choice-dispatch.arcw").display().to_string(),
-                        workspace_path("samples/rich-text-showcase.arcw").display().to_string()
+                        workspace_path("samples/rich-text-showcase/src/main.arcw").display().to_string()
                     ],
                     "path": db_path.display().to_string(),
                     "query": "choice.opening rich_text",
@@ -1112,11 +1112,11 @@ fn agent_mcp_stdio_captures_source_without_prior_observe() {
     let path = temp_mcp_arcw(
         "agent-mcp-direct-capture",
         r#"
-pub dialogue defaults {
-    font = serif
+character @character.alice Alice as alice {
+    dialogue_style {
+        font = serif
+    }
 }
-
-character @character.alice Alice as alice {}
 
 flow @flow.main main {
     let player = "Aoi"

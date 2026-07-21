@@ -1,10 +1,7 @@
-use crate::ast::dialogue::{
-    DialogueContentSourceMap, DialogueDefaultAssignOp, DialogueDefaultAssignment,
-    DialogueDefaultPath, DialogueDefaultsItem,
-};
+use crate::ast::dialogue::DialogueContentSourceMap;
 use crate::expr::{Expr, collect_dialogue_call_content_ranges};
 
-use super::headers::{parse_optional_decl_entity_ref, parse_visibility_prefix, simple_error};
+use super::headers::simple_error;
 use super::{
     BlockStyle, ContentCall, ContentCallParse, CstLine, DialogueContent, FlowItem, LinePlan,
     MappedDialogueSource, MappedDialogueSourceBuilder, Parser, RawSyntax, ScopeBlock, SpeakerLine,
@@ -15,74 +12,10 @@ use super::{
     parse_line_plan_attachment, parse_line_plan_attachment_with_body_base, parse_with_brace_label,
     parse_with_indent_label, split_brace_item, split_brace_item_with_scan, split_call_head,
     split_leading_ident, split_speaker_line, split_top_level_binding,
-    split_top_level_punctuation_once,
 };
 use crate::cst::CstPunctuationScan;
 
 impl Parser<'_> {
-    pub(super) fn parse_dialogue_defaults(&mut self) -> Option<DialogueDefaultsItem> {
-        let attrs = self.take_pending_attrs();
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing dialogue defaults",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the dialogue defaults body"],
-            );
-            return None;
-        }
-        let (visibility, rest) = parse_visibility_prefix(head.trim());
-        let after_defaults = rest
-            .trim_start()
-            .strip_prefix("dialogue defaults")?
-            .trim_start();
-        if starts_dialogue_defaults_relative_id(after_defaults) {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.start + head.len()),
-                "dialogue defaults profiles cannot use relative IDs",
-                ["@dialogue.mobile", "@dialogue.debug"],
-                Some(after_defaults),
-                ["write the full defaults profile ID"],
-            );
-        }
-        let (id, tail) = parse_optional_decl_entity_ref(
-            after_defaults,
-            "dialogue",
-            start_line.start,
-            &mut self.errors,
-        );
-        if !tail.trim().is_empty() {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.start + head.len()),
-                "unexpected tokens after dialogue defaults header",
-                ["{"],
-                Some(tail.trim()),
-                ["move defaults into the declaration body"],
-            );
-        }
-        let body_base = start_line.start
-            + start_line
-                .text
-                .find('{')
-                .map_or_else(|| head.len() + "{".len(), |open| open + "{".len());
-        let assignments = parse_dialogue_default_assignments(
-            &body,
-            body_base,
-            TextRange::new(start_line.start, end),
-            &mut self.errors,
-        );
-        Some(DialogueDefaultsItem::new(
-            attrs,
-            visibility,
-            id,
-            assignments,
-            TextRange::new(start_line.start, end),
-        ))
-    }
-
     pub(super) fn parse_let_dialogue_call(&mut self) -> Option<Stmt> {
         let start = self.current().clone();
         let mut text = start.text.trim().to_owned();
@@ -690,11 +623,6 @@ fn split_brace_item_with_body_base<'a>(
     ))
 }
 
-fn starts_dialogue_defaults_relative_id(source: &str) -> bool {
-    let trimmed = source.trim_start();
-    trimmed.starts_with("@.") || trimmed.starts_with("@..")
-}
-
 fn dialogue_expr_bracket_depth(source: &str, mut depth: usize) -> usize {
     let mut chars = source.char_indices().peekable();
     while let Some((_, ch)) = chars.next() {
@@ -712,122 +640,6 @@ fn dialogue_expr_bracket_depth(source: &str, mut depth: usize) -> usize {
         }
     }
     depth
-}
-
-fn parse_dialogue_default_assignments(
-    body: &str,
-    base: usize,
-    fallback_range: TextRange,
-    errors: &mut Vec<super::recovery::ParseError>,
-) -> Vec<DialogueDefaultAssignment> {
-    let mut assignments = Vec::new();
-    let mut path_stack: Vec<String> = Vec::new();
-    let mut line_start = 0usize;
-    for line in body.split_inclusive('\n') {
-        let line_without_eol = line.trim_end_matches(['\r', '\n']);
-        let trimmed = line_without_eol.trim();
-        let trimmed_start_in_line = line_without_eol
-            .len()
-            .saturating_sub(line_without_eol.trim_start().len());
-        let trimmed_start = base + line_start + trimmed_start_in_line;
-        let trimmed_range = TextRange::new(trimmed_start, trimmed_start + trimmed.len());
-        line_start += line.len();
-        if trimmed.is_empty() || trimmed.starts_with("//") {
-            continue;
-        }
-        if trimmed == "}" {
-            if path_stack.pop().is_none() {
-                errors.push(simple_error(
-                    trimmed_range.start(),
-                    trimmed_range.end() - trimmed_range.start(),
-                    "unexpected closing brace in dialogue defaults",
-                    "nested defaults block",
-                ));
-            }
-            continue;
-        }
-        if let Some(block_name) = trimmed.strip_suffix('{').map(str::trim) {
-            if block_name.is_empty() || block_name.contains(char::is_whitespace) {
-                errors.push(simple_error(
-                    trimmed_range.start(),
-                    trimmed_range.end() - trimmed_range.start(),
-                    "expected dialogue defaults block path",
-                    "rich_text {",
-                ));
-            } else {
-                path_stack.extend(block_name.split('.').map(str::trim).map(str::to_owned));
-            }
-            continue;
-        }
-        if trimmed.contains('{') || trimmed.contains('}') {
-            errors.push(simple_error(
-                trimmed_range.start(),
-                trimmed_range.end() - trimmed_range.start(),
-                "one-line nested dialogue defaults blocks are not canonical",
-                "write nested assignments on separate lines",
-            ));
-            continue;
-        }
-        let Some((name, op, value)) = split_dialogue_default_assignment(trimmed) else {
-            errors.push(simple_error(
-                trimmed_range.start(),
-                trimmed_range.end() - trimmed_range.start(),
-                "expected dialogue default assignment",
-                "name = expr",
-            ));
-            continue;
-        };
-        let mut segments = path_stack.clone();
-        segments.extend(name.split('.').map(str::trim).map(str::to_owned));
-        let Some(path) = DialogueDefaultPath::from_dotted(&segments.join(".")) else {
-            errors.push(simple_error(
-                trimmed_range.start(),
-                trimmed_range.end() - trimmed_range.start(),
-                "expected dialogue default assignment path",
-                "rich_text.ruby.size = expr",
-            ));
-            continue;
-        };
-        let value = value.trim();
-        let name_offset = trimmed.find(name).unwrap_or_default();
-        let value_offset = trimmed
-            .rfind(value)
-            .unwrap_or_else(|| trimmed.len().saturating_sub(value.len()));
-        assignments.push(DialogueDefaultAssignment::new(
-            path,
-            op,
-            parse_expr_lossy(value),
-            value.to_owned(),
-            trimmed_range,
-            TextRange::new(
-                trimmed_start + name_offset,
-                trimmed_start + name_offset + name.len(),
-            ),
-            TextRange::new(
-                trimmed_start + value_offset,
-                trimmed_start + value_offset + value.len(),
-            ),
-        ));
-    }
-    if !path_stack.is_empty() {
-        errors.push(simple_error(
-            fallback_range.start(),
-            fallback_range.end() - fallback_range.start(),
-            "unclosed nested dialogue defaults block",
-            "}",
-        ));
-    }
-    assignments
-}
-
-fn split_dialogue_default_assignment(
-    source: &str,
-) -> Option<(&str, DialogueDefaultAssignOp, &str)> {
-    if let Some((name, value)) = source.split_once("+=") {
-        return Some((name.trim(), DialogueDefaultAssignOp::Append, value.trim()));
-    }
-    split_top_level_punctuation_once(source, '=')
-        .map(|(name, value)| (name.trim(), DialogueDefaultAssignOp::Replace, value.trim()))
 }
 
 fn replace_dialogue_call_content_source_map(expr: &mut Expr, source_map: DialogueContentSourceMap) {

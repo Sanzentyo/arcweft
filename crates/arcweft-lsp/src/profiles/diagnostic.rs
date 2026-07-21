@@ -31,6 +31,8 @@ pub enum LspProfileDiagnosticKind {
     ProjectSourceRead,
     /// An Arcweft project source could not be parsed or linked.
     ProjectSourceParse,
+    /// The exact loaded project was rejected by a later compiler stage.
+    ProjectCompile,
     /// Generated external-module metadata could not be read.
     ExternalModuleMetadataRead,
     /// Generated external-module metadata could not be decoded or admitted.
@@ -39,6 +41,10 @@ pub enum LspProfileDiagnosticKind {
     CharacterManifestRead,
     /// A character manifest could not be parsed or validated.
     CharacterManifestParse,
+    /// A character layer payload could not be read.
+    CharacterLayerPayloadRead,
+    /// A character layer payload could not be decoded or validated.
+    CharacterLayerPayloadParse,
     /// Character manifests declared duplicate public character ids.
     CharacterCatalog,
 }
@@ -133,10 +139,13 @@ impl LspProfileDiagnosticKind {
             Self::ProfilePublication => "profile.publication",
             Self::ProjectSourceRead => "profile.project_source.read",
             Self::ProjectSourceParse => "profile.project_source.parse",
+            Self::ProjectCompile => "profile.project.compile",
             Self::ExternalModuleMetadataRead => "profile.external_module_metadata.read",
             Self::ExternalModuleMetadataParse => "profile.external_module_metadata.parse",
             Self::CharacterManifestRead => "profile.character_manifest.read",
             Self::CharacterManifestParse => "profile.character_manifest.parse",
+            Self::CharacterLayerPayloadRead => "profile.character_layer_payload.read",
+            Self::CharacterLayerPayloadParse => "profile.character_layer_payload.parse",
             Self::CharacterCatalog => "profile.character_manifest.catalog",
         }
     }
@@ -169,6 +178,9 @@ fn environment_diagnostic(
                 LspProfileDiagnosticKind::CharacterCatalog,
                 error.to_string(),
             )
+        }
+        error @ super::environment::RegisterProfileEnvironmentError::Compile { .. } => {
+            LspProfileDiagnostic::new(LspProfileDiagnosticKind::ProjectCompile, error.to_string())
         }
         error => LspProfileDiagnostic::new(
             LspProfileDiagnosticKind::CharacterCatalog,
@@ -310,6 +322,12 @@ fn topology_resource_diagnostic_kind(
         }
         (Resource::CharacterPackageManifest { .. }, TopologyResourceFailure::Parse) => {
             LspProfileDiagnosticKind::CharacterManifestParse
+        }
+        (Resource::CharacterLayerPayload { .. }, TopologyResourceFailure::Read) => {
+            LspProfileDiagnosticKind::CharacterLayerPayloadRead
+        }
+        (Resource::CharacterLayerPayload { .. }, TopologyResourceFailure::Parse) => {
+            LspProfileDiagnosticKind::CharacterLayerPayloadParse
         }
         (Resource::ExternalModuleMetadata { .. }, TopologyResourceFailure::Read) => {
             LspProfileDiagnosticKind::ExternalModuleMetadataRead

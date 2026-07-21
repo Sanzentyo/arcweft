@@ -1,9 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
-use arcweft_compiler::error::CompileSourceError;
-use arcweft_compiler::project::{ProjectCompilationContext, compile_project};
+use arcweft_compiler::project::{ProjectCompilationContext, ProjectCompileStage, compile_project};
 use arcweft_compiler::source::compile_source;
-use arcweft_compiler::style::ViewStyleLowerError;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
@@ -244,11 +242,21 @@ fn style_compiler_rejects_an_application_to_a_missing_sheet() {
 "#,
     )
     .expect_err("missing named sheet is not product data");
-    assert!(matches!(
-        error,
-        CompileSourceError::Style(ViewStyleLowerError::UnknownSheetApplication { sheet, .. })
-            if sheet == "style.missing"
-    ));
+    let project = error.project();
+    assert_eq!(project.stage(), ProjectCompileStage::StyleLower.as_str());
+    let diagnostic = project
+        .diagnostics()
+        .first()
+        .expect("style rejection emits a diagnostic");
+    assert_eq!(
+        diagnostic
+            .diagnostic()
+            .code()
+            .expect("style diagnostic code")
+            .as_str(),
+        "style.lower"
+    );
+    assert!(diagnostic.diagnostic().message().contains("style.missing"));
 }
 
 #[test]

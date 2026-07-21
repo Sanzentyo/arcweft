@@ -135,7 +135,7 @@ pub fn compile_checked_agent_bundle(
         },
         source_map,
         bytecode,
-        arcweft_render_text::LineDisplayCatalog::default(),
+        compiled.runtime_plan().line_display_catalog.clone(),
     )?
     .with_agent_manifest(manifest.clone());
     Ok(CompiledAgentBundle {

@@ -16,5 +16,11 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+arcweft-dialogue = { workspace = true }
+arcweft-resource-model = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-view = { workspace = true }
+
 [lints]
 workspace = true

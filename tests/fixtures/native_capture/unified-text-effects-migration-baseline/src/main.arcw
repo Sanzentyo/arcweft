@@ -8,16 +8,29 @@ pub character lumi {
                 color = rgb("#eaf6ff")
                 size = 32px
             }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 12px
+                gap = 0px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
     }
 }
 
 pub style migration_effects_panel {
     .dialogue_panel {
-        background = rgba(17, 18, 16, 242)
+        background-color = rgba(17, 18, 16, 242)
     }
     .dialogue_action {
-        background = rgba(0, 0, 0, 0)
+        background-color = rgba(0, 0, 0, 0)
     }
     .migration_effects_panel {
         color = rgba(242, 246, 255, 255)
@@ -40,23 +53,6 @@ pub view MigrationEffectsPanel(dialogue: DialogueView) {
         Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
             .part(dialogue_action)
             .on_click { dialogue.primary_action }
-    }
-}
-
-pub dialogue defaults {
-    view = @view.MigrationEffectsPanel
-    rich_text {
-        layout {
-            writing_mode = horizontal_tb
-            jlreq = normal
-            vertical_latin = mixed
-        }
-        ruby {
-            size = 12px
-            gap = 0px
-            overhang = 3px
-            collision_gap = 2px
-        }
     }
 }
 
@@ -94,9 +90,9 @@ entry cli @entry.unified_text_effects_migration_baseline {
 
 flow unified_text_effects_migration_baseline {
     lumi.say(id=@say.migration.matrix, voice=auto, look=.focus)[
-        FX: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]glow[/color][/effect] [effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm[/color][/effect] [effect .shader id=soft_glow amount=1 phase=glyph_color]color[/effect] [effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post[/effect] [.host id=sparkle amp=1.5px seed=shader-demo state_scope=run]sparkle[/]。[r]
-        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]wave[/] [.shake amp=2px seed=voice-shake state_scope=glyph target=glyph phase=glyph_transform]shake[/] [effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform state_scope=glyph]jitter[/effect] [fx breath_orbit(amplitude=5px, speed=0.75)]source-y[/fx] [fx source_drift(amplitude=5px, speed=0.8)]source-x[/fx]。[r]
-        Reveal: [.typewriter cps=4 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo state_scope=glyph target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo state_scope=run]typewriter-wave-shake[/][/][/][/] [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]spin-pulse[/][/]。[r]
+        FX: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]glow[/color][/effect] [effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm[/color][/effect] [effect .shader id=soft_glow amount=1 phase=glyph_color]color[/effect] [effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post[/effect] [.host id=sparkle amp=1.5px seed=shader-demo]sparkle[/]。[r]
+        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]wave[/] [.shake amp=2px seed=voice-shake target=glyph phase=glyph_transform]shake[/] [effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform]jitter[/effect] [fx breath_orbit(amplitude=5px, speed=0.75)]source-y[/fx] [fx source_drift(amplitude=5px, speed=0.8)]source-x[/fx]。[r]
+        Reveal: [.typewriter cps=4 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo]typewriter-wave-shake[/][/][/][/] [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]spin-pulse[/][/]。[r]
         Vertical: [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/]ABC2026[/font][/]。[p]
     ]
 

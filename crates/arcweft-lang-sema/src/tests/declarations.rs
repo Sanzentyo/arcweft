@@ -906,10 +906,6 @@ signal @signal:.current_flow: Watch<Ref<Flow>>
 
 signal @signal:. ready: Watch<bool>
 
-dialogue defaults @dialogue:.opening {
-    view = @view.side
-}
-
 source @source:.events() {
     yield event
 }
@@ -939,15 +935,11 @@ source @source:. metrics() {
     ));
     assert!(matches!(
         &hir.declarations()[4],
-        HirTopLevelDecl::DialogueDefaults(item) if item.id().is_some_and(|id| id.body() == "dialogue.opening")
-    ));
-    assert!(matches!(
-        &hir.declarations()[5],
         HirTopLevelDecl::Source(source)
             if source.item().id().is_some_and(|id| id.body() == "source.events")
     ));
     assert!(matches!(
-        &hir.declarations()[6],
+        &hir.declarations()[5],
         HirTopLevelDecl::Source(source)
             if source.item().id().is_some_and(|id| id.body() == "source.metrics")
     ));

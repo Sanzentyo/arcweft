@@ -75,6 +75,7 @@ thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 
 [dev-dependencies]
+arcweft-dialogue = { workspace = true }
 arcweft-lsp = { workspace = true }
 arcweft-runtime-driver = { workspace = true }
 

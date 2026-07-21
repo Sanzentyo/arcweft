@@ -39,6 +39,7 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_id::PublicId;
 use arcweft_interaction_model::{
     id::Identifier,
@@ -59,6 +60,7 @@ use arcweft_presentation::text_input::{
     TextRevision,
 };
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::dialogue::{
     BundlePresentationTransition, DialogueAdvanceRejection, DialogueEntryState,
@@ -78,10 +80,10 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewTextValue,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::ViewProgramId;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use arcweft_view::{
     ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedSource, ViewId, ViewValueProgram,
     ViewValueProgramId,
@@ -109,6 +111,31 @@ fn cli_entry(entry: &str, flow: &str, binding: [u8; 32]) -> RuntimeEntrySpec {
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    test_dialogue_revision_with_view_byte(0x5a)
+}
+
+fn test_dialogue_revision_with_view_byte(view_byte: u8) -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-session-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-session-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([view_byte; 32])
+            .expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn dialogue_text(presentation: &BundlePresentationSnapshot) -> Option<&str> {
@@ -141,43 +168,46 @@ fn fixture_bundle() -> ArcweftBundle {
 fn paged_fixture_bundle() -> ArcweftBundle {
     let mut bundle = fixture_bundle_with("unused", false, false);
     let line = line_id("line.opening");
-    bundle.display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line,
-        callee: "alice".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_view::ViewId::try_new_engine_owned(
-            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
-        )
-        .unwrap(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![
-            RichTextNode::Text {
-                text: "A".to_owned(),
-            },
-            RichTextNode::Control {
-                control: arcweft_render_text::RichTextControl::Page,
-            },
-            RichTextNode::Text {
-                text: "B".to_owned(),
-            },
-            RichTextNode::Control {
-                control: arcweft_render_text::RichTextControl::LineWait,
-            },
-            RichTextNode::Text {
-                text: "C".to_owned(),
-            },
-            RichTextNode::Control {
-                control: arcweft_render_text::RichTextControl::Page,
-            },
-        ]),
-    }]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line,
+            callee: "alice".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "A".to_owned(),
+                },
+                RichTextNode::Control {
+                    control: arcweft_render_text::RichTextControl::Page,
+                },
+                RichTextNode::Text {
+                    text: "B".to_owned(),
+                },
+                RichTextNode::Control {
+                    control: arcweft_render_text::RichTextControl::LineWait,
+                },
+                RichTextNode::Text {
+                    text: "C".to_owned(),
+                },
+                RichTextNode::Control {
+                    control: arcweft_render_text::RichTextControl::Page,
+                },
+            ]),
+        }],
+    )
+    .expect("test display catalog is revision-consistent");
     bundle
 }
 
@@ -251,7 +281,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
     )
     .unwrap()
     .with_entries(vec![main_cli_entry()]);
-    let display = LineDisplayCatalog::new(Vec::new());
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
     let product_awbc = AwbcLowerer::new(&plan, &display, "view-runtime.arcw")
         .lower()
@@ -520,23 +550,29 @@ fn fixture_bundle_with(
 
 fn fixture_bundle_with_dialogue_owner(owner: &ViewId, display_text: &str) -> ArcweftBundle {
     let mut bundle = fixture_bundle_with(display_text, false, false);
-    bundle.display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line: line_id("line.opening"),
-        callee: "alice".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: owner.clone(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: display_text.to_owned(),
-        }]),
-    }]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line: line_id("line.opening"),
+            callee: "alice".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view: owner.clone(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: display_text.to_owned(),
+            }]),
+        }],
+    )
+    .expect("test display catalog is revision-consistent");
     bundle
         .with_view_resources(
             Some(ViewProgramResource {
@@ -619,26 +655,29 @@ fn fixture_bundle_from_parts(
         .expect("runtime plan is valid")
         .with_entries(entries);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line,
-        callee: "alice".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_view::ViewId::try_new_engine_owned(
-            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
-        )
-        .unwrap(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: display_text.to_owned(),
-        }]),
-    }]);
+    let display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line,
+            callee: "alice".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: display_text.to_owned(),
+            }]),
+        }],
+    )
+    .expect("test display catalog is revision-consistent");
     let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -704,7 +743,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         .expect("runtime plan is valid")
         .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::new(Vec::new());
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, "await-demo.arcw")
         .lower()
         .expect("product AWBC lowers")
@@ -761,7 +800,7 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     .expect("runtime plan is valid")
     .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -823,26 +862,32 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
     .expect("runtime plan is valid")
     .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line,
-        callee: "concierge".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_view::ViewId::try_new_engine_owned(
-            arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
-        )
-        .unwrap(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: "Submit the form.".to_owned(),
-        }]),
-    }]);
+    let display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line,
+            callee: "concierge".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view: arcweft_view::ViewId::try_new_engine_owned(
+                arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+            )
+            .unwrap(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: "Submit the form.".to_owned(),
+            }]),
+        }],
+    )
+    .expect("test display catalog is revision-consistent");
     let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -941,7 +986,7 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
     .expect("runtime plan is valid")
     .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, "await-replacement.arcw")
         .lower()
         .expect("product AWBC lowers")
@@ -2023,6 +2068,89 @@ fn malformed_dialogue_frame_restore_is_rejected_without_mutating_the_session() {
         .restore_session_snapshot(invalid)
         .expect_err("regressing dialogue marker is rejected");
     assert!(matches!(error, BundleSessionSaveError::Presentation { .. }));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("live session remains valid"),
+        before
+    );
+}
+
+#[test]
+fn session_save_binds_the_exact_dialogue_profile_revision() {
+    let bundle = fixture_bundle();
+    let session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+
+    let snapshot = session
+        .snapshot_session()
+        .expect("session snapshot exports");
+
+    assert_eq!(
+        &snapshot.generation.dialogue_revision,
+        bundle.display.dialogue_revision()
+    );
+}
+
+#[test]
+fn dialogue_profile_revision_mismatch_is_rejected_without_mutating_the_session() {
+    let bundle = fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let before = session
+        .snapshot_session()
+        .expect("session snapshot exports");
+    let mut tampered = before.clone();
+    tampered.generation.dialogue_revision = test_dialogue_revision_with_view_byte(0xa5);
+
+    let error = session
+        .restore_session_snapshot(tampered)
+        .expect_err("a save from another admitted dialogue profile is rejected");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::GenerationMismatch {
+            field: "dialogue_revision",
+            ..
+        }
+    ));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("live session remains valid"),
+        before
+    );
+}
+
+#[test]
+fn presentation_dialogue_revision_mismatch_is_rejected_atomically() {
+    let bundle = paged_fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let mut value = serde_json::to_value(&before).expect("snapshot encodes as JSON value");
+    *value
+        .pointer_mut("/presentation/dialogue/presentations/0/entries/0/frame/dialogue_revision")
+        .expect("dialogue frame revision is present") =
+        serde_json::to_value(test_dialogue_revision_with_view_byte(0xa5))
+            .expect("revision encodes as JSON value");
+    let tampered = serde_json::from_value(value).expect("typed snapshot decodes");
+
+    let error = session
+        .restore_session_snapshot(tampered)
+        .expect_err("a frame from another admitted dialogue profile is rejected");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::GenerationMismatch {
+            field: "presentation.dialogue_revision",
+            ..
+        }
+    ));
     assert_eq!(
         session
             .snapshot_session()

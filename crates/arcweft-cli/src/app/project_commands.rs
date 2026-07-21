@@ -21,7 +21,6 @@ use arcweft_bundle::{
 };
 use arcweft_compiler::{
     incremental::{BuildSnapshotRequest, snapshot_compiled_project},
-    lower::lower_source_runtime_plan_with_typecheck_and_options,
     parse::parse_source_text,
     persistent::{
         ActualBytecodeUnitFactsInput, ActualLinkPlanFactsInput, BytecodeUnitFactsInput,
@@ -57,7 +56,6 @@ use arcweft_project_loader::cache::{
     store::FilesystemCacheStore,
 };
 use arcweft_project_loader::project::{LoadedProject, ProjectLoadError};
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::SourceDocument;
 use arcweft_verify::{
     BackendKind, Severity, VerificationDiagnostic, VerificationMode, VerificationPolicy,
@@ -2026,17 +2024,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         }
         CompileEmit::Plan => {
             let plan = progress.run(CliProgressStatus::Compiling, "runtime plan", || {
-                lower_source_runtime_plan_with_typecheck_and_options(
-                    &checked.hir,
-                    &checked.typecheck_report,
-                    &RuntimePlanLowerOptions::default(),
-                )
-                .map_err(|errors| {
-                    for error in errors {
-                        eprintln!("error: {}", error.message());
-                    }
-                    ExitCode::FAILURE
-                })
+                Ok::<_, ExitCode>(checked.runtime_plan().plan.clone())
             })?;
             let output_path = output.as_deref().expect("plan emit has a default path");
             progress.run(CliProgressStatus::Writing, output_path.display(), || {

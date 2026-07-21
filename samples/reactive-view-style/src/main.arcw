@@ -8,6 +8,10 @@ pub character designer {
                 color = rgb("#f7fbff")
                 size = 27px
             }
+            ruby {
+                size = 12px
+                gap = 1px
+            }
         }
     }
 }
@@ -93,16 +97,6 @@ pub view ReactivePanel(dialogue: DialogueView) {
         .part(dialogue_panel)
         .style(@style.reactive_panel)
         .style(@style.reactive_interaction)
-}
-
-pub dialogue defaults {
-    view = @view.ReactivePanel
-    rich_text {
-        ruby {
-            size = 12px
-            gap = 1px
-        }
-    }
 }
 
 struct GameState {

@@ -1,0 +1,14 @@
+schema = 1
+default-profile = "main"
+
+[package]
+id = "org.arcweft.samples.rich-text-effects-animation"
+version = "0.1.0"
+
+[profiles.main]
+kind = "cli"
+entry = "@entry.rich_text_effects_animation"
+source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.AnimationPanel"

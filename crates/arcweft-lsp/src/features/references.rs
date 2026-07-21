@@ -39,7 +39,7 @@ pub fn references(
             return locations;
         }
     }
-    let Some(cascade) = effective_dialogue_cascade_at(document, offset) else {
+    let Some(cascade) = effective_dialogue_cascade_at(profile, document, offset) else {
         return Vec::new();
     };
     let mut seen = BTreeSet::new();

@@ -11,7 +11,6 @@ impl HirTopLevelDecl {
             Self::Entry(_) => "entry",
             Self::ExternCapability(_) => "extern_capability",
             Self::ExternMod(_) => "extern_mod",
-            Self::DialogueDefaults(_) => "dialogue_defaults",
             Self::Struct(_) => "struct",
             Self::TypeAlias(_) => "type_alias",
             Self::Proof(_) => "proof",

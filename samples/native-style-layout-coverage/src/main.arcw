@@ -71,10 +71,6 @@ pub view CoveragePanel(dialogue: DialogueView) {
         .style(@style.coverage_panel)
 }
 
-pub dialogue defaults {
-    view = @view.CoveragePanel
-}
-
 struct GameState {
     started: bool
 }

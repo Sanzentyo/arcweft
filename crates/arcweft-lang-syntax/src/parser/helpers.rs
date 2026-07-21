@@ -934,8 +934,9 @@ mod tests {
         collect_logical_block_items, content_may_be_typed_expr,
         parse_expr_with_inline_line_plan_with_stats,
     };
+    use crate::ast::common::TextRange;
     use crate::cst::SyntaxParseStats;
-    use crate::expr::Expr;
+    use crate::expr::{Expr, collect_dialogue_call_content_ranges};
     use std::borrow::Cow;
 
     #[test]
@@ -973,6 +974,29 @@ mod tests {
             crate::ast::common::TextRange::new(4, 26)
         );
         assert!(matches!(try_expr.operand(), Expr::DialogueCall { .. }));
+    }
+
+    #[test]
+    fn general_try_preserves_dialogue_content_after_a_nested_call_callee() {
+        let source = "try render(\"[.shake]effect[/][p]\")()[[.shake]effect[/][p]]";
+        let parsed = parse_expr_with_inline_line_plan_with_stats(source, None);
+        let Expr::Try(try_expr) = &parsed else {
+            panic!("expected typed general try expression, got {parsed:?}");
+        };
+        assert!(matches!(try_expr.operand(), Expr::DialogueCall { .. }));
+
+        let document_base = 47;
+        let ranges = collect_dialogue_call_content_ranges(
+            &parsed,
+            source,
+            TextRange::new(document_base, document_base + source.len()),
+        );
+        assert_eq!(ranges.len(), 1, "dialogue content ranges: {ranges:?}");
+        let relative = TextRange::new(
+            ranges[0].start() - document_base,
+            ranges[0].end() - document_base,
+        );
+        assert_eq!(&source[relative.as_range()], "[.shake]effect[/][p]");
     }
 
     #[test]

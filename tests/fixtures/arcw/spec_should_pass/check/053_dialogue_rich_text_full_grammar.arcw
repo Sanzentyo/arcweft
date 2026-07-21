@@ -1,31 +1,3 @@
-pub dialogue defaults @dialogue.full {
-    inline_error = InlineFailure.fallback("?")
-
-    rich_text {
-        text {
-            font = "Yu Gothic"
-            size = 30px
-            color = rgb("#f5f5f5")
-        }
-
-        layout {
-            writing_mode = horizontal_tb
-            jlreq = normal
-            vertical_latin = mixed
-            wrap = container
-            overflow = page
-        }
-
-        ruby {
-            position = over
-            size = 14px
-            gap = 2px
-            overhang = 7px
-            collision_gap = 2px
-        }
-    }
-}
-
 #[fx]
 pub fn warning(
     accent: Color = rgb("#ff4050"),
@@ -47,6 +19,8 @@ pub fn warning(
 pub character @character.alice Alice as alice {
     default_voice = auto
     dialogue_style {
+        inline_error = InlineFailure.fallback("?")
+
         rich_text {
             text {
                 font = "Yu Gothic"
@@ -54,8 +28,20 @@ pub character @character.alice Alice as alice {
                 size = 29px
             }
 
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+                wrap = container
+                overflow = page
+            }
+
             ruby {
+                position = over
+                size = 14px
                 gap = 1px
+                overhang = 7px
+                collision_gap = 2px
             }
         }
     }
@@ -64,6 +50,8 @@ pub character @character.alice Alice as alice {
 pub character @character.bob Bob as bob {
     default_voice = auto
     dialogue_style {
+        inline_error = InlineFailure.fallback("?")
+
         rich_text {
             text {
                 font = "Meiryo"
@@ -71,8 +59,20 @@ pub character @character.bob Bob as bob {
                 size = 28px
             }
 
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+                wrap = container
+                overflow = page
+            }
+
             ruby {
                 position = under
+                size = 14px
+                gap = 2px
+                overhang = 7px
+                collision_gap = 2px
             }
         }
     }
@@ -81,11 +81,29 @@ pub character @character.bob Bob as bob {
 pub character @character.narrator Narrator as narrator {
     default_voice = auto
     dialogue_style {
+        inline_error = InlineFailure.fallback("?")
+
         rich_text {
             text {
                 font = "Segoe UI"
                 color = rgb("#e8e8e8")
                 size = 27px
+            }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+                wrap = container
+                overflow = page
+            }
+
+            ruby {
+                position = over
+                size = 14px
+                gap = 2px
+                overhang = 7px
+                collision_gap = 2px
             }
         }
     }

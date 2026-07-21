@@ -203,14 +203,9 @@ fn agent_observe_json_reports_rich_text_display_objects() {
     let path = temp_arcw(
         "agent-observe-rich-text",
         r##"
-pub dialogue defaults {
-    font = serif
-    text_color = rgb("#101112")
-    inline_error = InlineFailure.fallback("?")
-}
-
 character @character.alice Alice as alice {
     dialogue_style {
+        font = serif
         text_color = rgb("#202122")
     }
 }

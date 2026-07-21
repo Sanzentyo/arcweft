@@ -15,12 +15,15 @@ use arcweft_bundle::{
     BundleImageObjectFit, BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest,
     BundleRuntimeSummary, BundleVirtualFile, BundleVirtualFileSpace,
 };
+use arcweft_compiler::source::{compile_source, compile_source_with_env};
 use arcweft_core::{
     bytecode::BytecodeProgram,
     plan::{EntryRuntimeId, RuntimePlan},
 };
-use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_sema::{
+    env::TypeCheckEnv,
+    types::{EntityKind, TypeKind},
+};
 use arcweft_player_scene::{
     fonts::PlayerFontSet,
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
@@ -45,10 +48,6 @@ use arcweft_render_wgpu::geometry::{
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_runtime_plan::{
-    flow::{lower_runtime_plan, lower_runtime_plan_with_stats},
-    fx::lower_fx_definitions,
-};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::collections::BTreeMap;
 
@@ -312,6 +311,8 @@ fn wave(amplitude: Length = 3px) -> Fx {
   ])
 }
 
+character @character.narrator Narrator as narrator {}
+
 flow opening {
   narrator: [fx wave()]typed Fx[/fx][p]
 }
@@ -320,16 +321,16 @@ entry cli @entry.opening {
   goto @flow.opening
 }
 "##;
-    let parsed = parse_source(SOURCE);
-    assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("typed Fx fixture lowers to HIR");
-    let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
+    let env = TypeCheckEnv::standard().with_symbol(
+        "shader.source_glow",
+        TypeKind::entity_ref(EntityKind::Other("Shader".to_owned())),
+    );
+    let compiled = compile_source_with_env(SOURCE, &env).expect("typed Fx fixture compiles");
     let definitions =
-        FxDefinitions::try_new(lower_fx_definitions(&hir).expect("Fx definitions lower"))
-            .expect("Fx inventory");
+        FxDefinitions::try_new(compiled.fx_definitions.iter().cloned()).expect("Fx inventory");
     bundle_from_runtime_plan(
-        &report.plan,
-        report.line_display_catalog,
+        &compiled.plan,
+        compiled.display,
         SOURCE,
         "web-rich-text-fx.arcw",
         "entry.opening",
@@ -823,13 +824,10 @@ entry cli @entry.manual_released { goto @flow.manual_released }
 entry cli @entry.manual_destroyed { goto @flow.manual_destroyed }
 entry cli @entry.scoped_disposed { goto @flow.scoped_disposed }
 "#;
-    let parsed = parse_source(SOURCE);
-    assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("authored fixture lowers to HIR");
-    let plan = lower_runtime_plan(&hir).expect("authored fixture lowers to runtime plan");
+    let compiled = compile_source(SOURCE).expect("authored fixture compiles");
     bundle_from_runtime_plan(
-        &plan,
-        LineDisplayCatalog::default(),
+        &compiled.plan,
+        compiled.display,
         SOURCE,
         "web-authored-image-handle.arcw",
         "entry.manual_live",
@@ -881,13 +879,10 @@ entry cli @entry.view_manual_unmounted { goto @flow.view_manual_unmounted }
 entry cli @entry.view_manual_destroyed { goto @flow.view_manual_destroyed }
 entry cli @entry.view_scoped_disposed { goto @flow.view_scoped_disposed }
 "#;
-    let parsed = parse_source(SOURCE);
-    assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("authored view fixture lowers to HIR");
-    let plan = lower_runtime_plan(&hir).expect("authored view fixture lowers to runtime plan");
+    let compiled = compile_source(SOURCE).expect("authored View fixture compiles");
     bundle_from_runtime_plan(
-        &plan,
-        LineDisplayCatalog::default(),
+        &compiled.plan,
+        compiled.display,
         SOURCE,
         "web-authored-view-controls.arcw",
         "entry.view_manual_live",

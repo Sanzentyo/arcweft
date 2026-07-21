@@ -11,6 +11,7 @@ arcweft-adapter-context = { workspace = true, features = ["sema"] }
 arcweft-agent-repl = { workspace = true }
 arcweft-character = { workspace = true }
 arcweft-compiler = { workspace = true }
+arcweft-core = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
@@ -19,6 +20,7 @@ arcweft-manifest-model = { workspace = true }
 arcweft-project-loader = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-resource-model = { workspace = true }
 arcweft-runtime-host = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
@@ -37,6 +39,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 arcweft-adapter-metadata.workspace = true
+arcweft-project.workspace = true
 
 [lib]
 path = "src/lib.rs"

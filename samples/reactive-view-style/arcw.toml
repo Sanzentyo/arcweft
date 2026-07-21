@@ -9,3 +9,6 @@ version = "0.1.0"
 kind = "game"
 entry = "@entry.reactive_view_style"
 source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.ReactivePanel"

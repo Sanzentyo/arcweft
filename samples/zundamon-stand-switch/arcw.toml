@@ -12,3 +12,6 @@ source-dir = "src"
 kind = "game"
 entry = "@entry.main"
 source = "src/main.arcw"
+
+[profiles."game.main".dialogue]
+view = "view.ZundamonPanel"

@@ -123,10 +123,6 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::ExternMod(item.clone()));
             }
-            Item::DialogueDefaults(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::DialogueDefaults(item.clone()));
-            }
             Item::Impl(item) => {
                 self.declarations.push(HirTopLevelDecl::Impl(item.clone()));
             }
@@ -429,37 +425,6 @@ flow @flow.opening opening {
             errors[0].message(),
             "raw top-level item cannot be lowered: alice: Hello[p]"
         );
-    }
-
-    #[test]
-    fn lowering_preserves_dialogue_defaults_attributes() {
-        let tree = parse_source(
-            r#"
-#[profile(note="mobile defaults")]
-pub dialogue defaults @dialogue.mobile {
-    rich_text {
-        ruby {
-            size = 10px
-        }
-    }
-}
-"#,
-        )
-        .into_typed_tree();
-
-        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-        let defaults = hir
-            .declarations()
-            .iter()
-            .find_map(|decl| match decl {
-                crate::model::HirTopLevelDecl::DialogueDefaults(defaults) => Some(defaults),
-                _ => None,
-            })
-            .expect("dialogue defaults lowers");
-
-        assert_eq!(defaults.attrs().len(), 1);
-        assert_eq!(defaults.attrs()[0].name(), "profile");
-        assert_eq!(defaults.attrs()[0].args(), Some("note=\"mobile defaults\""));
     }
 
     #[test]

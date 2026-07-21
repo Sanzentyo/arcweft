@@ -14,6 +14,7 @@ use arcweft_character::{
     },
     registration_catalog::SourceBackedCharacterCatalog,
 };
+use arcweft_compiler::project::{CompiledProject, ProjectCompilationContext, compile_project};
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
@@ -43,6 +44,10 @@ use arcweft_lang_syntax::{
     parser::parse_source,
 };
 use arcweft_launch::ProfileId;
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 use std::{
     sync::{Barrier, atomic::AtomicBool, mpsc},
@@ -50,14 +55,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-fn registered_world() -> Arc<RegisteredSemanticWorld> {
+fn registered_world() -> Arc<CompiledProject> {
     registered_world_with_base(TypeCheckEnv::standard())
 }
 
-fn registered_world_with_base(base: TypeCheckEnv) -> Arc<RegisteredSemanticWorld> {
-    let (document, project) = project_fixture();
+fn registered_world_with_base(base: TypeCheckEnv) -> Arc<CompiledProject> {
+    let (document, _project) = project_fixture();
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("cache-tests").expect("package"),
+        CallablePackageId::try_new("cache.tests").expect("package"),
         document.identity().id().clone(),
         "test",
     )
@@ -69,15 +74,7 @@ fn registered_world_with_base(base: TypeCheckEnv) -> Arc<RegisteredSemanticWorld
         Vec::new(),
     )
     .expect("registration facts");
-    Arc::new(
-        CharacterRegistrar::register(CharacterRegistrationRequest::new(
-            Arc::new(base),
-            project.as_ref(),
-            &facts,
-            None,
-        ))
-        .expect("registered semantic world"),
-    )
+    compile_fixture(&document, base, facts, None)
 }
 
 #[allow(
@@ -88,14 +85,13 @@ fn registered_world_with_character_asset(
     asset: &str,
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> (
-    Arc<RegisteredSemanticWorld>,
+    Arc<CompiledProject>,
     Arc<SourceDocument>,
-    Arc<HirProject>,
     Arc<SourceDocument>,
 ) {
-    let (root, project) = project_fixture();
+    let (root, _project) = project_fixture();
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("cache-tests").expect("package"),
+        CallablePackageId::try_new("cache.tests").expect("package"),
         root.identity().id().clone(),
         "test",
     )
@@ -197,16 +193,54 @@ fn registered_world_with_character_asset(
         vec![catalog],
     )
     .expect("character registration facts");
-    let registered = Arc::new(
-        CharacterRegistrar::register(CharacterRegistrationRequest::new(
-            Arc::new(TypeCheckEnv::standard()),
-            project.as_ref(),
-            &facts,
-            previous,
-        ))
-        .expect("registered character world"),
+    let registered = compile_fixture(&root, TypeCheckEnv::standard(), facts, previous);
+    (registered, root, manifest_document)
+}
+
+fn compile_fixture(
+    document: &Arc<SourceDocument>,
+    base: TypeCheckEnv,
+    facts: ProjectRegistrationFacts,
+    previous: Option<&RegisteredTypeCheckEnv>,
+) -> Arc<CompiledProject> {
+    let manifest = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://cache-tests/arcw.toml")
+                .expect("manifest document id"),
+            SourceName::path("arcw.toml"),
+            "",
+        )
+        .expect("manifest document"),
     );
-    (registered, root, project, manifest_document)
+    let sources = ProjectSources::new(
+        std::path::PathBuf::from("arcw.toml"),
+        std::path::PathBuf::new(),
+        PackageSpec {
+            id: PackageId::new("cache.tests").expect("package id"),
+            version: PackageVersion::new("0.0.0").expect("package version"),
+        },
+        BuildSpec::default(),
+        manifest,
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            std::path::PathBuf::from("src/main.arcw"),
+            Arc::clone(document),
+            [],
+        )],
+    )
+    .expect("project sources");
+    let context = ProjectCompilationContext::new(
+        Arc::new(base),
+        Arc::new(facts),
+        Arc::new(ResourceTypeRegistry::empty()),
+        previous.cloned().map(Arc::new),
+        None,
+        Vec::new(),
+    );
+    Arc::new(
+        compile_project(&sources, &context, &RuntimePlanLowerOptions::default())
+            .expect("compiled test project"),
+    )
 }
 
 fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
@@ -225,7 +259,7 @@ fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
     let project = Arc::new(
         HirProject::new(
-            "cache-tests",
+            "cache.tests",
             [HirProjectModule::try_new(
                 CanonicalModulePath::crate_root(),
                 document.identity().clone(),
@@ -238,15 +272,21 @@ fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
     (document, project)
 }
 
-fn accepted_candidate(world: Arc<RegisteredSemanticWorld>) -> AcceptedProfileCandidate {
-    let (document, project) = project_fixture();
+fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidate {
+    let document = Arc::new(
+        compiled
+            .linked_hir()
+            .source_document()
+            .cloned()
+            .expect("compiled source document"),
+    );
     let source_uri = "file:///workspace/cache-tests/src/main.arcw"
         .parse::<Uri>()
         .expect("source URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            project,
-            world.as_ref(),
+            Arc::new(compiled.hir_project().clone()),
+            compiled.registered_world(),
             vec![AcceptedSourceDocumentSeed::new(
                 document,
                 AcceptedSourceLocator::Uri { uri: source_uri },
@@ -268,7 +308,7 @@ fn accepted_candidate(world: Arc<RegisteredSemanticWorld>) -> AcceptedProfileCan
             &manifest_uri,
             ProfileId::new("test").expect("valid test profile ID"),
         ),
-        world,
+        compiled,
         project,
         AcceptedOverlaySet::default(),
     )
@@ -276,9 +316,8 @@ fn accepted_candidate(world: Arc<RegisteredSemanticWorld>) -> AcceptedProfileCan
 }
 
 fn accepted_character_candidate(
-    world: Arc<RegisteredSemanticWorld>,
+    compiled: Arc<CompiledProject>,
     root: Arc<SourceDocument>,
-    project: Arc<HirProject>,
     manifest: Arc<SourceDocument>,
 ) -> AcceptedProfileCandidate {
     let source_uri = "file:///workspace/cache-tests/src/main.arcw"
@@ -289,8 +328,8 @@ fn accepted_character_candidate(
         .expect("manifest URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            project,
-            world.as_ref(),
+            Arc::new(compiled.hir_project().clone()),
+            compiled.registered_world(),
             vec![
                 AcceptedSourceDocumentSeed::new(
                     root,
@@ -320,7 +359,7 @@ fn accepted_character_candidate(
             &profile_manifest_uri,
             ProfileId::new("test").expect("profile"),
         ),
-        world,
+        compiled,
         project,
         AcceptedOverlaySet::default(),
     )
@@ -358,7 +397,7 @@ fn main() -> Unit {
         .expect("recovered source lowers to HIR");
     let project = Arc::new(
         HirProject::new(
-            "cache-tests",
+            "cache.tests",
             [HirProjectModule::try_new(
                 CanonicalModulePath::crate_root(),
                 document.identity().clone(),
@@ -369,7 +408,7 @@ fn main() -> Unit {
         .expect("recovered HIR project"),
     );
     let world_id = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("cache-tests").expect("package"),
+        CallablePackageId::try_new("cache.tests").expect("package"),
         document.identity().id().clone(),
         "test",
     )
@@ -406,39 +445,10 @@ fn main() -> Unit {
         )
         .expect("recovered signature outcome"),
     );
-    let source_uri = "file:///workspace/cache-tests/src/recovered-signature.arcw"
-        .parse::<Uri>()
-        .expect("source URI");
-    let accepted_project = Arc::new(
-        AcceptedProjectSnapshot::try_new(
-            project,
-            world.as_ref(),
-            vec![AcceptedSourceDocumentSeed::new(
-                document,
-                AcceptedSourceLocator::Uri { uri: source_uri },
-                AcceptedSourceOwnership::Workspace,
-                AcceptedSourceAccess::Writable,
-            )],
-        )
-        .expect("accepted recovered project"),
-    );
-    let workspace_uri = "file:///workspace/cache-tests"
-        .parse::<Uri>()
-        .expect("workspace URI");
-    let manifest_uri = "file:///workspace/cache-tests/arcw.toml"
-        .parse::<Uri>()
-        .expect("manifest URI");
-    let candidate = AcceptedProfileCandidate::try_new(
-        AcceptedProfileKey::new(
-            &workspace_uri,
-            &manifest_uri,
-            ProfileId::new("test").expect("profile"),
-        ),
-        world,
-        accepted_project,
-        AcceptedOverlaySet::default(),
-    )
-    .expect("recovered accepted candidate");
+    // Recovery is a request-local overlay concern. The accepted generation
+    // remains the last fully compiled project and only its cache namespace is
+    // used to retain this typed recovery result.
+    let candidate = accepted_candidate(registered_world());
     (candidate, outcome, cursor)
 }
 
@@ -479,7 +489,7 @@ fn colliding_typed_binding_registration()
 -> arcweft_lang_sema::registration::CharacterRegistrationReport {
     let (root, project) = project_fixture();
     let world = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("cache-tests").expect("package"),
+        CallablePackageId::try_new("cache.tests").expect("package"),
         root.identity().id().clone(),
         "test",
     )
@@ -633,13 +643,11 @@ fn recovered_help_reuses_only_the_exact_recovery_source_and_stamp_key() {
 )]
 fn signature_cache_key_misses_when_any_single_identity_field_changes() {
     let state = LspProfileState::new();
-    let (world, root, project, manifest) =
-        registered_world_with_character_asset("layers/body.png", None);
+    let (world, root, manifest) = registered_world_with_character_asset("layers/body.png", None);
     let accepted = state
         .replace_accepted(accepted_character_candidate(
             Arc::clone(&world),
             root,
-            project,
             manifest,
         ))
         .expect("accepted character environment");
@@ -656,8 +664,8 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
                 .then_some(identity)
         })
         .expect("module-backed source identity");
-    let symbols = world.symbols();
-    let environment = world.environment();
+    let symbols = world.project_symbols();
+    let environment = world.registered_environment();
     let generation = accepted.generation();
     let world_id = symbols.world().clone();
     let symbol_revision = *symbols.revision();
@@ -701,9 +709,11 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
     let changed_symbol_revision =
         ProjectSymbolRevision::try_for_documents([changed_document.identity()])
             .expect("changed symbol revision");
-    let (changed_characters, _, _, _) =
-        registered_world_with_character_asset("layers/body-updated.png", Some(world.environment()));
-    let changed_environment = changed_characters.environment();
+    let (changed_characters, _, _) = registered_world_with_character_asset(
+        "layers/body-updated.png",
+        Some(world.registered_environment()),
+    );
+    let changed_environment = changed_characters.registered_environment();
     let variations = [
         SignatureCacheKey::new(
             AcceptedEnvironmentGeneration::for_test(generation.get() + 1),
@@ -863,8 +873,8 @@ fn base_change_same_character_invalidates_broad_cache() {
         TypeCheckEnv::standard().with_symbol("adapter.mode", TypeKind::Bool),
     );
     assert_eq!(
-        first_world.environment().character_digest(),
-        second_world.environment().character_digest(),
+        first_world.registered_environment().character_digest(),
+        second_world.registered_environment().character_digest(),
         "the narrow character key deliberately cannot observe base facts"
     );
 
@@ -888,36 +898,33 @@ fn base_change_same_character_invalidates_broad_cache() {
 #[test]
 fn character_digest_and_revision_change_publish_a_fresh_cache_namespace() {
     let state = LspProfileState::new();
-    let (first_world, first_root, first_project, first_manifest) =
+    let (first_world, first_root, first_manifest) =
         registered_world_with_character_asset("layers/body.png", None);
     let first = state
         .replace_accepted(accepted_character_candidate(
             Arc::clone(&first_world),
             first_root,
-            first_project,
             first_manifest,
         ))
         .expect("first accepted character environment");
     insert_signature_cache(&first);
-    let (second_world, second_root, second_project, second_manifest) =
-        registered_world_with_character_asset(
-            "layers/body-updated.png",
-            Some(first_world.environment()),
-        );
-    assert_ne!(
-        first_world.environment().character_digest(),
-        second_world.environment().character_digest()
+    let (second_world, second_root, second_manifest) = registered_world_with_character_asset(
+        "layers/body-updated.png",
+        Some(first_world.registered_environment()),
     );
     assert_ne!(
-        first_world.environment().character_revision(),
-        second_world.environment().character_revision()
+        first_world.registered_environment().character_digest(),
+        second_world.registered_environment().character_digest()
+    );
+    assert_ne!(
+        first_world.registered_environment().character_revision(),
+        second_world.registered_environment().character_revision()
     );
 
     let second = state
         .replace_accepted(accepted_character_candidate(
             second_world,
             second_root,
-            second_project,
             second_manifest,
         ))
         .expect("changed character environment");
@@ -932,6 +939,7 @@ fn generation_overflow_preserves_state() {
     let state = LspProfileState::new();
     let AcceptedProfileCandidate {
         profile,
+        compiled,
         world,
         project,
         overlays,
@@ -939,6 +947,7 @@ fn generation_overflow_preserves_state() {
     let previous = Arc::new(AcceptedProfileEnvironment {
         generation: AcceptedEnvironmentGeneration::for_test(u64::MAX),
         profile,
+        compiled,
         world,
         project,
         overlays,

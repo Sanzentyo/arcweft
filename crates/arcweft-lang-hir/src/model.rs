@@ -3,7 +3,7 @@ use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{DocBlock, TextRange, UseItem, Visibility},
-        dialogue::{DialogueContent, DialogueDefaultsItem, LineArg, SpeakerLineSurface},
+        dialogue::{DialogueContent, LineArg, SpeakerLineSurface},
         flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax},
         items::{
@@ -96,7 +96,6 @@ pub enum HirTopLevelDecl {
     Entry(HirEntryDecl),
     ExternCapability(ExternCapabilityItem),
     ExternMod(ExternModItem),
-    DialogueDefaults(DialogueDefaultsItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
     Proof(ProofItem),

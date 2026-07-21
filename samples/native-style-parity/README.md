@@ -32,5 +32,5 @@ Generated bundles and PNG reports are written under `web/local/` and
 For a quick local observe capture:
 
 ```bash
-cargo run -p arcweft-cli --features native-capture -- agent observe samples/native-style-parity/main.arcw --json --image png --out target/native-style-parity/observe.png --mode drain --steps 4 --max-ops 64
+cargo run -p arcweft-cli --features native-capture -- agent observe --manifest-path samples/native-style-parity/arcw.toml --profile main --json --image png --out target/native-style-parity/observe.png --mode drain --steps 4 --max-ops 64
 ```

@@ -1,6 +1,9 @@
 use super::*;
 use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
+use arcweft_dialogue::{
+    DialoguePresentationProfile, DialogueProfileRevision, FallbackStylePolicy, InlineFailurePolicy,
+    InlineFallback,
+};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
@@ -9,9 +12,38 @@ use arcweft_render_text::{
     RichTextRubyPosition, RichTextSettingSource, RichTextSourceRange, RichTextStyle,
     RichTextStyleContribution, RichTextTransformOrigin, RichTextWritingMode, RuntimeLineContext,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-plan-render-text-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-plan-render-text-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
+
+fn test_dialogue_defaults(module: &arcweft_lang_hir::model::HirModule) -> DialogueDisplayDefaults {
+    let profile = DialoguePresentationProfile::engine_default();
+    let revision = test_dialogue_revision();
+    DialogueDisplayDefaults::from_module_with_profile(module, Some((&profile, &revision)))
 }
 
 fn lower_dialogue_display_with_module_fx(
@@ -47,7 +79,7 @@ flow @flow.main main {
         })
         .expect("dialogue item");
 
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let spec = lower_dialogue_display(line_id("say.opening.001"), dialogue, &defaults);
 
     assert_eq!(spec.view.as_str(), "std.view.dialogue");
@@ -67,13 +99,13 @@ flow @flow.main main {
         ]
     );
     assert_eq!(
-        spec.default_inline_failure_policy,
-        Some(InlineFailurePolicy::Fallback {
+        spec.inline_failure,
+        InlineFailurePolicy::Fallback {
             fallback: InlineFallback::Text {
                 text: "?".to_owned(),
                 style: FallbackStylePolicy::Plain
             }
-        })
+        }
     );
     assert!(spec.content.nodes.iter().any(|node| {
         matches!(
@@ -137,7 +169,7 @@ fn canonical_scalar_tags_match_short_and_direct_dialogue_styles() {
         lower_dialogue_display(
             line_id("say.scalar.tags"),
             dialogue,
-            &DialogueDisplayDefaults::from_module(&hir),
+            &test_dialogue_defaults(&hir),
         )
         .content
         .nodes
@@ -202,7 +234,7 @@ flow @flow.main main {
             _ => None,
         })
         .expect("dialogue item");
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let spec = lower_dialogue_display(line_id("say.wait.valid"), dialogue, &defaults);
 
     assert!(spec.content.nodes.iter().any(|node| matches!(
@@ -240,7 +272,7 @@ flow @flow.main main {
             _ => None,
         })
         .expect("dialogue item");
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let error = lower_dialogue_display_with_speaker_presets(
         line_id("say.wait.invalid"),
         dialogue,
@@ -271,7 +303,7 @@ flow @flow.main main {
             _ => None,
         })
         .expect("dialogue item");
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let error = lower_dialogue_display_with_speaker_presets(
         line_id("say.speed.invalid"),
         dialogue,
@@ -315,7 +347,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.001"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
         &hir,
     );
     let frame = spec
@@ -385,7 +417,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.host_event.effect"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -446,7 +478,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.styled_interpolation_after_break"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
         &hir,
     );
     let frame = spec
@@ -511,7 +543,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.object.proxy"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -593,7 +625,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.object.proxy.defaults"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -666,7 +698,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.object.proxy.nested"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -768,7 +800,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.object.proxy.inferred"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
         &hir,
     );
     let frame = spec
@@ -887,7 +919,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.object.proxy.rich_text_attribute"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -957,7 +989,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.presentation.scalar"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -1006,7 +1038,7 @@ flow @flow.main main {
 ",
     );
     let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let dialogues = hir
         .flows()
         .first()
@@ -1103,7 +1135,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.effect.end"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
         &hir,
     );
     let frame = spec
@@ -1152,7 +1184,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.transform.rotate"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -1207,18 +1239,18 @@ flow @flow.main main {
 }
 
 #[test]
-fn rich_text_defaults_and_line_options_lower_to_ruby_layout() {
+fn character_dialogue_style_and_line_options_lower_to_ruby_layout() {
     let source = r"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
-            gap = 2px
+character @character.alice Alice as alice {
+    dialogue_style {
+        rich_text {
+            ruby {
+                size = 14px
+                gap = 2px
+            }
         }
     }
 }
-
-character @character.alice Alice as alice {}
 
 flow @flow.main main {
     alice(rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px))): |[夢](ゆめ)[p]
@@ -1239,7 +1271,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.defaults"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
 
     assert!(spec.base_styles.iter().any(|style| {
@@ -1278,7 +1310,7 @@ flow @flow.main main {
     }));
     assert!(
         spec.style_contributions.iter().any(|contribution| {
-            contribution.layer == RichTextCascadeLayer::DialogueDefaults
+            contribution.layer == RichTextCascadeLayer::CharacterDialogueStyle
                 && contribution.path == "rich_text.ruby.size"
                 && contribution.value == "14px"
                 && !contribution.active
@@ -1304,70 +1336,10 @@ flow @flow.main main {
             )
     }));
     assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::DialogueDefaults
+        contribution.layer == RichTextCascadeLayer::CharacterDialogueStyle
             && contribution.path == "rich_text.ruby.size"
             && !contribution.active
             && contribution.shadowed_by.is_some()
-    }));
-}
-
-#[test]
-fn dialogue_display_uses_canonical_defaults_profile_when_multiple_exist() {
-    let parsed = parse_source(
-        r##"
-pub dialogue defaults @dialogue.debug {
-    text_color = rgb("#ff0000")
-}
-
-pub dialogue defaults {
-    text_color = rgb("#101112")
-}
-
-pub dialogue defaults @dialogue.mobile {
-    text_color = rgb("#00ff00")
-}
-
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: Hello[p]
-}
-"##,
-    );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let dialogue = hir
-        .flows()
-        .first()
-        .and_then(|flow| flow.body().first())
-        .and_then(|item| match item {
-            arcweft_lang_hir::model::HirFlowItem::Dialogue(dialogue) => Some(dialogue),
-            _ => None,
-        })
-        .expect("dialogue item");
-    let spec = lower_dialogue_display(
-        line_id("say.rich_text.defaults.profile"),
-        dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
-    );
-
-    assert_eq!(
-        spec.base_styles,
-        vec![RichTextStyle::Color {
-            value: RichTextColor::Rgb {
-                red: 16,
-                green: 17,
-                blue: 18
-            }
-        }]
-    );
-    assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::DialogueDefaults
-            && contribution.path == "text_color"
-            && contribution.value == "rgb(\"#101112\")"
-            && contribution.active
-    }));
-    assert!(!spec.style_contributions.iter().any(|contribution| {
-        contribution.value == "rgb(\"#ff0000\")" || contribution.value == "rgb(\"#00ff00\")"
     }));
 }
 
@@ -1396,7 +1368,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.002"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -1433,7 +1405,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.003"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -1474,7 +1446,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.004"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
     let frame = spec
         .resolve_frame(&RuntimeLineContext::default())
@@ -1497,15 +1469,15 @@ flow @flow.main main {
 #[test]
 fn inline_rich_text_span_contributes_cascade_provenance() {
     let source = r"
-pub dialogue defaults {
-    rich_text {
-        ruby {
-            size = 14px
+character @character.alice Alice as alice {
+    dialogue_style {
+        rich_text {
+            ruby {
+                size = 14px
+            }
         }
     }
 }
-
-character @character.alice Alice as alice {}
 
 flow @flow.main main {
     alice: [.ruby_over ruby_size=11px]|[夢](ゆめ)[/][p]
@@ -1527,7 +1499,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display(
         line_id("say.rich_text.inline"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
     );
 
     assert!(spec.style_contributions.iter().any(|contribution| {
@@ -1539,7 +1511,7 @@ flow @flow.main main {
                 == Some((inline_size_start, inline_size_start + 4))
     }));
     assert!(spec.style_contributions.iter().any(|contribution| {
-        contribution.layer == RichTextCascadeLayer::DialogueDefaults
+        contribution.layer == RichTextCascadeLayer::CharacterDialogueStyle
             && contribution.path == "rich_text.ruby.size"
             && contribution.value == "14px"
             && !contribution.active
@@ -1567,7 +1539,7 @@ fn multiline_inline_span_provenance_projects_lf_and_crlf_ranges() {
         let spec = lower_dialogue_display(
             line_id("say.rich_text.multiline_inline"),
             dialogue,
-            &DialogueDisplayDefaults::from_module(&hir),
+            &test_dialogue_defaults(&hir),
         );
         assert!(spec.style_contributions.iter().any(|contribution| {
             contribution.layer == RichTextCascadeLayer::InlineSpan
@@ -1601,7 +1573,7 @@ flow @flow.main main {
     let spec = lower_dialogue_display_with_module_fx(
         line_id("say.rich_text.quoted_effect"),
         dialogue,
-        &DialogueDisplayDefaults::from_module(&hir),
+        &test_dialogue_defaults(&hir),
         &hir,
     );
 
@@ -1628,14 +1600,8 @@ flow @flow.main main {
 }
 
 #[test]
-fn dialogue_display_inherits_global_and_character_style_defaults() {
+fn dialogue_display_inherits_character_style_and_line_overrides() {
     let source = r##"
-pub dialogue defaults {
-    font = serif
-    text_color = rgb("#101112")
-    inline_error = InlineFailure.fallback("global")
-}
-
 character @character.alice Alice as alice {
     dialogue_style {
         text_color = rgb("#202122")
@@ -1644,12 +1610,12 @@ character @character.alice Alice as alice {
 }
 
 flow @flow.main main {
-    @<character.alice>.say(color=rgb("#303132"))[Hello #[missing][p]]
+    alice(text_color=rgb("#303132")): Hello #[missing][p]
 }
 "##;
     let parsed = parse_source(source);
     let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let dialogue = hir
         .flows()
         .first()
@@ -1665,16 +1631,6 @@ flow @flow.main main {
     assert_eq!(
         spec.base_styles,
         vec![
-            RichTextStyle::Font {
-                family: RichTextFontFamily::Serif
-            },
-            RichTextStyle::Color {
-                value: RichTextColor::Rgb {
-                    red: 16,
-                    green: 17,
-                    blue: 18
-                }
-            },
             RichTextStyle::Color {
                 value: RichTextColor::Rgb {
                     red: 32,
@@ -1691,10 +1647,7 @@ flow @flow.main main {
             }
         ]
     );
-    assert_eq!(
-        spec.default_inline_failure_policy,
-        Some(InlineFailurePolicy::Discard)
-    );
+    assert_eq!(spec.inline_failure, InlineFailurePolicy::Discard);
     let character_text_color = spec
         .style_contributions
         .iter()
@@ -1736,7 +1689,7 @@ flow @flow.main main {
 "#;
     let parsed = parse_source(source);
     let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let defaults = DialogueDisplayDefaults::from_module(&hir);
+    let defaults = test_dialogue_defaults(&hir);
     let dialogue = hir
         .flows()
         .first()

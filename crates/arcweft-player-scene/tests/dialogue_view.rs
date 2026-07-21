@@ -3,6 +3,7 @@ use arcweft_bundle::resource_codec::view::ViewRuntimeActionButtonAction;
 use arcweft_bundle::resource_codec::{ValidatedViewProduct, ViewProductValidationLimits};
 use arcweft_bundle::standard_view::{dialogue_program, dialogue_style, dialogue_text};
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_player_scene::{
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame},
     images::BundleImageCatalog,
@@ -16,11 +17,34 @@ use arcweft_render_wgpu::{
     geometry::{PreparedTextOwnerKind, RenderPreferences, RenderViewport},
     view_scene::ViewPrimitive,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::{
     dialogue::{DialoguePresentationOperation, DialogueViewDefinition},
     display::BundlePresentationSnapshot,
     view_runtime::BundleViewRuntime,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("player-scene-dialogue-view-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.player-scene-dialogue-view-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 #[test]
 fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
@@ -99,6 +123,8 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         speaker_label: Some("語り手".to_owned()),
         text_key: None,
         view: arcweft_bundle::standard_view::dialogue_view_id(),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
@@ -109,7 +135,7 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
                 ..RichTextLayout::default()
             },
         }],
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![RichTextNode::Ruby {
@@ -152,7 +178,8 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
         product,
         Some(text.clone()),
-        &LineDisplayCatalog::new(vec![display_spec]),
+        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
+            .expect("test display catalog is revision-consistent"),
     )
     .expect("standard View runtime");
     presentation.view =

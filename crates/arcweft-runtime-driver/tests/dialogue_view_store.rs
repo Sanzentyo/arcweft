@@ -1,12 +1,36 @@
 use arcweft_core::plan::{FlowEvent, RuntimeLineId};
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::dialogue::{
     DialoguePresentationOperation, DialoguePresentationStore, DialogueViewDefinition,
 };
 use arcweft_runtime_driver::display::resolve_display_frames;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-dialogue-view-store-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-dialogue-view-store-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn view_definition(value: &str) -> DialogueViewDefinition {
@@ -22,11 +46,13 @@ fn display_spec(line: &str, view: &str, text: &str) -> LineDisplaySpec {
         speaker_label: None,
         text_key: None,
         view: arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![RichTextNode::Text {
@@ -36,7 +62,11 @@ fn display_spec(line: &str, view: &str, text: &str) -> LineDisplaySpec {
 }
 
 fn resolved_frame(line: &str, view: &str, text: &str) -> arcweft_render_text::LineDisplayFrame {
-    let catalog = LineDisplayCatalog::new(vec![display_spec(line, view, text)]);
+    let catalog = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(line, view, text)],
+    )
+    .expect("test display catalog is revision-consistent");
     let resolution = resolve_display_frames(
         &catalog,
         &[FlowEvent::DialogueLine {
@@ -57,10 +87,14 @@ fn resolved_frame(line: &str, view: &str, text: &str) -> arcweft_render_text::Li
 
 #[test]
 fn same_view_history_mounts_only_its_active_occurrence() {
-    let catalog = LineDisplayCatalog::new(vec![
-        display_spec("line.first", "view.Dialogue", "first"),
-        display_spec("line.second", "view.Dialogue", "second"),
-    ]);
+    let catalog = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![
+            display_spec("line.first", "view.Dialogue", "first"),
+            display_spec("line.second", "view.Dialogue", "second"),
+        ],
+    )
+    .expect("test display catalog is revision-consistent");
     let resolution = resolve_display_frames(
         &catalog,
         &[

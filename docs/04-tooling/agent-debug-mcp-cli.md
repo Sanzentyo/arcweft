@@ -51,8 +51,9 @@ requested result, which gives LLM debuggers a single-call path for "show me this
 layer/object" and "what did I click here" workflows while still updating
 `resources/list`.
 `arcweft.observe` uses the same direct-source versus launch-profile selection
-model as `arcw agent observe`, so project-selected dialogue defaults and adapter
-context are available through MCP without also supplying a source path. Capture
+model as `arcw agent observe`, so the profile-owned dialogue View, Style, and
+inline-failure policy, together with adapter context, are available through MCP
+without also supplying a source path. Capture
 resources are retained in the current
 MCP session by URI, so later captures do not evict earlier PNG/raw resources;
 `resources/read` and `arcweft.resource.read` return the same native renderer

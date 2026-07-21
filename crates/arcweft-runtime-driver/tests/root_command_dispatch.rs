@@ -23,7 +23,9 @@ use arcweft_core::step::{
 use arcweft_core::value::{
     RuntimeExpr, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
+use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleHotSwapError, BundleSession, BundleSessionError, BundleSessionOptions,
@@ -34,12 +36,33 @@ use arcweft_runtime_driver::session::{
 };
 use arcweft_runtime_driver::session_save::{BundleSessionPendingBlocker, BundleSessionSaveError};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 const ENTRY: &str = "entry.root_commands";
 const FLOW: &str = "flow.root_commands";
 const CONSTRUCTOR: &str = "command.save";
 const TARGET: &str = "save.slot.primary";
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-root-command-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-root-command-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn entry_id() -> EntryRuntimeId {
     EntryRuntimeId::from_source_entity_body(ENTRY).expect("entry ID")
@@ -303,7 +326,7 @@ fn command_bundle_with_root(
         vec![contract.flow_executable()],
     );
     plan.verify().expect("stateful plan verifies");
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, "root-commands.arcw")
         .lower()
         .expect("AWBC lowers")
@@ -353,7 +376,7 @@ fn non_stateful_bundle() -> (ArcweftBundle, EntryRuntimeId) {
         roles: RuntimeEntryRoles::None,
     }]);
     plan.verify().expect("non-stateful plan verifies");
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, "non-stateful.arcw")
         .lower()
         .expect("AWBC lowers")

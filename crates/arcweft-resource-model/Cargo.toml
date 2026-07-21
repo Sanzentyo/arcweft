@@ -13,7 +13,11 @@ arcweft-interaction-model.workspace = true
 arcweft-layout.workspace = true
 arcweft-manifest-model.workspace = true
 arcweft-source = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lib]
 path = "src/lib.rs"

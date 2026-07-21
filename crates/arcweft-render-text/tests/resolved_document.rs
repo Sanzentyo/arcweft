@@ -1,5 +1,5 @@
 use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_render_text::{
     DialogueHostEvent, LanguageTag, LineDisplaySpec, Milli, ResolvedTextDocument, ResolvedTextRun,
     ResolvedTextRunSource, ResolvedTextStyle, RichTextControl, RichTextDocument,
@@ -8,6 +8,9 @@ use arcweft_render_text::{
     RichTextWritingMode, RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily,
     TextResolveError, TextStyleCascade, TextWeight,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::collections::BTreeMap;
 
 #[test]
@@ -26,6 +29,26 @@ fn style() -> ResolvedTextStyle {
         .expect("valid test style")
 }
 
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("render-text-resolved-document-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.render-text-resolved-document-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
+
 fn line(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
     LineDisplaySpec {
         line: RuntimeLineId::canonical("resolved.document.test").expect("canonical test line"),
@@ -33,11 +56,13 @@ fn line(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
         speaker_label: None,
         text_key: None,
         view: arcweft_view::ViewId::try_new("view.resolved-document.test").unwrap(),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: Some(InlineFailurePolicy::FailLine),
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(nodes),

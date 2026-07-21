@@ -7,14 +7,9 @@ fn agent_observe_writes_layer_png_and_object_raw_images() {
         r##"
 entry cli @entry.main { goto @flow.main }
 
-pub dialogue defaults {
-    font = serif
-    text_color = rgb("#101112")
-    inline_error = InlineFailure.fallback("?")
-}
-
 character @character.alice Alice as alice {
     dialogue_style {
+        font = serif
         text_color = rgb("#202122")
     }
 }

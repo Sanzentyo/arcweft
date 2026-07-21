@@ -1592,10 +1592,13 @@ mod tests {
         AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::entry::AgentBudget;
+    use arcweft_dialogue::DialogueProfileRevision;
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
     #[test]
     fn bundle_json_round_trips_without_paths() {
@@ -1618,7 +1621,7 @@ mod tests {
             },
             source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::default(),
+            LineDisplayCatalog::new(test_dialogue_revision()),
         )
         .expect("standard dialogue source joins source map")
         .with_adapter_manifests([BundleAdapterManifest {
@@ -2165,7 +2168,7 @@ mod tests {
             },
             source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::default(),
+            LineDisplayCatalog::new(test_dialogue_revision()),
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
@@ -2179,6 +2182,25 @@ mod tests {
         )
         .expect("source document");
         SourceMapSection::try_from_documents(&[&document]).expect("source map")
+    }
+
+    fn test_dialogue_revision() -> DialogueProfileRevision {
+        let source = SourceDocument::try_new(
+            SourceDocumentId::try_new("bundle-lib-test-revision").expect("source ID"),
+            SourceName::Memory,
+            "test manifest",
+        )
+        .expect("source document");
+        let sources = SourceSetRevision::try_for_identities([source.identity()])
+            .expect("test source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            source.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.bundle-lib-test").expect("View program ID"),
+            AcceptedViewProgramRevision::try_from_bytes([0x6b; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
     }
 
     fn minimal_awbc_program() -> AwbcProgram {

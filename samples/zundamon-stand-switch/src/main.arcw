@@ -59,10 +59,6 @@ pub view ZundamonPanel(dialogue: DialogueView) {
     }
 }
 
-pub dialogue defaults {
-    view = @view.ZundamonPanel
-}
-
 pub asset zundamon.normal {
     kind = image
     file = "zundamon/normal.png"

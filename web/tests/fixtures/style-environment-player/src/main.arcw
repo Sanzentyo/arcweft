@@ -31,10 +31,6 @@ pub view EnvironmentPanel(dialogue: DialogueView) {
         .style(@style.environment_panel)
 }
 
-pub dialogue defaults {
-    view = @view.EnvironmentPanel
-}
-
 struct GameState {
     started: bool
 }

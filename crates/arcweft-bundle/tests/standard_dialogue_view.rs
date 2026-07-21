@@ -13,14 +13,36 @@ use arcweft_bundle::standard_view::{
 };
 use arcweft_bundle::{BundleCodecError, BundleViewProductAttachError};
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-use arcweft_view::ViewId;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::style::{
     ViewColorValue, ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplicationTarget, ViewStyleDeclaration,
 };
+use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("test.arcw").expect("source ID"),
+        SourceName::path("test.arcw"),
+        "",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([document.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        document.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.bundle-standard-dialogue-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 #[test]
 fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
@@ -416,10 +438,14 @@ fn one_free_source_slot_is_insufficient_for_both_reserved_standard_sources() {
 #[test]
 fn dialogue_view_id_round_trips_as_the_accepted_public_owner() {
     let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::new(vec![display_spec(
-        RuntimeLineId::from_runtime_line_value("say.accepted").expect("line ID"),
-        ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
-    )]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(
+            RuntimeLineId::from_runtime_line_value("say.accepted").expect("line ID"),
+            ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
+        )],
+    )
+    .expect("test display catalog is revision-consistent");
 
     let encoded = bundle.to_json_bytes().expect("accepted owner encodes");
     let decoded =
@@ -431,10 +457,14 @@ fn dialogue_view_id_round_trips_as_the_accepted_public_owner() {
 #[test]
 fn dialogue_view_id_rejects_malformed_wire_identity() {
     let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::new(vec![display_spec(
-        RuntimeLineId::from_runtime_line_value("say.malformed").expect("line ID"),
-        ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
-    )]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(
+            RuntimeLineId::from_runtime_line_value("say.malformed").expect("line ID"),
+            ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
+        )],
+    )
+    .expect("test display catalog is revision-consistent");
     let mut payload: serde_json::Value =
         serde_json::from_slice(&bundle.to_json_bytes().expect("fixture encodes"))
             .expect("fixture JSON");
@@ -474,10 +504,14 @@ const fn position(value: ViewPosition) -> ViewSpecifiedValue {
 #[test]
 fn dialogue_view_id_is_required_and_rejects_null_wire_identity() {
     let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::new(vec![display_spec(
-        RuntimeLineId::from_runtime_line_value("say.required").expect("line ID"),
-        ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
-    )]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(
+            RuntimeLineId::from_runtime_line_value("say.required").expect("line ID"),
+            ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
+        )],
+    )
+    .expect("test display catalog is revision-consistent");
     let payload: serde_json::Value =
         serde_json::from_slice(&bundle.to_json_bytes().expect("fixture encodes"))
             .expect("fixture JSON");
@@ -509,7 +543,11 @@ fn dialogue_view_id_rejects_unknown_public_owner() {
     let line = RuntimeLineId::from_runtime_line_value("say.unknown").expect("line ID");
     let unknown = ViewId::try_new("view.UnknownDialogue").expect("well-formed View ID");
     let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::new(vec![display_spec(line.clone(), unknown.clone())]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(line.clone(), unknown.clone())],
+    )
+    .expect("test display catalog is revision-consistent");
 
     assert!(matches!(
         bundle.to_json_bytes(),
@@ -536,7 +574,11 @@ fn dialogue_view_id_rejects_registered_owner_without_dialogue_role() {
     let mut bundle = test_bundle()
         .with_view_resources(Some(authored), None)
         .expect("authored View resources merge");
-    bundle.display = LineDisplayCatalog::new(vec![display_spec(line.clone(), owner.clone())]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(line.clone(), owner.clone())],
+    )
+    .expect("test display catalog is revision-consistent");
 
     assert!(matches!(
         bundle.to_json_bytes(),
@@ -555,10 +597,14 @@ fn dialogue_view_validation_rejects_duplicate_owners_before_role_selection() {
     let mut duplicate = program.definitions[0].clone();
     duplicate.parameters.clear();
     program.definitions.push(duplicate);
-    bundle.display = LineDisplayCatalog::new(vec![display_spec(
-        RuntimeLineId::from_runtime_line_value("say.duplicate-view").expect("line ID"),
-        owner.clone(),
-    )]);
+    bundle.display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![display_spec(
+            RuntimeLineId::from_runtime_line_value("say.duplicate-view").expect("line ID"),
+            owner.clone(),
+        )],
+    )
+    .expect("test display catalog is revision-consistent");
 
     assert!(matches!(
         bundle.to_json_bytes(),
@@ -573,11 +619,13 @@ fn display_spec(line: RuntimeLineId, view: ViewId) -> LineDisplaySpec {
         speaker_label: None,
         text_key: None,
         view,
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![RichTextNode::Text {
@@ -662,6 +710,6 @@ fn try_test_bundle(
         },
         source_map,
         BytecodeProgram::default(),
-        LineDisplayCatalog::default(),
+        LineDisplayCatalog::new(test_dialogue_revision()),
     )
 }

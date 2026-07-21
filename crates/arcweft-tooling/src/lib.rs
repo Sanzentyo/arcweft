@@ -8,7 +8,6 @@ mod canonicalization;
 pub mod code_actions;
 mod decl_identity;
 mod dialogue_content;
-mod dialogue_defaults;
 mod dialogue_sugar;
 pub mod edit;
 pub mod format;

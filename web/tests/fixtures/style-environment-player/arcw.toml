@@ -1,0 +1,14 @@
+schema = 1
+default-profile = "main"
+
+[package]
+id = "org.arcweft.web-fixtures.style-environment-player"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+entry = "@entry.main"
+source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.EnvironmentPanel"

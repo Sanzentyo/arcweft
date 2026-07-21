@@ -1,4 +1,4 @@
-use arcweft_compiler::{error::CompileSourceError, source::compile_source};
+use arcweft_compiler::{project::ProjectCompileStage, source::compile_source};
 use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
 
 const MISSING_AS_SOURCE: &str =
@@ -14,11 +14,20 @@ fn parser_diagnostic_compiler_forwarding_preserves_the_complete_logical_value() 
         ParseErrorKind::ViewExportPartMissingAs
     );
 
-    let CompileSourceError::Parse(compiler_diagnostics) =
-        compile_source(MISSING_AS_SOURCE).expect_err("missing `as` must stop compilation")
-    else {
-        panic!("expected typed parser diagnostics");
-    };
+    let compiler_error =
+        compile_source(MISSING_AS_SOURCE).expect_err("missing `as` must stop compilation");
+    let project = compiler_error.project();
+    assert_eq!(project.stage(), ProjectCompileStage::Parse.as_str());
+    let compiler_diagnostics = project
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| {
+            diagnostic
+                .parse_error()
+                .expect("parse-stage diagnostics preserve their typed parser payload")
+                .clone()
+        })
+        .collect::<Vec<_>>();
 
     assert_eq!(compiler_diagnostics, syntax_diagnostics);
 }

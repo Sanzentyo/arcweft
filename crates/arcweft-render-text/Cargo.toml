@@ -11,9 +11,13 @@ arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-view = { workspace = true }
-
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
+
+[dev-dependencies]
+arcweft-resource-model = { workspace = true }
+arcweft-source = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

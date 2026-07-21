@@ -16,6 +16,7 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, RestartReason, WindowedPatchEvent, WindowedPatchReport,
 };
@@ -23,11 +24,13 @@ use arcweft_player_native::{WindowedRuntimeOutcome, WindowedRuntimeOwner};
 use arcweft_player_scene::input::InputController;
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_render_wgpu::geometry::RenderViewport;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::swap::GenerationId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use serde::Serialize;
 use std::fmt::Write as _;
 
@@ -46,6 +49,26 @@ const WRONG_BASE_SOURCE_LABEL: &str = "tests/fixtures/windowed_live_patch/src/wr
 const AWAIT_BASE_SOURCE_LABEL: &str = "tests/fixtures/windowed_live_patch/src/await_base.arcw";
 const AWAIT_CODE_GENERATIONAL_TARGET_SOURCE_LABEL: &str =
     "tests/fixtures/windowed_live_patch/src/await_code_generational_target.arcw";
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("player-native-windowed-live-patch-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.player-native-windowed-live-patch-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 const BASE_SOURCE: &str = include_str!("../fixtures/windowed_live_patch/src/base.arcw");
 const CONTENT_TARGET_SOURCE: &str =
@@ -1041,23 +1064,29 @@ fn dialogue_main_ops(line: &RuntimeLineId, changed_main_code: bool) -> Vec<FlowO
 }
 
 fn dialogue_display_catalog(line: RuntimeLineId, display_text: &str) -> LineDisplayCatalog {
-    LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line,
-        callee: "alice".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_bundle::standard_view::dialogue_view_id(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: display_text.to_owned(),
-        }]),
-    }])
+    LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line,
+            callee: "alice".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(vec![RichTextNode::Text {
+                text: display_text.to_owned(),
+            }]),
+        }],
+    )
+    .expect("test display catalog is revision-consistent")
 }
 
 fn bundle_from_runtime_parts(
@@ -1151,7 +1180,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     )
     .expect("await fixture runtime plan is valid")
     .with_entries(vec![cli_main_entry()]);
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()
         .expect("await fixture product AWBC lowers")
@@ -1193,7 +1222,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     )
     .expect("await replacement runtime plan is valid")
     .with_entries(vec![cli_main_entry()]);
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()
         .expect("await replacement product AWBC lowers")

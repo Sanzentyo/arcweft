@@ -1,14 +1,13 @@
-use arcweft_lang_hir::syntax::ast::dialogue::{DialogueDefaultAssignment, DialogueDefaultsItem};
 use arcweft_lang_hir::syntax::ast::items::EntityDeclItem;
 use arcweft_lang_hir::syntax::expr::{Expr, Literal, parse_expr};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextStyleContribution,
 };
 
-use super::defaults::DialogueStyleDefaults;
+use super::dialogue_context::DialogueStyleDefaults;
 use super::helpers::entity_ref_label;
 use super::inline_failure::inline_default_from_named_expr;
-use super::raw::{rich_text_assign_op, source_file, source_range, style_assignment_source};
+use super::raw::style_assignment_source;
 use super::style_block::{named_style_block, style_block_assignments};
 use super::style_expr::display_styles_from_named_expr;
 
@@ -76,9 +75,6 @@ fn entity_style_keys(item: &EntityDeclItem) -> Vec<String> {
 pub(crate) fn character_callee_keys(callee: &str) -> Vec<String> {
     let mut keys = Vec::new();
     push_character_callee_key(&mut keys, callee.trim());
-    if let Some(receiver) = callee.trim().strip_suffix(".say") {
-        push_character_callee_key(&mut keys, receiver);
-    }
     if let Some((speaker, _)) = callee.trim().split_once('.') {
         push_character_callee_key(&mut keys, speaker);
     }
@@ -130,33 +126,6 @@ fn style_defaults_from_body(
         }
     }
     defaults
-}
-
-pub(crate) fn style_defaults_from_dialogue_defaults(
-    item: &DialogueDefaultsItem,
-) -> DialogueStyleDefaults {
-    let mut defaults = DialogueStyleDefaults::default();
-    let item_id = item.id().map(|id| id.body().to_owned());
-    for assignment in item.assignments() {
-        append_dialogue_default_assignment(&mut defaults, assignment, item_id.clone());
-    }
-    defaults
-}
-
-fn append_dialogue_default_assignment(
-    defaults: &mut DialogueStyleDefaults,
-    assignment: &DialogueDefaultAssignment,
-    item_id: Option<String>,
-) {
-    append_style_default(
-        defaults,
-        assignment.path().dotted(),
-        rich_text_assign_op(assignment.op()),
-        assignment.raw_value().to_owned(),
-        assignment.value(),
-        RichTextCascadeLayer::DialogueDefaults,
-        source_file(item_id, Some(source_range(assignment.value_range()))),
-    );
 }
 
 fn append_style_default(

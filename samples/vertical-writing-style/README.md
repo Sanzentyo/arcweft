@@ -8,7 +8,8 @@ surface:
   transparent primary-action hit target;
 - `pub view VerticalWritingShowcase(dialogue: DialogueView)` owns the complete
   presentation geometry; and
-- `pub dialogue defaults` selects that View and supplies ruby defaults.
+- `arcw.toml` selects that View for the `main` launch profile, while
+  `vertical_guide.dialogue_style` owns its ruby defaults.
 
 The responsibilities are deliberately separate. `pub style` and the single
 View-root `.style(...)` application control the authored View's visual
@@ -36,7 +37,7 @@ Run:
 just vertical-writing-style-sample
 ```
 
-The command checks and bundles `main.arcw`, then uses the shared headless WGPU
+The command checks and bundles `arcw.toml`, then uses the shared headless WGPU
 text capture path to write four PNGs and their typed frame-observation reports
 under `target/vertical-writing-style/`. It also repeats the vertical-RL capture
 at the same logical time and requires an identical SHA-256 hash, providing a

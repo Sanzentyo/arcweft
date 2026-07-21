@@ -42,8 +42,8 @@ compression = "none"
   "format": "arcweft.character",
   "version": 1,
   "character": "character.akane",
-  "canvas": { "width": 8, "height": 8 },
-  "anchor": { "x": 4, "y": 8 },
+  "canvas": { "width": 96, "height": 128 },
+  "anchor": { "x": 48, "y": 128 },
   "default_look": "normal",
   "parts": [{
     "id": "body",
@@ -51,7 +51,7 @@ compression = "none"
     "variants": [{
       "id": "default",
       "asset": "layers/body.png",
-      "rect": { "x": 0, "y": 0, "width": 8, "height": 8 },
+      "rect": { "x": 0, "y": 0, "width": 96, "height": 128 },
       "opacity": 255,
       "blend": "normal",
       "clipping": false
@@ -62,6 +62,12 @@ compression = "none"
     { "id": "smile", "select": [{ "part": "body", "variant": "default" }] }
   ]
 }"#,
+    );
+    project.write_bytes(
+        "assets/akane.awchar/layers/body.png",
+        include_bytes!(
+            "../../arcweft-character/tests/fixtures/zundamon.awchar/layers/body--default.png"
+        ),
     );
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()));
@@ -110,6 +116,14 @@ impl TestProject {
     }
 
     fn write(&self, path: &str, contents: &str) {
+        let path = self.path(path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent");
+        }
+        fs::write(path, contents).expect("write");
+    }
+
+    fn write_bytes(&self, path: &str, contents: &[u8]) {
         let path = self.path(path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("parent");

@@ -54,7 +54,7 @@ pub struct AssetCatalogSection {
 }
 
 /// Optional display catalog section for render-text display data and image objects.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DisplayCatalogSection {
     pub display: LineDisplayCatalog,
     pub image_objects: Vec<BundleImageObject>,

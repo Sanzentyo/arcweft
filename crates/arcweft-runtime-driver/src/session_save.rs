@@ -17,6 +17,7 @@ use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 pub use arcweft_core::root::RootStateSnapshotV1;
+use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -44,6 +45,7 @@ pub struct BundleSessionSnapshot {
 pub struct BundleSessionGenerationSnapshot {
     pub active_generation: GenerationId,
     pub artifact: BundleSessionArtifactIdentity,
+    pub dialogue_revision: DialogueProfileRevision,
     pub bytecode_abi: u32,
     pub adapter_requirements: BundleDigest,
 }

@@ -10,6 +10,7 @@ use arcweft_core::{
     stream::StreamOp,
     value::{DenseSeq, RuntimeExpr, RuntimeSeq, RuntimeValue},
 };
+use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::symbol::{
@@ -25,9 +26,12 @@ use arcweft_lang_sema::project_index::{
 use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::parser::parse_source;
-use arcweft_render_text::{RichTextColor, RichTextStyle};
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_runtime_plan::flow::{AdmittedRuntimePlanLowerOptions, RuntimePlanLowerOptions};
+use arcweft_source::{
+    SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSetRevision,
+};
+use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId, ViewStyleSheetId};
 
 use crate::{
     agent_project::agent_project_graph_from_project,
@@ -60,6 +64,30 @@ fn test_source_anchor() -> SourceAnchor {
             .span(SourceRange::new(0, 0))
             .expect("empty test span"),
     )
+}
+
+fn test_dialogue_presentation() -> DialoguePresentationProfile {
+    DialoguePresentationProfile::engine_default()
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = test_source_document("generated://arcweft/compiler-dialogue-profile", 1);
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.compiler-test").expect("test View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32])
+            .expect("test View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
+
+fn admitted_options() -> AdmittedRuntimePlanLowerOptions {
+    RuntimePlanLowerOptions::default()
+        .with_dialogue_profile(test_dialogue_presentation(), test_dialogue_revision())
 }
 
 fn runtime_apply_arg_counts(expr: &RuntimeExpr) -> Vec<usize> {
@@ -285,36 +313,11 @@ fn compiles_dialogue_source_to_plan_and_display_catalog() {
     let source = r"
 character @character.alice Alice as alice {}
 
-struct GameState {
-    score: i32
-}
-
-enum GameEvent {
-    Start
-}
-
-fn initial_game_state() -> GameState
-effects {}
-{
-    initial_game_state()
-}
-
-fn reduce_game(state: &GameState, event: GameEvent)
-    -> Result<Reduction<GameState>, ReducerError>
-effects {}
-{
-    reduce_game(state, event)
-}
-
-entry game @entry.main {
-    state = GameState
-    initializer = initial_game_state
-    event = GameEvent
-    reducer = reduce_game
+entry cli @entry.main {
     goto @flow.main
 }
 
-flow @flow.main main(state: GameState) {
+flow @flow.main main {
 alice: Hello
 }
 ";
@@ -386,7 +389,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers with executable witness trait calls");
 
@@ -434,7 +437,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers with function-value evidence");
     let FlowOp::Let { expr, .. } = &report.plan.flows[0].ops[0] else {
@@ -447,9 +450,8 @@ flow @flow.main main {
                 && args.len() == 1
     ));
 
-    let plain_report =
-        lower_source_runtime_plan_with_stats_and_options(&hir, &RuntimePlanLowerOptions::default())
-            .expect("runtime plan lowers without typecheck evidence");
+    let plain_report = lower_source_runtime_plan_with_stats_and_options(&hir, &admitted_options())
+        .expect("runtime plan lowers without typecheck evidence");
     let FlowOp::Let { expr, .. } = &plain_report.plan.flows[0].ops[0] else {
         panic!("expected first plain op to bind the call");
     };
@@ -483,7 +485,7 @@ flow @flow.main main {
 
     let errors = lower_source_runtime_plan_with_stats_and_options(
         &hir,
-        &RuntimePlanLowerOptions::default()
+        &admitted_options()
             .with_required_typed_lowering_evidence_len(typecheck.typed_lowering_evidence.len()),
     )
     .expect_err("checked runtime lowering must reject missing typed evidence");
@@ -527,7 +529,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers with expected-function evidence");
     let FlowOp::Let { expr, .. } = &report.plan.flows[0].ops[0] else {
@@ -582,7 +584,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers with capture metadata");
     let capture_inventory = report
@@ -635,7 +637,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers inferred partial functions");
     let [
@@ -728,7 +730,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers named missing input");
     let FlowOp::Let { expr, .. } = &report.plan.flows[0].ops[0] else {
@@ -778,7 +780,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers data-last method fallback");
     let [
@@ -866,7 +868,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers curried source and local method fallback");
     let [
@@ -947,7 +949,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers fixed spread data-last method fallback");
     let [
@@ -1048,7 +1050,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers data-last pipe calls");
     let [
@@ -1126,7 +1128,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers pipe-left placeholder inside if-let expression");
     let [
@@ -1191,7 +1193,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers pipe-left placeholder inside match expression");
     let [
@@ -1257,7 +1259,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers non-annotated function prefix partial");
     let [
@@ -1316,7 +1318,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers source function named data-last pipe");
     let [
@@ -1394,7 +1396,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers destructured closure parameter");
     let [
@@ -1452,7 +1454,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes non-helper source function partial");
 
@@ -1526,7 +1528,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan lowers fixed literal spread signature calls");
 
@@ -1617,7 +1619,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes curried source function");
 
@@ -1708,7 +1710,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan lowers fixed literal spread function-value apply");
 
@@ -1785,7 +1787,7 @@ flow main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("spread container and following numeric evidence stay aligned");
     let FlowOp::Let { expr: wide, .. } = &report.plan.flows[0].ops[2] else {
@@ -1820,7 +1822,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function returned closure");
 
@@ -1900,7 +1902,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function destructured closure let");
 
@@ -2002,7 +2004,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing pure helper call");
 
@@ -2101,7 +2103,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing pure-helper alias");
 
@@ -2207,7 +2209,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing exact source call");
 
@@ -2292,7 +2294,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing source-function alias");
 
@@ -2380,7 +2382,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing pure-helper pipes");
 
@@ -2498,7 +2500,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing source-function pipe");
 
@@ -2566,7 +2568,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing control expressions");
 
@@ -2656,7 +2658,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function containing if-let expression");
 
@@ -2750,7 +2752,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes source function callback call");
 
@@ -2825,7 +2827,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("checked runtime plan materializes callback partial let");
 
@@ -2917,7 +2919,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects source function partials whose body calls");
 
@@ -2964,7 +2966,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects partials through chained unsupported sources");
 
@@ -3007,7 +3009,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported prefix source function partials");
 
@@ -3050,7 +3052,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported bare source function values");
 
@@ -3096,7 +3098,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects source functions that call unaccepted sources");
 
@@ -3137,7 +3139,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported bare task function values");
 
@@ -3178,7 +3180,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported bare dialogue function values");
 
@@ -3221,7 +3223,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported bare stream function values");
 
@@ -3263,7 +3265,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported data-last source function partials");
 
@@ -3311,7 +3313,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects chained unsupported data-last source partials");
 
@@ -3354,7 +3356,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported data-last task partials");
 
@@ -3397,7 +3399,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported data-last dialogue partials");
 
@@ -3440,7 +3442,7 @@ flow @flow.main main {
     let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect_err("checked runtime plan rejects unsupported data-last stream partials");
 
@@ -3484,7 +3486,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers local function data-last pipe");
     let [
@@ -3551,7 +3553,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers curried data-last pipe");
     let [FlowOp::Let { expr: sum, .. }, ..] = report.plan.flows[0].ops.as_slice() else {
@@ -3602,7 +3604,7 @@ flow @flow.main main {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers curried call-group samples");
     let [
@@ -3664,7 +3666,7 @@ pub source @source.values: Source<i64, String> {
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime plan lowers with shared typed evidence cursor");
 
@@ -3713,7 +3715,7 @@ flow main {
     lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
         &typecheck,
-        &RuntimePlanLowerOptions::default(),
+        &admitted_options(),
     )
     .expect("runtime lowering must consume the same per-argument expression evidence");
 }
@@ -3793,46 +3795,43 @@ entry cli @entry.main {
 }
 
 #[test]
-fn lower_source_runtime_plan_with_options_applies_dialogue_defaults_profile() {
+fn lower_source_runtime_plan_with_options_preserves_admitted_dialogue_profile() {
     let parsed = parse_source_text(
-        r##"
-pub dialogue defaults {
-text_color = rgb("#101112")
-}
-
-pub dialogue defaults @dialogue.mobile {
-text_color = rgb("#202122")
-}
-
+        r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
 alice: Hello[p]
 }
-"##,
+",
     );
     let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
     validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect("fixture typechecks");
 
+    let profile = DialoguePresentationProfile::new(
+        ViewId::standard_dialogue(),
+        Some(
+            ViewStyleSheetId::try_new("style.dialogue.mobile")
+                .expect("typed profile Style identity"),
+        ),
+        InlineFailurePolicy::FailLine,
+    );
+    let revision = test_dialogue_revision();
+
     let report = lower_source_runtime_plan_with_stats_and_options(
         &hir,
-        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.mobile"),
+        &RuntimePlanLowerOptions::default()
+            .with_dialogue_profile(profile.clone(), revision.clone()),
     )
-    .expect("runtime plan lowers with selected dialogue defaults");
+    .expect("runtime plan lowers with the compiler-admitted dialogue profile");
     let spec = report
         .line_display_catalog
         .lines()
         .first()
         .expect("line display spec");
 
-    assert_eq!(
-        spec.base_styles,
-        vec![RichTextStyle::Color {
-            value: RichTextColor::Rgb {
-                red: 32,
-                green: 33,
-                blue: 34
-            }
-        }]
-    );
+    assert_eq!(spec.view, *profile.view());
+    assert_eq!(spec.profile_style, profile.style().cloned());
+    assert_eq!(spec.dialogue_revision, revision);
+    assert_eq!(spec.inline_failure, InlineFailurePolicy::FailLine);
 }

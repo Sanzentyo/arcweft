@@ -63,8 +63,8 @@
 Style/defaults navigation is based on the effective presentation context at the
 cursor position, not only lexical scope. A context may include the selected
 project/build profile, module, flow, named scope path, current dialogue line or
-content call, speaker preset, character, authored dialogue View style, selected dialogue
-defaults profile, and inline rich-text span stack.
+content call, speaker preset, character, authored dialogue View style, selected
+profile dialogue Style, and inline rich-text span stack.
 
 The dialogue RichText cascade is:
 
@@ -74,7 +74,7 @@ inline rich-text span
   -> speaker preset options
   -> character dialogue_style
   -> authored dialogue View style
-  -> selected dialogue defaults
+  -> selected profile dialogue Style
   -> engine defaults
 ```
 
@@ -99,17 +99,16 @@ LSP features use that shared index:
 - hover shows the winning value and cascade contributors for fields such as
   `rich_text.ruby.size`
 - go to definition on an effective style field jumps to the winning assignment
-  value range; when the winner comes from a profile-selected dialogue defaults
-  profile, the result also includes the manifest value that selected that
-  defaults profile
+  value range; when the winner comes from the profile dialogue Style, the result
+  also includes the manifest field that selected that Style
 - peek cascade shows shadowed and unset layers
 - find all contributors lists declarations and inline spans that can affect the
-  field in the current entry profile, including the manifest value that selected
-  a dialogue defaults profile when that profile contributes to the field
+  field in the current entry profile, including the manifest field that selected
+  the contributing dialogue Style
 - go to active profile selection jumps to the manifest or build profile that
-  selected `@dialogue.mobile`
+  selected the dialogue View and Style
 - code actions can extract an override to a line option, speaker preset,
-  character `dialogue_style`, authored View style, or dialogue defaults profile
+  character `dialogue_style`, authored View style, or profile dialogue Style
 
 Generated or fully elaborated source is also surfaced through diagnostics.
 Domain lint names are used in user-authored attributes, while stable numeric

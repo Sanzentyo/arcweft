@@ -56,7 +56,7 @@ use arcweft_core::task::{
     HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_lang_hir::entry::HirEntryItem;
 use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirChoiceOption, HirDialogue, HirFlow, HirFlowItem, HirFor, HirFunction,
@@ -119,12 +119,24 @@ pub struct RuntimeAgentControllerRequest {
     pub declaration: CallableDeclarationId,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeDialogueProfile {
+    presentation: DialoguePresentationProfile,
+    revision: DialogueProfileRevision,
+}
+
+/// Runtime-plan options whose dialogue presentation has passed compiler
+/// catalog admission. Executable lowering accepts only this typestate.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdmittedRuntimePlanLowerOptions {
+    options: RuntimePlanLowerOptions,
+    dialogue: RuntimeDialogueProfile,
+}
+
 /// Options that select profile/build-context inputs for runtime-plan lowering.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimePlanLowerOptions {
     package_identity: Option<String>,
-    dialogue_defaults: Option<String>,
-    dialogue_inline_failure: Option<InlineFailurePolicy>,
     for_iteration_evidence: Vec<RuntimeIteratorEvidence>,
     trait_methods: Vec<RuntimeTraitMethod>,
     typed_lowering_evidence: Vec<RuntimeTypedLoweringEvidence>,
@@ -139,21 +151,8 @@ pub struct RuntimePlanLowerOptions {
 impl RuntimePlanLowerOptions {
     /// Creates default source-local lowering options.
     #[must_use]
-    pub const fn new() -> Self {
-        Self {
-            package_identity: None,
-            dialogue_defaults: None,
-            dialogue_inline_failure: None,
-            for_iteration_evidence: Vec::new(),
-            trait_methods: Vec::new(),
-            typed_lowering_evidence: Vec::new(),
-            closure_captures: Vec::new(),
-            agent_controllers: Vec::new(),
-            entry_callables: Vec::new(),
-            command_policy: None,
-            required_typed_lowering_evidence_len: None,
-            assertion_build_profile: RuntimeAssertionBuildProfile::Debug,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Selects the canonical package identity used by compiled cross-section
@@ -164,19 +163,20 @@ impl RuntimePlanLowerOptions {
         self
     }
 
-    /// Selects a dialogue defaults profile by entity ID, for example
-    /// `dialogue.mobile`.
+    /// Supplies the compiler-admitted dialogue presentation and exact revision.
     #[must_use]
-    pub fn with_dialogue_defaults(mut self, id: impl Into<String>) -> Self {
-        self.dialogue_defaults = Some(id.into());
-        self
-    }
-
-    /// Supplies the selected launch profile's global inline-failure policy.
-    #[must_use]
-    pub fn with_dialogue_inline_failure(mut self, policy: InlineFailurePolicy) -> Self {
-        self.dialogue_inline_failure = Some(policy);
-        self
+    pub fn with_dialogue_profile(
+        self,
+        profile: DialoguePresentationProfile,
+        revision: DialogueProfileRevision,
+    ) -> AdmittedRuntimePlanLowerOptions {
+        AdmittedRuntimePlanLowerOptions {
+            options: self,
+            dialogue: RuntimeDialogueProfile {
+                presentation: profile,
+                revision,
+            },
+        }
     }
 
     #[must_use]
@@ -255,18 +255,6 @@ impl RuntimePlanLowerOptions {
         self
     }
 
-    /// Selected dialogue defaults profile ID, if supplied by a launch profile.
-    #[must_use]
-    pub fn dialogue_defaults(&self) -> Option<&str> {
-        self.dialogue_defaults.as_deref()
-    }
-
-    /// Selected global inline-failure policy, if supplied by a launch profile.
-    #[must_use]
-    pub const fn dialogue_inline_failure(&self) -> Option<&InlineFailurePolicy> {
-        self.dialogue_inline_failure.as_ref()
-    }
-
     /// Canonical package identity for source-defined cross-section references.
     ///
     /// Source-local lowering uses `crate`; project and bundle drivers should
@@ -341,6 +329,70 @@ impl RuntimePlanLowerOptions {
     }
 }
 
+impl AdmittedRuntimePlanLowerOptions {
+    /// Effective typed dialogue presentation for this lowering transaction.
+    #[must_use]
+    pub const fn dialogue_profile(&self) -> &DialoguePresentationProfile {
+        &self.dialogue.presentation
+    }
+
+    /// Exact checked profile revision for this lowering transaction.
+    #[must_use]
+    pub const fn dialogue_revision(&self) -> &DialogueProfileRevision {
+        &self.dialogue.revision
+    }
+
+    #[must_use]
+    pub fn with_for_iteration_evidence(
+        mut self,
+        evidence: impl IntoIterator<Item = RuntimeIteratorEvidence>,
+    ) -> Self {
+        self.options = self.options.with_for_iteration_evidence(evidence);
+        self
+    }
+
+    #[must_use]
+    pub fn with_trait_methods(
+        mut self,
+        trait_methods: impl IntoIterator<Item = RuntimeTraitMethod>,
+    ) -> Self {
+        self.options = self.options.with_trait_methods(trait_methods);
+        self
+    }
+
+    #[must_use]
+    pub fn with_typed_lowering_evidence(
+        mut self,
+        evidence: impl IntoIterator<Item = RuntimeTypedLoweringEvidence>,
+    ) -> Self {
+        self.options = self.options.with_typed_lowering_evidence(evidence);
+        self
+    }
+
+    #[must_use]
+    pub fn with_closure_capture_metadata(
+        mut self,
+        captures: impl IntoIterator<Item = RuntimeClosureCaptureInventory>,
+    ) -> Self {
+        self.options = self.options.with_closure_capture_metadata(captures);
+        self
+    }
+
+    #[must_use]
+    pub fn with_required_typed_lowering_evidence_len(mut self, len: usize) -> Self {
+        self.options = self.options.with_required_typed_lowering_evidence_len(len);
+        self
+    }
+}
+
+impl std::ops::Deref for AdmittedRuntimePlanLowerOptions {
+    type Target = RuntimePlanLowerOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.options
+    }
+}
+
 fn hash_entry_binding_part(hasher: &mut blake3::Hasher, value: &[u8]) {
     hasher.update(&(value.len() as u64).to_le_bytes());
     hasher.update(value);
@@ -371,30 +423,17 @@ pub struct RuntimePlanLowerStats {
 /// This pass is intentionally stricter than line-task-only lowering: it must
 /// not silently skip flow syntax because the engine would otherwise execute a
 /// different story than the source describes.
-pub fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats(module).map(|report| report.plan)
-}
-
-/// Lowers checked HIR with explicit profile/build-context options.
-pub fn lower_runtime_plan_with_options(
+pub fn lower_runtime_plan(
     module: &HirModule,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats_and_options(module, options).map(|report| report.plan)
+    lower_runtime_plan_with_stats(module, options).map(|report| report.plan)
 }
 
 /// Lowers checked HIR to a runtime plan and records lowering-time counters.
 pub fn lower_runtime_plan_with_stats(
     module: &HirModule,
-) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats_and_options(module, &RuntimePlanLowerOptions::default())
-}
-
-/// Lowers checked HIR with explicit profile/build-context options and records
-/// lowering-time counters.
-pub fn lower_runtime_plan_with_stats_and_options(
-    module: &HirModule,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
     options
         .validate_typed_lowering_evidence()
@@ -497,7 +536,7 @@ pub fn lower_runtime_plan_with_stats_and_options(
 
 fn lower_runtime_entries(
     module: &HirModule,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Vec<RuntimeEntrySpec> {
     module
         .declarations()
@@ -585,21 +624,21 @@ fn lower_entry_target(items: &[HirEntryItem]) -> RuntimeEntryTarget {
 pub(crate) fn lower_runtime_flows(
     module: &HirModule,
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<LoweredRuntimeFlows, Vec<RuntimePlanLowerError>> {
+    let dialogue_profile = options.dialogue_profile();
+    let dialogue_revision = options.dialogue_revision();
     let fx = FxCatalog::try_from_module_for_package(module, options.package_identity())
         .map_err(|error| vec![error])?;
-    let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
+    let display_defaults = DialogueDisplayDefaults::from_module_with_profile(
         module,
-        options.dialogue_defaults(),
-    )
-    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?
-    .with_inline_failure_policy(options.dialogue_inline_failure());
+        Some((dialogue_profile, dialogue_revision)),
+    );
     let mut lowerer = FlowRuntimeLowerer {
         module,
         agent_controller: false,
         line_task_groups: Vec::new(),
-        line_display_catalog: LineDisplayCatalog::default(),
+        line_display_catalog: LineDisplayCatalog::new(dialogue_revision.clone()),
         display_defaults,
         fx,
         speaker_preset_scopes: Vec::new(),
@@ -633,7 +672,7 @@ fn lower_requested_agent_controller_flows(
     module: &HirModule,
     requests: &[RuntimeAgentControllerRequest],
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<Vec<RuntimeFlow>, Vec<RuntimePlanLowerError>> {
     requests
         .iter()
@@ -676,21 +715,21 @@ fn lower_agent_function_controller_flow(
     function: &HirFunction,
     id: FlowRuntimeId,
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimeFlow, Vec<RuntimePlanLowerError>> {
+    let dialogue_profile = options.dialogue_profile();
+    let dialogue_revision = options.dialogue_revision();
     let fx = FxCatalog::try_from_module_for_package(module, options.package_identity())
         .map_err(|error| vec![error])?;
-    let display_defaults = DialogueDisplayDefaults::try_from_module_with_selection(
+    let display_defaults = DialogueDisplayDefaults::from_module_with_profile(
         module,
-        options.dialogue_defaults(),
-    )
-    .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?
-    .with_inline_failure_policy(options.dialogue_inline_failure());
+        Some((dialogue_profile, dialogue_revision)),
+    );
     let mut lowerer = FlowRuntimeLowerer {
         module,
         agent_controller: true,
         line_task_groups: Vec::new(),
-        line_display_catalog: LineDisplayCatalog::default(),
+        line_display_catalog: LineDisplayCatalog::new(dialogue_revision.clone()),
         display_defaults,
         fx,
         speaker_preset_scopes: Vec::new(),
@@ -1174,7 +1213,12 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
             &active_speaker_presets,
             &self.fx,
         ) {
-            Ok(display) => self.line_display_catalog.push(display),
+            Ok(display) => {
+                if let Err(error) = self.line_display_catalog.push(display) {
+                    self.errors
+                        .push(RuntimePlanLowerError::new(error.to_string()));
+                }
+            }
             Err(error) => self.errors.push(error),
         }
         let _ = flow_index;

@@ -214,7 +214,6 @@ pub(crate) enum CstTopLevelItemKind {
     Entry,
     ExternCapability,
     ExternMod,
-    DialogueDefaults,
     Proof,
     Test,
     Bench,

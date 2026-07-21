@@ -8,6 +8,11 @@ pub character stylist {
                 color = rgb("#ecf7ff")
                 size = 24px
             }
+
+            ruby {
+                size = 10px
+                gap = 1px
+            }
         }
     }
 }
@@ -46,16 +51,6 @@ pub view StylePanel(dialogue: DialogueView) {
         .part(dialogue_panel)
         .style(@style.native_style_parity)
         .style(@style.style_panel)
-}
-
-pub dialogue defaults {
-    view = @view.StylePanel
-    rich_text {
-        ruby {
-            size = 10px
-            gap = 1px
-        }
-    }
 }
 
 style native_style_parity {

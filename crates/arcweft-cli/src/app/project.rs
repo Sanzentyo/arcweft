@@ -9,8 +9,9 @@ use arcweft_adapter_context::{
     manifest::AdapterManifest, publication::AdapterManifestSource, standard,
 };
 use arcweft_compiler::project::{
-    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompileDiagnostic,
-    ProjectCompileError, ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
+    AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
+    ProjectCompileDiagnostic, ProjectCompileError, ProjectEntrySelection,
+    ProjectEntrySelectionKind, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_host_adapter::HostCallPolicy;
@@ -298,14 +299,11 @@ impl SourceSelection {
 pub(in crate::app) fn runtime_plan_options_for_selection(
     selection: &SourceSelection,
 ) -> Result<RuntimePlanLowerOptions, ExitCode> {
-    let mut options = RuntimePlanLowerOptions::default()
+    let options = RuntimePlanLowerOptions::default()
         .with_package_identity(selection.package_identity()?)
         .with_command_policy(RuntimeCommandPolicy::deny_all(
             RootExecutionLimits::engine_default(),
         ));
-    if let Some(profile) = selection.profile() {
-        options = options.with_dialogue_inline_failure(profile.dialogue().inline_failure().clone());
-    }
     Ok(options)
 }
 
@@ -611,26 +609,41 @@ pub(in crate::app) fn load_and_check_selection(
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, adapter_override)?;
+    let runtime_options = runtime_plan_options_for_selection(selection)?;
     if let Some(topology) = semantic.profile_topology() {
         let context = profile_project_compilation_context(topology, &semantic)?;
         return load_and_check_loaded_project(
             topology.loaded_project(),
             &context,
             &semantic,
+            &runtime_options,
             phases,
         );
     }
     if let Some(manifest) = selection.project_manifest() {
-        return load_and_check_project_with_env(manifest, selection, &semantic, phases);
+        return load_and_check_project_with_env(
+            manifest,
+            selection,
+            &semantic,
+            &runtime_options,
+            phases,
+        );
     }
     let direct = direct_project_compilation_input(selection, &semantic, &mut phases)?;
-    load_and_check_project_sources(direct.sources(), direct.context(), semantic.base(), phases)
+    load_and_check_project_sources(
+        direct.sources(),
+        direct.context(),
+        semantic.base(),
+        &runtime_options,
+        phases,
+    )
 }
 
 fn load_and_check_project_with_env(
     manifest: &Path,
     selection: &SourceSelection,
     semantic: &SelectionSemanticContext,
+    runtime_options: &RuntimePlanLowerOptions,
     mut phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
     let loaded = run_profile_phase(&mut phases, "load_project", || {
@@ -640,30 +653,35 @@ fn load_and_check_project_with_env(
         })
     })?;
     let context = project_compilation_context(&loaded, selection, semantic)?;
-    load_and_check_loaded_project(&loaded, &context, semantic, phases)
+    load_and_check_loaded_project(&loaded, &context, semantic, runtime_options, phases)
 }
 
 fn load_and_check_loaded_project(
     loaded: &LoadedProject,
     context: &ProjectCompilationContext,
     semantic: &SelectionSemanticContext,
+    runtime_options: &RuntimePlanLowerOptions,
     phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
-    load_and_check_project_sources(loaded.sources(), context, semantic.base(), phases)
+    load_and_check_project_sources(
+        loaded.sources(),
+        context,
+        semantic.base(),
+        runtime_options,
+        phases,
+    )
 }
 
 fn load_and_check_project_sources(
     sources: &ProjectSources,
     context: &ProjectCompilationContext,
     env: &TypeCheckEnv,
+    runtime_options: &RuntimePlanLowerOptions,
     mut phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
-    let runtime_options = RuntimePlanLowerOptions::default().with_command_policy(
-        RuntimeCommandPolicy::deny_all(RootExecutionLimits::engine_default()),
-    );
     let source_document = Arc::clone(sources.root_module().document());
     let compiled = run_profile_phase(&mut phases, "project_compile", || {
-        compile_project(sources, context, &runtime_options).map_err(|error| {
+        compile_project(sources, context, runtime_options).map_err(|error| {
             print_project_compile_error(&error);
             ExitCode::FAILURE
         })
@@ -678,6 +696,7 @@ fn load_and_check_project_sources(
             emitter.emit(&lint.diagnostic(source.document()), &diagnostic_source);
         }
     }
+    let compiled = Arc::new(compiled);
     Ok(CheckedModule {
         hir: compiled.linked_hir().clone(),
         env: env.clone(),
@@ -685,6 +704,7 @@ fn load_and_check_project_sources(
         syntax_warnings: compiled.syntax_warnings(),
         line_task_groups: compiled.line_task_groups().to_vec(),
         typecheck_report: compiled.typecheck_report().clone(),
+        compiled,
         phases,
     })
 }
@@ -1160,6 +1180,7 @@ fn adapter_registry_for_selection(
 }
 
 pub(crate) struct CheckedModule {
+    pub(crate) compiled: Arc<CompiledProject>,
     pub(crate) hir: arcweft_lang_hir::model::HirModule,
     pub(crate) env: TypeCheckEnv,
     pub(crate) source_document: Arc<SourceDocument>,
@@ -1167,6 +1188,12 @@ pub(crate) struct CheckedModule {
     pub(crate) line_task_groups: Vec<LoweredLineTaskGroup>,
     pub(crate) typecheck_report: TypeCheckReport,
     pub(crate) phases: Vec<RuntimeProfilePhase>,
+}
+
+impl CheckedModule {
+    pub(crate) fn runtime_plan(&self) -> &arcweft_runtime_plan::flow::RuntimePlanLowerReport {
+        self.compiled.runtime_plan()
+    }
 }
 
 pub(in crate::app) fn load_and_check_with_env(
@@ -1188,7 +1215,18 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
     let direct =
         direct_project_compilation_input_with_env(path, &package_id, env, &[], &mut phases)?;
-    load_and_check_project_sources(direct.sources(), direct.context(), env, phases)
+    let runtime_options = RuntimePlanLowerOptions::default()
+        .with_package_identity(package_id.as_str())
+        .with_command_policy(RuntimeCommandPolicy::deny_all(
+            RootExecutionLimits::engine_default(),
+        ));
+    load_and_check_project_sources(
+        direct.sources(),
+        direct.context(),
+        env,
+        &runtime_options,
+        phases,
+    )
 }
 
 #[cfg(test)]

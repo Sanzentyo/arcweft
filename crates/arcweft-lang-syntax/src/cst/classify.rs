@@ -108,8 +108,6 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::ExternCapability
     } else if looks_like_extern_mod_item(trimmed) {
         CstTopLevelItemKind::ExternMod
-    } else if looks_like_dialogue_defaults(trimmed) {
-        CstTopLevelItemKind::DialogueDefaults
     } else if looks_like_proof_item(trimmed) {
         CstTopLevelItemKind::Proof
     } else if looks_like_test_item(trimmed) {
@@ -228,10 +226,6 @@ fn looks_like_entry_item(trimmed: &str) -> bool {
 
 fn looks_like_extern_capability_item(trimmed: &str) -> bool {
     visible_head(trimmed).starts_with("extern capability ")
-}
-
-fn looks_like_dialogue_defaults(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("dialogue defaults")
 }
 
 fn looks_like_proof_item(trimmed: &str) -> bool {

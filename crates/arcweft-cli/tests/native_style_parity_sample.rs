@@ -10,7 +10,7 @@ use arcweft_lang_syntax::{
 #[test]
 fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let source = fs::read_to_string(root.join("samples/native-style-parity/main.arcw"))
+    let source = fs::read_to_string(root.join("samples/native-style-parity/src/main.arcw"))
         .expect("native Style parity sample source");
     let parsed = parse_source(source.clone());
 

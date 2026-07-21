@@ -13,7 +13,8 @@ authored dialogue View, Fx, and capture. Five sequential dialogue pages cover:
 
 `pub style unified_text_panel` declares the text-style contribution.
 `pub view UnifiedTextPanel(dialogue: DialogueView)` explicitly places the
-speaker and rich dialogue content, and `pub dialogue defaults` selects it.
+speaker and rich dialogue content, and `arcw.toml` selects it for the main
+launch profile. `parity.dialogue_style` owns the shared ruby defaults.
 Dialogue has no separate presentation entity or renderer path: every active
 target is a persistent authored View mount using the ordinary prepared-text
 batch and `ViewPrimitive::Text` path.

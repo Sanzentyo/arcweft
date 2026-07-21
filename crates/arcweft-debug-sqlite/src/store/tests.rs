@@ -439,7 +439,7 @@ fn diagnostic_and_test_result_search_filter_project_privacy_before_limit() {
             severity: "error".to_owned(),
             phase: "render".to_owned(),
             message: "missing shader binding for glyph wobble".to_owned(),
-            source_path: Some("samples/rich-text-effects-animation.arcw".to_owned()),
+            source_path: Some("samples/rich-text-effects-animation/src/main.arcw".to_owned()),
             start_byte: Some(12),
             end_byte: Some(34),
             related_ids: vec![PublicId::new("@effect.wobble").expect("public id")],

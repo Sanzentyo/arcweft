@@ -878,9 +878,32 @@ mod tests {
     use arcweft_core::plan::{
         FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeLineId,
     };
+    use arcweft_dialogue::DialogueProfileRevision;
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+    fn dialogue_revision() -> DialogueProfileRevision {
+        let manifest = SourceDocument::try_new(
+            SourceDocumentId::try_new("runtime-host-bundle-runner-test").expect("document ID"),
+            SourceName::Memory,
+            "test manifest",
+        )
+        .expect("test document");
+        let sources =
+            SourceSetRevision::try_for_identities([manifest.identity()]).expect("source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            manifest.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.runtime-host-bundle-runner-test")
+                .expect("View program ID"),
+            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
+    }
 
     #[test]
     fn bundle_runner_session_captures_per_run_host_state_and_steps_incrementally() {
@@ -1107,7 +1130,7 @@ mod tests {
             target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
             roles: RuntimeEntryRoles::None,
         }]);
-        let display = LineDisplayCatalog::default();
+        let display = LineDisplayCatalog::new(dialogue_revision());
         let product_awbc = AwbcLowerer::new(&plan, &display, "dialogue-bundle.arcw")
             .lower()
             .expect("product AWBC lowers")

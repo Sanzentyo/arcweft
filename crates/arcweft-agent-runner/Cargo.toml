@@ -16,8 +16,11 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-dialogue = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-resource-model = { workspace = true }
 arcweft-source = { workspace = true }
+arcweft-view = { workspace = true }
 
 [lints]
 workspace = true

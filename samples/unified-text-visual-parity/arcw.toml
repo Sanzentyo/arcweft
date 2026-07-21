@@ -1,0 +1,14 @@
+schema = 1
+default-profile = "main"
+
+[package]
+id = "org.arcweft.samples.unified-text-visual-parity"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+entry = "@entry.unified_text_visual_parity"
+source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.UnifiedTextPanel"

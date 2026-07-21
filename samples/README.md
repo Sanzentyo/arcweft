@@ -9,7 +9,7 @@ run with `arcw`.
 
 - [visual-novel-mini](visual-novel-mini/README.md) - a small narrative project
   with game, CLI, server, test, and bench entry examples.
-- [rich-text-showcase.arcw](rich-text-showcase.arcw) - rich-text rendering
+- [rich-text-showcase](rich-text-showcase/README.md) - rich-text rendering
   showcase with Windows fonts, vertical snippets, canonical nested typography
   defaults, authored dialogue-View styles, speaker preset overrides, and line ruby
   overrides for Agent observe provenance checks.

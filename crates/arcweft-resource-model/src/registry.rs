@@ -15,6 +15,7 @@ use crate::value::{
 };
 use arcweft_manifest_model::SemanticDigest;
 use core::fmt;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -38,7 +39,8 @@ pub struct ResourceRegistryPublication {
 pub struct ResourceSchemaDigest(SemanticDigest);
 
 /// Semantic digest of one complete immutable resource type registry.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct ResourceTypeRegistryDigest(SemanticDigest);
 
 /// Immutable, canonically ordered configured-resource registry.
@@ -482,6 +484,29 @@ mod tests {
         assert_eq!(
             registry.verify_integrity(),
             Err(ResourceRegistryIntegrityError::SchemaDigestMismatch { schema: schema_id })
+        );
+    }
+
+    #[test]
+    fn registry_digest_wire_uses_strict_semantic_digest_text() {
+        let registry = ResourceTypeRegistry::empty();
+        let encoded = serde_json::to_string(&registry.digest()).expect("encode registry digest");
+
+        assert_eq!(encoded, format!(r#""{}""#, registry.digest()));
+        assert_eq!(
+            serde_json::from_str::<ResourceTypeRegistryDigest>(&encoded)
+                .expect("decode registry digest"),
+            registry.digest()
+        );
+        assert!(
+            serde_json::from_str::<ResourceTypeRegistryDigest>(&encoded.to_uppercase()).is_err()
+        );
+        assert!(
+            serde_json::from_str::<ResourceTypeRegistryDigest>(&format!(
+                r#""{}""#,
+                "00".repeat(32)
+            ))
+            .is_err()
         );
     }
 }

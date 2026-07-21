@@ -1108,7 +1108,6 @@ fn index_top_level_declaration(
         | HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternCapability(_)
         | HirTopLevelDecl::ExternMod(_)
-        | HirTopLevelDecl::DialogueDefaults(_)
         | HirTopLevelDecl::Struct(_)
         | HirTopLevelDecl::TypeAlias(_)
         | HirTopLevelDecl::Proof(_) => {}

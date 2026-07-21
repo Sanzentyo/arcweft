@@ -1,14 +1,45 @@
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue};
-use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineTextFailure};
-use arcweft_render_text::{
-    DialogueHostEvent, LineDisplaySpec, RichTextColor, RichTextControl, RichTextControlMarker,
-    RichTextDocument, RichTextFontFamily, RichTextNode, RichTextPresentation, RichTextRange,
-    RichTextRubyAnnotation, RichTextStyle, RichTextTextSource, RuntimeLineContext,
+use arcweft_dialogue::{
+    DialogueProfileRevision, FallbackStylePolicy, InlineFailurePolicy, InlineTextFailure,
 };
+use arcweft_render_text::{
+    DialogueHostEvent, LineDisplayCatalog, LineDisplayCatalogError, LineDisplaySpec, RichTextColor,
+    RichTextControl, RichTextControlMarker, RichTextDocument, RichTextFontFamily, RichTextNode,
+    RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextStyle, RichTextTextSource,
+    RuntimeLineContext,
+};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    test_dialogue_revision_with_view_byte(0x5a)
+}
+
+fn test_dialogue_revision_with_view_byte(view_byte: u8) -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("render-text-frame-resolution-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.render-text-frame-resolution-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([view_byte; 32])
+            .expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn spec(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
@@ -18,15 +49,66 @@ fn spec(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
         speaker_label: None,
         text_key: None,
         view: arcweft_view::ViewId::try_new("view.frame-resolution.test").unwrap(),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(nodes),
     }
+}
+
+#[test]
+fn display_catalog_rejects_a_line_from_another_admitted_profile() {
+    let catalog_revision = test_dialogue_revision();
+    let mut line = spec(vec![RichTextNode::Text {
+        text: "profile-bound".to_owned(),
+    }]);
+    line.dialogue_revision = test_dialogue_revision_with_view_byte(0xa5);
+
+    let error = LineDisplayCatalog::try_from_lines(catalog_revision, vec![line])
+        .expect_err("mixed profile revisions are rejected");
+
+    assert!(matches!(
+        error,
+        LineDisplayCatalogError::RevisionMismatch { .. }
+    ));
+}
+
+#[test]
+fn display_catalog_wire_is_strict_and_revision_consistent() {
+    let revision = test_dialogue_revision();
+    let catalog = LineDisplayCatalog::try_from_lines(
+        revision,
+        vec![spec(vec![RichTextNode::Text {
+            text: "profile-bound".to_owned(),
+        }])],
+    )
+    .expect("catalog is revision-consistent");
+    let encoded = serde_json::to_value(&catalog).expect("catalog encodes");
+    let decoded: LineDisplayCatalog =
+        serde_json::from_value(encoded.clone()).expect("catalog round-trips");
+    assert_eq!(decoded, catalog);
+
+    let mut unknown = encoded.clone();
+    unknown["unpublished_compatibility_field"] = serde_json::json!(true);
+    assert!(serde_json::from_value::<LineDisplayCatalog>(unknown).is_err());
+
+    let mut mismatched = encoded;
+    mismatched["lines"][0]["dialogue_revision"] =
+        serde_json::to_value(test_dialogue_revision_with_view_byte(0xa5))
+            .expect("revision encodes");
+    let error = serde_json::from_value::<LineDisplayCatalog>(mismatched)
+        .expect_err("mixed profile revisions are rejected while decoding");
+    assert!(
+        error
+            .to_string()
+            .contains("different dialogue profile revision")
+    );
 }
 
 #[test]

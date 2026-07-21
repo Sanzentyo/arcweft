@@ -21,7 +21,33 @@ use arcweft_core::entry::{
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    test_dialogue_revision_with_view_byte(0x5a)
+}
+
+fn test_dialogue_revision_with_view_byte(view_byte: u8) -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-swap-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-swap-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([view_byte; 32])
+            .expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn digest(value: &[u8]) -> BundleDigest {
     BundleDigest::of(value)
@@ -90,6 +116,7 @@ fn generation(id: u64, code: &'static [u8], content: &'static [u8]) -> Arc<Progr
     Arc::new(ProgramGeneration {
         id: GenerationId(id),
         content_root: digest(content),
+        dialogue_revision: test_dialogue_revision(),
         bytecode_abi: BYTECODE_ABI_VERSION,
         code_slots: BTreeMap::from([(
             CodeSlotId("main".to_owned()),
@@ -125,6 +152,19 @@ fn content_only_swap_does_not_require_quiescence_semantically() {
     assert!(compatibility.can_apply_live());
     assert!(!compatibility.requires_quiescence());
     assert_eq!(compatibility.label(), "content-only");
+}
+
+#[test]
+fn dialogue_profile_revision_change_requires_presentation_reset_boundary() {
+    let active = generation(1, b"code", b"content");
+    let mut next = (*generation(2, b"code", b"content")).clone();
+    next.dialogue_revision = test_dialogue_revision_with_view_byte(0x6b);
+
+    let compatibility = classify_swap(&active, &next);
+
+    assert_eq!(compatibility, SwapCompatibility::CodeCompatible);
+    assert!(compatibility.can_apply_live());
+    assert!(compatibility.requires_quiescence());
 }
 
 #[test]
@@ -232,6 +272,7 @@ fn hot_007_verified_executable_generation_populates_the_selected_root_layout() {
         &bytecode,
         digest(b"content"),
         digest(b"adapter"),
+        test_dialogue_revision(),
     )
     .expect("verified executable generation");
 
@@ -547,7 +588,7 @@ fn test_bundle(bytecode: BytecodeProgram, asset_bytes: &[u8]) -> ArcweftBundle {
         },
         source_map("test.arcw", "flow main { return \"ok\" }"),
         bytecode,
-        LineDisplayCatalog::default(),
+        LineDisplayCatalog::new(test_dialogue_revision()),
     )
     .expect("test bundle source map accepts the generated standard Style source")
     .with_virtual_files([BundleVirtualFile {

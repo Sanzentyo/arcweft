@@ -52,7 +52,7 @@ fn presentation_definition(
             return Some(GotoDefinitionResponse::Array(locations));
         }
     }
-    let cascade = effective_dialogue_cascade_at(document, offset)?;
+    let cascade = effective_dialogue_cascade_at(profile, document, offset)?;
     let selected_contributions = cascade.selected_contributions();
     let locations = selected_contributions
         .iter()

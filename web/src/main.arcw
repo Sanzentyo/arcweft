@@ -70,10 +70,6 @@ pub view WebPanel(dialogue: DialogueView) {
         .style(@style.web_panel)
 }
 
-pub dialogue defaults {
-    view = @view.WebPanel
-}
-
 pub asset generated.background {
     kind = image
     file = "generated/background.png"

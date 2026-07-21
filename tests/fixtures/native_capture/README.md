@@ -20,7 +20,7 @@ This directory contains intentionally checked-in native-renderer image fixtures.
   text-combine-upright digits, sideways Latin, and capture-time controlled
   typewriter visibility. Its PNG and raw crops are generated in tests rather
   than checked in as stable goldens.
-- `unified_text_effects_migration_baseline.arcw` is the temporary migration
+- `unified-text-effects-migration-baseline/src/main.arcw` is the temporary migration
   witness for fixed-time wave, shake, jitter, typewriter, spin, pulse, shader,
   post-process, host effect, source Fx transform, and vertical-effect output.
   It deliberately uses only resolvable resources at the baseline revision;

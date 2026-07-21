@@ -17,8 +17,8 @@ pub use arcweft_presentation::fx::{FxApplication, FxTarget};
 mod resolve_frame;
 
 pub use catalog::{
-    LineDisplayArg, LineDisplayCatalog, LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer,
-    RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
+    LineDisplayArg, LineDisplayCatalog, LineDisplayCatalogError, LineDisplaySpec, RichTextAssignOp,
+    RichTextCascadeLayer, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };
 pub use frame::{
     LineDisplayFrame, RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker,

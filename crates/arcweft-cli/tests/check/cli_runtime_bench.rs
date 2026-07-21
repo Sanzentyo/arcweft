@@ -667,23 +667,17 @@ fn runtime_plan_fixture_path() -> PathBuf {
         r##"
 pub view PlanDialogue(dialogue: DialogueView) {
     Panel {
-        Text(dialogue.character.display_name)
+        Text(dialogue.speaker)
         RichText(dialogue.content)
-    }
-}
-
-pub dialogue defaults {
-    view = @view.PlanDialogue
-    rich_text {
-        ruby {
-            size = 14px
-        }
     }
 }
 
 pub character alice {
     dialogue_style {
         rich_text {
+            ruby {
+                size = 14px
+            }
             text {
                 color = "#202122"
             }
@@ -709,12 +703,12 @@ fn assert_plan_style_contributions(stdout: &str, contributions: &[serde_json::Va
         stdout,
         contributions,
         PlanStyleContribution {
-            layer: "dialogue_defaults",
+            layer: "character_dialogue_style",
             path: "rich_text.ruby.size",
             value: "14px",
             active: None,
             requires_range: true,
-            context: "dialogue defaults",
+            context: "character dialogue_style",
         },
     );
     assert_plan_style_contribution(
@@ -2499,33 +2493,6 @@ fn canonicalize_respects_source_allow_attribute_when_writing() {
     let rewritten = fs::read_to_string(&path).expect("rewritten source");
     assert!(rewritten.contains("flow @flow.generated generated {"));
     assert!(rewritten.contains("alice.say()[hi[p]]"));
-}
-
-#[test]
-fn canonicalize_nests_dotted_dialogue_defaults_when_writing() {
-    let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
-    let path = temp_arcw_project("canonicalize-dialogue-defaults", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
-        .output()
-        .expect("arcw canonicalize runs");
-
-    assert!(
-        output.status.success(),
-        "canonicalize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(
-        rewritten.contains(
-            "rich_text {\n        ruby {\n            size = 14px\n            gap += 1px"
-        )
-    );
-    assert!(!rewritten.contains("rich_text.ruby.size"));
-    assert!(!rewritten.contains("rich_text.ruby.gap"));
 }
 
 #[test]

@@ -52,7 +52,7 @@ test-rich-text-object-goal:
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_renderer_captures_combined_typewriter_animation_sample -- --ignored --exact --nocapture
     @cargo test -p arcweft-cli --features native-capture --test check agent_observe_native::agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources -- --exact --nocapture
     @cargo run -p arcweft-cli --quiet -- check samples/rich-text-full-grammar.arcw
-    @cargo run -p arcweft-cli --quiet -- check samples/rich-text-effects-animation.arcw
+    @cargo run -p arcweft-cli --quiet -- check --manifest-path samples/rich-text-effects-animation/arcw.toml --profile main
 
 test-image-animation-goal:
     @cargo test -p arcweft-image -- --nocapture

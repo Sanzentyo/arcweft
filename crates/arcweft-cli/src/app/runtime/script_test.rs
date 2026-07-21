@@ -3,14 +3,12 @@ use super::options::ScriptTestOptions;
 use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
     SourceSelection, load_and_check_selection, native_host_policy_for_selection,
-    require_profile_kind, resolve_source_selection, runtime_plan_options_for_selection,
-    runtime_pure_config_for_selection,
+    require_profile_kind, resolve_source_selection, runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::output::{
     ScriptTestFinalStatus, ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus,
 };
-use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::value::RuntimeBinding;
@@ -60,18 +58,7 @@ pub(in crate::app) fn script_test_selection(
     let checked = load_and_check_selection(selection, None)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let manifest = collect_script_tests(&checked.hir);
-    let runtime_options = runtime_plan_options_for_selection(selection)?;
-    let plan = lower_source_runtime_plan_with_typecheck_and_options(
-        &checked.hir,
-        &checked.typecheck_report,
-        &runtime_options,
-    )
-    .map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {}", error.message());
-        }
-        ExitCode::FAILURE
-    })?;
+    let plan = checked.runtime_plan().plan.clone();
     let file_roots = selection.native_file_roots();
     let source = NativeRunSource::new(selection.path(), &file_roots);
     let output = ScriptTestRunReport {

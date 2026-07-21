@@ -12,16 +12,39 @@ use arcweft_bundle::resource_codec::view::{
     ViewParameterResource, ViewParameterRole, ViewProductValidationLimits, ViewProgramResource,
 };
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_render_text::{
     LineDisplayCatalog, LineDisplayFrame, LineDisplaySpec, RichTextDocument, RuntimeLineContext,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::{
-    DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex, ViewId,
-    ViewProgramId,
+    AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
+    DialogueStageIndex, ViewId, ViewProgramId,
 };
 
 fn view_id(value: &str) -> ViewId {
     ViewId::try_new(value).expect("test View ID")
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-dialogue-acceptance-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-dialogue-acceptance-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn runtime_with_role(role: ViewParameterRole) -> BundleViewRuntime {
@@ -63,21 +86,27 @@ fn runtime_with_definitions(
 }
 
 fn display(view: ViewId) -> LineDisplayCatalog {
-    LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line: RuntimeLineId::from_runtime_line_value("say.accepted").expect("line ID"),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view,
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(Vec::new()),
-    }])
+    LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line: RuntimeLineId::from_runtime_line_value("say.accepted").expect("line ID"),
+            callee: "narrator".to_owned(),
+            speaker_label: None,
+            text_key: None,
+            view,
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: RichTextDocument::new(Vec::new()),
+        }],
+    )
+    .expect("test display catalog is revision-consistent")
 }
 
 fn display_frame(view: ViewId) -> LineDisplayFrame {
@@ -307,10 +336,16 @@ fn prepared_replacement_is_stale_when_declared_owners_change_independently() {
         ("view.SecondDialogue", ViewParameterRole::Dialogue),
     ]);
     runtime
-        .accept_dialogue_view_definitions(&LineDisplayCatalog::new(vec![
-            display(first.clone()).lines()[0].clone(),
-            display(second.clone()).lines()[0].clone(),
-        ]))
+        .accept_dialogue_view_definitions(
+            &LineDisplayCatalog::try_from_lines(
+                test_dialogue_revision(),
+                vec![
+                    display(first.clone()).lines()[0].clone(),
+                    display(second.clone()).lines()[0].clone(),
+                ],
+            )
+            .expect("test display catalog is revision-consistent"),
+        )
         .expect("both declared owners accept");
     let prepared = runtime
         .prepare_view_program_replacement(runtime.product().clone())

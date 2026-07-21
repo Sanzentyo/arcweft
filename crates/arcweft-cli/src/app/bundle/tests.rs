@@ -12,6 +12,7 @@ use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow, RuntimeLineId};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
+use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_lang_hir::{
     model::HirModule,
     symbol::{CallablePackageId, ProjectSymbolWorldId},
@@ -24,7 +25,8 @@ use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -41,6 +43,25 @@ struct TestCompiledViewResources {
     text: Option<ViewTextResource>,
     input: Option<ViewInputResource>,
     image_objects: Vec<BundleImageObject>,
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("cli-bundle-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.cli-bundle-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 impl TestCompiledViewResources {
@@ -1296,9 +1317,6 @@ pub view DialoguePanel(dialogue: DialogueView) {
   }
 }
 
-pub dialogue defaults {
-  view = @view.DialoguePanel
-}
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
@@ -1594,9 +1612,6 @@ pub view StoryPanel(line: StoryDialogue) {
   }
 }
 
-pub dialogue defaults {
-  view = @view.StoryPanel
-}
 "#;
 
 #[test]
@@ -1640,11 +1655,13 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
         speaker_label: Some("Hero".to_owned()),
         text_key: None,
         view: arcweft_view::ViewId::try_new("view.StoryPanel").unwrap(),
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(vec![RichTextNode::Text {
@@ -1677,7 +1694,8 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
     let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
         product,
         Some(text),
-        &LineDisplayCatalog::new(vec![display_spec]),
+        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
+            .expect("test display catalog is revision-consistent"),
     )
     .expect("custom dialogue View runtime builds");
     let frame = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
@@ -2080,21 +2098,27 @@ fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
         base: "夢".to_owned(),
         ruby: "ゆめ".to_owned(),
     }]);
-    let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-        line: RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: Some("text.opening.dream".to_owned()),
-        view: arcweft_bundle::standard_view::dialogue_view_id(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        default_inline_failure_policy: None,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: document.clone(),
-    }]);
+    let display = LineDisplayCatalog::try_from_lines(
+        test_dialogue_revision(),
+        vec![LineDisplaySpec {
+            line: RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
+            callee: "narrator".to_owned(),
+            speaker_label: None,
+            text_key: Some("text.opening.dream".to_owned()),
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
+            profile_style: None,
+            dialogue_revision: test_dialogue_revision(),
+            voice: None,
+            look: None,
+            style: None,
+            base_styles: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            style_contributions: Vec::new(),
+            args: Vec::new(),
+            content: document.clone(),
+        }],
+    )
+    .expect("test display catalog is revision-consistent");
     let mut text = ViewTextResource {
         sources: vec![arcweft_bundle::resource_codec::view::ViewTextSourceRecord {
             public_id: "text.view.dream".to_owned(),
@@ -2123,9 +2147,13 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
     assert_eq!(parsed.errors(), &[]);
     let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree())
         .expect("test source lowers to HIR");
-    let plan = arcweft_runtime_plan::flow::lower_runtime_plan(&hir)
+    let runtime_options = RuntimePlanLowerOptions::default().with_dialogue_profile(
+        DialoguePresentationProfile::engine_default(),
+        test_dialogue_revision(),
+    );
+    let plan = arcweft_runtime_plan::flow::lower_runtime_plan(&hir, &runtime_options)
         .expect("test source lowers to a runtime plan");
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()
         .expect("test product AWBC lowers")
@@ -2265,7 +2293,7 @@ flow main(state: GameState) { return "done" }
     assert!(!product_awbc.program().source_map.is_empty());
     assert_eq!(
         product_awbc.program().display_map.is_empty(),
-        artifact.bundle.display == LineDisplayCatalog::default()
+        artifact.bundle.display.lines().is_empty()
     );
 
     let bytes = artifact

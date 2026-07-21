@@ -31,17 +31,40 @@ use arcweft_debug_model::{
     script::DebugScriptRunOutcome,
     test_result::DebugTestResult,
 };
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use serde::Serialize;
 
 fn test_agent_resource_uri(value: impl Into<String>) -> AgentResourceUri {
     AgentResourceUri::new(value).expect("test resource URI is nonempty")
 }
 
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("cli-agent-native-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.cli-agent-native-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
+
 #[test]
 fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
     let options = agent_mcp_script_run_options(&serde_json::json!({
         "path": "samples/agent-script/cli-run-smoke.awfagent",
-        "native_source": "samples/rich-text-showcase.arcw",
+        "native_source": "samples/rich-text-showcase/src/main.arcw",
         "entry": "entry.main",
         "executor": "aot",
         "pure_backend": "jit",
@@ -213,7 +236,9 @@ fn test_line_display_frame() -> LineDisplayFrame {
         speaker_label: None,
         text: String::new(),
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         nodes: Vec::new(),
         display_map: arcweft_render_text::RichTextDisplayMap::default(),
@@ -1276,7 +1301,7 @@ fn agent_mcp_rag_query_includes_source_program_summary() {
     let _ = std::fs::remove_file(&db_path);
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let choice_source = workspace_root.join("samples/agent-script/native-choice-dispatch.arcw");
-    let rich_text_source = workspace_root.join("samples/rich-text-showcase.arcw");
+    let rich_text_source = workspace_root.join("samples/rich-text-showcase/src/main.arcw");
     let mut state = AgentMcpState::default();
 
     let query_result = agent_mcp_call_rag_query(
@@ -1644,7 +1669,7 @@ fn seed_mcp_rag_graph_history_debug_store(path: &std::path::Path) {
             severity: "error".to_owned(),
             phase: "render".to_owned(),
             message: "missing MCP glyph wobble shader".to_owned(),
-            source_path: Some("samples/rich-text-effects-animation.arcw".to_owned()),
+            source_path: Some("samples/rich-text-effects-animation/src/main.arcw".to_owned()),
             start_byte: Some(20),
             end_byte: Some(40),
             related_ids: vec![PublicId::new("@effect.wobble").expect("public id")],

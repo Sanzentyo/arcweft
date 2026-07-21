@@ -17,7 +17,7 @@ use crate::cst::{
     CstPunctuationDeltas, CstStmtKind, CstStructuredFlowBlockKind, CstTopLevelItemKind,
     CstTopLevelLineKind, SyntaxNode, SyntaxParseStats, classify_stmt, cst_lines_for_source,
     find_matching_punctuation, find_top_level_punctuation, source_line_iter, split_leading_ident,
-    split_top_level_keyword_once, split_top_level_punctuation_once,
+    split_top_level_keyword_once,
 };
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;
@@ -668,7 +668,7 @@ impl<'a> Parser<'a> {
                 self.push_error(
                     *attr.range(),
                     "attribute is not attached to an attribute-aware item",
-                    ["flow", "fn", "character", "dialogue defaults", "source"],
+                    ["flow", "fn", "character", "source"],
                     Some(attr.name()),
                     ["move the attribute directly before a supported declaration"],
                 );

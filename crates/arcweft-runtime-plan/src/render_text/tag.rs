@@ -17,7 +17,7 @@ use super::attrs::{
     angle_from_attrs, milli_attr, param_from_value, parse_attrs, parse_typed_attrs,
     transform_angle_attr, trim_quotes, truthy_attr,
 };
-use super::defaults::TextProxyTypeDefaults;
+use super::dialogue_context::TextProxyTypeDefaults;
 use super::inline_failure::{inline_failure_policy, inline_fallback_source_label};
 
 pub(crate) fn lower_dialogue_token_parts(

@@ -198,7 +198,29 @@ fn append_display_frames(
 mod tests {
     use super::*;
     use arcweft_bundle::resource_codec::SourceMapSection;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+    fn test_dialogue_revision() -> DialogueProfileRevision {
+        let manifest = SourceDocument::try_new(
+            SourceDocumentId::try_new("player-native-lib-test").expect("document ID"),
+            SourceName::Memory,
+            "test manifest",
+        )
+        .expect("test document");
+        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
+            .expect("test source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            manifest.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.player-native-lib-test").expect("View program ID"),
+            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
+    }
 
     #[test]
     fn bundle_headless_uses_runtime_host_flow_events_for_display_frames() {
@@ -226,23 +248,29 @@ mod tests {
         )
         .expect("runtime plan is valid")
         .with_entries(vec![cli_main_entry()]);
-        let display = LineDisplayCatalog::new(vec![LineDisplaySpec {
-            line,
-            callee: "alice".to_owned(),
-            speaker_label: None,
-            text_key: None,
-            view: arcweft_bundle::standard_view::dialogue_view_id(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            default_inline_failure_policy: None,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![RichTextNode::Text {
-                text: "Hello bundle".to_owned(),
-            }]),
-        }]);
+        let display = LineDisplayCatalog::try_from_lines(
+            test_dialogue_revision(),
+            vec![LineDisplaySpec {
+                line,
+                callee: "alice".to_owned(),
+                speaker_label: None,
+                text_key: None,
+                view: arcweft_bundle::standard_view::dialogue_view_id(),
+                profile_style: None,
+                dialogue_revision: test_dialogue_revision(),
+                voice: None,
+                look: None,
+                style: None,
+                base_styles: Vec::new(),
+                inline_failure: InlineFailurePolicy::FailLine,
+                style_contributions: Vec::new(),
+                args: Vec::new(),
+                content: RichTextDocument::new(vec![RichTextNode::Text {
+                    text: "Hello bundle".to_owned(),
+                }]),
+            }],
+        )
+        .expect("test display catalog is revision-consistent");
         let product_awbc = AwbcLowerer::new(&plan, &display, "bundle-display.arcw")
             .lower()
             .expect("product AWBC lowers")
@@ -313,7 +341,7 @@ mod tests {
         )
         .expect("runtime plan is valid")
         .with_entries(vec![cli_main_entry()]);
-        let display = LineDisplayCatalog::default();
+        let display = LineDisplayCatalog::new(test_dialogue_revision());
         let product_awbc = AwbcLowerer::new(&plan, &display, "return-only.arcw")
             .lower()
             .expect("product AWBC lowers")

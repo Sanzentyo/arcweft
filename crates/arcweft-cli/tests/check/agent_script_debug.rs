@@ -3401,7 +3401,7 @@ fn agent_rag_query_indexes_multiple_sources() {
     fs::create_dir_all(db_path.parent().expect("multi-source RAG DB parent"))
         .expect("create multi-source RAG DB parent");
     let choice_source = workspace_path("samples/agent-script/native-choice-dispatch.arcw");
-    let rich_text_source = workspace_path("samples/rich-text-showcase.arcw");
+    let rich_text_source = workspace_path("samples/rich-text-showcase/src/main.arcw");
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -3437,7 +3437,7 @@ fn agent_rag_query_indexes_multiple_sources() {
                     .is_some_and(|id| id.contains("source.blake3:"))
                     && item["source_anchor"]["path"]
                         .as_str()
-                        .is_some_and(|path| path.ends_with("rich-text-showcase.arcw"))
+                        .is_some_and(|path| path.ends_with("rich-text-showcase/src/main.arcw"))
             })
         }),
         "multi-source RAG should namespace source/project chunks by source input: {pack}"
@@ -5095,7 +5095,7 @@ fn seed_debug_search_diagnostics(store: &DebugStore, program_hash: StableHash) {
             severity: "error".to_owned(),
             phase: "render".to_owned(),
             message: "missing shader binding for glyph wobble".to_owned(),
-            source_path: Some("samples/rich-text-effects-animation.arcw".to_owned()),
+            source_path: Some("samples/rich-text-effects-animation/src/main.arcw".to_owned()),
             start_byte: Some(120),
             end_byte: Some(180),
             related_ids: vec![PublicId::new("@effect.wobble").expect("public id")],

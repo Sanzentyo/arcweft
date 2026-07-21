@@ -14,7 +14,6 @@ use arcweft_lang_syntax::{
 
 use crate::decl_identity::declaration_identity_edits;
 use crate::dialogue_content::{collect_dialogue_content_ranges, collect_speaker_lines};
-use crate::dialogue_defaults::dialogue_defaults_nested_assignment_edits;
 use crate::dialogue_sugar::{DialogueSugarContext, DialogueSugarMode, dialogue_text_sugar_edits};
 use crate::edit::{edits_overlap, report_from_edits};
 use crate::line_sugar::{await_question_edit, closing_brace_insert, speaker_line_edit};
@@ -40,11 +39,6 @@ pub fn canonicalize_source(
     let mut diagnostics = Vec::new();
 
     edits.extend(declaration_identity_edits(source, &parsed));
-    edits.extend(dialogue_defaults_nested_assignment_edits(
-        source,
-        &parsed,
-        &mut path_aliases,
-    )?);
 
     for line in collect_speaker_lines(&parsed) {
         match exact_speaker_record(source, inventory, line) {

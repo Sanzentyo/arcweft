@@ -210,9 +210,12 @@ mod tests {
         bytecode::BytecodeProgram,
         plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
     };
+    use arcweft_dialogue::DialogueProfileRevision;
     use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
     use std::{
         process,
         time::{SystemTime, UNIX_EPOCH},
@@ -234,6 +237,26 @@ mod tests {
             patch_transport: None,
             path: PathBuf::from(path),
         }
+    }
+
+    fn test_dialogue_revision() -> DialogueProfileRevision {
+        let manifest = SourceDocument::try_new(
+            SourceDocumentId::try_new("player-native-main-test").expect("document ID"),
+            SourceName::Memory,
+            "test manifest",
+        )
+        .expect("test document");
+        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
+            .expect("test source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            manifest.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.player-native-main-test")
+                .expect("View program ID"),
+            AcceptedViewProgramRevision::try_from_bytes([0x5b; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
     }
 
     #[test]
@@ -334,7 +357,7 @@ mod tests {
             ),
             roles: arcweft_core::entry::RuntimeEntryRoles::None,
         }]);
-        let display = LineDisplayCatalog::default();
+        let display = LineDisplayCatalog::new(test_dialogue_revision());
         let product_awbc = AwbcLowerer::new(&plan, &display, "bundle-mode-runs.arcw")
             .lower()
             .expect("product AWBC lowers")

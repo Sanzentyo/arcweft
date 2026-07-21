@@ -73,10 +73,11 @@ rich_text {
 }
 ```
 
-Dialogue defaults, authored View styles, character `dialogue_style`, speaker presets,
-line options, and inline spans all contribute to the same effective RichText
-style. Records deep-merge by field. The nearest explicit field wins, while
-unspecified sibling fields continue to inherit from lower-priority defaults.
+The selected profile dialogue Style, authored View styles, character
+`dialogue_style`, speaker presets, line options, and inline spans all contribute
+to the same effective RichText style. Records deep-merge by field. The nearest
+explicit field wins, while unspecified sibling fields continue to inherit from
+lower-priority layers.
 
 Ruby-specific fields mean:
 

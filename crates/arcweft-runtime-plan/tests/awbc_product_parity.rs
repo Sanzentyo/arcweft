@@ -34,6 +34,7 @@ use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeExpr,
     RuntimeExprMatchArm, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
+use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_interaction_model::{
     audio::{AudioCommand, AudioDispatchId, AudioMillis, GainDbMilli},
     id::Identifier,
@@ -41,7 +42,29 @@ use arcweft_interaction_model::{
     payload::InteractionPayload,
 };
 use arcweft_render_text::LineDisplayCatalog;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-plan-parity-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-plan-parity-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 #[derive(Debug)]
 struct ParityStep {
@@ -112,7 +135,7 @@ fn run_parity_with_options(
     inputs: Vec<RuntimeStepInput>,
 ) -> Vec<ParityStep> {
     let plan = with_parity_entry(plan);
-    let display = LineDisplayCatalog::default();
+    let display = LineDisplayCatalog::new(test_dialogue_revision());
     let awbc = AwbcLowerer::new(&plan, &display, "awbc_product_parity.arcw")
         .lower()
         .expect("runtime plan lowers to AWBC")
@@ -1498,7 +1521,7 @@ fn awbc_product_parity_stream_for_next_binds_source_item() {
     );
     let awbc = AwbcLowerer::new(
         &plan,
-        &LineDisplayCatalog::default(),
+        &LineDisplayCatalog::new(test_dialogue_revision()),
         "stream-for-next.arcw",
     )
     .lower()

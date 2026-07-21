@@ -1,0 +1,14 @@
+schema = 1
+default-profile = "main"
+
+[package]
+id = "org.arcweft.samples.native-style-layout-coverage"
+version = "0.1.0"
+
+[profiles.main]
+kind = "game"
+entry = "@entry.native_style_layout_coverage"
+source = "src/main.arcw"
+
+[profiles.main.dialogue]
+view = "view.CoveragePanel"

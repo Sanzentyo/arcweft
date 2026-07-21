@@ -148,7 +148,6 @@ ItemDecl     :=
   | SourceDecl
   | EntryDecl
   | ViewDecl
-  | DialogueDefaultsDecl
   | AssetDecl
   | ImageDecl
   | ProofDecl
@@ -434,47 +433,30 @@ choice @.first -> @choice.opening.dream.first
 choice @.first outside a scope -> @choice.opening.first
 ```
 
-## Hooks
+## Dialogue presentation ownership
 
-```text
-DialogueDefaultsDecl :=
-    Visibility? 'dialogue' 'defaults' EntityRef? Block
+Dialogue presentation selection is project metadata, not an Arcweft source
+item. The accepted launch or project profile owns a typed dialogue View, an
+optional base Style, and the inline-failure policy:
 
-Dialogue defaults declare a defaults profile. `pub dialogue defaults { ... }`
-is the canonical exported project-wide profile; its identity is supplied by
-the declaration role and does not repeat `defaults` in an entity reference.
-Other profiles are selected explicitly by project/build configuration or
-tooling and are not merged merely because they are visible. A named mobile
-profile is written `pub dialogue defaults @dialogue.mobile { ... }`.
-Product/test lowering diagnoses multiple applicable profiles when no active
-profile can be chosen unambiguously.
+```toml
+[profiles.game.dialogue]
+view = "view.main_dialogue"
+style = "style.main_dialogue"
 
-Inside the block, structured RichText typography is written as a nested
-assignment block:
-
-```text
-pub dialogue defaults {
-  rich_text {
-    text   { font = Expr, size = Expr, color = Expr, ... }
-    layout { writing_mode = Expr, jlreq = Expr, vertical_latin = Expr, ... }
-    ruby   { position = Expr, size = Expr, gap = Expr, overhang = Expr, ... }
-  }
-}
+[profiles.game.dialogue.inline-failure]
+kind = "fail_line"
 ```
 
-Structured defaults deep-merge by field through the dialogue cascade. Scalar
-fields use nearest-wins semantics; collections require explicit collection
-operators such as `=` or `+=`.
+The manifest IDs are validated as View and Style identities during project
+admission. The selected View and Style become the base presentation inputs for
+all dialogue in that profile. Character-local `dialogue_style`, speaker preset,
+line, and inline rich-text values remain source-level inputs and override the
+profile base through the ordinary cascade.
 
-One-line nested assignments such as `ruby { size = 11px gap = 1px }` are not
-canonical because field boundaries are ambiguous. Formatters should write
-multiline blocks, or require commas if a compact single-line form is ever
-accepted.
-
-Dialogue defaults preserve structured assignment expressions for later style,
-View, voice, and localization lowering. Events are declared through their
-owning constructs, and input decoding uses ordinary functions; the grammar has
-no universal hook, memo function/block, or parser declaration.
+Events are declared through their owning constructs, and input decoding uses
+ordinary functions; the grammar has no universal hook, memo function/block, or
+parser declaration.
 
 ## Types
 

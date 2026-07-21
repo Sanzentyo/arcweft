@@ -8,7 +8,20 @@ pub character alice {
                 color = rgb("#d9f2ff")
                 size = 29px
             }
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+            ruby {
+                position = over
+                size = 12px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
+        inline_error = InlineFailure.fallback("?")
     }
 }
 
@@ -22,7 +35,20 @@ pub character bob {
                 color = rgb("#ffe0d0")
                 size = 28px
             }
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+            ruby {
+                position = over
+                size = 12px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
+        inline_error = InlineFailure.fallback("?")
     }
 }
 
@@ -36,7 +62,20 @@ pub character narrator {
                 color = rgb("#e8e8e8")
                 size = 27px
             }
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+            ruby {
+                position = over
+                size = 12px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
+        inline_error = InlineFailure.fallback("?")
     }
 }
 
@@ -48,24 +87,6 @@ pub struct KeywordHit {
 #[text_proxy(kind="hover", default_hit=false, depth=2, layer=view)]
 pub struct HoverHit {
     layer: String
-}
-
-pub dialogue defaults @dialogue.full {
-    rich_text {
-        layout {
-            writing_mode = horizontal_tb
-            jlreq = normal
-            vertical_latin = mixed
-        }
-        ruby {
-            position = over
-            size = 12px
-            gap = 1px
-            overhang = 3px
-            collision_gap = 2px
-        }
-    }
-    inline_error = InlineFailure.fallback("?")
 }
 
 #[fx]

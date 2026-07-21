@@ -9,11 +9,11 @@ use arcweft_render_text::{
 use crate::errors::RuntimePlanLowerError;
 use crate::labels::expr_label;
 
+use super::character_profile::append_style_contributions;
 use super::contributions::{
     LineOptionContribution, append_inline_span_contributions, append_line_option_contributions,
 };
-use super::defaults::{DialogueDisplayDefaults, DialogueSpeakerPreset};
-use super::entity_defaults::append_style_contributions;
+use super::dialogue_context::{DialogueDisplayDefaults, DialogueSpeakerPreset};
 use super::fx::{
     DialogueFxExpander, FxCatalog, FxInlineAssignment, append_fx_inline_contributions,
 };
@@ -64,6 +64,11 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets_and_fx(
     }
     let default_inline_failure_policy =
         lower_effective_inline_failure_policy(dialogue, defaults, speaker_presets);
+    let dialogue_revision = defaults.profile_revision.clone().ok_or_else(|| {
+        RuntimePlanLowerError::new(
+            "dialogue lowering requires one compiler-admitted presentation profile revision",
+        )
+    })?;
     let preset_chain = speaker_preset_chain(dialogue.callee(), speaker_presets);
     let character_callee = preset_chain
         .first()
@@ -86,11 +91,13 @@ pub(crate) fn lower_dialogue_display_with_speaker_presets_and_fx(
             .map(str::to_owned),
         text_key: dialogue.text_key().map(|id| id.body().to_owned()),
         view: effective_dialogue_view(dialogue, defaults, speaker_presets)?,
+        profile_style: defaults.profile_style.clone(),
+        dialogue_revision,
         voice: dialogue.voice().map(expr_label),
         look: dialogue.look().map(expr_label),
         style: dialogue.style().map(expr_label),
         base_styles: lower_effective_dialogue_base_styles(dialogue, defaults, speaker_presets),
-        default_inline_failure_policy: default_inline_failure_policy.clone(),
+        inline_failure: default_inline_failure_policy.unwrap_or(InlineFailurePolicy::FailLine),
         style_contributions: lower_effective_dialogue_style_contributions(
             dialogue,
             defaults,

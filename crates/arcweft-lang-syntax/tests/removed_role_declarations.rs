@@ -6,10 +6,11 @@ use arcweft_lang_syntax::parser::{
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::sync::Arc;
 
-const REMOVED_DECLARATIONS: [&str; 3] = [
+const REMOVED_DECLARATIONS: [&str; 4] = [
     "state GameState {\n    value: i32\n}\n",
     "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
     "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
+    "dialogue defaults {\n    view = @view.main\n}\n",
 ];
 
 fn assert_rejected(parsed: &arcweft_lang_syntax::source::ParsedSource, source: &str) {

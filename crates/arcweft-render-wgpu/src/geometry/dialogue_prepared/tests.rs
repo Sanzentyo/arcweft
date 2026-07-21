@@ -1,5 +1,5 @@
 use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_presentation::{
     fx::{
         Angle, FiniteF32, FxApplication, FxApplicationResolver, FxColor, FxContextSlot,
@@ -14,10 +14,33 @@ use arcweft_render_text::{
     LineDisplaySpec, RichTextControl, RichTextDocument, RichTextLayout, RichTextNode,
     RichTextStyle, RichTextWritingMode, RuntimeLineContext, TextWeight,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 use super::*;
 
 const TEST_FONT: &[u8] = include_bytes!("../../../../../web/assets/noto-sans-jp-vf.ttf");
+
+fn dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("render-wgpu-dialogue-prepared-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.render-wgpu-dialogue-prepared-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 struct NoFxResolver;
 
@@ -557,11 +580,13 @@ fn frame(nodes: Vec<RichTextNode>) -> arcweft_render_text::LineDisplayFrame {
         text_key: None,
         view: arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
             .expect("standard dialogue View id"),
+        profile_style: None,
+        dialogue_revision: dialogue_revision(),
         voice: None,
         look: None,
         style: None,
         base_styles: Vec::new(),
-        default_inline_failure_policy: Some(InlineFailurePolicy::FailLine),
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         args: Vec::new(),
         content: RichTextDocument::new(nodes),

@@ -21,6 +21,7 @@ thiserror.workspace = true
 [dev-dependencies]
 arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
+arcweft-resource-model = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

@@ -16,7 +16,9 @@ pub(crate) use cache_batch::PendingProjectCompileStores;
 #[cfg(test)]
 use cache_batch::PendingStoreTransitionError;
 pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, ProjectCompileCache};
-pub use dialogue_profile::{CheckedDialogueProfile, DialogueProfileAdmissionError};
+pub use dialogue_profile::{
+    CheckedDialogueProfile, DialogueProfileAdmissionError, DialogueProfileOwner,
+};
 pub(crate) use entry_runtime::EntryRuntimeProjection;
 pub use registration::{
     AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectEntrySelection,
@@ -57,7 +59,7 @@ use arcweft_runtime_plan::{
 use arcweft_source::SourceDocumentId;
 use arcweft_source::{
     Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceDocument, SourceDocumentIdentity,
-    SourceName,
+    SourceName, SourceSetRevision,
 };
 use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 use thiserror::Error;
@@ -148,7 +150,7 @@ pub struct CompiledProject {
     image_catalog: CompiledImageCatalog,
     fx_definitions: Arc<[FxDefinition]>,
     view_product: CompiledViewProduct,
-    dialogue_profile: Option<CheckedDialogueProfile>,
+    dialogue_profile: CheckedDialogueProfile,
     line_task_groups: Vec<LoweredLineTaskGroup>,
     runtime_plan: RuntimePlanLowerReport,
 }
@@ -331,6 +333,11 @@ impl CompiledProject {
         &self.registered_world
     }
 
+    /// Retains the exact registered world owned by this compiled project.
+    pub fn registered_world_arc(&self) -> Arc<RegisteredSemanticWorld> {
+        Arc::clone(&self.registered_world)
+    }
+
     pub fn registered_environment(&self) -> &RegisteredTypeCheckEnv {
         self.registered_world.environment()
     }
@@ -363,11 +370,11 @@ impl CompiledProject {
         &self.view_product
     }
 
-    /// Launch-selected dialogue presentation admitted against this project's
-    /// exact View/Style product. Direct source compilation has no launch
-    /// profile and therefore returns `None`.
-    pub const fn dialogue_profile(&self) -> Option<&CheckedDialogueProfile> {
-        self.dialogue_profile.as_ref()
+    /// Dialogue presentation admitted against this project's exact View/Style
+    /// product. Direct source compilation receives a typed project-default
+    /// owner rather than an unchecked runtime fallback.
+    pub const fn dialogue_profile(&self) -> &CheckedDialogueProfile {
+        &self.dialogue_profile
     }
 
     pub fn line_task_groups(&self) -> &[LoweredLineTaskGroup] {
@@ -548,19 +555,47 @@ where
                 [error.diagnostic()],
             )
         })?;
-        let dialogue_profile = context
-            .accepted_launch_profile()
-            .map(|input| {
-                CheckedDialogueProfile::try_admit(input, &view_product, context.resource_types())
-            })
-            .transpose()
+        let dialogue_profile_input = if let Some(input) = context.accepted_launch_profile() {
+            dialogue_profile::DialogueProfileAdmissionInput::Launch(input)
+        } else {
+            let topology_sources = SourceSetRevision::try_for_identities(
+                std::iter::once(project.manifest_document().identity()).chain(
+                    project
+                        .modules()
+                        .map(|source| source.document().identity()),
+                ),
+            )
             .map_err(|error| {
-                linked_error_with_compilation_sources(
+                linked_error(
                     ProjectCompileStage::DialogueProfileAdmission,
-                    context,
-                    [error.diagnostic()],
+                    [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                        .with_code("profile.dialogue.project-source-revision")
+                        .with_label(DiagnosticLabel::primary(
+                            project.manifest_document().start_span(),
+                            Some(
+                                "the project-default dialogue profile could not bind this source inventory"
+                                    .to_owned(),
+                            ),
+                        ))],
                 )
             })?;
+            dialogue_profile::DialogueProfileAdmissionInput::ProjectDefault {
+                manifest: project.manifest_document(),
+                topology_sources,
+            }
+        };
+        let dialogue_profile = CheckedDialogueProfile::try_admit(
+            dialogue_profile_input,
+            &view_product,
+            context.resource_types(),
+        )
+        .map_err(|error| {
+            linked_error_with_compilation_sources(
+                ProjectCompileStage::DialogueProfileAdmission,
+                context,
+                [error.diagnostic()],
+            )
+        })?;
         let line_task_groups = lower::lower_source_line_tasks(&linked_hir).map_err(|errors| {
             linked_error(
                 ProjectCompileStage::LineTaskLower,
@@ -582,7 +617,11 @@ where
             .clone()
             .with_package_identity(project.package().id.as_str())
             .with_agent_controllers(agent_controllers)
-            .with_entry_callables(entry_callables);
+            .with_entry_callables(entry_callables)
+            .with_dialogue_profile(
+                dialogue_profile.presentation().clone(),
+                dialogue_profile.revision().clone(),
+            );
         let mut runtime_plan = lower::lower_source_runtime_plan_with_typecheck_stats_and_options(
             &linked_hir,
             &typecheck_report,

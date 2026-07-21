@@ -185,7 +185,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let adapters = required_adapter_requirements(&view, external_sections)?;
     let _content = required_content_catalog(&view, external_sections)?;
     let assets = optional_asset_catalog(&view, external_sections)?.unwrap_or_default();
-    let display = optional_display_catalog(&view, external_sections)?.unwrap_or_default();
+    let display = required_display_catalog(&view, external_sections)?;
     let source_map = optional_source_map(&view, external_sections)?.ok_or_else(|| {
         BundleCodecError::DecodeAwfb {
             message: "AWFB bundle is missing its canonical SourceMap section".to_owned(),
@@ -416,11 +416,11 @@ fn optional_asset_catalog(
     )
 }
 
-fn optional_display_catalog(
+fn required_display_catalog(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
-) -> Result<Option<CompactDisplayCatalogSection>, BundleCodecError> {
-    optional_compact_payload(
+) -> Result<CompactDisplayCatalogSection, BundleCodecError> {
+    required_compact_payload(
         view,
         external_sections,
         BundleSectionKind::DisplayCatalog,
@@ -766,9 +766,12 @@ mod tests {
         AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_dialogue::DialogueProfileRevision;
     use arcweft_presentation::fx::{FxDefinition, FxGraph, FxId, FxNode};
     use arcweft_render_text::LineDisplayCatalog;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
     use std::path::Path;
 
     #[test]
@@ -1122,7 +1125,7 @@ mod tests {
             },
             source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::default(),
+            LineDisplayCatalog::new(test_dialogue_revision()),
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
@@ -1136,6 +1139,25 @@ mod tests {
         )
         .expect("source document");
         SourceMapSection::try_from_documents(&[&document]).expect("source map")
+    }
+
+    fn test_dialogue_revision() -> DialogueProfileRevision {
+        let source = SourceDocument::try_new(
+            SourceDocumentId::try_new("bundle-product-test-revision").expect("source ID"),
+            SourceName::Memory,
+            "test manifest",
+        )
+        .expect("source document");
+        let sources = SourceSetRevision::try_for_identities([source.identity()])
+            .expect("test source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            source.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.bundle-product-test").expect("View program ID"),
+            AcceptedViewProgramRevision::try_from_bytes([0x7c; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
     }
 
     fn minimal_awbc_program() -> AwbcProgram {

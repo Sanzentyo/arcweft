@@ -1,6 +1,5 @@
-use super::common::{TextRange, Visibility};
-use super::ids::{EntityRef, EntityRefSyntax, IdRef};
-use super::items::Attribute;
+use super::common::TextRange;
+use super::ids::{EntityRefSyntax, IdRef};
 use super::line_plan::LinePlan;
 use crate::{expr::Expr, text::DialogueTextDiagnostic};
 use thiserror::Error;
@@ -261,41 +260,6 @@ pub struct LineArg {
     value: Expr,
     raw_value: String,
     value_range: TextRange,
-}
-
-/// Global dialogue default declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueDefaultsItem {
-    attrs: Vec<Attribute>,
-    visibility: Option<Visibility>,
-    id: Option<EntityRef>,
-    assignments: Vec<DialogueDefaultAssignment>,
-    range: TextRange,
-}
-
-/// One assignment inside a `dialogue defaults` declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueDefaultAssignment {
-    path: DialogueDefaultPath,
-    op: DialogueDefaultAssignOp,
-    value: Expr,
-    raw_value: String,
-    range: TextRange,
-    path_range: TextRange,
-    value_range: TextRange,
-}
-
-/// Dot-separated path of a structured dialogue defaults assignment.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogueDefaultPath {
-    segments: Vec<String>,
-}
-
-/// Assignment operator used by a dialogue defaults assignment.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DialogueDefaultAssignOp {
-    Replace,
-    Append,
 }
 
 impl DialogueContent {
@@ -973,113 +937,5 @@ impl LineArg {
 
     pub const fn value_range(&self) -> &TextRange {
         &self.value_range
-    }
-}
-
-impl DialogueDefaultsItem {
-    pub(crate) const fn new(
-        attrs: Vec<Attribute>,
-        visibility: Option<Visibility>,
-        id: Option<EntityRef>,
-        assignments: Vec<DialogueDefaultAssignment>,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            attrs,
-            visibility,
-            id,
-            assignments,
-            range,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn attrs(&self) -> &[Attribute] {
-        &self.attrs
-    }
-
-    pub const fn id(&self) -> Option<&EntityRef> {
-        self.id.as_ref()
-    }
-
-    pub fn assignments(&self) -> &[DialogueDefaultAssignment] {
-        &self.assignments
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl DialogueDefaultAssignment {
-    pub(crate) const fn new(
-        path: DialogueDefaultPath,
-        op: DialogueDefaultAssignOp,
-        value: Expr,
-        raw_value: String,
-        range: TextRange,
-        path_range: TextRange,
-        value_range: TextRange,
-    ) -> Self {
-        Self {
-            path,
-            op,
-            value,
-            raw_value,
-            range,
-            path_range,
-            value_range,
-        }
-    }
-
-    pub const fn path(&self) -> &DialogueDefaultPath {
-        &self.path
-    }
-
-    pub const fn op(&self) -> DialogueDefaultAssignOp {
-        self.op
-    }
-
-    pub const fn value(&self) -> &Expr {
-        &self.value
-    }
-
-    pub fn raw_value(&self) -> &str {
-        &self.raw_value
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-
-    pub const fn path_range(&self) -> &TextRange {
-        &self.path_range
-    }
-
-    pub const fn value_range(&self) -> &TextRange {
-        &self.value_range
-    }
-}
-
-impl DialogueDefaultPath {
-    pub fn from_dotted(path: &str) -> Option<Self> {
-        let segments: Vec<String> = path
-            .split('.')
-            .map(str::trim)
-            .filter(|segment| !segment.is_empty())
-            .map(str::to_owned)
-            .collect();
-        (!segments.is_empty()).then_some(Self { segments })
-    }
-
-    pub fn segments(&self) -> &[String] {
-        &self.segments
-    }
-
-    pub fn dotted(&self) -> String {
-        self.segments.join(".")
     }
 }

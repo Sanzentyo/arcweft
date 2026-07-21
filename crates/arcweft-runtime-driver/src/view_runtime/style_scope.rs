@@ -5,6 +5,7 @@ use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewRuntimeGeometryO
 use arcweft_view::{
     ViewId, ViewMountId, ViewPartLocalName, ViewPartName, ViewStyleApplication,
     ViewStyleApplicationTarget, ViewStyleBoundaryFacts, ViewStyleNodeKey, ViewStyleScopeId,
+    ViewStyleSheetId,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -239,6 +240,19 @@ impl ViewStyleScopeRuntime {
 }
 
 impl ViewStyleScopeStack {
+    pub(crate) fn enter_dialogue_profile(
+        &mut self,
+        sheet: &ViewStyleSheetId,
+        allocator: &mut ViewStyleScopeAllocator,
+    ) -> Result<(), ViewStyleScopeError> {
+        self.enter_definition(
+            &[ViewStyleApplicationTarget::Named {
+                sheet: sheet.clone(),
+            }],
+            allocator,
+        )
+    }
+
     pub(crate) fn enter_definition(
         &mut self,
         styles: &[ViewStyleApplicationTarget],
@@ -385,5 +399,48 @@ impl ViewStyleScopeStack {
                 .ok_or(ViewStyleScopeError::ViewBoundaryDepth)?;
         }
         Ok(nested)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ViewStyleScopeAllocator, ViewStyleScopeStack};
+    use arcweft_view::{ViewStyleApplicationTarget, ViewStyleSheetId};
+
+    #[test]
+    fn dialogue_profile_sheet_precedes_authored_definition_sheet() {
+        let profile =
+            ViewStyleSheetId::try_new("style.dialogue_profile").expect("profile Style sheet ID");
+        let definition = ViewStyleSheetId::try_new("style.dialogue_definition")
+            .expect("definition Style sheet ID");
+        let mut allocator = ViewStyleScopeAllocator::default();
+        let mut stack = ViewStyleScopeStack::default();
+
+        stack
+            .enter_dialogue_profile(&profile, &mut allocator)
+            .expect("profile scope");
+        stack
+            .enter_definition(
+                &[ViewStyleApplicationTarget::Named {
+                    sheet: definition.clone(),
+                }],
+                &mut allocator,
+            )
+            .expect("definition scope");
+        let local = stack
+            .applications_for_node(&[], false, false, &mut allocator)
+            .expect("retained applications");
+
+        assert_eq!(local.applications.len(), 2);
+        assert_eq!(local.applications[0].application_order(), 0);
+        assert_eq!(local.applications[1].application_order(), 1);
+        assert_eq!(
+            local.applications[0].target(),
+            &ViewStyleApplicationTarget::Named { sheet: profile }
+        );
+        assert_eq!(
+            local.applications[1].target(),
+            &ViewStyleApplicationTarget::Named { sheet: definition }
+        );
     }
 }

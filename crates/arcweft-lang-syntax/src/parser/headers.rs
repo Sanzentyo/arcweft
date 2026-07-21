@@ -408,22 +408,6 @@ pub(super) fn parse_visibility_prefix(input: &str) -> (Option<Visibility>, &str)
     }
 }
 
-pub(super) fn parse_optional_entity_ref<'a>(
-    input: &'a str,
-    base: usize,
-    errors: &mut Vec<ParseError>,
-) -> (Option<EntityRef>, &'a str) {
-    let trimmed = input.trim_start();
-    if starts_leading_entity_ref(trimmed) {
-        match parse_required_entity_ref(trimmed, base, errors) {
-            Some((entity, rest)) => (Some(entity), rest),
-            None => (None, input),
-        }
-    } else {
-        (None, input)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct EmptyDeclRelativeMarker {
     pub(super) range: TextRange,
@@ -487,36 +471,6 @@ pub(super) fn parse_optional_decl_id_ref<'a>(
         _ => {}
     }
     (Some(id), rest)
-}
-
-pub(super) fn parse_optional_decl_entity_ref<'a>(
-    input: &'a str,
-    family: &str,
-    base: usize,
-    errors: &mut Vec<ParseError>,
-) -> (Option<EntityRef>, &'a str) {
-    let trimmed = input.trim_start();
-    if let Some((marker_family, marker_len, rest)) = split_empty_decl_relative_marker(trimmed) {
-        if marker_family.is_some_and(|actual| !decl_family_matches(family, actual)) {
-            errors.push(simple_error(
-                base,
-                marker_len,
-                "family-relative declaration marker uses the wrong family",
-                &format!("@{family}:. name"),
-            ));
-        }
-        return (None, rest);
-    }
-    if starts_leading_relative_id(trimmed) || starts_leading_relative_entity_ref(trimmed) {
-        match parse_required_id_ref(trimmed, base, errors)
-            .and_then(|(id, rest)| normalize_decl_id_ref(id, family, errors).map(|id| (id, rest)))
-        {
-            Some((entity, rest)) => (Some(entity), rest),
-            None => (None, input),
-        }
-    } else {
-        parse_optional_entity_ref(input, base, errors)
-    }
 }
 
 pub(super) fn parse_optional_id_ref<'a>(

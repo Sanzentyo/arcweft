@@ -3,7 +3,6 @@ use std::ops::Range;
 
 use arcweft_lang_hir::model::HirDialogue;
 use arcweft_lang_hir::syntax::ast::common::TextRange;
-use arcweft_lang_hir::syntax::ast::dialogue::DialogueDefaultAssignOp;
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
@@ -303,13 +302,6 @@ pub(crate) fn mark_shadowed_style_contributions(contributions: &mut [RichTextSty
             contributions[previous].active = false;
             contributions[previous].shadowed_by = Some(index);
         }
-    }
-}
-
-pub(crate) fn rich_text_assign_op(op: DialogueDefaultAssignOp) -> RichTextAssignOp {
-    match op {
-        DialogueDefaultAssignOp::Replace => RichTextAssignOp::Replace,
-        DialogueDefaultAssignOp::Append => RichTextAssignOp::Append,
     }
 }
 

@@ -1,12 +1,54 @@
 use super::*;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::value::{RuntimeFieldValue, RuntimeSeq, runtime_sequence_from_literal_values};
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     RichTextCascadeLayer, RichTextColor, RichTextSettingSource, RichTextStyle,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId, ViewStyleSheetId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-plan-flow-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-plan-flow-test").expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
+
+fn admitted_options(profile: DialoguePresentationProfile) -> AdmittedRuntimePlanLowerOptions {
+    RuntimePlanLowerOptions::default().with_dialogue_profile(profile, test_dialogue_revision())
+}
+
+fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
+    super::lower_runtime_plan(
+        module,
+        &admitted_options(DialoguePresentationProfile::engine_default()),
+    )
+}
+
+fn lower_runtime_plan_with_stats(
+    module: &HirModule,
+) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
+    super::lower_runtime_plan_with_stats(
+        module,
+        &admitted_options(DialoguePresentationProfile::engine_default()),
+    )
+}
 
 #[test]
 fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
@@ -408,85 +450,46 @@ flow main {
 }
 
 #[test]
-fn runtime_plan_options_select_dialogue_defaults_profile() {
-    let parsed = parse_source(
-        r##"
-pub dialogue defaults {
-    text_color = rgb("#101112")
-}
-
-pub dialogue defaults @dialogue.mobile {
-    text_color = rgb("#202122")
-}
-
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: Hello[p]
-}
-"##,
-    );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let report = lower_runtime_plan_with_stats_and_options(
-        &hir,
-        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.mobile"),
-    )
-    .expect("runtime plan lowers with selected dialogue defaults");
-    let spec = report
-        .line_display_catalog
-        .lines()
-        .first()
-        .expect("line display spec");
-
-    assert_eq!(
-        spec.base_styles,
-        vec![RichTextStyle::Color {
-            value: RichTextColor::Rgb {
-                red: 32,
-                green: 33,
-                blue: 34
-            }
-        }]
-    );
-}
-
-#[test]
-fn runtime_plan_options_apply_profile_inline_failure_policy() {
+fn admitted_dialogue_profile_propagates_typed_owner_style_policy_and_revision() {
     let parsed = parse_source(
         r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
-    alice: Hello #[missing][p]
+    alice: Hello[p]
 }
 ",
     );
     let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let report = lower_runtime_plan_with_stats_and_options(
-        &hir,
-        &RuntimePlanLowerOptions::default()
-            .with_dialogue_inline_failure(InlineFailurePolicy::Discard),
-    )
-    .expect("runtime plan lowers with profile inline-failure policy");
+    let profile = DialoguePresentationProfile::new(
+        ViewId::try_new("view.MobileDialogue").expect("View ID"),
+        Some(ViewStyleSheetId::try_new("style.dialogue.mobile").expect("Style ID")),
+        InlineFailurePolicy::Discard,
+    );
+    let revision = test_dialogue_revision();
+    let options =
+        RuntimePlanLowerOptions::default().with_dialogue_profile(profile, revision.clone());
+    let report = super::lower_runtime_plan_with_stats(&hir, &options)
+        .expect("runtime plan lowers with admitted dialogue profile");
     let spec = report
         .line_display_catalog
         .lines()
         .first()
         .expect("line display spec");
 
+    assert_eq!(spec.view.as_str(), "view.MobileDialogue");
     assert_eq!(
-        spec.default_inline_failure_policy,
-        Some(InlineFailurePolicy::Discard)
+        spec.profile_style.as_ref().map(ViewStyleSheetId::as_str),
+        Some("style.dialogue.mobile")
     );
+    assert_eq!(spec.inline_failure, InlineFailurePolicy::Discard);
+    assert_eq!(spec.dialogue_revision, revision);
+    assert_eq!(report.line_display_catalog.dialogue_revision(), &revision);
 }
 
 #[test]
 fn speaker_preset_styles_join_dialogue_cascade() {
     let source = r##"
-pub dialogue defaults {
-    text_color = rgb("#101112")
-}
-
 character @character.alice Alice as alice {
     dialogue_style {
         text_color = rgb("#202122")
@@ -519,13 +522,6 @@ flow @flow.main main {
         vec![
             RichTextStyle::Color {
                 value: RichTextColor::Rgb {
-                    red: 16,
-                    green: 17,
-                    blue: 18,
-                }
-            },
-            RichTextStyle::Color {
-                value: RichTextColor::Rgb {
                     red: 32,
                     green: 33,
                     blue: 34,
@@ -555,15 +551,15 @@ flow @flow.main main {
         ]
     );
     assert!(matches!(
-        spec.default_inline_failure_policy,
-        Some(InlineFailurePolicy::Fallback { .. })
+        spec.inline_failure,
+        InlineFailurePolicy::Fallback { .. }
     ));
     assert!(spec.style_contributions.iter().any(|contribution| {
         contribution.layer == RichTextCascadeLayer::SpeakerPreset
             && contribution.path == "rich_text.text.color"
             && contribution.value == "rgb(\"#404142\")"
             && contribution.active
-            && contribution.style_index == Some(3)
+            && contribution.style_index == Some(2)
             && matches!(
                 &contribution.source,
                 RichTextSettingSource::SourceFile {
@@ -584,67 +580,6 @@ flow @flow.main main {
             && contribution.path == "text_color"
             && contribution.value == "rgb(\"#505152\")"
             && contribution.active
-            && contribution.style_index == Some(4)
+            && contribution.style_index == Some(3)
     }));
-}
-
-#[test]
-fn runtime_plan_reports_ambiguous_dialogue_defaults_profiles() {
-    let parsed = parse_source(
-        r##"
-pub dialogue defaults @dialogue.debug {
-    text_color = rgb("#101112")
-}
-
-pub dialogue defaults @dialogue.mobile {
-    text_color = rgb("#202122")
-}
-
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: Hello[p]
-}
-"##,
-    );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let errors = lower_runtime_plan_with_stats(&hir)
-        .expect_err("ambiguous dialogue defaults should fail runtime lowering");
-
-    assert!(
-        errors.iter().any(|error| error
-            .message()
-            .contains("multiple dialogue defaults profiles")),
-        "{errors:#?}"
-    );
-}
-
-#[test]
-fn runtime_plan_reports_missing_selected_dialogue_defaults_profile() {
-    let parsed = parse_source(
-        r##"
-pub dialogue defaults {
-    text_color = rgb("#101112")
-}
-
-character @character.alice Alice as alice {}
-
-flow @flow.main main {
-    alice: Hello[p]
-}
-"##,
-    );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
-    let errors = lower_runtime_plan_with_stats_and_options(
-        &hir,
-        &RuntimePlanLowerOptions::default().with_dialogue_defaults("dialogue.mobile"),
-    )
-    .expect_err("missing selected dialogue defaults should fail runtime lowering");
-
-    assert!(
-        errors
-            .iter()
-            .any(|error| error.message().contains("dialogue.mobile")),
-        "{errors:#?}"
-    );
 }

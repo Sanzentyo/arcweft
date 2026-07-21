@@ -3,12 +3,10 @@ use super::options::CliRunOptions;
 use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
     load_and_check_selection, native_host_policy_for_selection, require_profile_kind,
-    resolve_source_selection, runtime_plan_options_for_selection,
-    runtime_pure_config_for_selection,
+    resolve_source_selection, runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
-use arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options;
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_core::value::{RuntimeBinding, RuntimeValue, runtime_sequence_values};
 use arcweft_launch::LaunchKind;
@@ -32,18 +30,7 @@ pub(in crate::app) fn runtime_cli_command(
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
-    let runtime_options = runtime_plan_options_for_selection(&selection)?;
-    let plan = lower_source_runtime_plan_with_typecheck_and_options(
-        &checked.hir,
-        &checked.typecheck_report,
-        &runtime_options,
-    )
-    .map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {error}");
-        }
-        ExitCode::FAILURE
-    })?;
+    let plan = checked.runtime_plan().plan.clone();
     let entry = selection.command_entry(options.entry.as_deref())?;
     let entry = select_runtime_cli_entry(&plan, entry)?;
     let mut bindings = options.values.clone();

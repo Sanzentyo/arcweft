@@ -13,6 +13,30 @@ use arcweft_core::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
+use arcweft_dialogue::DialogueProfileRevision;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-plan-awbc-lower-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-plan-awbc-lower-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::canonical(value).expect("test flow ID is valid")
@@ -21,7 +45,7 @@ fn flow_id(value: &str) -> FlowRuntimeId {
 fn lower_plan(plan: &RuntimePlan) -> AwbcLowerReport {
     AwbcLowerer::new(
         plan,
-        &arcweft_render_text::LineDisplayCatalog::default(),
+        &arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision()),
         "test.arcw",
     )
     .lower()
@@ -222,7 +246,7 @@ fn lowers_constant_return_plan_to_awbc_tables() {
         Vec::new(),
     )
     .expect("plan builds");
-    let display = arcweft_render_text::LineDisplayCatalog::default();
+    let display = arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision());
     let report = AwbcLowerer::new(&plan, &display, "test.arcw")
         .with_options(AwbcLowerOptions {
             verify: false,
@@ -257,7 +281,7 @@ fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
     )
     .expect("plan builds");
     let plan = with_test_entry(plan, flow_id("main"));
-    let display = arcweft_render_text::LineDisplayCatalog::default();
+    let display = arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision());
     let report = AwbcLowerer::new(&plan, &display, "test.arcw")
         .lower()
         .expect("AWBC lowers runtime function apply");

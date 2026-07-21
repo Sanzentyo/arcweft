@@ -87,16 +87,22 @@ pub view MainDialogue(dialogue: DialogueView) {
     }
 }
 
-pub dialogue defaults {
-    view = @view.MainDialogue
-    reveal = typewriter(speed=normal)
-}
 ```
 
-The ID-free declaration is the canonical project-wide defaults profile.
-Writing a redundant explicit defaults ID is not the recommended form. Named
-profiles use a direct dialogue ID such as
-`pub dialogue defaults @dialogue.mobile { ... }`.
+The matching launch or project manifest owns the base dialogue presentation:
+
+```toml
+[profiles.game.dialogue]
+view = "view.main_dialogue"
+style = "style.main_dialogue"
+
+[profiles.game.dialogue.inline-failure]
+kind = "fail_line"
+```
+
+The profile's View is validated as a typed View identity; the optional Style is
+validated as a typed Style identity. Source declarations do not nominate a
+project-wide dialogue default.
 
 ## Selecting another View
 
@@ -184,15 +190,15 @@ inline rich-text span
   -> speaker preset options
   -> character dialogue_style
   -> authored View style
-  -> selected dialogue defaults
+  -> selected profile dialogue Style
   -> standard defaults
 ```
 
-## Read-state hooks
+## Read-state presentation
 
-Read-state and localization hooks receive the dialogue occurrence and selected
-View mount as typed context. They may patch dialogue data before the View value
-program is evaluated, but may not mutate the retained View tree directly.
+The selected View receives typed dialogue occurrence data, including the
+current read state and locale. Its retained presentation may render those values
+without a global callback or a second dialogue-rendering path.
 
 Conceptually, the context contains:
 
@@ -210,18 +216,9 @@ pub struct DialogueHookCtx {
 }
 ```
 
-The built-in read-state hook can be selected globally:
-
-```arcw
-pub dialogue defaults {
-    hooks {
-        before_text_style += @hook.dialogue.read_state_color
-    }
-}
-```
-
-Hooks are deterministic unless their declared effects explicitly say
-otherwise. Product builds may reject nondeterministic debug hooks.
+Character-local style policy may refine the same presentation. Per-line
+behavior remains in the line plan or in the selected View's own interaction
+surface.
 
 ## Agent observation
 

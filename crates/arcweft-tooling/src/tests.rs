@@ -294,33 +294,6 @@ fn await_expansion_composes_contained_parent_path_edits() {
 }
 
 #[test]
-fn dialogue_defaults_expansion_composes_parent_paths_in_values() {
-    let source = concat!(
-        "pub dialogue defaults {\n",
-        "    rich_text.ruby.size = parent::ruby_size\n",
-        "}\n",
-    );
-
-    let report = canonicalize_for_test(source)
-        .expect("contained path edit composes into the dialogue-defaults replacement");
-
-    assert_eq!(
-        report.output,
-        concat!(
-            "pub dialogue defaults {\n",
-            "    rich_text {\n",
-            "        ruby {\n",
-            "            size = super::ruby_size\n",
-            "        }\n",
-            "    }\n",
-            "}\n",
-        )
-    );
-    assert_eq!(report.edits.len(), 1);
-    assert!(report.edits[0].replacement.contains("super::ruby_size"));
-}
-
-#[test]
 fn speaker_expansion_consumes_typed_statement_context() {
     let source = concat!(
         "pub struct SettingsInput {\n",
@@ -507,19 +480,6 @@ fn canonicalization_preserves_source_allowed_decl_identity_surface() {
     assert!(report.changed);
     assert!(report.output.contains("flow @flow.generated generated {"));
     assert!(report.output.contains("alice.say()[hi[p]]"));
-}
-
-#[test]
-fn canonicalization_nests_dotted_dialogue_defaults_assignments() {
-    let source = "pub dialogue defaults {\n    rich_text.ruby.size = 14px\n    rich_text.ruby.gap += 1px\n}\n";
-    let report = canonicalize_for_test(source).expect("canonicalization report");
-
-    assert!(report.changed);
-    assert!(report.output.contains(
-            "    rich_text {\n        ruby {\n            size = 14px\n            gap += 1px\n        }\n    }"
-        ));
-    assert!(!report.output.contains("rich_text.ruby.size"));
-    assert!(!report.output.contains("rich_text.ruby.gap"));
 }
 
 #[test]
@@ -907,6 +867,14 @@ fn canonical_rich_text_visits_flow_else_branches() {
 #[test]
 fn canonical_rich_text_uses_the_dialogue_delimiters_when_content_repeats_in_callee() {
     let source = "flow @flow.opening opening {\n    let handles = try render(\"[.shake]effect[/][p]\")()[[.shake]effect[/][p]]\n}\n";
+    let parsed = parse_source(source);
+    let content_ranges = crate::dialogue_content::collect_dialogue_content_ranges(&parsed);
+    assert_eq!(
+        content_ranges.len(),
+        1,
+        "content ranges: {content_ranges:?}"
+    );
+    assert_eq!(&source[content_ranges[0].clone()], "[.shake]effect[/][p]");
     let report = format_source(
         source,
         FormatOptions {

@@ -9,7 +9,7 @@ use arcweft_render_text::{RichTextControl, RichTextNode, RichTextStyle};
 
 use crate::errors::RuntimePlanLowerError;
 use crate::render_text::{
-    defaults::TextProxyTypeDefaults,
+    dialogue_context::TextProxyTypeDefaults,
     tag::{inferred_text_proxy_type, lower_dialogue_token_parts},
 };
 

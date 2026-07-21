@@ -11,11 +11,10 @@ use super::{
     NominalTypeContext, Pattern, Stmt, StreamGeneratorFacts, TypeCheckEnv, TypeCheckError,
     TypeCheckReport, TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidenceKind, YieldContext, choice_output_type, entity_kind_for_decl,
-    entity_syntax_kind, function_callable_id, function_param_local_type,
-    function_param_local_type_with_generics, function_signature_type,
-    function_signature_type_with_nominal_types, ident_pattern_name, normalize_choice_type,
-    signature_generic_names, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
-    validate_typecheck_ready,
+    function_callable_id, function_param_local_type, function_param_local_type_with_generics,
+    function_signature_type, function_signature_type_with_nominal_types, ident_pattern_name,
+    normalize_choice_type, signature_generic_names, stream_return_types, type_ref_kind,
+    type_ref_kind_with_generics, validate_typecheck_ready,
 };
 #[cfg(test)]
 use crate::callable::ResolverWork;
@@ -1347,7 +1346,6 @@ impl TypeChecker<'_> {
     )]
     pub(super) fn check_top_level_decl(&mut self, declaration: &HirTopLevelDecl) {
         match declaration {
-            HirTopLevelDecl::DialogueDefaults(item) => self.check_dialogue_defaults(item),
             HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Struct(_)
@@ -1407,27 +1405,6 @@ impl TypeChecker<'_> {
 
     fn check_style_decl(&mut self, item: &HirStyleDecl) {
         self.expect_entity_kind(item.id(), &EntityKind::Style, "style id");
-    }
-
-    fn check_dialogue_defaults(
-        &mut self,
-        item: &arcweft_lang_syntax::ast::dialogue::DialogueDefaultsItem,
-    ) {
-        for assignment in item
-            .assignments()
-            .iter()
-            .filter(|assignment| assignment.path().dotted() == "view")
-        {
-            if !matches!(
-                assignment.value(),
-                Expr::EntityRef(reference)
-                    if entity_syntax_kind(reference) == Some(EntityKind::View)
-            ) {
-                self.errors.push(TypeCheckError::new(
-                    "dialogue defaults `view` must be a typed View reference".to_owned(),
-                ));
-            }
-        }
     }
 
     fn check_extern_mod(&mut self, item: &ExternModItem) {

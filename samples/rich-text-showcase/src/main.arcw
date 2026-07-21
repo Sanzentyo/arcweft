@@ -8,6 +8,19 @@ pub character alice {
                 color = rgb("#d9f2ff")
                 size = 30px
             }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 13px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
     }
 }
@@ -21,6 +34,19 @@ pub character narrator {
                 font = "Yu Gothic UI"
                 color = rgb("#e8e8e8")
                 size = 28px
+            }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 13px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
             }
         }
     }
@@ -36,6 +62,19 @@ pub character benio {
                 color = rgb("#ffd9e8")
                 size = 29px
             }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 13px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
+            }
         }
     }
 }
@@ -49,6 +88,19 @@ pub character clerk {
                 font = "MS Gothic"
                 color = rgb("#e8ffd9")
                 size = 27px
+            }
+
+            layout {
+                writing_mode = horizontal_tb
+                jlreq = normal
+                vertical_latin = mixed
+            }
+
+            ruby {
+                size = 13px
+                gap = 1px
+                overhang = 3px
+                collision_gap = 2px
             }
         }
     }
@@ -82,23 +134,6 @@ pub view RichTextPanel(dialogue: DialogueView) {
         Button("", x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px)
             .part(dialogue_action)
             .on_click { dialogue.primary_action }
-    }
-}
-
-pub dialogue defaults {
-    view = @view.RichTextPanel
-    rich_text {
-        layout {
-            writing_mode = horizontal_tb
-            jlreq = normal
-            vertical_latin = mixed
-        }
-        ruby {
-            size = 13px
-            gap = 1px
-            overhang = 3px
-            collision_gap = 2px
-        }
     }
 }
 

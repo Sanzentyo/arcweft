@@ -1,62 +1,120 @@
-use arcweft_lang_hir::lower::lower_to_hir;
-use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_syntax::parser::parse_source;
+use std::{path::PathBuf, sync::Arc};
 
-use crate::error::{CompileSourceError, ValidateHirError};
-use crate::hir::validate_hir_with_env;
-use crate::lower::lower_source_runtime_plan_with_typecheck_stats_and_options;
-use crate::style::lower_source_view_styles;
+use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+use crate::error::CompileSourceError;
+use crate::project::{ProjectCompilationContext, compile_project};
 use crate::types::CompiledSource;
 
-/// Compiles an Arcweft source string with the standard type-checking environment.
+const SOURCE_PACKAGE: &str = "local.arcweft.single-source";
+
+/// Compiles an Arcweft source string through the standard project compiler.
 pub fn compile_source(source: &str) -> Result<CompiledSource, CompileSourceError> {
     compile_source_with_env(source, &TypeCheckEnv::standard())
 }
 
-/// Compiles an Arcweft source string with a supplied type-checking environment.
+/// Compiles one in-memory module through the same View/profile admission and
+/// runtime-plan path as an ordinary project.
+///
+/// # Panics
+///
+/// Panics only if the compiler-owned single-source package constants or the
+/// internally constructed one-root project violate their static invariants.
 pub fn compile_source_with_env(
     source: &str,
     env: &TypeCheckEnv,
 ) -> Result<CompiledSource, CompileSourceError> {
-    let parsed = parse_source(source.to_owned());
-    if !parsed.errors().is_empty() {
-        return Err(CompileSourceError::Parse(parsed.errors().to_vec()));
-    }
-    let hir = lower_to_hir(parsed.typed_tree()).map_err(CompileSourceError::Hir)?;
-    let typecheck_report = validate_hir_with_env(&hir, env).map_err(|error| match error {
-        ValidateHirError::Resolve(errors) => CompileSourceError::Resolve(errors),
-        ValidateHirError::Readiness(errors) => CompileSourceError::Readiness(errors),
-        ValidateHirError::Type(errors) => CompileSourceError::Type(errors),
-    })?;
-    let style = lower_source_view_styles(&hir, &typecheck_report.style_catalog, parsed.document())?;
-    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck_report,
-        &arcweft_runtime_plan::flow::RuntimePlanLowerOptions::default(),
+    let document = source_document(source);
+    let manifest = manifest_document();
+    let package = PackageSpec {
+        id: PackageId::new(SOURCE_PACKAGE).expect("single-source package ID is valid"),
+        version: PackageVersion::new("0.0.0").expect("single-source package version is valid"),
+    };
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        package,
+        BuildSpec::default(),
+        Arc::clone(&manifest),
+        [ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            PathBuf::from("src/main.arcw"),
+            Arc::clone(&document),
+            [],
+        )],
     )
-    .map_err(CompileSourceError::RuntimePlan)?;
+    .expect("one canonical root module forms a valid project source inventory");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(SOURCE_PACKAGE)
+            .expect("single-source callable package ID is valid"),
+        document.identity().id().clone(),
+        "single-source",
+    )
+    .expect("single-source symbol world is valid");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&manifest), Arc::clone(&document)],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("single-source documents form coherent registration facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(env.clone()),
+        Arc::new(facts),
+        Arc::new(ResourceTypeRegistry::empty()),
+        None,
+        None,
+        Vec::new(),
+    );
+    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())?;
+    let report = compiled.runtime_plan();
     Ok(CompiledSource {
-        plan: report.plan,
-        display: report.line_display_catalog,
-        hir,
-        typecheck_report,
-        style,
+        plan: report.plan.clone(),
+        display: report.line_display_catalog.clone(),
+        hir: compiled.linked_hir().clone(),
+        typecheck_report: compiled.typecheck_report().clone(),
+        style: compiled.style().clone(),
+        fx_definitions: Arc::from(compiled.fx_definitions()),
         runtime_plan_stats: report.stats,
     })
 }
 
+fn source_document(source: &str) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-source://src/main.arcw")
+                .expect("single-source document ID is valid"),
+            SourceName::path("src/main.arcw"),
+            source,
+        )
+        .expect("an in-memory Rust string is a valid source document"),
+    )
+}
+
+fn manifest_document() -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-source://arcw.toml")
+                .expect("single-source manifest ID is valid"),
+            SourceName::path("arcw.toml"),
+            "",
+        )
+        .expect("the synthetic project manifest is a valid source document"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_sema::env::TypeCheckEnv;
-    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     use super::{compile_source, compile_source_with_env};
-    use crate::error::CompileSourceError;
-    use crate::hir::validate_hir_with_env;
 
     #[test]
     fn source_compiler_entrypoints_reject_removed_role_declarations_at_parse() {
@@ -65,54 +123,19 @@ mod tests {
             "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
             "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
         ] {
-            assert!(matches!(
+            for result in [
                 compile_source(source),
-                Err(CompileSourceError::Parse(errors)) if !errors.is_empty()
-            ));
-            assert!(matches!(
                 compile_source_with_env(source, &TypeCheckEnv::standard()),
-                Err(CompileSourceError::Parse(errors)) if !errors.is_empty()
-            ));
+            ] {
+                let error = result.expect_err("removed declaration must be rejected");
+                assert!(
+                    error
+                        .project()
+                        .diagnostics()
+                        .iter()
+                        .any(|diagnostic| diagnostic.parse_error().is_some())
+                );
+            }
         }
-    }
-
-    #[test]
-    fn arcw_and_awfagent_documents_share_ast_hir_and_sema_results() {
-        let source = r"
-fn smoke() -> Result<Unit, AgentError>
-effects {}
-{
-    Ok(())
-}
-
-entry agent @entry.agent.main {
-    controller = smoke
-}
-";
-        let parse = |id: &str, name: &str| {
-            parse_document_with_source(
-                Arc::new(
-                    SourceDocument::try_new(
-                        SourceDocumentId::try_new(id).expect("source ID"),
-                        SourceName::path(name),
-                        source,
-                    )
-                    .expect("source document"),
-                ),
-                ParseOptions::default(),
-            )
-        };
-        let arcw = parse("parity://main.arcw", "main.arcw");
-        let awfagent = parse("parity://main.awfagent", "main.awfagent");
-        assert_eq!(arcw.errors(), awfagent.errors());
-        assert_eq!(arcw.typed_tree(), awfagent.typed_tree());
-
-        let arcw_hir = lower_to_hir(arcw.typed_tree()).expect(".arcw HIR");
-        let agent_hir = lower_to_hir(awfagent.typed_tree()).expect(".awfagent HIR");
-        assert_eq!(arcw_hir, agent_hir);
-        let env = TypeCheckEnv::standard();
-        let arcw_sema = validate_hir_with_env(&arcw_hir, &env).expect(".arcw sema");
-        let agent_sema = validate_hir_with_env(&agent_hir, &env).expect(".awfagent sema");
-        assert_eq!(arcw_sema, agent_sema);
     }
 }

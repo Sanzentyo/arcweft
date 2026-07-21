@@ -8,7 +8,10 @@ use arcweft_bundle::resource_codec::{
     ValidatedViewProduct, ViewDefinitionResource, ViewInstructionSpan, ViewProductValidationLimits,
     ViewProgramResource,
 };
-use arcweft_view::ViewProgramId;
+use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 fn validated(program: Option<ViewProgramResource>) -> ValidatedViewProduct {
     ValidatedViewProduct::try_new(None, program, None, ViewProductValidationLimits::default())
@@ -17,6 +20,26 @@ fn validated(program: Option<ViewProgramResource>) -> ValidatedViewProduct {
 
 fn handle_id(value: &str) -> PresentationHandleId {
     PresentationHandleId::try_new(value).unwrap()
+}
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let manifest = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-axis-seed-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        manifest.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.runtime-driver-axis-seed-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn handle_record(
@@ -833,7 +856,9 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         speaker_label: None,
         text: String::new(),
         base_styles: Vec::new(),
-        default_inline_failure_policy: None,
+        profile_style: None,
+        dialogue_revision: test_dialogue_revision(),
+        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         nodes: Vec::new(),
         display_map: arcweft_render_text::RichTextDisplayMap::default(),

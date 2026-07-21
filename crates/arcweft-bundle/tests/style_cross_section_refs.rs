@@ -18,8 +18,31 @@ use arcweft_core::{
     },
     bytecode::BytecodeProgram,
 };
+use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_render_text::LineDisplayCatalog;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn test_dialogue_revision() -> DialogueProfileRevision {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("bundle-style-cross-section-test").expect("document ID"),
+        SourceName::Memory,
+        "test manifest",
+    )
+    .expect("test document");
+    let sources =
+        SourceSetRevision::try_for_identities([source.identity()]).expect("test source revision");
+    DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.bundle-style-cross-section-test")
+            .expect("View program ID"),
+        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 type ReferenceSelector = for<'a> fn(&'a mut ViewStyleResource) -> &'a mut CrossSectionRef;
 type ReferenceMutation = fn(&mut CrossSectionRef);
@@ -294,7 +317,7 @@ fn minimal_bundle() -> ArcweftBundle {
         },
         source_map("style-cross-section.arcw", ""),
         BytecodeProgram::default(),
-        LineDisplayCatalog::default(),
+        LineDisplayCatalog::new(test_dialogue_revision()),
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program())

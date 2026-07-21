@@ -5,9 +5,8 @@ use arcweft_lang_sema::check::{
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use arcweft_runtime_plan::flow::{
-    RuntimeClosureCapture, RuntimeClosureCaptureInventory, RuntimePlanLowerOptions,
-    RuntimePlanLowerReport, lower_runtime_plan_with_options,
-    lower_runtime_plan_with_stats_and_options,
+    AdmittedRuntimePlanLowerOptions, RuntimeClosureCapture, RuntimeClosureCaptureInventory,
+    RuntimePlanLowerReport, lower_runtime_plan, lower_runtime_plan_with_stats,
 };
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
@@ -35,27 +34,27 @@ pub fn lower_source_line_tasks(
 /// Lowers checked HIR into a runtime plan with explicit profile/build-context options.
 pub fn lower_source_runtime_plan_with_options(
     hir: &HirModule,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    lower_runtime_plan_with_options(hir, options)
+    lower_runtime_plan(hir, options)
 }
 
 /// Lowers checked HIR using the `for` iteration evidence recorded by type checking.
 pub fn lower_source_runtime_plan_with_typecheck_and_options(
     hir: &HirModule,
     typecheck: &TypeCheckReport,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
     let options = runtime_plan_options_with_typecheck_evidence(options, typecheck)?;
-    lower_runtime_plan_with_options(hir, &options)
+    lower_runtime_plan(hir, &options)
 }
 
 /// Lowers checked HIR into a runtime plan and display catalog with compiler counters.
 pub fn lower_source_runtime_plan_with_stats_and_options(
     hir: &HirModule,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats_and_options(hir, options)
+    lower_runtime_plan_with_stats(hir, options)
 }
 
 /// Lowers checked HIR into a runtime plan and display catalog with type-checker
@@ -63,16 +62,17 @@ pub fn lower_source_runtime_plan_with_stats_and_options(
 pub fn lower_source_runtime_plan_with_typecheck_stats_and_options(
     hir: &HirModule,
     typecheck: &TypeCheckReport,
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
 ) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
     let options = runtime_plan_options_with_typecheck_evidence(options, typecheck)?;
-    lower_runtime_plan_with_stats_and_options(hir, &options)
+    lower_runtime_plan_with_stats(hir, &options)
 }
 
 pub fn runtime_plan_options_with_typecheck_evidence(
-    options: &RuntimePlanLowerOptions,
+    options: &AdmittedRuntimePlanLowerOptions,
     typecheck: &TypeCheckReport,
-) -> Result<RuntimePlanLowerOptions, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
+) -> Result<AdmittedRuntimePlanLowerOptions, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>>
+{
     let trait_methods = lower_runtime_trait_methods_from_typecheck(
         &typecheck.trait_catalog,
         &typecheck.for_iteration_evidence,
