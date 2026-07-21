@@ -177,7 +177,7 @@ ensures result.is_err() => result.err().span.is_some() {
 Sending:
 
 ```arcw
-task fn set_panel_color(
+fn set_panel_color(
     panel: UsbDeviceHandle,
     led: u8,
     color: Color,

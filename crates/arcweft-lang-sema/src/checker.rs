@@ -391,6 +391,11 @@ pub struct TypeCheckReport {
     pub typed_lowering_evidence: Vec<TypedLoweringEvidence>,
     pub closure_captures: Vec<ClosureCaptureInventory>,
     pub numeric_fallbacks: Vec<NumericFallback>,
+    /// Invocation behavior derived from checked return types and callable-owned body facts.
+    ///
+    /// Reports produced without a linked project symbol table leave this empty because a
+    /// checked execution fact is never published without its canonical declaration identity.
+    pub callable_executions: Vec<CheckedCallableExecution>,
     pub effects: EffectAnalysisReport,
     pub for_iteration_evidence: Vec<ForIterationEvidence>,
     pub trait_catalog: TraitCatalog,
@@ -403,6 +408,63 @@ pub struct TypeCheckReport {
     /// Exact source ranges of authored absolute entity references.
     pub project_entity_references: Vec<ProjectEntityReference>,
     call_target_fact_report: CallTargetFactReport,
+}
+
+/// Checked invocation behavior for one canonical project callable declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCallableExecution {
+    declaration: CallableDeclarationId,
+    mode: CallableExecutionMode,
+}
+
+impl CheckedCallableExecution {
+    fn new(declaration: CallableDeclarationId, mode: CallableExecutionMode) -> Self {
+        Self { declaration, mode }
+    }
+
+    /// Returns the declaration identity shared with the project callable catalog.
+    pub const fn declaration(&self) -> &CallableDeclarationId {
+        &self.declaration
+    }
+
+    /// Returns the checked invocation behavior without projecting a source role.
+    pub const fn mode(&self) -> &CallableExecutionMode {
+        &self.mode
+    }
+}
+
+/// Runtime-relevant invocation behavior derived after semantic checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallableExecutionMode {
+    /// The call enters an ordinary frame immediately, including suspending functions and
+    /// functions that return an already-existing Stream value.
+    DirectFrame,
+    /// The call constructs a lazy Stream producer owned by this declaration.
+    StreamFactory {
+        item: TypeKind,
+        error: TypeKind,
+        generator: StreamGeneratorFacts,
+    },
+}
+
+/// Callable-owned syntax facts used to classify one Stream generator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StreamGeneratorFacts {
+    own_scope_yield_count: usize,
+}
+
+impl StreamGeneratorFacts {
+    fn new(own_scope_yield_count: usize) -> Self {
+        debug_assert!(own_scope_yield_count > 0);
+        Self {
+            own_scope_yield_count,
+        }
+    }
+
+    /// Returns the number of syntactic yields owned by the declaration's generator scope.
+    pub const fn own_scope_yield_count(self) -> usize {
+        self.own_scope_yield_count
+    }
 }
 
 /// One typed ordinary-call reference selected by the shared callable resolver.
@@ -583,6 +645,7 @@ struct TypeChecker<'a> {
     closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
     numeric_fallbacks: Vec<NumericFallback>,
+    callable_executions: Vec<CheckedCallableExecution>,
     allow_signed_min_literal: bool,
     local_function_effects: HashMap<String, CallableId>,
     closure_effect_callables_by_expr: HashMap<ExprNodeKey, CallableId>,
@@ -978,6 +1041,7 @@ impl<'a> TypeChecker<'a> {
             closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
             numeric_fallbacks: Vec::new(),
+            callable_executions: Vec::new(),
             allow_signed_min_literal: false,
             local_function_effects: HashMap::new(),
             closure_effect_callables_by_expr: HashMap::new(),

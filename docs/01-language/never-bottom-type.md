@@ -72,7 +72,7 @@ This applies to:
 ## Diverging expressions
 
 ```arcw
-return expr      // exits current fn / flow / parser / task fn
+return expr      // exits current fn / flow / parser
 goto @flow.x     // exits current flow segment with FlowExit.Goto
 break expr       // exits nearest loop; if loop-valued, contributes expr type
 continue         // starts next loop iteration

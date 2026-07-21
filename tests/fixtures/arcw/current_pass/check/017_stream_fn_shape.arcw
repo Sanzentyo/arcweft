@@ -1,4 +1,4 @@
-stream fn uppercase_events() -> Stream<String, String> {
+fn uppercase_events() -> Stream<String, String> {
     yield "hello"
 }
 

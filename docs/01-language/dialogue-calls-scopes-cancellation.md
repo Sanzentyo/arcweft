@@ -625,7 +625,7 @@ Use normal typed `if`, `match`, `await`, and `return` in the surrounding `flow` 
 A function called from dialogue text or cue mode must be declared dialogue-safe.
 
 ```arcw
-pub dialogue fn flash(
+pub fn flash(
     color: Color = rgb("#ffffff"),
     time: Duration = 120ms,
 ) -> Result<DialogueCue, TagError>
@@ -760,7 +760,7 @@ with {
 ## Line plan output values and scoped handles
 
 A line plan exports a value with `out`. Do not use `return` for line-plan
-values; `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`.
+values; `return` exits the nearest `fn`, `parser`, or `flow`.
 `out` is how short-lived line-local handles are exported deliberately.
 
 ```arcw

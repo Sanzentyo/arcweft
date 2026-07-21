@@ -351,5 +351,5 @@ with 'line {
 }
 ```
 
-`break` and `continue` may target loop labels. `out` may target a line/cue/content label. `return` exits the nearest `fn`, `task fn`, `parser`, or `flow`; diagnostics should spell that target explicitly, and future syntax may allow `return from 'flow expr` only for named function/flow boundaries if needed.
+`break` and `continue` may target loop labels. `out` may target a line/cue/content label. `return` exits the nearest `fn`, `parser`, or `flow`; diagnostics should spell that target explicitly, and future syntax may allow `return from 'flow expr` only for named function/flow boundaries if needed.
 

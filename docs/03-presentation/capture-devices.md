@@ -393,7 +393,7 @@ Watch<VideoFrameHandle> / Watch<f32>
 Generator syntax is still useful as a **stream transform**:
 
 ```arcw
-stream fn microphone_level(
+fn microphone_level(
     frames: Stream<AudioFrame, AudioError>,
 ) -> Stream<f32, AudioError> {
     for frame in frames {

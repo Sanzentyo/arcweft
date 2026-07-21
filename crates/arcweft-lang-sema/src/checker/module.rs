@@ -6,10 +6,11 @@ pub(crate) use super::call_target_facts::SignatureFocusedAnalysis;
 use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallTargetFactReport};
 use super::line_plan::DialogueContentRangeMode;
 use super::{
-    EffectScope, EntityKind, EnumVariantPayload, FunctionKind, FxCatalog, HirModule,
-    HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, NominalTypeContext, Pattern, Stmt,
-    TypeCheckEnv, TypeCheckError, TypeCheckReport, TypeCheckWarning, TypeChecker, TypeExpressionId,
-    TypeKind, TypedLoweringEvidenceKind, YieldContext, choice_output_type, entity_kind_for_decl,
+    CallableExecutionMode, CheckedCallableExecution, EffectScope, EntityKind, EnumVariantPayload,
+    FunctionKind, FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
+    NominalTypeContext, Pattern, Stmt, StreamGeneratorFacts, TypeCheckEnv, TypeCheckError,
+    TypeCheckReport, TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind,
+    TypedLoweringEvidenceKind, YieldContext, choice_output_type, entity_kind_for_decl,
     entity_syntax_kind, function_callable_id, function_param_local_type,
     function_param_local_type_with_generics, function_signature_type,
     function_signature_type_with_nominal_types, ident_pattern_name, normalize_choice_type,
@@ -90,6 +91,16 @@ impl TypeCheckReport {
                     .map(crate::effect_row::EffectRow::closed)
             }
         })
+    }
+
+    /// Returns the checked invocation behavior for one canonical declaration.
+    pub fn callable_execution(
+        &self,
+        declaration: &CallableDeclarationId,
+    ) -> Option<&CheckedCallableExecution> {
+        self.callable_executions
+            .iter()
+            .find(|fact| fact.declaration() == declaration)
     }
 
     /// Returns canonicalization evidence for one exact registered source identity.
@@ -564,6 +575,7 @@ fn finish_type_check_with_call_facts(
         typed_lowering_evidence: std::mem::take(&mut checker.typed_lowering_evidence),
         closure_captures: std::mem::take(&mut checker.closure_captures),
         numeric_fallbacks: std::mem::take(&mut checker.numeric_fallbacks),
+        callable_executions: std::mem::take(&mut checker.callable_executions),
         effects,
         for_iteration_evidence: std::mem::take(&mut checker.for_iteration_evidence),
         trait_catalog: std::mem::take(&mut checker.trait_catalog),
@@ -689,6 +701,7 @@ impl TypeChecker<'_> {
                 .signature()
                 .return_type()
                 .map(|ty| type_ref_kind_with_generics(ty, &generic_names));
+            let execution = Self::classify_callable_execution(function, expected_return.as_ref());
             for contract in function.contracts() {
                 self.check_function_contract_clause(contract, expected_return.as_ref());
             }
@@ -697,15 +710,16 @@ impl TypeChecker<'_> {
             let previous_callable = self
                 .effect_collector
                 .enter(self.effect_callable_id_for_function(function));
-            let typed_lowering_owner = self
-                .project_symbols
-                .and_then(|symbols| {
-                    CallableDeclarationId::for_function(symbols.world().package(), function).ok()
-                })
-                .map(|declaration| super::TypedLoweringOwnerScope {
-                    declaration,
-                    expression_base: self.stats.expressions,
-                });
+            let callable_declaration = self.project_symbols.and_then(|symbols| {
+                CallableDeclarationId::for_function(symbols.world().package(), function).ok()
+            });
+            let typed_lowering_owner =
+                callable_declaration
+                    .clone()
+                    .map(|declaration| super::TypedLoweringOwnerScope {
+                        declaration,
+                        expression_base: self.stats.expressions,
+                    });
             let previous_typed_lowering_owner =
                 std::mem::replace(&mut self.typed_lowering_owner, typed_lowering_owner);
             self.higher_order_param_scope_stack
@@ -714,13 +728,19 @@ impl TypeChecker<'_> {
                 .trait_catalog
                 .predicates_for_signature(function.signature());
             self.trait_predicate_stack.push(predicates);
-            if function.kind() == FunctionKind::Stream {
+            if function.kind() == FunctionKind::Stream
+                || matches!(execution, CallableExecutionMode::StreamFactory { .. })
+            {
                 self.check_stream_function(function);
                 self.trait_predicate_stack.pop();
                 self.higher_order_param_scope_stack.pop();
                 self.typed_lowering_owner = previous_typed_lowering_owner;
                 self.effect_collector.restore(previous_callable);
                 self.effect_capabilities = effect_snapshot;
+                if let Some(declaration) = callable_declaration {
+                    self.callable_executions
+                        .push(CheckedCallableExecution::new(declaration, execution));
+                }
                 continue;
             }
             let actual = self.with_expected_return(expected_return.as_ref(), |this| {
@@ -736,6 +756,10 @@ impl TypeChecker<'_> {
             self.typed_lowering_owner = previous_typed_lowering_owner;
             self.effect_collector.restore(previous_callable);
             self.effect_capabilities = effect_snapshot;
+            if let Some(declaration) = callable_declaration {
+                self.callable_executions
+                    .push(CheckedCallableExecution::new(declaration, execution));
+            }
             if let (Some(expected), Some(actual)) = (expected_return, actual)
                 && !self.types_compatible(&expected, &actual)
             {
@@ -746,6 +770,218 @@ impl TypeChecker<'_> {
                     type_kind_label(&actual)
                 )));
             }
+        }
+    }
+
+    fn classify_callable_execution(
+        function: &HirFunction,
+        return_type: Option<&TypeKind>,
+    ) -> CallableExecutionMode {
+        let own_scope_yield_count = Self::own_scope_yield_count(function.statements())
+            + function
+                .value()
+                .map_or(0, |value| Self::expr_own_scope_yield_count(value.expr()));
+        match return_type {
+            Some(TypeKind::Stream { item, error }) if own_scope_yield_count > 0 => {
+                CallableExecutionMode::StreamFactory {
+                    item: (**item).clone(),
+                    error: (**error).clone(),
+                    generator: StreamGeneratorFacts::new(own_scope_yield_count),
+                }
+            }
+            _ => CallableExecutionMode::DirectFrame,
+        }
+    }
+
+    fn own_scope_yield_count(statements: &[Stmt]) -> usize {
+        statements
+            .iter()
+            .map(Self::stmt_own_scope_yield_count)
+            .sum()
+    }
+
+    fn stmt_own_scope_yield_count(statement: &Stmt) -> usize {
+        match statement {
+            Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
+                Self::expr_own_scope_yield_count(expr)
+            }
+            Stmt::Assign { target, expr }
+            | Stmt::LifetimeSet { target, expr }
+            | Stmt::Signal {
+                target,
+                value: expr,
+            } => {
+                Self::expr_own_scope_yield_count(target.expr())
+                    + Self::expr_own_scope_yield_count(expr.expr())
+            }
+            Stmt::LetElse {
+                expr, else_body, ..
+            } => {
+                Self::expr_own_scope_yield_count(expr.expr())
+                    + Self::own_scope_yield_count(else_body)
+            }
+            Stmt::LetScope { scope, .. } => {
+                Self::own_scope_yield_count(scope.statements())
+                    + scope.value().map_or(0, Self::expr_own_scope_yield_count)
+            }
+            Stmt::DeferBlock { statements, .. } => Self::own_scope_yield_count(statements),
+            Stmt::Defer { expr, .. }
+            | Stmt::Out { expr, .. }
+            | Stmt::Goto(expr)
+            | Stmt::Close(expr)
+            | Stmt::Select(expr) => Self::expr_own_scope_yield_count(expr.expr()),
+            Stmt::Yield(expr) => 1 + Self::expr_own_scope_yield_count(expr.expr()),
+            Stmt::UnsafeLifetime { body, .. } | Stmt::Loop { body } | Stmt::While { body, .. } => {
+                Self::own_scope_yield_count(body)
+            }
+            Stmt::WhileLet {
+                expr, guard, body, ..
+            } => {
+                Self::expr_own_scope_yield_count(expr.expr())
+                    + guard
+                        .as_ref()
+                        .map_or(0, |guard| Self::expr_own_scope_yield_count(guard.expr()))
+                    + Self::own_scope_yield_count(body)
+            }
+            Stmt::For { source, body, .. } => {
+                Self::expr_own_scope_yield_count(source.expr()) + Self::own_scope_yield_count(body)
+            }
+            Stmt::If {
+                condition,
+                body,
+                else_body,
+            } => {
+                Self::expr_own_scope_yield_count(condition.expr())
+                    + Self::own_scope_yield_count(body)
+                    + Self::own_scope_yield_count(else_body)
+            }
+            Stmt::Match { expr, arms } => {
+                Self::expr_own_scope_yield_count(expr.expr())
+                    + arms
+                        .iter()
+                        .map(|arm| {
+                            arm.guard_authored()
+                                .map_or(0, |guard| Self::expr_own_scope_yield_count(guard.expr()))
+                                + Self::own_scope_yield_count(arm.body())
+                        })
+                        .sum::<usize>()
+            }
+            Stmt::Break { expr, .. } => expr
+                .as_ref()
+                .map_or(0, |expr| Self::expr_own_scope_yield_count(expr.expr())),
+            // Thread and event-handler bodies execute under independent runtime owners. Expressions
+            // may contain closures, Seq blocks, or Source values, all of which likewise own their
+            // yields and therefore are intentionally not traversed here.
+            Stmt::Assertion(_)
+            | Stmt::LetChoice { .. }
+            | Stmt::LetLoop { .. }
+            | Stmt::LetAwait { .. }
+            | Stmt::LetActionReceive { .. }
+            | Stmt::Thread(_)
+            | Stmt::Wait(_)
+            | Stmt::On { .. }
+            | Stmt::Continue { .. }
+            | Stmt::Raw(_) => 0,
+        }
+    }
+
+    fn expr_own_scope_yield_count(expression: &Expr) -> usize {
+        match expression {
+            Expr::Tuple(items) | Expr::BracketSeq(items) => {
+                items.iter().map(Self::expr_own_scope_yield_count).sum()
+            }
+            Expr::ArrayRepeat { value, len }
+            | Expr::Index {
+                target: value,
+                index: len,
+            }
+            | Expr::Pipe {
+                lhs: value,
+                rhs: len,
+            }
+            | Expr::Binary {
+                lhs: value,
+                rhs: len,
+                ..
+            } => Self::expr_own_scope_yield_count(value) + Self::expr_own_scope_yield_count(len),
+            Expr::Call(call) => {
+                Self::expr_own_scope_yield_count(call.callee())
+                    + call
+                        .args()
+                        .iter()
+                        .map(|argument| Self::expr_own_scope_yield_count(argument.value()))
+                        .sum::<usize>()
+            }
+            Expr::Select(select) => Self::expr_own_scope_yield_count(select.target()),
+            Expr::DialogueCall { callee, .. } => Self::expr_own_scope_yield_count(callee),
+            Expr::Try(tried) => Self::expr_own_scope_yield_count(tried.operand()),
+            Expr::Await(awaited) => Self::expr_own_scope_yield_count(awaited.operand()),
+            Expr::Range { start, end, .. } => {
+                start.as_deref().map_or(0, Self::expr_own_scope_yield_count)
+                    + end.as_deref().map_or(0, Self::expr_own_scope_yield_count)
+            }
+            Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => fields
+                .iter()
+                .map(|(_, value)| Self::expr_own_scope_yield_count(value))
+                .sum(),
+            Expr::Borrow(borrowed) => Self::expr_own_scope_yield_count(borrowed.operand()),
+            Expr::Deref(dereferenced) => Self::expr_own_scope_yield_count(dereferenced.operand()),
+            Expr::Unary { expr, .. } => Self::expr_own_scope_yield_count(expr),
+            Expr::Block { statements, value }
+            | Expr::NamedBlock {
+                statements, value, ..
+            } => {
+                Self::own_scope_yield_count(statements)
+                    + value.as_deref().map_or(0, Self::expr_own_scope_yield_count)
+            }
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                Self::expr_own_scope_yield_count(condition)
+                    + Self::expr_own_scope_yield_count(then_branch)
+                    + else_branch
+                        .as_deref()
+                        .map_or(0, Self::expr_own_scope_yield_count)
+            }
+            Expr::IfLet {
+                expr,
+                guard,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                Self::expr_own_scope_yield_count(expr)
+                    + guard.as_deref().map_or(0, Self::expr_own_scope_yield_count)
+                    + Self::expr_own_scope_yield_count(then_branch)
+                    + else_branch
+                        .as_deref()
+                        .map_or(0, Self::expr_own_scope_yield_count)
+            }
+            Expr::Match { scrutinee, arms } => {
+                Self::expr_own_scope_yield_count(scrutinee)
+                    + arms
+                        .iter()
+                        .map(|arm| {
+                            arm.guard().map_or(0, Self::expr_own_scope_yield_count)
+                                + Self::expr_own_scope_yield_count(arm.value())
+                        })
+                        .sum::<usize>()
+            }
+            // These variants introduce independent execution/yield owners or contain no child
+            // expression capable of owning a statement-level yield.
+            Expr::Closure { .. }
+            | Expr::ComputationBlock { .. }
+            | Expr::Thread { .. }
+            | Expr::Literal(_)
+            | Expr::EntityRef(_)
+            | Expr::LifetimePath { .. }
+            | Expr::Path(_)
+            | Expr::ShortVariant(_)
+            | Expr::Placeholder(_)
+            | Expr::NumericBracketSeq(_)
+            | Expr::Raw(_) => 0,
         }
     }
 

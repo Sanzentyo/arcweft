@@ -10,6 +10,7 @@ use arcweft_lang_syntax::{ast::flow::AuthoredExpr, expr::AwaitPropagation};
 
 impl TypeChecker<'_> {
     pub(super) fn check_yield_stmt(&mut self, expr: &AuthoredExpr) {
+        self.record_static_effect("control.suspend", "yield");
         self.reject_active_borrows(SuspensionBoundary::Yield);
         let actual = self.check_authored_expr(expr);
         let Some(context) = self.yield_stack.last_mut() else {

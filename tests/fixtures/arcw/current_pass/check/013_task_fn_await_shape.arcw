@@ -1,4 +1,4 @@
-task fn load_opening_assets() -> ArcResult<OpeningAssets> {
+fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let bg = try await load_bg()
     Ok(OpeningAssets { bg })
 }

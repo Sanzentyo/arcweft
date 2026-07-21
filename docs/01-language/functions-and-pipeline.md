@@ -182,9 +182,9 @@ let also_seven = add(2i64)(5i64)
 ```
 
 Call group は flatten しない。`f(a, b)(c)` と `f(a)(b, c)` は別の
-関数型として扱う。この curried call group は `fn` / `task fn` /
-`dialogue fn` / `stream fn` / trait member / impl member の関数的な宣言に
-属する構文であり、`flow` parameter は 0 個または 1 group に限る。
+関数型として扱う。この curried call group は ordinary `fn` / trait member /
+impl member の関数的な宣言に属する構文であり、`flow` parameter は 0 個または
+1 group に限る。
 `flow main(a)(b)` のような curried flow parameter は構文診断になる。
 
 ```arcw

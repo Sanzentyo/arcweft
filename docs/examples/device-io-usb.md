@@ -29,7 +29,7 @@ pub fn decode_sensor_packet(bytes: &[u8]) -> Result<SensorFrame, UsbParseError> 
     Ok(SensorFrame { value })
 }
 
-stream fn sensor_frames(dev: DevicePort<UsbDevice>) -> Stream<SensorFrame, SensorError> {
+fn sensor_frames(dev: DevicePort<UsbDevice>) -> Stream<SensorFrame, SensorError> {
     for await packet in dev.bulk_in(0x81) {
         yield decode_sensor_packet(packet.bytes).map_err(.Parse)?
     }

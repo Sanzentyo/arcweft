@@ -519,7 +519,7 @@ canonicalize these inferred forms back to `[layout .vertical_rl]...[/layout]`,
 A dialogue-safe function must declare its effects:
 
 ```arcw
-pub dialogue fn flash(
+pub fn flash(
     color: Color = rgb("#ffffff"),
     time: Duration = 120ms,
 ) -> Result<DialogueCue, TagError>
@@ -532,7 +532,7 @@ effects { stage.flash }
 A dialogue-safe function used by the handler:
 
 ```arcw
-pub dialogue fn mark_keyword(
+pub fn mark_keyword(
     word: String,
     color: Color,
 ) -> Result<DialogueCue, TagError>

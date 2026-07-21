@@ -184,12 +184,13 @@ let voice = try await voice.load(@voice.alice.001) with:
         progress.set(p.ratio)
 ```
 
-## Await in task fn
+## Direct-style await in functions
 
-Background `task fn` may use simpler await when not directly visible.
+Any ordinary `fn` may use direct-style `await` when its suspension is not
+directly visible.
 
 ```arcw
-task fn load_opening_assets() -> ArcResult<OpeningAssets> {
+fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let bg = try await asset.image(@asset:.bg.room)
     let voice = try await asset.audio(@asset:.voice.alice.001)
     Ok(OpeningAssets { bg, voice })

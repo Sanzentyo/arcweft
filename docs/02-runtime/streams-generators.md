@@ -98,15 +98,16 @@ let usb =
     }
 ```
 
-## Stream functions
+## Generator functions
 
-A `stream fn` is a state machine that yields values. It is allowed for pure
-transforms and for processing a granted stream or port. It must return
-`Stream<T, E>`; `Source<T, E>` is reserved for policy-backed `source`
-declarations.
+An ordinary `fn` whose own body yields is a state machine that produces values.
+It is allowed for pure transforms and for processing a granted stream or port.
+It must return `Stream<T, E>`; `Source<T, E>` is reserved for policy-backed
+`source` declarations. An ordinary `fn` that merely returns a `Stream<T, E>`
+without its own `yield` is a passthrough, not a generator.
 
 ```arcw
-stream fn rms_level(
+fn rms_level(
     frames: Stream<AudioFrame, AudioError>,
 ) -> Stream<f32, AudioError> {
     for frame in frames {
@@ -122,8 +123,8 @@ stream fn rms_level(
 The following is not allowed:
 
 ```arcw
-stream fn unsafe_open_mic() -> Stream<AudioFrame, AudioError> {
-    // error: stream fn cannot open devices directly
+fn unsafe_open_mic() -> Stream<AudioFrame, AudioError> {
+    // error: a generator function cannot open devices directly
     let mic = capture.microphone(@capture.player_microphone)
 }
 ```
@@ -148,7 +149,7 @@ seq { ... yield ... }
   pure lazy sequence; no runtime effects
 
 stream { ... yield ... }
-stream fn ... -> Stream<T, E> { ... yield ... }
+fn ... -> Stream<T, E> { ... yield ... }
   deterministic transform over existing values/streams
 
 source @source.id: Source<T, E> { on item value => yield value }
@@ -190,7 +191,7 @@ The following may not cross `yield`:
 - borrowed device callback buffer.
 
 ```arcw
-stream fn bad<'frame>(bytes: &'frame [u8]) -> Stream<u8, Unit> {
+fn bad<'frame>(bytes: &'frame [u8]) -> Stream<u8, Unit> {
     yield bytes[0] // error if bytes is a frame-local borrow that may not outlive yield
 }
 ```
@@ -198,7 +199,7 @@ stream fn bad<'frame>(bytes: &'frame [u8]) -> Stream<u8, Unit> {
 Own or lease the data explicitly:
 
 ```arcw
-stream fn ok(bytes: Bytes) -> Stream<u8, Unit> {
+fn ok(bytes: Bytes) -> Stream<u8, Unit> {
     yield bytes[0]
 }
 ```

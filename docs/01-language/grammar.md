@@ -496,8 +496,7 @@ aliases to the same type.
 ## Functions
 
 ```text
-FunctionDecl  := Visibility? FunctionKind Ident GenericParams? ParamGroup+ ReturnType? WhereClause? Contract* Block
-FunctionKind  := 'fn' | 'task fn' | 'dialogue fn' | 'stream fn'
+FunctionDecl  := Visibility? 'fn' Ident GenericParams? ParamGroup+ ReturnType? WhereClause? Contract* Block
 GenericParams := '<' GenericParam (',' GenericParam)* ','? '>'
 GenericParam  := Lifetime | IdentPath
 ParamGroup    := '(' Param (',' Param)* ','? ')'
@@ -579,9 +578,11 @@ and a semantic hash from its body and referenced resources. Each application
 also receives a distinct deterministic `FxInstanceId` from its retained
 location/span identity and application ordinal.
 
-`stream fn` must declare `-> Stream<T, E>`. Hand-written stream transforms do
-not return `Source<T, E>`; live external sources use `source` declarations so
-policy, replay, and privacy remain explicit.
+An ordinary `fn` whose own body contains `yield` is a generator and must
+declare `-> Stream<T, E>`. A function that returns `Stream<T, E>` without an
+own-scope `yield` is an ordinary stream passthrough. Hand-written stream
+transforms do not return `Source<T, E>`; live external sources use `source`
+declarations so policy, replay, and privacy remain explicit.
 
 ## Source Declarations
 
@@ -689,9 +690,9 @@ LabelRef     := '\'' Ident
 `break expr` is allowed only in `loop`.
 `out` is allowed only in line-plan, cue-block, and content-scope continuations.
 `yield` parses as a statement but is semantically valid only in explicit
-generation contexts: `seq { ... }`, `stream { ... }`, `stream fn`, and `source`
-handlers. Flow bodies and dialogue line plans use `return`/`goto`/`out`
-instead.
+generation contexts: `seq { ... }`, `stream { ... }`, an ordinary `fn` whose
+own scope yields, and `source` handlers. Flow bodies and dialogue line plans
+use `return`/`goto`/`out` instead.
 
 ## Let and let-else
 

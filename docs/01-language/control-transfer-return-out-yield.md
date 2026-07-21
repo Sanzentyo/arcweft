@@ -4,7 +4,7 @@ Arcweft separates five kinds of control transfer.
 
 ## `return`
 
-`return expr` leaves the nearest `fn`, `task fn`, `parser`, or `flow`.
+`return expr` leaves the nearest `fn`, `parser`, or `flow`.
 
 ```arcw
 pub flow @flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
@@ -37,7 +37,7 @@ statement with `Unit` type, and the expression must match the item type of the
 surrounding generator-like construct.
 
 ```arcw
-stream fn rms_level(frames: Stream<AudioFrame, AudioError>) -> Stream<f32, AudioError> {
+fn rms_level(frames: Stream<AudioFrame, AudioError>) -> Stream<f32, AudioError> {
     for frame in frames {
         yield frame.rms()
     }
@@ -49,7 +49,7 @@ Allowed contexts:
 ```text
 seq { ... }
 stream { ... }
-stream fn ... -> Stream<T, E> { ... }
+fn ... -> Stream<T, E> { ... yield ... }
 source @source.id: Source<T, E> { on item frame => yield frame }
 ```
 
@@ -73,8 +73,9 @@ pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
 }
 ```
 
-Do not use `yield` in ordinary functions, task functions, flows, hooks, memo
-functions, or dialogue line plans. Use `out` for line-plan results.
+Do not use `yield` in a non-generator function, flow, hook, memo function, or
+dialogue line plan. An ordinary `fn` becomes a generator only when its own
+scope contains `yield`; use `out` for line-plan results.
 
 ```arcw
 let outcome = alice.say()[長い台詞です。[p]]

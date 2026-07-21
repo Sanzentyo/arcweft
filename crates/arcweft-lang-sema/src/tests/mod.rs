@@ -12,6 +12,7 @@ mod dialogue;
 mod expressions;
 mod function_effect_rows;
 mod function_effect_timing;
+mod function_execution;
 mod function_method_fallback;
 mod function_stack;
 mod fx;

@@ -5,9 +5,10 @@
 
 pub use crate::{
     checker::{
-        ClosureCapture, ClosureCaptureInventory, DataLastMethodFallbackArg, ForIterationEvidence,
-        ForIterationEvidenceFamily, NumericFallback, NumericFallbackKind, ProjectCallableReference,
-        ProjectEntityReference, StandardIteratorFamily, TypeCheckReport, TypeCheckStats,
+        CallableExecutionMode, CheckedCallableExecution, ClosureCapture, ClosureCaptureInventory,
+        DataLastMethodFallbackArg, ForIterationEvidence, ForIterationEvidenceFamily,
+        NumericFallback, NumericFallbackKind, ProjectCallableReference, ProjectEntityReference,
+        StandardIteratorFamily, StreamGeneratorFacts, TypeCheckReport, TypeCheckStats,
         TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId, TypeJudgmentRule,
         TypeJudgmentSubject, TypedLoweringEvidence, TypedLoweringEvidenceKind,
         analyze_project_types_for_canonicalization, analyze_registered_project_types,
