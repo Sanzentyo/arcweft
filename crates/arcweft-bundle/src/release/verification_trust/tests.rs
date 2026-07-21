@@ -196,6 +196,24 @@ fn artifact_byte_limit_is_checked_before_deserialization() {
             actual: VERIFICATION_TRUST_ARTIFACT_MAX_BYTES + 1,
         })
     );
+    assert_eq!(
+        VerificationTrustRevocationArtifact::from_json_slice(&oversized),
+        Err(VerificationTrustError::ByteLimitExceeded {
+            kind: "verification trust revocation artifact",
+            limit: VERIFICATION_TRUST_ARTIFACT_MAX_BYTES,
+            actual: VERIFICATION_TRUST_ARTIFACT_MAX_BYTES + 1,
+        })
+    );
+
+    let at_artifact_limit = vec![b' '; VERIFICATION_TRUST_ARTIFACT_MAX_BYTES];
+    assert!(matches!(
+        VerificationTrustArtifact::from_json_slice(&at_artifact_limit),
+        Err(VerificationTrustError::DecodeJson(_))
+    ));
+    assert!(matches!(
+        VerificationTrustRevocationArtifact::from_json_slice(&at_artifact_limit),
+        Err(VerificationTrustError::DecodeJson(_))
+    ));
 
     let oversized_authority = vec![b' '; VERIFICATION_TRUST_AUTHORITY_MAX_BYTES + 1];
     assert_eq!(
@@ -278,7 +296,13 @@ fn signed_authority_json_round_trip_is_strict() {
         sample_revocations(Vec::new()),
     );
     let bytes = serde_json::to_vec(&document).expect("authority JSON");
-    ValidatedVerificationTrustAuthority::from_json_slice(&bytes).expect("valid authority JSON");
+    let validated =
+        ValidatedVerificationTrustAuthority::from_json_slice(&bytes).expect("valid authority JSON");
+    assert_eq!(validated.document(), &document);
+    assert_eq!(
+        serde_json::to_vec(validated.document()).expect("re-encoded authority JSON"),
+        bytes
+    );
 
     let mut unknown = serde_json::to_value(&document).expect("authority value");
     unknown
@@ -328,19 +352,147 @@ fn signed_authority_json_round_trip_is_strict() {
 }
 
 #[test]
-fn signed_authority_rejects_tampering_stale_generations_and_wrong_channel() {
+fn authority_json_requires_all_top_level_fields_and_both_signatures() {
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
-
-    let mut tampered = signed_authority(
+    let document = signed_authority(
         &signing_key,
         sample_manifest(),
         sample_revocations(Vec::new()),
     );
-    tampered.trust_manifest.signature.signing_digest = BundleDigest::of(b"tampered");
+    let value = serde_json::to_value(document).expect("authority value");
+
+    for field in [
+        "schema_version",
+        "signing_policy",
+        "signature_policy",
+        "trust_manifest",
+        "revocations",
+    ] {
+        let mut missing = value.clone();
+        missing
+            .as_object_mut()
+            .expect("authority object")
+            .remove(field);
+        let bytes = serde_json::to_vec(&missing).expect("missing-field JSON");
+        assert!(
+            matches!(
+                ValidatedVerificationTrustAuthority::from_json_slice(&bytes),
+                Err(VerificationTrustError::DecodeJson(_))
+            ),
+            "authority field `{field}` must be required"
+        );
+    }
+
+    for artifact in ["trust_manifest", "revocations"] {
+        let mut missing = value.clone();
+        missing[artifact]
+            .as_object_mut()
+            .expect("signed artifact object")
+            .remove("signature");
+        let bytes = serde_json::to_vec(&missing).expect("missing-signature JSON");
+        assert!(
+            matches!(
+                ValidatedVerificationTrustAuthority::from_json_slice(&bytes),
+                Err(VerificationTrustError::DecodeJson(_))
+            ),
+            "authority artifact `{artifact}` must carry a signature"
+        );
+    }
+}
+
+#[test]
+fn canonical_artifact_json_round_trip_preserves_bytes_and_digests() {
+    let manifest = sample_manifest();
+    let mut reversed_manifest = manifest.clone();
+    reversed_manifest.admissions.reverse();
+    let artifact = artifact_with_placeholder_signature(reversed_manifest);
+    let canonical_json = artifact.to_json_bytes().expect("canonical trust JSON");
+    let decoded = VerificationTrustArtifact::from_json_slice(&canonical_json).expect("trust JSON");
+    assert_eq!(
+        decoded.to_json_bytes().expect("re-encoded trust JSON"),
+        canonical_json
+    );
+    assert_eq!(
+        decoded.manifest.digest().expect("decoded trust digest"),
+        manifest.digest().expect("original trust digest")
+    );
+
+    let first_id = manifest.admissions[0].admission_id;
+    let second_id = manifest.admissions[1].admission_id;
+    let revocations = sample_revocations(vec![
+        revoked(second_id, "second"),
+        revoked(first_id, "first"),
+    ]);
+    let expected_digest = revocations.digest().expect("original revocation digest");
+    let artifact = revocation_artifact_with_placeholder_signature(revocations);
+    let canonical_json = artifact.to_json_bytes().expect("canonical revocation JSON");
+    let decoded = VerificationTrustRevocationArtifact::from_json_slice(&canonical_json)
+        .expect("revocation JSON");
+    assert_eq!(
+        decoded.to_json_bytes().expect("re-encoded revocation JSON"),
+        canonical_json
+    );
+    assert_eq!(
+        decoded
+            .manifest
+            .digest()
+            .expect("decoded revocation digest"),
+        expected_digest
+    );
+}
+
+#[test]
+fn signed_authority_rejects_manifest_and_transcript_digest_tampering() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+
+    let mut manifest_digest = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    manifest_digest.trust_manifest.signature.manifest_digest = BundleDigest::of(b"tampered");
     assert!(matches!(
-        ValidatedVerificationTrustAuthority::try_from_document(tampered),
+        ValidatedVerificationTrustAuthority::try_from_document(manifest_digest),
+        Err(VerificationTrustError::ManifestDigestMismatch { .. })
+    ));
+
+    let mut manifest_transcript = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    manifest_transcript.trust_manifest.signature.signing_digest = BundleDigest::of(b"tampered");
+    assert!(matches!(
+        ValidatedVerificationTrustAuthority::try_from_document(manifest_transcript),
         Err(VerificationTrustError::SigningDigestMismatch { .. })
     ));
+
+    let mut revocation_digest = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    revocation_digest.revocations.signature.manifest_digest = BundleDigest::of(b"tampered");
+    assert!(matches!(
+        ValidatedVerificationTrustAuthority::try_from_document(revocation_digest),
+        Err(VerificationTrustError::ManifestDigestMismatch { .. })
+    ));
+
+    let mut revocation_transcript = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    revocation_transcript.revocations.signature.signing_digest = BundleDigest::of(b"tampered");
+    assert!(matches!(
+        ValidatedVerificationTrustAuthority::try_from_document(revocation_transcript),
+        Err(VerificationTrustError::SigningDigestMismatch { .. })
+    ));
+}
+
+#[test]
+fn signed_authority_rejects_stale_generations_and_wrong_channel() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
 
     let mut stale = signed_authority(
         &signing_key,
@@ -369,6 +521,50 @@ fn signed_authority_rejects_tampering_stale_generations_and_wrong_channel() {
         ValidatedVerificationTrustAuthority::try_from_document(wrong_channel),
         Err(VerificationTrustError::ChannelMismatch { .. })
     ));
+}
+
+#[test]
+fn signed_authority_rejects_stale_revocations_and_an_older_signed_pair_replay() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+
+    let mut stale_revocation = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    stale_revocation
+        .signing_policy
+        .verification_trust
+        .minimum_revocation_generation = 13;
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(stale_revocation),
+        Err(VerificationTrustError::StaleRevocationGeneration {
+            actual: 12,
+            minimum: 13,
+        })
+    );
+
+    let mut old_manifest = sample_manifest();
+    old_manifest.generation = 6;
+    let mut old_revocations = sample_revocations(Vec::new());
+    old_revocations.generation = 11;
+    let replay = signed_authority(&signing_key, old_manifest, old_revocations);
+
+    let mut valid_at_old_snapshot = replay.clone();
+    valid_at_old_snapshot.signing_policy.verification_trust = VerificationTrustGenerationPolicy {
+        minimum_policy_generation: 6,
+        minimum_revocation_generation: 11,
+    };
+    ValidatedVerificationTrustAuthority::try_from_document(valid_at_old_snapshot)
+        .expect("the older pair has valid signatures at its original generation floors");
+
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(replay),
+        Err(VerificationTrustError::StalePolicyGeneration {
+            actual: 6,
+            minimum: 7,
+        })
+    );
 }
 
 #[test]
@@ -448,6 +644,115 @@ fn signed_authority_rejects_revoked_or_wrong_epoch_key() {
     assert_eq!(
         ValidatedVerificationTrustAuthority::try_from_document(wrong_epoch),
         Err(VerificationTrustError::KeyEpochRejected { epoch: 5 })
+    );
+}
+
+#[test]
+fn signing_policy_key_epoch_window_is_inclusive_min_exclusive_max() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+    let at_minimum = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    ValidatedVerificationTrustAuthority::try_from_document(at_minimum)
+        .expect("the inclusive minimum key epoch is accepted");
+
+    for rejected_epoch in [KEY_EPOCH - 1, KEY_EPOCH + 1, KEY_EPOCH + 2] {
+        let mut outside = signed_authority(
+            &signing_key,
+            sample_manifest(),
+            sample_revocations(Vec::new()),
+        );
+        outside.trust_manifest.signature.key_epoch = rejected_epoch;
+        assert_eq!(
+            ValidatedVerificationTrustAuthority::try_from_document(outside),
+            Err(VerificationTrustError::KeyEpochRejected {
+                epoch: rejected_epoch,
+            })
+        );
+    }
+}
+
+#[test]
+fn authority_rejects_revocation_policy_id_mismatch() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+    let mut document = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    document.revocations.manifest.policy_id =
+        VerificationTrustPolicyId::new("release-security/other-policy")
+            .expect("different policy id");
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(document),
+        Err(VerificationTrustError::RevocationPolicyMismatch)
+    );
+}
+
+#[test]
+fn authority_rejects_nested_manifest_and_signature_schema_mismatches() {
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+
+    let mut manifest = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    manifest.trust_manifest.manifest.schema_version = 2;
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(manifest),
+        Err(VerificationTrustError::UnsupportedSchema {
+            kind: "verification trust manifest",
+            actual: 2,
+            expected: VERIFICATION_TRUST_SCHEMA_VERSION,
+        })
+    );
+
+    let mut manifest_signature = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    manifest_signature.trust_manifest.signature.schema_version = 2;
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(manifest_signature),
+        Err(VerificationTrustError::UnsupportedSchema {
+            kind: "verification trust signature",
+            actual: 2,
+            expected: VERIFICATION_TRUST_SCHEMA_VERSION,
+        })
+    );
+
+    let mut revocations = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    revocations.revocations.manifest.schema_version = 2;
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(revocations),
+        Err(VerificationTrustError::UnsupportedSchema {
+            kind: "verification trust revocations",
+            actual: 2,
+            expected: VERIFICATION_TRUST_SCHEMA_VERSION,
+        })
+    );
+
+    let mut revocation_signature = signed_authority(
+        &signing_key,
+        sample_manifest(),
+        sample_revocations(Vec::new()),
+    );
+    revocation_signature.revocations.signature.schema_version = 2;
+    assert_eq!(
+        ValidatedVerificationTrustAuthority::try_from_document(revocation_signature),
+        Err(VerificationTrustError::UnsupportedSchema {
+            kind: "verification trust signature",
+            actual: 2,
+            expected: VERIFICATION_TRUST_SCHEMA_VERSION,
+        })
     );
 }
 
@@ -546,6 +851,21 @@ fn artifact_with_placeholder_signature(
         manifest_digest,
     );
     VerificationTrustArtifact {
+        manifest,
+        signature,
+    }
+}
+
+fn revocation_artifact_with_placeholder_signature(
+    manifest: VerificationTrustRevocations,
+) -> VerificationTrustRevocationArtifact {
+    let manifest_digest = manifest.digest().expect("revocation digest");
+    let signature = placeholder_signature(
+        SigningSubjectKind::VerificationTrustRevocations,
+        &manifest.channel,
+        manifest_digest,
+    );
+    VerificationTrustRevocationArtifact {
         manifest,
         signature,
     }
