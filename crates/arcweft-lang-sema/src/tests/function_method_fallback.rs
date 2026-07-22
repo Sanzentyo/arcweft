@@ -11,6 +11,7 @@ fn analyze_registered_method_fixture(
         vec![document],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registered method fixture facts");
     let registered = crate::test_support::character_project::register(

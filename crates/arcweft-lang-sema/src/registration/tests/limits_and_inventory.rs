@@ -78,6 +78,7 @@ fn limit_catalogs_exact_and_one_over() {
         vec![Arc::clone(&root)],
         Vec::new(),
         catalogs.clone(),
+        Vec::new(),
     )
     .expect("exact catalog facts");
     register(&project, &exact, TypeCheckEnv::standard(), None)
@@ -88,8 +89,9 @@ fn limit_catalogs_exact_and_one_over() {
         SourceBackedCharacterCatalog::try_new(root.identity().clone(), Vec::new())
             .expect("one-over empty catalog"),
     );
-    let facts = ProjectRegistrationFacts::try_new(world, vec![root], Vec::new(), one_over)
-        .expect("catalog count is enforced by the registrar");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, vec![root], Vec::new(), one_over, Vec::new())
+            .expect("catalog count is enforced by the registrar");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect_err("one-over catalog limit is rejected");
     assert_registration_limit(
@@ -140,9 +142,14 @@ fn limit_occurrences_exact_and_one_over() {
     let (manifest_documents, catalogs) = build_catalogs(&vec![16; 64]);
     let mut documents = vec![Arc::clone(&root)];
     documents.extend(manifest_documents);
-    let exact =
-        ProjectRegistrationFacts::try_new(world.clone(), documents.clone(), Vec::new(), catalogs)
-            .expect("exact occurrence facts");
+    let exact = ProjectRegistrationFacts::try_new(
+        world.clone(),
+        documents.clone(),
+        Vec::new(),
+        catalogs,
+        Vec::new(),
+    )
+    .expect("exact occurrence facts");
     register(&project, &exact, TypeCheckEnv::standard(), None)
         .expect("exact occurrence limit is accepted");
 
@@ -151,9 +158,14 @@ fn limit_occurrences_exact_and_one_over() {
     let (manifest_documents, one_over_catalogs) = build_catalogs(&one_over_counts);
     let mut one_over_documents = vec![root];
     one_over_documents.extend(manifest_documents);
-    let facts =
-        ProjectRegistrationFacts::try_new(world, one_over_documents, Vec::new(), one_over_catalogs)
-            .expect("occurrence count is enforced by registrar");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        one_over_documents,
+        Vec::new(),
+        one_over_catalogs,
+        Vec::new(),
+    )
+    .expect("occurrence count is enforced by registrar");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect_err("one-over occurrence limit is rejected");
     assert_registration_limit(
@@ -182,6 +194,7 @@ fn limit_owners_exact_and_one_over() {
         documents.clone(),
         Vec::new(),
         vec![exact_catalog],
+        Vec::new(),
     )
     .expect("exact owner facts");
     register(&project, &exact, TypeCheckEnv::standard(), None)
@@ -190,9 +203,14 @@ fn limit_owners_exact_and_one_over() {
     let one_over_catalog =
         SourceBackedCharacterCatalog::try_new(root.identity().clone(), manifests)
             .expect("one-over owner catalog");
-    let facts =
-        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), vec![one_over_catalog])
-            .expect("owner count is enforced by registrar");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        documents,
+        Vec::new(),
+        vec![one_over_catalog],
+        Vec::new(),
+    )
+    .expect("owner count is enforced by registrar");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect_err("one-over owner limit is rejected");
     assert_registration_limit(
@@ -215,9 +233,14 @@ fn limit_documents_exact_and_one_over() {
             "",
         )
     }));
-    let exact =
-        ProjectRegistrationFacts::try_new(world.clone(), documents.clone(), Vec::new(), Vec::new())
-            .expect("exact document facts");
+    let exact = ProjectRegistrationFacts::try_new(
+        world.clone(),
+        documents.clone(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("exact document facts");
     register(&project, &exact, TypeCheckEnv::standard(), None)
         .expect("exact document limit is accepted");
 
@@ -225,8 +248,9 @@ fn limit_documents_exact_and_one_over() {
         "arcweft-generated://registration-tests/document-one-over",
         "",
     ));
-    let report = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect_err("one-over document limit is rejected");
+    let report =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect_err("one-over document limit is rejected");
     assert_registration_limit(
         &report,
         CharacterRegistrationLimitKind::Documents,
@@ -260,6 +284,7 @@ fn registration_source_bytes_exact_and_one_over() {
         vec![Arc::clone(&root), exact_document],
         Vec::new(),
         vec![exact_catalog],
+        Vec::new(),
     )
     .expect("exact source-byte facts");
     register(&project, &exact, TypeCheckEnv::standard(), None)
@@ -282,6 +307,7 @@ fn registration_source_bytes_exact_and_one_over() {
         vec![root, one_over_document],
         Vec::new(),
         vec![one_over_catalog],
+        Vec::new(),
     )
     .expect_err("one-over aggregate source-byte limit is rejected");
     assert!(report.diagnostics().iter().any(|diagnostic| matches!(
@@ -423,6 +449,7 @@ fn inventory_descriptor_excludes_aliases_base_and_world() {
         vec![Arc::clone(&root), document],
         vec![fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("second facts");
     let changed_base = TypeCheckEnv::standard().with_symbol("unrelated", TypeKind::String);
@@ -464,6 +491,7 @@ fn inventory_descriptor_observes_character_owner_path() {
         vec![root, document],
         vec![changed_fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("changed path facts");
     let changed = register(&project, &changed_facts, TypeCheckEnv::standard(), None)

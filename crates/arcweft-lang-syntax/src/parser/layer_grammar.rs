@@ -293,12 +293,7 @@ fn emit_reference_value(
 fn retained_reference_family(reference: &str) -> Option<RetainedIdentityFamily> {
     let value = reference.strip_prefix('@')?;
     let prefix_end = value.find(['.', ':']).unwrap_or(value.len());
-    match &value[..prefix_end] {
-        "layer" => Some(RetainedIdentityFamily::Layer),
-        "view" => Some(RetainedIdentityFamily::View),
-        "activity" => Some(RetainedIdentityFamily::Activity),
-        _ => None,
-    }
+    RetainedIdentityFamily::from_prefix(&value[..prefix_end])
 }
 
 fn emit_policy_value(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize, member: &str) {

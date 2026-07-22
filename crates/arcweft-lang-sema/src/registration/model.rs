@@ -25,11 +25,22 @@ use arcweft_source::{
 use thiserror::Error;
 
 use crate::{
-    callable::{EnvironmentCallablePublication, RegisteredCallableCatalog},
-    env::{TypeCheckEnv, identity::EnvironmentBindingId, nominal::AcceptedNominalCatalog},
+    callable::RegisteredCallableCatalog,
+    env::{
+        AcceptedRustTypeMetadataCatalog, TypeCheckEnv,
+        identity::EnvironmentBindingId,
+        nominal::{
+            AcceptedNominalCatalog, AcceptedNominalCatalogDigest, AcceptedNominalCatalogError,
+            AcceptedNominalId, AcceptedNominalRecord,
+        },
+    },
+    registration::EnvironmentPublicationItemId,
     types::{CharacterNominalType, TypeKind},
 };
 
+use super::environment_input::{
+    BoundEnvironmentRegistrationInput, SourceBackedEnvironmentRegistrationInput,
+};
 use super::{
     diagnostic::{
         CharacterRegistrationDiagnostic, CharacterRegistrationDiagnosticKind,
@@ -42,7 +53,19 @@ use super::{
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RegisteredExternalOwner {
     Character(CharacterId),
-    Environment(EnvironmentBindingId),
+    Environment(RegisteredEnvironmentExternalOwner),
+}
+
+/// Semantic owner and value binding selected for one environment-backed external.
+///
+/// The nominal owner participates in accepted type identity. The value binding
+/// selects the concrete type exposed by the external symbol. They are distinct
+/// for adapter exports: every nominal in an adapter shares `adapter:<id>` as its
+/// semantic owner while each exported symbol has its own binding.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RegisteredEnvironmentExternalOwner {
+    nominal_owner: EnvironmentBindingId,
+    value_binding: EnvironmentBindingId,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -73,6 +96,7 @@ pub struct ProjectRegistrationFacts {
     external_declarations: ProjectExternalDeclarations,
     external_owners: Vec<ExternalOwnerContribution>,
     catalogs: Vec<SourceBackedCharacterCatalog>,
+    environment_inputs: Box<[BoundEnvironmentRegistrationInput]>,
     manifest_owner_sources: BTreeMap<(usize, usize), SourceSpan>,
 }
 
@@ -81,7 +105,6 @@ pub struct CharacterRegistrationRequest<'a> {
     pub(crate) project: &'a HirProject,
     pub(crate) facts: &'a ProjectRegistrationFacts,
     pub(crate) previous: Option<&'a RegisteredTypeCheckEnv>,
-    pub(crate) callable_publications: Vec<EnvironmentCallablePublication>,
 }
 
 #[derive(Clone, Debug)]
@@ -161,6 +184,10 @@ pub struct CharacterInventoryDigest(pub(crate) [u8; 32]);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CharacterInventoryRevision(pub(crate) u64);
 
+/// Stable identity of one completely accepted semantic environment.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RegisteredEnvironmentDigest(pub(crate) [u8; 32]);
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterInventoryDescriptorV1 {
     pub(crate) characters: Vec<(CharacterId, CharacterManifestFingerprint)>,
@@ -170,12 +197,14 @@ pub struct CharacterInventoryDescriptorV1 {
 #[derive(Clone, Debug)]
 pub struct RegisteredTypeCheckEnv {
     pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
+    pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, BTreeSet<String>>,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
     pub(crate) character_digest: CharacterInventoryDigest,
     pub(crate) character_revision: CharacterInventoryRevision,
+    pub(crate) environment_digest: RegisteredEnvironmentDigest,
 }
 
 /// Accepted nominal-resolution world available before callable publication.
@@ -187,6 +216,43 @@ pub struct RegisteredTypeCheckEnv {
 pub struct AcceptedNominalWorld {
     base: Arc<TypeCheckEnv>,
     external_owners: ExternalOwnerRegistry,
+    visibility: Arc<AcceptedNominalVisibilityIndex>,
+}
+
+/// Stable identity of the exact nominal world used for semantic projection.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AcceptedNominalWorldStamp {
+    world: ProjectSymbolWorldId,
+    revision: ProjectSymbolRevision,
+    catalog_digest: AcceptedNominalCatalogDigest,
+}
+
+/// Source evidence for one visible or intentionally inaccessible nominal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AcceptedNominalSource {
+    declaration: SourceSpan,
+    item: EnvironmentPublicationItemId,
+}
+
+/// Visibility of exact source-backed nominal declarations in one accepted world.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AcceptedNominalVisibilityIndex {
+    visible: BTreeMap<AcceptedNominalId, AcceptedNominalSource>,
+    inaccessible: BTreeMap<AcceptedNominalId, AcceptedNominalSource>,
+}
+
+/// Failure to look up one exact nominal identity in an accepted world.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AcceptedNominalWorldLookupError {
+    #[error("accepted nominal `{requested:?}` is not present in this world")]
+    Unknown { requested: Box<AcceptedNominalId> },
+    #[error("accepted nominal `{requested:?}` is private in this world")]
+    Inaccessible { requested: Box<AcceptedNominalId> },
+    #[error("accepted nominal path belongs to `{visible:?}`, not `{requested:?}`")]
+    OwnerMismatch {
+        requested: Box<AcceptedNominalId>,
+        visible: Box<AcceptedNominalId>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -258,11 +324,38 @@ pub enum CharacterInventoryIntegrityError {
 }
 
 impl RegisteredExternalOwner {
+    pub fn environment(
+        nominal_owner: EnvironmentBindingId,
+        value_binding: EnvironmentBindingId,
+    ) -> Self {
+        Self::Environment(RegisteredEnvironmentExternalOwner::new(
+            nominal_owner,
+            value_binding,
+        ))
+    }
+
     pub const fn kind(&self) -> RegisteredExternalOwnerKind {
         match self {
             Self::Character(_) => RegisteredExternalOwnerKind::Character,
             Self::Environment(_) => RegisteredExternalOwnerKind::Environment,
         }
+    }
+}
+
+impl RegisteredEnvironmentExternalOwner {
+    pub fn new(nominal_owner: EnvironmentBindingId, value_binding: EnvironmentBindingId) -> Self {
+        Self {
+            nominal_owner,
+            value_binding,
+        }
+    }
+
+    pub const fn nominal_owner(&self) -> &EnvironmentBindingId {
+        &self.nominal_owner
+    }
+
+    pub const fn value_binding(&self) -> &EnvironmentBindingId {
+        &self.value_binding
     }
 }
 
@@ -302,6 +395,7 @@ impl ProjectRegistrationFacts {
         documents: Vec<Arc<SourceDocument>>,
         mut externals: Vec<ExternalRegistrationFact>,
         catalogs: Vec<SourceBackedCharacterCatalog>,
+        mut environment_inputs: Vec<SourceBackedEnvironmentRegistrationInput>,
     ) -> Result<Self, CharacterRegistrationReport> {
         if documents.is_empty() {
             return Err(CharacterRegistrationReport::from_diagnostics(Vec::new()).with_omitted(1));
@@ -359,6 +453,32 @@ impl ProjectRegistrationFacts {
             validate_span(fact.owner_source(), &by_id, &mut diagnostics);
             for binding in fact.declaration().direct_bindings() {
                 validate_span(binding.source(), &by_id, &mut diagnostics);
+            }
+        }
+        for input in &environment_inputs {
+            match by_id.get(input.source().id()) {
+                None => diagnostics.push(CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::WrongDocument {
+                        expected: world.root_document().clone(),
+                        actual: input.source().id().clone(),
+                    },
+                    full_span(&first_document),
+                    [],
+                )),
+                Some(document) if document.identity() != input.source() => {
+                    diagnostics.push(CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::WrongRevision {
+                            expected: document.identity().revision(),
+                            actual: input.source().revision(),
+                        },
+                        full_span(document),
+                        [],
+                    ));
+                }
+                Some(_) => {}
+            }
+            for span in input.source_spans() {
+                validate_span(span, &by_id, &mut diagnostics);
             }
         }
         let mut manifest_owner_sources = BTreeMap::new();
@@ -518,6 +638,18 @@ impl ProjectRegistrationFacts {
             });
         }
 
+        environment_inputs.sort_by(|left, right| {
+            left.owner()
+                .cmp(right.owner())
+                .then_with(|| left.source().id().cmp(right.source().id()))
+                .then_with(|| left.source().revision().cmp(&right.source().revision()))
+        });
+        let environment_inputs = environment_inputs
+            .into_iter()
+            .map(|input| input.bind_world(world.clone()))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+
         Ok(Self {
             world,
             symbol_revision,
@@ -525,6 +657,7 @@ impl ProjectRegistrationFacts {
             external_declarations,
             external_owners,
             catalogs,
+            environment_inputs,
             manifest_owner_sources,
         })
     }
@@ -547,6 +680,22 @@ impl ProjectRegistrationFacts {
 
     pub fn catalogs(&self) -> impl ExactSizeIterator<Item = &SourceBackedCharacterCatalog> {
         self.catalogs.iter()
+    }
+
+    pub(crate) fn environment_inputs(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &BoundEnvironmentRegistrationInput> {
+        self.environment_inputs.iter()
+    }
+
+    pub(crate) fn declares_environment_binding(&self, id: &EnvironmentBindingId) -> bool {
+        self.environment_inputs.iter().any(|input| {
+            input
+                .input()
+                .value_bindings()
+                .iter()
+                .any(|binding| binding.id() == id)
+        })
     }
 
     pub(crate) fn external_owner_contributions(
@@ -610,19 +759,7 @@ impl<'a> CharacterRegistrationRequest<'a> {
             project,
             facts,
             previous,
-            callable_publications: Vec::new(),
         }
-    }
-
-    /// Adds one typed selected-environment callable publication to the same
-    /// fail-closed transaction that accepts the semantic world.
-    #[must_use]
-    pub fn with_callable_publication(
-        mut self,
-        publication: EnvironmentCallablePublication,
-    ) -> Self {
-        self.callable_publications.push(publication);
-        self
     }
 }
 
@@ -662,10 +799,25 @@ impl CharacterInventoryRevision {
     }
 }
 
+impl RegisteredEnvironmentDigest {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 impl RegisteredTypeCheckEnv {
     /// Immutable callable catalog accepted with this exact semantic world.
     pub fn callable_catalog(&self) -> &RegisteredCallableCatalog {
         &self.callables
+    }
+
+    /// Immutable Rust ADT metadata accepted with this exact semantic world.
+    pub fn rust_metadata(&self) -> &AcceptedRustTypeMetadataCatalog {
+        &self.rust_metadata
     }
 
     /// Exact nominal world accepted before and retained with callable publication.
@@ -687,6 +839,11 @@ impl RegisteredTypeCheckEnv {
 
     pub const fn character_revision(&self) -> CharacterInventoryRevision {
         self.character_revision
+    }
+
+    /// Canonical identity of this complete, successfully registered world.
+    pub const fn environment_digest(&self) -> RegisteredEnvironmentDigest {
+        self.environment_digest
     }
 
     pub fn character_enum_variants(
@@ -734,6 +891,7 @@ impl AcceptedNominalWorld {
         world: ProjectSymbolWorldId,
         symbol_revision: ProjectSymbolRevision,
         owners: BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
+        visibility: AcceptedNominalVisibilityIndex,
     ) -> Self {
         Self {
             base,
@@ -742,6 +900,33 @@ impl AcceptedNominalWorld {
                 revision: symbol_revision,
                 owners,
             },
+            visibility: Arc::new(visibility),
+        }
+    }
+
+    pub(crate) fn try_with_environment_bindings(
+        mut self,
+        bindings: impl IntoIterator<Item = (EnvironmentBindingId, TypeKind)>,
+        aliases: impl IntoIterator<Item = AcceptedNominalRecord>,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        let mut base = bindings
+            .into_iter()
+            .fold((*self.base).clone(), |environment, (id, ty)| {
+                environment.with_symbol(id.as_str(), ty)
+            });
+        for alias in aliases {
+            base.try_insert_nominal_record(alias)?;
+        }
+        self.base = Arc::new(base);
+        Ok(self)
+    }
+
+    /// Exact world/revision/catalog identity required by projected publications.
+    pub fn stamp(&self) -> AcceptedNominalWorldStamp {
+        AcceptedNominalWorldStamp {
+            world: self.external_owners.world.clone(),
+            revision: self.external_owners.revision,
+            catalog_digest: self.base.nominal_catalog().digest(),
         }
     }
 
@@ -765,10 +950,101 @@ impl AcceptedNominalWorld {
         self.base.nominal_catalog()
     }
 
+    pub fn visibility(&self) -> &AcceptedNominalVisibilityIndex {
+        &self.visibility
+    }
+
+    pub(crate) fn accepted_record(
+        &self,
+        requested: &AcceptedNominalId,
+    ) -> Result<&AcceptedNominalRecord, AcceptedNominalWorldLookupError> {
+        if self.visibility.inaccessible.contains_key(requested) {
+            return Err(AcceptedNominalWorldLookupError::Inaccessible {
+                requested: Box::new(requested.clone()),
+            });
+        }
+        let Some(record) = self
+            .base
+            .nominal_catalog()
+            .exact(requested.canonical_path())
+        else {
+            return Err(AcceptedNominalWorldLookupError::Unknown {
+                requested: Box::new(requested.clone()),
+            });
+        };
+        if record.id() != requested {
+            return Err(AcceptedNominalWorldLookupError::OwnerMismatch {
+                requested: Box::new(requested.clone()),
+                visible: Box::new(record.id().clone()),
+            });
+        }
+        Ok(record)
+    }
+
     pub(crate) fn external_owners(
         &self,
     ) -> &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner> {
         &self.external_owners.owners
+    }
+}
+
+impl AcceptedNominalWorldStamp {
+    pub const fn world(&self) -> &ProjectSymbolWorldId {
+        &self.world
+    }
+
+    pub const fn revision(&self) -> ProjectSymbolRevision {
+        self.revision
+    }
+
+    pub const fn catalog_digest(&self) -> AcceptedNominalCatalogDigest {
+        self.catalog_digest
+    }
+}
+
+impl AcceptedNominalSource {
+    pub const fn new(declaration: SourceSpan, item: EnvironmentPublicationItemId) -> Self {
+        Self { declaration, item }
+    }
+
+    pub const fn declaration(&self) -> &SourceSpan {
+        &self.declaration
+    }
+
+    pub const fn item(&self) -> &EnvironmentPublicationItemId {
+        &self.item
+    }
+}
+
+impl AcceptedNominalVisibilityIndex {
+    pub(crate) fn visible_entries(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&AcceptedNominalId, &AcceptedNominalSource)> {
+        self.visible.iter()
+    }
+
+    pub(crate) fn inaccessible_entries(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&AcceptedNominalId, &AcceptedNominalSource)> {
+        self.inaccessible.iter()
+    }
+
+    pub fn visible(&self, id: &AcceptedNominalId) -> Option<&AcceptedNominalSource> {
+        self.visible.get(id)
+    }
+
+    pub fn inaccessible(&self, id: &AcceptedNominalId) -> Option<&AcceptedNominalSource> {
+        self.inaccessible.get(id)
+    }
+
+    pub(crate) fn from_parts(
+        visible: BTreeMap<AcceptedNominalId, AcceptedNominalSource>,
+        inaccessible: BTreeMap<AcceptedNominalId, AcceptedNominalSource>,
+    ) -> Self {
+        Self {
+            visible,
+            inaccessible,
+        }
     }
 }
 

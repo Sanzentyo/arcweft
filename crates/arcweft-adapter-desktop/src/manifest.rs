@@ -1,12 +1,16 @@
 use arcweft_adapter_context::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
     AdapterCallableParameterIndex, AdapterCallablePath, AdapterEffectCapability,
-    AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall, AdapterManifest,
-    AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterTypeKind,
+    AdapterEnvironmentOwnerId, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
+    AdapterId, AdapterManifest, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
+    AdapterNominalPathPrefix, AdapterNominalPathSegment, AdapterNominalTypeRef,
+    AdapterNominalVisibility, AdapterParameterGroup, AdapterParameterPassing,
+    AdapterParameterPresence, AdapterTypeKind,
 };
 use arcweft_rust_abi::{
-    ArcweftRustManifest, ArcweftRustPackage, ArcweftRustTypeDecl, ArcweftRustTypeKind,
-    ArcweftRustVariant,
+    ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustTypeDecl,
+    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustVariant,
+    ArcweftRustVariantPayload,
 };
 
 pub const DESKTOP_PLATFORM_ADAPTER_ID: &str = "desktop-platform";
@@ -31,6 +35,8 @@ pub const DESKTOP_OWNED_CURSOR_SET_VISIBLE_CALL: &str = "desktop.cursor.owned.se
 pub const DESKTOP_OWNED_CURSOR_SET_POSITION_CALL: &str = "desktop.cursor.owned.set_position";
 pub const DESKTOP_WINDOW_MODE_TYPE: &str = "WindowMode";
 pub const DESKTOP_CURSOR_ICON_TYPE: &str = "CursorIcon";
+const DESKTOP_ERROR_TYPE: &str = "DesktopError";
+const DESKTOP_RUST_PACKAGE_ID: &str = "arcweft-adapter-desktop";
 pub const DESKTOP_FILES_READ_CALL: &str = "desktop.files.user.read";
 pub const DESKTOP_FILES_WRITE_CALL: &str = "desktop.files.user.write";
 pub const DESKTOP_KNOWN_READ_CALL: &str = "desktop.files.known.read";
@@ -111,7 +117,19 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
     .into_iter()
     .fold(
         AdapterManifest::new(DESKTOP_OWNED_WINDOW_ADAPTER_ID, "Owned Desktop Window")
+            .try_with_nominal_declaration(
+                AdapterNominalDeclaration::try_new(
+                    adapter_nominal_path(DESKTOP_ERROR_TYPE),
+                    0,
+                    AdapterNominalVisibility::Public,
+                    DESKTOP_ERROR_TYPE,
+                )
+                .expect("DesktopError is a valid adapter-native nominal declaration"),
+            )
+            .expect("DesktopError is the sole declaration at its path")
             .with_effect(effect.clone())
+            .try_with_rust_package_mount(desktop_rust_package_id(), empty_rust_mount())
+            .expect("desktop Rust package mount is unique")
             .try_with_rust_manifest(&owned_window_rust_manifest())
             .expect("owned-window Rust metadata has typed callable names"),
         |manifest, (call, path, signature)| {
@@ -276,17 +294,11 @@ fn param(name: &'static str, ty: AdapterTypeKind) -> (&'static str, AdapterTypeK
 }
 
 fn window_mode_param() -> (&'static str, AdapterTypeKind) {
-    param(
-        "mode",
-        AdapterTypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned()),
-    )
+    param("mode", desktop_rust_nominal(DESKTOP_WINDOW_MODE_TYPE))
 }
 
 fn cursor_icon_param() -> (&'static str, AdapterTypeKind) {
-    param(
-        "icon",
-        AdapterTypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned()),
-    )
+    param("icon", desktop_rust_nominal(DESKTOP_CURSOR_ICON_TYPE))
 }
 
 fn callable_path<const N: usize>(segments: [&str; N]) -> AdapterCallablePath {
@@ -336,7 +348,7 @@ fn signature<const N: usize>(
 
 fn owned_window_rust_manifest() -> ArcweftRustManifest {
     ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "arcweft-adapter-desktop".to_owned(),
+        id: desktop_rust_package_id(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         metadata_hash: None,
     })
@@ -383,14 +395,15 @@ fn unit_enum_type<const N: usize>(
     variants: [&str; N],
 ) -> ArcweftRustTypeDecl {
     ArcweftRustTypeDecl {
-        name: name.to_owned(),
+        path: rust_type_path(name),
         rust_path: rust_path.to_owned(),
+        parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: variants
                 .into_iter()
                 .map(|name| ArcweftRustVariant {
                     name: name.to_owned(),
-                    fields: Vec::new(),
+                    payload: ArcweftRustVariantPayload::Unit,
                 })
                 .collect(),
         },
@@ -400,7 +413,58 @@ fn unit_enum_type<const N: usize>(
 fn need_string_desktop_error() -> AdapterTypeKind {
     AdapterTypeKind::Need {
         ready: Box::new(AdapterTypeKind::String),
-        error: Box::new(AdapterTypeKind::Named("DesktopError".to_owned())),
+        error: Box::new(desktop_environment_nominal(DESKTOP_ERROR_TYPE)),
+    }
+}
+
+fn desktop_rust_package_id() -> ArcweftRustPackageId {
+    ArcweftRustPackageId::try_new(DESKTOP_RUST_PACKAGE_ID)
+        .expect("desktop Rust package ID is valid")
+}
+
+fn rust_type_path(name: &str) -> ArcweftRustTypePath {
+    ArcweftRustTypePath::try_new([ArcweftRustTypePathSegment::try_new(name)
+        .expect("desktop Rust type names are valid identifiers")])
+    .expect("one segment forms a desktop Rust type path")
+}
+
+fn empty_rust_mount() -> AdapterNominalPathPrefix {
+    AdapterNominalPathPrefix::try_new([]).expect("empty Rust package mount is valid")
+}
+
+fn adapter_nominal_path(name: &str) -> AdapterNominalPath {
+    AdapterNominalPath::try_new([AdapterNominalPathSegment::try_new(name)
+        .expect("desktop nominal names are valid identifiers")])
+    .expect("one segment forms a desktop nominal path")
+}
+
+fn desktop_rust_nominal(name: &str) -> AdapterTypeKind {
+    let path = empty_rust_mount()
+        .join(&rust_type_path(name))
+        .expect("desktop Rust type path joins its package mount");
+    AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::RustPackage {
+                package: desktop_rust_package_id(),
+            },
+            path,
+            [],
+        )
+        .expect("desktop Rust nominal reference is valid"),
+    }
+}
+
+fn desktop_environment_nominal(name: &str) -> AdapterTypeKind {
+    let adapter = AdapterId::new(DESKTOP_OWNED_WINDOW_ADAPTER_ID);
+    AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::Environment {
+                owner: AdapterEnvironmentOwnerId::for_adapter(&adapter),
+            },
+            adapter_nominal_path(name),
+            [],
+        )
+        .expect("desktop adapter-native nominal reference is valid"),
     }
 }
 
@@ -464,7 +528,7 @@ mod tests {
             set_bounds.signature().return_type(),
             &AdapterTypeKind::Need {
                 ready: Box::new(AdapterTypeKind::String),
-                error: Box::new(AdapterTypeKind::Named("DesktopError".to_owned())),
+                error: Box::new(desktop_environment_nominal(DESKTOP_ERROR_TYPE)),
             }
         );
 
@@ -477,7 +541,7 @@ mod tests {
             .expect("set_mode function");
         assert_eq!(
             set_mode.signature().groups()[0].parameters()[0].ty(),
-            &AdapterTypeKind::Named(DESKTOP_WINDOW_MODE_TYPE.to_owned())
+            &desktop_rust_nominal(DESKTOP_WINDOW_MODE_TYPE)
         );
 
         let set_icon = manifest
@@ -489,7 +553,7 @@ mod tests {
             .expect("set_icon function");
         assert_eq!(
             set_icon.signature().groups()[0].parameters()[0].ty(),
-            &AdapterTypeKind::Named(DESKTOP_CURSOR_ICON_TYPE.to_owned())
+            &desktop_rust_nominal(DESKTOP_CURSOR_ICON_TYPE)
         );
 
         let request_close = manifest
@@ -508,11 +572,11 @@ mod tests {
         );
 
         assert!(manifest.rust_types().iter().any(|ty| {
-            ty.decl().name == DESKTOP_WINDOW_MODE_TYPE
+            ty.decl().path == rust_type_path(DESKTOP_WINDOW_MODE_TYPE)
                 && enum_contains(ty.decl(), ["Fullscreen", "BorderlessFullscreen"])
         }));
         assert!(manifest.rust_types().iter().any(|ty| {
-            ty.decl().name == DESKTOP_CURSOR_ICON_TYPE
+            ty.decl().path == rust_type_path(DESKTOP_CURSOR_ICON_TYPE)
                 && enum_contains(ty.decl(), ["Pointer", "Default"])
         }));
     }

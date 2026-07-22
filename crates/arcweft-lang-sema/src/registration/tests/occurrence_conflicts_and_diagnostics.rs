@@ -34,6 +34,7 @@ fn equal_cross_catalog_occurrences_coalesce() {
         vec![root, first_document, second_document],
         vec![fact],
         vec![first_catalog, second_catalog],
+        Vec::new(),
     )
     .expect("equal cross-catalog facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
@@ -85,6 +86,7 @@ fn reordered_equal_manifest_coalesces() {
         vec![root, first_document, reordered_document],
         vec![fact],
         catalogs,
+        Vec::new(),
     )
     .expect("reordered facts");
 
@@ -179,6 +181,7 @@ fn equal_cross_catalog_occurrences_retain_all_conflict_provenance() {
         vec![root, first_document, second_document, changed_document],
         vec![fact],
         catalogs,
+        Vec::new(),
     )
     .expect("source-backed facts");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
@@ -206,7 +209,7 @@ fn diagnostics_are_deterministically_sorted() {
     let diagnostic = |owner: &str| {
         CharacterRegistrationDiagnostic::new(
             CharacterRegistrationDiagnosticKind::UnknownOwner {
-                owner: RegisteredExternalOwner::Environment(
+                owner: environment_external_owner(
                     EnvironmentBindingId::try_new(owner).expect("environment id"),
                 ),
             },
@@ -228,7 +231,7 @@ fn diagnostics_are_deterministically_sorted() {
         forward.diagnostics()[0].kind(),
         CharacterRegistrationDiagnosticKind::UnknownOwner {
             owner: RegisteredExternalOwner::Environment(owner)
-        } if owner.as_str() == "environment.a"
+        } if owner.value_binding().as_str() == "environment.a"
     ));
 }
 
@@ -239,7 +242,7 @@ fn diagnostic_code_is_derived_from_kind() {
         "x",
     );
     let kind = CharacterRegistrationDiagnosticKind::UnknownOwner {
-        owner: RegisteredExternalOwner::Environment(
+        owner: environment_external_owner(
             EnvironmentBindingId::try_new("adapter.viewport").expect("environment id"),
         ),
     };
@@ -266,7 +269,7 @@ fn diagnostic_cap_128_and_129() {
             .map(|index| {
                 CharacterRegistrationDiagnostic::new(
                     CharacterRegistrationDiagnosticKind::UnknownOwner {
-                        owner: RegisteredExternalOwner::Environment(
+                        owner: environment_external_owner(
                             EnvironmentBindingId::try_new(format!("environment.{index:03}"))
                                 .expect("environment id"),
                         ),
@@ -289,7 +292,7 @@ fn diagnostic_cap_128_and_129() {
         one_over.diagnostics().last().expect("last retained").kind(),
         CharacterRegistrationDiagnosticKind::UnknownOwner {
             owner: RegisteredExternalOwner::Environment(owner)
-        } if owner.as_str() == "environment.127"
+        } if owner.value_binding().as_str() == "environment.127"
     ));
 }
 
@@ -367,6 +370,7 @@ fn unequal_cross_catalog_occurrences_conflict_atomically() {
         vec![root, first_document, changed_document],
         vec![fact],
         vec![first_catalog, changed_catalog],
+        Vec::new(),
     )
     .expect("conflicting source facts remain constructible");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
@@ -399,7 +403,7 @@ fn external_conflict_is_atomic() {
     let environment_id = EnvironmentBindingId::try_new("adapter.viewport").expect("environment id");
     let environment_fact = ExternalRegistrationFact::new(
         character_fact.declaration().clone(),
-        RegisteredExternalOwner::Environment(environment_id.clone()),
+        environment_external_owner(environment_id.clone()),
         declaration,
     );
     let catalog = SourceBackedCharacterCatalog::try_new(root.identity().clone(), vec![backed])
@@ -409,6 +413,7 @@ fn external_conflict_is_atomic() {
         vec![root, document],
         vec![environment_fact, character_fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("conflicting contributions remain observable");
     let base = TypeCheckEnv::standard().with_symbol(environment_id.as_str(), TypeKind::I32);

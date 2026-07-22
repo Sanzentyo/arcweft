@@ -275,6 +275,7 @@ dependencies = [
  "arcweft-lang-syntax",
  "arcweft-rust-abi",
  "arcweft-source",
+ "blake3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -705,6 +706,7 @@ dependencies = [
 name = "arcweft-compiler"
 version = "0.1.0"
 dependencies = [
+ "arcweft-adapter-context",
  "arcweft-agent-protocol",
  "arcweft-agent-runner",
  "arcweft-bundle",
@@ -945,6 +947,7 @@ dependencies = [
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "arcweft-presentation",
+ "arcweft-rust-abi",
  "arcweft-source",
  "arcweft-view",
  "blake3",
@@ -1013,6 +1016,7 @@ dependencies = [
  "arcweft-resource-model",
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
+ "arcweft-rust-abi",
  "arcweft-source",
  "arcweft-tooling",
  "arcweft-verify",
@@ -1431,6 +1435,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "unicode-ident",
 ]
 
 [[package]]

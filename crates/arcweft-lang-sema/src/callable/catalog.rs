@@ -5,12 +5,16 @@ use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::SourceDocumentIdentity;
 
+use super::digest::CanonicalEncoder;
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableCatalogError, CallableDocumentation,
     CallableLimits, CallableLookupKey, CallableProviderId, CallableSignatureSchema, CallableSource,
-    EnvironmentCallableId, EnvironmentCallableKind, ProjectCallablePath, ProjectNameBinding,
-    RustCallableProvenance, SignatureOrigin,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallablePublicationDigest,
+    ProjectCallablePath, ProjectNameBinding, RustCallableProvenance, SignatureOrigin,
 };
+use crate::registration::AcceptedNominalWorldStamp;
+
+const CATALOG_DOMAIN: &[u8] = b"arcweft.registered-callable-catalog.v1\0";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EnvironmentDeclarationOrdinal(u32);
@@ -39,6 +43,7 @@ pub struct CallableRecord {
     documentation: CallableDocumentation,
     source: Option<CallableSource>,
     rust: Option<RustCallableProvenance>,
+    publication_digest: Option<EnvironmentCallablePublicationDigest>,
     declaration_order: EnvironmentDeclarationOrdinal,
 }
 
@@ -53,6 +58,7 @@ impl CallableRecord {
         documentation: CallableDocumentation,
         source: Option<CallableSource>,
         rust: Option<RustCallableProvenance>,
+        publication_digest: Option<EnvironmentCallablePublicationDigest>,
         declaration_order: EnvironmentDeclarationOrdinal,
     ) -> Result<Self, CallableCatalogError> {
         match &id {
@@ -74,6 +80,9 @@ impl CallableRecord {
                 if rust.is_some() {
                     return Err(CallableCatalogError::UnexpectedProjectRustProvenance);
                 }
+                if publication_digest.is_some() {
+                    return Err(CallableCatalogError::UnexpectedProjectPublicationDigest);
+                }
             }
             CallableCandidateId::Environment(environment) => {
                 if environment.key() != &key
@@ -91,6 +100,9 @@ impl CallableRecord {
                 {
                     return Err(CallableCatalogError::IdKeyMismatch);
                 }
+                if publication_digest.is_none() {
+                    return Err(CallableCatalogError::MissingEnvironmentPublicationDigest);
+                }
             }
             _ => return Err(CallableCatalogError::IdKeyMismatch),
         }
@@ -104,6 +116,7 @@ impl CallableRecord {
             documentation,
             source,
             rust,
+            publication_digest,
             declaration_order,
         })
     }
@@ -131,6 +144,9 @@ impl CallableRecord {
     }
     pub const fn rust(&self) -> Option<&RustCallableProvenance> {
         self.rust.as_ref()
+    }
+    pub const fn publication_digest(&self) -> Option<EnvironmentCallablePublicationDigest> {
+        self.publication_digest
     }
     pub const fn declaration_order(&self) -> EnvironmentDeclarationOrdinal {
         self.declaration_order
@@ -453,7 +469,7 @@ impl EnvironmentCallableCatalog {
         records
     }
 
-    pub(crate) fn has_rust_package(&self, package: &str) -> bool {
+    pub(crate) fn has_rust_package(&self, package: &crate::env::nominal::RustPackageId) -> bool {
         self.by_id.values().any(|record| {
             matches!(
                 record.id(),
@@ -461,28 +477,40 @@ impl EnvironmentCallableCatalog {
                     if id.kind() == EnvironmentCallableKind::RustFunction
             ) && record
                 .rust()
-                .is_some_and(|rust| rust.package().name() == package)
+                .is_some_and(|rust| rust.package().name() == package.as_str())
         })
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisteredCallableCatalog {
+    nominal_world: AcceptedNominalWorldStamp,
     project: ProjectCallableCatalog,
     environment: EnvironmentCallableCatalog,
     nominal_resolutions: crate::nominal::NominalResolutionIndex,
+    digest: super::RegisteredCallableCatalogDigest,
 }
 impl RegisteredCallableCatalog {
     pub(crate) fn new(
+        nominal_world: AcceptedNominalWorldStamp,
         project: ProjectCallableCatalog,
         environment: EnvironmentCallableCatalog,
         nominal_resolutions: crate::nominal::NominalResolutionIndex,
     ) -> Self {
+        let digest = registered_catalog_digest(&nominal_world, &project, &environment);
         Self {
+            nominal_world,
             project,
             environment,
             nominal_resolutions,
+            digest,
         }
+    }
+    pub const fn nominal_world(&self) -> &AcceptedNominalWorldStamp {
+        &self.nominal_world
+    }
+    pub const fn digest(&self) -> super::RegisteredCallableCatalogDigest {
+        self.digest
     }
     pub const fn project(&self) -> &ProjectCallableCatalog {
         &self.project
@@ -509,4 +537,138 @@ impl RegisteredCallableCatalog {
     pub fn environment_record(&self, id: &EnvironmentCallableId) -> Option<&Arc<CallableRecord>> {
         self.environment.record(id)
     }
+}
+
+fn registered_catalog_digest(
+    nominal_world: &AcceptedNominalWorldStamp,
+    project: &ProjectCallableCatalog,
+    environment: &EnvironmentCallableCatalog,
+) -> super::RegisteredCallableCatalogDigest {
+    let mut encoder = CanonicalEncoder::default();
+    encoder.nominal_world(nominal_world);
+
+    let mut project_records = project.by_declaration.values().collect::<Vec<_>>();
+    project_records.sort_by_key(|record| record_identity_bytes(record));
+    encoder.usize(project_records.len());
+    for record in project_records {
+        encode_record(&mut encoder, record);
+    }
+
+    let mut environment_records = environment.by_id.values().collect::<Vec<_>>();
+    environment_records.sort_by_key(|record| record_identity_bytes(record));
+    encoder.usize(environment_records.len());
+    for record in environment_records {
+        encode_record(&mut encoder, record);
+    }
+
+    let mut bindings = project.bindings.iter().collect::<Vec<_>>();
+    bindings.sort_by_key(|(path, _)| project_path_bytes(path));
+    encoder.usize(bindings.len());
+    for (path, binding) in bindings {
+        encode_project_path(&mut encoder, path);
+        match binding {
+            ProjectNameBinding::Callable(declaration) => {
+                encoder.tag(0);
+                encoder.project_declaration(declaration);
+            }
+            ProjectNameBinding::Environment(id) => {
+                encoder.tag(1);
+                encoder.environment_id(id);
+            }
+            ProjectNameBinding::NonCallable { path, ty } => {
+                encoder.tag(2);
+                encode_project_path(&mut encoder, path);
+                encoder.bytes(ty.semantic_identity_digest().as_bytes());
+            }
+        }
+    }
+
+    let mut indexes = environment
+        .free
+        .iter()
+        .map(|(path, set)| (CallableLookupKey::Free(path.clone()), set))
+        .chain(
+            environment
+                .methods
+                .iter()
+                .map(|(method, set)| (CallableLookupKey::Method(method.clone()), set)),
+        )
+        .collect::<Vec<_>>();
+    indexes.sort_by_key(|(key, _)| lookup_key_bytes(key));
+    encoder.usize(indexes.len());
+    for (key, set) in indexes {
+        encoder.lookup_key(&key);
+        encoder.usize(set.as_slice().len());
+        for entry in set.as_slice() {
+            encode_candidate(&mut encoder, entry.primary().id());
+            let mut equivalents = entry.equivalent_sources().iter().collect::<Vec<_>>();
+            equivalents.sort_by_key(|source| candidate_bytes(source.id()));
+            encoder.usize(equivalents.len());
+            for equivalent in equivalents {
+                encode_candidate(&mut encoder, equivalent.id());
+            }
+        }
+    }
+
+    super::RegisteredCallableCatalogDigest::from_bytes(encoder.finish(CATALOG_DOMAIN))
+}
+
+fn encode_record(encoder: &mut CanonicalEncoder, record: &CallableRecord) {
+    encode_candidate(encoder, record.id());
+    encoder.lookup_key(record.key());
+    encoder.authority(record.authority());
+    encoder.provider(record.provider());
+    encoder.bytes(record.schema().semantic_digest().as_bytes());
+    encoder.option(record.publication_digest().as_ref(), |encoder, digest| {
+        encoder.bytes(digest.as_bytes());
+    });
+    encoder.documentation(record.documentation());
+    encoder.option(record.source(), CanonicalEncoder::source);
+    encoder.option(record.rust(), CanonicalEncoder::rust_provenance);
+    encoder.usize(record.declaration_order().get());
+}
+
+fn encode_candidate(encoder: &mut CanonicalEncoder, id: &CallableCandidateId) {
+    match id {
+        CallableCandidateId::Project(declaration) => {
+            encoder.tag(0);
+            encoder.project_declaration(declaration);
+        }
+        CallableCandidateId::Environment(environment) => {
+            encoder.tag(1);
+            encoder.environment_id(environment);
+        }
+        _ => unreachable!("registered catalogs contain only project and environment callables"),
+    }
+}
+
+fn encode_project_path(encoder: &mut CanonicalEncoder, path: &ProjectCallablePath) {
+    encoder.string(path.package().as_str());
+    encoder.usize(path.module().segments().len());
+    for segment in path.module().segments() {
+        encoder.string(segment.as_str());
+    }
+    encoder.lookup_key(&CallableLookupKey::Free(path.path().clone()));
+}
+
+fn record_identity_bytes(record: &CallableRecord) -> Vec<u8> {
+    candidate_bytes(record.id())
+}
+
+fn candidate_bytes(id: &CallableCandidateId) -> Vec<u8> {
+    let mut encoder = CanonicalEncoder::default();
+    encode_candidate(&mut encoder, id);
+    encoder.into_bytes()
+}
+
+fn lookup_key_bytes(key: &CallableLookupKey) -> Vec<u8> {
+    let mut encoder = CanonicalEncoder::default();
+    encoder.lookup_key(key);
+    encoder.into_bytes()
+}
+
+fn project_path_bytes(path: &ProjectCallablePath) -> Vec<u8> {
+    let mut encoder = CanonicalEncoder::default();
+    encode_project_path(&mut encoder, path);
+    encoder.into_bytes()
 }

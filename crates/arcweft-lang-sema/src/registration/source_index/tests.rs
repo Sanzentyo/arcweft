@@ -705,6 +705,7 @@ fn co_definition_order_is_deterministic_across_catalog_order() {
         documents.clone(),
         vec![fact.clone()],
         vec![catalog(first.clone()), catalog(second.clone())],
+        Vec::new(),
     )
     .expect("forward facts");
     let reverse = ProjectRegistrationFacts::try_new(
@@ -712,6 +713,7 @@ fn co_definition_order_is_deterministic_across_catalog_order() {
         documents,
         vec![fact],
         vec![catalog(second), catalog(first)],
+        Vec::new(),
     )
     .expect("reverse facts");
     let registered = register(&project, &forward, TypeCheckEnv::standard(), None)

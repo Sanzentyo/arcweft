@@ -62,6 +62,7 @@ fn registered_fixture(source: &str) -> (Arc<SourceDocument>, HirProject, Registe
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registration facts");
     let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(

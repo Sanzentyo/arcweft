@@ -93,6 +93,7 @@ fn checked_single(
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .unwrap();
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None).unwrap();
@@ -129,7 +130,8 @@ fn checked(source: &str) -> CheckedEntryBinding {
 fn checked_modules(sources: &[(&str, &str)]) -> CheckedEntryBinding {
     let (documents, project, world) = project_modules("entry-identity-order", sources);
     let facts =
-        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new()).unwrap();
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .unwrap();
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None).unwrap();
     let typecheck = analyze_registered_project_types(&project.linked_module(), &registered);
     let catalog = check_project_entries(

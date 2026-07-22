@@ -7,8 +7,14 @@ use crate::{
 
 fn registered_report(profile: &str, source: &str) -> crate::checker::TypeCheckReport {
     let (document, project, world) = root_project_source(profile, source);
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("project nominal shape registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("project nominal shape registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("project nominal shape semantic world");
     analyze_registered_project_types(&project.linked_module(), &registered)
@@ -89,8 +95,9 @@ effects {}
             ("textual", "pub struct Payload { value: String }\n"),
         ],
     );
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("qualified project nominal registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("qualified project nominal registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("qualified project nominal semantic world");
     let report = analyze_registered_project_types(&project.linked_module(), &registered);

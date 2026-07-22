@@ -47,8 +47,14 @@ entry game @entry.game.main {
 
 pub(super) fn checked(source: &str) -> CheckedEntryBinding {
     let (document, project, world) = root_project_source("checked-entry", source);
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("entry fixture registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("entry fixture registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("entry fixture semantic world");
     let typecheck =
@@ -70,8 +76,9 @@ pub(super) fn checked_project(
     sources: &[(&str, &str)],
 ) -> Result<super::CheckedEntryCatalog, Vec<super::CheckedEntryDiagnostic>> {
     let (documents, project, world) = project_modules("checked-entry-project", sources);
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("entry fixture registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("entry fixture registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("entry fixture semantic world");
     let typecheck =
@@ -86,8 +93,14 @@ pub(super) fn checked_project(
 
 fn checked_agent(source: &str) -> CheckedEntryBinding {
     let (document, project, world) = root_project_source("checked-agent-entry", source);
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("Agent entry registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("Agent entry registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("Agent entry semantic world");
     let typecheck =
@@ -186,8 +199,9 @@ fn bind_021_duplicate_entry_ids_across_modules_are_rejected() {
         "duplicate-entry",
         &[("", SOURCE), ("other", "entry cli @entry.game.main { }\n")],
     );
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("entry fixture registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("entry fixture registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("entry fixture semantic world");
     let typecheck =
@@ -377,8 +391,14 @@ entry agent @entry.agent.smoke {{
     };
 
     let (document, project, world) = root_project_source("agent-propagation-role", &with_entry);
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("Agent propagation registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("Agent propagation registration facts");
     let registered =
         register(&project, &facts, environment(), None).expect("Agent propagation semantic world");
     let report =
@@ -412,8 +432,14 @@ entry agent @entry.agent.smoke {{
     assert_eq!(controller.declaration(), declaration);
 
     let (document, project, world) = root_project_source("agent-propagation-role", function);
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("ordinary propagation registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("ordinary propagation registration facts");
     let registered = register(&project, &facts, environment(), None)
         .expect("ordinary propagation semantic world");
     let ordinary =
@@ -634,8 +660,9 @@ pub fn work() -> Unit {
         ),
     ];
     let (documents, project, world) = project_modules("same-name-effects", &sources);
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("same-name effect registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("same-name effect registration facts");
     let env = TypeCheckEnv::standard()
         .with_function_signature(
             "adapter.read_text",

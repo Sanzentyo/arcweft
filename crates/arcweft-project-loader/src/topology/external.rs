@@ -7,16 +7,19 @@ use super::{
 use arcweft_adapter_context::manifest::{
     AdapterCallableGroupIndex, AdapterCallableModelError, AdapterCallableName,
     AdapterCallableOverloadIndex, AdapterCallableParameterIndex, AdapterCallablePath,
-    AdapterEffectCapability, AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest,
-    AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol,
-    AdapterSymbolPath, AdapterSymbolPathError, AdapterSymbolSegment, AdapterTypeKind,
+    AdapterEffectCapability, AdapterEnvironmentOwnerId, AdapterFunctionParam,
+    AdapterFunctionSignature, AdapterManifest, AdapterNominalDeclaration, AdapterNominalOwner,
+    AdapterNominalPath, AdapterNominalPathError, AdapterNominalPathSegment, AdapterNominalTypeRef,
+    AdapterNominalVisibility, AdapterParameterGroup, AdapterParameterPassing,
+    AdapterParameterPresence, AdapterSymbol, AdapterSymbolPath, AdapterSymbolPathError,
+    AdapterSymbolSegment, AdapterTypeKind,
 };
 use arcweft_adapter_metadata::{AdapterFunctionExport, FunctionPurity};
 use arcweft_launch::resolve::ResolvedLaunchProfile;
 use arcweft_manifest_model::{
     ExternalModuleImportId, ManifestVisibility, ModuleMountPath, TypeReference,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Extends the selected host adapter with only the admitted, mounted module surface.
 pub(super) fn extend_selected_adapter(
@@ -76,31 +79,43 @@ pub(super) fn validate_activity_bindings(
 
 struct ExternalModuleFactBuilder {
     adapter: Option<AdapterManifest>,
-    mounted_identities: BTreeSet<String>,
+    mounted_identities: BTreeSet<Vec<String>>,
+    nominal_owner: AdapterNominalOwner,
 }
 
 impl ExternalModuleFactBuilder {
     fn new(adapter: AdapterManifest) -> Self {
+        let nominal_owner = AdapterNominalOwner::Environment {
+            owner: AdapterEnvironmentOwnerId::for_adapter(adapter.id()),
+        };
         let mut mounted_identities = adapter
             .symbols()
             .iter()
-            .map(|symbol| symbol.path().to_string())
+            .map(|symbol| {
+                symbol
+                    .path()
+                    .segments()
+                    .iter()
+                    .map(|segment| segment.as_str().to_owned())
+                    .collect::<Vec<_>>()
+            })
             .collect::<BTreeSet<_>>();
         mounted_identities.extend(
             adapter
                 .functions()
                 .iter()
-                .map(|function| callable_path_text(function.path())),
+                .map(|function| callable_path_segments(function.path())),
         );
         mounted_identities.extend(
             adapter
                 .rust_functions()
                 .iter()
-                .map(|function| callable_path_text(function.path())),
+                .map(|function| callable_path_segments(function.path())),
         );
         Self {
             adapter: Some(adapter),
             mounted_identities,
+            nominal_owner,
         }
     }
 
@@ -122,20 +137,69 @@ impl ExternalModuleFactBuilder {
         module: &LoadedExternalModuleMetadata,
     ) -> Result<(), ExternalModuleFactsError> {
         let exports = &module.metadata().metadata().exports;
-        let visible_types = exports
-            .types
-            .iter()
-            .filter(|export| export.visibility != ManifestVisibility::Private)
-            .map(|export| export.name.as_str())
-            .collect::<BTreeSet<_>>();
+        let mut local_types = BTreeMap::new();
 
-        for export in exports
-            .types
-            .iter()
-            .filter(|export| export.visibility != ManifestVisibility::Private)
-        {
-            let identity = mounted_identity(&module.import().mount, export.name.as_str());
-            self.claim_identity(identity.clone())?;
+        for export in &exports.types {
+            let nominal_path = mounted_nominal_path(&module.import().mount, export.name.as_str())
+                .map_err(|source| ExternalModuleFactsError::NominalPath {
+                import: module.import_id().clone(),
+                export: export.name.to_string(),
+                source,
+            })?;
+            self.claim_identity(
+                nominal_path
+                    .segments()
+                    .iter()
+                    .map(|segment| segment.as_str().to_owned())
+                    .collect(),
+            )?;
+            let nominal = AdapterNominalTypeRef::try_new(
+                self.nominal_owner.clone(),
+                nominal_path.clone(),
+                [],
+            )
+            .map_err(|source| ExternalModuleFactsError::NominalDeclaration {
+                import: module.import_id().clone(),
+                export: export.name.to_string(),
+                source: Box::new(source.into()),
+            })?;
+            local_types.insert(export.name.as_str(), nominal.clone());
+
+            let visibility = match export.visibility {
+                ManifestVisibility::Private => AdapterNominalVisibility::Private,
+                ManifestVisibility::Public | ManifestVisibility::Package => {
+                    AdapterNominalVisibility::Public
+                }
+            };
+            let declaration = AdapterNominalDeclaration::try_new(
+                nominal_path,
+                0,
+                visibility,
+                export.name.to_string(),
+            )
+            .map_err(|source| ExternalModuleFactsError::NominalDeclaration {
+                import: module.import_id().clone(),
+                export: export.name.to_string(),
+                source: Box::new(source.into()),
+            })?;
+            let adapter = self
+                .adapter
+                .take()
+                .ok_or(ExternalModuleFactsError::ProjectionState {
+                    operation: "inserting a nominal declaration fact",
+                })?;
+            let adapter = adapter
+                .try_with_nominal_declaration(declaration)
+                .map_err(|source| ExternalModuleFactsError::NominalDeclaration {
+                    import: module.import_id().clone(),
+                    export: export.name.to_string(),
+                    source: Box::new(source),
+                })?;
+
+            if export.visibility == ManifestVisibility::Private {
+                self.adapter = Some(adapter);
+                continue;
+            }
             let path = mounted_symbol_path(&module.import().mount, export.name.as_str()).map_err(
                 |source| ExternalModuleFactsError::Symbol {
                     import: module.import_id().clone(),
@@ -143,15 +207,10 @@ impl ExternalModuleFactBuilder {
                     source,
                 },
             )?;
-            let adapter = self
-                .adapter
-                .take()
-                .ok_or(ExternalModuleFactsError::ProjectionState {
-                    operation: "inserting a type fact",
-                })?;
-            self.adapter = Some(
-                adapter.with_symbol(AdapterSymbol::new(path, AdapterTypeKind::Named(identity))),
-            );
+            self.adapter = Some(adapter.with_symbol(AdapterSymbol::new(
+                path,
+                AdapterTypeKind::Nominal { nominal },
+            )));
         }
 
         for export in exports
@@ -159,7 +218,7 @@ impl ExternalModuleFactBuilder {
             .iter()
             .filter(|export| export.visibility != ManifestVisibility::Private)
         {
-            self.add_function(module, export, &visible_types)?;
+            self.add_function(module, export, &local_types)?;
         }
         Ok(())
     }
@@ -168,11 +227,19 @@ impl ExternalModuleFactBuilder {
         &mut self,
         module: &LoadedExternalModuleMetadata,
         export: &AdapterFunctionExport,
-        local_types: &BTreeSet<&str>,
+        local_types: &BTreeMap<&str, AdapterNominalTypeRef>,
     ) -> Result<(), ExternalModuleFactsError> {
         validate_function_purity(module, export)?;
-        let identity = mounted_identity(&module.import().mount, export.name.as_str());
-        self.claim_identity(identity)?;
+        self.claim_identity(
+            module
+                .import()
+                .mount
+                .as_str()
+                .split('.')
+                .chain([export.name.as_str()])
+                .map(str::to_owned)
+                .collect(),
+        )?;
         let path = mounted_callable_path(&module.import().mount, export.name.as_str()).map_err(
             |source| {
                 ExternalModuleFactsError::callable(module.import_id(), export.name.as_str(), source)
@@ -197,12 +264,14 @@ impl ExternalModuleFactBuilder {
         Ok(())
     }
 
-    fn claim_identity(&mut self, identity: String) -> Result<(), ExternalModuleFactsError> {
-        if self.mounted_identities.insert(identity.clone()) {
-            Ok(())
-        } else {
-            Err(ExternalModuleFactsError::DuplicateMountedIdentity { identity })
+    fn claim_identity(&mut self, identity: Vec<String>) -> Result<(), ExternalModuleFactsError> {
+        if self.mounted_identities.contains(&identity) {
+            return Err(ExternalModuleFactsError::DuplicateMountedIdentity {
+                identity: identity.join("."),
+            });
         }
+        self.mounted_identities.insert(identity);
+        Ok(())
     }
 }
 
@@ -228,7 +297,7 @@ fn validate_function_purity(
 fn mounted_function_signature(
     module: &LoadedExternalModuleMetadata,
     export: &AdapterFunctionExport,
-    local_types: &BTreeSet<&str>,
+    local_types: &BTreeMap<&str, AdapterNominalTypeRef>,
 ) -> Result<AdapterFunctionSignature, ExternalModuleFactsError> {
     let parameters = mounted_function_parameters(module, export, local_types)?;
     let group_index = AdapterCallableGroupIndex::try_from_usize(0).map_err(|source| {
@@ -239,7 +308,6 @@ fn mounted_function_signature(
     })?;
     let return_type = mounted_type(
         &export.return_type,
-        &module.import().mount,
         local_types,
         module.import_id(),
         export.name.as_str(),
@@ -252,7 +320,7 @@ fn mounted_function_signature(
 fn mounted_function_parameters(
     module: &LoadedExternalModuleMetadata,
     export: &AdapterFunctionExport,
-    local_types: &BTreeSet<&str>,
+    local_types: &BTreeMap<&str, AdapterNominalTypeRef>,
 ) -> Result<Vec<AdapterFunctionParam>, ExternalModuleFactsError> {
     export
         .params
@@ -261,7 +329,6 @@ fn mounted_function_parameters(
         .map(|(index, parameter)| {
             let ty = mounted_type(
                 &parameter.ty,
-                &module.import().mount,
                 local_types,
                 module.import_id(),
                 export.name.as_str(),
@@ -319,26 +386,34 @@ fn mounted_callable_path(
     )
 }
 
-fn mounted_identity(mount: &ModuleMountPath, leaf: &str) -> String {
-    format!("{}.{leaf}", mount.as_str())
+fn mounted_nominal_path(
+    mount: &ModuleMountPath,
+    leaf: &str,
+) -> Result<AdapterNominalPath, AdapterNominalPathError> {
+    AdapterNominalPath::try_new(
+        mount
+            .as_str()
+            .split('.')
+            .chain([leaf])
+            .map(AdapterNominalPathSegment::try_new)
+            .collect::<Result<Vec<_>, _>>()?,
+    )
 }
 
-fn callable_path_text(path: &AdapterCallablePath) -> String {
+fn callable_path_segments(path: &AdapterCallablePath) -> Vec<String> {
     path.segments()
         .iter()
-        .map(AdapterCallableName::as_str)
-        .collect::<Vec<_>>()
-        .join(".")
+        .map(|segment| segment.as_str().to_owned())
+        .collect()
 }
 
 fn mounted_type(
     reference: &TypeReference,
-    mount: &ModuleMountPath,
-    local_types: &BTreeSet<&str>,
+    local_types: &BTreeMap<&str, AdapterNominalTypeRef>,
     import: &ExternalModuleImportId,
     export: &str,
 ) -> Result<AdapterTypeKind, ExternalModuleFactsError> {
-    TypeReferenceParser::new(reference.as_str(), mount, local_types)
+    TypeReferenceParser::new(reference.as_str(), local_types)
         .parse()
         .map_err(|source| match source {
             TypeReferenceParseError::Invalid => ExternalModuleFactsError::TypeReference {
@@ -363,8 +438,7 @@ fn mounted_type(
 struct TypeReferenceParser<'a> {
     source: &'a str,
     offset: usize,
-    mount: &'a ModuleMountPath,
-    local_types: &'a BTreeSet<&'a str>,
+    local_types: &'a BTreeMap<&'a str, AdapterNominalTypeRef>,
     limits: TypeReferenceLimits,
     work: usize,
 }
@@ -380,24 +454,18 @@ enum TypeReferenceParseError {
 }
 
 impl<'a> TypeReferenceParser<'a> {
-    fn new(
-        source: &'a str,
-        mount: &'a ModuleMountPath,
-        local_types: &'a BTreeSet<&'a str>,
-    ) -> Self {
-        Self::with_limits(source, mount, local_types, TypeReferenceLimits::PRODUCTION)
+    fn new(source: &'a str, local_types: &'a BTreeMap<&'a str, AdapterNominalTypeRef>) -> Self {
+        Self::with_limits(source, local_types, TypeReferenceLimits::PRODUCTION)
     }
 
     fn with_limits(
         source: &'a str,
-        mount: &'a ModuleMountPath,
-        local_types: &'a BTreeSet<&'a str>,
+        local_types: &'a BTreeMap<&'a str, AdapterNominalTypeRef>,
         limits: TypeReferenceLimits,
     ) -> Self {
         Self {
             source,
             offset: 0,
-            mount,
             local_types,
             limits,
             work: 0,
@@ -451,7 +519,9 @@ impl<'a> TypeReferenceParser<'a> {
             if !self.consume(")") {
                 return Err(TypeReferenceParseError::Invalid);
             }
-            return Ok(AdapterTypeKind::Tuple(elements));
+            return Ok(AdapterTypeKind::Tuple {
+                items: elements.into_boxed_slice(),
+            });
         }
 
         let name = self.parse_name().ok_or(TypeReferenceParseError::Invalid)?;
@@ -462,8 +532,9 @@ impl<'a> TypeReferenceParser<'a> {
             }
             return self
                 .local_types
-                .contains(name)
-                .then(|| AdapterTypeKind::Named(mounted_identity(self.mount, name)))
+                .get(name)
+                .cloned()
+                .map(|nominal| AdapterTypeKind::Nominal { nominal })
                 .ok_or(TypeReferenceParseError::Invalid);
         }
 
@@ -476,9 +547,15 @@ impl<'a> TypeReferenceParser<'a> {
             return Err(TypeReferenceParseError::Invalid);
         }
         match (name, arguments.as_slice()) {
-            ("Vec", [element]) => Ok(AdapterTypeKind::Vec(Box::new(element.clone()))),
-            ("Seq", [element]) => Ok(AdapterTypeKind::Seq(Box::new(element.clone()))),
-            ("Option", [element]) => Ok(AdapterTypeKind::Option(Box::new(element.clone()))),
+            ("Vec", [element]) => Ok(AdapterTypeKind::Vec {
+                item: Box::new(element.clone()),
+            }),
+            ("Seq", [element]) => Ok(AdapterTypeKind::Seq {
+                item: Box::new(element.clone()),
+            }),
+            ("Option", [element]) => Ok(AdapterTypeKind::Option {
+                item: Box::new(element.clone()),
+            }),
             ("Result", [ok, error]) => Ok(AdapterTypeKind::Result {
                 ok: Box::new(ok.clone()),
                 error: Box::new(error.clone()),
@@ -530,29 +607,51 @@ impl<'a> TypeReferenceParser<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExternalModuleFactsError, TypeReferenceParseError, TypeReferenceParser, mounted_type,
+        ExternalModuleFactsError, TypeReferenceParseError, TypeReferenceParser,
+        mounted_nominal_path, mounted_type,
     };
-    use arcweft_adapter_context::manifest::AdapterTypeKind;
+    use arcweft_adapter_context::manifest::{
+        AdapterEnvironmentOwnerId, AdapterId, AdapterNominalOwner, AdapterNominalTypeRef,
+        AdapterTypeKind,
+    };
     use arcweft_manifest_model::{ExternalModuleImportId, ModuleMountPath, TypeReference};
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
 
     use crate::topology::{TypeReferenceLimitKind, TypeReferenceLimits};
+
+    fn local_types(
+        mount: &ModuleMountPath,
+        names: &[&'static str],
+    ) -> BTreeMap<&'static str, AdapterNominalTypeRef> {
+        let owner = AdapterNominalOwner::Environment {
+            owner: AdapterEnvironmentOwnerId::for_adapter(&AdapterId::new("test")),
+        };
+        names
+            .iter()
+            .copied()
+            .map(|name| {
+                let path = mounted_nominal_path(mount, name).expect("mounted nominal path");
+                let nominal = AdapterNominalTypeRef::try_new(owner.clone(), path, [])
+                    .expect("nominal reference");
+                (name, nominal)
+            })
+            .collect()
+    }
 
     #[test]
     fn type_reference_parser_mounts_nominal_types_inside_structural_types() {
         let mount = ModuleMountPath::new("mini_games.truck").expect("mount");
-        let local_types = BTreeSet::from(["TruckError", "TruckResult"]);
+        let local_types = local_types(&mount, &["TruckError", "TruckResult"]);
+        let result = local_types["TruckResult"].clone();
+        let error = local_types["TruckError"].clone();
 
         assert_eq!(
-            TypeReferenceParser::new("Need<Vec<TruckResult>, TruckError>", &mount, &local_types,)
-                .parse(),
+            TypeReferenceParser::new("Need<Vec<TruckResult>, TruckError>", &local_types).parse(),
             Ok(AdapterTypeKind::Need {
-                ready: Box::new(AdapterTypeKind::Vec(Box::new(AdapterTypeKind::Named(
-                    "mini_games.truck.TruckResult".to_owned(),
-                )))),
-                error: Box::new(AdapterTypeKind::Named(
-                    "mini_games.truck.TruckError".to_owned(),
-                )),
+                ready: Box::new(AdapterTypeKind::Vec {
+                    item: Box::new(AdapterTypeKind::Nominal { nominal: result }),
+                }),
+                error: Box::new(AdapterTypeKind::Nominal { nominal: error }),
             })
         );
     }
@@ -560,15 +659,15 @@ mod tests {
     #[test]
     fn type_reference_parser_rejects_unknown_or_trailing_input() {
         let mount = ModuleMountPath::new("truck").expect("mount");
-        let local_types = BTreeSet::from(["TruckResult"]);
+        let local_types = local_types(&mount, &["TruckResult"]);
 
         assert!(
-            TypeReferenceParser::new("Unknown", &mount, &local_types)
+            TypeReferenceParser::new("Unknown", &local_types)
                 .parse()
                 .is_err()
         );
         assert!(
-            TypeReferenceParser::new("Vec<TruckResult>>", &mount, &local_types)
+            TypeReferenceParser::new("Vec<TruckResult>>", &local_types)
                 .parse()
                 .is_err()
         );
@@ -577,12 +676,11 @@ mod tests {
     #[test]
     fn type_reference_parser_enforces_byte_depth_and_work_limits() {
         let mount = ModuleMountPath::new("truck").expect("mount");
-        let local_types = BTreeSet::from(["TruckResult"]);
+        let local_types = local_types(&mount, &["TruckResult"]);
 
         assert_eq!(
             TypeReferenceParser::with_limits(
                 "TruckResult",
-                &mount,
                 &local_types,
                 TypeReferenceLimits::new(5, usize::MAX, usize::MAX),
             )
@@ -597,7 +695,6 @@ mod tests {
         assert_eq!(
             TypeReferenceParser::with_limits(
                 "Vec<Vec<TruckResult>>",
-                &mount,
                 &local_types,
                 TypeReferenceLimits::new(usize::MAX, 2, usize::MAX),
             )
@@ -612,7 +709,6 @@ mod tests {
         assert_eq!(
             TypeReferenceParser::with_limits(
                 "(TruckResult, TruckResult)",
-                &mount,
                 &local_types,
                 TypeReferenceLimits::new(usize::MAX, usize::MAX, 2),
             )
@@ -629,12 +725,12 @@ mod tests {
     fn generated_fact_projection_reports_the_production_depth_limit() {
         let mount = ModuleMountPath::new("truck").expect("mount");
         let import = ExternalModuleImportId::new("truck").expect("import");
-        let local_types = BTreeSet::from(["TruckResult"]);
+        let local_types = local_types(&mount, &["TruckResult"]);
         let nested = (0..TypeReferenceLimits::PRODUCTION.nesting_depth())
             .fold("TruckResult".to_owned(), |inner, _| format!("Vec<{inner}>"));
         let reference = TypeReference::new(nested).expect("visible type reference");
 
-        let error = mounted_type(&reference, &mount, &local_types, &import, "drive_truck")
+        let error = mounted_type(&reference, &local_types, &import, "drive_truck")
             .expect_err("the production projector must reject excessive nesting");
         assert!(matches!(
             error,

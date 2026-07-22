@@ -89,6 +89,7 @@ pub(super) fn typecheck_registered_source(
         vec![document],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registered type-check fixture facts");
     let registered =

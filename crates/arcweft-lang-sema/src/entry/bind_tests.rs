@@ -26,8 +26,9 @@ fn diagnostics(source: &str) -> Vec<CheckedEntryDiagnostic> {
 
 fn diagnostics_with_read_text(source: &str) -> Vec<CheckedEntryDiagnostic> {
     let (documents, project, world) = project_modules("checked-entry-read-text", &[("", source)]);
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("entry fixture registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("entry fixture registration facts");
     let environment = TypeCheckEnv::standard()
         .with_function_signature(
             "adapter.read_text",
@@ -93,6 +94,7 @@ fn checked_project_ignoring_syntax_errors(
     let facts = ProjectRegistrationFacts::try_new(
         world,
         vec![Arc::clone(&document)],
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     )

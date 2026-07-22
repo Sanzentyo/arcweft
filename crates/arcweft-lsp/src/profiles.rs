@@ -14,6 +14,8 @@ pub use load::LspProfileResolver;
 pub(crate) use load::apply_registered_topology;
 pub use model::{LspProfile, ProfileSourceSelection};
 
+#[cfg(test)]
+pub(crate) use environment::register_loaded_environment;
 pub(crate) use environment::register_profile_environment_with_overlays;
 pub(crate) use uri::file_path_from_uri;
 

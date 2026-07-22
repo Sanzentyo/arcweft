@@ -1,23 +1,17 @@
 //! Typed adapter manifest model shared by product adapters, CLI, LSP, and semantic checking.
 
+use std::collections::BTreeMap;
+
 #[cfg(feature = "sema")]
-use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv, nominal::RustPackageId};
-#[cfg(feature = "sema")]
-use arcweft_lang_sema::types::TypeKind;
-#[cfg(feature = "sema")]
-use arcweft_lang_syntax::{
-    ast::{
-        module_path::ModulePathRoot,
-        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
-    },
-    types::TypePath,
-};
-#[cfg(feature = "sema")]
-use arcweft_rust_abi::ArcweftRustTypeKind;
+use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv};
 use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
-    ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeRef,
+    ArcweftRustAbiLimits, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+    ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
+    ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef, ArcweftRustVariantPayload,
 };
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+mod nominal;
 #[cfg(feature = "sema")]
 mod registration;
 mod registry;
@@ -30,8 +24,17 @@ pub use crate::callable::{
     AdapterToolingParameterDoc, AdapterToolingSubject,
 };
 pub use crate::symbol::{AdapterSymbolPath, AdapterSymbolPathError, AdapterSymbolSegment};
+pub use nominal::{
+    AdapterEnvironmentOwnerId, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
+    AdapterNominalPathError, AdapterNominalPathPrefix, AdapterNominalPathSegment,
+    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterRustPackageMountTable,
+    AdapterTypeModelError,
+};
 #[cfg(feature = "sema")]
-pub use registration::{AdapterRegistrationFactsError, SourceBackedAdapterRegistrationFacts};
+pub use registration::{
+    AdapterRegistrationFactsError, SourceBackedAdapterRegistrationFacts,
+    SourceBackedAdapterRegistrationParts,
+};
 pub use registry::{AdapterRegistry, AdapterRegistryError};
 
 /// Stable adapter identifier used by launch profiles and tooling.
@@ -39,7 +42,8 @@ pub use registry::{AdapterRegistry, AdapterRegistryError};
 pub struct AdapterId(String);
 
 /// Language-free type shape used by adapter manifests.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AdapterTypeKind {
     /// Unit value.
     Unit,
@@ -78,11 +82,11 @@ pub enum AdapterTypeKind {
     /// Unicode scalar value.
     Char,
     /// Owned vector.
-    Vec(Box<AdapterTypeKind>),
+    Vec { item: Box<AdapterTypeKind> },
     /// Deterministic sequence.
-    Seq(Box<AdapterTypeKind>),
+    Seq { item: Box<AdapterTypeKind> },
     /// Optional value.
-    Option(Box<AdapterTypeKind>),
+    Option { item: Box<AdapterTypeKind> },
     /// Fallible value.
     Result {
         /// Success payload.
@@ -91,16 +95,16 @@ pub enum AdapterTypeKind {
         error: Box<AdapterTypeKind>,
     },
     /// Tuple value.
-    Tuple(Vec<AdapterTypeKind>),
-    /// Incremental need value.
+    Tuple { items: Box<[AdapterTypeKind]> },
+    /// Incremental asynchronous value used by the existing await contract.
     Need {
         /// Ready payload.
         ready: Box<AdapterTypeKind>,
-        /// Error payload.
+        /// Failure payload.
         error: Box<AdapterTypeKind>,
     },
-    /// Adapter-defined nominal type.
-    Named(String),
+    /// Exact adapter or Rust-package nominal type.
+    Nominal { nominal: AdapterNominalTypeRef },
 }
 
 /// A symbol injected by a host adapter into the checked source environment.
@@ -162,7 +166,8 @@ pub struct AdapterRustFunction {
 /// A Rust ADT export injected into tooling metadata.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AdapterRustType {
-    package: String,
+    package: ArcweftRustPackage,
+    accepted_path: AdapterNominalPath,
     decl: ArcweftRustTypeDecl,
 }
 
@@ -171,6 +176,9 @@ pub struct AdapterRustType {
 pub struct AdapterManifest {
     id: AdapterId,
     display_name: String,
+    nominal_declarations: Vec<AdapterNominalDeclaration>,
+    rust_package_mounts: AdapterRustPackageMountTable,
+    rust_packages: BTreeMap<ArcweftRustPackageId, ArcweftRustPackage>,
     symbols: Vec<AdapterSymbol>,
     methods: Vec<AdapterMethod>,
     functions: Vec<AdapterFunction>,
@@ -179,6 +187,29 @@ pub struct AdapterManifest {
     rust_functions: Vec<AdapterRustFunction>,
     rust_types: Vec<AdapterRustType>,
     tooling_docs: Vec<AdapterToolingDoc>,
+}
+
+/// Invalid cross-package or nominal facts in one adapter manifest.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AdapterManifestModelError {
+    #[error(transparent)]
+    Callable(#[from] AdapterCallableModelError),
+    #[error(transparent)]
+    NominalPath(#[from] AdapterNominalPathError),
+    #[error(transparent)]
+    Type(#[from] AdapterTypeModelError),
+    #[error("Rust ABI manifest is invalid: {0}")]
+    RustManifest(arcweft_rust_abi::ArcweftRustManifestError),
+    #[error("Rust package `{package}` has no adapter nominal mount")]
+    MissingRustPackageMount { package: ArcweftRustPackageId },
+    #[error("Rust package `{package}` already has an adapter nominal mount")]
+    DuplicateRustPackageMount { package: ArcweftRustPackageId },
+    #[error("Rust package `{package}` was ingested more than once")]
+    DuplicateRustPackageManifest { package: ArcweftRustPackageId },
+    #[error("duplicate adapter nominal declaration at `{path}`")]
+    DuplicateNominalDeclaration { path: AdapterNominalPath },
+    #[error("Rust callable contains declaration-local type parameter {index}")]
+    CallableTypeParameter { index: usize },
 }
 
 impl AdapterId {
@@ -407,8 +438,13 @@ impl AdapterRustFunction {
 
 impl AdapterRustType {
     /// Rust adapter package that exported this type.
-    pub fn package(&self) -> &str {
+    pub const fn package(&self) -> &ArcweftRustPackage {
         &self.package
+    }
+
+    /// Exact source-visible path after applying the package mount.
+    pub const fn accepted_path(&self) -> &AdapterNominalPath {
+        &self.accepted_path
     }
 
     /// Exported Rust ADT declaration.
@@ -423,6 +459,9 @@ impl AdapterManifest {
         Self {
             id: AdapterId::new(id),
             display_name: display_name.into(),
+            nominal_declarations: Vec::new(),
+            rust_package_mounts: AdapterRustPackageMountTable::default(),
+            rust_packages: BTreeMap::new(),
             symbols: Vec::new(),
             methods: Vec::new(),
             functions: Vec::new(),
@@ -510,34 +549,88 @@ impl AdapterManifest {
         self
     }
 
-    /// Adds Rust ABI metadata exported by an adapter crate.
-    pub fn try_with_rust_manifest(
+    /// Adds one exact Rust package mount before its metadata is ingested.
+    pub fn try_with_rust_package_mount(
         mut self,
-        manifest: &ArcweftRustManifest,
-    ) -> Result<Self, AdapterCallableModelError> {
-        let package = manifest.package.clone();
-        self.rust_types
-            .extend(manifest.types.iter().cloned().map(|decl| AdapterRustType {
-                package: package.name.clone(),
-                decl,
-            }));
-        for (overload, function) in manifest.functions.iter().enumerate() {
-            self.rust_functions
-                .push(adapter_rust_function(package.clone(), overload, function)?);
+        package: ArcweftRustPackageId,
+        prefix: AdapterNominalPathPrefix,
+    ) -> Result<Self, AdapterManifestModelError> {
+        if self.rust_package_mounts.get(&package).is_some() {
+            return Err(AdapterManifestModelError::DuplicateRustPackageMount { package });
         }
+        self.rust_package_mounts.insert(package, prefix);
         Ok(self)
     }
 
-    /// Applies this adapter manifest to an existing checker environment.
+    /// Adds one adapter-native nominal declaration owned by this manifest.
+    pub fn try_with_nominal_declaration(
+        mut self,
+        declaration: AdapterNominalDeclaration,
+    ) -> Result<Self, AdapterManifestModelError> {
+        if self
+            .nominal_declarations
+            .iter()
+            .any(|current| current.path() == declaration.path())
+        {
+            return Err(AdapterManifestModelError::DuplicateNominalDeclaration {
+                path: declaration.path().clone(),
+            });
+        }
+        self.nominal_declarations.push(declaration);
+        Ok(self)
+    }
+
+    /// Adds validated Rust ABI metadata exported by an adapter crate.
+    pub fn try_with_rust_manifest(
+        mut self,
+        manifest: &ArcweftRustManifest,
+    ) -> Result<Self, AdapterManifestModelError> {
+        manifest
+            .validate(ArcweftRustAbiLimits::PRODUCTION)
+            .map_err(AdapterManifestModelError::RustManifest)?;
+        let package = manifest.package.clone();
+        let package_id = package.id.clone();
+        let prefix = require_package_mount(&self.rust_package_mounts, &package_id)?.clone();
+        if self.rust_packages.contains_key(&package_id) {
+            return Err(AdapterManifestModelError::DuplicateRustPackageManifest {
+                package: package_id,
+            });
+        }
+        for declaration in &manifest.types {
+            require_type_decl_mounts(&self.rust_package_mounts, declaration)?;
+        }
+        for function in &manifest.functions {
+            for parameter in &function.params {
+                require_type_ref_mounts(&self.rust_package_mounts, &parameter.ty)?;
+            }
+            require_type_ref_mounts(&self.rust_package_mounts, &function.return_type)?;
+        }
+        for decl in manifest.types.iter().cloned() {
+            let accepted_path = prefix.join(&decl.path)?;
+            self.rust_types.push(AdapterRustType {
+                package: package.clone(),
+                accepted_path,
+                decl,
+            });
+        }
+        for (overload, function) in manifest.functions.iter().enumerate() {
+            self.rust_functions.push(adapter_rust_function(
+                package.clone(),
+                &self.rust_package_mounts,
+                overload,
+                function,
+            )?);
+        }
+        self.rust_packages.insert(package_id, package);
+        Ok(self)
+    }
+
+    /// Declares this manifest's effect capabilities to a checker environment.
     #[cfg(feature = "sema")]
-    pub fn apply_to_env(&self, env: TypeCheckEnv) -> TypeCheckEnv {
-        let env = self.symbols.iter().fold(env, |env, symbol| {
-            env.with_symbol(symbol.path().to_string(), symbol.ty().to_sema_type_kind())
-        });
-        let env = self.effects.iter().fold(env, |env, effect| {
+    pub fn declare_effects(&self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.effects.iter().fold(env, |env, effect| {
             env.with_capability(effect.to_sema_effect_capability())
-        });
-        self.rust_types.iter().fold(env, apply_rust_type_to_env)
+        })
     }
 
     /// Marks this manifest's effects as provided by the selected target.
@@ -548,15 +641,32 @@ impl AdapterManifest {
         })
     }
 
-    /// Applies this manifest and marks its effects as target-provided.
+    /// Declares this manifest's effects and marks them as target-provided.
     #[cfg(feature = "sema")]
-    pub fn apply_to_target_env(&self, env: TypeCheckEnv) -> TypeCheckEnv {
-        self.grant_effect_availability(self.apply_to_env(env))
+    pub fn declare_target_effects(&self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.grant_effect_availability(self.declare_effects(env))
     }
 
     /// Injected symbols, preserved for tooling and diagnostics.
     pub fn symbols(&self) -> &[AdapterSymbol] {
         &self.symbols
+    }
+
+    /// Adapter-native nominal declarations in authored order.
+    pub fn nominal_declarations(&self) -> &[AdapterNominalDeclaration] {
+        &self.nominal_declarations
+    }
+
+    /// Exact Rust package mounts accepted before metadata ingestion.
+    pub const fn rust_package_mounts(&self) -> &AdapterRustPackageMountTable {
+        &self.rust_package_mounts
+    }
+
+    /// Exact Rust package provenance accepted by this manifest.
+    pub fn rust_packages(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&ArcweftRustPackageId, &ArcweftRustPackage)> {
+        self.rust_packages.iter()
     }
 
     /// Injected methods, preserved for tooling and diagnostics.
@@ -607,9 +717,10 @@ impl AdapterManifest {
 
 fn adapter_rust_function(
     package: ArcweftRustPackage,
+    mounts: &AdapterRustPackageMountTable,
     overload: usize,
     function: &ArcweftRustFunction,
-) -> Result<AdapterRustFunction, AdapterCallableModelError> {
+) -> Result<AdapterRustFunction, AdapterManifestModelError> {
     Ok(AdapterRustFunction {
         package,
         path: AdapterCallablePath::single(AdapterCallableName::try_new(function.name.clone())?),
@@ -620,9 +731,9 @@ fn adapter_rust_function(
                 .params
                 .iter()
                 .enumerate()
-                .map(|(index, parameter)| adapter_function_param(index, parameter))
+                .map(|(index, parameter)| adapter_function_param(mounts, index, parameter))
                 .collect::<Result<Vec<_>, _>>()?,
-            rust_type_ref_to_adapter_type_kind(&function.return_type),
+            rust_type_ref_to_adapter_type_kind(mounts, &function.return_type)?,
         )?,
         purity: function.purity,
         effects: function
@@ -635,16 +746,17 @@ fn adapter_rust_function(
 }
 
 fn adapter_function_param(
+    mounts: &AdapterRustPackageMountTable,
     index: usize,
     parameter: &ArcweftRustParam,
-) -> Result<AdapterFunctionParam, AdapterCallableModelError> {
-    AdapterFunctionParam::try_new(
+) -> Result<AdapterFunctionParam, AdapterManifestModelError> {
+    Ok(AdapterFunctionParam::try_new(
         AdapterCallableParameterIndex::try_from_usize(index)?,
         Some(AdapterCallableName::try_new(parameter.name.clone())?),
-        rust_type_ref_to_adapter_type_kind(&parameter.ty),
+        rust_type_ref_to_adapter_type_kind(mounts, &parameter.ty)?,
         AdapterParameterPassing::PositionalOrNamed,
         AdapterParameterPresence::Required,
-    )
+    )?)
 }
 
 fn adapter_function_signature(
@@ -661,42 +773,11 @@ fn empty_adapter_signature(return_type: AdapterTypeKind) -> AdapterFunctionSigna
         .expect("empty initial adapter signature is structurally valid")
 }
 
-#[cfg(feature = "sema")]
-fn apply_rust_type_to_env(env: TypeCheckEnv, ty: &AdapterRustType) -> TypeCheckEnv {
-    let type_kind = TypeKind::Named(ty.decl.name.clone());
-    let package = RustPackageId::try_new(ty.package.clone())
-        .expect("ingested Rust manifests have valid package identifiers");
-    let path = rust_type_path(&ty.decl.name);
-    let env = env
-        .try_with_rust_type_export(package, path)
-        .expect("ingested Rust manifests have unique, valid type exports");
-    match &ty.decl.kind {
-        ArcweftRustTypeKind::Enum { variants } => env
-            .try_with_enum_variants(
-                type_kind,
-                variants
-                    .iter()
-                    .filter(|variant| variant.fields.is_empty())
-                    .map(|variant| variant.name.clone()),
-            )
-            .expect("Rust adapter enum types are ordinary nominal types"),
-        ArcweftRustTypeKind::Struct { .. } | ArcweftRustTypeKind::Newtype { .. } => env,
-    }
-}
-
-#[cfg(feature = "sema")]
-fn rust_type_path(name: &str) -> TypePath {
-    ProjectSymbolPath::new(
-        ModulePathRoot::ImplicitCrate,
-        [ProjectSymbolSegment::try_new(name)
-            .expect("ingested Rust manifests have valid type identifiers")],
-    )
-    .expect("one valid segment forms a project-symbol path")
-    .into()
-}
-
-fn rust_type_ref_to_adapter_type_kind(ty: &ArcweftRustTypeRef) -> AdapterTypeKind {
-    match ty {
+fn rust_type_ref_to_adapter_type_kind(
+    mounts: &AdapterRustPackageMountTable,
+    ty: &ArcweftRustTypeRef,
+) -> Result<AdapterTypeKind, AdapterManifestModelError> {
+    Ok(match ty {
         ArcweftRustTypeRef::Unit => AdapterTypeKind::Unit,
         ArcweftRustTypeRef::Bool => AdapterTypeKind::Bool,
         ArcweftRustTypeRef::I8 => AdapterTypeKind::I8,
@@ -715,72 +796,139 @@ fn rust_type_ref_to_adapter_type_kind(ty: &ArcweftRustTypeRef) -> AdapterTypeKin
         ArcweftRustTypeRef::F64 => AdapterTypeKind::F64,
         ArcweftRustTypeRef::String => AdapterTypeKind::String,
         ArcweftRustTypeRef::Char => AdapterTypeKind::Char,
-        ArcweftRustTypeRef::Vec { item } => {
-            AdapterTypeKind::Vec(Box::new(rust_type_ref_to_adapter_type_kind(item)))
-        }
-        ArcweftRustTypeRef::Seq { item } => {
-            AdapterTypeKind::Seq(Box::new(rust_type_ref_to_adapter_type_kind(item)))
-        }
-        ArcweftRustTypeRef::Option { item } => {
-            AdapterTypeKind::Option(Box::new(rust_type_ref_to_adapter_type_kind(item)))
-        }
-        ArcweftRustTypeRef::Result { ok, error } => AdapterTypeKind::Result {
-            ok: Box::new(rust_type_ref_to_adapter_type_kind(ok)),
-            error: Box::new(rust_type_ref_to_adapter_type_kind(error)),
+        ArcweftRustTypeRef::Vec { item } => AdapterTypeKind::Vec {
+            item: Box::new(rust_type_ref_to_adapter_type_kind(mounts, item)?),
         },
-        ArcweftRustTypeRef::Tuple { items } => AdapterTypeKind::Tuple(
-            items
+        ArcweftRustTypeRef::Seq { item } => AdapterTypeKind::Seq {
+            item: Box::new(rust_type_ref_to_adapter_type_kind(mounts, item)?),
+        },
+        ArcweftRustTypeRef::Option { item } => AdapterTypeKind::Option {
+            item: Box::new(rust_type_ref_to_adapter_type_kind(mounts, item)?),
+        },
+        ArcweftRustTypeRef::Result { ok, error } => AdapterTypeKind::Result {
+            ok: Box::new(rust_type_ref_to_adapter_type_kind(mounts, ok)?),
+            error: Box::new(rust_type_ref_to_adapter_type_kind(mounts, error)?),
+        },
+        ArcweftRustTypeRef::Tuple { items } => AdapterTypeKind::Tuple {
+            items: items
                 .iter()
-                .map(rust_type_ref_to_adapter_type_kind)
-                .collect(),
-        ),
-        ArcweftRustTypeRef::Named { name } => AdapterTypeKind::primitive_name(name)
-            .unwrap_or_else(|| AdapterTypeKind::Named(name.clone())),
+                .map(|item| rust_type_ref_to_adapter_type_kind(mounts, item))
+                .collect::<Result<Box<[_]>, _>>()?,
+        },
+        ArcweftRustTypeRef::Nominal {
+            package,
+            path,
+            arguments,
+        } => {
+            let prefix = require_package_mount(mounts, package)?;
+            let path = prefix.join(path)?;
+            let arguments = arguments
+                .iter()
+                .map(|argument| rust_type_ref_to_adapter_type_kind(mounts, argument))
+                .collect::<Result<Vec<_>, _>>()?;
+            AdapterTypeKind::Nominal {
+                nominal: AdapterNominalTypeRef::try_new(
+                    AdapterNominalOwner::RustPackage {
+                        package: package.clone(),
+                    },
+                    path,
+                    arguments,
+                )?,
+            }
+        }
+        ArcweftRustTypeRef::TypeParameter { index } => {
+            return Err(AdapterManifestModelError::CallableTypeParameter { index: index.get() });
+        }
+    })
+}
+
+fn require_package_mount<'a>(
+    mounts: &'a AdapterRustPackageMountTable,
+    package: &ArcweftRustPackageId,
+) -> Result<&'a AdapterNominalPathPrefix, AdapterManifestModelError> {
+    mounts
+        .get(package)
+        .ok_or_else(|| AdapterManifestModelError::MissingRustPackageMount {
+            package: package.clone(),
+        })
+}
+
+fn require_type_decl_mounts(
+    mounts: &AdapterRustPackageMountTable,
+    declaration: &ArcweftRustTypeDecl,
+) -> Result<(), AdapterManifestModelError> {
+    match &declaration.kind {
+        ArcweftRustTypeKind::Struct { shape } => match shape {
+            ArcweftRustStructShape::Unit => Ok(()),
+            ArcweftRustStructShape::Tuple { fields } => require_type_refs_mounts(mounts, fields),
+            ArcweftRustStructShape::Record { fields } => fields
+                .iter()
+                .try_for_each(|field| require_type_ref_mounts(mounts, &field.ty)),
+        },
+        ArcweftRustTypeKind::Enum { variants } => {
+            variants
+                .iter()
+                .try_for_each(|variant| match &variant.payload {
+                    ArcweftRustVariantPayload::Unit => Ok(()),
+                    ArcweftRustVariantPayload::Tuple { fields } => {
+                        require_type_refs_mounts(mounts, fields)
+                    }
+                    ArcweftRustVariantPayload::Record { fields } => fields
+                        .iter()
+                        .try_for_each(|field| require_type_ref_mounts(mounts, &field.ty)),
+                })
+        }
+        ArcweftRustTypeKind::Newtype { inner } => require_type_ref_mounts(mounts, inner),
     }
 }
 
-#[cfg(feature = "sema")]
-impl AdapterTypeKind {
-    /// Converts this adapter type shape into the semantic checker type model.
-    pub fn to_sema_type_kind(&self) -> TypeKind {
-        match self {
-            Self::Unit => TypeKind::Unit,
-            Self::Bool => TypeKind::Bool,
-            Self::I8 => TypeKind::I8,
-            Self::I16 => TypeKind::I16,
-            Self::I32 => TypeKind::I32,
-            Self::I64 => TypeKind::I64,
-            Self::I128 => TypeKind::I128,
-            Self::ISize => TypeKind::ISize,
-            Self::U8 => TypeKind::U8,
-            Self::U16 => TypeKind::U16,
-            Self::U32 => TypeKind::U32,
-            Self::U64 => TypeKind::U64,
-            Self::U128 => TypeKind::U128,
-            Self::USize => TypeKind::USize,
-            Self::F32 => TypeKind::F32,
-            Self::F64 => TypeKind::F64,
-            Self::String => TypeKind::String,
-            Self::Char => TypeKind::Char,
-            Self::Vec(item) => TypeKind::Vec(Box::new(item.to_sema_type_kind())),
-            Self::Seq(item) => TypeKind::Seq(Box::new(item.to_sema_type_kind())),
-            Self::Option(item) => TypeKind::Option(Box::new(item.to_sema_type_kind())),
-            Self::Result { ok, error } => TypeKind::Result {
-                ok: Box::new(ok.to_sema_type_kind()),
-                error: Box::new(error.to_sema_type_kind()),
-            },
-            Self::Tuple(items) => TypeKind::Tuple(
-                items
-                    .iter()
-                    .map(AdapterTypeKind::to_sema_type_kind)
-                    .collect(),
-            ),
-            Self::Need { ready, error } => TypeKind::Need {
-                ready: Box::new(ready.to_sema_type_kind()),
-                error: Box::new(error.to_sema_type_kind()),
-            },
-            Self::Named(name) => TypeKind::Named(name.clone()),
+fn require_type_refs_mounts(
+    mounts: &AdapterRustPackageMountTable,
+    types: &[ArcweftRustTypeRef],
+) -> Result<(), AdapterManifestModelError> {
+    types
+        .iter()
+        .try_for_each(|ty| require_type_ref_mounts(mounts, ty))
+}
+
+fn require_type_ref_mounts(
+    mounts: &AdapterRustPackageMountTable,
+    ty: &ArcweftRustTypeRef,
+) -> Result<(), AdapterManifestModelError> {
+    match ty {
+        ArcweftRustTypeRef::Vec { item }
+        | ArcweftRustTypeRef::Seq { item }
+        | ArcweftRustTypeRef::Option { item } => require_type_ref_mounts(mounts, item),
+        ArcweftRustTypeRef::Result { ok, error } => {
+            require_type_ref_mounts(mounts, ok)?;
+            require_type_ref_mounts(mounts, error)
         }
+        ArcweftRustTypeRef::Tuple { items } => require_type_refs_mounts(mounts, items),
+        ArcweftRustTypeRef::Nominal {
+            package, arguments, ..
+        } => {
+            require_package_mount(mounts, package)?;
+            require_type_refs_mounts(mounts, arguments)
+        }
+        ArcweftRustTypeRef::Unit
+        | ArcweftRustTypeRef::Bool
+        | ArcweftRustTypeRef::I8
+        | ArcweftRustTypeRef::I16
+        | ArcweftRustTypeRef::I32
+        | ArcweftRustTypeRef::I64
+        | ArcweftRustTypeRef::I128
+        | ArcweftRustTypeRef::ISize
+        | ArcweftRustTypeRef::U8
+        | ArcweftRustTypeRef::U16
+        | ArcweftRustTypeRef::U32
+        | ArcweftRustTypeRef::U64
+        | ArcweftRustTypeRef::U128
+        | ArcweftRustTypeRef::USize
+        | ArcweftRustTypeRef::F32
+        | ArcweftRustTypeRef::F64
+        | ArcweftRustTypeRef::String
+        | ArcweftRustTypeRef::Char
+        | ArcweftRustTypeRef::TypeParameter { .. } => Ok(()),
     }
 }
 

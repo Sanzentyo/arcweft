@@ -26,8 +26,8 @@ use arcweft_lang_sema::{
         CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
         CallableParameterPresence, CallableParameterType, CallablePath, CallableSignatureSchema,
         CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
-        EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
-        EnvironmentDeclarationOrdinal, PRODUCTION_CALLABLE_LIMITS, PresentationCallableId,
+        EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
+        PRODUCTION_CALLABLE_LIMITS, PresentationCallableId, ProjectCallablePath,
         SemanticSignatureHelp, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     effect_row::EffectRow,
@@ -40,8 +40,14 @@ use arcweft_lang_sema::{
         },
     },
     registration::{
-        CharacterRegistrar, CharacterRegistrationRequest, ExternalRegistrationFact,
-        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredSemanticWorld,
+        CharacterRegistrar, CharacterRegistrationRequest, EnvironmentCallableLookupInput,
+        EnvironmentCallablePublicationMetadataInput, EnvironmentCallablePublicationRecordInput,
+        EnvironmentCallableSignatureInput, EnvironmentManifestDigest,
+        EnvironmentParameterGroupInput, EnvironmentParameterInput,
+        EnvironmentParameterMetadataInput, EnvironmentParameterTypeInput,
+        EnvironmentPublicationItemId, EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode,
+        ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredExternalOwner,
+        RegisteredSemanticWorld, SourceBackedEnvironmentRegistrationInput,
     },
     signature::{
         SignatureNotApplicable, SignatureQuery, SignatureQueryControl, SignatureQueryOutcome,
@@ -66,6 +72,11 @@ struct SignatureFixture {
     world: RegisteredSemanticWorld,
 }
 
+struct TestPublication {
+    owner: EnvironmentCallableOwner,
+    records: Vec<EnvironmentCallablePublicationRecord>,
+}
+
 fn type_path(source: &str) -> TypePath {
     let authored = parse_type_ref(source).expect("fixture type path parses");
     let TypeRef::Path(path) = authored.value() else {
@@ -79,7 +90,7 @@ impl SignatureFixture {
         name: &str,
         source: &str,
         environment: TypeCheckEnv,
-        publications: Vec<EnvironmentCallablePublication>,
+        publications: Vec<TestPublication>,
     ) -> Self {
         let document = Arc::new(
             SourceDocument::try_new(
@@ -114,13 +125,35 @@ impl SignatureFixture {
         )
         .expect("symbol world");
         let manifest = character_manifest();
-        let registration = registration_facts(&document, world_id, &manifest);
-        let mut request =
-            CharacterRegistrationRequest::new(Arc::new(environment), &project, &registration, None);
-        for publication in publications {
-            request = request.with_callable_publication(publication);
+        let mut environment_documents = Vec::new();
+        let mut environment_inputs = Vec::new();
+        for (index, publication) in publications.into_iter().enumerate() {
+            let environment_document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(format!("memory:///{name}-environment-{index}"))
+                        .expect("environment source ID"),
+                    SourceName::Generated,
+                    "environment publication",
+                )
+                .expect("environment source"),
+            );
+            environment_inputs.push(environment_input(publication, &environment_document));
+            environment_documents.push(environment_document);
         }
-        let world = CharacterRegistrar::register(request).expect("registered semantic world");
+        let registration = registration_facts(
+            &document,
+            world_id,
+            &manifest,
+            environment_documents,
+            environment_inputs,
+        );
+        let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+            Arc::new(environment),
+            &project,
+            &registration,
+            None,
+        ))
+        .expect("registered semantic world");
         Self {
             document,
             project,
@@ -197,6 +230,8 @@ fn registration_facts(
     source: &Arc<SourceDocument>,
     world: ProjectSymbolWorldId,
     manifest: &CharacterManifest,
+    environment_documents: Vec<Arc<SourceDocument>>,
+    environment_inputs: Vec<SourceBackedEnvironmentRegistrationInput>,
 ) -> ProjectRegistrationFacts {
     let manifest_document = Arc::new(
         SourceDocument::try_new(
@@ -225,9 +260,11 @@ fn registration_facts(
         character_bindings(&declaration),
     )
     .expect("character declaration");
+    let mut documents = vec![Arc::clone(source), Arc::clone(&manifest_document)];
+    documents.extend(environment_documents);
     ProjectRegistrationFacts::try_new(
         world,
-        vec![Arc::clone(source), Arc::clone(&manifest_document)],
+        documents,
         vec![ExternalRegistrationFact::new(
             seed,
             RegisteredExternalOwner::Character(owner),
@@ -237,6 +274,7 @@ fn registration_facts(
             SourceBackedCharacterCatalog::try_new(source.identity().clone(), vec![source_backed])
                 .expect("character catalog"),
         ],
+        environment_inputs,
     )
     .expect("registration facts")
 }
@@ -823,7 +861,7 @@ fn main(actor: Actor) -> Unit {
     );
 }
 
-fn adapter_nominal_publication(nominal: TypeKind) -> EnvironmentCallablePublication {
+fn adapter_nominal_publication(nominal: TypeKind) -> TestPublication {
     let parameter = CallableParameter::try_new(
         CallableParameterIndex::try_from_usize(0).expect("parameter zero"),
         Some(CallableName::try_new("look").expect("parameter name")),
@@ -869,12 +907,132 @@ fn adapter_nominal_publication(nominal: TypeKind) -> EnvironmentCallablePublicat
         EnvironmentDeclarationOrdinal::try_from_usize(0).expect("ordinal zero"),
     )
     .expect("adapter record");
-    EnvironmentCallablePublication::try_new(
-        EnvironmentCallableOwner::Adapter(
+    TestPublication {
+        owner: EnvironmentCallableOwner::Adapter(
             AdapterPackageId::try_new("adapter.nominal-surface").expect("adapter ID"),
         ),
-        vec![record],
-        &PRODUCTION_CALLABLE_LIMITS,
+        records: vec![record],
+    }
+}
+
+fn environment_input(
+    publication: TestPublication,
+    source: &SourceDocument,
+) -> SourceBackedEnvironmentRegistrationInput {
+    let span = source
+        .span(SourceRange::new(0, source.text().len()))
+        .expect("environment source span");
+    let package = CallablePackageId::try_new(match &publication.owner {
+        EnvironmentCallableOwner::Adapter(owner) => owner.as_str(),
+        EnvironmentCallableOwner::Standard(_) => "standard-signature-matrix",
+    })
+    .expect("environment package");
+    let records = publication
+        .records
+        .into_iter()
+        .map(|record| {
+            let CallableLookupKey::Free(path) = record.key() else {
+                panic!("signature matrix publishes only free callables")
+            };
+            let path = ProjectCallablePath::new(
+                package.clone(),
+                CanonicalModulePath::crate_root(),
+                path.clone(),
+            );
+            let item = EnvironmentPublicationItemId::AdapterFunction {
+                owner: publication.owner.clone(),
+                path: path.clone(),
+                overload: record.overload(),
+            };
+            let groups = record
+                .schema()
+                .groups()
+                .iter()
+                .map(|group| {
+                    EnvironmentParameterGroupInput::new(
+                        group.index(),
+                        group.kind(),
+                        group
+                            .parameters()
+                            .iter()
+                            .map(|parameter| {
+                                EnvironmentParameterInput::new(
+                                    parameter.index(),
+                                    parameter.name().cloned(),
+                                    match parameter.ty() {
+                                        CallableParameterType::Exact(ty) => {
+                                            EnvironmentParameterTypeInput::Exact(neutral_type(
+                                                ty, &span,
+                                            ))
+                                        }
+                                        CallableParameterType::Unchecked => {
+                                            EnvironmentParameterTypeInput::Unchecked {
+                                                source: span.clone(),
+                                            }
+                                        }
+                                    },
+                                    parameter.passing(),
+                                    parameter.presence(),
+                                    EnvironmentParameterMetadataInput::new(
+                                        parameter.documentation().map(Into::into),
+                                        None,
+                                    ),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            EnvironmentCallablePublicationRecordInput::new(
+                item,
+                record.kind(),
+                EnvironmentCallableLookupInput::Free(path),
+                record.overload(),
+                EnvironmentCallableSignatureInput::new(
+                    groups,
+                    neutral_type(record.schema().result(), &span),
+                    record.schema().effects().declared().clone(),
+                    record.schema().argument_policy(),
+                    record.schema().validator().clone(),
+                ),
+                record.declaration_order(),
+                EnvironmentCallablePublicationMetadataInput::new(
+                    record.documentation().clone(),
+                    record.source().cloned(),
+                    record.rust().cloned(),
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    SourceBackedEnvironmentRegistrationInput::new(
+        publication.owner,
+        source.identity().clone(),
+        EnvironmentManifestDigest::from_bytes(*blake3::hash(source.text().as_bytes()).as_bytes()),
+        [],
+        [],
+        [],
+        records,
     )
-    .expect("adapter publication")
+}
+
+fn neutral_type(ty: &TypeKind, source: &SourceSpan) -> EnvironmentTypeProjectionNode {
+    let kind = match ty {
+        TypeKind::Unit => EnvironmentTypeProjectionKind::Unit,
+        TypeKind::Bool => EnvironmentTypeProjectionKind::Bool,
+        TypeKind::I32 => EnvironmentTypeProjectionKind::I32,
+        TypeKind::String => EnvironmentTypeProjectionKind::String,
+        TypeKind::CharacterNominal(nominal) => {
+            EnvironmentTypeProjectionKind::CharacterNominal(nominal.clone())
+        }
+        TypeKind::AcceptedNominal(nominal) => EnvironmentTypeProjectionKind::AcceptedNominal {
+            id: nominal.declaration().clone(),
+            arguments: nominal
+                .arguments()
+                .iter()
+                .map(|argument| neutral_type(argument, source))
+                .collect(),
+        },
+        other => panic!("unsupported signature-matrix environment type: {other:?}"),
+    };
+    EnvironmentTypeProjectionNode::new(source.clone(), kind)
 }

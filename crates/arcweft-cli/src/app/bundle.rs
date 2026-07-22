@@ -48,7 +48,7 @@ use arcweft_core::{
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
-use arcweft_id::{PublicId, RetainedIdentityFamily};
+use arcweft_id::{AssetId, AssetVirtualPath, PublicId, RetainedIdentityFamily};
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -1230,6 +1230,13 @@ fn collect_bundle_image_assets(
         .flatten()
         .collect::<Vec<_>>();
     assets.sort_by(|left, right| left.id.cmp(&right.id));
+    if let Some(collision) = assets.windows(2).find(|pair| pair[0].id == pair[1].id) {
+        eprintln!(
+            "error: bundled image asset paths {} and {} derive the same stable identity {}",
+            collision[0].file.path, collision[1].file.path, collision[0].id
+        );
+        return Err(ExitCode::FAILURE);
+    }
     Ok(assets)
 }
 
@@ -1239,9 +1246,20 @@ fn bundle_image_asset_from_virtual_file(
     let Some(format) = bundle_image_format_from_path(&file.path) else {
         return Ok(None);
     };
-    let Some(id) = bundle_asset_id_from_virtual_path(&file.path) else {
-        return Ok(None);
-    };
+    let virtual_path = AssetVirtualPath::try_new(file.path.clone()).map_err(|error| {
+        eprintln!(
+            "error: bundled image asset has an invalid virtual path {}: {error}",
+            file.path
+        );
+        ExitCode::FAILURE
+    })?;
+    let id = AssetId::try_from(&virtual_path).map_err(|error| {
+        eprintln!(
+            "error: bundled image asset cannot form a stable asset identity {}: {error}",
+            file.path
+        );
+        ExitCode::FAILURE
+    })?;
     let decoded = arcweft_image::decode_image_bytes(
         bundle_image_decode_format(format),
         &file.bytes,
@@ -1256,7 +1274,7 @@ fn bundle_image_asset_from_virtual_file(
     })?;
     let dimensions = decoded.dimensions();
     Ok(Some(BundleImageAsset {
-        id,
+        id: id.as_str().to_owned(),
         file: BundleVirtualFileRef {
             space: file.space,
             path: file.path.clone(),
@@ -1291,36 +1309,6 @@ const fn bundle_image_decode_format(format: BundleImageFormat) -> arcweft_image:
         BundleImageFormat::Gif => arcweft_image::ImageFormat::Gif,
         BundleImageFormat::WebP => arcweft_image::ImageFormat::WebP,
     }
-}
-
-fn bundle_asset_id_from_virtual_path(path: &str) -> Option<String> {
-    let without_extension = path.rsplit_once('.').map_or(path, |(stem, _)| stem);
-    let parts = without_extension
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .map(bundle_asset_id_component)
-        .collect::<Option<Vec<_>>>()?;
-    (!parts.is_empty()).then(|| format!("asset.{}", parts.join(".")))
-}
-
-fn bundle_asset_id_component(value: &str) -> Option<String> {
-    let component = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() {
-                ch.to_ascii_lowercase()
-            } else if matches!(ch, '_' | '-') {
-                '_'
-            } else {
-                '\0'
-            }
-        })
-        .collect::<String>();
-    (!component.is_empty()
-        && component
-            .chars()
-            .all(|ch| ch == '_' || ch.is_ascii_lowercase() || ch.is_ascii_digit()))
-    .then_some(component)
 }
 
 fn collect_bundle_virtual_files_for_space(

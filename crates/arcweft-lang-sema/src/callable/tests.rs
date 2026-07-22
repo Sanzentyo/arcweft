@@ -25,8 +25,12 @@ use arcweft_lang_syntax::{
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
 use crate::{
-    canonicalization::SemanticScopeId, checker::TypeExpressionId, effect_row::EffectRow,
-    env::TypeCheckEnv, registration::AcceptedNominalWorld, types::TypeKind,
+    canonicalization::SemanticScopeId,
+    checker::TypeExpressionId,
+    effect_row::EffectRow,
+    env::TypeCheckEnv,
+    registration::{AcceptedNominalWorld, EnvironmentManifestDigest},
+    types::TypeKind,
 };
 
 use super::limits::{CatalogBuildWork, ResolverWork, SignatureQueryWorkMeter};
@@ -42,12 +46,13 @@ use super::{
     CallableParameterType, CallablePath, CallablePathError, CallableQueryLimitError,
     CallableScalarError, CallableScalarKind, CallableSchemaError, CallableSignatureSchema,
     CallableSource, CallableValidator, CharacterOwnerSource, CurriedCallableId, DataLastCallableId,
-    DialogueCallableId, DialogueCalleeIdentity, EnvironmentCallableId, EnvironmentCallableKind,
-    EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, FloatWidth, FunctionValueOrdinal,
-    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, LanguageCallableFamily,
-    LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates,
-    PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, PresentationCallableId,
-    ProjectCallablePath, ReceiverMethodKey, ReductionConstructorKind,
+    DialogueCallableId, DialogueCalleeIdentity, DocumentationProvenance, EnvironmentCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
+    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, FloatWidth,
+    FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, FxResolution,
+    LanguageCallableFamily, LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet,
+    NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
+    PresentationCallableId, ProjectCallablePath, ReceiverMethodKey, ReductionConstructorKind,
     RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable, ResolvedCharacterOwner,
     ResolvedFunctionValue, RustItemPath, SemanticParameter, SemanticParameterGroup,
     SemanticSignature, SemanticSignatureError, SemanticSignatureHelp, SemanticSignatureIndex,
@@ -103,6 +108,16 @@ fn project_binding_path(segments: impl IntoIterator<Item = String>) -> ProjectSy
             .map(|segment| ProjectSymbolSegment::try_new(segment).expect("valid project segment")),
     )
     .expect("test project binding path is non-empty")
+}
+
+fn accepted_nominal_world(symbols: &ProjectSymbolTable) -> AcceptedNominalWorld {
+    AcceptedNominalWorld::new(
+        Arc::new(TypeCheckEnv::standard()),
+        symbols.world().clone(),
+        *symbols.revision(),
+        BTreeMap::new(),
+        crate::registration::AcceptedNominalVisibilityIndex::default(),
+    )
 }
 
 fn external_binding_project(
@@ -218,6 +233,51 @@ fn multi_group_schema(group_count: usize) -> Arc<CallableSignatureSchema> {
         )
         .expect("valid multi-group schema"),
     )
+}
+
+fn environment_record(
+    callable: &str,
+    ordinal: usize,
+    documentation: CallableDocumentation,
+) -> EnvironmentCallablePublicationRecord {
+    EnvironmentCallablePublicationRecord::try_new(
+        EnvironmentCallableKind::Function,
+        CallableLookupKey::Free(path(&[callable])),
+        CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        (*multi_group_schema(1)).clone(),
+        documentation,
+        None,
+        None,
+        EnvironmentDeclarationOrdinal::try_from_usize(ordinal).expect("declaration ordinal"),
+    )
+    .expect("environment publication record")
+}
+
+fn projected_publication(
+    world: &AcceptedNominalWorld,
+    owner: &str,
+    records: Vec<EnvironmentCallablePublicationRecord>,
+) -> EnvironmentCallablePublication {
+    EnvironmentCallablePublication::try_new_projected(
+        EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).expect("adapter owner")),
+        world.stamp(),
+        EnvironmentManifestDigest::from_bytes([0x5a; 32]),
+        records,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("projected environment publication")
+}
+
+fn documentation(summary: &str) -> CallableDocumentation {
+    CallableDocumentation::try_new(
+        Some(Arc::<str>::from(summary)),
+        None,
+        Vec::new(),
+        DocumentationProvenance::AdapterTooling {
+            package: AdapterPackageId::try_new("adapter.digest-docs").expect("documentation owner"),
+        },
+    )
+    .expect("callable documentation")
 }
 
 fn project_fixture(name_value: &str) -> ResolvedFixture {
@@ -589,12 +649,16 @@ fn callable_catalog_rejects_a_symbol_world_from_another_package() {
     let symbols = ProjectSymbolTable::link(&project, &externals)
         .expect("linking retains the distinct symbol-world identity")
         .into_table();
-    let mut builder = RegisteredCallableCatalogBuilder::new(PRODUCTION_CALLABLE_LIMITS);
     let nominal_world = AcceptedNominalWorld::new(
         Arc::new(TypeCheckEnv::standard()),
         symbols.world().clone(),
         *symbols.revision(),
         BTreeMap::new(),
+        crate::registration::AcceptedNominalVisibilityIndex::default(),
+    );
+    let mut builder = RegisteredCallableCatalogBuilder::for_nominal_world(
+        &nominal_world,
+        PRODUCTION_CALLABLE_LIMITS,
     );
 
     let error = builder
@@ -611,7 +675,9 @@ fn callable_catalog_rejects_a_symbol_world_from_another_package() {
 fn typed_project_binding_path_limit_is_fail_closed() {
     let binding = project_binding_path((0..3).map(|index| format!("segment-{index}")));
     let (project, symbols) = external_binding_project([("adapter.long".to_owned(), binding)]);
-    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(2, 100));
+    let world = accepted_nominal_world(&symbols);
+    let mut builder =
+        RegisteredCallableCatalogBuilder::for_nominal_world(&world, project_binding_limits(2, 100));
 
     assert_eq!(
         builder.add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32)),
@@ -633,13 +699,17 @@ fn typed_project_binding_work_charges_one_row_plus_each_segment() {
         )])
     };
     let (project, symbols) = fixture();
-    let mut exact = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 3));
+    let world = accepted_nominal_world(&symbols);
+    let mut exact =
+        RegisteredCallableCatalogBuilder::for_nominal_world(&world, project_binding_limits(32, 3));
     exact
         .add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32))
         .expect("one row plus two segments consumes exactly three units");
 
     let (project, symbols) = fixture();
-    let mut one_under = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 2));
+    let world = accepted_nominal_world(&symbols);
+    let mut one_under =
+        RegisteredCallableCatalogBuilder::for_nominal_world(&world, project_binding_limits(32, 2));
     assert_eq!(
         one_under.add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32)),
         Err(CallableCatalogBuildError::Limit(
@@ -664,7 +734,11 @@ fn typed_project_binding_without_registered_type_is_fail_closed() {
         .expect("external scope binding")
         .2
         .clone();
-    let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
+    let world = accepted_nominal_world(&symbols);
+    let mut builder = RegisteredCallableCatalogBuilder::for_nominal_world(
+        &world,
+        project_binding_limits(32, 100),
+    );
 
     assert_eq!(
         builder.add_project_bindings(&project, &symbols, |_| None),
@@ -704,7 +778,11 @@ fn reversed_typed_external_facts_produce_identical_project_catalogs() {
             .scope_bindings()
             .map(|(module, path, target)| (module.clone(), path.clone(), target.clone()))
             .collect::<Vec<_>>();
-        let mut builder = RegisteredCallableCatalogBuilder::new(project_binding_limits(32, 100));
+        let world = accepted_nominal_world(&symbols);
+        let mut builder = RegisteredCallableCatalogBuilder::for_nominal_world(
+            &world,
+            project_binding_limits(32, 100),
+        );
         builder
             .add_project_bindings(&project, &symbols, |_| Some(TypeKind::I32))
             .expect("typed project bindings");
@@ -720,6 +798,110 @@ fn reversed_typed_external_facts_produce_identical_project_catalogs() {
 
     assert_eq!(forward, reverse);
     assert_eq!(forward.0.len(), 2);
+}
+
+#[test]
+fn publication_and_catalog_digests_are_order_independent_but_include_tooling_evidence() {
+    let (_, symbols) = external_binding_project([]);
+    let world = accepted_nominal_world(&symbols);
+    let first = environment_record("alpha", 0, documentation("alpha docs"));
+    let second = environment_record("beta", 1, documentation("beta docs"));
+
+    let forward = projected_publication(
+        &world,
+        "adapter.digest-order",
+        vec![first.clone(), second.clone()],
+    );
+    let reversed =
+        projected_publication(&world, "adapter.digest-order", vec![second, first.clone()]);
+    assert_eq!(forward.digest(), reversed.digest());
+
+    let changed_record = environment_record("alpha", 0, documentation("changed alpha docs"));
+    assert_eq!(
+        first.schema().semantic_digest(),
+        changed_record.schema().semantic_digest(),
+        "tooling evidence is excluded from semantic call compatibility"
+    );
+    let changed = projected_publication(
+        &world,
+        "adapter.digest-order",
+        vec![
+            changed_record,
+            environment_record("beta", 1, documentation("beta docs")),
+        ],
+    );
+    assert_ne!(forward.digest(), changed.digest());
+
+    let catalog = |publication| {
+        let mut builder =
+            RegisteredCallableCatalogBuilder::for_nominal_world(&world, PRODUCTION_CALLABLE_LIMITS);
+        builder
+            .add_environment(publication)
+            .expect("publication belongs to the accepted world");
+        builder.finish().expect("registered callable catalog")
+    };
+    assert_eq!(catalog(forward).digest(), catalog(reversed).digest());
+    assert_ne!(
+        catalog(projected_publication(
+            &world,
+            "adapter.digest-order",
+            vec![
+                first,
+                environment_record("beta", 1, documentation("beta docs"))
+            ],
+        ))
+        .digest(),
+        catalog(changed).digest()
+    );
+}
+
+#[test]
+fn callable_builder_rejects_another_world_before_admitting_publication() {
+    let (_, symbols) = external_binding_project([]);
+    let world = accepted_nominal_world(&symbols);
+    let other_world_id = ProjectSymbolWorldId::try_new(
+        symbols.world().package().clone(),
+        symbols.world().root_document().clone(),
+        "another-accepted-profile",
+    )
+    .expect("other accepted world");
+    let other_world = AcceptedNominalWorld::new(
+        Arc::new(TypeCheckEnv::standard()),
+        other_world_id,
+        *symbols.revision(),
+        BTreeMap::new(),
+        crate::registration::AcceptedNominalVisibilityIndex::default(),
+    );
+    let stale = projected_publication(
+        &other_world,
+        "adapter.world-stamp",
+        vec![environment_record(
+            "value",
+            0,
+            CallableDocumentation::missing(),
+        )],
+    );
+    let mut builder =
+        RegisteredCallableCatalogBuilder::for_nominal_world(&world, PRODUCTION_CALLABLE_LIMITS);
+
+    assert!(matches!(
+        builder.add_environment(stale),
+        Err(CallableCatalogBuildError::PublicationWorldMismatch { .. })
+    ));
+
+    builder
+        .add_environment(projected_publication(
+            &world,
+            "adapter.world-stamp",
+            vec![environment_record(
+                "value",
+                0,
+                CallableDocumentation::missing(),
+            )],
+        ))
+        .expect("a rejected stale publication leaves the builder usable");
+    let catalog = builder.finish().expect("catalog after stale rejection");
+    assert!(catalog.free(&path(&["value"])).is_some());
 }
 
 #[test]

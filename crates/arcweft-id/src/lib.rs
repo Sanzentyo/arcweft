@@ -46,6 +46,14 @@ pub struct PublicId(String);
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TextKey(String);
 
+/// Validated relative path within the authored asset virtual-file space.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AssetVirtualPath(String);
+
+/// Stable catalog identity derived from an [`AssetVirtualPath`].
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AssetId(PublicId);
+
 /// Retained global-identity family owned by Arcweft.
 ///
 /// `Asset` participates in retained reference validation even though packaged
@@ -88,6 +96,32 @@ pub enum PublicIdFamilyError {
     },
     #[error("derived public ID is invalid")]
     InvalidDerivedId(#[from] IdError),
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AssetVirtualPathError {
+    #[error("asset virtual path must not be empty")]
+    Empty,
+    #[error("asset virtual path must be relative: {value}")]
+    Absolute { value: String },
+    #[error("asset virtual path must use '/' separators: {value}")]
+    Backslash { value: String },
+    #[error("asset virtual path contains an empty component: {value}")]
+    EmptyComponent { value: String },
+    #[error("asset virtual path contains a relative traversal component: {value}")]
+    RelativeComponent { value: String },
+    #[error("asset virtual path contains a control character: {value}")]
+    ContainsControl { value: String },
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AssetIdError {
+    #[error("asset virtual path has no effective identity components: {path}")]
+    NoEffectiveComponents { path: AssetVirtualPath },
+    #[error("asset virtual path component cannot form an asset identity: {component}")]
+    InvalidComponent { component: String },
+    #[error("derived asset public ID is invalid")]
+    InvalidPublicId(#[from] IdError),
 }
 
 impl EntityId {
@@ -133,6 +167,20 @@ impl RetainedIdentityFamily {
         }
     }
 
+    pub fn from_prefix(prefix: &str) -> Option<Self> {
+        match prefix {
+            "asset" => Some(Self::Asset),
+            "character" => Some(Self::Character),
+            "view" => Some(Self::View),
+            "action" => Some(Self::Action),
+            "activity" => Some(Self::Activity),
+            "signal" => Some(Self::Signal),
+            "metric" => Some(Self::Metric),
+            "layer" => Some(Self::Layer),
+            _ => None,
+        }
+    }
+
     pub fn validate_public_id(self, id: &PublicId) -> Result<(), PublicIdFamilyError> {
         let prefix = self.prefix();
         if id
@@ -154,6 +202,99 @@ impl RetainedIdentityFamily {
         local: &DeclarationName,
     ) -> Result<PublicId, PublicIdFamilyError> {
         PublicId::try_new(format!("{}.{}", self.prefix(), local.as_str())).map_err(Into::into)
+    }
+}
+
+impl AssetVirtualPath {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, AssetVirtualPathError> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(AssetVirtualPathError::Empty);
+        }
+        if value.starts_with('/')
+            || value
+                .as_bytes()
+                .get(1)
+                .is_some_and(|separator| *separator == b':')
+        {
+            return Err(AssetVirtualPathError::Absolute { value });
+        }
+        if value.contains('\\') {
+            return Err(AssetVirtualPathError::Backslash { value });
+        }
+        if value.chars().any(char::is_control) {
+            return Err(AssetVirtualPathError::ContainsControl { value });
+        }
+        let mut components = value.split('/');
+        if components.clone().any(str::is_empty) {
+            return Err(AssetVirtualPathError::EmptyComponent { value });
+        }
+        if components.any(|component| matches!(component, "." | "..")) {
+            return Err(AssetVirtualPathError::RelativeComponent { value });
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AssetId {
+    pub fn as_public_id(&self) -> &PublicId {
+        &self.0
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_public_id(self) -> PublicId {
+        self.0
+    }
+}
+
+impl TryFrom<&AssetVirtualPath> for AssetId {
+    type Error = AssetIdError;
+
+    fn try_from(path: &AssetVirtualPath) -> Result<Self, Self::Error> {
+        let without_extension = path
+            .as_str()
+            .rsplit_once('.')
+            .map_or(path.as_str(), |(stem, _)| stem);
+        if without_extension.is_empty() {
+            return Err(AssetIdError::NoEffectiveComponents { path: path.clone() });
+        }
+
+        let components = without_extension
+            .split('/')
+            .map(|component| {
+                component
+                    .chars()
+                    .map(|character| {
+                        if character.is_ascii_alphanumeric() {
+                            Some(character.to_ascii_lowercase())
+                        } else if matches!(character, '_' | '-') {
+                            Some('_')
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Option<String>>()
+                    .filter(|normalized| !normalized.is_empty())
+                    .ok_or_else(|| AssetIdError::InvalidComponent {
+                        component: component.to_owned(),
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        if components.is_empty() {
+            return Err(AssetIdError::NoEffectiveComponents { path: path.clone() });
+        }
+        Ok(Self(PublicId::try_new(format!(
+            "asset.{}",
+            components.join(".")
+        ))?))
     }
 }
 
@@ -205,6 +346,18 @@ impl fmt::Display for TextKey {
     }
 }
 
+impl fmt::Display for AssetVirtualPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl fmt::Display for AssetId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl fmt::Display for DeclarationName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -235,6 +388,14 @@ impl FromStr for PublicId {
 
 impl FromStr for TextKey {
     type Err = IdError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::try_new(value)
+    }
+}
+
+impl FromStr for AssetVirtualPath {
+    type Err = AssetVirtualPathError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         Self::try_new(value)
@@ -308,8 +469,8 @@ fn is_reserved_prefix(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        CharacterSurfaceAlias, DeclarationName, IdErrorKind, PublicId, PublicIdFamilyError,
-        RetainedIdentityFamily, TextKey,
+        AssetId, AssetIdError, AssetVirtualPath, CharacterSurfaceAlias, DeclarationName,
+        IdErrorKind, PublicId, PublicIdFamilyError, RetainedIdentityFamily, TextKey,
     };
 
     #[test]
@@ -365,6 +526,65 @@ mod tests {
                 id: derived,
             }
         );
+    }
+
+    #[test]
+    fn retained_family_round_trips_its_owned_prefixes() {
+        for family in [
+            RetainedIdentityFamily::Asset,
+            RetainedIdentityFamily::Character,
+            RetainedIdentityFamily::View,
+            RetainedIdentityFamily::Action,
+            RetainedIdentityFamily::Activity,
+            RetainedIdentityFamily::Signal,
+            RetainedIdentityFamily::Metric,
+            RetainedIdentityFamily::Layer,
+        ] {
+            assert_eq!(
+                RetainedIdentityFamily::from_prefix(family.prefix()),
+                Some(family)
+            );
+        }
+        assert_eq!(RetainedIdentityFamily::from_prefix("image"), None);
+    }
+
+    #[test]
+    fn asset_identity_is_derived_from_normalized_virtual_path() {
+        let cases = [
+            ("bg/Room.png", "asset.bg.room"),
+            ("BG/Room.PNG", "asset.bg.room"),
+            ("ui/main-menu.webp", "asset.ui.main_menu"),
+            ("voice/alice/greeting.ogg", "asset.voice.alice.greeting"),
+        ];
+        for (path, expected) in cases {
+            let path = AssetVirtualPath::try_new(path).expect("valid virtual path");
+            assert_eq!(AssetId::try_from(&path).unwrap().as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn asset_identity_rejects_invalid_components_and_empty_stems() {
+        let spaced = AssetVirtualPath::try_new("ui/main menu.png").unwrap();
+        assert_eq!(
+            AssetId::try_from(&spaced),
+            Err(AssetIdError::InvalidComponent {
+                component: "main menu".to_owned(),
+            })
+        );
+
+        let extension_only = AssetVirtualPath::try_new(".png").unwrap();
+        assert!(matches!(
+            AssetId::try_from(&extension_only),
+            Err(AssetIdError::NoEffectiveComponents { .. })
+        ));
+    }
+
+    #[test]
+    fn asset_virtual_path_rejects_non_normalized_paths() {
+        assert!(AssetVirtualPath::try_new("/ui/main.png").is_err());
+        assert!(AssetVirtualPath::try_new("ui\\main.png").is_err());
+        assert!(AssetVirtualPath::try_new("ui//main.png").is_err());
+        assert!(AssetVirtualPath::try_new("ui/../main.png").is_err());
     }
 
     #[test]

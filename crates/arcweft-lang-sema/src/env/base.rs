@@ -2,11 +2,7 @@ use super::identity::EnvironmentBindingId;
 use super::{
     effects::EffectCapability,
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
-    nominal::{
-        AcceptedNominalCatalog, AcceptedNominalCatalogError, AcceptedNominalId,
-        AcceptedNominalOrigin, AcceptedNominalOwnerId, AcceptedNominalRecord,
-        AcceptedNominalSemantics, RustPackageId, standard_exact_record,
-    },
+    nominal::{AcceptedNominalCatalog, AcceptedNominalOrigin, standard_exact_record},
 };
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CONTENT_TYPE, DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE,
@@ -16,7 +12,7 @@ use crate::dialogue_view::{
 use crate::effect_row::EffectRow;
 use crate::types::{CharacterNominalType, EntityType, TypeKind};
 use arcweft_data::DataFormat;
-use arcweft_lang_syntax::types::{FnParamKind, TypePath};
+use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -88,12 +84,6 @@ pub struct MethodSignature {
     pub(crate) signature: FunctionSignature,
 }
 
-/// Rust exports contributed by one adapter crate metadata manifest.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct RustPackageExports {
-    pub(crate) types: HashSet<String>,
-}
-
 /// Agent-visible semantic action attached to one project entity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentActionEnvSignature {
@@ -126,7 +116,6 @@ pub struct TypeCheckEnv {
     pub(crate) debug_paths: HashMap<(DebugPathKind, String), TypeKind>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
-    pub(crate) rust_packages: HashMap<RustPackageId, RustPackageExports>,
     pub(crate) nominal_records: HashMap<String, HashMap<String, TypeKind>>,
     nominal_record_literal_policies: HashMap<String, NominalRecordLiteralPolicy>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
@@ -1114,42 +1103,6 @@ impl TypeCheckEnv {
         self
     }
 
-    /// Atomically registers one typed Rust export and its exact accepted fact.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if the validated [`TypePath`] invariant is violated and the
-    /// path contains no segment. Public constructors cannot create that state.
-    pub fn try_with_rust_type_export(
-        mut self,
-        package: RustPackageId,
-        path: TypePath,
-    ) -> Result<Self, AcceptedNominalCatalogError> {
-        let name = path
-            .segments()
-            .last()
-            .expect("typed paths contain at least one segment")
-            .as_str()
-            .to_owned();
-        let accepted = AcceptedNominalRecord::try_new(
-            AcceptedNominalId::new(AcceptedNominalOwnerId::RustPackage(package.clone()), path),
-            0,
-            AcceptedNominalSemantics::Opaque,
-            AcceptedNominalOrigin::RustExport,
-            None,
-        )?;
-        self.nominal_catalog = self.nominal_catalog.try_with_record(
-            accepted,
-            crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
-        )?;
-        self.rust_packages
-            .entry(package)
-            .or_default()
-            .types
-            .insert(name);
-        Ok(self)
-    }
-
     pub(crate) fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
         self.symbols.get(name)
     }
@@ -1221,10 +1174,6 @@ impl TypeCheckEnv {
     /// being enforced.
     pub fn available_effects(&self) -> Option<&HashSet<EffectCapability>> {
         self.available_effects.as_ref()
-    }
-
-    pub(crate) fn rust_package(&self, package: &RustPackageId) -> Option<&RustPackageExports> {
-        self.rust_packages.get(package)
     }
 }
 
@@ -1378,11 +1327,5 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             TypeKind::Choice(alternatives.into_iter().map(normalize_type_kind).collect())
         }
         other => other,
-    }
-}
-
-impl RustPackageExports {
-    pub(crate) fn has_type(&self, name: &str) -> bool {
-        self.types.contains(name)
     }
 }

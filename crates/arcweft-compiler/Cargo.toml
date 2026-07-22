@@ -35,6 +35,7 @@ thiserror.workspace = true
 path = "src/lib.rs"
 
 [dev-dependencies]
+arcweft-adapter-context = { workspace = true, features = ["sema"] }
 arcweft-agent-runner = { workspace = true }
 arcweft-debug-model = { workspace = true }
 trybuild.workspace = true

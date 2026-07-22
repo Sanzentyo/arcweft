@@ -160,6 +160,7 @@ fn collect_bundle_dsl_view_resources_for_package(
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .map_err(|error| {
         eprintln!("error: failed to build test registration facts: {error:?}");
@@ -171,7 +172,6 @@ fn collect_bundle_dsl_view_resources_for_package(
         Arc::new(ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     );
     let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
         .map_err(|error| {
@@ -2556,6 +2556,28 @@ fn collect_bundle_image_assets_decodes_static_and_animated_webp_metadata() {
     assert_eq!(loop_asset.format, BundleImageFormat::WebP);
     assert_eq!(loop_asset.animation, BundleImageAnimation::Animated);
     assert!(loop_asset.dimensions.is_some());
+}
+
+#[test]
+fn collect_bundle_image_assets_rejects_invalid_stable_identity_components() {
+    let mut file = sample_image_virtual_file("bg/poster.webp");
+    file.path = "bg/main menu.webp".to_owned();
+    assert!(collect_bundle_image_assets(&[file]).is_err());
+}
+
+#[test]
+fn collect_bundle_image_assets_rejects_normalized_identity_collisions() {
+    let mut dashed = sample_image_virtual_file("bg/poster.webp");
+    dashed.path = "ui/main-menu.webp".to_owned();
+    let mut underscored = sample_image_virtual_file("bg/room.png");
+    underscored.path = "ui/main_menu.png".to_owned();
+    assert!(collect_bundle_image_assets(&[dashed, underscored]).is_err());
+
+    let mut uppercase = sample_image_virtual_file("bg/poster.webp");
+    uppercase.path = "images/Hero.webp".to_owned();
+    let mut lowercase = sample_image_virtual_file("bg/room.png");
+    lowercase.path = "images/hero.png".to_owned();
+    assert!(collect_bundle_image_assets(&[uppercase, lowercase]).is_err());
 }
 
 #[test]

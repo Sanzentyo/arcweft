@@ -12,6 +12,7 @@ arcweft-lang-sema = { workspace = true, optional = true }
 arcweft-lang-hir = { workspace = true, optional = true }
 arcweft-lang-syntax = { workspace = true, optional = true }
 arcweft-source = { workspace = true, optional = true }
+blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

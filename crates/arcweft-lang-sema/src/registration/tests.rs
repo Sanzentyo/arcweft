@@ -23,9 +23,9 @@ use arcweft_source::{SourceDocument, SourceRange};
 
 use crate::test_support::character_project::{
     PACKAGE, backed_manifest, character_binding_paths, declaration_span, external_fact,
-    one_character_facts, one_character_facts_with_documents, project_modules, project_path,
-    register, root_project, root_project_source, sample_manifest, sample_manifest_for,
-    source_document,
+    one_character_facts, one_character_facts_with_documents, one_character_facts_with_environment,
+    project_modules, project_path, register, root_project, root_project_source, sample_manifest,
+    sample_manifest_for, source_document,
 };
 use crate::{
     callable::{
@@ -49,6 +49,10 @@ use super::{
     ExternalOwnerLookupError, ExternalRegistrationFact, ProjectRegistrationFacts,
     RegisteredExternalOwner, RegisteredExternalOwnerKind, RegisteredSemanticWorld,
 };
+
+fn environment_external_owner(id: EnvironmentBindingId) -> RegisteredExternalOwner {
+    RegisteredExternalOwner::environment(id.clone(), id)
+}
 
 fn reordered_manifest(reverse: bool) -> CharacterManifest {
     let owner = CharacterId::try_new("character.akane").expect("character");
@@ -138,7 +142,7 @@ fn registered_character_and_environment(
     let environment_fact = external_fact(
         environment.as_str(),
         &[project_path(["adapter", "viewport"])],
-        RegisteredExternalOwner::Environment(environment.clone()),
+        environment_external_owner(environment.clone()),
         generated
             .span(SourceRange::new(0, "adapter.viewport".len()))
             .expect("environment declaration"),
@@ -150,6 +154,7 @@ fn registered_character_and_environment(
         vec![root, manifest_document, generated],
         vec![character_fact, environment_fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("mixed registration facts");
     let base = TypeCheckEnv::standard().with_symbol(environment.as_str(), TypeKind::I32);

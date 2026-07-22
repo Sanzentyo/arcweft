@@ -10,6 +10,7 @@ use core::fmt;
 
 mod character_nominal;
 mod compatibility;
+mod digest;
 mod mismatch;
 mod nominal;
 mod openness;
@@ -17,6 +18,7 @@ mod order;
 mod substitution;
 
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
+pub use digest::SemanticTypeDigest;
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
     AcceptedNominalType, DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId,

@@ -144,7 +144,7 @@ fn registration_facts_and_registry_share_one_owner_enum() {
         .find(|symbol| symbol.canonical_path().leaf() == environment.as_str())
         .expect("environment external")
         .declaration();
-    let expected = RegisteredExternalOwner::Environment(environment);
+    let expected = environment_external_owner(environment);
 
     assert_eq!(
         registered.environment().external_owner(
@@ -273,12 +273,17 @@ fn environment_external_owner_lookup() {
     let fact = external_fact(
         id.as_str(),
         &[project_path(["adapter", "viewport"])],
-        RegisteredExternalOwner::Environment(id.clone()),
+        environment_external_owner(id.clone()),
         declaration,
     );
-    let facts =
-        ProjectRegistrationFacts::try_new(world, vec![root, generated], vec![fact], Vec::new())
-            .expect("environment facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![root, generated],
+        vec![fact],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("environment facts");
     let base = TypeCheckEnv::standard().with_symbol(id.as_str(), TypeKind::I32);
     let registered = register(&project, &facts, base, None).expect("environment registers");
     let declaration = registered
@@ -310,7 +315,7 @@ fn environment_external_owner_lookup() {
             declaration,
             RegisteredExternalOwnerKind::Environment,
         ),
-        Ok(&RegisteredExternalOwner::Environment(id))
+        Ok(&environment_external_owner(id))
     );
     assert!(matches!(
         registered.environment().external_owner(
@@ -349,12 +354,17 @@ fn environment_owner_uses_exact_base_symbol_key() {
     let fact = external_fact(
         id.as_str(),
         &[project_path(["adapter", "viewport"])],
-        RegisteredExternalOwner::Environment(id.clone()),
+        environment_external_owner(id.clone()),
         declaration,
     );
-    let facts =
-        ProjectRegistrationFacts::try_new(world, vec![root, generated], vec![fact], Vec::new())
-            .expect("environment facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![root, generated],
+        vec![fact],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("environment facts");
     let altered = EnvironmentBindingId::try_new("adapter.viewporT").expect("altered key");
     let wrong_base = TypeCheckEnv::standard().with_symbol(altered.as_str(), TypeKind::I32);
 
@@ -364,7 +374,7 @@ fn environment_owner_uses_exact_base_symbol_key() {
         diagnostic.kind(),
         CharacterRegistrationDiagnosticKind::UnknownOwner {
             owner: RegisteredExternalOwner::Environment(owner),
-        } if owner == &id
+        } if owner.value_binding() == &id
     )));
 
     let exact_base = TypeCheckEnv::standard().with_symbol(id.as_str(), TypeKind::I32);
@@ -388,8 +398,9 @@ fn unknown_owner_is_atomic() {
         RegisteredExternalOwner::Character(owner.clone()),
         declaration,
     );
-    let facts = ProjectRegistrationFacts::try_new(world, vec![root], vec![fact], Vec::new())
-        .expect("source facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, vec![root], vec![fact], Vec::new(), Vec::new())
+            .expect("source facts");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect_err("unknown owner rejects transaction");
 
@@ -585,6 +596,7 @@ pub(super) fn external_exact_duplicate_is_atomic() {
         vec![root, document],
         vec![fact.clone(), fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("duplicate contributions remain observable");
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)

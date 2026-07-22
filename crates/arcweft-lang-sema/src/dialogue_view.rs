@@ -315,9 +315,14 @@ mod tests {
 
     fn registered_report(source: &str) -> TypeCheckReport {
         let (document, project, world) = root_project_source("dialogue-view-model", source);
-        let facts =
-            ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-                .expect("dialogue View registration facts");
+        let facts = ProjectRegistrationFacts::try_new(
+            world,
+            vec![document],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("dialogue View registration facts");
         let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
             .expect("dialogue View semantic world");
         analyze_registered_project_types(&project.linked_module(), &registered)

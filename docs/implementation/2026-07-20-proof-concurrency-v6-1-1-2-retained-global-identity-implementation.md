@@ -1,13 +1,20 @@
 # Proof concurrency v6.1.1.2 retained global-identity implementation
 
-## Accepted package
+## Current reconciled package
 
 The implementation source of truth is
-`arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip`.
+[`docs/reviews/packages/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip`](../reviews/packages/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip).
 Its SHA-256 is
-`7be398ebe2cefa2daefa963c7c8c6efb0b2389bb015edf36e585fb8b770242b1`.
+`0e30a91fa2f7a288e9a12d8afc7356525604cbdc907d659cd97311207d26a68e`.
 All 18 archive members match `MANIFEST.txt`, the entries are in lexical order,
 and the manifest self-entry uses the required 64-zero rule.
+
+This archive is the latest-`main` reconciliation returned against Git
+`3acc9cfec034d00cee173e41cbfb37cd46115c50`. It replaces the earlier accepted
+archive with SHA-256
+`7be398ebe2cefa2daefa963c7c8c6efb0b2389bb015edf36e585fb8b770242b1`
+as the implementation source of truth without adding a compatibility contract.
+The earlier digest remains recorded here as historical package provenance.
 
 Intake started from local Git parent
 `6b97057a0a430179175682494e07c7529554933b` and Jujutsu working-copy change
@@ -57,6 +64,81 @@ diagnostic, CSS/Takumi route, or source gate is permitted.
 | 9 | typed HIR/project-symbol and downstream migration | pending |
 | 10 | docs/examples/fixtures and obsolete-path deletion | pending |
 | 11 | full validation, structural audit, Tier 2, commit/push cleanup | pending |
+
+## 2026-07-23 latest-main reconciliation
+
+The returned latest-`main` contract was reconciled at Git
+`3acc9cfec034d00cee173e41cbfb37cd46115c50` and Jujutsu working-copy change
+`vszsuyoznmpkzsrxotpwulouvowktqro`. The independently safe owner correction is
+implemented without starting the atomic public syntax/HIR switch:
+
+- `RetainedIdentityFamily::from_prefix` now belongs to the original owned enum;
+- `AssetVirtualPath` validates normalized relative `/`-separated catalog paths;
+- `AssetId` owns exact path-to-public-ID derivation and typed failures;
+- Layer reference-family recognition uses the owned family API rather than a
+  second prefix table; and
+- CLI bundle image admission consumes `AssetVirtualPath`/`AssetId`, rejects an
+  invalid identity instead of silently omitting the file, and transactionally
+  rejects two image paths that normalize to one asset ID.
+
+This does not claim the final project-wide asset catalog from Cut 7. It moves
+the existing image-bundle caller to the final identity owner and leaves
+filesystem enumeration and bytes in the CLI/build adapter as required.
+
+The public switch remains sequencing-blocked rather than design-blocked. A
+one-off planning inventory in this checkout still found `.typed_tree()` in 90
+Rust files, `TypedSyntaxTree` in 20, `lower_to_hir` in 59, `SourceItem` in 8,
+`EntityDeclItem` in 13, and `HirTopLevelDecl::EntityDecl` in 13. These counts
+are review evidence only and are not a source gate. Cut 8 must still replace
+the complete-document authority atomically; implementing one retained public
+wrapper early would create the prohibited dual reader. Cuts 9–11 therefore
+remain pending.
+
+### Focused validation
+
+- `cargo test -p arcweft-id --lib --tests`: 20 unit tests and 1 public-API
+  trybuild test passed;
+- `cargo test -p arcweft-cli --lib collect_bundle_image_assets --all-features`:
+  3 focused tests passed, including invalid identity and dash/underscore
+  normalized collision; after adding case/extension collision to the same test,
+  its repeated CLI test-harness link was stopped at the coordinating agent's
+  request to release the shared Cargo target for the concurrent package;
+- `cargo test -p arcweft-lang-syntax --lib --all-features`: all 452 tests
+  passed, including the seven retained private grammars and their limits;
+- `cargo clippy -p arcweft-id -p arcweft-lang-syntax --all-targets
+  --all-features -- -D warnings`: passed;
+- `cargo clippy -p arcweft-cli --all-targets --all-features -- -D warnings`:
+  blocked by nine warnings in the concurrently changing sema environment
+  publication projection, outside this package slice, before Clippy reached
+  the CLI crate;
+- the same CLI Clippy gate with `--no-deps` was retried without changing the
+  feature set, but a concurrent adapter-context registration-source compile
+  error and unused import still stopped it before the CLI crate;
+- `cargo fmt --all -- --check`: this slice is formatted, but the workspace
+  check reported diffs in concurrently changing adapter-context registration
+  input files;
+- direct stable `rustfmt --check` over this slice's four Rust files: passed;
+- `git diff --check` over the five edited text files: passed; and
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .`: scanned 3,595
+  files, 1,893 Rust files, 879,825 physical Rust lines, and 94 manifests; it
+  reported 0 errors and 138 warnings and wrote no report in dry-run mode.
+
+### Structural measurement
+
+| Path | Crate / role | Bytes | Physical LOC | Responsibility |
+| --- | --- | ---: | ---: | --- |
+| `crates/arcweft-id/src/lib.rs` | `arcweft-id`, production | 18,148 | 597 | owned IDs, retained family vocabulary, asset path/identity |
+| `crates/arcweft-lang-syntax/src/parser/layer_grammar.rs` | `arcweft-lang-syntax`, production | 13,997 | 434 | private lossless Layer grammar and recovery |
+| `crates/arcweft-cli/src/app/bundle.rs` | `arcweft-cli`, production | 50,134 | 1,396 | bundle command orchestration, virtual files, typed asset admission |
+| `crates/arcweft-cli/src/app/bundle/tests.rs` | `arcweft-cli`, unit tests | 89,434 | 2,764 | bundle command and product acceptance tests |
+
+Cargo metadata reports fan-in/fan-out of 24/4 for `arcweft-id`, 13/8 for
+`arcweft-lang-syntax`, and 0/69 for the application-level `arcweft-cli` crate.
+The CLI production and test modules remain above warning thresholds, but this
+slice removes the local identity helpers and adds only the two direct behavior
+tests; it does not add a new responsibility or cross an error threshold. Their
+broader decomposition remains part of the repository structural-warning
+backlog rather than a reason to move asset identity back into CLI.
 
 ## Current evidence
 

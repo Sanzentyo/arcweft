@@ -29,7 +29,7 @@ entry game @entry.main {
     goto @flow.opening
 }
 
-flow opening(state: GameState) effects { signal.write } {
+flow opening(state: GameState) -> String effects { signal.write } {
     signal.set(@signal.current_flow, @flow.opening)
     return "opening"
 }

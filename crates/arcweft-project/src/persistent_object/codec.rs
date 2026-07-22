@@ -1415,6 +1415,7 @@ mod tests {
             CompilerObjectKind::LinkPlan,
         ] {
             let key = key(kind);
+            assert_ne!(key.environment_digest, BuildDigest::ZERO);
             let payload = match kind {
                 CompilerObjectKind::ParsedSyntax => parsed_payload_for(&key),
                 CompilerObjectKind::InterfaceSummary => interface_payload_for(&key),
@@ -1429,6 +1430,19 @@ mod tests {
             let decoded = AwboEnvelope::decode(&bytes, &key).expect("envelope decodes");
 
             assert_eq!(decoded, envelope);
+            let stage_inputs = match &decoded.payload {
+                CompilerObjectPayload::ParsedSyntax(value) => &value.stage_inputs,
+                CompilerObjectPayload::InterfaceSummary(value) => &value.stage_inputs,
+                CompilerObjectPayload::HirBody(value) => &value.stage_inputs,
+                CompilerObjectPayload::TypecheckGate(value) => &value.stage_inputs,
+                CompilerObjectPayload::BytecodeUnit(value) => &value.stage_inputs,
+                CompilerObjectPayload::LinkPlan(value) => &value.stage_inputs,
+                CompilerObjectPayload::LineTaskEvidence(_)
+                | CompilerObjectPayload::RuntimePlanUnit(_) => {
+                    unreachable!("test covers payloads with persistent stage inputs")
+                }
+            };
+            assert_eq!(stage_inputs.environment_digest, key.environment_digest);
         }
     }
 

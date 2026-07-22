@@ -47,7 +47,6 @@ pub(crate) fn compile_repl_cell(
             selected_entry.clone(),
             ProjectEntrySelectionKind::Agent,
         )),
-        Vec::new(),
     );
     let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
         .map_err(|error| map_project_compile_error(&error))?;
@@ -159,16 +158,22 @@ fn repl_registration_facts(
         phase: ReplTransactionPhase::HirLowering,
         message: error.to_string(),
     })?;
-    ProjectRegistrationFacts::try_new(world, vec![Arc::clone(document)], Vec::new(), Vec::new())
-        .map_err(|error| ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::SemanticEffectChecks,
-            message: error
-                .diagnostics()
-                .iter()
-                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
-                .collect::<Vec<_>>()
-                .join("; "),
-        })
+    ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(document)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|error| ReplTransactionError::Compile {
+        phase: ReplTransactionPhase::SemanticEffectChecks,
+        message: error
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+            .collect::<Vec<_>>()
+            .join("; "),
+    })
 }
 
 fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionError {

@@ -21,10 +21,11 @@ use crate::{
     effects::EffectSet,
     env::{FunctionSignature, TypeCheckEnv},
     nominal::{CheckedTypeReferenceCache, NominalResolutionIndex},
-    registration::AcceptedNominalWorld,
+    registration::{AcceptedNominalWorld, AcceptedNominalWorldStamp, EnvironmentManifestDigest},
     types::{GenericTypeOwnerId, TypeKind},
 };
 
+use super::digest::CanonicalEncoder;
 use super::limits::CatalogBuildWork;
 use super::nominal_signature::ProjectSignatureResolver;
 use super::{
@@ -45,6 +46,7 @@ use super::{
 };
 
 pub(crate) struct RegisteredCallableCatalogBuilder {
+    nominal_world: AcceptedNominalWorldStamp,
     limits: CallableLimits,
     project_modules: Vec<RegisteredProjectModuleCallables>,
     project_records: Vec<Arc<CallableRecord>>,
@@ -70,8 +72,9 @@ struct RustExternAliasSeed {
 }
 
 impl RegisteredCallableCatalogBuilder {
-    pub(crate) fn new(limits: CallableLimits) -> Self {
+    pub(crate) fn for_nominal_world(world: &AcceptedNominalWorld, limits: CallableLimits) -> Self {
         Self {
+            nominal_world: world.stamp(),
             limits,
             project_modules: Vec::new(),
             project_records: Vec::new(),
@@ -328,6 +331,7 @@ impl RegisteredCallableCatalogBuilder {
             documentation,
             Some(callable_source),
             None,
+            None,
             EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
                 .map_err(|_| identity_mismatch(source))?,
         )
@@ -388,6 +392,12 @@ impl RegisteredCallableCatalogBuilder {
         &mut self,
         publication: EnvironmentCallablePublication,
     ) -> Result<(), CallableCatalogBuildError> {
+        if publication.nominal_world() != &self.nominal_world {
+            return Err(CallableCatalogBuildError::PublicationWorldMismatch {
+                expected: Box::new(self.nominal_world.clone()),
+                actual: Box::new(publication.nominal_world().clone()),
+            });
+        }
         let environment_count = self
             .environment_publications
             .iter()
@@ -426,6 +436,7 @@ impl RegisteredCallableCatalogBuilder {
             &mut self.work,
         )?;
         Ok(RegisteredCallableCatalog::new(
+            self.nominal_world,
             project,
             environment,
             self.nominal_resolutions,
@@ -686,6 +697,7 @@ fn finish_environment(
     let mut records = Vec::new();
     let mut by_id = HashMap::new();
     for publication in publications {
+        let publication_digest = publication.digest();
         for publication_record in publication.records() {
             let id = EnvironmentCallableId::new(
                 publication.owner().clone(),
@@ -708,6 +720,7 @@ fn finish_environment(
                 publication_record.documentation().clone(),
                 publication_record.source().cloned(),
                 publication_record.rust().cloned(),
+                Some(publication_digest),
                 publication_record.declaration_order(),
             )?);
             by_id.insert(id, Arc::clone(&record));
@@ -895,6 +908,7 @@ fn environment_origin(record: &CallableRecord) -> SignatureOrigin {
 impl TypeCheckEnv {
     pub(crate) fn standard_callable_publication(
         &self,
+        nominal_world: AcceptedNominalWorldStamp,
         limits: &CallableLimits,
     ) -> Result<EnvironmentCallablePublication, super::CallablePublicationError> {
         let owner = EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core);
@@ -955,8 +969,33 @@ impl TypeCheckEnv {
                 limits,
             )?);
         }
-        EnvironmentCallablePublication::try_new(owner, records, limits)
+        let manifest_digest = standard_manifest_digest(&records);
+        EnvironmentCallablePublication::try_new_projected(
+            owner,
+            nominal_world,
+            manifest_digest,
+            records,
+            limits,
+        )
     }
+}
+
+fn standard_manifest_digest(
+    records: &[EnvironmentCallablePublicationRecord],
+) -> EnvironmentManifestDigest {
+    const DOMAIN: &[u8] = b"arcweft.standard-environment-manifest.v1\0";
+
+    let mut records = records.iter().collect::<Vec<_>>();
+    records.sort_by_key(|record| record.declaration_order());
+    let mut encoder = CanonicalEncoder::default();
+    encoder.usize(records.len());
+    for record in records {
+        encoder.environment_kind(record.kind());
+        encoder.lookup_key(record.key());
+        encoder.usize(record.overload().get());
+        encoder.bytes(record.schema().semantic_digest().as_bytes());
+    }
+    EnvironmentManifestDigest::from_bytes(encoder.finish(DOMAIN))
 }
 
 fn callable_path_from_storage(path: &str) -> Result<CallablePath, super::CallablePublicationError> {

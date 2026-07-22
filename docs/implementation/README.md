@@ -7,6 +7,16 @@ Design specifications remain in the numbered `docs/` chapters. Files here descri
 The current operational worktree map is
 `docs/implementation/current-work-status-2026-07-10.md`.
 
+The canonical tracker for Rust `#[allow(...)]`, workspace lint-policy, and
+command-line lint-suppression follow-up is
+`docs/implementation/lint-allow-tracker.md`; do not repeat its repository-wide
+inventory before reading that tracker.
+
+The accepted adapter/Rust nominal publication, registered callable and Rust
+metadata catalogs, semantic/environment digests, persistent-query identity,
+and typed LSP projection are tracked in
+`docs/implementation/2026-07-23-lang-01-1-1-2-2-adapter-callable-nominal-publication.md`.
+
 The current unified text, authored dialogue View, and Fx acceptance boundary is
 tracked in
 `docs/implementation/unified-text-dialogue-view-fx-2026-07-12.md`.

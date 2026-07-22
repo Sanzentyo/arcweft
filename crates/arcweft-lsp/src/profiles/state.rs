@@ -402,6 +402,7 @@ impl AcceptedProfileEnvironment {
             *symbols.revision(),
             environment.character_revision(),
             environment.character_digest(),
+            environment.environment_digest(),
             source,
             Some(1),
             byte_offset,

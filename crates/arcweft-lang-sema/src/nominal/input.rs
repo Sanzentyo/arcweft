@@ -15,7 +15,9 @@ use arcweft_source::SourceDocumentIdentity;
 
 use crate::{
     env::TypeCheckEnv,
-    registration::{AcceptedNominalWorld, ExternalOwnerLookupError},
+    registration::{
+        AcceptedNominalWorld, AcceptedNominalWorldLookupError, ExternalOwnerLookupError,
+    },
     types::{GenericTypeParameterId, TypeKind, TypePoisonId},
 };
 
@@ -112,6 +114,10 @@ pub enum TypeResolutionInputError {
     RegisteredEnvironmentIntegrity {
         external: ExternalDeclarationId,
         reason: Box<ExternalOwnerLookupError>,
+    },
+    RegisteredNominalIntegrity {
+        external: ExternalDeclarationId,
+        reason: Box<AcceptedNominalWorldLookupError>,
     },
     InvalidLimits {
         reason: NominalResolutionLimitsError,

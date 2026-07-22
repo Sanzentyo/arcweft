@@ -73,6 +73,7 @@ fn registered_world_with_base(base: TypeCheckEnv) -> Arc<CompiledProject> {
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registration facts");
     compile_fixture(&document, base, facts, None)
@@ -192,6 +193,7 @@ fn registered_world_with_character_asset(
         vec![Arc::clone(&root), Arc::clone(&manifest_document)],
         vec![fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("character registration facts");
     let registered = compile_fixture(&root, TypeCheckEnv::standard(), facts, previous);
@@ -236,7 +238,6 @@ fn compile_fixture(
         Arc::new(ResourceTypeRegistry::empty()),
         previous.cloned().map(Arc::new),
         None,
-        Vec::new(),
     );
     Arc::new(
         compile_project(&sources, &context, &RuntimePlanLowerOptions::default())
@@ -419,6 +420,7 @@ fn main() -> Unit {
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("recovered registration facts");
     let world = Arc::new(
@@ -479,9 +481,10 @@ fn external_registration_fact(
     .expect("external declaration seed");
     ExternalRegistrationFact::new(
         seed,
-        RegisteredExternalOwner::Environment(
-            EnvironmentBindingId::try_new(owner).expect("environment owner"),
-        ),
+        {
+            let owner = EnvironmentBindingId::try_new(owner).expect("environment owner");
+            RegisteredExternalOwner::environment(owner.clone(), owner)
+        },
         declaration,
     )
 }
@@ -526,6 +529,7 @@ fn colliding_typed_binding_registration()
         world,
         vec![root, first, second],
         vec![first_fact, second_fact],
+        Vec::new(),
         Vec::new(),
     )
     .expect("colliding facts retain typed evidence");
@@ -672,6 +676,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
     let symbol_revision = *symbols.revision();
     let character_revision = environment.character_revision();
     let character_digest = environment.character_digest();
+    let environment_digest = environment.environment_digest();
     let outcome = Arc::new(SignatureQueryOutcome::NotApplicable(
         arcweft_lang_sema::signature::SignatureNotApplicable::CursorOutsideArgumentList,
     ));
@@ -681,6 +686,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
         symbol_revision,
         character_revision,
         character_digest,
+        environment_digest,
         source.clone(),
         Some(1),
         0,
@@ -722,6 +728,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             character_revision,
             character_digest,
+            environment_digest,
             source.clone(),
             Some(1),
             0,
@@ -732,6 +739,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             character_revision,
             character_digest,
+            environment_digest,
             source.clone(),
             Some(1),
             0,
@@ -742,6 +750,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             changed_symbol_revision,
             character_revision,
             character_digest,
+            environment_digest,
             source.clone(),
             Some(1),
             0,
@@ -752,6 +761,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             changed_environment.character_revision(),
             character_digest,
+            environment_digest,
             source.clone(),
             Some(1),
             0,
@@ -762,6 +772,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             character_revision,
             changed_environment.character_digest(),
+            environment_digest,
             source.clone(),
             Some(1),
             0,
@@ -772,6 +783,18 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             character_revision,
             character_digest,
+            changed_environment.environment_digest(),
+            source.clone(),
+            Some(1),
+            0,
+        ),
+        SignatureCacheKey::new(
+            generation,
+            world_id.clone(),
+            symbol_revision,
+            character_revision,
+            character_digest,
+            environment_digest,
             changed_document.identity().clone(),
             Some(1),
             0,
@@ -782,6 +805,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             character_revision,
             character_digest,
+            environment_digest,
             source.clone(),
             Some(2),
             0,
@@ -792,6 +816,7 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             symbol_revision,
             character_revision,
             character_digest,
+            environment_digest,
             source,
             Some(1),
             1,

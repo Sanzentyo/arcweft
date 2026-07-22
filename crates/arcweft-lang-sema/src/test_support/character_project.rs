@@ -284,8 +284,41 @@ pub(crate) fn one_character_facts_with_documents(
     let catalog = SourceBackedCharacterCatalog::try_new(root.identity().clone(), vec![manifest])
         .expect("catalog");
     documents.push(document);
-    ProjectRegistrationFacts::try_new(world, documents, vec![fact], vec![catalog])
+    ProjectRegistrationFacts::try_new(world, documents, vec![fact], vec![catalog], Vec::new())
         .expect("registration facts")
+}
+
+pub(crate) fn one_character_facts_with_environment(
+    root: &Arc<SourceDocument>,
+    mut documents: Vec<Arc<SourceDocument>>,
+    world: ProjectSymbolWorldId,
+    manifest: &CharacterManifest,
+    environment_inputs: Vec<crate::registration::SourceBackedEnvironmentRegistrationInput>,
+) -> ProjectRegistrationFacts {
+    let (document, manifest) = backed_manifest(
+        "arcweft-project://registration-tests/characters/akane.awchar.json",
+        manifest,
+    );
+    let owner = manifest.manifest().character().clone();
+    let declaration = declaration_span(&manifest);
+    let binding_paths = character_binding_paths(&owner);
+    let fact = external_fact(
+        owner.as_str(),
+        &binding_paths,
+        RegisteredExternalOwner::Character(owner.clone()),
+        declaration,
+    );
+    let catalog = SourceBackedCharacterCatalog::try_new(root.identity().clone(), vec![manifest])
+        .expect("catalog");
+    documents.push(document);
+    ProjectRegistrationFacts::try_new(
+        world,
+        documents,
+        vec![fact],
+        vec![catalog],
+        environment_inputs,
+    )
+    .expect("registration facts")
 }
 
 pub(crate) fn register(

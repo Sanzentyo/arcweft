@@ -22,11 +22,10 @@ use crate::{
         CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
         CallableParameterPresence, CallableParameterType, CallablePath, CallableSignatureSchema,
         CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
-        EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
-        EnvironmentDeclarationOrdinal, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
-        ResolverWork, SemanticSignatureIndex, SignatureOrigin, SignatureQueryLimits,
-        SignatureQueryStep, SignatureQueryWorkMeter, SpreadArgumentPolicy,
-        UnknownNamedArgumentPolicy,
+        EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
+        PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, ResolverWork,
+        SemanticSignatureIndex, SignatureOrigin, SignatureQueryLimits, SignatureQueryStep,
+        SignatureQueryWorkMeter, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     checker::module::{
         SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
@@ -36,10 +35,11 @@ use crate::{
     env::{FunctionParam, FunctionSignature, TypeCheckEnv},
     registration::{CharacterRegistrar, CharacterRegistrationRequest, RegisteredSemanticWorld},
     test_support::character_project::{
-        PACKAGE, one_character_facts, register, root_project_source, sample_manifest,
-        source_document,
+        PACKAGE, one_character_facts, one_character_facts_with_environment, register,
+        root_project_source, sample_manifest, source_document,
     },
-    types::{EntityKind, TypeKind},
+    test_support::environment::source_backed_callable_input,
+    types::TypeKind,
 };
 
 use super::{
@@ -71,6 +71,11 @@ struct SignatureFixture {
     world: RegisteredSemanticWorld,
 }
 
+struct TestPublication {
+    owner: EnvironmentCallableOwner,
+    records: Vec<EnvironmentCallablePublicationRecord>,
+}
+
 impl SignatureFixture {
     fn new(source: &str) -> Self {
         let (document, project, world_id) = root_project_source("signature-query", source);
@@ -91,22 +96,39 @@ impl SignatureFixture {
         }
     }
 
-    fn with_publication(source: &str, publication: EnvironmentCallablePublication) -> Self {
+    fn with_publication(source: &str, publication: TestPublication) -> Self {
         Self::with_environment_and_publication(source, TypeCheckEnv::standard(), publication)
     }
 
     fn with_environment_and_publication(
         source: &str,
         environment: TypeCheckEnv,
-        publication: EnvironmentCallablePublication,
+        publication: TestPublication,
     ) -> Self {
         let (document, project, world_id) =
             root_project_source("signature-query-publication", source);
-        let facts = one_character_facts(&document, world_id, &sample_manifest("layers/body.png"));
-        let world = CharacterRegistrar::register(
-            CharacterRegistrationRequest::new(Arc::new(environment), &project, &facts, None)
-                .with_callable_publication(publication),
-        )
+        let environment_document = source_document(
+            "arcweft-generated://signature-query/publication",
+            "signature query environment publication",
+        );
+        let environment_input = source_backed_callable_input(
+            publication.owner,
+            &environment_document,
+            publication.records,
+        );
+        let facts = one_character_facts_with_environment(
+            &document,
+            vec![Arc::clone(&document), environment_document],
+            world_id,
+            &sample_manifest("layers/body.png"),
+            vec![environment_input],
+        );
+        let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+            Arc::new(environment),
+            &project,
+            &facts,
+            None,
+        ))
         .expect("signature publication fixture registers");
         Self {
             document,
@@ -1170,7 +1192,7 @@ fn main() -> Unit {
 }
 
 #[test]
-fn open_typed_and_unchecked_slots_are_equally_non_specific() {
+fn unchecked_slots_are_equally_non_specific() {
     let fixture = SignatureFixture::with_publication(
         r"
 fn main() -> Unit {
@@ -1183,7 +1205,7 @@ fn main() -> Unit {
             "open_choice",
             [
                 one_parameter_schema(
-                    CallableParameterType::Exact(TypeKind::Named("_".to_owned())),
+                    CallableParameterType::Unchecked,
                     CallableParameterPassing::PositionalOrNamed,
                     CallableParameterPresence::Required,
                     TypeKind::String,
@@ -1263,11 +1285,6 @@ fn main() -> Unit {
     ()
 }
 ";
-    let function_type = TypeKind::function_with_effects(
-        [TypeKind::I32],
-        TypeKind::I32,
-        EffectRow::closed(EffectSet::new()),
-    );
     let fixture = SignatureFixture::with_publication(
         source,
         publication(
@@ -1281,7 +1298,7 @@ fn main() -> Unit {
                     TypeKind::Bool,
                 ),
                 one_parameter_schema(
-                    CallableParameterType::Exact(function_type),
+                    CallableParameterType::Exact(TypeKind::I32),
                     CallableParameterPassing::PositionalOrNamed,
                     CallableParameterPresence::Required,
                     TypeKind::String,
@@ -1454,7 +1471,7 @@ fn main() -> Unit {
 }
 
 #[test]
-fn candidate_zero_owns_unselected_mapping_and_closed_entity_refs_rank_exactly() {
+fn candidate_zero_owns_unselected_mapping_and_exact_slots_rank_over_unchecked() {
     let no_viable = SignatureFixture::with_publication(
         r#"
 fn main() -> Unit {
@@ -1486,16 +1503,16 @@ fn main() -> Unit {
         1
     );
 
-    let entity = SignatureFixture::with_publication(
+    let exact = SignatureFixture::with_publication(
         r"
 fn main() -> Unit {
-    entity_choice(@character.alice)
+    exact_choice(1i32)
     ()
 }
 ",
         publication(
-            "adapter.signature-closed-entity",
-            "entity_choice",
+            "adapter.signature-exact-slot",
+            "exact_choice",
             [
                 one_parameter_schema(
                     CallableParameterType::Unchecked,
@@ -1504,7 +1521,7 @@ fn main() -> Unit {
                     TypeKind::Bool,
                 ),
                 one_parameter_schema(
-                    CallableParameterType::Exact(TypeKind::entity_ref(EntityKind::Character)),
+                    CallableParameterType::Exact(TypeKind::I32),
                     CallableParameterPassing::PositionalOrNamed,
                     CallableParameterPresence::Required,
                     TypeKind::String,
@@ -1512,11 +1529,11 @@ fn main() -> Unit {
             ],
         ),
     );
-    let SignatureQueryOutcome::Help(help) = entity
-        .query_in("entity_choice(@character.alice)", "@character.alice")
-        .expect("closed entity-reference query")
+    let SignatureQueryOutcome::Help(help) = exact
+        .query_in("exact_choice(1i32)", "1i32")
+        .expect("exact-slot query")
     else {
-        panic!("closed entity reference must select the exact overload")
+        panic!("exact slot must select the exact overload")
     };
     assert_eq!(help.active_signature().get(), 1);
     assert_eq!(help.signatures()[1].result(), &TypeKind::String);
@@ -2097,7 +2114,7 @@ fn diagnostic_codes(help: &SemanticSignatureHelp) -> Vec<CallableDiagnosticCode>
         .collect()
 }
 
-fn selected_overload_publication() -> EnvironmentCallablePublication {
+fn selected_overload_publication() -> TestPublication {
     let owner = EnvironmentCallableOwner::Adapter(
         AdapterPackageId::try_new("adapter.signature-selection").expect("adapter id"),
     );
@@ -2122,11 +2139,10 @@ fn selected_overload_publication() -> EnvironmentCallablePublication {
         .expect("selected overload publication record")
     })
     .collect::<Vec<_>>();
-    EnvironmentCallablePublication::try_new(owner, records, &PRODUCTION_CALLABLE_LIMITS)
-        .expect("selected overload publication")
+    TestPublication { owner, records }
 }
 
-fn ambiguous_publication() -> EnvironmentCallablePublication {
+fn ambiguous_publication() -> TestPublication {
     let owner = EnvironmentCallableOwner::Adapter(
         AdapterPackageId::try_new("adapter.signature-ambiguity").expect("adapter id"),
     );
@@ -2149,15 +2165,14 @@ fn ambiguous_publication() -> EnvironmentCallablePublication {
             .expect("ambiguous publication record")
         })
         .collect::<Vec<_>>();
-    EnvironmentCallablePublication::try_new(owner, records, &PRODUCTION_CALLABLE_LIMITS)
-        .expect("ambiguous publication")
+    TestPublication { owner, records }
 }
 
 fn publication(
     owner: &str,
     callable: &str,
     schemas: impl IntoIterator<Item = CallableSignatureSchema>,
-) -> EnvironmentCallablePublication {
+) -> TestPublication {
     let owner =
         EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).expect("adapter id"));
     let segments = callable.split('.').collect::<Vec<_>>();
@@ -2180,8 +2195,7 @@ fn publication(
             .expect("overload publication record")
         })
         .collect::<Vec<_>>();
-    EnvironmentCallablePublication::try_new(owner, records, &PRODUCTION_CALLABLE_LIMITS)
-        .expect("overload publication")
+    TestPublication { owner, records }
 }
 
 fn one_parameter_schema(

@@ -129,6 +129,16 @@ Reviewable-cut validation is recorded as follows:
   stale MCP/Agent-observe response and fixture assumptions, not propagation
   failures. They remain explicitly open rather than being counted as passing.
 
+A 2026-07-23 follow-up during the accepted adapter-nominal integration closed
+that stale Tier 2 evidence. The four failures shared one root cause: three
+sample sources returned `String` from flows whose result type was omitted and
+therefore authoritatively `Unit`. Four checked-in native golden fixtures had
+the same drift. After adding explicit `-> String` annotations,
+`CARGO_BUILD_JOBS=1 just test-tier2` passed all 46 selected MCP, Agent-observe,
+native-capture, visual-smoke, and exact PNG/imq cases. The historical 18/22
+result above remains the exact evidence from the original cut, not the current
+repository status.
+
 ## Deviations and remaining boundaries
 
 - There is no semantic deviation from the package.

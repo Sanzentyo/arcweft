@@ -348,7 +348,7 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
             documentation: Some(lsp_types::Documentation::String(format!(
                 "Rust export: {}\nPackage: {}",
                 function.rust_path(),
-                function.package().name
+                function.package().id
             ))),
             ..CompletionItem::default()
         }
@@ -358,13 +358,13 @@ pub fn rust_adapter_completions(context: &ArcweftLspContext<'_>) -> Vec<Completi
         .rust_types()
         .iter()
         .map(|ty| CompletionItem {
-            label: ty.decl().name.clone(),
+            label: ty.accepted_path().to_string(),
             kind: Some(rust_type_completion_kind(ty.decl())),
             detail: Some(ty.decl().to_string()),
             documentation: Some(lsp_types::Documentation::String(format!(
                 "Rust type: {}\nPackage: {}",
                 ty.decl().rust_path,
-                ty.package()
+                ty.package().id
             ))),
             ..CompletionItem::default()
         });
@@ -452,7 +452,7 @@ pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option
                 "{}\nRust: {}\nPackage: {}",
                 signature_label(&label, function.signature()),
                 function.rust_path(),
-                function.package().name
+                function.package().id
             ))),
             range: None,
         });
@@ -461,13 +461,13 @@ pub fn rust_adapter_hover(context: &ArcweftLspContext<'_>, name: &str) -> Option
         .adapter()
         .rust_types()
         .iter()
-        .find(|ty| ty.decl().name == name)
+        .find(|ty| ty.accepted_path().to_string() == name)
         .map(|ty| Hover {
             contents: HoverContents::Scalar(MarkedString::String(format!(
                 "{}\nRust: {}\nPackage: {}",
                 ty.decl(),
                 ty.decl().rust_path,
-                ty.package()
+                ty.package().id
             ))),
             range: None,
         })
@@ -1039,9 +1039,9 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
         AdapterTypeKind::String => "String".to_owned(),
         AdapterTypeKind::Char => "Char".to_owned(),
         AdapterTypeKind::Unit => "()".to_owned(),
-        AdapterTypeKind::Vec(item) => format!("Vec<{}>", type_kind_label(item)),
-        AdapterTypeKind::Seq(item) => format!("Seq<{}>", type_kind_label(item)),
-        AdapterTypeKind::Option(item) => format!("Option<{}>", type_kind_label(item)),
+        AdapterTypeKind::Vec { item } => format!("Vec<{}>", type_kind_label(item)),
+        AdapterTypeKind::Seq { item } => format!("Seq<{}>", type_kind_label(item)),
+        AdapterTypeKind::Option { item } => format!("Option<{}>", type_kind_label(item)),
         AdapterTypeKind::Result { ok, error } => {
             format!(
                 "Result<{}, {}>",
@@ -1049,7 +1049,7 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
                 type_kind_label(error)
             )
         }
-        AdapterTypeKind::Tuple(items) => format!(
+        AdapterTypeKind::Tuple { items } => format!(
             "({})",
             items
                 .iter()
@@ -1064,7 +1064,28 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
                 type_kind_label(error)
             )
         }
-        AdapterTypeKind::Named(name) => name.clone(),
+        AdapterTypeKind::Nominal { nominal } => {
+            let mut label = nominal
+                .path()
+                .segments()
+                .iter()
+                .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str)
+                .collect::<Vec<_>>()
+                .join(".");
+            if !nominal.arguments().is_empty() {
+                label.push('<');
+                label.push_str(
+                    &nominal
+                        .arguments()
+                        .iter()
+                        .map(type_kind_label)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+                label.push('>');
+            }
+            label
+        }
     }
 }
 
@@ -1073,14 +1094,18 @@ mod tests {
     use super::*;
     use arcweft_adapter_context::manifest::{
         AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
-        AdapterCallableParameterIndex, AdapterFunctionParam, AdapterHostCall, AdapterManifest,
+        AdapterCallableParameterIndex, AdapterEnvironmentOwnerId, AdapterFunctionParam,
+        AdapterHostCall, AdapterId, AdapterManifest, AdapterNominalDeclaration,
+        AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathPrefix,
+        AdapterNominalPathSegment, AdapterNominalTypeRef, AdapterNominalVisibility,
         AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol,
         AdapterSymbolPath, AdapterSymbolSegment, AdapterToolingDoc,
     };
     use arcweft_rust_abi::{
         ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
-        ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
-        ArcweftRustTypeRef, ArcweftRustVariant,
+        ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
+        ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
+        ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
     };
     use arcweft_verify::{
         SourceSpan as VerifySourceSpan, ToolActionApplicability, ToolActionCommand,
@@ -1391,14 +1416,16 @@ mod tests {
 
     #[test]
     fn exposes_rust_adapter_completion_and_hover() {
+        let package = rust_package_id("truck_game");
         let manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-            name: "truck_game".to_owned(),
+            id: package.clone(),
             version: "0.1.0".to_owned(),
             metadata_hash: None,
         })
         .with_type(ArcweftRustTypeDecl {
-            name: "Rank".to_owned(),
+            path: rust_type_path(["Rank"]),
             rust_path: "truck_game::Rank".to_owned(),
+            parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: Vec::new(),
             },
@@ -1410,13 +1437,17 @@ mod tests {
                 name: "score".to_owned(),
                 ty: ArcweftRustTypeRef::I32,
             }],
-            return_type: ArcweftRustTypeRef::Named {
-                name: "Rank".to_owned(),
+            return_type: ArcweftRustTypeRef::Nominal {
+                package: package.clone(),
+                path: rust_type_path(["Rank"]),
+                arguments: Vec::new(),
             },
             purity: ArcweftRustPurity::Pure,
             effects: Vec::new(),
         });
         let adapter = AdapterManifest::new("fixture", "Fixture")
+            .try_with_rust_package_mount(package, empty_rust_mount())
+            .expect("test Rust package mount is unique")
             .try_with_rust_manifest(&manifest)
             .expect("Rust callable metadata is typed");
         let context = ArcweftLspContext::new(&adapter);
@@ -1434,6 +1465,8 @@ mod tests {
     fn exposes_complex_rust_adapter_type_shapes_from_metadata() {
         let manifest = complex_rust_manifest();
         let adapter = AdapterManifest::new("fixture", "Fixture")
+            .try_with_rust_package_mount(manifest.package.id.clone(), empty_rust_mount())
+            .expect("test Rust package mount is unique")
             .try_with_rust_manifest(&manifest)
             .expect("Rust callable metadata is typed");
         let context = ArcweftLspContext::new(&adapter);
@@ -1447,7 +1480,7 @@ mod tests {
         assert!(stats.detail.as_deref().is_some_and(|detail| {
             detail.contains("score: i32")
                 && detail.contains("tags: Vec<String>")
-                && detail.contains("rank: Option<Rank>")
+                && detail.contains("rank: Option<quest_logic::Rank>")
         }));
         let rank = completions
             .iter()
@@ -1471,7 +1504,7 @@ mod tests {
 
     fn complex_rust_manifest() -> ArcweftRustManifest {
         ArcweftRustManifest::new(ArcweftRustPackage {
-            name: "quest_logic".to_owned(),
+            id: rust_package_id("quest_logic"),
             version: "0.1.0".to_owned(),
             metadata_hash: None,
         })
@@ -1483,49 +1516,53 @@ mod tests {
 
     fn player_stats_type() -> ArcweftRustTypeDecl {
         ArcweftRustTypeDecl {
-            name: "PlayerStats".to_owned(),
+            path: rust_type_path(["PlayerStats"]),
             rust_path: "quest_logic::PlayerStats".to_owned(),
+            parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Struct {
-                fields: vec![
-                    ArcweftRustField {
-                        name: "score".to_owned(),
-                        ty: ArcweftRustTypeRef::I32,
-                    },
-                    ArcweftRustField {
-                        name: "tags".to_owned(),
-                        ty: ArcweftRustTypeRef::Vec {
-                            item: Box::new(ArcweftRustTypeRef::String),
+                shape: ArcweftRustStructShape::Record {
+                    fields: vec![
+                        ArcweftRustField {
+                            name: "score".to_owned(),
+                            ty: ArcweftRustTypeRef::I32,
                         },
-                    },
-                    ArcweftRustField {
-                        name: "rank".to_owned(),
-                        ty: ArcweftRustTypeRef::Option {
-                            item: Box::new(ArcweftRustTypeRef::Named {
-                                name: "Rank".to_owned(),
-                            }),
+                        ArcweftRustField {
+                            name: "tags".to_owned(),
+                            ty: ArcweftRustTypeRef::Vec {
+                                item: Box::new(ArcweftRustTypeRef::String),
+                            },
                         },
-                    },
-                ],
+                        ArcweftRustField {
+                            name: "rank".to_owned(),
+                            ty: ArcweftRustTypeRef::Option {
+                                item: Box::new(rust_nominal("quest_logic", ["Rank"])),
+                            },
+                        },
+                    ],
+                },
             },
         }
     }
 
     fn rank_type() -> ArcweftRustTypeDecl {
         ArcweftRustTypeDecl {
-            name: "Rank".to_owned(),
+            path: rust_type_path(["Rank"]),
             rust_path: "quest_logic::Rank".to_owned(),
+            parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: vec![
                     ArcweftRustVariant {
                         name: "Bronze".to_owned(),
-                        fields: Vec::new(),
+                        payload: ArcweftRustVariantPayload::Unit,
                     },
                     ArcweftRustVariant {
                         name: "Custom".to_owned(),
-                        fields: vec![ArcweftRustField {
-                            name: "label".to_owned(),
-                            ty: ArcweftRustTypeRef::String,
-                        }],
+                        payload: ArcweftRustVariantPayload::Record {
+                            fields: vec![ArcweftRustField {
+                                name: "label".to_owned(),
+                                ty: ArcweftRustTypeRef::String,
+                            }],
+                        },
                     },
                 ],
             },
@@ -1534,8 +1571,9 @@ mod tests {
 
     fn session_id_type() -> ArcweftRustTypeDecl {
         ArcweftRustTypeDecl {
-            name: "SessionId".to_owned(),
+            path: rust_type_path(["SessionId"]),
             rust_path: "quest_logic::SessionId".to_owned(),
+            parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Newtype {
                 inner: ArcweftRustTypeRef::U64,
             },
@@ -1549,9 +1587,7 @@ mod tests {
             params: vec![
                 ArcweftRustParam {
                     name: "stats".to_owned(),
-                    ty: ArcweftRustTypeRef::Named {
-                        name: "PlayerStats".to_owned(),
-                    },
+                    ty: rust_nominal("quest_logic", ["PlayerStats"]),
                 },
                 ArcweftRustParam {
                     name: "seed".to_owned(),
@@ -1563,9 +1599,7 @@ mod tests {
                     },
                 },
             ],
-            return_type: ArcweftRustTypeRef::Named {
-                name: "Rank".to_owned(),
-            },
+            return_type: rust_nominal("quest_logic", ["Rank"]),
             purity: ArcweftRustPurity::Pure,
             effects: Vec::new(),
         }
@@ -1573,13 +1607,34 @@ mod tests {
 
     #[test]
     fn exposes_adapter_manifest_completions_and_hover() {
+        let nominal_path = adapter_nominal_path(["CustomApi"]);
+        let nominal_type = AdapterTypeKind::Nominal {
+            nominal: AdapterNominalTypeRef::try_new(
+                AdapterNominalOwner::Environment {
+                    owner: AdapterEnvironmentOwnerId::for_adapter(&AdapterId::new("custom")),
+                },
+                nominal_path.clone(),
+                [],
+            )
+            .expect("test nominal reference is valid"),
+        };
         let adapter = AdapterManifest::new("custom", "Custom")
+            .try_with_nominal_declaration(
+                AdapterNominalDeclaration::try_new(
+                    nominal_path,
+                    0,
+                    AdapterNominalVisibility::Public,
+                    "CustomApi",
+                )
+                .expect("test nominal declaration is valid"),
+            )
+            .expect("test nominal declaration is unique")
             .with_symbol(AdapterSymbol::new(
                 adapter_symbol_path(["custom"]),
-                AdapterTypeKind::Named("CustomApi".to_owned()),
+                nominal_type.clone(),
             ))
             .with_method_signature(
-                AdapterTypeKind::Named("CustomApi".to_owned()),
+                nominal_type,
                 adapter_name("read"),
                 adapter_overload(0),
                 adapter_signature([("path", AdapterTypeKind::String)], AdapterTypeKind::String),
@@ -1815,6 +1870,36 @@ mod tests {
             AdapterSymbolSegment::try_new(segment).expect("valid test adapter symbol segment")
         }))
         .expect("test adapter symbol path is non-empty")
+    }
+
+    fn adapter_nominal_path<const N: usize>(segments: [&str; N]) -> AdapterNominalPath {
+        AdapterNominalPath::try_new(segments.map(|segment| {
+            AdapterNominalPathSegment::try_new(segment).expect("valid test adapter nominal segment")
+        }))
+        .expect("test adapter nominal path is non-empty")
+    }
+
+    fn empty_rust_mount() -> AdapterNominalPathPrefix {
+        AdapterNominalPathPrefix::try_new([]).expect("empty Rust package mount is valid")
+    }
+
+    fn rust_package_id(value: &str) -> ArcweftRustPackageId {
+        ArcweftRustPackageId::try_new(value).expect("valid test Rust package ID")
+    }
+
+    fn rust_type_path<const N: usize>(segments: [&str; N]) -> ArcweftRustTypePath {
+        ArcweftRustTypePath::try_new(segments.map(|segment| {
+            ArcweftRustTypePathSegment::try_new(segment).expect("valid test Rust path segment")
+        }))
+        .expect("test Rust type path is non-empty")
+    }
+
+    fn rust_nominal<const N: usize>(package: &str, segments: [&str; N]) -> ArcweftRustTypeRef {
+        ArcweftRustTypeRef::Nominal {
+            package: rust_package_id(package),
+            path: rust_type_path(segments),
+            arguments: Vec::new(),
+        }
     }
 
     fn adapter_overload(value: usize) -> AdapterCallableOverloadIndex {

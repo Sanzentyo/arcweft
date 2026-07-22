@@ -34,6 +34,101 @@ fn complete_world_commits_once() {
         .environment()
         .verify_character_inventory(registered.symbols())
         .expect("registered descriptor verifies");
+    assert_ne!(
+        registered.environment().environment_digest().as_bytes(),
+        &[0; 32],
+        "a committed semantic world has a non-zero canonical environment identity"
+    );
+}
+
+#[test]
+fn registered_environment_digest_is_manifest_order_independent_and_identity_sensitive() {
+    use crate::{
+        callable::{AdapterPackageId, EnvironmentCallableOwner},
+        registration::{EnvironmentManifestDigest, SourceBackedEnvironmentRegistrationInput},
+    };
+
+    let (root, project, world) = root_project("environment-digest");
+    let first_document = source_document(
+        "arcweft-generated://registration-tests/environment-a",
+        "environment a",
+    );
+    let second_document = source_document(
+        "arcweft-generated://registration-tests/environment-b",
+        "environment b",
+    );
+    let input = |owner: &str, document: &SourceDocument, marker: u8| {
+        SourceBackedEnvironmentRegistrationInput::new(
+            EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).unwrap()),
+            document.identity().clone(),
+            EnvironmentManifestDigest::from_bytes([marker; 32]),
+            [],
+            [],
+            [],
+            [],
+        )
+    };
+    let manifest = sample_manifest("layers/body.png");
+    let forward_facts = one_character_facts_with_environment(
+        &root,
+        vec![
+            Arc::clone(&root),
+            Arc::clone(&first_document),
+            Arc::clone(&second_document),
+        ],
+        world.clone(),
+        &manifest,
+        vec![
+            input("adapter-a", &first_document, 1),
+            input("adapter-b", &second_document, 2),
+        ],
+    );
+    let reverse_facts = one_character_facts_with_environment(
+        &root,
+        vec![
+            Arc::clone(&second_document),
+            Arc::clone(&root),
+            Arc::clone(&first_document),
+        ],
+        world.clone(),
+        &manifest,
+        vec![
+            input("adapter-b", &second_document, 2),
+            input("adapter-a", &first_document, 1),
+        ],
+    );
+    let changed_facts = one_character_facts_with_environment(
+        &root,
+        vec![
+            Arc::clone(&root),
+            Arc::clone(&first_document),
+            Arc::clone(&second_document),
+        ],
+        world,
+        &manifest,
+        vec![
+            input("adapter-a", &first_document, 1),
+            input("adapter-b", &second_document, 3),
+        ],
+    );
+
+    let forward = register(&project, &forward_facts, TypeCheckEnv::standard(), None)
+        .expect("forward environment registers");
+    let reverse = register(&project, &reverse_facts, TypeCheckEnv::standard(), None)
+        .expect("reverse environment registers");
+    let changed = register(&project, &changed_facts, TypeCheckEnv::standard(), None)
+        .expect("changed environment registers");
+
+    assert_eq!(
+        forward.environment().environment_digest(),
+        reverse.environment().environment_digest(),
+        "manifest and document insertion order cannot affect the registered identity"
+    );
+    assert_ne!(
+        forward.environment().environment_digest(),
+        changed.environment().environment_digest(),
+        "a selected typed manifest digest participates in the registered identity"
+    );
 }
 
 #[test]
@@ -240,6 +335,7 @@ fn accepted_world_publishes_qualified_compact_and_authored_character_paths() {
         vec![root, manifest_document],
         vec![fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("typed character binding facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
@@ -384,84 +480,121 @@ fn accepted_world_catalogues_qualified_adapter_non_callable_path() {
             declaration,
             RegisteredExternalOwnerKind::Environment,
         ),
-        Ok(&RegisteredExternalOwner::Environment(environment))
+        Ok(&environment_external_owner(environment))
     );
+}
+
+fn callable_collision_input(
+    owner: &str,
+    result: crate::registration::EnvironmentTypeProjectionKind,
+) -> (
+    Arc<SourceDocument>,
+    crate::registration::SourceBackedEnvironmentRegistrationInput,
+) {
+    use crate::{
+        callable::{
+            AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableGroupIndex,
+            CallableGroupKind, CallableOverloadIndex, CallableValidator, EnvironmentCallableKind,
+            EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, SpreadArgumentPolicy,
+            UnknownNamedArgumentPolicy,
+        },
+        effect_row::EffectRow,
+        registration::{
+            EnvironmentCallableLookupInput, EnvironmentCallablePublicationMetadataInput,
+            EnvironmentCallablePublicationRecordInput, EnvironmentCallableSignatureInput,
+            EnvironmentManifestDigest, EnvironmentPublicationItemId, EnvironmentTypeProjectionNode,
+            SourceBackedEnvironmentRegistrationInput,
+        },
+    };
+
+    let owner = EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).unwrap());
+    let document = source_document(
+        &format!("arcweft-generated://registration-tests/{owner:?}"),
+        "collision",
+    );
+    let span = document
+        .span(SourceRange::new(0, "collision".len()))
+        .unwrap();
+    let callable_path = ProjectCallablePath::new(
+        CallablePackageId::try_new(match &owner {
+            EnvironmentCallableOwner::Adapter(owner) => owner.as_str(),
+            EnvironmentCallableOwner::Standard(_) => unreachable!(),
+        })
+        .unwrap(),
+        CanonicalModulePath::crate_root(),
+        CallablePath::try_new([CallableName::try_new("collision").unwrap()]).unwrap(),
+    );
+    let overload = CallableOverloadIndex::try_from_usize(0).unwrap();
+    let schema = EnvironmentCallableSignatureInput::new(
+        [crate::registration::EnvironmentParameterGroupInput::new(
+            CallableGroupIndex::try_from_usize(0).unwrap(),
+            CallableGroupKind::Initial,
+            [],
+        )],
+        EnvironmentTypeProjectionNode::new(span, result),
+        EffectRow::closed(crate::effects::EffectSet::default()),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::Reject,
+        ),
+        CallableValidator::Ordinary,
+    );
+    let record = EnvironmentCallablePublicationRecordInput::new(
+        EnvironmentPublicationItemId::AdapterFunction {
+            owner: owner.clone(),
+            path: callable_path.clone(),
+            overload,
+        },
+        EnvironmentCallableKind::Function,
+        EnvironmentCallableLookupInput::Free(callable_path),
+        overload,
+        schema,
+        EnvironmentDeclarationOrdinal::try_from_usize(0).unwrap(),
+        EnvironmentCallablePublicationMetadataInput::new(
+            CallableDocumentation::missing(),
+            None,
+            None,
+        ),
+    );
+    let input = SourceBackedEnvironmentRegistrationInput::new(
+        owner,
+        document.identity().clone(),
+        EnvironmentManifestDigest::from_bytes(*blake3::hash(document.text().as_bytes()).as_bytes()),
+        [],
+        [],
+        [],
+        [record],
+    );
+    (document, input)
 }
 
 #[test]
 fn same_rank_callable_collision_rejects_candidate_world_before_publication() {
-    use crate::{
-        callable::{
-            AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema,
-            CallableGroupIndex, CallableGroupKind, CallableLookupKey, CallableOverloadIndex,
-            CallableParameterGroup, CallableSignatureSchema, CallableValidator,
-            EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
-            EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
-            PRODUCTION_CALLABLE_LIMITS, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
-        },
-        effect_row::EffectRow,
-    };
+    use crate::registration::EnvironmentTypeProjectionKind;
 
-    let publication = |owner: &str, result: TypeKind| {
-        let schema = CallableSignatureSchema::try_new(
-            vec![
-                CallableParameterGroup::try_new(
-                    CallableGroupIndex::try_from_usize(0).unwrap(),
-                    CallableGroupKind::Initial,
-                    Vec::new(),
-                    &PRODUCTION_CALLABLE_LIMITS,
-                )
-                .unwrap(),
-            ],
-            result,
-            CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::default())),
-            CallableArgumentPolicy::new(
-                UnknownNamedArgumentPolicy::Reject,
-                SpreadArgumentPolicy::Reject,
-            ),
-            CallableValidator::Ordinary,
-            &PRODUCTION_CALLABLE_LIMITS,
-        )
-        .unwrap();
-        EnvironmentCallablePublication::try_new(
-            EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new(owner).unwrap()),
-            vec![
-                EnvironmentCallablePublicationRecord::try_new(
-                    EnvironmentCallableKind::Function,
-                    CallableLookupKey::Free(
-                        CallablePath::try_new([CallableName::try_new("collision").unwrap()])
-                            .unwrap(),
-                    ),
-                    CallableOverloadIndex::try_from_usize(0).unwrap(),
-                    schema,
-                    CallableDocumentation::missing(),
-                    None,
-                    None,
-                    EnvironmentDeclarationOrdinal::try_from_usize(0).unwrap(),
-                )
-                .unwrap(),
-            ],
-            &PRODUCTION_CALLABLE_LIMITS,
-        )
-        .unwrap()
-    };
-
+    let input = |owner, result| callable_collision_input(owner, result);
     let (root, project, world) = root_project("callable-collision");
-    let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));
-    let previous = register(&project, &facts, TypeCheckEnv::standard(), None)
+    let baseline_facts =
+        one_character_facts(&root, world.clone(), &sample_manifest("layers/body.png"));
+    let previous = register(&project, &baseline_facts, TypeCheckEnv::standard(), None)
         .expect("baseline world registers");
     let (_, previous_environment, _) = previous.into_parts();
     let previous_revision = previous_environment.character_revision();
-    let report = CharacterRegistrar::register(
-        CharacterRegistrationRequest::new(
-            Arc::new(TypeCheckEnv::standard()),
-            &project,
-            &facts,
-            Some(&previous_environment),
-        )
-        .with_callable_publication(publication("adapter-a", TypeKind::I32))
-        .with_callable_publication(publication("adapter-b", TypeKind::I64)),
-    )
+    let (first_document, first) = input("adapter-a", EnvironmentTypeProjectionKind::I32);
+    let (second_document, second) = input("adapter-b", EnvironmentTypeProjectionKind::I64);
+    let facts = one_character_facts_with_environment(
+        &root,
+        vec![Arc::clone(&root), first_document, second_document],
+        world,
+        &sample_manifest("layers/body.png"),
+        vec![first, second],
+    );
+    let report = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &facts,
+        Some(&previous_environment),
+    ))
     .expect_err("same-rank providers for one key reject the candidate world");
 
     assert!(report.diagnostics().iter().any(|diagnostic| matches!(
@@ -485,9 +618,14 @@ fn project_world_package_mismatch_rejects_registration_as_a_corrupt_catalog() {
         "callable-package-mismatch",
     )
     .expect("mismatched symbol world");
-    let facts =
-        ProjectRegistrationFacts::try_new(world, vec![Arc::clone(&root)], Vec::new(), Vec::new())
-            .expect("registration facts retain their own typed world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&root)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts retain their own typed world");
 
     let report = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect_err("registration cannot combine project and symbol-world packages");

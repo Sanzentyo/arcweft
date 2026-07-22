@@ -1,0 +1,709 @@
+//! Canonical semantic identity encoding for checked types.
+
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationId, CallableDeclarationOwner, ProjectSymbolWorldId,
+    nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
+};
+use arcweft_lang_syntax::{
+    ast::module_path::{CanonicalModulePath, ModulePathRoot},
+    expr::LifetimeScopeKind,
+    reference::BorrowKind,
+    types::TypePath,
+};
+use arcweft_source::SourceSpan;
+
+use crate::{
+    effect_row::{EffectRow, EffectRowTail},
+    env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId, OpenNominalRuleId},
+};
+
+use super::{
+    AcceptedNominalType, ArrayLength, CharacterNominalType, EntityKind, GenericTypeOwnerId,
+    GenericTypeParameterId, HandleState, IteratorStateKind, MapKind, OpenNominalType,
+    ProjectNominalType, TypeKind,
+};
+
+const DOMAIN: &[u8] = b"arcweft.semantic-type.identity.v1\0";
+
+/// Stable semantic identity of one complete checked type.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SemanticTypeDigest([u8; 32]);
+
+impl SemanticTypeDigest {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl TypeKind {
+    /// Returns the canonical typed identity digest used by semantic caches.
+    #[must_use]
+    pub fn semantic_identity_digest(&self) -> SemanticTypeDigest {
+        let mut encoder = Encoder::new(DOMAIN);
+        encoder.ty(self);
+        SemanticTypeDigest(*encoder.finish().as_bytes())
+    }
+}
+
+struct Encoder(blake3::Hasher);
+
+impl Encoder {
+    fn new(domain: &[u8]) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(domain);
+        Self(hasher)
+    }
+
+    fn finish(self) -> blake3::Hash {
+        self.0.finalize()
+    }
+
+    fn tag(&mut self, value: u16) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    fn byte(&mut self, value: u8) {
+        self.0.update(&[value]);
+    }
+
+    fn bool(&mut self, value: bool) {
+        self.byte(u8::from(value));
+    }
+
+    fn u16(&mut self, value: u16) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    fn u32(&mut self, value: u32) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    fn u64(&mut self, value: u64) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    fn len(&mut self, value: usize) {
+        self.u32(u32::try_from(value).expect("accepted semantic sequences fit the u32 contract"));
+    }
+
+    fn string(&mut self, value: &str) {
+        self.len(value.len());
+        self.0.update(value.as_bytes());
+    }
+
+    fn option<T>(&mut self, value: Option<&T>, encode: impl FnOnce(&mut Self, &T)) {
+        match value {
+            Some(value) => {
+                self.byte(1);
+                encode(self, value);
+            }
+            None => self.byte(0),
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the stable semantic digest intentionally keeps one exhaustive fixed-tag match so a new TypeKind variant cannot bypass identity encoding"
+    )]
+    fn ty(&mut self, ty: &TypeKind) {
+        match ty {
+            TypeKind::Bool => self.tag(1),
+            TypeKind::I8 => self.tag(2),
+            TypeKind::I16 => self.tag(3),
+            TypeKind::I32 => self.tag(4),
+            TypeKind::I64 => self.tag(5),
+            TypeKind::I128 => self.tag(6),
+            TypeKind::ISize => self.tag(7),
+            TypeKind::U8 => self.tag(8),
+            TypeKind::U16 => self.tag(9),
+            TypeKind::U32 => self.tag(10),
+            TypeKind::U64 => self.tag(11),
+            TypeKind::U128 => self.tag(12),
+            TypeKind::USize => self.tag(13),
+            TypeKind::F32 => self.tag(14),
+            TypeKind::F64 => self.tag(15),
+            TypeKind::String => self.tag(16),
+            TypeKind::Char => self.tag(17),
+            TypeKind::Bytes => self.tag(18),
+            TypeKind::TextCluster => self.tag(19),
+            TypeKind::Duration => self.tag(20),
+            TypeKind::Range(inner) => {
+                self.tag(21);
+                self.ty(inner);
+            }
+            TypeKind::IteratorState { family, item } => {
+                self.tag(22);
+                self.iterator_family(*family);
+                self.ty(item);
+            }
+            TypeKind::DisplayText => self.tag(23),
+            TypeKind::DebugStatePath => self.tag(24),
+            TypeKind::ObservationFieldPath => self.tag(25),
+            TypeKind::Ref(entity) => {
+                self.tag(26);
+                self.entity_kind(entity.kind());
+                self.option(entity.value(), Self::ty);
+            }
+            TypeKind::Probe(inner) => {
+                self.tag(27);
+                self.ty(inner);
+            }
+            TypeKind::Predicate => self.tag(28),
+            TypeKind::Observation => self.tag(29),
+            TypeKind::ObservedObject => self.tag(30),
+            TypeKind::AgentBBox => self.tag(31),
+            TypeKind::ActionName => self.tag(32),
+            TypeKind::ActionTarget => self.tag(33),
+            TypeKind::ActionResult => self.tag(34),
+            TypeKind::AgentValue => self.tag(35),
+            TypeKind::DataFormat => self.tag(36),
+            TypeKind::DataShape => self.tag(37),
+            TypeKind::AgentEntityMetadata => self.tag(38),
+            TypeKind::AgentSourceAnchor => self.tag(39),
+            TypeKind::AgentProjectGraphNeighborhood => self.tag(40),
+            TypeKind::AgentProjectGraphSymbol => self.tag(41),
+            TypeKind::AgentProjectGraphEdge => self.tag(42),
+            TypeKind::CaptureTarget => self.tag(43),
+            TypeKind::CaptureRef => self.tag(44),
+            TypeKind::AgentResource => self.tag(45),
+            TypeKind::AgentResourceBody => self.tag(46),
+            TypeKind::RagContextPack => self.tag(47),
+            TypeKind::Vec(inner) => {
+                self.tag(48);
+                self.ty(inner);
+            }
+            TypeKind::Array { item, len } => {
+                self.tag(49);
+                self.ty(item);
+                self.array_length(len);
+            }
+            TypeKind::Slice(inner) => {
+                self.tag(50);
+                self.ty(inner);
+            }
+            TypeKind::Seq(inner) => {
+                self.tag(51);
+                self.ty(inner);
+            }
+            TypeKind::Map { kind, key, value } => {
+                self.tag(52);
+                self.map_kind(*kind);
+                self.ty(key);
+                self.ty(value);
+            }
+            TypeKind::BorrowRef {
+                kind,
+                lifetime,
+                inner,
+            } => {
+                self.tag(53);
+                self.borrow_kind(*kind);
+                self.option(lifetime.as_ref(), Self::lifetime);
+                self.ty(inner);
+            }
+            TypeKind::Need { ready, error } => {
+                self.tag(54);
+                self.ty(ready);
+                self.ty(error);
+            }
+            TypeKind::Stream { item, error } => {
+                self.tag(55);
+                self.ty(item);
+                self.ty(error);
+            }
+            TypeKind::Source { item, error } => {
+                self.tag(56);
+                self.ty(item);
+                self.ty(error);
+            }
+            TypeKind::Result { ok, error } => {
+                self.tag(57);
+                self.ty(ok);
+                self.ty(error);
+            }
+            TypeKind::Option(inner) => {
+                self.tag(58);
+                self.ty(inner);
+            }
+            TypeKind::Handle {
+                name,
+                lifetime,
+                state,
+                must_drop,
+            } => {
+                self.tag(59);
+                self.string(name);
+                self.lifetime(lifetime);
+                self.handle_state(*state);
+                self.bool(*must_drop);
+            }
+            TypeKind::ThreadHandle(inner) => {
+                self.tag(60);
+                self.ty(inner);
+            }
+            TypeKind::Shared(inner) => {
+                self.tag(61);
+                self.ty(inner);
+            }
+            TypeKind::Function {
+                params,
+                return_type,
+                effects,
+            } => {
+                self.tag(62);
+                self.types(params);
+                self.ty(return_type);
+                self.effect_row(effects);
+            }
+            TypeKind::GenericParam(parameter) => {
+                self.tag(63);
+                self.generic_parameter(parameter);
+            }
+            TypeKind::ProjectNominal(nominal) => {
+                self.tag(64);
+                self.project_nominal(nominal);
+            }
+            TypeKind::AcceptedNominal(nominal) => {
+                self.tag(65);
+                self.accepted_nominal(nominal);
+            }
+            TypeKind::OpenNominal(nominal) => {
+                self.tag(66);
+                self.open_nominal(nominal);
+            }
+            TypeKind::Error(poison) => {
+                self.tag(67);
+                self.u32(poison.index());
+            }
+            TypeKind::Projection {
+                subject,
+                trait_name,
+                assoc,
+            } => {
+                self.tag(68);
+                self.ty(subject);
+                self.option(trait_name.as_ref(), |encoder, value| encoder.string(value));
+                self.string(assoc);
+            }
+            TypeKind::Speaker(kind) => {
+                self.tag(69);
+                self.entity_kind(kind);
+            }
+            TypeKind::SpeakerPreset(kind) => {
+                self.tag(70);
+                self.entity_kind(kind);
+            }
+            TypeKind::CharacterPatch(kind) => {
+                self.tag(71);
+                self.entity_kind(kind);
+            }
+            TypeKind::FocusPatch => self.tag(72),
+            TypeKind::CharacterNominal(nominal) => {
+                self.tag(73);
+                self.character_nominal(nominal);
+            }
+            TypeKind::Named(name) => {
+                self.tag(74);
+                self.string(name);
+            }
+            TypeKind::Tuple(items) => {
+                self.tag(75);
+                self.types(items);
+            }
+            TypeKind::Choice(items) => {
+                self.tag(76);
+                self.types(items);
+            }
+            TypeKind::Unit => self.tag(77),
+            TypeKind::Never => self.tag(78),
+        }
+    }
+
+    fn types(&mut self, types: &[TypeKind]) {
+        self.len(types.len());
+        for ty in types {
+            self.ty(ty);
+        }
+    }
+
+    fn array_length(&mut self, length: &ArrayLength) {
+        match length {
+            ArrayLength::Const(value) => {
+                self.byte(0);
+                self.u64(u64::try_from(*value).expect("array lengths fit u64"));
+            }
+            ArrayLength::Generic(parameter) => {
+                self.byte(1);
+                self.generic_parameter(parameter);
+            }
+            ArrayLength::Error(poison) => {
+                self.byte(2);
+                self.u32(poison.index());
+            }
+            ArrayLength::Inferred => self.byte(3),
+        }
+    }
+
+    fn generic_parameter(&mut self, parameter: &GenericTypeParameterId) {
+        self.generic_owner(parameter.owner());
+        self.u16(parameter.ordinal());
+    }
+
+    fn generic_owner(&mut self, owner: &GenericTypeOwnerId) {
+        match owner {
+            GenericTypeOwnerId::Callable(id) => {
+                self.byte(0);
+                self.callable_declaration(id);
+            }
+            GenericTypeOwnerId::Nominal(id) => {
+                self.byte(1);
+                self.project_nominal_declaration(id);
+            }
+            GenericTypeOwnerId::AcceptedNominal(id) => {
+                self.byte(2);
+                self.accepted_nominal_id(id);
+            }
+            GenericTypeOwnerId::AcceptedSource(source) => {
+                self.byte(3);
+                self.source_span(source);
+            }
+            GenericTypeOwnerId::Detached(id) => {
+                self.byte(4);
+                self.u64(id.value());
+            }
+        }
+    }
+
+    fn project_nominal(&mut self, nominal: &ProjectNominalType) {
+        self.project_nominal_declaration(nominal.declaration());
+        self.types(nominal.arguments());
+    }
+
+    fn accepted_nominal(&mut self, nominal: &AcceptedNominalType) {
+        self.accepted_nominal_id(nominal.declaration());
+        self.types(nominal.arguments());
+    }
+
+    fn open_nominal(&mut self, nominal: &OpenNominalType) {
+        self.open_rule(nominal.rule());
+        self.type_path(nominal.path());
+        self.types(nominal.arguments());
+    }
+
+    fn callable_declaration(&mut self, id: &CallableDeclarationId) {
+        self.string(id.package().as_str());
+        self.module_path(id.module());
+        self.callable_owner(id.owner());
+        self.len(id.owner_path().len());
+        for segment in id.owner_path() {
+            self.string(segment.as_str());
+        }
+        self.string(id.name());
+    }
+
+    fn project_nominal_declaration(&mut self, id: &ProjectNominalDeclarationId) {
+        self.project_world(id.world());
+        self.0.update(id.revision().as_source_set().as_bytes());
+        self.module_path(id.module());
+        self.byte(match id.kind() {
+            ProjectNominalDeclarationKind::Struct => 0,
+            ProjectNominalDeclarationKind::Enum => 1,
+            ProjectNominalDeclarationKind::TypeAlias => 2,
+        });
+        self.len(id.owner_path().len());
+        for segment in id.owner_path() {
+            self.string(segment.as_str());
+        }
+        self.string(id.name().as_str());
+    }
+
+    fn project_world(&mut self, world: &ProjectSymbolWorldId) {
+        self.string(world.package().as_str());
+        self.string(world.root_document().as_str());
+        self.string(world.profile());
+    }
+
+    fn accepted_nominal_id(&mut self, id: &AcceptedNominalId) {
+        match id.owner() {
+            AcceptedNominalOwnerId::Standard => self.byte(0),
+            AcceptedNominalOwnerId::Environment(owner) => {
+                self.byte(1);
+                self.string(owner.as_str());
+            }
+            AcceptedNominalOwnerId::RustPackage(package) => {
+                self.byte(2);
+                self.string(package.as_str());
+            }
+            AcceptedNominalOwnerId::Character(character) => {
+                self.byte(3);
+                self.string(character.as_str());
+            }
+        }
+        self.type_path(id.canonical_path());
+    }
+
+    fn open_rule(&mut self, id: &OpenNominalRuleId) {
+        self.string(id.owner().as_str());
+        self.u32(id.ordinal());
+    }
+
+    fn type_path(&mut self, path: &TypePath) {
+        self.module_root(path.root());
+        self.len(path.segments().len());
+        for segment in path.segments() {
+            self.string(segment.as_str());
+        }
+    }
+
+    fn module_path(&mut self, path: &CanonicalModulePath) {
+        self.len(path.segments().len());
+        for segment in path.segments() {
+            self.string(segment.as_str());
+        }
+    }
+
+    fn source_span(&mut self, source: &SourceSpan) {
+        self.string(source.source().id().as_str());
+        self.0.update(source.source().revision().as_bytes());
+        self.u64(source.source().source_len());
+        let range = source.range();
+        self.u64(u64::try_from(range.start()).expect("source offsets fit u64"));
+        self.u64(u64::try_from(range.end()).expect("source offsets fit u64"));
+    }
+
+    fn effect_row(&mut self, row: &EffectRow) {
+        self.len(row.concrete().iter().len());
+        for effect in row.concrete().iter() {
+            self.string(effect.as_str());
+        }
+        match row.tail() {
+            EffectRowTail::Closed => self.byte(0),
+            EffectRowTail::Variable(variable) => {
+                self.byte(1);
+                self.u32(variable.index());
+            }
+            EffectRowTail::Unknown => self.byte(2),
+        }
+    }
+
+    fn character_nominal(&mut self, nominal: &CharacterNominalType) {
+        match nominal {
+            CharacterNominalType::Look { character } => {
+                self.byte(0);
+                self.string(character.as_str());
+            }
+            CharacterNominalType::Part { character } => {
+                self.byte(1);
+                self.string(character.as_str());
+            }
+            CharacterNominalType::Variant { character, part } => {
+                self.byte(2);
+                self.string(character.as_str());
+                self.string(part.as_str());
+            }
+        }
+    }
+
+    fn callable_owner(&mut self, owner: CallableDeclarationOwner) {
+        self.byte(match owner {
+            CallableDeclarationOwner::Function => 0,
+            CallableDeclarationOwner::ExternCapability => 1,
+            CallableDeclarationOwner::View => 2,
+            CallableDeclarationOwner::Predicate => 3,
+            CallableDeclarationOwner::Proof => 4,
+        });
+    }
+
+    fn module_root(&mut self, root: ModulePathRoot) {
+        match root {
+            ModulePathRoot::ImplicitCrate => self.byte(0),
+            ModulePathRoot::Crate => self.byte(1),
+            ModulePathRoot::SelfModule => self.byte(2),
+            ModulePathRoot::Super(levels) => {
+                self.byte(3);
+                self.u64(u64::try_from(levels).expect("module parent depth fits u64"));
+            }
+        }
+    }
+
+    fn iterator_family(&mut self, family: IteratorStateKind) {
+        self.byte(match family {
+            IteratorStateKind::Range => 0,
+            IteratorStateKind::Seq => 1,
+            IteratorStateKind::Stream => 2,
+            IteratorStateKind::Vec => 3,
+            IteratorStateKind::Array => 4,
+            IteratorStateKind::Slice => 5,
+        });
+    }
+
+    fn map_kind(&mut self, kind: MapKind) {
+        self.byte(match kind {
+            MapKind::Ordered => 0,
+            MapKind::Sorted => 1,
+            MapKind::BTree => 2,
+        });
+    }
+
+    fn borrow_kind(&mut self, kind: BorrowKind) {
+        self.byte(match kind {
+            BorrowKind::Shared => 0,
+            BorrowKind::Mutable => 1,
+        });
+    }
+
+    fn lifetime(&mut self, lifetime: &LifetimeScopeKind) {
+        match lifetime {
+            LifetimeScopeKind::Frame => self.byte(0),
+            LifetimeScopeKind::Tick => self.byte(1),
+            LifetimeScopeKind::Cue => self.byte(2),
+            LifetimeScopeKind::Line => self.byte(3),
+            LifetimeScopeKind::Scene => self.byte(4),
+            LifetimeScopeKind::Flow => self.byte(5),
+            LifetimeScopeKind::Session => self.byte(6),
+            LifetimeScopeKind::Global => self.byte(7),
+            LifetimeScopeKind::Persistent => self.byte(8),
+            LifetimeScopeKind::Named(name) => {
+                self.byte(9);
+                self.string(name);
+            }
+        }
+    }
+
+    fn handle_state(&mut self, state: HandleState) {
+        self.byte(match state {
+            HandleState::Live => 0,
+            HandleState::Dropped => 1,
+            HandleState::Detached => 2,
+            HandleState::MovedOut => 3,
+        });
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "fixed entity-family tags are the canonical identity table and must remain exhaustive"
+    )]
+    fn entity_kind(&mut self, kind: &EntityKind) {
+        if let EntityKind::Other(value) = kind {
+            self.u16(37);
+            self.string(value);
+            return;
+        }
+        self.u16(match kind {
+            EntityKind::Agent => 0,
+            EntityKind::Entry => 1,
+            EntityKind::Flow => 2,
+            EntityKind::Choice => 3,
+            EntityKind::ChoiceOption => 4,
+            EntityKind::Character => 5,
+            EntityKind::View => 6,
+            EntityKind::Action => 7,
+            EntityKind::Activity => 8,
+            EntityKind::DialogueLine => 9,
+            EntityKind::Text => 10,
+            EntityKind::Content => 11,
+            EntityKind::Input => 12,
+            EntityKind::Button => 13,
+            EntityKind::Style => 14,
+            EntityKind::Asset => 15,
+            EntityKind::Image => 16,
+            EntityKind::Animation => 17,
+            EntityKind::Capture => 18,
+            EntityKind::Hook => 19,
+            EntityKind::Signal => 20,
+            EntityKind::Metric => 21,
+            EntityKind::Scene => 22,
+            EntityKind::Source => 23,
+            EntityKind::Test => 24,
+            EntityKind::Bench => 25,
+            EntityKind::Layer => 26,
+            EntityKind::Voice => 27,
+            EntityKind::Se => 28,
+            EntityKind::Bgm => 29,
+            EntityKind::AudioBus => 30,
+            EntityKind::MixerSnapshot => 31,
+            EntityKind::Ducking => 32,
+            EntityKind::Motion => 33,
+            EntityKind::Rig => 34,
+            EntityKind::Slot => 35,
+            EntityKind::Target => 36,
+            EntityKind::Other(_) => unreachable!("custom entity family handled above"),
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arcweft_lang_syntax::{
+        ast::{
+            module_path::ModulePathRoot,
+            symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
+        },
+        types::TypePath,
+    };
+
+    use crate::{
+        env::{
+            identity::EnvironmentBindingId,
+            nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
+        },
+        types::{AcceptedNominalType, TypeKind},
+    };
+
+    fn path(name: &str) -> TypePath {
+        ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            [ProjectSymbolSegment::try_new(name).expect("segment")],
+        )
+        .expect("path")
+        .into()
+    }
+
+    #[test]
+    fn accepted_owner_and_nested_arguments_participate_in_identity() {
+        let first = TypeKind::AcceptedNominal(AcceptedNominalType::new(
+            AcceptedNominalId::new(
+                AcceptedNominalOwnerId::Environment(
+                    EnvironmentBindingId::try_new("adapter:first").expect("owner"),
+                ),
+                path("Value"),
+            ),
+            [TypeKind::Vec(Box::new(TypeKind::I32))],
+        ));
+        let owner_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
+            AcceptedNominalId::new(
+                AcceptedNominalOwnerId::Environment(
+                    EnvironmentBindingId::try_new("adapter:second").expect("owner"),
+                ),
+                path("Value"),
+            ),
+            [TypeKind::Vec(Box::new(TypeKind::I32))],
+        ));
+        let argument_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
+            AcceptedNominalId::new(
+                AcceptedNominalOwnerId::Environment(
+                    EnvironmentBindingId::try_new("adapter:first").expect("owner"),
+                ),
+                path("Value"),
+            ),
+            [TypeKind::Vec(Box::new(TypeKind::I64))],
+        ));
+
+        assert_eq!(
+            first.semantic_identity_digest(),
+            first.clone().semantic_identity_digest()
+        );
+        assert_ne!(
+            first.semantic_identity_digest(),
+            owner_changed.semantic_identity_digest()
+        );
+        assert_ne!(
+            first.semantic_identity_digest(),
+            argument_changed.semantic_identity_digest()
+        );
+    }
+}

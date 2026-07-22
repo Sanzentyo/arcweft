@@ -415,6 +415,12 @@ impl ArcweftLspSession {
                 actual: environment.character_revision(),
             });
         }
+        if environment.environment_digest() != stamp.environment_digest() {
+            return Err(SignatureRequestStale::EnvironmentDigestChanged {
+                expected: stamp.environment_digest(),
+                actual: environment.environment_digest(),
+            });
+        }
         if !Arc::ptr_eq(world, stamp.world()) {
             return Err(SignatureRequestStale::WorldArcChanged);
         }

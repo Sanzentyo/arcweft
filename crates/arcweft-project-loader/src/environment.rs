@@ -21,7 +21,7 @@ use arcweft_lang_hir::symbol::{
 };
 use arcweft_lang_sema::registration::{
     CharacterRegistrationReport, ExternalRegistrationFact, ProjectRegistrationFacts,
-    RegisteredExternalOwner,
+    RegisteredExternalOwner, SourceBackedEnvironmentRegistrationInput,
 };
 use arcweft_lang_syntax::ast::{
     common::Visibility,
@@ -227,6 +227,7 @@ pub fn load_project_registration(
         sources.documents,
         sources.external_facts,
         catalogs,
+        sources.environment_inputs,
     )
     .map_err(|report| ProjectRegistrationLoadError::Registration(Box::new(report)))?;
     sources.file_documents.sort_by(|left, right| {
@@ -281,6 +282,7 @@ pub fn load_profile_registration(
             .collect(),
         external_facts: Vec::new(),
         character_manifests: Vec::new(),
+        environment_inputs: Vec::new(),
     };
     append_adapter_sources(
         &mut sources,
@@ -304,6 +306,7 @@ pub fn load_profile_registration(
         sources.documents,
         sources.external_facts,
         catalogs,
+        sources.environment_inputs,
     )
     .map_err(|report| ProjectRegistrationLoadError::Registration(Box::new(report)))?;
     sources.file_documents.sort_by(|left, right| {
@@ -326,6 +329,7 @@ struct RegistrationSources {
     file_documents: Vec<LoadedFileDocument>,
     external_facts: Vec<ExternalRegistrationFact>,
     character_manifests: Vec<SourceBackedCharacterManifest>,
+    environment_inputs: Vec<SourceBackedEnvironmentRegistrationInput>,
 }
 
 struct CharacterRegistrationSource {
@@ -400,6 +404,7 @@ fn project_registration_sources(
         file_documents,
         external_facts: request.external_facts.clone(),
         character_manifests: Vec::new(),
+        environment_inputs: Vec::new(),
     }
 }
 
@@ -410,10 +415,12 @@ fn append_adapter_sources<'a>(
     for (index, manifest) in manifests.into_iter().enumerate() {
         let ordinal = u64::try_from(index)
             .map_err(|_| ProjectRegistrationLoadError::AdapterOrdinalOverflow)?;
-        let facts = manifest.source_backed_registration_facts(ordinal)?;
-        let (document, facts) = facts.into_parts();
-        sources.documents.push(document);
-        sources.external_facts.extend(facts);
+        let parts = manifest
+            .source_backed_registration_facts(ordinal)?
+            .into_parts();
+        sources.documents.push(parts.document);
+        sources.external_facts.extend(parts.externals);
+        sources.environment_inputs.push(parts.environment);
     }
     Ok(())
 }

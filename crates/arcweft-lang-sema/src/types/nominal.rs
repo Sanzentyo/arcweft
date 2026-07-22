@@ -18,6 +18,7 @@ pub struct TypePoisonId(u32);
 pub enum GenericTypeOwnerId {
     Callable(CallableDeclarationId),
     Nominal(ProjectNominalDeclarationId),
+    AcceptedNominal(AcceptedNominalId),
     AcceptedSource(SourceSpan),
     Detached(DetachedTypeOwnerId),
 }
@@ -102,6 +103,7 @@ impl GenericTypeParameterId {
         let owner = match self.owner.as_ref() {
             GenericTypeOwnerId::Callable(owner) => owner.qualified_name(),
             GenericTypeOwnerId::Nominal(owner) => owner.qualified_name(),
+            GenericTypeOwnerId::AcceptedNominal(owner) => owner.source_label(),
             GenericTypeOwnerId::AcceptedSource(source) => {
                 let range = source.range();
                 format!(
@@ -168,7 +170,10 @@ impl AcceptedNominalType {
     }
 
     pub(super) fn source_label(&self) -> String {
-        application_label(&self.declaration.source_label(), &self.arguments)
+        application_label(
+            &self.declaration.canonical_path().canonical_string(),
+            &self.arguments,
+        )
     }
 }
 

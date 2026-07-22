@@ -63,6 +63,7 @@ pub fn compile_source_with_env(
         vec![Arc::clone(&manifest), Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("single-source documents form coherent registration facts");
     let context = ProjectCompilationContext::new(
@@ -71,7 +72,6 @@ pub fn compile_source_with_env(
         Arc::new(ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     );
     let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())?;
     let report = compiled.runtime_plan();

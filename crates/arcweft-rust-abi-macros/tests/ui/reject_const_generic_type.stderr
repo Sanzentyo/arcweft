@@ -1,0 +1,5 @@
+error: ArcweftType metadata does not support const generic ADTs
+ --> tests/ui/reject_const_generic_type.rs:4:19
+  |
+4 | pub struct Buffer<const N: usize> {
+  |                   ^^^^^

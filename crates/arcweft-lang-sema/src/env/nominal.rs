@@ -83,6 +83,19 @@ pub struct AcceptedNominalRecord {
     source: Option<SourceSpan>,
 }
 
+/// Failure to instantiate one already accepted nominal declaration.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AcceptedNominalInstantiationError {
+    #[error("accepted nominal `{id}` expects {expected} type argument(s), but received {actual}")]
+    WrongArity {
+        id: String,
+        expected: u16,
+        actual: usize,
+    },
+    #[error("accepted nominal `{id}` has semantics incompatible with its declared arity")]
+    InvalidSemantics { id: String },
+}
+
 /// Stable identity of one explicitly registered open-name rule.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OpenNominalRuleId {
@@ -324,6 +337,35 @@ impl AcceptedNominalRecord {
 
     pub const fn source(&self) -> Option<&SourceSpan> {
         self.source.as_ref()
+    }
+
+    /// Instantiates this exact record without performing another name lookup.
+    pub(crate) fn try_instantiate(
+        &self,
+        arguments: impl Into<Box<[TypeKind]>>,
+    ) -> Result<TypeKind, AcceptedNominalInstantiationError> {
+        let arguments = arguments.into();
+        if arguments.len() != usize::from(self.arity) {
+            return Err(AcceptedNominalInstantiationError::WrongArity {
+                id: self.id.source_label(),
+                expected: self.arity,
+                actual: arguments.len(),
+            });
+        }
+        match &self.semantics {
+            AcceptedNominalSemantics::Exact(ty) if arguments.is_empty() => Ok(ty.clone()),
+            AcceptedNominalSemantics::Opaque => Ok(TypeKind::AcceptedNominal(
+                crate::types::AcceptedNominalType::new(self.id.clone(), arguments),
+            )),
+            AcceptedNominalSemantics::Character(character) if arguments.is_empty() => {
+                Ok(TypeKind::CharacterNominal(character.clone()))
+            }
+            AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Character(_) => {
+                Err(AcceptedNominalInstantiationError::InvalidSemantics {
+                    id: self.id.source_label(),
+                })
+            }
+        }
     }
 }
 

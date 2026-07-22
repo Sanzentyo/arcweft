@@ -26,18 +26,24 @@ use arcweft_lang_sema::{
         CallableParameter, CallableParameterGroup, CallableParameterIndex,
         CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
         CallableSignatureSchema, CallableValidator, EnvironmentCallableKind,
-        EnvironmentCallableOwner, EnvironmentCallablePublication,
-        EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
-        PRODUCTION_CALLABLE_LIMITS, RustCallableProvenance, RustCallablePurity, RustItemPath,
-        RustPackageProvenance, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        EnvironmentCallableOwner, EnvironmentCallablePublicationRecord,
+        EnvironmentDeclarationOrdinal, PRODUCTION_CALLABLE_LIMITS, ProjectCallablePath,
+        RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
+        SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     checker::{TypeCheckReport, TypeExpressionId, analyze_registered_project_types},
     effect_row::EffectRow,
     effects::EffectSet,
-    env::TypeCheckEnv,
+    env::{TypeCheckEnv, nominal::RustPackageId},
     registration::{
-        CharacterRegistrar, CharacterRegistrationRequest, ExternalRegistrationFact,
-        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredSemanticWorld,
+        CharacterRegistrar, CharacterRegistrationRequest, EnvironmentCallableLookupInput,
+        EnvironmentCallablePublicationMetadataInput, EnvironmentCallablePublicationRecordInput,
+        EnvironmentCallableSignatureInput, EnvironmentManifestDigest,
+        EnvironmentParameterGroupInput, EnvironmentParameterInput,
+        EnvironmentParameterMetadataInput, EnvironmentParameterTypeInput,
+        EnvironmentPublicationItemId, EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode,
+        ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredExternalOwner,
+        RegisteredSemanticWorld, SourceBackedEnvironmentRegistrationInput,
     },
     signature::{
         SignatureNotApplicable, SignatureQuery, SignatureQueryControl, SignatureQueryOutcome,
@@ -61,12 +67,17 @@ struct SignatureFixture {
     world: RegisteredSemanticWorld,
 }
 
+struct TestPublication {
+    owner: EnvironmentCallableOwner,
+    records: Vec<EnvironmentCallablePublicationRecord>,
+}
+
 impl SignatureFixture {
     fn new(
         name: &str,
         source: &str,
         manifests: &[CharacterManifest],
-        publications: Vec<EnvironmentCallablePublication>,
+        publications: Vec<TestPublication>,
     ) -> Self {
         let document = Arc::new(
             SourceDocument::try_new(
@@ -100,16 +111,34 @@ impl SignatureFixture {
             "character-signature-facts",
         )
         .expect("symbol world");
-        let registration = registration_facts(&document, world_id, manifests);
-        let mut request = CharacterRegistrationRequest::new(
+        let mut environment_documents = Vec::new();
+        let mut environment_inputs = Vec::new();
+        for (index, publication) in publications.into_iter().enumerate() {
+            let environment_document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(format!("memory:///{name}-environment-{index}"))
+                        .expect("environment source ID"),
+                    SourceName::Generated,
+                    "environment publication",
+                )
+                .expect("environment source"),
+            );
+            environment_inputs.push(environment_input(publication, &environment_document));
+            environment_documents.push(environment_document);
+        }
+        let registration = registration_facts(
+            &document,
+            world_id,
+            manifests,
+            environment_documents,
+            environment_inputs,
+        );
+        let request = CharacterRegistrationRequest::new(
             Arc::new(TypeCheckEnv::standard()),
             &project,
             &registration,
             None,
         );
-        for publication in publications {
-            request = request.with_callable_publication(publication);
-        }
         let world = CharacterRegistrar::register(request).expect("registered semantic world");
         Self {
             document,
@@ -189,8 +218,11 @@ fn registration_facts(
     source: &Arc<SourceDocument>,
     world: ProjectSymbolWorldId,
     manifests: &[CharacterManifest],
+    environment_documents: Vec<Arc<SourceDocument>>,
+    environment_inputs: Vec<SourceBackedEnvironmentRegistrationInput>,
 ) -> ProjectRegistrationFacts {
     let mut documents = vec![Arc::clone(source)];
+    documents.extend(environment_documents);
     let mut source_backed = Vec::new();
     let mut externals = Vec::new();
     for (index, manifest) in manifests.iter().enumerate() {
@@ -238,7 +270,7 @@ fn registration_facts(
                 .expect("source-backed character catalog"),
         ]
     };
-    ProjectRegistrationFacts::try_new(world, documents, externals, catalogs)
+    ProjectRegistrationFacts::try_new(world, documents, externals, catalogs, environment_inputs)
         .expect("registration facts")
 }
 
@@ -303,7 +335,7 @@ struct RecordSpec {
     result: TypeKind,
 }
 
-fn publication(owner: &str, specs: Vec<RecordSpec>) -> EnvironmentCallablePublication {
+fn publication(owner: &str, specs: Vec<RecordSpec>) -> TestPublication {
     let owner = EnvironmentCallableOwner::Adapter(
         AdapterPackageId::try_new(owner).expect("adapter package ID"),
     );
@@ -325,8 +357,150 @@ fn publication(owner: &str, specs: Vec<RecordSpec>) -> EnvironmentCallablePublic
             .expect("callable publication record")
         })
         .collect();
-    EnvironmentCallablePublication::try_new(owner, records, &PRODUCTION_CALLABLE_LIMITS)
-        .expect("callable publication")
+    TestPublication { owner, records }
+}
+
+fn environment_input(
+    publication: TestPublication,
+    source: &SourceDocument,
+) -> SourceBackedEnvironmentRegistrationInput {
+    let span = source
+        .span(SourceRange::new(0, source.text().len()))
+        .expect("environment source span");
+    let package = CallablePackageId::try_new(match &publication.owner {
+        EnvironmentCallableOwner::Adapter(owner) => owner.as_str(),
+        EnvironmentCallableOwner::Standard(_) => "standard-character-signature",
+    })
+    .expect("environment package");
+    let records = publication
+        .records
+        .into_iter()
+        .map(|record| environment_record_input(&publication.owner, &package, &span, &record))
+        .collect::<Vec<_>>();
+    SourceBackedEnvironmentRegistrationInput::new(
+        publication.owner,
+        source.identity().clone(),
+        EnvironmentManifestDigest::from_bytes(*blake3::hash(source.text().as_bytes()).as_bytes()),
+        [],
+        [],
+        [],
+        records,
+    )
+}
+
+fn environment_record_input(
+    owner: &EnvironmentCallableOwner,
+    package: &CallablePackageId,
+    span: &SourceSpan,
+    record: &EnvironmentCallablePublicationRecord,
+) -> EnvironmentCallablePublicationRecordInput {
+    let CallableLookupKey::Free(path) = record.key() else {
+        panic!("character signature fixtures publish only free callables")
+    };
+    let callable_path = ProjectCallablePath::new(
+        package.clone(),
+        CanonicalModulePath::crate_root(),
+        path.clone(),
+    );
+    let item = if let Some(rust) = record.rust() {
+        EnvironmentPublicationItemId::RustFunction {
+            adapter: rust.adapter().clone(),
+            package: RustPackageId::try_new(rust.package().name()).expect("Rust package ID"),
+            rust_item: rust.rust_path().clone(),
+            callable_path: callable_path.clone(),
+            overload: record.overload(),
+        }
+    } else {
+        EnvironmentPublicationItemId::AdapterFunction {
+            owner: owner.clone(),
+            path: callable_path.clone(),
+            overload: record.overload(),
+        }
+    };
+    let groups = record
+        .schema()
+        .groups()
+        .iter()
+        .map(|group| environment_parameter_group(group, span))
+        .collect::<Vec<_>>();
+    EnvironmentCallablePublicationRecordInput::new(
+        item,
+        record.kind(),
+        EnvironmentCallableLookupInput::Free(callable_path),
+        record.overload(),
+        EnvironmentCallableSignatureInput::new(
+            groups,
+            neutral_type(record.schema().result(), span),
+            record.schema().effects().declared().clone(),
+            record.schema().argument_policy(),
+            record.schema().validator().clone(),
+        ),
+        record.declaration_order(),
+        EnvironmentCallablePublicationMetadataInput::new(
+            record.documentation().clone(),
+            record.source().cloned(),
+            record.rust().cloned(),
+        ),
+    )
+}
+
+fn environment_parameter_group(
+    group: &CallableParameterGroup,
+    span: &SourceSpan,
+) -> EnvironmentParameterGroupInput {
+    EnvironmentParameterGroupInput::new(
+        group.index(),
+        group.kind(),
+        group
+            .parameters()
+            .iter()
+            .map(|parameter| environment_parameter(parameter, span))
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn environment_parameter(
+    parameter: &CallableParameter,
+    span: &SourceSpan,
+) -> EnvironmentParameterInput {
+    let ty = match parameter.ty() {
+        CallableParameterType::Exact(ty) => {
+            EnvironmentParameterTypeInput::Exact(neutral_type(ty, span))
+        }
+        CallableParameterType::Unchecked => EnvironmentParameterTypeInput::Unchecked {
+            source: span.clone(),
+        },
+    };
+    EnvironmentParameterInput::new(
+        parameter.index(),
+        parameter.name().cloned(),
+        ty,
+        parameter.passing(),
+        parameter.presence(),
+        EnvironmentParameterMetadataInput::new(parameter.documentation().map(Into::into), None),
+    )
+}
+
+fn neutral_type(ty: &TypeKind, source: &SourceSpan) -> EnvironmentTypeProjectionNode {
+    let kind = match ty {
+        TypeKind::Unit => EnvironmentTypeProjectionKind::Unit,
+        TypeKind::Bool => EnvironmentTypeProjectionKind::Bool,
+        TypeKind::I32 => EnvironmentTypeProjectionKind::I32,
+        TypeKind::String => EnvironmentTypeProjectionKind::String,
+        TypeKind::CharacterNominal(nominal) => {
+            EnvironmentTypeProjectionKind::CharacterNominal(nominal.clone())
+        }
+        TypeKind::AcceptedNominal(nominal) => EnvironmentTypeProjectionKind::AcceptedNominal {
+            id: nominal.declaration().clone(),
+            arguments: nominal
+                .arguments()
+                .iter()
+                .map(|argument| neutral_type(argument, source))
+                .collect(),
+        },
+        other => panic!("unsupported character-signature environment type: {other:?}"),
+    };
+    EnvironmentTypeProjectionNode::new(source.clone(), kind)
 }
 
 fn exact_schema(parameter: Option<(&str, TypeKind)>, result: TypeKind) -> CallableSignatureSchema {
@@ -533,7 +707,7 @@ fn nominal_parity_publication(
     bob_look: &TypeKind,
     alice_face: &TypeKind,
     alice_body: &TypeKind,
-) -> EnvironmentCallablePublication {
+) -> TestPublication {
     publication(
         "adapter.nominal-parity",
         vec![
@@ -740,12 +914,10 @@ fn main() -> Unit {
         EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
     )
     .expect("Rust publication record");
-    let publication = EnvironmentCallablePublication::try_new(
-        EnvironmentCallableOwner::Adapter(adapter),
-        vec![record],
-        &PRODUCTION_CALLABLE_LIMITS,
-    )
-    .expect("Rust callable publication");
+    let publication = TestPublication {
+        owner: EnvironmentCallableOwner::Adapter(adapter),
+        records: vec![record],
+    };
     let fixture = SignatureFixture::new("rust-suffix-no-fallback", SOURCE, &[], vec![publication]);
     assert_eq!(
         fixture.query("unregistered.resolve(1i32)", 0),

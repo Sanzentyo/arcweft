@@ -1,15 +1,24 @@
 //! Validated environment callable publication records.
 
+use crate::registration::{AcceptedNominalWorldStamp, EnvironmentManifestDigest};
+
+use super::digest::CanonicalEncoder;
 use super::{
     CallableDocumentation, CallableLimits, CallableLookupKey, CallablePublicationError,
     CallableSignatureSchema, CallableSource, CallableValidator, EnvironmentCallableKind,
-    EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, RustCallableProvenance,
+    EnvironmentCallableOwner, EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal,
+    RustCallableProvenance,
 };
+
+const PUBLICATION_DOMAIN: &[u8] = b"arcweft.environment-publication.v1\0";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentCallablePublication {
     owner: EnvironmentCallableOwner,
-    records: Vec<EnvironmentCallablePublicationRecord>,
+    nominal_world: AcceptedNominalWorldStamp,
+    manifest_digest: EnvironmentManifestDigest,
+    records: Box<[EnvironmentCallablePublicationRecord]>,
+    digest: EnvironmentCallablePublicationDigest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,8 +34,10 @@ pub struct EnvironmentCallablePublicationRecord {
 }
 
 impl EnvironmentCallablePublication {
-    pub fn try_new(
+    pub(crate) fn try_new_projected(
         owner: EnvironmentCallableOwner,
+        nominal_world: AcceptedNominalWorldStamp,
+        manifest_digest: EnvironmentManifestDigest,
         records: Vec<EnvironmentCallablePublicationRecord>,
         limits: &CallableLimits,
     ) -> Result<Self, CallablePublicationError> {
@@ -37,13 +48,34 @@ impl EnvironmentCallablePublication {
             }
             .into());
         }
-        Ok(Self { owner, records })
+        let digest = publication_digest(&owner, &nominal_world, manifest_digest, &records);
+        Ok(Self {
+            owner,
+            nominal_world,
+            manifest_digest,
+            records: records.into(),
+            digest,
+        })
     }
+
     pub const fn owner(&self) -> &EnvironmentCallableOwner {
         &self.owner
     }
+
+    pub const fn nominal_world(&self) -> &AcceptedNominalWorldStamp {
+        &self.nominal_world
+    }
+
+    pub const fn manifest_digest(&self) -> EnvironmentManifestDigest {
+        self.manifest_digest
+    }
+
     pub fn records(&self) -> &[EnvironmentCallablePublicationRecord] {
         &self.records
+    }
+
+    pub const fn digest(&self) -> EnvironmentCallablePublicationDigest {
+        self.digest
     }
 }
 
@@ -103,4 +135,42 @@ impl EnvironmentCallablePublicationRecord {
     pub const fn declaration_order(&self) -> EnvironmentDeclarationOrdinal {
         self.declaration_order
     }
+}
+
+fn publication_digest(
+    owner: &EnvironmentCallableOwner,
+    nominal_world: &AcceptedNominalWorldStamp,
+    manifest_digest: EnvironmentManifestDigest,
+    records: &[EnvironmentCallablePublicationRecord],
+) -> EnvironmentCallablePublicationDigest {
+    let mut records = records.iter().collect::<Vec<_>>();
+    records.sort_by(|left, right| {
+        left.declaration_order()
+            .cmp(&right.declaration_order())
+            .then_with(|| lookup_key_bytes(left.key()).cmp(&lookup_key_bytes(right.key())))
+            .then_with(|| left.overload().cmp(&right.overload()))
+    });
+
+    let mut encoder = CanonicalEncoder::default();
+    encoder.nominal_world(nominal_world);
+    encoder.environment_owner(owner);
+    encoder.bytes(manifest_digest.as_bytes());
+    encoder.usize(records.len());
+    for record in records {
+        encoder.environment_kind(record.kind());
+        encoder.lookup_key(record.key());
+        encoder.usize(record.overload().get());
+        encoder.bytes(record.schema().semantic_digest().as_bytes());
+        encoder.option(record.rust(), CanonicalEncoder::rust_provenance);
+        encoder.documentation(record.documentation());
+        encoder.option(record.source(), CanonicalEncoder::source);
+        encoder.usize(record.declaration_order().get());
+    }
+    EnvironmentCallablePublicationDigest::from_bytes(encoder.finish(PUBLICATION_DOMAIN))
+}
+
+fn lookup_key_bytes(key: &CallableLookupKey) -> Vec<u8> {
+    let mut encoder = CanonicalEncoder::default();
+    encoder.lookup_key(key);
+    encoder.into_bytes()
 }

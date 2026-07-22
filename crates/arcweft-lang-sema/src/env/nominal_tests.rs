@@ -8,14 +8,14 @@ use super::{
     identity::EnvironmentBindingId,
     nominal::{
         AcceptedNominalCatalog, AcceptedNominalCatalogError, AcceptedNominalId,
-        AcceptedNominalOrigin, AcceptedNominalOwnerId, AcceptedNominalRecord,
-        AcceptedNominalSemantics, OpenNominalArity, OpenNominalEnvironment, OpenNominalPattern,
-        OpenNominalPatternError, OpenNominalRule, OpenNominalRuleId, OpenNominalScope,
-        RustPackageId,
+        AcceptedNominalInstantiationError, AcceptedNominalOrigin, AcceptedNominalOwnerId,
+        AcceptedNominalRecord, AcceptedNominalSemantics, OpenNominalArity, OpenNominalEnvironment,
+        OpenNominalPattern, OpenNominalPatternError, OpenNominalRule, OpenNominalRuleId,
+        OpenNominalScope, RustPackageId,
     },
 };
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
-use crate::types::TypeKind;
+use crate::types::{AcceptedNominalType, TypeKind};
 
 fn path(source: &str) -> TypePath {
     let authored = parse_type_ref(source).expect("test path parses");
@@ -73,6 +73,33 @@ fn typed_ids_expose_owned_identity_without_inverse_display_parsing() {
     );
     assert_eq!(rule_id.owner().as_str(), "adapter.test");
     assert_eq!(rule_id.ordinal(), 7);
+}
+
+#[test]
+fn accepted_nominal_display_is_owner_independent_but_identity_is_not() {
+    let path = path("vendor.Rank");
+    let alpha = TypeKind::AcceptedNominal(AcceptedNominalType::new(
+        AcceptedNominalId::new(
+            AcceptedNominalOwnerId::RustPackage(RustPackageId::try_new("alpha").expect("package")),
+            path.clone(),
+        ),
+        [],
+    ));
+    let beta = TypeKind::AcceptedNominal(AcceptedNominalType::new(
+        AcceptedNominalId::new(
+            AcceptedNominalOwnerId::RustPackage(RustPackageId::try_new("beta").expect("package")),
+            path,
+        ),
+        [],
+    ));
+
+    assert_eq!(alpha.source_label(), "vendor.Rank");
+    assert_eq!(beta.source_label(), "vendor.Rank");
+    assert_ne!(alpha, beta);
+    assert_ne!(
+        alpha.semantic_identity_digest(),
+        beta.semantic_identity_digest()
+    );
 }
 
 #[test]
@@ -180,6 +207,39 @@ fn exact_records_reject_reserved_paths_and_nonzero_exact_arity() {
         Err(AcceptedNominalCatalogError::InvalidArity {
             minimum: 1,
             maximum: 1,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn accepted_record_instantiation_checks_arity_and_preserves_exact_identity() {
+    let id = AcceptedNominalId::new(
+        AcceptedNominalOwnerId::RustPackage(RustPackageId::try_new("typed-box").expect("package")),
+        path("vendor.Box"),
+    );
+    let record = AcceptedNominalRecord::try_new(
+        id.clone(),
+        1,
+        AcceptedNominalSemantics::Opaque,
+        AcceptedNominalOrigin::RustExport,
+        None,
+    )
+    .expect("generic opaque nominal record");
+
+    let instantiated = record
+        .try_instantiate(vec![TypeKind::I32])
+        .expect("matching arity instantiates");
+    assert!(matches!(
+        instantiated,
+        TypeKind::AcceptedNominal(nominal)
+            if nominal.declaration() == &id && nominal.arguments() == [TypeKind::I32]
+    ));
+    assert!(matches!(
+        record.try_instantiate(Vec::<TypeKind>::new()),
+        Err(AcceptedNominalInstantiationError::WrongArity {
+            expected: 1,
+            actual: 0,
             ..
         })
     ));
@@ -530,8 +590,19 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
 #[test]
 fn rust_export_publishes_typed_package_and_exact_path_atomically() {
     let package = RustPackageId::try_new("truck_game").expect("package");
+    let accepted = AcceptedNominalRecord::try_new(
+        AcceptedNominalId::new(
+            AcceptedNominalOwnerId::RustPackage(package.clone()),
+            path("Rank"),
+        ),
+        0,
+        AcceptedNominalSemantics::Opaque,
+        AcceptedNominalOrigin::RustExport,
+        None,
+    )
+    .expect("accepted Rust nominal");
     let environment = TypeCheckEnv::default()
-        .try_with_rust_type_export(package.clone(), path("Rank"))
+        .try_with_nominal_record(accepted)
         .expect("Rust export");
     let record = environment
         .nominal_catalog()

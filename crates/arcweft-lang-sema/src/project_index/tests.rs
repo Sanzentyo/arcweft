@@ -40,8 +40,14 @@ fn checked_project_index(
     source: &str,
 ) -> (CheckedEntryCatalog, ProjectSemanticIndex) {
     let (document, project, world) = root_project_source(profile, source);
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("entry role registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("entry role registration facts");
     let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
         .expect("entry role semantic world");
     let typecheck = analyze_registered_project_types(&project.linked_module(), &registered);
@@ -69,8 +75,9 @@ fn accepted_project_index(
     world: arcweft_lang_hir::symbol::ProjectSymbolWorldId,
     program_hash: &str,
 ) -> ProjectSemanticIndex {
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("project index registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("project index registration facts");
     let registered = register(project, &facts, TypeCheckEnv::standard(), None)
         .expect("project index registered world");
     let typecheck = analyze_registered_project_types(&project.linked_module(), &registered);

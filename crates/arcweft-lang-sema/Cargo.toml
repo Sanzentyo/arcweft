@@ -13,6 +13,7 @@ arcweft-id = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-presentation = { workspace = true }
+arcweft-rust-abi = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }
 blake3.workspace = true

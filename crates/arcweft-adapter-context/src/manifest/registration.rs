@@ -1,14 +1,27 @@
 //! Deterministic source-backed publication of typed adapter symbols.
 
-use std::{fmt::Write as _, sync::Arc};
+mod input;
+
+use std::sync::Arc;
 
 use arcweft_lang_hir::symbol::{
-    ExternalDeclarationSeed, ExternalDeclarationSeedError, ProjectDirectBinding,
-    ProjectDirectBindingError,
+    CallablePackageIdError, ExternalDeclarationSeed, ExternalDeclarationSeedError,
+    ProjectDirectBinding, ProjectDirectBindingError,
 };
 use arcweft_lang_sema::{
-    env::identity::{EnvironmentBindingId, EnvironmentBindingIdError},
-    registration::{ExternalRegistrationFact, RegisteredExternalOwner},
+    callable::{
+        AdapterPackageId, CallableDocumentationError, CallablePathError, CallableScalarError,
+        EnvironmentCallableOwner, RustProvenanceError, StandardEnvironmentId,
+    },
+    effects::EffectSetParseError,
+    env::{
+        identity::{EnvironmentBindingId, EnvironmentBindingIdError},
+        nominal::RustPackageIdError,
+    },
+    registration::{
+        ExternalRegistrationFact, RegisteredEnvironmentExternalOwner, RegisteredExternalOwner,
+        SourceBackedEnvironmentRegistrationInput,
+    },
 };
 use arcweft_lang_syntax::ast::{
     common::Visibility,
@@ -20,23 +33,29 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::{
     SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
-    SourceRange, SourceSpanError,
+    SourceSpanError,
 };
 use thiserror::Error;
 
-use super::{AdapterManifest, AdapterSymbolPath};
+use super::{
+    AdapterCallableModelError, AdapterEnvironmentOwnerId, AdapterManifest,
+    AdapterManifestModelError, AdapterNominalPathError,
+};
 
 /// One adapter's deterministic generated source and typed external contributions.
 #[derive(Clone, Debug)]
 pub struct SourceBackedAdapterRegistrationFacts {
     document: Arc<SourceDocument>,
     externals: Vec<ExternalRegistrationFact>,
+    environment: SourceBackedEnvironmentRegistrationInput,
 }
 
-struct AdapterRegistrationSymbol {
-    path: AdapterSymbolPath,
-    spelling: String,
-    range: SourceRange,
+/// Complete source-backed registration contribution from one adapter manifest.
+#[derive(Clone, Debug)]
+pub struct SourceBackedAdapterRegistrationParts {
+    pub document: Arc<SourceDocument>,
+    pub externals: Box<[ExternalRegistrationFact]>,
+    pub environment: SourceBackedEnvironmentRegistrationInput,
 }
 
 /// Failure while binding adapter facts to one generated source revision.
@@ -58,98 +77,75 @@ pub enum AdapterRegistrationFactsError {
     ExternalDeclaration(#[from] ExternalDeclarationSeedError),
     #[error(transparent)]
     EnvironmentBinding(#[from] EnvironmentBindingIdError),
+    #[error(transparent)]
+    CallableIdentity(#[from] CallableScalarError),
+    #[error(transparent)]
+    CallablePackage(#[from] CallablePackageIdError),
+    #[error(transparent)]
+    CallablePath(#[from] CallablePathError),
+    #[error(transparent)]
+    CallableModel(#[from] AdapterCallableModelError),
+    #[error(transparent)]
+    CallableDocumentation(#[from] CallableDocumentationError),
+    #[error(transparent)]
+    Effect(#[from] EffectSetParseError),
+    #[error(transparent)]
+    RustPackage(#[from] RustPackageIdError),
+    #[error(transparent)]
+    RustProvenance(#[from] RustProvenanceError),
+    #[error(transparent)]
+    ManifestModel(#[from] AdapterManifestModelError),
+    #[error(transparent)]
+    NominalPath(#[from] AdapterNominalPathError),
+    #[error(
+        "adapter type reference claims environment owner `{actual:?}` instead of `{expected:?}`"
+    )]
+    EnvironmentOwnerMismatch {
+        expected: AdapterEnvironmentOwnerId,
+        actual: AdapterEnvironmentOwnerId,
+    },
+    #[error("Rust metadata field index {value} exceeds u16")]
+    RustFieldIndexOverflow { value: usize },
+    #[error("type source-site index {value} exceeds u16")]
+    TypeSiteIndexOverflow { value: usize },
+    #[error("duplicate generated source site for item {item:?} at {site:?}")]
+    DuplicateTypeSourceSite {
+        item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
+        site: Box<arcweft_lang_sema::registration::EnvironmentTypeSite>,
+    },
+    #[error("missing generated source site for item {item:?} at {site:?}")]
+    MissingTypeSourceSite {
+        item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
+        site: Box<arcweft_lang_sema::registration::EnvironmentTypeSite>,
+    },
+    #[error("duplicate generated item source for {item:?}")]
+    DuplicateItemSource {
+        item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
+    },
+    #[error("missing generated item source for {item:?}")]
+    MissingItemSource {
+        item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
+    },
 }
 
 impl AdapterManifest {
-    fn deterministic_registration_source(&self) -> (String, Vec<AdapterRegistrationSymbol>) {
-        let mut source = String::new();
-        writeln!(&mut source, "adapter-manifest-v1")
-            .expect("writing adapter facts to a String cannot fail");
-        writeln!(&mut source, "id {:#?}", self.id)
-            .expect("writing adapter facts to a String cannot fail");
-        writeln!(&mut source, "display-name {:#?}", self.display_name)
-            .expect("writing adapter facts to a String cannot fail");
-        let mut manifest_facts = Vec::new();
-        manifest_facts.extend(
-            self.symbols
-                .iter()
-                .map(|value| format!("symbol-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.methods
-                .iter()
-                .map(|value| format!("method-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.functions
-                .iter()
-                .map(|value| format!("function-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.effects
-                .iter()
-                .map(|value| format!("effect-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.host_calls
-                .iter()
-                .map(|value| format!("host-call-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.rust_functions
-                .iter()
-                .map(|value| format!("rust-function-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.rust_types
-                .iter()
-                .map(|value| format!("rust-type-fact {value:#?}")),
-        );
-        manifest_facts.extend(
-            self.tooling_docs
-                .iter()
-                .map(|value| format!("tooling-doc-fact {value:#?}")),
-        );
-        manifest_facts.sort();
-        for fact in manifest_facts {
-            writeln!(&mut source, "{fact}").expect("writing adapter facts to a String cannot fail");
-        }
-        let mut symbols = self.symbols.iter().collect::<Vec<_>>();
-        symbols.sort_by(|left, right| {
-            left.path()
-                .cmp(right.path())
-                .then_with(|| format!("{:?}", left.ty()).cmp(&format!("{:?}", right.ty())))
-        });
-        let mut ranges = Vec::with_capacity(symbols.len());
-        for symbol in symbols {
-            source.push_str("symbol ");
-            let start = source.len();
-            let spelling = symbol.path().to_string();
-            source.push_str(&spelling);
-            let end = source.len();
-            source.push('\n');
-            ranges.push(AdapterRegistrationSymbol {
-                path: symbol.path().clone(),
-                spelling,
-                range: SourceRange::new(start, end),
-            });
-        }
-        (source, ranges)
-    }
-
     /// Binds every registration-visible base fact to one deterministic generated document.
     pub fn source_backed_registration_facts(
         &self,
         ordinal: u64,
     ) -> Result<SourceBackedAdapterRegistrationFacts, AdapterRegistrationFactsError> {
-        let (source, symbols) = self.deterministic_registration_source();
+        let owner = environment_callable_owner(self)?;
+        let nominal_owner = EnvironmentBindingId::try_new(
+            AdapterEnvironmentOwnerId::for_adapter(self.id()).as_str(),
+        )?;
+        let rendering = input::source::render(self, &owner)?;
         let document = Arc::new(SourceDocument::try_new(
             SourceDocumentId::try_new(format!("arcweft-generated://adapter-context/{ordinal}"))?,
             SourceName::Generated,
-            source,
+            rendering.text,
         )?);
-        let mut externals = Vec::with_capacity(symbols.len());
-        for symbol in symbols {
+        let mut externals = Vec::with_capacity(rendering.symbols.len());
+        for symbol in rendering.symbols {
             let declaration = document.span(symbol.range)?;
             let project_path = ProjectSymbolPath::new(
                 ModulePathRoot::ImplicitCrate,
@@ -180,13 +176,15 @@ impl AdapterManifest {
             )?;
             externals.push(ExternalRegistrationFact::new(
                 seed,
-                RegisteredExternalOwner::Environment(EnvironmentBindingId::try_new(
-                    symbol.spelling,
-                )?),
+                RegisteredExternalOwner::Environment(RegisteredEnvironmentExternalOwner::new(
+                    nominal_owner.clone(),
+                    EnvironmentBindingId::try_new(symbol.spelling)?,
+                )),
                 declaration,
             ));
         }
         Ok(SourceBackedAdapterRegistrationFacts {
+            environment: input::environment_input(self, owner, &document, &rendering.map)?,
             document,
             externals,
         })
@@ -202,7 +200,35 @@ impl SourceBackedAdapterRegistrationFacts {
         &self.externals
     }
 
-    pub fn into_parts(self) -> (Arc<SourceDocument>, Vec<ExternalRegistrationFact>) {
-        (self.document, self.externals)
+    pub const fn environment(&self) -> &SourceBackedEnvironmentRegistrationInput {
+        &self.environment
     }
+
+    pub fn into_parts(self) -> SourceBackedAdapterRegistrationParts {
+        SourceBackedAdapterRegistrationParts {
+            document: self.document,
+            externals: self.externals.into_boxed_slice(),
+            environment: self.environment,
+        }
+    }
+}
+
+fn environment_callable_owner(
+    manifest: &AdapterManifest,
+) -> Result<EnvironmentCallableOwner, CallableScalarError> {
+    let standard = match manifest.id().as_str() {
+        crate::standard::SANS_IO_ADAPTER_ID => Some(StandardEnvironmentId::SansIo),
+        crate::standard::NATIVE_HTTP_ADAPTER_ID => Some(StandardEnvironmentId::NativeHttp),
+        crate::standard::INFERENCE_TENSOR_ADAPTER_ID => {
+            Some(StandardEnvironmentId::InferenceTensor)
+        }
+        crate::standard::SYSTEM_INFO_ADAPTER_ID => Some(StandardEnvironmentId::SystemInfo),
+        crate::standard::NATIVE_FILE_ADAPTER_ID => Some(StandardEnvironmentId::NativeFile),
+        crate::standard::MATH_ADAPTER_ID => Some(StandardEnvironmentId::Math),
+        _ => None,
+    };
+    standard.map_or_else(
+        || AdapterPackageId::try_new(manifest.id().as_str()).map(EnvironmentCallableOwner::Adapter),
+        |owner| Ok(EnvironmentCallableOwner::Standard(owner)),
+    )
 }

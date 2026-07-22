@@ -144,7 +144,7 @@ impl LspProfile {
 
     /// Builds the semantic environment selected by this profile.
     pub fn typecheck_env(&self) -> TypeCheckEnv {
-        self.adapter.apply_to_env(TypeCheckEnv::standard())
+        self.adapter.declare_effects(TypeCheckEnv::standard())
     }
 }
 

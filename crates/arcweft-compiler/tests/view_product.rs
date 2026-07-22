@@ -497,6 +497,7 @@ fn project_view_fixture(source: &str, source_id: &str) -> ProjectViewFixture {
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registration facts");
     let context = ProjectCompilationContext::new(
@@ -505,7 +506,6 @@ fn project_view_fixture(source: &str, source_id: &str) -> ProjectViewFixture {
         Arc::new(ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     );
     ProjectViewFixture {
         project,

@@ -50,8 +50,14 @@ fn registered(id: &str, source: &str) -> RegisteredSemanticWorld {
     .unwrap_or_else(|error| panic!("{id}: project: {error}"));
     let world = ProjectSymbolWorldId::try_new(package, document.identity().id().clone(), id)
         .unwrap_or_else(|error| panic!("{id}: world ID: {error}"));
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .unwrap_or_else(|error| panic!("{id}: registration facts: {error:?}"));
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .unwrap_or_else(|error| panic!("{id}: registration facts: {error:?}"));
     CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(TypeCheckEnv::standard()),
         &project,

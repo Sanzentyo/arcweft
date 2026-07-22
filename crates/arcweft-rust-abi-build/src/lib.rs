@@ -187,8 +187,8 @@ pub fn emit_cargo_rerun_hints(options: &MetadataBuildOptions) {
 mod tests {
     use super::*;
     use arcweft_rust_abi::{
-        ArcweftRustFunction, ArcweftRustPackage, ArcweftRustParam, ArcweftRustPurity,
-        ArcweftRustTypeRef,
+        ArcweftRustFunction, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustParam,
+        ArcweftRustPurity, ArcweftRustTypeRef,
     };
 
     #[test]
@@ -197,7 +197,7 @@ mod tests {
             std::env::temp_dir().join(format!("arcweft-rust-abi-build-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-            name: "truck_game".to_owned(),
+            id: ArcweftRustPackageId::try_new("truck_game").expect("valid package ID"),
             version: "0.1.0".to_owned(),
             metadata_hash: None,
         })

@@ -180,8 +180,9 @@ fn register(manifests: &[CharacterManifest]) -> RegisteredSemanticWorld {
         SourceBackedCharacterCatalog::try_new(source.identity().clone(), source_backed)
             .expect("source-backed catalog"),
     ];
-    let facts = ProjectRegistrationFacts::try_new(world, documents, externals, catalogs)
-        .expect("registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, externals, catalogs, Vec::new())
+            .expect("registration facts");
     CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(TypeCheckEnv::default()),
         &project,

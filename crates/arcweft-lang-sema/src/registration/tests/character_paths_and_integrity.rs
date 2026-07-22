@@ -162,6 +162,7 @@ fn character_alias_two_owners_fails() {
         vec![root, akane_document, ren_document],
         facts.into(),
         vec![catalog],
+        Vec::new(),
     )
     .expect("two-owner facts");
 
@@ -222,7 +223,7 @@ fn canonical_spelling_collision_fails() {
     let environment_fact = external_fact(
         environment.as_str(),
         &[project_path(["character", "akane"])],
-        RegisteredExternalOwner::Environment(environment.clone()),
+        environment_external_owner(environment.clone()),
         declaration_span(&backed),
     );
     let catalog = SourceBackedCharacterCatalog::try_new(root.identity().clone(), vec![backed])
@@ -232,6 +233,7 @@ fn canonical_spelling_collision_fails() {
         vec![root, document],
         vec![character_fact, environment_fact],
         vec![catalog],
+        Vec::new(),
     )
     .expect("collision facts");
     let base = TypeCheckEnv::standard().with_symbol(environment.as_str(), TypeKind::I32);
@@ -364,7 +366,7 @@ fn verify_character_inventory_detects_tamper() {
         .declaration();
     tampered_registry.external_owners_mut_for_test().insert(
         declaration,
-        RegisteredExternalOwner::Environment(
+        environment_external_owner(
             EnvironmentBindingId::try_new("adapter.tampered").expect("environment binding"),
         ),
     );

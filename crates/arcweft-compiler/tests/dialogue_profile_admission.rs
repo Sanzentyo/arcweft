@@ -261,6 +261,7 @@ source = "main.arcw"
             vec![Arc::clone(&source_document), Arc::clone(&manifest_document)],
             Vec::new(),
             Vec::new(),
+            Vec::new(),
         )
         .expect("registration facts");
         let compiler_registry = Arc::new(ResourceTypeRegistry::empty());
@@ -282,7 +283,6 @@ source = "main.arcw"
             compiler_registry,
             None,
             None,
-            Vec::new(),
         );
         let context = if launch_profile {
             context.with_accepted_launch_profile(input)

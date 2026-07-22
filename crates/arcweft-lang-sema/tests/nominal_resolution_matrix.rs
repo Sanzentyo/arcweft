@@ -111,8 +111,14 @@ fn registered(source: &str, profile: &str) -> RegisteredSemanticWorld {
     .expect("matrix project");
     let world = ProjectSymbolWorldId::try_new(package, document.identity().id().clone(), profile)
         .expect("matrix world");
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("matrix registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("matrix registration facts");
     CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(TypeCheckEnv::standard()),
         &project,

@@ -119,8 +119,14 @@ fn entry_project(
         "entry-test",
     )
     .expect("world");
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("facts");
     let selection = ProjectEntrySelection::new(
         PublicId::try_new(selected_id).expect("entry ID"),
         selected_kind,
@@ -131,7 +137,6 @@ fn entry_project(
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         Some(selection),
-        Vec::new(),
     );
     (project, context)
 }

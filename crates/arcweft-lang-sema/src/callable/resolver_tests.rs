@@ -17,17 +17,22 @@ use crate::{
     },
     effect_row::EffectRow,
     env::{
-        FunctionParam, FunctionSignature, TypeCheckEnv, identity::EnvironmentBindingId,
-        nominal::RustPackageId,
+        FunctionParam, FunctionSignature, TypeCheckEnv,
+        identity::EnvironmentBindingId,
+        nominal::{
+            AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId,
+            AcceptedNominalRecord, AcceptedNominalSemantics, RustPackageId,
+        },
     },
     registration::{
         CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
-        RegisteredExternalOwner, RegisteredSemanticWorld,
+        RegisteredExternalOwner, RegisteredSemanticWorld, SourceBackedEnvironmentRegistrationInput,
     },
     test_support::character_project::{
-        external_fact, one_character_facts, project_path, root_project_source, sample_manifest,
-        source_document,
+        external_fact, one_character_facts, one_character_facts_with_environment, project_path,
+        root_project_source, sample_manifest, source_document,
     },
+    test_support::environment::source_backed_callable_input,
     traits::TraitCatalog,
     types::{AcceptedNominalType, TypeKind},
 };
@@ -41,12 +46,12 @@ use super::{
     CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
     CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
     CallableQueryLimitError, CallableSignatureSchema, CallableValidator, CapabilityCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
-    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, LexicalCallableScope,
-    PRODUCTION_CALLABLE_LIMITS, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
-    ResolvedCallTarget, ResolverWork, RustCallableProvenance, RustCallablePurity, RustItemPath,
-    RustPackageProvenance, SignatureOrigin, SignatureQueryStep, SignatureQueryStepControl,
-    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy, resolve_call_target,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationRecord,
+    EnvironmentDeclarationOrdinal, LexicalCallableScope, PRODUCTION_CALLABLE_LIMITS,
+    ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedCallTarget, ResolverWork,
+    RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
+    SignatureOrigin, SignatureQueryStep, SignatureQueryStepControl, SpreadArgumentPolicy,
+    StandardEnvironmentId, UnknownNamedArgumentPolicy, resolve_call_target,
 };
 
 const SOURCE: &str = r#"
@@ -80,9 +85,16 @@ impl ResolverFixture {
 
     fn with_profile(profile: &str) -> Self {
         let (document, project, world) = root_project_source(profile, SOURCE);
-        let facts = one_character_facts(&document, world, &sample_manifest("layers/body.png"));
+        let (environment_document, environment_input) = adapter_environment_input();
+        let facts = one_character_facts_with_environment(
+            &document,
+            vec![Arc::clone(&document), environment_document],
+            world,
+            &sample_manifest("layers/body.png"),
+            vec![environment_input],
+        );
         let base = TypeCheckEnv::standard()
-            .with_symbol("infer", TypeKind::Named("InferApi".to_owned()))
+            .with_symbol("infer", TypeKind::I32)
             .with_function_signature(
                 "standard_value",
                 FunctionSignature::new(
@@ -96,10 +108,12 @@ impl ResolverFixture {
                 FunctionSignature::new(TypeKind::Unit, []),
             )
             .with_function_signature("hero", FunctionSignature::new(TypeKind::Unit, []));
-        let world = CharacterRegistrar::register(
-            CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
-                .with_callable_publication(adapter_publication()),
-        )
+        let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+            Arc::new(base),
+            &project,
+            &facts,
+            None,
+        ))
         .expect("registered callable resolver fixture");
         Self {
             document,
@@ -885,16 +899,20 @@ flow @flow.main main {
 }
 ";
     let (document, project, symbol_world) = root_project_source("registered-open-checked", SOURCE);
-    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
-    let world = CharacterRegistrar::register(
-        CharacterRegistrationRequest::new(
-            Arc::new(TypeCheckEnv::standard()),
-            &project,
-            &facts,
-            None,
-        )
-        .with_callable_publication(adapter_publication()),
-    )
+    let (environment_document, environment_input) = adapter_environment_input();
+    let facts = one_character_facts_with_environment(
+        &document,
+        vec![Arc::clone(&document), environment_document],
+        symbol_world,
+        &sample_manifest("layers/body.png"),
+        vec![environment_input],
+    );
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &facts,
+        None,
+    ))
     .expect("registered open-checked fixture");
     let report = analyze_registered_project_types(&project.linked_module(), &world);
     assert!(
@@ -925,16 +943,20 @@ flow @flow.main main {
 }
 ";
     let (document, project, symbol_world) = root_project_source("registered-spread-policy", SOURCE);
-    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
-    let world = CharacterRegistrar::register(
-        CharacterRegistrationRequest::new(
-            Arc::new(TypeCheckEnv::standard()),
-            &project,
-            &facts,
-            None,
-        )
-        .with_callable_publication(adapter_publication()),
-    )
+    let (environment_document, environment_input) = adapter_environment_input();
+    let facts = one_character_facts_with_environment(
+        &document,
+        vec![Arc::clone(&document), environment_document],
+        symbol_world,
+        &sample_manifest("layers/body.png"),
+        vec![environment_input],
+    );
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &facts,
+        None,
+    ))
     .expect("registered spread-policy fixture");
     let report = analyze_registered_project_types(&project.linked_module(), &world);
     assert!(
@@ -975,12 +997,22 @@ flow @flow.main main {
 }
 "#;
     let (document, project, symbol_world) = root_project_source("rust-extern-alias", SOURCE);
-    let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
     let rank_path: arcweft_lang_syntax::types::TypePath = project_path(["Rank"]).into();
     let base = TypeCheckEnv::standard()
-        .try_with_rust_type_export(
-            RustPackageId::try_new("truck_game").expect("package id"),
-            rank_path.clone(),
+        .try_with_nominal_record(
+            AcceptedNominalRecord::try_new(
+                AcceptedNominalId::new(
+                    AcceptedNominalOwnerId::RustPackage(
+                        RustPackageId::try_new("truck_game").expect("package id"),
+                    ),
+                    rank_path.clone(),
+                ),
+                0,
+                AcceptedNominalSemantics::Opaque,
+                AcceptedNominalOrigin::RustExport,
+                None,
+            )
+            .expect("accepted Rust nominal"),
         )
         .expect("Rust type export");
     let rank = base
@@ -1011,16 +1043,28 @@ flow @flow.main main {
         EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
     )
     .expect("Rust publication record");
-    let publication = EnvironmentCallablePublication::try_new(
+    let environment_document = source_document(
+        "arcweft-generated://callable-resolver/rust-alias",
+        "rust score_to_rank callable",
+    );
+    let environment_input = source_backed_callable_input(
         EnvironmentCallableOwner::Adapter(adapter),
-        vec![record],
-        &PRODUCTION_CALLABLE_LIMITS,
-    )
-    .expect("Rust callable publication");
-    let world = CharacterRegistrar::register(
-        CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
-            .with_callable_publication(publication),
-    )
+        &environment_document,
+        [record],
+    );
+    let facts = one_character_facts_with_environment(
+        &document,
+        vec![Arc::clone(&document), environment_document],
+        symbol_world,
+        &sample_manifest("layers/body.png"),
+        vec![environment_input],
+    );
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(base),
+        &project,
+        &facts,
+        None,
+    ))
     .expect("registered Rust alias fixture");
     let fixture = ResolverFixture {
         document,
@@ -1042,8 +1086,7 @@ flow @flow.main main {
 #[test]
 fn selected_resolver_returns_adapter_method_candidate() {
     let fixture = ResolverFixture::new();
-    let method =
-        resolved_candidate(fixture.resolve_method(&TypeKind::Named("InferApi".to_owned()), "run"));
+    let method = resolved_candidate(fixture.resolve_method(&TypeKind::I32, "run"));
     assert!(matches!(
         method.origin(),
         SignatureOrigin::Adapter { package, .. } if package.as_str() == "adapter.resolver"
@@ -1082,16 +1125,9 @@ fn compact_project_binding_does_not_shadow_a_qualified_environment_callable() {
     let fact = external_fact(
         environment.as_str(),
         &[project_path(["akane"])],
-        RegisteredExternalOwner::Environment(environment.clone()),
+        RegisteredExternalOwner::environment(environment.clone(), environment.clone()),
         declaration,
     );
-    let facts = ProjectRegistrationFacts::try_new(
-        symbol_world,
-        vec![Arc::clone(&document), generated],
-        vec![fact],
-        Vec::new(),
-    )
-    .expect("compact typed project binding");
     let record = EnvironmentCallablePublicationRecord::try_new(
         EnvironmentCallableKind::Function,
         CallableLookupKey::Free(callable_path(&["character", "akane"])),
@@ -1103,19 +1139,28 @@ fn compact_project_binding_does_not_shadow_a_qualified_environment_callable() {
         EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
     )
     .expect("qualified environment callable");
-    let publication = EnvironmentCallablePublication::try_new(
+    let environment_input = source_backed_callable_input(
         EnvironmentCallableOwner::Adapter(
             AdapterPackageId::try_new("adapter.segmented-shadowing").expect("adapter id"),
         ),
-        vec![record],
-        &PRODUCTION_CALLABLE_LIMITS,
+        &generated,
+        [record],
+    );
+    let facts = ProjectRegistrationFacts::try_new(
+        symbol_world,
+        vec![Arc::clone(&document), generated],
+        vec![fact],
+        Vec::new(),
+        vec![environment_input],
     )
-    .expect("qualified environment publication");
+    .expect("compact typed project binding");
     let base = TypeCheckEnv::standard().with_symbol(environment.as_str(), TypeKind::I32);
-    let world = CharacterRegistrar::register(
-        CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
-            .with_callable_publication(publication),
-    )
+    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(base),
+        &project,
+        &facts,
+        None,
+    ))
     .expect("segmented resolver fixture");
     let fixture = ResolverFixture {
         document,
@@ -1464,7 +1509,10 @@ fn assert_generic_untyped_schema(schema: &CallableSignatureSchema) {
     assert_eq!(schema.validator(), &CallableValidator::Untyped);
 }
 
-fn adapter_publication() -> EnvironmentCallablePublication {
+fn adapter_environment_input() -> (
+    Arc<SourceDocument>,
+    SourceBackedEnvironmentRegistrationInput,
+) {
     let owner = EnvironmentCallableOwner::Adapter(
         AdapterPackageId::try_new("adapter.resolver").expect("adapter id"),
     );
@@ -1505,7 +1553,7 @@ fn adapter_publication() -> EnvironmentCallablePublication {
     let method = EnvironmentCallablePublicationRecord::try_new(
         EnvironmentCallableKind::Method,
         CallableLookupKey::Method(ReceiverMethodKey::new(
-            TypeKind::Named("InferApi".to_owned()),
+            TypeKind::I32,
             CallableName::try_new("run").expect("method name"),
         )),
         CallableOverloadIndex::try_from_usize(0).expect("overload"),
@@ -1538,9 +1586,14 @@ fn adapter_publication() -> EnvironmentCallablePublication {
         EnvironmentDeclarationOrdinal::try_from_usize(5).expect("declaration ordinal"),
     )
     .expect("fixed-literal-only adapter record");
-    EnvironmentCallablePublication::try_new(
+    let document = source_document(
+        "arcweft-generated://callable-resolver/adapter",
+        "adapter resolver callables",
+    );
+    let input = source_backed_callable_input(
         owner,
-        vec![
+        &document,
+        [
             single,
             dotted,
             receiver_collision,
@@ -1548,9 +1601,8 @@ fn adapter_publication() -> EnvironmentCallablePublication {
             open_checked,
             fixed_literal_only,
         ],
-        &PRODUCTION_CALLABLE_LIMITS,
-    )
-    .expect("adapter publication")
+    );
+    (document, input)
 }
 
 fn ordinary_single_parameter_schema(

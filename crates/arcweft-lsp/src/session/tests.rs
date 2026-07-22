@@ -1223,18 +1223,36 @@ flow @flow.main main {}\n";
     );
 
     let completions = completion_labels(&mut session, uri.clone());
+    assert_eq!(
+        completions
+            .iter()
+            .filter(|item| item.label == "quest.PlayerStats")
+            .count(),
+        1,
+        "the accepted nominal catalog is the single completion owner: {:?}",
+        completions
+            .iter()
+            .filter(|item| item.label == "quest.PlayerStats")
+            .collect::<Vec<_>>()
+    );
     let player_stats = completions
         .iter()
         .find(|item| item.label == "quest.PlayerStats")
         .expect("mounted PlayerStats completion");
-    assert_eq!(player_stats.detail.as_deref(), Some("quest.PlayerStats"));
+    assert_eq!(
+        player_stats.detail.as_deref(),
+        Some("environment:adapter:sans-io::quest.PlayerStats")
+    );
     let evaluate = completions
         .iter()
         .find(|item| item.label == "quest.quest_evaluate")
         .expect("mounted quest_evaluate completion");
-    assert!(evaluate.detail.as_deref().is_some_and(|detail| {
-        detail == "quest.quest_evaluate(stats: quest.PlayerStats) -> String"
-    }));
+    assert!(
+        evaluate.detail.as_deref().is_some_and(|detail| {
+            detail == "quest.quest_evaluate(stats: quest.PlayerStats) -> String"
+        }),
+        "unexpected callable completion: {evaluate:?}"
+    );
 
     let hover = arcweft_verify_lsp::profile_hover(
         &session.profile_for_uri(&uri).context(),
@@ -1249,7 +1267,6 @@ flow @flow.main main {}\n";
 }
 
 #[test]
-#[ignore = "awaiting Lang-01.1.1.2.2 adapter nominal publication projection"]
 #[allow(
     clippy::too_many_lines,
     reason = "the end-to-end test verifies result projection plus hit, miss, stable-none, and error cache behavior"

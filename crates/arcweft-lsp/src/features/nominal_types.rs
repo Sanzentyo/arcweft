@@ -10,8 +10,13 @@ use arcweft_lang_hir::symbol::{
     nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
 };
 use arcweft_lang_sema::{
-    nominal::{BuiltinTypeConstructor, TypeArgumentExpectation, TypeNameResolution},
-    types::{EntityKind, TypeKind},
+    env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
+    nominal::{
+        BuiltinTypeConstructor, ExternalNominalResolution, TypeArgumentExpectation,
+        TypeNameResolution,
+    },
+    registration::{RegisteredExternalOwner, RegisteredExternalOwnerKind},
+    types::{AcceptedNominalType, EntityKind, TypeKind},
 };
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 use arcweft_source::SourceSpan;
@@ -23,7 +28,9 @@ use lsp_types::{
 
 use crate::{
     documents::{DocumentSnapshot, DocumentStore},
-    profiles::{LspProfile, accepted_project::AcceptedProjectSnapshot},
+    profiles::{
+        LspProfile, accepted_project::AcceptedProjectSnapshot, state::AcceptedProfileEnvironment,
+    },
 };
 
 #[derive(Clone)]
@@ -49,6 +56,12 @@ struct LanguageNominalCursor {
     normalized: Option<TypeKind>,
 }
 
+#[derive(Clone)]
+struct AcceptedNominalCursor {
+    nominal: AcceptedNominalType,
+    source: SourceSpan,
+}
+
 pub(crate) fn hover(
     profile: &LspProfile,
     document: &DocumentSnapshot,
@@ -57,39 +70,94 @@ pub(crate) fn hover(
     let accepted = profile.accepted_environment()?;
     let project = exact_project(accepted.project(), document)?;
     if let Some(cursor) = language_symbol_at(project, document, offset) {
-        let text = match cursor.owner {
-            LanguageNominalOwner::Builtin(constructor) => {
-                let mut text = format!(
-                    "language-owned type constructor `{}<EntityFamily>`",
-                    constructor.spelling()
-                );
-                if let Some(normalized) = cursor
-                    .normalized
-                    .filter(|normalized| !matches!(normalized, TypeKind::Error(_)))
-                {
-                    write!(text, "\n\nnormalized type: `{}`", normalized.source_label())
-                        .expect("writing to a String cannot fail");
-                }
-                text
-            }
-            LanguageNominalOwner::EntityFamily(family) => format!(
-                "entity family `{}`",
-                family
-                    .authored_type_name()
-                    .expect("resolver facts expose only authored fixed families")
-            ),
-        };
-        return Some(Hover {
-            contents: HoverContents::Scalar(MarkedString::String(text)),
-            range: Some(
-                document.line_index().range_from_byte_span(
-                    cursor.source.range().start(),
-                    cursor.source.range().end(),
-                ),
-            ),
-        });
+        return Some(language_nominal_hover(document, cursor));
+    }
+    if let Some(cursor) = accepted_nominal_at(project, document, offset) {
+        return accepted_nominal_hover(&accepted, document, &cursor);
     }
     let cursor = symbol_at(project, document, offset)?;
+    project_nominal_hover(project, document, cursor)
+}
+
+fn language_nominal_hover(document: &DocumentSnapshot, cursor: LanguageNominalCursor) -> Hover {
+    let text = match cursor.owner {
+        LanguageNominalOwner::Builtin(constructor) => {
+            let mut text = format!(
+                "language-owned type constructor `{}<EntityFamily>`",
+                constructor.spelling()
+            );
+            if let Some(normalized) = cursor
+                .normalized
+                .filter(|normalized| !matches!(normalized, TypeKind::Error(_)))
+            {
+                write!(text, "\n\nnormalized type: `{}`", normalized.source_label())
+                    .expect("writing to a String cannot fail");
+            }
+            text
+        }
+        LanguageNominalOwner::EntityFamily(family) => format!(
+            "entity family `{}`",
+            family
+                .authored_type_name()
+                .expect("resolver facts expose only authored fixed families")
+        ),
+    };
+    hover_at(document, &cursor.source, text)
+}
+
+fn accepted_nominal_hover(
+    accepted: &AcceptedProfileEnvironment,
+    document: &DocumentSnapshot,
+    cursor: &AcceptedNominalCursor,
+) -> Option<Hover> {
+    let environment = accepted.world().environment();
+    let id = cursor.nominal.declaration();
+    let record = environment
+        .nominal_catalog()
+        .exact(id.canonical_path())
+        .filter(|record| record.id() == id)?;
+    let metadata = environment.rust_metadata().get(id);
+    let mut text = if metadata.is_some() {
+        format!("accepted Rust nominal `{}`", id.source_label())
+    } else {
+        format!("accepted environment nominal `{}`", id.source_label())
+    };
+    write!(
+        text,
+        "\n\nowner: `{}`\n\nmounted path: `{}`\n\narity: `{}`",
+        id.owner().source_label(),
+        id.canonical_path().canonical_string(),
+        record.arity()
+    )
+    .expect("writing to a String cannot fail");
+    if let Some(metadata) = metadata {
+        write!(
+            text,
+            "\n\nRust package: `{}`\n\nRust item: `{}`",
+            metadata.package(),
+            metadata.rust_item().as_str()
+        )
+        .expect("writing to a String cannot fail");
+    }
+    if !cursor.nominal.arguments().is_empty() {
+        let arguments = cursor
+            .nominal
+            .arguments()
+            .iter()
+            .map(TypeKind::source_label)
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(text, "\n\napplied arguments: `{arguments}`")
+            .expect("writing to a String cannot fail");
+    }
+    Some(hover_at(document, &cursor.source, text))
+}
+
+fn project_nominal_hover(
+    project: &AcceptedProjectSnapshot,
+    document: &DocumentSnapshot,
+    cursor: NominalCursor,
+) -> Option<Hover> {
     let record = project
         .semantic_index()
         .project_nominal(&cursor.declaration)?;
@@ -140,14 +208,18 @@ pub(crate) fn hover(
         )
         .expect("writing to a String cannot fail");
     }
-    Some(Hover {
+    Some(hover_at(document, &cursor.source, text))
+}
+
+fn hover_at(document: &DocumentSnapshot, source: &SourceSpan, text: String) -> Hover {
+    Hover {
         contents: HoverContents::Scalar(MarkedString::String(text)),
         range: Some(
             document
                 .line_index()
-                .range_from_byte_span(cursor.source.range().start(), cursor.source.range().end()),
+                .range_from_byte_span(source.range().start(), source.range().end()),
         ),
-    })
+    }
 }
 
 pub(crate) fn definition(
@@ -159,6 +231,29 @@ pub(crate) fn definition(
     let project = exact_project(accepted.project(), document)?;
     if language_symbol_at(project, document, offset).is_some() {
         return None;
+    }
+    if let Some(cursor) = accepted_nominal_at(project, document, offset) {
+        let environment = accepted.world().environment();
+        let id = cursor.nominal.declaration();
+        let source = environment
+            .rust_metadata()
+            .get(id)
+            .map(arcweft_lang_sema::env::AcceptedRustTypeMetadata::source)
+            .or_else(|| {
+                environment
+                    .nominal_world()
+                    .visibility()
+                    .visible(id)
+                    .map(arcweft_lang_sema::registration::AcceptedNominalSource::declaration)
+            })
+            .or_else(|| {
+                environment
+                    .nominal_catalog()
+                    .exact(id.canonical_path())
+                    .filter(|record| record.id() == id)
+                    .and_then(|record| record.source())
+            })?;
+        return location(project, source).map(GotoDefinitionResponse::Scalar);
     }
     let cursor = symbol_at(project, document, offset)?;
     let source = project
@@ -230,6 +325,7 @@ pub(crate) fn completions(
     let Some(module) = project.module_key(source.document().identity()) else {
         return Vec::new();
     };
+    let environment = accepted.world().environment();
     let mut items = accepted
         .world()
         .symbols()
@@ -246,23 +342,46 @@ pub(crate) fn completions(
                 ))),
                 ..CompletionItem::default()
             },
-            ProjectTypeTarget::External(external) => CompletionItem {
-                label: binding.spelling().to_string(),
-                kind: Some(CompletionItemKind::CLASS),
-                detail: Some(external.canonical_path().to_string()),
-                documentation: Some(Documentation::String(
-                    "Accepted source-backed external type.".to_owned(),
-                )),
-                ..CompletionItem::default()
-            },
+            ProjectTypeTarget::External(external) => {
+                let detail = environment
+                    .external_owner(
+                        accepted.world().symbols(),
+                        external.declaration(),
+                        RegisteredExternalOwnerKind::Environment,
+                    )
+                    .ok()
+                    .and_then(|owner| match owner {
+                        RegisteredExternalOwner::Environment(owner) => {
+                            environment.environment_binding(owner.value_binding())
+                        }
+                        RegisteredExternalOwner::Character(_) => None,
+                    })
+                    .and_then(|ty| match ty {
+                        TypeKind::AcceptedNominal(nominal) => {
+                            Some(nominal.declaration().source_label())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| external.canonical_path().to_string());
+                CompletionItem {
+                    label: binding.spelling().to_string(),
+                    kind: Some(CompletionItemKind::CLASS),
+                    detail: Some(detail),
+                    documentation: Some(Documentation::String(
+                        "Accepted source-backed external type.".to_owned(),
+                    )),
+                    ..CompletionItem::default()
+                }
+            }
         })
         .collect::<Vec<_>>();
     items.extend(
-        accepted
-            .world()
-            .environment()
+        environment
             .nominal_catalog()
             .exact_records()
+            .filter(|record| {
+                accepted_nominal_is_visible(environment.nominal_world().visibility(), record.id())
+            })
             .map(|record| CompletionItem {
                 label: record.id().canonical_path().canonical_string(),
                 kind: Some(CompletionItemKind::CLASS),
@@ -292,6 +411,18 @@ pub(crate) fn completions(
             }),
     );
     items
+}
+
+fn accepted_nominal_is_visible(
+    visibility: &arcweft_lang_sema::registration::AcceptedNominalVisibilityIndex,
+    id: &AcceptedNominalId,
+) -> bool {
+    match id.owner() {
+        AcceptedNominalOwnerId::Environment(_) | AcceptedNominalOwnerId::RustPackage(_) => {
+            visibility.visible(id).is_some()
+        }
+        AcceptedNominalOwnerId::Standard | AcceptedNominalOwnerId::Character(_) => true,
+    }
 }
 
 pub(crate) fn contextual_completions(
@@ -548,6 +679,45 @@ fn language_symbol_at(
         .min_by_key(|cursor| cursor.source.range().end() - cursor.source.range().start())
 }
 
+fn accepted_nominal_at(
+    project: &AcceptedProjectSnapshot,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<AcceptedNominalCursor> {
+    let identity = project
+        .sources()
+        .by_uri(document.uri())?
+        .document()
+        .identity();
+    project
+        .typecheck()
+        .nominal_resolutions
+        .nodes()
+        .filter_map(|(_, node)| {
+            let (TypeNameResolution::Accepted(nominal)
+            | TypeNameResolution::External(ExternalNominalResolution::Accepted {
+                nominal, ..
+            })) = node.outcome()
+            else {
+                return None;
+            };
+            let source = node
+                .terminal_source()
+                .and_then(|source| source.project())
+                .filter(|source| span_contains_offset(source, identity, offset))
+                .or_else(|| {
+                    node.source()
+                        .project()
+                        .filter(|source| span_contains_offset(source, identity, offset))
+                })?;
+            Some(AcceptedNominalCursor {
+                nominal: nominal.clone(),
+                source: source.clone(),
+            })
+        })
+        .min_by_key(|cursor| cursor.source.range().end() - cursor.source.range().start())
+}
+
 fn span_contains_offset(
     span: &SourceSpan,
     identity: &arcweft_source::SourceDocumentIdentity,
@@ -612,7 +782,21 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+    use arcweft_adapter_context::manifest::{
+        AdapterManifest, AdapterNominalDeclaration, AdapterNominalPath, AdapterNominalPathPrefix,
+        AdapterNominalPathSegment, AdapterNominalVisibility, AdapterRegistry,
+    };
+    use arcweft_launch::LaunchProfileSelection;
+    use arcweft_project_loader::topology::{
+        ProfileTopologyLoadRequest, ProfileTopologyOwnerId, load_profile_topology,
+    };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
+    use arcweft_rust_abi::{
+        ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustTypeDecl,
+        ArcweftRustTypeKind, ArcweftRustTypeParameter, ArcweftRustTypeParameterIndex,
+        ArcweftRustTypeParameterName, ArcweftRustTypePath, ArcweftRustTypePathSegment,
+        ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
+    };
     use lsp_types::{
         DidOpenTextDocumentParams, GotoDefinitionResponse, HoverContents, MarkedString,
         TextDocumentItem, Uri,
@@ -622,7 +806,9 @@ mod tests {
     use crate::{
         diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis},
         positions::PositionEncoding,
-        profiles::LspProfileResolver,
+        profiles::{
+            LspProfile, LspProfileResolver, register_loaded_environment, state::AcceptedOverlaySet,
+        },
     };
 
     const MAIN: &str = r"
@@ -976,6 +1162,131 @@ entry agent @entry.agent.main {
     }
 
     #[test]
+    fn accepted_rust_nominal_tooling_retains_identity_metadata_and_source() {
+        const SOURCE: &str = r"
+fn smoke() -> Result<Unit, AgentError>
+effects {}
+{
+    Ok(())
+}
+
+fn identity(value: Envelope<Rank>) -> Envelope<Rank> {
+    value
+}
+
+entry agent @entry.agent.main {
+    controller = smoke
+}
+";
+        let project = TestProject::new("accepted-rust-nominal-tooling");
+        let adapter = rust_nominal_adapter();
+        project.write(
+            "arcw.toml",
+            r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.accepted-rust-nominal-tooling"
+version = "0.1.0"
+
+[profiles.agent]
+kind = "agent"
+entry = "@entry.agent.main"
+source = "src/main.arcw"
+adapter = "rust-nominal-tooling"
+"#,
+        );
+        project.write("src/main.arcw", SOURCE);
+        let manifest_path = project.path("arcw.toml");
+        let owner = ProfileTopologyOwnerId::workspace(
+            file_uri(&project.root).to_string(),
+            file_uri(&manifest_path).to_string(),
+        )
+        .expect("workspace owner");
+        let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            owner,
+            LaunchProfileSelection::Explicit("agent"),
+            &[],
+            AdapterRegistry::from_manifests([adapter.clone()]),
+        ))
+        .expect("custom adapter topology");
+        let (candidate, _) =
+            register_loaded_environment(&topology, AcceptedOverlaySet::default(), None)
+                .expect("registered custom adapter environment");
+        let profile = LspProfile::new(adapter, RuntimeHostRunnerKind::Native);
+        profile
+            .state()
+            .replace_accepted(candidate)
+            .expect("accepted custom adapter environment");
+
+        let main_path = project.path("src/main.arcw");
+        let document = open(&main_path, SOURCE);
+        let offset = SOURCE.find("Envelope<Rank>").expect("generic Rust type") + 1;
+        let accepted = profile.accepted_environment().expect("accepted profile");
+        let cursor = accepted_nominal_at(accepted.project(), &document, offset)
+            .expect("typed accepted nominal cursor");
+        assert_eq!(
+            cursor.nominal.declaration().owner().source_label(),
+            "rust:tooling-types"
+        );
+        assert_eq!(
+            cursor
+                .nominal
+                .declaration()
+                .canonical_path()
+                .canonical_string(),
+            "Envelope"
+        );
+        let [TypeKind::AcceptedNominal(argument)] = cursor.nominal.arguments() else {
+            panic!("Envelope retains its accepted Rank argument")
+        };
+        assert_eq!(
+            argument.declaration().canonical_path().canonical_string(),
+            "Rank"
+        );
+
+        let HoverContents::Scalar(MarkedString::String(text)) = hover(&profile, &document, offset)
+            .expect("accepted Rust nominal hover")
+            .contents
+        else {
+            panic!("expected accepted Rust nominal string hover")
+        };
+        assert!(text.contains("accepted Rust nominal `rust:tooling-types::Envelope`"));
+        assert!(text.contains("Rust package: `tooling-types`"));
+        assert!(text.contains("mounted path: `Envelope`"));
+        assert!(text.contains("arity: `1`"));
+        assert!(text.contains("Rust item: `tooling_types::Envelope`"));
+        assert!(text.contains("applied arguments: `Rank`"));
+
+        let GotoDefinitionResponse::Scalar(actual) =
+            definition(&profile, &document, offset).expect("accepted Rust metadata definition")
+        else {
+            panic!("expected one accepted Rust metadata definition")
+        };
+        let metadata = accepted
+            .world()
+            .environment()
+            .rust_metadata()
+            .get(cursor.nominal.declaration())
+            .expect("accepted Rust metadata");
+        assert_eq!(
+            actual,
+            location(accepted.project(), metadata.source())
+                .expect("generated metadata source has a typed URI")
+        );
+
+        let completions = completions(&profile, &document);
+        assert!(completions.iter().any(|item| {
+            item.label == "Envelope"
+                && item.detail.as_deref() == Some("rust:tooling-types::Envelope")
+        }));
+        assert!(
+            !completions.iter().any(|item| item.label == "PrivateOnly"),
+            "inaccessible accepted nominals are not completion candidates"
+        );
+    }
+
+    #[test]
     fn accepted_project_nominal_tooling_rejects_a_stale_document_snapshot() {
         const TEST_ID: &str = "TOOL-STALE";
         let project = TestProject::new("nominal-stale-tooling");
@@ -1114,5 +1425,68 @@ source = "src/main.arcw"
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+
+    fn rust_nominal_adapter() -> AdapterManifest {
+        let package = ArcweftRustPackageId::try_new("tooling-types").expect("Rust package ID");
+        let type_path = |name: &str| {
+            ArcweftRustTypePath::try_new([
+                ArcweftRustTypePathSegment::try_new(name).expect("Rust type path segment")
+            ])
+            .expect("Rust type path")
+        };
+        let parameter_index =
+            ArcweftRustTypeParameterIndex::try_from_usize(0).expect("generic parameter index");
+        let rust = ArcweftRustManifest::new(ArcweftRustPackage {
+            id: package.clone(),
+            version: "1.0.0".to_owned(),
+            metadata_hash: None,
+        })
+        .with_type(ArcweftRustTypeDecl {
+            path: type_path("Rank"),
+            rust_path: "tooling_types::Rank".to_owned(),
+            parameters: Vec::new(),
+            kind: ArcweftRustTypeKind::Enum {
+                variants: vec![ArcweftRustVariant {
+                    name: "First".to_owned(),
+                    payload: ArcweftRustVariantPayload::Unit,
+                }],
+            },
+        })
+        .with_type(ArcweftRustTypeDecl {
+            path: type_path("Envelope"),
+            rust_path: "tooling_types::Envelope".to_owned(),
+            parameters: vec![ArcweftRustTypeParameter {
+                index: parameter_index,
+                name: ArcweftRustTypeParameterName::try_new("T").expect("generic parameter name"),
+            }],
+            kind: ArcweftRustTypeKind::Newtype {
+                inner: ArcweftRustTypeRef::TypeParameter {
+                    index: parameter_index,
+                },
+            },
+        });
+        let private_path =
+            AdapterNominalPath::try_new([AdapterNominalPathSegment::try_new("PrivateOnly")
+                .expect("private nominal path segment")])
+            .expect("private nominal path");
+        AdapterManifest::new("rust-nominal-tooling", "Rust Nominal Tooling")
+            .try_with_nominal_declaration(
+                AdapterNominalDeclaration::try_new(
+                    private_path,
+                    0,
+                    AdapterNominalVisibility::Private,
+                    "PrivateOnly",
+                )
+                .expect("private nominal declaration"),
+            )
+            .expect("private nominal path is unique")
+            .try_with_rust_package_mount(
+                package,
+                AdapterNominalPathPrefix::try_new([]).expect("empty package mount"),
+            )
+            .expect("Rust package mount")
+            .try_with_rust_manifest(&rust)
+            .expect("Rust nominal metadata")
     }
 }

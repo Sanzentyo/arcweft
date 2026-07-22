@@ -22,7 +22,10 @@ use arcweft_lang_syntax::ast::{
 use arcweft_source::{SourceRange, SourceSpan};
 
 use crate::{
-    callable::{PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogBuilder},
+    callable::{
+        EnvironmentPublicationProjectionErrorKind, EnvironmentPublicationProjectionReport,
+        PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogBuilder,
+    },
     env::{
         TypeCheckEnv,
         nominal::{
@@ -31,6 +34,8 @@ use crate::{
             OpenNominalEnvironment,
         },
     },
+    nominal::{NominalAggregationLimits, NominalResolutionLimits},
+    registration::{AcceptedNominalInputVisibility, AcceptedNominalSource},
     types::{CharacterNominalType, EntityKind, EntityType, TypeKind},
 };
 
@@ -42,9 +47,9 @@ use super::{
     },
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
-        AcceptedNominalWorld, CharacterInventoryRevision, CharacterRegistrar,
-        CharacterRegistrationRequest, RegisteredExternalOwner, RegisteredSemanticWorld,
-        RegisteredTypeCheckEnv,
+        AcceptedNominalVisibilityIndex, AcceptedNominalWorld, CharacterInventoryRevision,
+        CharacterRegistrar, CharacterRegistrationRequest, RegisteredExternalOwner,
+        RegisteredSemanticWorld, RegisteredTypeCheckEnv,
     },
     source_index::CharacterDefinitionIndex,
 };
@@ -185,27 +190,98 @@ impl CharacterRegistrar {
             ]));
         }
 
-        let accepted_base = match accepted_external_environment(&request, &link, &owners) {
-            Ok(environment) => environment,
-            Err(error) => {
-                return Err(CharacterRegistrationReport::from_diagnostics(vec![
-                    CharacterRegistrationDiagnostic::new(
-                        CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
-                        fallback,
-                        [],
-                    ),
-                ]));
-            }
-        };
-        let nominal_world = Arc::new(AcceptedNominalWorld::new(
+        let (accepted_base, visibility) =
+            match accepted_external_environment(&request, &link, &owners) {
+                Ok(environment) => environment,
+                Err(error) => {
+                    return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                            fallback,
+                            [],
+                        ),
+                    ]));
+                }
+            };
+        let nominal_world = AcceptedNominalWorld::new(
             accepted_base,
             request.facts.world().clone(),
             *request.facts.symbol_revision(),
             owners,
-        ));
+            visibility,
+        );
+        let mut environment_bindings = BTreeMap::new();
+        for input in request.facts.environment_inputs() {
+            let projected = nominal_world
+                .try_project_environment_bindings(
+                    input,
+                    NominalResolutionLimits::PRODUCTION,
+                    NominalAggregationLimits::PRODUCTION,
+                )
+                .map_err(environment_projection_registration_report)?;
+            for (id, ty) in projected {
+                if environment_bindings.insert(id, ty).is_some() {
+                    return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::CallableCatalog {
+                                code:
+                                    crate::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+                            },
+                            fallback.clone(),
+                            [],
+                        ),
+                    ]));
+                }
+            }
+        }
+        let environment_aliases = environment_external_alias_records(
+            &request,
+            &link,
+            nominal_world.external_owners(),
+            &environment_bindings,
+        )
+        .map_err(|error| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                    fallback.clone(),
+                    [],
+                ),
+            ])
+        })?;
+        let nominal_world = Arc::new(
+            nominal_world
+                .try_with_environment_bindings(environment_bindings, environment_aliases)
+                .map_err(|error| {
+                    CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                            fallback.clone(),
+                            [],
+                        ),
+                    ])
+                })?,
+        );
 
-        let mut callable_builder =
-            RegisteredCallableCatalogBuilder::new(PRODUCTION_CALLABLE_LIMITS);
+        let rust_metadata_inputs = request
+            .facts
+            .environment_inputs()
+            .flat_map(|input| input.input().rust_metadata().iter().cloned())
+            .collect::<Vec<_>>();
+        let rust_metadata = Arc::new(
+            nominal_world
+                .try_project_rust_metadata(
+                    &rust_metadata_inputs,
+                    NominalResolutionLimits::PRODUCTION,
+                    NominalAggregationLimits::PRODUCTION,
+                )
+                .map_err(environment_projection_registration_report)?,
+        );
+
+        let mut callable_builder = RegisteredCallableCatalogBuilder::for_nominal_world(
+            &nominal_world,
+            PRODUCTION_CALLABLE_LIMITS,
+        );
         if let Err(error) =
             callable_builder.add_project(request.project, link.table(), &nominal_world)
         {
@@ -225,9 +301,9 @@ impl CharacterRegistrar {
                             Some(RegisteredExternalOwner::Character(_)) => {
                                 Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
                             }
-                            Some(RegisteredExternalOwner::Environment(id)) => {
-                                nominal_world.environment_binding(id).cloned()
-                            }
+                            Some(RegisteredExternalOwner::Environment(owner)) => nominal_world
+                                .environment_binding(owner.value_binding())
+                                .cloned(),
                             None => None,
                         }
                     }
@@ -249,7 +325,7 @@ impl CharacterRegistrar {
         }
         let standard_publication = match nominal_world
             .typecheck_env()
-            .standard_callable_publication(&PRODUCTION_CALLABLE_LIMITS)
+            .standard_callable_publication(nominal_world.stamp(), &PRODUCTION_CALLABLE_LIMITS)
         {
             Ok(publication) => publication,
             Err(error) => {
@@ -272,7 +348,16 @@ impl CharacterRegistrar {
                 ),
             ]));
         }
-        for publication in request.callable_publications.iter().cloned() {
+        for input in request.facts.environment_inputs() {
+            let publication = match nominal_world.try_project_environment_publication(
+                input,
+                NominalResolutionLimits::PRODUCTION,
+                NominalAggregationLimits::PRODUCTION,
+                &PRODUCTION_CALLABLE_LIMITS,
+            ) {
+                Ok(publication) => publication,
+                Err(report) => return Err(environment_projection_registration_report(report)),
+            };
             if let Err(error) = callable_builder.add_environment(publication) {
                 return Err(CharacterRegistrationReport::from_diagnostics(vec![
                     CharacterRegistrationDiagnostic::new(
@@ -296,15 +381,26 @@ impl CharacterRegistrar {
             }
         };
 
+        let environment_digest = super::environment_digest::derive(
+            &nominal_world,
+            rust_metadata.digest().as_bytes(),
+            callables.digest().as_bytes(),
+            request.facts,
+            digest,
+            revision,
+        );
+
         let symbols = Arc::new(link.into_table());
         let environment = Arc::new(RegisteredTypeCheckEnv {
             nominal_world,
+            rust_metadata,
             callables,
             characters,
             character_variants,
             character_descriptor: descriptor,
             character_digest: digest,
             character_revision: revision,
+            environment_digest,
         });
         let character_definitions =
             match CharacterDefinitionIndex::try_build(request.facts, &symbols, &environment) {
@@ -338,6 +434,51 @@ impl CharacterRegistrar {
     }
 }
 
+fn environment_projection_registration_report(
+    report: EnvironmentPublicationProjectionReport,
+) -> CharacterRegistrationReport {
+    let (projection_diagnostics, omitted_diagnostics) = report.into_parts();
+    let diagnostics = projection_diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let code = match diagnostic.kind() {
+                EnvironmentPublicationProjectionErrorKind::LimitExceeded { .. } => {
+                    crate::callable::CallableDiagnosticCode::ResourceExhausted
+                }
+                EnvironmentPublicationProjectionErrorKind::WorldMismatch => {
+                    crate::callable::CallableDiagnosticCode::WorldMismatch
+                }
+                EnvironmentPublicationProjectionErrorKind::UnknownPath { .. }
+                | EnvironmentPublicationProjectionErrorKind::InaccessibleExport { .. }
+                | EnvironmentPublicationProjectionErrorKind::OwnerMismatch { .. }
+                | EnvironmentPublicationProjectionErrorKind::WrongArity { .. }
+                | EnvironmentPublicationProjectionErrorKind::InvalidAcceptedSemantics { .. }
+                | EnvironmentPublicationProjectionErrorKind::FreeTypeParameterInCallable {
+                    ..
+                }
+                | EnvironmentPublicationProjectionErrorKind::UnboundMetadataTypeParameter {
+                    ..
+                }
+                | EnvironmentPublicationProjectionErrorKind::MetadataOwnerMismatch { .. }
+                | EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog { .. }
+                | EnvironmentPublicationProjectionErrorKind::Callable { .. } => {
+                    crate::callable::CallableDiagnosticCode::CorruptCallableCatalog
+                }
+            };
+            CharacterRegistrationDiagnostic::new(
+                CharacterRegistrationDiagnosticKind::CallableCatalog { code },
+                diagnostic.primary().clone(),
+                diagnostic
+                    .related()
+                    .iter()
+                    .map(|related| related.source().clone()),
+            )
+        })
+        .collect();
+    CharacterRegistrationReport::from_diagnostics(diagnostics)
+        .with_omitted(u64::try_from(omitted_diagnostics).unwrap_or(u64::MAX))
+}
+
 #[allow(
     clippy::result_large_err,
     reason = "accepted catalog construction preserves its complete typed atomic-failure evidence"
@@ -346,12 +487,35 @@ fn accepted_external_environment(
     request: &CharacterRegistrationRequest<'_>,
     link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
     owners: &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
-) -> Result<Arc<TypeCheckEnv>, AcceptedNominalCatalogError> {
+) -> Result<(Arc<TypeCheckEnv>, AcceptedNominalVisibilityIndex), AcceptedNominalCatalogError> {
     request
         .base
         .nominal_catalog()
         .validate_scopes_for(OpenNominalEnvironment::Accepted)?;
     let mut environment = request.base.as_ref().clone();
+    let mut visible = BTreeMap::new();
+    let mut inaccessible = BTreeMap::new();
+    for input in request.facts.environment_inputs() {
+        for nominal in input.input().nominal_inventory() {
+            environment.try_insert_nominal_record(AcceptedNominalRecord::try_new(
+                nominal.id().clone(),
+                nominal.arity(),
+                AcceptedNominalSemantics::Opaque,
+                nominal.origin(),
+                Some(nominal.source().clone()),
+            )?)?;
+            let source =
+                AcceptedNominalSource::new(nominal.source().clone(), nominal.item().clone());
+            match nominal.visibility() {
+                AcceptedNominalInputVisibility::Visible => {
+                    visible.insert(nominal.id().clone(), source);
+                }
+                AcceptedNominalInputVisibility::Inaccessible => {
+                    inaccessible.insert(nominal.id().clone(), source);
+                }
+            }
+        }
+    }
     for (seed_id, declaration) in link.seed_declarations() {
         let Some(owner) = owners.get(&declaration) else {
             continue;
@@ -362,17 +526,7 @@ fn accepted_external_environment(
             .declaration(seed_id)
             .expect("linked external seeds belong to the accepted registration facts");
         let (accepted_owner, semantics, origin) = match owner {
-            RegisteredExternalOwner::Environment(id) => (
-                AcceptedNominalOwnerId::Environment(id.clone()),
-                AcceptedNominalSemantics::Exact(
-                    request
-                        .base
-                        .environment_binding(id)
-                        .expect("environment owners were validated before catalog publication")
-                        .clone(),
-                ),
-                AcceptedNominalOrigin::Adapter,
-            ),
+            RegisteredExternalOwner::Environment(_) => continue,
             RegisteredExternalOwner::Character(character) => (
                 AcceptedNominalOwnerId::Character(character.clone()),
                 AcceptedNominalSemantics::Exact(TypeKind::Ref(EntityType::new(
@@ -392,7 +546,51 @@ fn accepted_external_environment(
             )?)?;
         }
     }
-    Ok(Arc::new(environment))
+    Ok((
+        Arc::new(environment),
+        AcceptedNominalVisibilityIndex::from_parts(visible, inaccessible),
+    ))
+}
+
+fn environment_external_alias_records(
+    request: &CharacterRegistrationRequest<'_>,
+    link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
+    owners: &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
+    bindings: &BTreeMap<crate::env::identity::EnvironmentBindingId, TypeKind>,
+) -> Result<Vec<AcceptedNominalRecord>, AcceptedNominalCatalogError> {
+    let mut aliases = Vec::new();
+    for (seed_id, declaration) in link.seed_declarations() {
+        let Some(RegisteredExternalOwner::Environment(owner)) = owners.get(&declaration) else {
+            continue;
+        };
+        let Some(ty) = bindings
+            .get(owner.value_binding())
+            .or_else(|| request.base.environment_binding(owner.value_binding()))
+        else {
+            continue;
+        };
+        if matches!(ty, TypeKind::AcceptedNominal(_)) {
+            continue;
+        }
+        let seed = request
+            .facts
+            .external_declarations()
+            .declaration(seed_id)
+            .expect("linked external seeds belong to the accepted registration facts");
+        for binding in seed.direct_bindings() {
+            aliases.push(AcceptedNominalRecord::try_new(
+                AcceptedNominalId::new(
+                    AcceptedNominalOwnerId::Environment(owner.nominal_owner().clone()),
+                    binding.path().clone().into(),
+                ),
+                0,
+                AcceptedNominalSemantics::Exact(ty.clone()),
+                AcceptedNominalOrigin::Adapter,
+                Some(binding.source().clone()),
+            )?);
+        }
+    }
+    Ok(aliases)
 }
 
 fn validate_project_sources(
@@ -602,8 +800,14 @@ fn build_external_owners(
         };
         let valid_owner = match &contribution.target {
             RegisteredExternalOwner::Character(owner) => manifests.contains_key(owner),
-            RegisteredExternalOwner::Environment(id) => {
-                request.base.environment_binding(id).is_some()
+            RegisteredExternalOwner::Environment(owner) => {
+                request
+                    .base
+                    .environment_binding(owner.value_binding())
+                    .is_some()
+                    || request
+                        .facts
+                        .declares_environment_binding(owner.value_binding())
             }
         };
         if !valid_owner {

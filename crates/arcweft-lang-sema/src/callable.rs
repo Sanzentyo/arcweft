@@ -9,12 +9,14 @@ mod arguments;
 mod builder;
 mod catalog;
 mod dialogue;
+mod digest;
 mod error;
 mod facts;
 mod identity;
 mod limits;
 mod nominal_signature;
 mod presentation;
+mod projection;
 mod publication;
 mod resolver;
 mod schema;
@@ -28,6 +30,10 @@ pub use catalog::{
     ProjectCallableCatalog, RegisteredCallableCatalog, RegisteredProjectModuleCallables,
 };
 pub use dialogue::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
+pub use digest::{
+    CallableSignatureSchemaDigest, EnvironmentCallablePublicationDigest,
+    RegisteredCallableCatalogDigest,
+};
 pub use error::{
     BuiltinIdentityError, CallTargetFactError, CallableBuildLimitError, CallableCatalogBuildError,
     CallableCatalogError, CallableDiagnosticCode, CallableDocumentationError,
@@ -72,6 +78,11 @@ pub use limits::{
 pub(crate) use limits::{ResolverWork, SignatureQueryWorkMeter};
 pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamedArgument};
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
+pub use projection::{
+    EnvironmentPublicationProjectionDiagnostic, EnvironmentPublicationProjectionErrorKind,
+    EnvironmentPublicationProjectionReport, EnvironmentPublicationRelatedLabel,
+    EnvironmentPublicationRelatedSource,
+};
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
     CallCallee, CallResolverRequest, CallSourceContext, LexicalCallBinding, LexicalCallableScope,

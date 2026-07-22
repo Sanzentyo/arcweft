@@ -8,7 +8,8 @@ use arcweft_lang_hir::{
     symbol::{ProjectSymbolRevision, ProjectSymbolWorldId},
 };
 use arcweft_lang_sema::registration::{
-    CharacterInventoryDigest, CharacterInventoryRevision, RegisteredSemanticWorld,
+    CharacterInventoryDigest, CharacterInventoryRevision, RegisteredEnvironmentDigest,
+    RegisteredSemanticWorld,
 };
 use arcweft_lang_sema::{
     callable::{CallableQueryLimitError, ResolveCallError, SemanticSignatureError},
@@ -59,6 +60,7 @@ pub(crate) struct SignatureRequestStamp {
     symbol_revision: ProjectSymbolRevision,
     character_digest: CharacterInventoryDigest,
     character_revision: CharacterInventoryRevision,
+    environment_digest: RegisteredEnvironmentDigest,
     uri: LspUriKey,
     protocol_document: SourceDocumentIdentity,
     accepted_document_identity: SourceDocumentIdentity,
@@ -279,6 +281,11 @@ pub(crate) enum SignatureRequestStale {
         expected: CharacterInventoryRevision,
         actual: CharacterInventoryRevision,
     },
+    #[error("signature registered environment digest changed")]
+    EnvironmentDigestChanged {
+        expected: RegisteredEnvironmentDigest,
+        actual: RegisteredEnvironmentDigest,
+    },
     #[error("signature accepted project wrapper changed")]
     ProjectArcChanged,
     #[error("signature URI maps to another accepted document")]
@@ -384,6 +391,7 @@ impl SignatureRequestStamp {
             symbol_revision: *world.symbols().revision(),
             character_digest: environment.character_digest(),
             character_revision: environment.character_revision(),
+            environment_digest: environment.environment_digest(),
             accepted_document_identity: accepted_document.identity().clone(),
             accepted,
             project,
@@ -445,6 +453,10 @@ impl SignatureRequestStamp {
         self.character_revision
     }
 
+    pub(crate) const fn environment_digest(&self) -> RegisteredEnvironmentDigest {
+        self.environment_digest
+    }
+
     pub(crate) const fn uri(&self) -> &LspUriKey {
         &self.uri
     }
@@ -473,6 +485,7 @@ impl SignatureRequestStamp {
             self.symbol_revision,
             self.character_revision,
             self.character_digest,
+            self.environment_digest,
             self.accepted_document_identity.clone(),
             Some(self.lsp_version),
             byte_offset,
@@ -663,6 +676,9 @@ impl SignatureRequestStale {
             Self::CharacterDigestChanged { .. } => "aw.signature.stale.character_digest_changed",
             Self::CharacterRevisionChanged { .. } => {
                 "aw.signature.stale.character_revision_changed"
+            }
+            Self::EnvironmentDigestChanged { .. } => {
+                "aw.signature.stale.environment_digest_changed"
             }
             Self::ProjectArcChanged => "aw.signature.stale.project_arc_changed",
             Self::UriRemapped { .. } => "aw.signature.stale.uri_remapped",

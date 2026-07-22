@@ -102,7 +102,7 @@ entry cli @entry.image_alignment_object {
     goto @flow.image_alignment_object
 }
 
-flow image_static_png {
+flow image_static_png() -> String {
     bg(@asset:.bg.room)
 
     narrator.say(id=@say.image.static_png, voice=auto)[
@@ -112,7 +112,7 @@ flow image_static_png {
     return "image_static_png"
 }
 
-flow image_static_jpeg {
+flow image_static_jpeg() -> String {
     bg(@asset:.bg.garden)
 
     narrator.say(id=@say.image.static_jpeg, voice=auto)[
@@ -122,7 +122,7 @@ flow image_static_jpeg {
     return "image_static_jpeg"
 }
 
-flow image_static_webp {
+flow image_static_webp() -> String {
     bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 0.75)
 
     narrator.say(id=@say.image.static_webp, voice=auto)[
@@ -132,7 +132,7 @@ flow image_static_webp {
     return "image_static_webp"
 }
 
-flow image_animated_gif {
+flow image_animated_gif() -> String {
     bg(@asset:.bg.pulse)
 
     narrator.say(id=@say.image.animated_gif, voice=auto)[
@@ -142,7 +142,7 @@ flow image_animated_gif {
     return "image_animated_gif"
 }
 
-flow image_animated_webp {
+flow image_animated_webp() -> String {
     bg(@asset:.bg.loop)
 
     narrator.say(id=@say.image.animated_webp, voice=auto)[
@@ -152,7 +152,7 @@ flow image_animated_webp {
     return "image_animated_webp"
 }
 
-flow image_sprite_overlay {
+flow image_sprite_overlay() -> String {
     bg(@asset:.bg.room)
     image(@image.sample.pulse_sprite)
 
@@ -163,7 +163,7 @@ flow image_sprite_overlay {
     return "image_sprite_overlay"
 }
 
-flow image_sprite_released {
+flow image_sprite_released() -> String {
     bg(@asset:.bg.room)
     let sprite = image(@image.sample.pulse_sprite)
     sprite.release()
@@ -175,7 +175,7 @@ flow image_sprite_released {
     return "image_sprite_released"
 }
 
-flow image_clipped_object {
+flow image_clipped_object() -> String {
     bg(@asset:.bg.room)
     image(asset = @asset:.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
 
@@ -186,7 +186,7 @@ flow image_clipped_object {
     return "image_clipped_object"
 }
 
-flow image_alignment_object {
+flow image_alignment_object() -> String {
     bg(@asset:.bg.room)
     image(asset = @asset:.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
 

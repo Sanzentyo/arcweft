@@ -2,7 +2,6 @@ use super::{ProjectCompileError, ProjectCompileStage, linked_error_with_registra
 use arcweft_id::PublicId;
 use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_sema::{
-    callable::EnvironmentCallablePublication,
     env::TypeCheckEnv,
     registration::{
         CharacterRegistrar, CharacterRegistrationDiagnostic, CharacterRegistrationRequest,
@@ -56,7 +55,6 @@ pub struct ProjectCompilationContext {
     resource_types: Arc<ResourceTypeRegistry>,
     previous: Option<Arc<RegisteredTypeCheckEnv>>,
     entry_selection: Option<ProjectEntrySelection>,
-    callable_publications: Vec<EnvironmentCallablePublication>,
     accepted_launch_profile: Option<AcceptedLaunchProfileInput>,
 }
 
@@ -134,7 +132,6 @@ impl ProjectCompilationContext {
         resource_types: Arc<ResourceTypeRegistry>,
         previous: Option<Arc<RegisteredTypeCheckEnv>>,
         entry_selection: Option<ProjectEntrySelection>,
-        callable_publications: Vec<EnvironmentCallablePublication>,
     ) -> Self {
         Self {
             base,
@@ -142,7 +139,6 @@ impl ProjectCompilationContext {
             resource_types,
             previous,
             entry_selection,
-            callable_publications,
             accepted_launch_profile: None,
         }
     }
@@ -184,10 +180,6 @@ pub(super) fn register(
         project,
         &context.facts,
         context.previous.as_deref(),
-    );
-    let request = context.callable_publications.iter().cloned().fold(
-        request,
-        CharacterRegistrationRequest::with_callable_publication,
     );
     CharacterRegistrar::register(request)
         .map(Arc::new)

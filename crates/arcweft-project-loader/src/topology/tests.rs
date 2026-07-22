@@ -4,7 +4,10 @@ use super::{
     ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, load_profile_topology,
 };
 use arcweft_adapter_context::{
-    manifest::{AdapterCallableName, AdapterEffectCapability, AdapterManifest, AdapterRegistry},
+    manifest::{
+        AdapterCallableName, AdapterEffectCapability, AdapterManifest, AdapterNominalOwner,
+        AdapterNominalVisibility, AdapterRegistry, AdapterTypeKind,
+    },
     standard::standard_registry,
 };
 use arcweft_adapter_metadata::{
@@ -557,10 +560,12 @@ flow @flow.main main effects { fs.read } {
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_to_hir(parsed.typed_tree()).expect("capability fixture lowers");
 
-    let read_env = read.adapter().apply_to_target_env(TypeCheckEnv::new());
+    let read_env = read.adapter().declare_target_effects(TypeCheckEnv::new());
     typecheck_hir(&hir, &read_env).expect("selected reader adapter grants fs.read");
 
-    let network_env = network.adapter().apply_to_target_env(TypeCheckEnv::new());
+    let network_env = network
+        .adapter()
+        .declare_target_effects(TypeCheckEnv::new());
     let errors =
         typecheck_hir(&hir, &network_env).expect_err("selected network adapter lacks fs.read");
     assert!(errors.iter().any(|error| {
@@ -612,10 +617,19 @@ fn generated_metadata_publishes_exact_mounted_type_function_and_activity_facts()
     assert_eq!(retained.exports.functions[0].purity, FunctionPurity::Pure);
     assert!(topology.adapter().symbols().iter().any(|symbol| {
         symbol.path().to_string() == "mini_games.truck.TruckResult"
-            && symbol.ty()
-                == &arcweft_adapter_context::manifest::AdapterTypeKind::Named(
-                    "mini_games.truck.TruckResult".to_owned(),
-                )
+            && matches!(
+                symbol.ty(),
+                AdapterTypeKind::Nominal { nominal }
+                    if matches!(nominal.owner(), AdapterNominalOwner::Environment { owner }
+                        if owner.as_str() == "adapter:sans-io")
+                        && nominal
+                            .path()
+                            .segments()
+                            .iter()
+                            .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str)
+                            .eq(["mini_games", "truck", "TruckResult"])
+                        && nominal.arguments().is_empty()
+            )
     }));
     assert!(
         !topology
@@ -624,6 +638,21 @@ fn generated_metadata_publishes_exact_mounted_type_function_and_activity_facts()
             .iter()
             .any(|symbol| symbol.path().to_string().ends_with("TruckTelemetry")),
         "private metadata exports are not project-visible"
+    );
+    assert!(
+        topology
+            .adapter()
+            .nominal_declarations()
+            .iter()
+            .any(|declaration| {
+                declaration.visibility() == AdapterNominalVisibility::Private
+                    && declaration
+                        .path()
+                        .segments()
+                        .iter()
+                        .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str)
+                        .eq(["mini_games", "truck", "TruckTelemetry"])
+            })
     );
     let function = topology
         .adapter()

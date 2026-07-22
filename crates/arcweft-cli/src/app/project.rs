@@ -5,9 +5,7 @@ use super::runtime::options::{
 use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
-use arcweft_adapter_context::{
-    manifest::AdapterManifest, publication::AdapterManifestSource, standard,
-};
+use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_compiler::project::{
     AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
     ProjectCompileDiagnostic, ProjectCompileError, ProjectEntrySelection,
@@ -18,10 +16,7 @@ use arcweft_host_adapter::HostCallPolicy;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{
-    callable::{EnvironmentCallablePublication, PRODUCTION_CALLABLE_LIMITS},
-    check::TypeCheckReport,
-    env::TypeCheckEnv,
-    registration::ProjectRegistrationFacts,
+    check::TypeCheckReport, env::TypeCheckEnv, registration::ProjectRegistrationFacts,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_launch::{
@@ -756,7 +751,6 @@ fn direct_project_compilation_input_with_env(
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
-        callable_publications(adapter_manifests)?,
     );
     Ok(DirectProjectCompilationInput { sources, context })
 }
@@ -815,6 +809,7 @@ fn direct_registration_facts(
 ) -> Result<ProjectRegistrationFacts, ExitCode> {
     let mut documents = vec![Arc::clone(document)];
     let mut external_facts = Vec::new();
+    let mut environment_inputs = Vec::new();
     for (index, manifest) in adapter_manifests.iter().enumerate() {
         let ordinal = u64::try_from(index).map_err(|_| {
             eprintln!("error: direct-source adapter ordinal exceeds u64::MAX");
@@ -828,9 +823,10 @@ fn direct_registration_facts(
                 );
                 ExitCode::FAILURE
             })?;
-        let (adapter_document, facts) = registration.into_parts();
-        documents.push(adapter_document);
-        external_facts.extend(facts);
+        let parts = registration.into_parts();
+        documents.push(parts.document);
+        external_facts.extend(parts.externals);
+        environment_inputs.push(parts.environment);
     }
 
     let package = CallablePackageId::try_new(package_id.as_str()).map_err(|error| {
@@ -842,27 +838,32 @@ fn direct_registration_facts(
             eprintln!("error: invalid direct-source semantic world: {error}");
             ExitCode::FAILURE
         })?;
-    ProjectRegistrationFacts::try_new(world, documents, external_facts, Vec::new()).map_err(
-        |report| {
-            for diagnostic in report.diagnostics() {
-                let diagnostic = diagnostic.diagnostic();
-                eprintln!(
-                    "error[{}]: {}",
-                    diagnostic
-                        .code()
-                        .map_or("registration", arcweft_source::DiagnosticCode::as_str),
-                    diagnostic.message()
-                );
-            }
-            if report.omitted_diagnostics() > 0 {
-                eprintln!(
-                    "error: {} direct-source registration diagnostic(s) omitted",
-                    report.omitted_diagnostics()
-                );
-            }
-            ExitCode::FAILURE
-        },
+    ProjectRegistrationFacts::try_new(
+        world,
+        documents,
+        external_facts,
+        Vec::new(),
+        environment_inputs,
     )
+    .map_err(|report| {
+        for diagnostic in report.diagnostics() {
+            let diagnostic = diagnostic.diagnostic();
+            eprintln!(
+                "error[{}]: {}",
+                diagnostic
+                    .code()
+                    .map_or("registration", arcweft_source::DiagnosticCode::as_str),
+                diagnostic.message()
+            );
+        }
+        if report.omitted_diagnostics() > 0 {
+            eprintln!(
+                "error: {} direct-source registration diagnostic(s) omitted",
+                report.omitted_diagnostics()
+            );
+        }
+        ExitCode::FAILURE
+    })
 }
 
 fn direct_package_id(package_name: &str) -> Result<PackageId, &'static str> {
@@ -945,54 +946,13 @@ fn compilation_context_from_facts(
                 })
         })
         .transpose()?;
-    let callable_publications = callable_publications(semantic.adapter_manifests())?;
     Ok(ProjectCompilationContext::new(
         Arc::new(semantic.base().clone()),
         Arc::new(facts),
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         entry_selection,
-        callable_publications,
     ))
-}
-
-fn callable_publications(
-    adapter_manifests: &[AdapterManifest],
-) -> Result<Vec<EnvironmentCallablePublication>, ExitCode> {
-    let mut callable_publications = standard::callable_publications(&PRODUCTION_CALLABLE_LIMITS)
-        .map_err(|error| {
-            eprintln!("error: failed to publish standard callable catalog: {error}");
-            ExitCode::FAILURE
-        })?;
-    for manifest in adapter_manifests {
-        if let Some(source) = standard::manifest_source(manifest.id().as_str()) {
-            if !manifest.rust_functions().is_empty() {
-                callable_publications.push(
-                    manifest
-                        .try_rust_callable_publication(source, &PRODUCTION_CALLABLE_LIMITS)
-                        .map_err(|error| {
-                            eprintln!(
-                                "error: failed to publish Rust ABI callable catalog: {error}"
-                            );
-                            ExitCode::FAILURE
-                        })?,
-                );
-            }
-            continue;
-        }
-        callable_publications.push(
-            manifest
-                .try_callable_publication(
-                    AdapterManifestSource::SelectedAdapter,
-                    &PRODUCTION_CALLABLE_LIMITS,
-                )
-                .map_err(|error| {
-                    eprintln!("error: failed to publish adapter callable catalog: {error}");
-                    ExitCode::FAILURE
-                })?,
-        );
-    }
-    Ok(callable_publications)
 }
 
 const fn project_entry_kind(kind: LaunchKind) -> ProjectEntrySelectionKind {
@@ -1070,14 +1030,14 @@ pub(in crate::app) fn semantic_context_for_selection(
         None => adapter_manifest_for_selection(selection, adapter_override)?,
     };
     let env = if adapter_override.is_some() || selection.profile().is_some() {
-        manifest.apply_to_target_env(TypeCheckEnv::standard())
+        manifest.declare_target_effects(TypeCheckEnv::standard())
     } else {
-        manifest.apply_to_env(TypeCheckEnv::standard())
+        manifest.declare_effects(TypeCheckEnv::standard())
     };
     let desktop = arcweft_adapter_desktop::standard_desktop_manifests();
     let env = desktop
         .iter()
-        .fold(env, |env, manifest| manifest.apply_to_env(env));
+        .fold(env, |env, manifest| manifest.declare_effects(env));
     let mut adapter_manifests = Vec::with_capacity(desktop.len() + 1);
     adapter_manifests.push(manifest);
     adapter_manifests.extend(desktop.iter().cloned());

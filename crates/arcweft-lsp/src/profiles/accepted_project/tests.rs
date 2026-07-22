@@ -52,8 +52,9 @@ fn project_and_world(
         "test",
     )
     .expect("world");
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("registration facts");
     let registered = Arc::new(
         CharacterRegistrar::register(CharacterRegistrationRequest::new(
             Arc::new(TypeCheckEnv::standard()),

@@ -2,9 +2,10 @@ use super::*;
 #[cfg(feature = "sema")]
 use arcweft_lang_sema::registration::RegisteredExternalOwner;
 use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustParam,
-    ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef,
-    ArcweftRustVariant,
+    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId,
+    ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
+    ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef, ArcweftRustVariant,
+    ArcweftRustVariantPayload,
 };
 
 #[test]
@@ -30,22 +31,19 @@ fn adapter_manifest_applies_effect_capabilities_and_function_effects() {
             adapter_signature([("path", AdapterTypeKind::String)], AdapterTypeKind::String),
             [AdapterEffectCapability::new("fs.read")],
         );
-    let env = manifest.apply_to_env(TypeCheckEnv::new());
+    let env = manifest.declare_effects(TypeCheckEnv::new());
 
     assert!(env.has_capability("fs.read"));
     assert!(
         env.available_effects().is_none(),
         "surface application must not select target availability"
     );
-    let publication = manifest
-        .try_callable_publication(
-            crate::publication::AdapterManifestSource::SelectedAdapter,
-            &arcweft_lang_sema::callable::PRODUCTION_CALLABLE_LIMITS,
-        )
-        .expect("typed callable publication succeeds");
-    assert_eq!(publication.records().len(), 1);
+    let registration = manifest
+        .source_backed_registration_facts(0)
+        .expect("source-backed callable input succeeds");
+    assert_eq!(registration.environment().callable_records().len(), 1);
 
-    let target_env = manifest.apply_to_target_env(TypeCheckEnv::new());
+    let target_env = manifest.declare_target_effects(TypeCheckEnv::new());
     assert!(
         target_env
             .available_effects()
@@ -59,14 +57,14 @@ fn adapter_manifest_applies_effect_capabilities_and_function_effects() {
     clippy::too_many_lines,
     reason = "one end-to-end publication test keeps the grouped signature, effects, and documentation assertions on the same record"
 )]
-fn callable_publication_preserves_groups_defaults_rest_effects_and_docs() {
+fn source_backed_callable_input_preserves_groups_defaults_rest_effects_and_docs() {
     use arcweft_lang_sema::{
         callable::{
-            AdapterPackageId, CallableLookupKey, CallableParameterPassing,
-            CallableParameterPresence, DocumentationProvenance, EnvironmentCallableOwner,
-            SpreadArgumentPolicy,
+            AdapterPackageId, CallableParameterPassing, CallableParameterPresence,
+            DocumentationProvenance, EnvironmentCallableOwner, SpreadArgumentPolicy,
         },
         effects::EffectId,
+        registration::EnvironmentCallableLookupInput,
     };
 
     let path = adapter_path(["network", "request"]);
@@ -122,7 +120,7 @@ fn callable_publication_preserves_groups_defaults_rest_effects_and_docs() {
         ],
     )
     .unwrap();
-    let publication = AdapterManifest::new("custom-network", "Custom Network")
+    let registration = AdapterManifest::new("custom-network", "Custom Network")
         .with_function_signature(
             path,
             overload,
@@ -130,22 +128,20 @@ fn callable_publication_preserves_groups_defaults_rest_effects_and_docs() {
             [AdapterEffectCapability::new("network.request")],
         )
         .with_tooling_doc(documentation)
-        .try_callable_publication(
-            crate::publication::AdapterManifestSource::SelectedAdapter,
-            &arcweft_lang_sema::callable::PRODUCTION_CALLABLE_LIMITS,
-        )
+        .source_backed_registration_facts(1)
         .unwrap();
 
     assert_eq!(
-        publication.owner(),
+        registration.environment().owner(),
         &EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new("custom-network").unwrap())
     );
-    let record = &publication.records()[0];
-    let CallableLookupKey::Free(path) = record.key() else {
+    let record = &registration.environment().callable_records()[0];
+    let EnvironmentCallableLookupInput::Free(path) = record.key() else {
         panic!("free function publication must retain a typed path");
     };
     assert_eq!(
-        path.segments()
+        path.path()
+            .segments()
             .iter()
             .map(arcweft_lang_sema::callable::CallableName::as_str)
             .collect::<Vec<_>>(),
@@ -168,7 +164,6 @@ fn callable_publication_preserves_groups_defaults_rest_effects_and_docs() {
         record
             .schema()
             .effects()
-            .declared()
             .concrete()
             .contains(&EffectId::parse("network.request").unwrap())
     );
@@ -189,44 +184,37 @@ fn callable_publication_preserves_groups_defaults_rest_effects_and_docs() {
 
 #[cfg(feature = "sema")]
 #[test]
-fn callable_publication_rejects_reserved_and_mismatched_standard_owners() {
-    use crate::publication::{AdapterCallablePublicationError, AdapterManifestSource};
-    use arcweft_lang_sema::callable::{PRODUCTION_CALLABLE_LIMITS, StandardEnvironmentId};
+fn source_backed_owner_is_derived_without_a_caller_selected_mode() {
+    use arcweft_lang_sema::callable::{
+        AdapterPackageId, EnvironmentCallableOwner, StandardEnvironmentId,
+    };
 
-    let reserved = AdapterManifest::new(crate::standard::SANS_IO_ADAPTER_ID, "Reserved")
-        .try_callable_publication(
-            AdapterManifestSource::SelectedAdapter,
-            &PRODUCTION_CALLABLE_LIMITS,
-        );
-    assert!(matches!(
-        reserved,
-        Err(AdapterCallablePublicationError::ReservedStandardIdClaimed { .. })
-    ));
-
-    let mismatch = AdapterManifest::new("not-sans-io", "Mismatch").try_callable_publication(
-        AdapterManifestSource::Standard(StandardEnvironmentId::SansIo),
-        &PRODUCTION_CALLABLE_LIMITS,
+    let standard = crate::standard::sans_io_manifest()
+        .source_backed_registration_facts(0)
+        .expect("reserved manifest ID has one fixed standard owner");
+    assert_eq!(
+        standard.environment().owner(),
+        &EnvironmentCallableOwner::Standard(StandardEnvironmentId::SansIo)
     );
-    assert!(matches!(
-        mismatch,
-        Err(AdapterCallablePublicationError::StandardIdMismatch {
-            source: StandardEnvironmentId::SansIo,
-            ..
-        })
-    ));
+
+    let custom = AdapterManifest::new("not-sans-io", "Custom")
+        .source_backed_registration_facts(1)
+        .expect("custom manifest has an adapter owner");
+    assert_eq!(
+        custom.environment().owner(),
+        &EnvironmentCallableOwner::Adapter(AdapterPackageId::try_new("not-sans-io").unwrap())
+    );
 }
 
 #[cfg(feature = "sema")]
 #[test]
-fn rust_callable_publication_is_a_typed_delta_for_augmented_standard_manifest() {
-    use crate::publication::AdapterManifestSource;
+fn source_backed_standard_input_retains_rust_callable_identity_and_order() {
     use arcweft_lang_sema::callable::{
-        EnvironmentCallableKind, EnvironmentCallableOwner, PRODUCTION_CALLABLE_LIMITS,
-        StandardEnvironmentId,
+        EnvironmentCallableKind, EnvironmentCallableOwner, StandardEnvironmentId,
     };
 
     let rust = ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "truck_game".to_owned(),
+        id: rust_package_id(),
         version: "0.1.0".to_owned(),
         metadata_hash: None,
     })
@@ -244,28 +232,26 @@ fn rust_callable_publication_is_a_typed_delta_for_augmented_standard_manifest() 
     let base = crate::standard::inference_tensor_manifest();
     let expected_order = base.functions().len() + base.methods().len();
     let augmented = base
+        .try_with_rust_package_mount(rust_package_id(), empty_rust_mount())
+        .expect("Rust package mount is unique")
         .try_with_rust_manifest(&rust)
         .expect("Rust callable metadata augments the standard manifest");
-    let publication = augmented
-        .try_rust_callable_publication(
-            AdapterManifestSource::Standard(StandardEnvironmentId::InferenceTensor),
-            &PRODUCTION_CALLABLE_LIMITS,
-        )
-        .expect("Rust delta publication is valid");
+    let registration = augmented
+        .source_backed_registration_facts(2)
+        .expect("source-backed standard registration input is valid");
 
     assert_eq!(
-        publication.owner(),
+        registration.environment().owner(),
         &EnvironmentCallableOwner::Standard(StandardEnvironmentId::InferenceTensor)
     );
-    assert_eq!(publication.records().len(), 1);
-    assert_eq!(
-        publication.records()[0].kind(),
-        EnvironmentCallableKind::RustFunction
-    );
-    assert_eq!(
-        publication.records()[0].declaration_order().get(),
-        expected_order
-    );
+    let rust_records = registration
+        .environment()
+        .callable_records()
+        .iter()
+        .filter(|record| record.kind() == EnvironmentCallableKind::RustFunction)
+        .collect::<Vec<_>>();
+    assert_eq!(rust_records.len(), 1);
+    assert_eq!(rust_records[0].declaration_order().get(), expected_order);
 }
 
 #[cfg(feature = "sema")]
@@ -301,7 +287,8 @@ fn source_backed_adapter_facts_bind_exact_environment_keys_and_base_revision() {
     assert!(matches!(
         first.externals()[0].target(),
         RegisteredExternalOwner::Environment(id)
-            if id.as_str() == "adapter.viewport"
+            if id.nominal_owner().as_str() == "adapter:fixture"
+                && id.value_binding().as_str() == "adapter.viewport"
     ));
     assert_eq!(
         first.externals()[0].declaration().direct_bindings()[0]
@@ -312,11 +299,15 @@ fn source_backed_adapter_facts_bind_exact_environment_keys_and_base_revision() {
             .collect::<Vec<_>>(),
         ["adapter", "viewport"]
     );
-    let base = first_manifest.apply_to_env(TypeCheckEnv::new());
     let RegisteredExternalOwner::Environment(id) = first.externals()[0].target() else {
         panic!("adapter symbol must register an environment owner");
     };
-    assert_eq!(base.environment_binding(id), Some(&TypeKind::I32));
+    let binding = &first.environment().value_bindings()[0];
+    assert_eq!(binding.id(), id.value_binding());
+    assert!(matches!(
+        binding.ty().kind(),
+        arcweft_lang_sema::registration::EnvironmentTypeProjectionKind::I32
+    ));
 }
 
 #[cfg(feature = "sema")]
@@ -357,47 +348,96 @@ fn source_backed_adapter_facts_are_independent_of_symbol_insertion_order() {
     );
 }
 
+#[cfg(feature = "sema")]
+#[test]
+fn source_backed_adapter_facts_retain_exact_recursive_type_ranges() {
+    use arcweft_lang_sema::registration::EnvironmentTypeProjectionKind;
+    use arcweft_source::{SourceDocument, SourceSpan};
+
+    fn source_text<'a>(document: &'a SourceDocument, span: &SourceSpan) -> &'a str {
+        let range = span.range();
+        &document.text()[range.start()..range.end()]
+    }
+
+    let symbol_type = AdapterTypeKind::Vec {
+        item: Box::new(AdapterTypeKind::Option {
+            item: Box::new(AdapterTypeKind::I32),
+        }),
+    };
+    let parameter_type = AdapterTypeKind::Result {
+        ok: Box::new(AdapterTypeKind::Vec {
+            item: Box::new(AdapterTypeKind::String),
+        }),
+        error: Box::new(AdapterTypeKind::I32),
+    };
+    let result_type = AdapterTypeKind::Need {
+        ready: Box::new(AdapterTypeKind::Seq {
+            item: Box::new(AdapterTypeKind::U8),
+        }),
+        error: Box::new(AdapterTypeKind::String),
+    };
+    let facts = AdapterManifest::new("fixture", "Fixture")
+        .with_symbol(AdapterSymbol::new(
+            adapter_symbol_path(["adapter", "values"]),
+            symbol_type,
+        ))
+        .with_function_signature(
+            adapter_path(["adapter", "read"]),
+            adapter_overload(0),
+            adapter_signature([("input", parameter_type)], result_type),
+            [],
+        )
+        .source_backed_registration_facts(19)
+        .expect("source-backed facts");
+    let document = facts.document();
+
+    let symbol = facts.environment().value_bindings()[0].ty();
+    assert_eq!(source_text(document, symbol.source()), "Vec<Option<i32>>");
+    let EnvironmentTypeProjectionKind::Vec(option) = symbol.kind() else {
+        panic!("symbol root must retain Vec shape");
+    };
+    assert_eq!(source_text(document, option.source()), "Option<i32>");
+    let EnvironmentTypeProjectionKind::Option(integer) = option.kind() else {
+        panic!("symbol child must retain Option shape");
+    };
+    assert_eq!(source_text(document, integer.source()), "i32");
+
+    let callable = &facts.environment().callable_records()[0];
+    let parameter = callable.schema().groups()[0].parameters()[0].ty();
+    assert_eq!(
+        source_text(document, parameter.source()),
+        "Result<Vec<String>,i32>"
+    );
+    let arcweft_lang_sema::registration::EnvironmentParameterTypeInput::Exact(parameter) =
+        parameter
+    else {
+        panic!("typed adapter parameter must not become unchecked")
+    };
+    let EnvironmentTypeProjectionKind::Result { ok, error } = parameter.kind() else {
+        panic!("parameter root must retain Result shape");
+    };
+    assert_eq!(source_text(document, ok.source()), "Vec<String>");
+    assert_eq!(source_text(document, error.source()), "i32");
+
+    let result = callable.schema().result();
+    assert_eq!(
+        source_text(document, result.source()),
+        "Need<Seq<u8>,String>"
+    );
+    let EnvironmentTypeProjectionKind::Need { ready, error } = result.kind() else {
+        panic!("result root must retain Need shape");
+    };
+    assert_eq!(source_text(document, ready.source()), "Seq<u8>");
+    assert_eq!(source_text(document, error.source()), "String");
+}
+
 #[test]
 fn rust_manifest_injects_full_function_signature() {
-    let manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "truck_game".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_type(ArcweftRustTypeDecl {
-        name: "Rank".to_owned(),
-        rust_path: "truck_game::Rank".to_owned(),
-        kind: ArcweftRustTypeKind::Enum {
-            variants: vec![
-                ArcweftRustVariant {
-                    name: "Bronze".to_owned(),
-                    fields: Vec::new(),
-                },
-                ArcweftRustVariant {
-                    name: "Custom".to_owned(),
-                    fields: vec![arcweft_rust_abi::ArcweftRustField {
-                        name: "label".to_owned(),
-                        ty: ArcweftRustTypeRef::String,
-                    }],
-                },
-            ],
-        },
-    })
-    .with_function(ArcweftRustFunction {
-        name: "score_to_rank".to_owned(),
-        rust_path: "truck_game::score_to_rank".to_owned(),
-        params: vec![ArcweftRustParam {
-            name: "score".to_owned(),
-            ty: ArcweftRustTypeRef::I32,
-        }],
-        return_type: ArcweftRustTypeRef::Named {
-            name: "Rank".to_owned(),
-        },
-        purity: ArcweftRustPurity::Pure,
-        effects: Vec::new(),
-    });
+    let manifest = rank_rust_manifest();
 
     let context = AdapterManifest::new("fixture", "Fixture")
+        .try_with_rust_package_mount(rust_package_id(), empty_rust_mount())
+        .expect("Rust package mount is unique")
         .try_with_rust_manifest(&manifest)
         .expect("Rust callable metadata is typed");
 
@@ -410,71 +450,51 @@ fn rust_manifest_injects_full_function_signature() {
     );
     assert_eq!(
         context.rust_functions()[0].signature(),
-        &adapter_signature(
-            [("score", AdapterTypeKind::I32)],
-            AdapterTypeKind::Named("Rank".to_owned())
-        )
+        &adapter_signature([("score", AdapterTypeKind::I32)], rank_adapter_type())
     );
 }
 
 #[cfg(feature = "sema")]
 #[test]
-fn rust_manifest_applies_to_semantic_env_when_enabled() {
-    let manifest = ArcweftRustManifest::new(ArcweftRustPackage {
-        name: "truck_game".to_owned(),
-        version: "0.1.0".to_owned(),
-        metadata_hash: None,
-    })
-    .with_type(ArcweftRustTypeDecl {
-        name: "Rank".to_owned(),
-        rust_path: "truck_game::Rank".to_owned(),
-        kind: ArcweftRustTypeKind::Enum {
-            variants: vec![
-                ArcweftRustVariant {
-                    name: "Bronze".to_owned(),
-                    fields: Vec::new(),
-                },
-                ArcweftRustVariant {
-                    name: "Custom".to_owned(),
-                    fields: vec![arcweft_rust_abi::ArcweftRustField {
-                        name: "label".to_owned(),
-                        ty: ArcweftRustTypeRef::String,
-                    }],
-                },
-            ],
-        },
-    })
-    .with_function(ArcweftRustFunction {
-        name: "score_to_rank".to_owned(),
-        rust_path: "truck_game::score_to_rank".to_owned(),
-        params: vec![ArcweftRustParam {
-            name: "score".to_owned(),
-            ty: ArcweftRustTypeRef::I32,
-        }],
-        return_type: ArcweftRustTypeRef::Named {
-            name: "Rank".to_owned(),
-        },
-        purity: ArcweftRustPurity::Pure,
-        effects: Vec::new(),
-    });
+fn rust_manifest_publishes_source_backed_nominal_metadata_when_enabled() {
+    let manifest = rank_rust_manifest();
 
-    let env = AdapterManifest::new("fixture", "Fixture")
+    let registration = AdapterManifest::new("fixture", "Fixture")
+        .try_with_rust_package_mount(rust_package_id(), empty_rust_mount())
+        .expect("Rust package mount is unique")
         .try_with_rust_manifest(&manifest)
         .expect("Rust callable metadata is typed")
-        .apply_to_env(TypeCheckEnv::new());
+        .source_backed_registration_facts(3)
+        .expect("Rust metadata has source-backed registration facts");
 
-    assert_eq!(
-        env,
-        TypeCheckEnv::new()
-            .try_with_rust_type_export(
-                RustPackageId::try_new("truck_game").expect("package id"),
-                rust_type_path("Rank"),
-            )
-            .expect("Rust type export")
-            .try_with_enum_variants(TypeKind::Named("Rank".to_owned()), ["Bronze"])
-            .expect("non-character Rust enum variants are accepted"),
-        "only non-callable Rust type metadata stays on the existing environment route"
-    );
+    let [metadata] = registration.environment().rust_metadata() else {
+        panic!("one Rust nominal metadata record is retained")
+    };
+    assert_eq!(metadata.package().as_str(), "truck_game");
+    assert_eq!(metadata.id().canonical_path().canonical_string(), "Rank");
+    let arcweft_lang_sema::env::rust_metadata::RustTypeMetadataPublicationKind::Enum { variants } =
+        metadata.kind()
+    else {
+        panic!("Rank remains typed enum metadata")
+    };
+    assert_eq!(variants.len(), 2);
+    assert_eq!(variants[0].name(), "Bronze");
+    assert!(matches!(
+        variants[0].payload(),
+        arcweft_lang_sema::env::rust_metadata::RustVariantPayloadInput::Unit
+    ));
+    assert_eq!(variants[1].name(), "Custom");
+    let arcweft_lang_sema::env::rust_metadata::RustVariantPayloadInput::Record(fields) =
+        variants[1].payload()
+    else {
+        panic!("Custom retains its record payload")
+    };
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].0, "label");
+    assert!(matches!(
+        fields[0].1.kind(),
+        arcweft_lang_sema::registration::EnvironmentTypeProjectionKind::String
+    ));
 }
 
 #[cfg(feature = "sema")]
@@ -498,6 +518,85 @@ fn adapter_symbol_path<const N: usize>(segments: [&str; N]) -> AdapterSymbolPath
         AdapterSymbolSegment::try_new(segment).expect("valid test adapter symbol segment")
     }))
     .expect("test adapter symbol path is non-empty")
+}
+
+fn rust_package_id() -> ArcweftRustPackageId {
+    ArcweftRustPackageId::try_new("truck_game").expect("valid test package ID")
+}
+
+fn rust_type_path(name: &str) -> ArcweftRustTypePath {
+    ArcweftRustTypePath::try_new([
+        ArcweftRustTypePathSegment::try_new(name).expect("valid test Rust type segment")
+    ])
+    .expect("one segment forms a Rust type path")
+}
+
+fn empty_rust_mount() -> AdapterNominalPathPrefix {
+    AdapterNominalPathPrefix::try_new([]).expect("empty Rust mount is valid")
+}
+
+fn rank_adapter_path() -> AdapterNominalPath {
+    empty_rust_mount()
+        .join(&rust_type_path("Rank"))
+        .expect("Rank path joins the package mount")
+}
+
+fn rank_adapter_type() -> AdapterTypeKind {
+    AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::RustPackage {
+                package: rust_package_id(),
+            },
+            rank_adapter_path(),
+            [],
+        )
+        .expect("Rank nominal reference is valid"),
+    }
+}
+
+fn rank_rust_manifest() -> ArcweftRustManifest {
+    ArcweftRustManifest::new(ArcweftRustPackage {
+        id: rust_package_id(),
+        version: "0.1.0".to_owned(),
+        metadata_hash: None,
+    })
+    .with_type(ArcweftRustTypeDecl {
+        path: rust_type_path("Rank"),
+        rust_path: "truck_game::Rank".to_owned(),
+        parameters: Vec::new(),
+        kind: ArcweftRustTypeKind::Enum {
+            variants: vec![
+                ArcweftRustVariant {
+                    name: "Bronze".to_owned(),
+                    payload: ArcweftRustVariantPayload::Unit,
+                },
+                ArcweftRustVariant {
+                    name: "Custom".to_owned(),
+                    payload: ArcweftRustVariantPayload::Record {
+                        fields: vec![arcweft_rust_abi::ArcweftRustField {
+                            name: "label".to_owned(),
+                            ty: ArcweftRustTypeRef::String,
+                        }],
+                    },
+                },
+            ],
+        },
+    })
+    .with_function(ArcweftRustFunction {
+        name: "score_to_rank".to_owned(),
+        rust_path: "truck_game::score_to_rank".to_owned(),
+        params: vec![ArcweftRustParam {
+            name: "score".to_owned(),
+            ty: ArcweftRustTypeRef::I32,
+        }],
+        return_type: ArcweftRustTypeRef::Nominal {
+            package: rust_package_id(),
+            path: rust_type_path("Rank"),
+            arguments: Vec::new(),
+        },
+        purity: ArcweftRustPurity::Pure,
+        effects: Vec::new(),
+    })
 }
 
 fn adapter_signature<const N: usize>(

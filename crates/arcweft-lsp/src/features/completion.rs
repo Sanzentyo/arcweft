@@ -13,16 +13,27 @@ pub fn completions(
     profile: &LspProfile,
     document: Option<&DocumentSnapshot>,
 ) -> Vec<CompletionItem> {
-    let mut items = profile_completions(&profile.context());
+    let mut seen_accepted_nominal_labels = BTreeSet::new();
+    let accepted_nominals = document
+        .map(|document| crate::features::nominal_types::completions(profile, document))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|item| seen_accepted_nominal_labels.insert(item.label.clone()))
+        .collect::<Vec<_>>();
+    let accepted_nominal_labels = accepted_nominals
+        .iter()
+        .map(|item| item.label.clone())
+        .collect::<BTreeSet<_>>();
+    let mut items = accepted_nominals;
+    items.extend(
+        profile_completions(&profile.context())
+            .into_iter()
+            .filter(|item| !accepted_nominal_labels.contains(item.label.as_str())),
+    );
     items.extend(crate::features::entry_roles::callable_completions(profile));
     items.extend(character_metadata_completions(profile));
     items.extend(enum_variant_completions(profile));
     items.extend(dialogue_view_completions(profile, document));
-    if let Some(document) = document {
-        items.extend(crate::features::nominal_types::completions(
-            profile, document,
-        ));
-    }
     dedup_completion_items(items)
 }
 

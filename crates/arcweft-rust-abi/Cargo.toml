@@ -10,6 +10,7 @@ repository.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
+unicode-ident.workspace = true
 
 [lib]
 path = "src/lib.rs"

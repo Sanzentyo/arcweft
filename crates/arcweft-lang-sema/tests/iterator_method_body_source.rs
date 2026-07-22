@@ -47,6 +47,7 @@ fn analyze_fixture(source: &str) -> arcweft_lang_sema::check::TypeCheckReport {
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registration facts");
     let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(

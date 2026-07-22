@@ -16,6 +16,7 @@ fn analyze_registered_source(
         vec![document],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("source-backed type-check registration facts");
     let registered =
@@ -2583,6 +2584,7 @@ flow @flow.container_source_ranges container_source_ranges {
     let facts = crate::registration::ProjectRegistrationFacts::try_new(
         world,
         vec![document],
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     )

@@ -13,7 +13,9 @@ use arcweft_lang_sema::character_definition::{
 };
 use arcweft_lang_sema::{
     callable::PRODUCTION_CALLABLE_LIMITS,
-    registration::{CharacterInventoryDigest, CharacterInventoryRevision},
+    registration::{
+        CharacterInventoryDigest, CharacterInventoryRevision, RegisteredEnvironmentDigest,
+    },
     signature::SignatureQueryOutcome,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
@@ -116,6 +118,7 @@ pub(crate) struct SignatureCacheKey {
     symbol_revision: ProjectSymbolRevision,
     character_revision: CharacterInventoryRevision,
     character_digest: CharacterInventoryDigest,
+    environment_digest: RegisteredEnvironmentDigest,
     source: SourceDocumentIdentity,
     lsp_version: Option<i32>,
     byte_offset: usize,
@@ -545,6 +548,7 @@ impl SignatureCacheKey {
         symbol_revision: ProjectSymbolRevision,
         character_revision: CharacterInventoryRevision,
         character_digest: CharacterInventoryDigest,
+        environment_digest: RegisteredEnvironmentDigest,
         source: SourceDocumentIdentity,
         lsp_version: Option<i32>,
         byte_offset: usize,
@@ -555,6 +559,7 @@ impl SignatureCacheKey {
             symbol_revision,
             character_revision,
             character_digest,
+            environment_digest,
             source,
             lsp_version,
             byte_offset,

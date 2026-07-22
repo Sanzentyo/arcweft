@@ -1,0 +1,5 @@
+error: arcweft_export does not support generic functions
+ --> tests/ui/reject_generic_export.rs:4:16
+  |
+4 | pub fn identity<T>(value: T) -> T {
+  |                ^

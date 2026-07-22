@@ -765,13 +765,29 @@ pub enum ExternalModuleFactsError {
         source: AdapterSymbolPathError,
     },
     #[error(
+        "generated import `{import}` has an invalid mounted nominal path for export `{export}`: {source}"
+    )]
+    NominalPath {
+        import: ExternalModuleImportId,
+        export: String,
+        #[source]
+        source: arcweft_adapter_context::manifest::AdapterNominalPathError,
+    },
+    #[error("generated import `{import}` could not register nominal export `{export}`: {source}")]
+    NominalDeclaration {
+        import: ExternalModuleImportId,
+        export: String,
+        #[source]
+        source: Box<arcweft_adapter_context::manifest::AdapterManifestModelError>,
+    },
+    #[error(
         "generated import `{import}` has an invalid mounted callable for export `{export}`: {source}"
     )]
     Callable {
         import: ExternalModuleImportId,
         export: String,
         #[source]
-        source: AdapterCallableModelError,
+        source: Box<AdapterCallableModelError>,
     },
     #[error(
         "generated import `{import}` export `{export}` has unsupported type reference `{reference}`"
@@ -831,7 +847,7 @@ impl ExternalModuleFactsError {
         Self::Callable {
             import: import.clone(),
             export: export.to_owned(),
-            source,
+            source: Box::new(source),
         }
     }
 }

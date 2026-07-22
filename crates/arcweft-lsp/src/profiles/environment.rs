@@ -3,9 +3,7 @@ use arcweft_compiler::project::{
     AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompileError, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
-use arcweft_lang_sema::{
-    callable::PRODUCTION_CALLABLE_LIMITS, env::TypeCheckEnv, registration::RegisteredTypeCheckEnv,
-};
+use arcweft_lang_sema::{env::TypeCheckEnv, registration::RegisteredTypeCheckEnv};
 use arcweft_launch::{LaunchProfileSelection, ProfileId};
 use arcweft_project_loader::{
     environment::{ProfileRegistrationLoadRequest, load_profile_registration},
@@ -48,8 +46,6 @@ pub(crate) enum RegisterProfileEnvironmentError {
         #[source]
         source: Box<ProjectCompileError>,
     },
-    #[error("project registration was rejected: {0}")]
-    Registration(String),
     #[error("registered character catalog was rejected: {0}")]
     Catalog(String),
     #[error("accepted profile candidate was rejected: {0}")]
@@ -119,36 +115,7 @@ pub(crate) fn register_loaded_environment(
         .map_err(RegisterProfileEnvironmentError::RegistrationLoad)?;
     let (facts, file_documents) = registration.into_parts();
     let facts = Arc::new(facts);
-    let base = topology.adapter().apply_to_env(TypeCheckEnv::standard());
-    let mut callable_publications =
-        arcweft_adapter_context::standard::callable_publications(&PRODUCTION_CALLABLE_LIMITS)
-            .map_err(|error| RegisterProfileEnvironmentError::Registration(error.to_string()))?;
-    if let Some(source) =
-        arcweft_adapter_context::standard::manifest_source(topology.adapter().id().as_str())
-    {
-        if !topology.adapter().rust_functions().is_empty() {
-            callable_publications.push(
-                topology
-                    .adapter()
-                    .try_rust_callable_publication(source, &PRODUCTION_CALLABLE_LIMITS)
-                    .map_err(|error| {
-                        RegisterProfileEnvironmentError::Registration(error.to_string())
-                    })?,
-            );
-        }
-    } else {
-        callable_publications.push(
-            topology
-                .adapter()
-                .try_callable_publication(
-                    arcweft_adapter_context::publication::AdapterManifestSource::SelectedAdapter,
-                    &PRODUCTION_CALLABLE_LIMITS,
-                )
-                .map_err(|error| {
-                    RegisterProfileEnvironmentError::Registration(error.to_string())
-                })?,
-        );
-    }
+    let base = topology.adapter().declare_effects(TypeCheckEnv::standard());
     let characters = registered_character_catalog(&facts)?;
     let source_seeds = accepted_source_seeds(&facts, file_documents);
     let resource_types = Arc::new(ResourceTypeRegistry::empty());
@@ -165,7 +132,6 @@ pub(crate) fn register_loaded_environment(
         resource_types,
         previous.cloned().map(Arc::new),
         None,
-        callable_publications,
     )
     .with_accepted_launch_profile(accepted_launch);
     let compiled = Arc::new(
@@ -269,9 +235,17 @@ fn accepted_source_seeds(
             .documents()
             .filter(|document| seeded.insert(document.identity().clone()))
             .map(|document| {
+                let locator = document
+                    .identity()
+                    .id()
+                    .as_str()
+                    .parse()
+                    .map_or(AcceptedSourceLocator::Unavailable, |uri| {
+                        AcceptedSourceLocator::Uri { uri }
+                    });
                 AcceptedSourceDocumentSeed::new(
                     Arc::clone(document),
-                    AcceptedSourceLocator::Unavailable,
+                    locator,
                     AcceptedSourceOwnership::Generated,
                     AcceptedSourceAccess::Unknown,
                 )

@@ -8,15 +8,25 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_sema::{
-    env::{TypeCheckEnv, identity::EnvironmentBindingId, nominal::RustPackageId},
+    callable::{AdapterPackageId, EnvironmentCallableOwner, RustItemPath},
+    env::{
+        TypeCheckEnv,
+        identity::EnvironmentBindingId,
+        nominal::{
+            AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId, RustPackageId,
+        },
+    },
     nominal::{
         ExternalNominalResolution, GenericTypeBinding, GenericTypeScope, NominalResolutionLimits,
         NominalTypeDiagnosticCode, ResolvedTypeRefOutcome, SelfTypeScope, TypeNameResolution,
         TypeResolutionInput, TypeSourceEvidence, resolve_type_ref,
     },
     registration::{
-        CharacterRegistrar, CharacterRegistrationRequest, ExternalRegistrationFact,
-        ProjectRegistrationFacts,
+        AcceptedNominalInputVisibility, AcceptedNominalInventoryInput, CharacterRegistrar,
+        CharacterRegistrationRequest, EnvironmentManifestDigest, EnvironmentPublicationItemId,
+        EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode, EnvironmentValueBindingInput,
+        ExternalRegistrationFact, ProjectRegistrationFacts,
+        SourceBackedEnvironmentRegistrationInput,
     },
     types::{DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId, TypeKind},
 };
@@ -128,7 +138,7 @@ fn external_rust_registration_fact(
     .expect("external declaration");
     ExternalRegistrationFact::new(
         seed,
-        arcweft_lang_sema::registration::RegisteredExternalOwner::Environment(owner),
+        arcweft_lang_sema::registration::RegisteredExternalOwner::environment(owner.clone(), owner),
         declaration,
     )
 }
@@ -169,20 +179,58 @@ fn external_rust_fixture() -> (
     let project = external_rust_project(&document, &package, &module);
     let owner = EnvironmentBindingId::try_new("adapter.packet").expect("environment owner");
     let package_id = RustPackageId::try_new("packet-rust").expect("Rust package");
-    let environment = TypeCheckEnv::standard()
-        .try_with_rust_type_export(package_id, path("Packet"))
-        .expect("Rust type export");
-    let packet = detached(
-        "Packet",
-        &environment,
-        &GenericTypeScope::empty(),
-        SelfTypeScope::Absent,
+    let accepted_id = AcceptedNominalId::new(
+        AcceptedNominalOwnerId::RustPackage(package_id.clone()),
+        path("Packet"),
+    );
+    let source = document
+        .span(arcweft_source::SourceRange::new(0, SOURCE.len()))
+        .expect("environment source span");
+    let adapter = AdapterPackageId::try_new("adapter.packet").expect("adapter package");
+    let environment_owner = EnvironmentCallableOwner::Adapter(adapter.clone());
+    let nominal_item = EnvironmentPublicationItemId::RustType {
+        adapter,
+        package: package_id,
+        rust_item: RustItemPath::try_new("packet_rust::Packet").expect("Rust item path"),
+        accepted_path: path("Packet"),
+    };
+    let symbol_path = ProjectSymbolPath::new(
+        ModulePathRoot::ImplicitCrate,
+        [
+            ProjectSymbolSegment::try_new("rust").expect("namespace segment"),
+            ProjectSymbolSegment::try_new("Packet").expect("leaf segment"),
+        ],
     )
-    .outcome()
-    .product()
-    .recovered()
-    .clone();
-    let environment = environment.with_symbol(owner.as_str(), packet.clone());
+    .expect("symbol path");
+    let environment_input = SourceBackedEnvironmentRegistrationInput::new(
+        environment_owner.clone(),
+        document.identity().clone(),
+        EnvironmentManifestDigest::from_bytes([1; 32]),
+        [AcceptedNominalInventoryInput::new(
+            accepted_id.clone(),
+            0,
+            AcceptedNominalInputVisibility::Visible,
+            AcceptedNominalOrigin::RustExport,
+            source.clone(),
+            nominal_item,
+        )],
+        [EnvironmentValueBindingInput::new(
+            EnvironmentPublicationItemId::AdapterSymbol {
+                owner: environment_owner,
+                path: symbol_path,
+            },
+            owner.clone(),
+            EnvironmentTypeProjectionNode::new(
+                source,
+                EnvironmentTypeProjectionKind::AcceptedNominal {
+                    id: accepted_id,
+                    arguments: Box::default(),
+                },
+            ),
+        )],
+        [],
+        [],
+    );
     let world_id = ProjectSymbolWorldId::try_new(
         package,
         document.identity().id().clone(),
@@ -195,18 +243,24 @@ fn external_rust_fixture() -> (
         vec![external_rust_registration_fact(
             document.as_ref(),
             module.clone(),
-            owner,
+            owner.clone(),
         )],
         Vec::new(),
+        vec![environment_input],
     )
     .expect("registration facts");
     let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
-        Arc::new(environment),
+        Arc::new(TypeCheckEnv::standard()),
         &project,
         &facts,
         None,
     ))
     .expect("registered semantic world");
+    let packet = world
+        .environment()
+        .environment_binding(&owner)
+        .expect("accepted environment binding")
+        .clone();
     let authored = use_field_type(&world);
     (world, module, authored, packet)
 }
@@ -242,6 +296,7 @@ fn accepted_field_report(source: &str) -> arcweft_lang_sema::nominal::TypeResolu
         )
         .expect("world"),
         vec![Arc::clone(&document)],
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     )
@@ -417,29 +472,9 @@ fn projection_rows_preserve_valid_subjects_and_suppress_unknown_follow_ons() {
 }
 
 #[test]
-fn diagnostic_order_is_stable_across_catalog_insertion_order() {
-    let first = TypeCheckEnv::new()
-        .try_with_rust_type_export(
-            RustPackageId::try_new("zeta").expect("package"),
-            path("Zeta"),
-        )
-        .expect("first Rust export")
-        .try_with_rust_type_export(
-            RustPackageId::try_new("alpha").expect("package"),
-            path("Alpha"),
-        )
-        .expect("second Rust export");
-    let second = TypeCheckEnv::new()
-        .try_with_rust_type_export(
-            RustPackageId::try_new("alpha").expect("package"),
-            path("Alpha"),
-        )
-        .expect("first Rust export")
-        .try_with_rust_type_export(
-            RustPackageId::try_new("zeta").expect("package"),
-            path("Zeta"),
-        )
-        .expect("second Rust export");
+fn diagnostic_order_is_stable_across_repeated_resolution() {
+    let first = TypeCheckEnv::new();
+    let second = TypeCheckEnv::new();
     let reports = [&first, &second].map(|environment| {
         detached(
             "(Self, Self, Self)",

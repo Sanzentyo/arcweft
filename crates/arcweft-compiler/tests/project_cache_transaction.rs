@@ -1,5 +1,14 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+use arcweft_adapter_context::manifest::{
+    AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
+    AdapterCallableParameterIndex, AdapterCallablePath, AdapterEnvironmentOwnerId,
+    AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest, AdapterNominalDeclaration,
+    AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathSegment, AdapterNominalTypeRef,
+    AdapterNominalVisibility, AdapterParameterGroup, AdapterParameterPassing,
+    AdapterParameterPresence, AdapterTypeKind,
+};
+use arcweft_compiler::incremental::{BuildSnapshotRequest, snapshot_compiled_project};
 use arcweft_compiler::project::{
     CompiledProjectModule, ProjectCompilationContext, ProjectCompileCache,
     ProjectCompileCacheStatus, ProjectCompileUnitFingerprint, compile_project_with_cache,
@@ -12,6 +21,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::fingerprint::BuildDigest;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -50,6 +60,24 @@ impl ProjectCompileCache for RecordingCache {
 }
 
 fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrationFacts>) {
+    let (project, document, world) = project_fixture(source, profile);
+    let facts = Arc::new(
+        ProjectRegistrationFacts::try_new(
+            world,
+            vec![document],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("registration facts"),
+    );
+    (project, facts)
+}
+
+fn project_fixture(
+    source: &str,
+    profile: &str,
+) -> (ProjectSources, Arc<SourceDocument>, ProjectSymbolWorldId) {
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new(format!(
@@ -95,11 +123,124 @@ fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrat
         profile,
     )
     .expect("world");
+    (project, document, world)
+}
+
+fn fixture_with_manifest(
+    source: &str,
+    profile: &str,
+    manifest: &AdapterManifest,
+) -> (ProjectSources, Arc<ProjectRegistrationFacts>, TypeCheckEnv) {
+    let (project, document, world) = project_fixture(source, profile);
+    let parts = manifest
+        .source_backed_registration_facts(0)
+        .expect("adapter registration facts")
+        .into_parts();
     let facts = Arc::new(
-        ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-            .expect("registration facts"),
+        ProjectRegistrationFacts::try_new(
+            world,
+            vec![document, parts.document],
+            parts.externals.into_vec(),
+            Vec::new(),
+            vec![parts.environment],
+        )
+        .expect("registration facts"),
     );
-    (project, facts)
+    (
+        project,
+        facts,
+        manifest.declare_effects(TypeCheckEnv::standard()),
+    )
+}
+
+fn nominal_manifest(adapter: &str, path: &str, nested_option: bool) -> AdapterManifest {
+    let manifest = AdapterManifest::new(adapter, "Persistent nominal fixture");
+    let nominal_path = AdapterNominalPath::try_new([
+        AdapterNominalPathSegment::try_new(path).expect("nominal path segment")
+    ])
+    .expect("nominal path");
+    let owner = AdapterEnvironmentOwnerId::for_adapter(manifest.id());
+    let nominal = AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::Environment { owner },
+            nominal_path.clone(),
+            [],
+        )
+        .expect("nominal reference"),
+    };
+    let parameter_type = if nested_option {
+        AdapterTypeKind::Option {
+            item: Box::new(nominal),
+        }
+    } else {
+        nominal
+    };
+    let parameter = AdapterFunctionParam::try_new(
+        AdapterCallableParameterIndex::try_from_usize(0).expect("parameter index"),
+        Some(AdapterCallableName::try_new("value").expect("parameter name")),
+        parameter_type,
+        AdapterParameterPassing::PositionalOrNamed,
+        AdapterParameterPresence::Required,
+    )
+    .expect("function parameter");
+    let signature = AdapterFunctionSignature::try_new(
+        vec![
+            AdapterParameterGroup::try_new(
+                AdapterCallableGroupIndex::try_from_usize(0).expect("group index"),
+                vec![parameter],
+            )
+            .expect("parameter group"),
+        ],
+        AdapterTypeKind::Unit,
+    )
+    .expect("function signature");
+
+    manifest
+        .try_with_nominal_declaration(
+            AdapterNominalDeclaration::try_new(
+                nominal_path,
+                0,
+                AdapterNominalVisibility::Public,
+                "persistent nominal",
+            )
+            .expect("nominal declaration"),
+        )
+        .expect("unique nominal declaration")
+        .with_function_signature(
+            AdapterCallablePath::single(
+                AdapterCallableName::try_new("accept").expect("callable name"),
+            ),
+            AdapterCallableOverloadIndex::try_from_usize(0).expect("overload index"),
+            signature,
+            [],
+        )
+}
+
+fn snapshot_with_manifest(
+    profile: &str,
+    manifest: &AdapterManifest,
+) -> arcweft_project::incremental::BuildSnapshot {
+    let (project, facts, base) =
+        fixture_with_manifest("fn main() -> Unit { () }\n", profile, manifest);
+    let compiled = compile_project_with_cache(
+        &project,
+        &context(base, facts),
+        &RuntimePlanLowerOptions::default(),
+        &mut RecordingCache::default(),
+    )
+    .expect("compiled project");
+    snapshot_compiled_project(
+        &project,
+        &compiled,
+        BuildSnapshotRequest {
+            build_id: "persistent-environment-build".to_owned(),
+            compiler_build_id: "compiler-test".to_owned(),
+            target_triple: "test-target".to_owned(),
+            target_features: Vec::new(),
+            profile: "test".to_owned(),
+            selected_entries: Vec::new(),
+        },
+    )
 }
 
 fn context(base: TypeCheckEnv, facts: Arc<ProjectRegistrationFacts>) -> ProjectCompilationContext {
@@ -109,7 +250,6 @@ fn context(base: TypeCheckEnv, facts: Arc<ProjectRegistrationFacts>) -> ProjectC
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     )
 }
 
@@ -307,4 +447,106 @@ fn compiled_project_holds_one_registered_world() {
         compiled.registered_environment(),
         compiled.registered_world().environment()
     ));
+}
+
+#[test]
+fn compiled_snapshot_carries_the_registered_environment_digest() {
+    let (project, facts) = fixture("fn main() -> Unit { () }\n", "environment-digest");
+    let mut cache = RecordingCache::default();
+    let compiled = compile_project_with_cache(
+        &project,
+        &context(TypeCheckEnv::standard(), facts),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect("compiled project");
+    let expected = BuildDigest::from_bytes(
+        *compiled
+            .registered_environment()
+            .environment_digest()
+            .as_bytes(),
+    );
+
+    let snapshot = snapshot_compiled_project(
+        &project,
+        &compiled,
+        BuildSnapshotRequest {
+            build_id: "environment-digest-build".to_owned(),
+            compiler_build_id: "compiler-test".to_owned(),
+            target_triple: "test-target".to_owned(),
+            target_features: Vec::new(),
+            profile: "test".to_owned(),
+            selected_entries: Vec::new(),
+        },
+    );
+
+    assert_ne!(expected, BuildDigest::ZERO);
+    assert_eq!(snapshot.project().adapter_environment_digest(), expected);
+}
+
+#[test]
+fn identical_accepted_environment_reuses_the_persistent_query_key() {
+    let manifest = nominal_manifest("persistent-fixture", "Rank", false);
+    let first = snapshot_with_manifest("stable-environment", &manifest);
+    let second = snapshot_with_manifest("stable-environment", &manifest);
+
+    assert_eq!(first.project(), second.project());
+    assert_eq!(first.queries().len(), second.queries().len());
+    assert!(
+        first
+            .queries()
+            .iter()
+            .zip(second.queries())
+            .all(|(left, right)| left.key() == right.key()),
+        "an identical accepted semantic environment must reproduce every persistent query key"
+    );
+}
+
+#[test]
+fn accepted_nominal_owner_and_path_invalidate_persistent_query_keys() {
+    let baseline = snapshot_with_manifest(
+        "nominal-identity-change",
+        &nominal_manifest("persistent-fixture", "Rank", false),
+    );
+    let changed_path = snapshot_with_manifest(
+        "nominal-identity-change",
+        &nominal_manifest("persistent-fixture", "Standing", false),
+    );
+    let changed_owner = snapshot_with_manifest(
+        "nominal-identity-change",
+        &nominal_manifest("other-persistent-fixture", "Rank", false),
+    );
+
+    let baseline_digest = baseline.project().adapter_environment_digest();
+    assert_ne!(
+        baseline_digest,
+        changed_path.project().adapter_environment_digest()
+    );
+    assert_ne!(
+        baseline_digest,
+        changed_owner.project().adapter_environment_digest()
+    );
+    assert_ne!(baseline.queries()[0].key(), changed_path.queries()[0].key());
+    assert_ne!(
+        baseline.queries()[0].key(),
+        changed_owner.queries()[0].key()
+    );
+}
+
+#[test]
+fn nested_callable_type_change_invalidates_persistent_query_keys() {
+    let direct = snapshot_with_manifest(
+        "nested-callable-type-change",
+        &nominal_manifest("persistent-fixture", "Rank", false),
+    );
+    let optional = snapshot_with_manifest(
+        "nested-callable-type-change",
+        &nominal_manifest("persistent-fixture", "Rank", true),
+    );
+
+    assert_ne!(
+        direct.project().adapter_environment_digest(),
+        optional.project().adapter_environment_digest()
+    );
+    assert_ne!(direct.queries()[0].key(), optional.queries()[0].key());
 }

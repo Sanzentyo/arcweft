@@ -35,6 +35,19 @@ use super::{
     evidence_from_project, open_expectation,
 };
 
+enum ExternalRecordLookup {
+    Record(AcceptedNominalRecord),
+    BudgetExceeded(Box<NameResult>),
+}
+
+struct ExternalResolutionSite<'a, 'source> {
+    context: &'a SourceContext<'source>,
+    node: &'a TypeRefNodePath,
+    symbols: &'a ProjectSymbolTable,
+    environment: &'a AcceptedNominalWorld,
+    external: &'a ExternalSymbol,
+}
+
 impl Resolver<'_, '_> {
     pub(super) fn resolve_name(
         &mut self,
@@ -99,11 +112,13 @@ impl Resolver<'_, '_> {
                         unreachable!("project lookup only selects externals in accepted worlds")
                     };
                     return self.resolve_external(
-                        context,
-                        node,
-                        symbols,
-                        environment,
-                        &external,
+                        &ExternalResolutionSite {
+                            context,
+                            node,
+                            symbols,
+                            environment,
+                            external: &external,
+                        },
                         arguments,
                         child_causes,
                     );
@@ -591,13 +606,9 @@ impl Resolver<'_, '_> {
             .map(|(path, value)| self.require_type(context, &path, value))
             .collect::<Vec<_>>();
         let nominal = AcceptedNominalType::new(record.id().clone(), checked);
-        let ty = match record.semantics() {
-            AcceptedNominalSemantics::Exact(ty) => ty.clone(),
-            AcceptedNominalSemantics::Opaque => TypeKind::AcceptedNominal(nominal.clone()),
-            AcceptedNominalSemantics::Character(character) => {
-                TypeKind::CharacterNominal(character.clone())
-            }
-        };
+        let ty = record
+            .try_instantiate(nominal.arguments().to_vec())
+            .expect("accepted catalog records retain valid semantics and checked arity");
         NameResult {
             value: NodeValue::typed(ty, child_causes),
             outcome: TypeNameResolution::Accepted(nominal),
@@ -624,63 +635,42 @@ impl Resolver<'_, '_> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn resolve_external(
         &mut self,
-        context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        symbols: &ProjectSymbolTable,
-        environment: &AcceptedNominalWorld,
-        external: &ExternalSymbol,
+        site: &ExternalResolutionSite<'_, '_>,
         arguments: Vec<(TypeRefNodePath, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
     ) -> Result<NameResult, TypeResolutionInputError> {
-        let owner = Self::registered_external_owner(symbols, environment, external)?;
-        let mut record = None;
-        for candidate in environment
-            .typecheck_env()
-            .nominal_catalog()
-            .exact_records()
-            .cloned()
-            .collect::<Vec<_>>()
-        {
-            if let Some(failed) = self.charge_name_work(1, context, node, child_causes.clone()) {
-                return Ok(failed);
-            }
-            let owner_matches = match (&owner, candidate.id().owner()) {
-                (
-                    RegisteredExternalOwner::Character(expected),
-                    AcceptedNominalOwnerId::Character(actual),
-                ) => expected == actual,
-                (
-                    RegisteredExternalOwner::Environment(expected),
-                    AcceptedNominalOwnerId::Environment(actual),
-                ) => expected == actual,
-                _ => false,
-            };
-            if owner_matches
-                && SymbolPath::try_from(candidate.id().canonical_path().path())
-                    .is_ok_and(|path| &path == external.canonical_path())
-            {
-                record = Some(candidate);
-                break;
-            }
-        }
-        let record =
-            record.ok_or_else(
-                || TypeResolutionInputError::RegisteredEnvironmentIntegrity {
-                    external: external.declaration(),
-                    reason: Box::new(ExternalOwnerLookupError::Unknown {
-                        declaration: external.declaration(),
-                    }),
-                },
-            )?;
+        let owner = Self::registered_external_owner(site.symbols, site.environment, site.external)?;
+        let bound_accepted = match &owner {
+            RegisteredExternalOwner::Environment(owner) => site
+                .environment
+                .environment_binding(owner.value_binding())
+                .and_then(|ty| match ty {
+                    TypeKind::AcceptedNominal(nominal) => Some(nominal.clone()),
+                    _ => None,
+                }),
+            RegisteredExternalOwner::Character(_) => None,
+        };
+        let record = match self.lookup_external_record(
+            site,
+            &owner,
+            bound_accepted.as_ref(),
+            &child_causes,
+        )? {
+            ExternalRecordLookup::Record(record) => record,
+            ExternalRecordLookup::BudgetExceeded(failed) => return Ok(*failed),
+        };
         let actual = u16::try_from(arguments.len()).expect("parser cap");
-        let expected = TypeArityExpectation::Exact(record.arity());
+        let expected = TypeArityExpectation::Exact(if bound_accepted.is_some() {
+            0
+        } else {
+            record.arity()
+        });
         if !expected.contains(actual) {
             return Ok(self.failed_name(
-                context,
-                node,
+                site.context,
+                site.node,
                 TypeResolutionFailure::WrongArity {
                     target: TypeArityTarget::Accepted(record.id().clone()),
                     expected,
@@ -701,14 +691,98 @@ impl Resolver<'_, '_> {
         }
         let checked = arguments
             .into_iter()
-            .map(|(path, value)| self.require_type(context, &path, value))
+            .map(|(path, value)| self.require_type(site.context, &path, value))
             .collect::<Vec<_>>();
-        let accepted = AcceptedNominalType::new(record.id().clone(), checked);
-        let (ty, resolution) = Self::external_nominal_product(&record, external, accepted);
+        let (ty, resolution) = if let Some(accepted) = bound_accepted {
+            let ty = TypeKind::AcceptedNominal(accepted.clone());
+            (
+                ty.clone(),
+                ExternalNominalResolution::Exact {
+                    external: site.external.declaration(),
+                    ty,
+                    accepted: accepted.declaration().clone(),
+                },
+            )
+        } else {
+            let accepted = AcceptedNominalType::new(record.id().clone(), checked);
+            Self::external_nominal_product(&record, site.external, accepted)
+        };
         Ok(NameResult {
             value: NodeValue::typed(ty, child_causes),
             outcome: TypeNameResolution::External(resolution),
         })
+    }
+
+    fn lookup_external_record(
+        &mut self,
+        site: &ExternalResolutionSite<'_, '_>,
+        owner: &RegisteredExternalOwner,
+        bound: Option<&AcceptedNominalType>,
+        child_causes: &[TypePoisonId],
+    ) -> Result<ExternalRecordLookup, TypeResolutionInputError> {
+        if let Some(bound) = bound {
+            if let Some(failed) =
+                self.charge_name_work(1, site.context, site.node, child_causes.to_vec())
+            {
+                return Ok(ExternalRecordLookup::BudgetExceeded(Box::new(failed)));
+            }
+            let record = site
+                .environment
+                .accepted_record(bound.declaration())
+                .cloned()
+                .map_err(
+                    |reason| TypeResolutionInputError::RegisteredNominalIntegrity {
+                        external: site.external.declaration(),
+                        reason: Box::new(reason),
+                    },
+                )?;
+            return Ok(ExternalRecordLookup::Record(record));
+        }
+
+        for candidate in site
+            .environment
+            .typecheck_env()
+            .nominal_catalog()
+            .exact_records()
+            .cloned()
+            .collect::<Vec<_>>()
+        {
+            if let Some(failed) =
+                self.charge_name_work(1, site.context, site.node, child_causes.to_vec())
+            {
+                return Ok(ExternalRecordLookup::BudgetExceeded(Box::new(failed)));
+            }
+            if Self::external_record_matches(owner, site.external, &candidate) {
+                return Ok(ExternalRecordLookup::Record(candidate));
+            }
+        }
+        Err(TypeResolutionInputError::RegisteredEnvironmentIntegrity {
+            external: site.external.declaration(),
+            reason: Box::new(ExternalOwnerLookupError::Unknown {
+                declaration: site.external.declaration(),
+            }),
+        })
+    }
+
+    fn external_record_matches(
+        owner: &RegisteredExternalOwner,
+        external: &ExternalSymbol,
+        candidate: &AcceptedNominalRecord,
+    ) -> bool {
+        let owner_matches = match (owner, candidate.id().owner()) {
+            (
+                RegisteredExternalOwner::Character(expected),
+                AcceptedNominalOwnerId::Character(actual),
+            ) => expected == actual,
+            (
+                RegisteredExternalOwner::Environment(expected),
+                AcceptedNominalOwnerId::Environment(actual),
+            ) => expected.nominal_owner() == actual,
+            _ => false,
+        };
+        owner_matches
+            && SymbolPath::try_from(candidate.id().canonical_path().path())
+                .is_ok_and(|path| &path == external.canonical_path())
     }
 
     fn registered_external_owner(
@@ -750,24 +824,27 @@ impl Resolver<'_, '_> {
         external: &ExternalSymbol,
         accepted: AcceptedNominalType,
     ) -> (TypeKind, ExternalNominalResolution) {
+        let instantiated = record
+            .try_instantiate(accepted.arguments().to_vec())
+            .expect("accepted catalog records retain valid semantics and checked arity");
         match record.semantics() {
             AcceptedNominalSemantics::Opaque => (
-                TypeKind::AcceptedNominal(accepted.clone()),
+                instantiated,
                 ExternalNominalResolution::Accepted {
                     external: external.declaration(),
                     nominal: accepted,
                 },
             ),
-            AcceptedNominalSemantics::Exact(ty) => (
-                ty.clone(),
+            AcceptedNominalSemantics::Exact(_) => (
+                instantiated.clone(),
                 ExternalNominalResolution::Exact {
                     external: external.declaration(),
-                    ty: ty.clone(),
+                    ty: instantiated,
                     accepted: record.id().clone(),
                 },
             ),
             AcceptedNominalSemantics::Character(character) => (
-                TypeKind::CharacterNominal(character.clone()),
+                instantiated,
                 ExternalNominalResolution::Character {
                     external: external.declaration(),
                     nominal: character.clone(),

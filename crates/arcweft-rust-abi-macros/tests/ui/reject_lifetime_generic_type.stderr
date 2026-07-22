@@ -1,0 +1,5 @@
+error: ArcweftType metadata does not support lifetime generic ADTs
+ --> tests/ui/reject_lifetime_generic_type.rs:4:21
+  |
+4 | pub struct Borrowed<'a> {
+  |                     ^^

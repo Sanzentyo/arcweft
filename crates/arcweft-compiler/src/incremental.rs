@@ -26,7 +26,13 @@ pub fn snapshot_compiled_project(
     compiled: &CompiledProject,
     request: BuildSnapshotRequest,
 ) -> BuildSnapshot {
-    let project_fingerprint = project_fingerprint(sources, &request);
+    let environment_digest = BuildDigest::from_bytes(
+        *compiled
+            .registered_environment()
+            .environment_digest()
+            .as_bytes(),
+    );
+    let project_fingerprint = project_fingerprint(sources, &request, environment_digest);
     let modules = compiled
         .modules()
         .iter()
@@ -67,7 +73,7 @@ pub fn snapshot_compiled_project(
                 source_digest: artifact_digest,
                 dependency_interface_digests: Vec::new(),
                 dependency_body_digests: Vec::new(),
-                adapter_environment_digest: BuildDigest::ZERO,
+                adapter_environment_digest: environment_digest,
                 launch_profile_digest: BuildDigest::ZERO,
                 declared_environment_digest: BuildDigest::ZERO,
                 format_options_digest: BuildDigest::ZERO,
@@ -92,6 +98,7 @@ pub fn snapshot_compiled_project(
 fn project_fingerprint(
     sources: &ProjectSources,
     request: &BuildSnapshotRequest,
+    environment_digest: BuildDigest,
 ) -> ProjectFingerprint {
     let mut source_bytes = Vec::new();
     for module in sources.modules() {
@@ -106,7 +113,11 @@ fn project_fingerprint(
         profile: request.profile.clone(),
         source_root_digest: BuildDigest::of(&source_bytes),
         manifest_digest: BuildDigest::of(sources.manifest_path().to_string_lossy().as_bytes()),
-        adapter_environment_digest: BuildDigest::ZERO,
+        // This existing field is also the source for
+        // `CompilerObjectKey::environment_digest`. Once registration has
+        // succeeded it carries the digest of the complete accepted semantic
+        // environment, not an adapter-only projection.
+        adapter_environment_digest: environment_digest,
         launch_profile_digest: BuildDigest::ZERO,
         declared_environment_digest: BuildDigest::ZERO,
     })

@@ -1136,6 +1136,23 @@ fn persistent_query_source_digest_mismatch_is_soft_miss() {
 }
 
 #[test]
+fn persistent_query_environment_digest_change_is_a_soft_miss() {
+    let store = FilesystemCacheStore::new(temp_root("environment"));
+    let request = typecheck_gate_request();
+    store_good_object(&store, &request);
+    let mut changed = request.clone();
+    changed.object_key.environment_digest = digest("changed-accepted-environment");
+
+    assert_eq!(
+        miss_reason(store.read_persistent_query(&changed)),
+        PersistentQueryMissReason::EnvironmentDigestMismatch {
+            expected: digest("changed-accepted-environment"),
+            actual: digest("environment"),
+        },
+    );
+}
+
+#[test]
 fn persistent_query_query_kind_mismatch_is_soft_miss() {
     let store = FilesystemCacheStore::new(temp_root("query-kind"));
     let mut request = parse_request();

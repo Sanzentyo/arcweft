@@ -197,8 +197,12 @@ pub enum CallableCatalogError {
     MissingProjectSource,
     #[error("project callable record cannot carry Rust provenance")]
     UnexpectedProjectRustProvenance,
+    #[error("project callable record cannot carry an environment publication digest")]
+    UnexpectedProjectPublicationDigest,
     #[error("Rust callable record requires Rust provenance")]
     MissingRustProvenance,
+    #[error("environment callable record requires its accepted publication digest")]
+    MissingEnvironmentPublicationDigest,
     #[error("callable set cannot be empty")]
     EmptyCandidateSet,
     #[error("candidate set contains mismatched lookup keys")]
@@ -489,6 +493,11 @@ pub enum CallableDiagnosticCode {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CallableCatalogBuildError {
+    #[error("callable publication belongs to a different accepted nominal world")]
+    PublicationWorldMismatch {
+        expected: Box<crate::registration::AcceptedNominalWorldStamp>,
+        actual: Box<crate::registration::AcceptedNominalWorldStamp>,
+    },
     #[error("duplicate typed callable ID {id:?}")]
     DuplicateTypedId { id: Box<CallableCandidateId> },
     #[error("same-rank provider collision for {key:?}")]
@@ -574,7 +583,8 @@ impl CallableCatalogBuildError {
     pub const fn code(&self) -> CallableDiagnosticCode {
         match self {
             Self::Limit(_) | Self::WorkOverflow => CallableDiagnosticCode::ResourceExhausted,
-            Self::DuplicateTypedId { .. }
+            Self::PublicationWorldMismatch { .. }
+            | Self::DuplicateTypedId { .. }
             | Self::SameRankCollision { .. }
             | Self::DuplicateProviderOverload { .. }
             | Self::NonContiguousOverloads { .. }

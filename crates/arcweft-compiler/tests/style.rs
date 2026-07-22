@@ -29,15 +29,15 @@ fn project_context(project: &ProjectSources) -> ProjectCompilationContext {
     let world =
         ProjectSymbolWorldId::try_new(package, root.identity().id().clone(), "compiler-style-test")
             .expect("symbol world");
-    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
-        .expect("registration facts");
+    let facts =
+        ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
+            .expect("registration facts");
     ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     )
 }
 

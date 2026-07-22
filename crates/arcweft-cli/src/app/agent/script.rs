@@ -119,15 +119,21 @@ pub(super) fn compile_agent_script_source(
         format!("agent-script:{}", selected_entry.as_str()),
     )
     .map_err(|error| error.to_string())?;
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .map_err(|report| {
-            report
-                .diagnostics()
-                .iter()
-                .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
-                .collect::<Vec<_>>()
-                .join("; ")
-        })?;
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .map_err(|report| {
+        report
+            .diagnostics()
+            .iter()
+            .map(|diagnostic| diagnostic.diagnostic().message().to_owned())
+            .collect::<Vec<_>>()
+            .join("; ")
+    })?;
     let context = ProjectCompilationContext::new(
         Arc::new(target_project.typecheck_env()),
         Arc::new(facts),
@@ -137,7 +143,6 @@ pub(super) fn compile_agent_script_source(
             selected_entry.clone(),
             ProjectEntrySelectionKind::Agent,
         )),
-        Vec::new(),
     );
     let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
         .map_err(|error| project_compile_message(&error))?;

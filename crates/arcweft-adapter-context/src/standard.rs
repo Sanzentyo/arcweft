@@ -2,8 +2,10 @@
 
 use crate::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
-    AdapterCallableParameterIndex, AdapterEffectCapability, AdapterFunctionParam,
-    AdapterFunctionSignature, AdapterHostCall, AdapterManifest, AdapterParameterGroup,
+    AdapterCallableParameterIndex, AdapterEffectCapability, AdapterEnvironmentOwnerId,
+    AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall, AdapterId, AdapterManifest,
+    AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathSegment,
+    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterParameterGroup,
     AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry, AdapterSymbol,
     AdapterSymbolPath, AdapterSymbolSegment, AdapterTypeKind,
 };
@@ -38,55 +40,6 @@ pub fn standard_registry() -> AdapterRegistry {
     ])
 }
 
-/// Publishes every accepted standard adapter through its fixed typed owner.
-#[cfg(feature = "sema")]
-pub fn callable_publications(
-    limits: &arcweft_lang_sema::callable::CallableLimits,
-) -> Result<
-    Vec<arcweft_lang_sema::callable::EnvironmentCallablePublication>,
-    crate::publication::AdapterCallablePublicationError,
-> {
-    use arcweft_lang_sema::callable::StandardEnvironmentId;
-
-    [
-        (sans_io_manifest(), StandardEnvironmentId::SansIo),
-        (native_http_manifest(), StandardEnvironmentId::NativeHttp),
-        (
-            inference_tensor_manifest(),
-            StandardEnvironmentId::InferenceTensor,
-        ),
-        (system_info_manifest(), StandardEnvironmentId::SystemInfo),
-        (native_file_manifest(), StandardEnvironmentId::NativeFile),
-        (math_manifest(), StandardEnvironmentId::Math),
-    ]
-    .into_iter()
-    .map(|(manifest, id)| {
-        manifest.try_callable_publication(
-            crate::publication::AdapterManifestSource::Standard(id),
-            limits,
-        )
-    })
-    .collect()
-}
-
-/// Returns the fixed standard owner for one reserved adapter manifest ID.
-#[cfg(feature = "sema")]
-pub fn manifest_source(id: &str) -> Option<crate::publication::AdapterManifestSource> {
-    use arcweft_lang_sema::callable::StandardEnvironmentId;
-
-    Some(crate::publication::AdapterManifestSource::Standard(
-        match id {
-            SANS_IO_ADAPTER_ID => StandardEnvironmentId::SansIo,
-            NATIVE_HTTP_ADAPTER_ID => StandardEnvironmentId::NativeHttp,
-            INFERENCE_TENSOR_ADAPTER_ID => StandardEnvironmentId::InferenceTensor,
-            SYSTEM_INFO_ADAPTER_ID => StandardEnvironmentId::SystemInfo,
-            NATIVE_FILE_ADAPTER_ID => StandardEnvironmentId::NativeFile,
-            MATH_ADAPTER_ID => StandardEnvironmentId::Math,
-            _ => return None,
-        },
-    ))
-}
-
 /// Default Sans I/O manifest.
 pub fn sans_io_manifest() -> AdapterManifest {
     AdapterManifest::new(SANS_IO_ADAPTER_ID, "Sans I/O")
@@ -94,30 +47,30 @@ pub fn sans_io_manifest() -> AdapterManifest {
 
 /// Native HTTP server manifest.
 pub fn native_http_manifest() -> AdapterManifest {
-    AdapterManifest::new(NATIVE_HTTP_ADAPTER_ID, "Native HTTP")
-        .with_symbol(adapter_symbol(
-            ["request"],
-            AdapterTypeKind::Named("HttpRequestContext".to_owned()),
-        ))
-        .with_effect(AdapterEffectCapability::new("http.respond"))
-        .with_host_call(AdapterHostCall::new(
-            "http.respond",
-            [AdapterEffectCapability::new("http.respond")],
-        ))
+    declare_nominals(
+        AdapterManifest::new(NATIVE_HTTP_ADAPTER_ID, "Native HTTP"),
+        ["HttpRequestContext"],
+    )
+    .with_symbol(adapter_symbol(
+        ["request"],
+        environment_nominal(NATIVE_HTTP_ADAPTER_ID, "HttpRequestContext"),
+    ))
+    .with_effect(AdapterEffectCapability::new("http.respond"))
+    .with_host_call(AdapterHostCall::new(
+        "http.respond",
+        [AdapterEffectCapability::new("http.respond")],
+    ))
 }
 
 /// Optional forward-inference tensor manifest.
 pub fn inference_tensor_manifest() -> AdapterManifest {
-    let tensor = AdapterTypeKind::Named("TensorF32".to_owned());
-    let manifest = AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor")
-        .with_symbol(adapter_symbol(
-            ["conv2d"],
-            AdapterTypeKind::Named("Conv2dApi".to_owned()),
-        ))
-        .with_symbol(adapter_symbol(
-            ["infer"],
-            AdapterTypeKind::Named("InferApi".to_owned()),
-        ));
+    let tensor = inference_nominal("TensorF32");
+    let manifest = declare_nominals(
+        AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor"),
+        ["Conv2dApi", "InferApi", "TensorF32"],
+    )
+    .with_symbol(adapter_symbol(["conv2d"], inference_nominal("Conv2dApi")))
+    .with_symbol(adapter_symbol(["infer"], inference_nominal("InferApi")));
     let manifest = with_conv2d_callable(manifest, &tensor);
     let manifest = with_inference_callables(manifest, &tensor);
     with_inference_host_calls(manifest)
@@ -125,7 +78,7 @@ pub fn inference_tensor_manifest() -> AdapterManifest {
 
 fn with_conv2d_callable(manifest: AdapterManifest, tensor: &AdapterTypeKind) -> AdapterManifest {
     manifest.with_method_signature(
-        AdapterTypeKind::Named("Conv2dApi".to_owned()),
+        inference_nominal("Conv2dApi"),
         callable_name("valid_f32"),
         overload_zero(),
         signature(
@@ -147,7 +100,7 @@ fn with_inference_callables(
 ) -> AdapterManifest {
     manifest
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("matmul_f32"),
             overload_zero(),
             signature(
@@ -157,7 +110,7 @@ fn with_inference_callables(
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("add_f32"),
             overload_zero(),
             signature(
@@ -167,7 +120,7 @@ fn with_inference_callables(
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("bias_add_f32"),
             overload_zero(),
             signature(
@@ -177,7 +130,7 @@ fn with_inference_callables(
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("matmul_bias_add_f32"),
             overload_zero(),
             signature(
@@ -191,14 +144,14 @@ fn with_inference_callables(
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("relu_f32"),
             overload_zero(),
             signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("max_pool2d_f32"),
             overload_zero(),
             signature(
@@ -214,24 +167,26 @@ fn with_inference_callables(
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("softmax_last_dim_f32"),
             overload_zero(),
             signature([("input", tensor.clone())], tensor.clone()),
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("argmax_last_dim_f32"),
             overload_zero(),
             signature(
                 [("input", tensor.clone())],
-                AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize)),
+                AdapterTypeKind::Seq {
+                    item: Box::new(AdapterTypeKind::USize),
+                },
             ),
             [],
         )
         .with_method_signature(
-            AdapterTypeKind::Named("InferApi".to_owned()),
+            inference_nominal("InferApi"),
             callable_name("flatten_outer_f32"),
             overload_zero(),
             signature([("input", tensor.clone())], tensor.clone()),
@@ -289,6 +244,50 @@ pub fn math_manifest() -> AdapterManifest {
         .with_host_call(AdapterHostCall::new("math.matmul_f64", []))
         .with_host_call(AdapterHostCall::new("math.tensor.add_f32", []))
         .with_host_call(AdapterHostCall::new("math.tensor.relu_f32", []))
+}
+
+fn declare_nominals<const N: usize>(
+    mut manifest: AdapterManifest,
+    names: [&str; N],
+) -> AdapterManifest {
+    for name in names {
+        manifest = manifest
+            .try_with_nominal_declaration(
+                AdapterNominalDeclaration::try_new(
+                    nominal_path(name),
+                    0,
+                    AdapterNominalVisibility::Public,
+                    name,
+                )
+                .expect("standard nominal declarations are valid"),
+            )
+            .expect("standard nominal declarations have distinct paths");
+    }
+    manifest
+}
+
+fn inference_nominal(name: &str) -> AdapterTypeKind {
+    environment_nominal(INFERENCE_TENSOR_ADAPTER_ID, name)
+}
+
+fn environment_nominal(adapter_id: &str, name: &str) -> AdapterTypeKind {
+    let adapter = AdapterId::new(adapter_id);
+    AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::Environment {
+                owner: AdapterEnvironmentOwnerId::for_adapter(&adapter),
+            },
+            nominal_path(name),
+            [],
+        )
+        .expect("standard nominal references are valid"),
+    }
+}
+
+fn nominal_path(name: &str) -> AdapterNominalPath {
+    AdapterNominalPath::try_new([AdapterNominalPathSegment::try_new(name)
+        .expect("standard nominal names are valid Rust identifiers")])
+    .expect("one valid segment forms a nominal path")
 }
 
 fn callable_name(value: &str) -> AdapterCallableName {
@@ -351,25 +350,27 @@ mod tests {
     #[test]
     fn inference_tensor_manifest_injects_namespaced_methods_without_core_prelude() {
         let manifest = inference_tensor_manifest();
-        let tensor = AdapterTypeKind::Named("TensorF32".to_owned());
+        let tensor = inference_nominal("TensorF32");
 
         assert_eq!(
             manifest.symbols(),
             &[
-                adapter_symbol(["conv2d"], AdapterTypeKind::Named("Conv2dApi".to_owned())),
-                adapter_symbol(["infer"], AdapterTypeKind::Named("InferApi".to_owned()))
+                adapter_symbol(["conv2d"], inference_nominal("Conv2dApi")),
+                adapter_symbol(["infer"], inference_nominal("InferApi"))
             ]
         );
         assert!(manifest.methods().iter().any(|method| {
-            method.receiver() == &AdapterTypeKind::Named("Conv2dApi".to_owned())
+            method.receiver() == &inference_nominal("Conv2dApi")
                 && method.name() == "valid_f32"
                 && method.signature().return_type() == &tensor
         }));
         assert!(manifest.methods().iter().any(|method| {
-            method.receiver() == &AdapterTypeKind::Named("InferApi".to_owned())
+            method.receiver() == &inference_nominal("InferApi")
                 && method.name() == "argmax_last_dim_f32"
                 && method.signature().return_type()
-                    == &AdapterTypeKind::Seq(Box::new(AdapterTypeKind::USize))
+                    == &AdapterTypeKind::Seq {
+                        item: Box::new(AdapterTypeKind::USize),
+                    }
         }));
         let fused = manifest
             .methods()

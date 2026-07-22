@@ -11,7 +11,7 @@ entry cli @entry.vertical_lr_ruby_text_combine_golden {
     goto @flow.vertical_lr_ruby_text_combine_golden
 }
 
-flow @flow.vertical_lr_ruby_text_combine_golden vertical_lr_ruby_text_combine_golden {
+flow @flow.vertical_lr_ruby_text_combine_golden vertical_lr_ruby_text_combine_golden() -> String {
     alice.say(id=@say.vertical_lr_ruby_text_combine_golden.001, voice=auto)[
         [.vertical_lr][font "MS Mincho"]縦 |[夢](ゆめ)[r] 2026 ABC。[/font][/][p]
     ]

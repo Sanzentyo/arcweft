@@ -48,15 +48,20 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
         "removed-role-test",
     )
     .expect("symbol world");
-    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
-        .expect("registration facts");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts");
     let context = ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     );
     (project, context)
 }
@@ -279,6 +284,7 @@ fn registration_diagnostic_retains_accepted_source_document() {
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("facts");
     let span = document.span(SourceRange::new(0, 2)).expect("span");
@@ -388,9 +394,10 @@ fn pending_stores_discard_on_registration_error() {
         vec![document],
         vec![ExternalRegistrationFact::new(
             seed,
-            RegisteredExternalOwner::Environment(owner),
+            RegisteredExternalOwner::environment(owner.clone(), owner),
             declaration,
         )],
+        Vec::new(),
         Vec::new(),
     )
     .expect("facts");
@@ -400,7 +407,6 @@ fn pending_stores_discard_on_registration_error() {
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
-        Vec::new(),
     );
     let mut cache = RecordingCache::default();
 

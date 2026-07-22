@@ -423,6 +423,7 @@ flow @flow.main main {
         vec![Arc::clone(&document)],
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     )
     .expect("registration facts");
     let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
