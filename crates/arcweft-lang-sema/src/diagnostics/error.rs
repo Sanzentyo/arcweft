@@ -1,5 +1,8 @@
 use super::{effect_trace::with_effect_trace_notes, trait_diagnostic::TraitDiagnostic};
-use crate::{effect_diagnostics::EffectDiagnostic, style::StyleDiagnostic, types::TypeKind};
+use crate::{
+    effect_diagnostics::EffectDiagnostic, nominal::NominalTypeDiagnostic, style::StyleDiagnostic,
+    types::TypeKind,
+};
 use arcweft_source::{Diagnostic, DiagnosticSeverity};
 use thiserror::Error;
 
@@ -111,6 +114,8 @@ pub enum TypeCheckErrorKind {
     Trait { diagnostic: TraitDiagnostic },
     /// A structured native Style semantic diagnostic.
     Style { diagnostic: StyleDiagnostic },
+    /// A source-backed nominal resolution diagnostic.
+    Nominal { diagnostic: NominalTypeDiagnostic },
 }
 
 /// Syntax-to-HIR readiness error for the future type checker.
@@ -148,6 +153,17 @@ impl TypeCheckError {
         Self {
             message: diagnostic.message().to_owned(),
             kind: TypeCheckErrorKind::Style { diagnostic },
+        }
+    }
+
+    pub(crate) fn nominal(diagnostic: NominalTypeDiagnostic) -> Self {
+        let message = diagnostic.to_source_diagnostic().map_or_else(
+            || "detached nominal resolution failed".to_owned(),
+            |value| value.message().to_owned(),
+        );
+        Self {
+            message,
+            kind: TypeCheckErrorKind::Nominal { diagnostic },
         }
     }
 
@@ -529,6 +545,9 @@ impl TypeCheckError {
             | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
             | TypeCheckErrorKind::Trait { .. }
             | TypeCheckErrorKind::Style { .. } => diagnostic,
+            TypeCheckErrorKind::Nominal {
+                diagnostic: nominal,
+            } => nominal.to_source_diagnostic().unwrap_or(diagnostic),
         }
     }
 }
@@ -602,5 +621,6 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         TypeCheckErrorKind::Effect { diagnostic } => diagnostic.code().as_str().to_owned(),
         TypeCheckErrorKind::Trait { diagnostic } => diagnostic.code().to_owned(),
         TypeCheckErrorKind::Style { diagnostic } => diagnostic.code().as_str().to_owned(),
+        TypeCheckErrorKind::Nominal { diagnostic } => diagnostic.kind().code().as_str().to_owned(),
     }
 }

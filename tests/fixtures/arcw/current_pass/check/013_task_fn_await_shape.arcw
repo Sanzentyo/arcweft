@@ -1,3 +1,9 @@
+type ArcResult<T> = Result<T, ArcError>
+
+struct OpeningAssets {
+    bg: ImageHandle
+}
+
 fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let bg = try await load_bg()
     Ok(OpeningAssets { bg })

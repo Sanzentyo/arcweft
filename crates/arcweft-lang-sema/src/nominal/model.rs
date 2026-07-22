@@ -1,0 +1,813 @@
+//! Immutable products emitted by nominal type resolution.
+
+use arcweft_lang_hir::symbol::{
+    ExternalDeclarationId, ProjectTypeCandidate, nominal::ProjectNominalDeclarationId,
+};
+use arcweft_lang_syntax::{
+    ast::common::TextRange,
+    types::{TypePath, TypeRefNodePath},
+};
+use arcweft_source::SourceSpan;
+
+use crate::{
+    env::nominal::{AcceptedNominalId, OpenNominalRuleId},
+    types::{
+        AcceptedNominalType, CharacterNominalType, EntityKind, GenericTypeParameterId,
+        ProjectNominalType, TypeKind, TypePoisonId,
+    },
+};
+
+use super::{NominalTypeDiagnostic, TypePoisonRecord};
+
+/// Exact local source range and optional accepted-project span for one type node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeSourceEvidence {
+    local: TextRange,
+    project: Option<SourceSpan>,
+}
+
+/// Closed language-owned type constructor set.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum BuiltinTypeConstructor {
+    Bool,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    ISize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    F32,
+    F64,
+    String,
+    Char,
+    Bytes,
+    Unit,
+    Never,
+    Vec,
+    Slice,
+    Seq,
+    Option,
+    Probe,
+    ThreadHandle,
+    Shared,
+    Array,
+    OrderedMap,
+    SortedMap,
+    BTreeMap,
+    Result,
+    Need,
+    Stream,
+    Source,
+    Speaker,
+    SpeakerPreset,
+}
+
+/// Resolution of a project external through the accepted environment owner map.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternalNominalResolution {
+    Accepted {
+        external: ExternalDeclarationId,
+        nominal: AcceptedNominalType,
+    },
+    Exact {
+        external: ExternalDeclarationId,
+        ty: TypeKind,
+        accepted: AcceptedNominalId,
+    },
+    Character {
+        external: ExternalDeclarationId,
+        nominal: CharacterNominalType,
+        accepted: AcceptedNominalId,
+    },
+}
+
+/// One authored path admitted by an explicit open-nominal rule.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedOpenNominal {
+    rule: OpenNominalRuleId,
+    path: TypePath,
+    arguments: Box<[TypeKind]>,
+}
+
+/// One resolved use of a project alias, retaining both identity and normalization.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedAliasReference {
+    declaration: ProjectNominalDeclarationId,
+    arguments: Box<[TypeKind]>,
+    normalized: TypeKind,
+    use_source: TypeSourceEvidence,
+    declaration_source: SourceSpan,
+    target_source: TypeSourceEvidence,
+}
+
+/// Typed resolution fact for one authored structural type node.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeNameResolution {
+    Structural(StructuralTypeNodeKind),
+    Builtin(BuiltinTypeConstructor),
+    EntityFamily(EntityKind),
+    Generic(GenericTypeParameterId),
+    SelfType(TypeKind),
+    TraitHead(TypePath),
+    Projection,
+    Project(ProjectNominalType),
+    Alias(ResolvedAliasReference),
+    External(ExternalNominalResolution),
+    Accepted(AcceptedNominalType),
+    Open(ResolvedOpenNominal),
+    Failed(TypeResolutionFailure),
+    Poisoned(TypePoisonId),
+    DetachedUnavailable(DetachedNominalEvidence),
+}
+
+/// Structural node families that do not perform nominal-name selection.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StructuralTypeNodeKind {
+    ConstInt,
+    Tuple,
+    Function,
+    Choice,
+    Reference,
+    Slice,
+}
+
+/// Resolution fact tied to its exact structural address and source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedTypeNode {
+    node: TypeRefNodePath,
+    source: TypeSourceEvidence,
+    terminal_source: Option<TypeSourceEvidence>,
+    reference_path: Option<TypePath>,
+    recovered: Option<TypeKind>,
+    outcome: TypeNameResolution,
+}
+
+/// One deterministic project-alias expansion step.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AliasExpansionFact {
+    alias: ProjectNominalDeclarationId,
+    arguments: Box<[TypeKind]>,
+    substitution: Box<[(GenericTypeParameterId, TypeKind)]>,
+    normalized: TypeKind,
+    use_source: TypeSourceEvidence,
+    declaration_source: SourceSpan,
+    target_source: TypeSourceEvidence,
+}
+
+/// Recovered semantic type together with every node and alias fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedTypeProduct {
+    recovered: TypeKind,
+    nodes: Box<[ResolvedTypeNode]>,
+    aliases: Box<[AliasExpansionFact]>,
+}
+
+/// Accepted-world result containing authoritative poison causes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoisonedTypeRef {
+    product: ResolvedTypeProduct,
+    causes: Box<[TypePoisonId]>,
+}
+
+/// Detached result that records every node for which project proof was unavailable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DetachedTypeRef {
+    product: ResolvedTypeProduct,
+    unavailable: Box<[TypeRefNodePath]>,
+    causes: Box<[TypePoisonId]>,
+}
+
+/// Complete, poisoned, or deliberately non-authoritative resolution outcome.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResolvedTypeRefOutcome {
+    Complete(ResolvedTypeProduct),
+    Poisoned(PoisonedTypeRef),
+    Detached(DetachedTypeRef),
+}
+
+/// Immutable result of the one public nominal-resolution operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeResolutionReport {
+    outcome: ResolvedTypeRefOutcome,
+    diagnostics: Box<[NominalTypeDiagnostic]>,
+    poisons: Box<[TypePoisonRecord]>,
+    omitted_diagnostics: u64,
+    work_charged: u64,
+}
+
+/// Type constructor whose authored argument count is checked.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeArityTarget {
+    Builtin(BuiltinTypeConstructor),
+    Project(ProjectNominalDeclarationId),
+    Accepted(AcceptedNominalId),
+    Open(OpenNominalRuleId),
+}
+
+/// Exact or inclusive valid authored arity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeArityExpectation {
+    Exact(u16),
+    Inclusive { minimum: u16, maximum: u16 },
+}
+
+/// Semantic shape required for one constructor argument.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeArgumentExpectation {
+    Type,
+    ConstInt,
+    EntityFamily,
+}
+
+/// Typed evidence retained when a detached world cannot prove a project name.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DetachedNominalEvidence {
+    path: TypePath,
+    source: TypeSourceEvidence,
+    reason: DetachedNominalReason,
+}
+
+/// Missing accepted-world component that prevented authoritative resolution.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DetachedNominalReason {
+    ProjectWorldUnavailable,
+    ModuleUnavailable,
+}
+
+/// Typed reason that one nominal node failed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeResolutionFailure {
+    Unknown {
+        path: TypePath,
+    },
+    Ambiguous {
+        path: TypePath,
+        candidates: Box<[ProjectTypeCandidate]>,
+    },
+    Inaccessible {
+        path: TypePath,
+        candidates: Box<[ProjectTypeCandidate]>,
+    },
+    WrongKind {
+        path: TypePath,
+        actual: ProjectTypeCandidate,
+    },
+    WrongArgumentKind {
+        target: TypeArityTarget,
+        argument: u16,
+        expected: TypeArgumentExpectation,
+        actual: TypeKind,
+    },
+    WrongArity {
+        target: TypeArityTarget,
+        expected: TypeArityExpectation,
+        actual: u16,
+    },
+    CyclicAlias {
+        cycle: Box<[ProjectNominalDeclarationId]>,
+    },
+    SelfUnavailable,
+    Limit {
+        kind: super::NominalResolutionLimitKind,
+        observed: u64,
+        maximum: u64,
+    },
+    WorkOverflow {
+        attempted: u64,
+        maximum: u64,
+    },
+}
+
+impl TypeSourceEvidence {
+    pub(crate) const fn new(local: TextRange, project: Option<SourceSpan>) -> Self {
+        Self { local, project }
+    }
+
+    /// Creates evidence for an accepted project type node.
+    pub const fn accepted(local: TextRange, project: SourceSpan) -> Self {
+        Self {
+            local,
+            project: Some(project),
+        }
+    }
+
+    /// Creates local-only evidence without fabricating project identity.
+    pub const fn detached(local: TextRange) -> Self {
+        Self {
+            local,
+            project: None,
+        }
+    }
+
+    pub const fn local(&self) -> TextRange {
+        self.local
+    }
+
+    pub const fn project(&self) -> Option<&SourceSpan> {
+        self.project.as_ref()
+    }
+}
+
+impl BuiltinTypeConstructor {
+    /// Canonical reserved source spelling.
+    pub const fn spelling(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::I8 => "i8",
+            Self::I16 => "i16",
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::I128 => "i128",
+            Self::ISize => "isize",
+            Self::U8 => "u8",
+            Self::U16 => "u16",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+            Self::U128 => "u128",
+            Self::USize => "usize",
+            Self::F32 => "f32",
+            Self::F64 => "f64",
+            Self::String => "String",
+            Self::Char => "char",
+            Self::Bytes => "Bytes",
+            Self::Unit => "Unit",
+            Self::Never => "Never",
+            Self::Vec => "Vec",
+            Self::Slice => "Slice",
+            Self::Seq => "Seq",
+            Self::Option => "Option",
+            Self::Probe => "Probe",
+            Self::ThreadHandle => "ThreadHandle",
+            Self::Shared => "Shared",
+            Self::Array => "Array",
+            Self::OrderedMap => "OrderedMap",
+            Self::SortedMap => "SortedMap",
+            Self::BTreeMap => "BTreeMap",
+            Self::Result => "Result",
+            Self::Need => "Need",
+            Self::Stream => "Stream",
+            Self::Source => "Source",
+            Self::Speaker => "Speaker",
+            Self::SpeakerPreset => "SpeakerPreset",
+        }
+    }
+
+    /// Contractual constructor arity.
+    pub const fn arity(self) -> u16 {
+        match self {
+            Self::Bool
+            | Self::I8
+            | Self::I16
+            | Self::I32
+            | Self::I64
+            | Self::I128
+            | Self::ISize
+            | Self::U8
+            | Self::U16
+            | Self::U32
+            | Self::U64
+            | Self::U128
+            | Self::USize
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Char
+            | Self::Bytes
+            | Self::Unit
+            | Self::Never => 0,
+            Self::Vec
+            | Self::Slice
+            | Self::Seq
+            | Self::Option
+            | Self::Probe
+            | Self::ThreadHandle
+            | Self::Shared
+            | Self::Speaker
+            | Self::SpeakerPreset => 1,
+            Self::Array
+            | Self::OrderedMap
+            | Self::SortedMap
+            | Self::BTreeMap
+            | Self::Result
+            | Self::Need
+            | Self::Stream
+            | Self::Source => 2,
+        }
+    }
+}
+
+impl ResolvedOpenNominal {
+    pub(crate) fn new(
+        rule: OpenNominalRuleId,
+        path: TypePath,
+        arguments: impl Into<Box<[TypeKind]>>,
+    ) -> Self {
+        Self {
+            rule,
+            path,
+            arguments: arguments.into(),
+        }
+    }
+
+    pub const fn rule(&self) -> &OpenNominalRuleId {
+        &self.rule
+    }
+
+    pub const fn path(&self) -> &TypePath {
+        &self.path
+    }
+
+    pub fn arguments(&self) -> &[TypeKind] {
+        &self.arguments
+    }
+}
+
+impl ResolvedAliasReference {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "an alias resolution fact must retain all use, declaration, and target evidence atomically"
+    )]
+    pub(crate) fn new(
+        declaration: ProjectNominalDeclarationId,
+        arguments: impl Into<Box<[TypeKind]>>,
+        normalized: TypeKind,
+        use_source: TypeSourceEvidence,
+        declaration_source: SourceSpan,
+        target_source: TypeSourceEvidence,
+    ) -> Self {
+        Self {
+            declaration,
+            arguments: arguments.into(),
+            normalized,
+            use_source,
+            declaration_source,
+            target_source,
+        }
+    }
+
+    pub const fn declaration(&self) -> &ProjectNominalDeclarationId {
+        &self.declaration
+    }
+
+    pub fn arguments(&self) -> &[TypeKind] {
+        &self.arguments
+    }
+
+    pub const fn normalized(&self) -> &TypeKind {
+        &self.normalized
+    }
+
+    pub const fn use_source(&self) -> &TypeSourceEvidence {
+        &self.use_source
+    }
+
+    pub const fn declaration_source(&self) -> &SourceSpan {
+        &self.declaration_source
+    }
+
+    pub const fn target_source(&self) -> &TypeSourceEvidence {
+        &self.target_source
+    }
+}
+
+impl ResolvedTypeNode {
+    pub(crate) const fn new(
+        node: TypeRefNodePath,
+        source: TypeSourceEvidence,
+        terminal_source: Option<TypeSourceEvidence>,
+        reference_path: Option<TypePath>,
+        recovered: Option<TypeKind>,
+        outcome: TypeNameResolution,
+    ) -> Self {
+        Self {
+            node,
+            source,
+            terminal_source,
+            reference_path,
+            recovered,
+            outcome,
+        }
+    }
+
+    pub const fn node(&self) -> &TypeRefNodePath {
+        &self.node
+    }
+
+    pub const fn source(&self) -> &TypeSourceEvidence {
+        &self.source
+    }
+
+    /// Exact final path segment selected by this node's name resolution.
+    pub const fn terminal_source(&self) -> Option<&TypeSourceEvidence> {
+        self.terminal_source.as_ref()
+    }
+
+    /// Validated authored path whose terminal was selected by name resolution.
+    pub const fn reference_path(&self) -> Option<&TypePath> {
+        self.reference_path.as_ref()
+    }
+
+    /// Semantic type recovered for this exact structural node.
+    ///
+    /// Constant and entity-family argument nodes are deliberately non-type
+    /// values and therefore return `None`.
+    pub const fn recovered(&self) -> Option<&TypeKind> {
+        self.recovered.as_ref()
+    }
+
+    pub const fn outcome(&self) -> &TypeNameResolution {
+        &self.outcome
+    }
+}
+
+impl AliasExpansionFact {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one alias expansion owns its typed substitution and three distinct source sites"
+    )]
+    pub(crate) fn new(
+        alias: ProjectNominalDeclarationId,
+        arguments: impl Into<Box<[TypeKind]>>,
+        substitution: impl Into<Box<[(GenericTypeParameterId, TypeKind)]>>,
+        normalized: TypeKind,
+        use_source: TypeSourceEvidence,
+        declaration_source: SourceSpan,
+        target_source: TypeSourceEvidence,
+    ) -> Self {
+        Self {
+            alias,
+            arguments: arguments.into(),
+            substitution: substitution.into(),
+            normalized,
+            use_source,
+            declaration_source,
+            target_source,
+        }
+    }
+
+    pub const fn alias(&self) -> &ProjectNominalDeclarationId {
+        &self.alias
+    }
+
+    pub fn arguments(&self) -> &[TypeKind] {
+        &self.arguments
+    }
+
+    pub fn substitution(&self) -> &[(GenericTypeParameterId, TypeKind)] {
+        &self.substitution
+    }
+
+    pub const fn normalized(&self) -> &TypeKind {
+        &self.normalized
+    }
+
+    pub const fn use_source(&self) -> &TypeSourceEvidence {
+        &self.use_source
+    }
+
+    pub const fn declaration_source(&self) -> &SourceSpan {
+        &self.declaration_source
+    }
+
+    pub const fn target_source(&self) -> &TypeSourceEvidence {
+        &self.target_source
+    }
+}
+
+impl ResolvedTypeProduct {
+    pub(crate) fn new(
+        recovered: TypeKind,
+        nodes: impl Into<Box<[ResolvedTypeNode]>>,
+        aliases: impl Into<Box<[AliasExpansionFact]>>,
+    ) -> Self {
+        Self {
+            recovered,
+            nodes: nodes.into(),
+            aliases: aliases.into(),
+        }
+    }
+
+    pub const fn recovered(&self) -> &TypeKind {
+        &self.recovered
+    }
+
+    pub fn nodes(&self) -> &[ResolvedTypeNode] {
+        &self.nodes
+    }
+
+    pub fn aliases(&self) -> &[AliasExpansionFact] {
+        &self.aliases
+    }
+}
+
+impl PoisonedTypeRef {
+    pub(crate) fn new(
+        product: ResolvedTypeProduct,
+        causes: impl Into<Box<[TypePoisonId]>>,
+    ) -> Self {
+        let mut causes = causes.into().into_vec();
+        causes.sort_unstable();
+        causes.dedup();
+        Self {
+            product,
+            causes: causes.into_boxed_slice(),
+        }
+    }
+
+    pub const fn product(&self) -> &ResolvedTypeProduct {
+        &self.product
+    }
+
+    pub fn causes(&self) -> &[TypePoisonId] {
+        &self.causes
+    }
+}
+
+impl DetachedTypeRef {
+    pub(crate) fn new(
+        product: ResolvedTypeProduct,
+        unavailable: impl Into<Box<[TypeRefNodePath]>>,
+        causes: impl Into<Box<[TypePoisonId]>>,
+    ) -> Self {
+        let mut unavailable = unavailable.into().into_vec();
+        unavailable.sort_unstable();
+        unavailable.dedup();
+        let mut causes = causes.into().into_vec();
+        causes.sort_unstable();
+        causes.dedup();
+        Self {
+            product,
+            unavailable: unavailable.into_boxed_slice(),
+            causes: causes.into_boxed_slice(),
+        }
+    }
+
+    pub const fn product(&self) -> &ResolvedTypeProduct {
+        &self.product
+    }
+
+    pub fn unavailable(&self) -> &[TypeRefNodePath] {
+        &self.unavailable
+    }
+
+    pub fn causes(&self) -> &[TypePoisonId] {
+        &self.causes
+    }
+}
+
+impl ResolvedTypeRefOutcome {
+    pub const fn product(&self) -> &ResolvedTypeProduct {
+        match self {
+            Self::Complete(product) => product,
+            Self::Poisoned(poisoned) => poisoned.product(),
+            Self::Detached(detached) => detached.product(),
+        }
+    }
+}
+
+impl TypeResolutionReport {
+    pub(crate) fn new(
+        outcome: ResolvedTypeRefOutcome,
+        diagnostics: impl Into<Box<[NominalTypeDiagnostic]>>,
+        poisons: impl Into<Box<[TypePoisonRecord]>>,
+        omitted_diagnostics: u64,
+        work_charged: u64,
+    ) -> Self {
+        Self {
+            outcome,
+            diagnostics: diagnostics.into(),
+            poisons: poisons.into(),
+            omitted_diagnostics,
+            work_charged,
+        }
+    }
+
+    pub const fn outcome(&self) -> &ResolvedTypeRefOutcome {
+        &self.outcome
+    }
+
+    pub fn diagnostics(&self) -> &[NominalTypeDiagnostic] {
+        &self.diagnostics
+    }
+
+    pub fn poisons(&self) -> &[TypePoisonRecord] {
+        &self.poisons
+    }
+
+    pub const fn omitted_diagnostics(&self) -> u64 {
+        self.omitted_diagnostics
+    }
+
+    pub const fn work_charged(&self) -> u64 {
+        self.work_charged
+    }
+}
+
+impl TypeArityExpectation {
+    pub const fn contains(self, actual: u16) -> bool {
+        match self {
+            Self::Exact(expected) => actual == expected,
+            Self::Inclusive { minimum, maximum } => actual >= minimum && actual <= maximum,
+        }
+    }
+
+    pub const fn minimum(self) -> u16 {
+        match self {
+            Self::Exact(exact) => exact,
+            Self::Inclusive { minimum, .. } => minimum,
+        }
+    }
+
+    pub const fn maximum(self) -> u16 {
+        match self {
+            Self::Exact(exact) => exact,
+            Self::Inclusive { maximum, .. } => maximum,
+        }
+    }
+}
+
+impl DetachedNominalEvidence {
+    pub(crate) const fn new(
+        path: TypePath,
+        source: TypeSourceEvidence,
+        reason: DetachedNominalReason,
+    ) -> Self {
+        Self {
+            path,
+            source,
+            reason,
+        }
+    }
+
+    pub const fn path(&self) -> &TypePath {
+        &self.path
+    }
+
+    pub const fn source(&self) -> &TypeSourceEvidence {
+        &self.source
+    }
+
+    pub const fn reason(&self) -> DetachedNominalReason {
+        self.reason
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_table_has_contractual_spellings_and_arities() {
+        assert_eq!(BuiltinTypeConstructor::Bool.spelling(), "bool");
+        assert_eq!(BuiltinTypeConstructor::Bool.arity(), 0);
+        assert_eq!(BuiltinTypeConstructor::Vec.arity(), 1);
+        assert_eq!(BuiltinTypeConstructor::Array.arity(), 2);
+        assert_eq!(
+            BuiltinTypeConstructor::SpeakerPreset.spelling(),
+            "SpeakerPreset"
+        );
+    }
+
+    #[test]
+    fn arity_expectations_are_inclusive_at_both_boundaries() {
+        let expectation = TypeArityExpectation::Inclusive {
+            minimum: 1,
+            maximum: 3,
+        };
+        assert!(!expectation.contains(0));
+        assert!(expectation.contains(1));
+        assert!(expectation.contains(3));
+        assert!(!expectation.contains(4));
+    }
+
+    #[test]
+    fn poison_and_detached_collections_are_canonicalized() {
+        let product = || ResolvedTypeProduct::new(TypeKind::Bool, [], []);
+        let poisoned = PoisonedTypeRef::new(
+            product(),
+            [
+                TypePoisonId::from_index(2),
+                TypePoisonId::from_index(1),
+                TypePoisonId::from_index(2),
+            ],
+        );
+        assert_eq!(
+            poisoned.causes(),
+            &[TypePoisonId::from_index(1), TypePoisonId::from_index(2)]
+        );
+
+        let detached = DetachedTypeRef::new(
+            product(),
+            [TypeRefNodePath::root(), TypeRefNodePath::root()],
+            [TypePoisonId::from_index(4), TypePoisonId::from_index(4)],
+        );
+        assert_eq!(detached.unavailable(), &[TypeRefNodePath::root()]);
+        assert_eq!(detached.causes(), &[TypePoisonId::from_index(4)]);
+    }
+}

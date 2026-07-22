@@ -539,7 +539,7 @@ pub enum Expr {
         inclusive: bool,
     },
     Record {
-        path: String,
+        path: DottedPath,
         fields: Vec<(String, Expr)>,
     },
     RecordLiteral(Vec<(String, Expr)>),

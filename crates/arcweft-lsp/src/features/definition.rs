@@ -22,6 +22,9 @@ pub fn definition(
     if let Some(result) = crate::features::entry_roles::definition(profile, document, offset) {
         return Ok(Some(result));
     }
+    if let Some(result) = crate::features::nominal_types::definition(profile, document, offset) {
+        return Ok(Some(result));
+    }
     match character_definition(profile, documents, document, offset)? {
         CharacterDefinitionDispatch::Character(result) => return Ok(result),
         CharacterDefinitionDispatch::NotCharacter => {}

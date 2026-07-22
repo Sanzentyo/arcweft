@@ -1,4 +1,7 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use arcweft_character::id::CharacterId;
 use arcweft_lang_hir::{
@@ -23,7 +26,7 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, 
 
 use crate::{
     canonicalization::SemanticScopeId, checker::TypeExpressionId, effect_row::EffectRow,
-    types::TypeKind,
+    env::TypeCheckEnv, registration::AcceptedNominalWorld, types::TypeKind,
 };
 
 use super::limits::{CatalogBuildWork, ResolverWork, SignatureQueryWorkMeter};
@@ -587,9 +590,15 @@ fn callable_catalog_rejects_a_symbol_world_from_another_package() {
         .expect("linking retains the distinct symbol-world identity")
         .into_table();
     let mut builder = RegisteredCallableCatalogBuilder::new(PRODUCTION_CALLABLE_LIMITS);
+    let nominal_world = AcceptedNominalWorld::new(
+        Arc::new(TypeCheckEnv::standard()),
+        symbols.world().clone(),
+        *symbols.revision(),
+        BTreeMap::new(),
+    );
 
     let error = builder
-        .add_project(&project, &symbols)
+        .add_project(&project, &symbols, &nominal_world)
         .expect_err("a callable catalog cannot span two package identities");
     assert_eq!(
         error,
@@ -659,7 +668,9 @@ fn typed_project_binding_without_registered_type_is_fail_closed() {
 
     assert_eq!(
         builder.add_project_bindings(&project, &symbols, |_| None),
-        Err(CallableCatalogBuildError::MissingProjectBindingType { target: expected })
+        Err(CallableCatalogBuildError::MissingProjectBindingType {
+            target: Box::new(expected),
+        })
     );
 }
 

@@ -52,6 +52,7 @@ struct DeadlineSchedulerState {
 pub(crate) struct RequestRegistry {
     state: Mutex<RegistryState>,
     scheduler: Arc<DeadlineScheduler>,
+    request_deadline: Duration,
     shutdown: AtomicBool,
 }
 
@@ -85,6 +86,12 @@ pub(crate) enum RequestAdmissionError {
 
 impl RequestRegistry {
     pub(super) fn try_new() -> Result<Arc<Self>, std::io::Error> {
+        Self::try_new_with_deadline(SIGNATURE_REQUEST_DEADLINE)
+    }
+
+    pub(super) fn try_new_with_deadline(
+        request_deadline: Duration,
+    ) -> Result<Arc<Self>, std::io::Error> {
         let scheduler = Arc::new(DeadlineScheduler {
             state: Mutex::new(DeadlineSchedulerState {
                 closed: false,
@@ -110,6 +117,7 @@ impl RequestRegistry {
                 active: BTreeMap::new(),
             }),
             scheduler,
+            request_deadline,
             shutdown: AtomicBool::new(false),
         }))
     }
@@ -126,7 +134,7 @@ impl RequestRegistry {
             return Err(RequestAdmissionError::ProfileClosing);
         }
         let deadline = Instant::now()
-            .checked_add(SIGNATURE_REQUEST_DEADLINE)
+            .checked_add(self.request_deadline)
             .ok_or(RequestAdmissionError::DeadlineOverflow)?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if !state.admission_open {

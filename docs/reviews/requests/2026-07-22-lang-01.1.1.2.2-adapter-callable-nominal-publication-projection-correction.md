@@ -1,0 +1,151 @@
+# Lang-01.1.1.2.2 — Adapter callable nominal publication projection correction
+
+## Sequence position
+
+This is the second contract-correction request split from Lang-01.1.1.2
+project nominal type resolution. It follows the accepted nominal catalog and
+source-backed callable signature resolver, and it must be settled before
+adapter- or Rust-published callable schemas can claim exact nominal parity with
+authored `extern` signatures.
+
+Lang-01.1.1.2.1 independently decides the contextual `Ref<Entity>` projection.
+The two requests may be designed in parallel, but the adapter publication
+correction must reuse the same accepted-world identities produced by
+Lang-01.1.1.2 rather than introducing another resolver.
+
+## Why this split is required
+
+The current production path carries a Rust nominal callable type through this
+chain:
+
+```text
+ArcweftRustTypeRef::Named(String)
+  -> AdapterTypeKind::Named(String)
+  -> AdapterFunctionSignature / method receiver
+  -> AdapterTypeKind::to_sema_type_kind()
+  -> TypeKind::Named(String)
+  -> EnvironmentCallablePublicationRecord
+```
+
+By contrast, the Lang-01.1.1.2 authored `extern` path now resolves the same
+accepted Rust export as:
+
+```text
+TypeKind::AcceptedNominal(
+    AcceptedNominalType {
+        owner: AcceptedNominalOwner::RustPackage(RustPackageId),
+        path: TypePath,
+        arguments: ...,
+    }
+)
+```
+
+Callable registration and exact schema matching therefore compare different
+semantic identities for the same exported nominal. Restoring string equality,
+adding a `Named` fallback, or teaching compatibility to equate the two would
+hide the missing publication boundary and would contradict the direct-final
+nominal contract.
+
+Lang-01.1.1.2 requires external owners to project accepted nominal identities,
+but its non-goals intentionally do not redesign callable publication. It does
+not decide where the adapter/Rust manifest receives the accepted catalog, how
+owner identity is selected, or how nested nominal references fail. Those
+decisions must not be guessed by the implementation agent.
+
+## Required decisions
+
+1. Select exactly one owner for contextual projection:
+   - replace `AdapterTypeKind::Named(String)` with an adapter-owned typed path
+     and resolve it while constructing a callable publication; or
+   - keep a wire/manifest name carrier but require an atomic publication
+     context that resolves every callable type into the accepted catalog before
+     `EnvironmentCallablePublicationRecord` exists; or
+   - specify another single typed model with equivalent ownership and failure
+     behavior.
+2. Specify the exact Rust/API types for nominal path, generic arguments,
+   package identity, method receiver identity, and nested composite types.
+3. Decide whether the accepted owner is the Rust package, selected adapter, or
+   another existing typed owner, including the mapping from
+   `ArcweftRustPackage`/adapter manifest metadata and collision rules.
+4. Specify the projection context and construction order relative to:
+   - `SourceBackedAdapterRegistrationFacts`;
+   - `AcceptedNominalWorld` construction;
+   - environment callable publication; and
+   - atomic registered-world admission.
+   The design must not introduce a registration-order cycle.
+5. Specify arity, nested-type, unknown-path, inaccessible export, duplicate,
+   malformed path, limit, and catalog-revision failure behavior. Failures must
+   be structured and must identify the owner and exact manifest/Rust item
+   source where available.
+6. Decide whether the public `AdapterTypeKind::to_sema_type_kind()` operation is
+   deleted, made fallible with a required context, or narrowed to primitives.
+   A context-free successful nominal conversion is not permitted.
+7. Specify how schema digests, callable candidate identity, signature help,
+   hover, method lookup, overload matching, and persistent query keys observe
+   the projected nominal identity.
+8. Specify whether non-callable Rust type metadata and enum payload metadata
+   migrate in the same atomic cut or remain on an explicitly typed existing
+   route. Do not leave a second `Named(String)` semantic identity for the same
+   accepted export.
+
+## Implementation order to prescribe
+
+1. Correct the adapter/Rust manifest type carriers and structured errors.
+2. Add the required accepted-world projection context without a dependency
+   inversion or registration-order cycle.
+3. Project method receivers, all parameter groups, results, and nested type
+   arguments before callable publication records are admitted.
+4. Migrate non-callable metadata if the selected owner model requires it.
+5. Delete context-free nominal conversion and every string-equality fallback.
+6. Update callable registration, query/signature-help consumers, persistent
+   facts, and adapter tests in one direct-final cut.
+
+## Tests the returned contract must specify
+
+- one Rust-exported nominal used as a free-function parameter and result;
+- the same nominal used as a method receiver and in a later curried parameter
+  group;
+- nested `Option`, `Result`, tuple, sequence/vector, and generic accepted
+  nominal arguments;
+- exact equality with the corresponding authored `extern` signature;
+- same terminal name from two Rust packages and from a project declaration;
+- unknown, inaccessible, malformed, wrong-arity, and over-limit nominal paths;
+- package/adapter owner mismatch and duplicate accepted export;
+- deterministic publication ordering, digest, structured error, and atomic
+  rollback on any failed nested type;
+- signature help, hover, method lookup, and overload resolution preserving the
+  accepted nominal ID rather than a display name;
+- detached or incomplete-world behavior, explicitly fail-closed;
+- round-trip tests for any manifest or persistent carrier changed by the
+  selected design.
+
+Tests must use typed public or crate-owned APIs. Source-text scans, permanent
+old-spelling diagnostics, `Named` compatibility tests, and implementation-path
+gates are not acceptable evidence.
+
+## Constraints
+
+- Preserve `syntax -> HIR -> sema -> runtime-plan/verify -> tooling` ownership.
+- Reuse `AcceptedNominalWorld`, `AcceptedNominalCatalog`,
+  `AcceptedNominalOwner`, `RustPackageId`, `TypePath`, and the checked callable
+  schema model unless current repository evidence proves a concrete defect.
+- Do not restore `From<&TypeRef> for TypeKind`, `Named("...")` semantic
+  identity, suffix lookup, terminal-name equality, dual readers, aliases,
+  migration shims, or a compatibility version bump for this unpublished
+  contract.
+- Do not redesign the already implemented source-backed project nominal
+  resolver, callable query budget, poison accounting, or registration
+  transaction beyond the minimum boundary required by this projection.
+- Keep `arcweft-rust-abi` and data-format carriers Sans I/O.
+
+## Expected output
+
+Return an independent, repository-aware, implementation-ready final-contract
+ZIP against the latest `main`. It must contain the selected owner model, exact
+Rust/API shapes, construction and dependency order, structured error and
+rollback table, schema/digest consequences, exhaustive test matrix,
+traceability, non-goals, and commands actually run against the repository.
+
+Do not modify production code. Do not present multiple alternatives as the
+final answer, and do not leave owner selection, registration order, failure
+semantics, or migration scope to the implementation agent.

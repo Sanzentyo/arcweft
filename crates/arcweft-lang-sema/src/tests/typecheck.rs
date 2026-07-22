@@ -4,6 +4,26 @@ use crate::check::{
 };
 use arcweft_data::DataFormat;
 
+fn analyze_registered_source(
+    profile: &str,
+    source: &str,
+    environment: TypeCheckEnv,
+) -> TypeCheckReport {
+    let (document, project, world) =
+        crate::test_support::character_project::root_project_source(profile, source);
+    let facts = crate::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("source-backed type-check registration facts");
+    let registered =
+        crate::test_support::character_project::register(&project, &facts, environment, None)
+            .expect("source-backed type-check semantic world");
+    crate::checker::analyze_registered_project_types(&project.linked_module(), &registered)
+}
+
 #[test]
 fn semantic_reference_types_preserve_borrow_kind() {
     let shared = TypeKind::BorrowRef {
@@ -1100,7 +1120,7 @@ flow @flow.borrow_stats borrow_stats {
     validate_typecheck_ready(&hir).expect("borrow stats fixture is typecheck-ready");
     let report = analyze_types(
         &hir,
-        &TypeCheckEnv::new().with_function("pixels", pixel_borrow_ty()),
+        &TypeCheckEnv::standard().with_function("pixels", pixel_borrow_ty()),
     );
     assert!(
         report.diagnostics.is_empty(),
@@ -1419,16 +1439,6 @@ fn numeric_primitive_types_keep_explicit_widths() {
     assert_eq!(TypeKind::primitive_name("Never"), Some(TypeKind::Never));
     assert_eq!(TypeKind::Unit.source_label(), "Unit");
     assert_eq!(TypeKind::Never.source_label(), "Never");
-    assert_eq!(
-        crate::checker::helpers::type_ref_kind(parse_type_ref("!").expect("! parses").value()),
-        TypeKind::Never
-    );
-    assert_eq!(
-        crate::checker::helpers::type_ref_kind(
-            parse_type_ref("Never").expect("Never parses").value()
-        ),
-        TypeKind::Never
-    );
     assert_eq!(
         TypeKind::function([], TypeKind::Unit).source_label(),
         "() -> Unit"
@@ -1756,14 +1766,7 @@ flow @flow.thread_source_ranges thread_source_ranges {
     );
 }
 
-#[test]
-fn desugared_function_stack_expression_judgments_keep_authored_source_ranges() {
-    let source = r#"
-struct Choice {
-    label: String,
-    enabled: bool,
-}
-
+const DESUGARED_FUNCTION_STACK_SOURCE: &str = r"
 fn add(lhs: i64, rhs: i64) -> i64 {
     lhs + rhs
 }
@@ -1775,18 +1778,33 @@ fn above(min: i64, value: i64) -> bool {
 flow @flow.desugared_source_ranges desugared_source_ranges {
     let threshold = 80i64
     let values: Vec<i64> = [79i64, 81i64]
-    let choice = Choice { label: "Start", enabled: true }
-    let label = choice.label
+    let transform = Transform2D {
+        translate_x: 0px,
+        translate_y: 0px,
+        origin_x: 0px,
+        origin_y: 0px,
+        scale_x: 1.0,
+        scale_y: 1.0,
+        skew_x: 0deg,
+        skew_y: 0deg,
+        rotation: 0deg,
+        opacity: 1.0,
+    }
+    let opacity = transform.opacity
     let high = values.filter(_ > threshold)
     let mapped = values.map(|value: i64| value + 1i64)
     let pipe_with_placeholder = threshold |> add(^, 11i64)
     let pipe_data_last = threshold |> add(22i64)
     let method_fallback = threshold.above(70i64)
 }
-"#;
+";
+
+#[test]
+fn desugared_function_stack_expression_judgments_keep_authored_source_ranges() {
+    let source = DESUGARED_FUNCTION_STACK_SOURCE;
     let tree = parse_ok(source);
     let hir = lower_to_hir(&tree).expect("desugared source range fixture lowers");
-    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    let report = analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         report.diagnostics.is_empty(),
         "unexpected diagnostics: {:?}",
@@ -1804,16 +1822,16 @@ flow @flow.desugared_source_ranges desugared_source_ranges {
         &report,
         source,
         "select",
-        "choice.label",
-        |ty| matches!(ty, TypeKind::String),
+        "transform.opacity",
+        |ty| matches!(ty, TypeKind::F32),
         "ordinary selector expressions should retain the full visible selector range",
     );
     assert_expr_source_judgment(
         &report,
         source,
         "path",
-        "choice",
-        |ty| matches!(ty, TypeKind::Named(name) if name == "Choice"),
+        "transform",
+        |ty| matches!(ty, TypeKind::Named(name) if name == "Transform2D"),
         "selector target expressions should retain their authored receiver range",
     );
     assert_expr_source_judgment(
@@ -1934,9 +1952,11 @@ flow @flow.assignment_source_ranges assignment_source_ranges {
     counter.value = counter.value + 2i64
 }
 ";
-    let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("assignment source range fixture lowers");
-    let report = analyze_types(&hir, &TypeCheckEnv::new());
+    let report = analyze_registered_source(
+        "assignment-statement-source-ranges",
+        source,
+        TypeCheckEnv::standard(),
+    );
     assert!(
         report.diagnostics.is_empty(),
         "unexpected diagnostics: {:?}",
@@ -2557,11 +2577,25 @@ flow @flow.container_source_ranges container_source_ranges {
 }
 "#;
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("container/control source range fixture lowers");
-    let report = analyze_types(
-        &hir,
-        &TypeCheckEnv::new().with_symbol("maybe", TypeKind::Option(Box::new(TypeKind::I64))),
+    lower_to_hir(&tree).expect("container/control source range fixture lowers");
+    let (document, project, world) = crate::test_support::character_project::root_project_source(
+        "container-source-ranges",
+        source,
     );
+    let facts = crate::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("container source-range registration facts");
+    let environment =
+        TypeCheckEnv::standard().with_symbol("maybe", TypeKind::Option(Box::new(TypeKind::I64)));
+    let registered =
+        crate::test_support::character_project::register(&project, &facts, environment, None)
+            .expect("container source-range semantic world");
+    let report =
+        crate::checker::analyze_registered_project_types(&project.linked_module(), &registered);
     assert!(
         report.diagnostics.is_empty(),
         "unexpected diagnostics: {:?}",
@@ -2593,7 +2627,7 @@ fn assert_container_expression_ranges(report: &TypeCheckReport, source: &str) {
         source,
         "array_repeat",
         "[505i64; 2]",
-        |ty| matches!(ty, TypeKind::Array { item, len } if item.as_ref() == &TypeKind::I64 && len == "2"),
+        |ty| matches!(ty, TypeKind::Array { item, len } if item.as_ref() == &TypeKind::I64 && len == &crate::types::ArrayLength::Const(2)),
         "array repeat root should carry its full authored range",
     );
     assert_expr_source_judgment(
@@ -2625,7 +2659,7 @@ fn assert_container_expression_ranges(report: &TypeCheckReport, source: &str) {
         source,
         "record",
         r#"Choice { label: "Start", enabled: ready }"#,
-        |ty| matches!(ty, TypeKind::Named(name) if name == "Choice"),
+        |ty| matches!(ty, TypeKind::ProjectNominal(nominal) if nominal.declaration().name().as_str() == "Choice"),
         "nominal record constructor should carry its full authored range",
     );
     assert_expr_source_judgment(
@@ -3621,42 +3655,36 @@ flow @flow.opening opening {
 
 #[test]
 fn type_ref_keeps_explicit_map_kind() {
-    let ordered = crate::checker::helpers::type_ref_kind(
-        parse_type_ref("OrderedMap<Ref<Character>, i64>")
-            .expect("ordered map type parses")
-            .value(),
+    let tree = parse_ok(
+        r"
+flow @flow.map_kinds map_kinds {
+    let ordered: OrderedMap<String, i64> = ordered_input
+    let sorted: SortedMap<String, i64> = sorted_input
+    let btree: BTreeMap<String, i64> = btree_input
+}
+",
     );
-    let sorted = crate::checker::helpers::type_ref_kind(
-        parse_type_ref("SortedMap<Ref<Character>, i64>")
-            .expect("sorted map type parses")
-            .value(),
-    );
-    let btree = crate::checker::helpers::type_ref_kind(
-        parse_type_ref("BTreeMap<Ref<Character>, i64>")
-            .expect("btree map type parses")
-            .value(),
-    );
-    assert!(matches!(
-        ordered,
-        TypeKind::Map {
-            kind: MapKind::Ordered,
-            ..
-        }
-    ));
-    assert!(matches!(
-        sorted,
-        TypeKind::Map {
-            kind: MapKind::Sorted,
-            ..
-        }
-    ));
-    assert!(matches!(
-        btree,
-        TypeKind::Map {
-            kind: MapKind::BTree,
-            ..
-        }
-    ));
+    let hir = lower_to_hir(&tree).expect("map-kind fixture lowers");
+    let map = |kind| TypeKind::Map {
+        kind,
+        key: Box::new(TypeKind::String),
+        value: Box::new(TypeKind::I64),
+    };
+    let env = TypeCheckEnv::new()
+        .with_symbol("ordered_input", map(MapKind::Ordered))
+        .with_symbol("sorted_input", map(MapKind::Sorted))
+        .with_symbol("btree_input", map(MapKind::BTree));
+    let report = analyze_types(&hir, &env);
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+
+    for expected in [MapKind::Ordered, MapKind::Sorted, MapKind::BTree] {
+        assert!(report.judgments.iter().any(|judgment| {
+            matches!(
+                &judgment.ty,
+                TypeKind::Map { kind, .. } if *kind == expected
+            )
+        }));
+    }
 }
 
 #[test]

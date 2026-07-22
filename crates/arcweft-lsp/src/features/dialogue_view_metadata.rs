@@ -2,7 +2,7 @@
 
 use crate::documents::DocumentSnapshot;
 use crate::profiles::LspProfile;
-use arcweft_lang_sema::dialogue_view::{DialogueViewModelRegistry, DialogueViewProjection};
+use arcweft_lang_sema::dialogue_view::DialogueViewProjection;
 use arcweft_lang_sema::types::TypeKind;
 use std::collections::BTreeSet;
 
@@ -46,13 +46,27 @@ pub(crate) fn dialogue_view_types(
         .map(|model| model.type_name().to_owned())
         .collect::<BTreeSet<_>>();
     if let Some(document) = document {
-        let parsed = arcweft_lang_syntax::parser::parse_source(document.text());
-        if parsed.errors().is_empty()
-            && let Ok(hir) = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree())
-            && let Ok(models) = DialogueViewModelRegistry::from_hir(&hir)
-        {
-            names.extend(models.models().map(|model| model.type_name().to_owned()));
-        }
+        names.extend(
+            profile
+                .accepted_environment()
+                .filter(|accepted| {
+                    accepted
+                        .project()
+                        .sources()
+                        .by_uri(document.uri())
+                        .is_some_and(|source| source.document().text() == document.text())
+                })
+                .into_iter()
+                .flat_map(|accepted| {
+                    accepted
+                        .project()
+                        .typecheck()
+                        .dialogue_view_models
+                        .models()
+                        .map(|model| model.type_name().to_owned())
+                        .collect::<Vec<_>>()
+                }),
+        );
     }
     names
         .into_iter()

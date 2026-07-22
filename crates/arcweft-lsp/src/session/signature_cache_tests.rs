@@ -20,6 +20,7 @@ use crate::{
     config::LspConfig,
     requests::{
         SignatureCancellationReason, SignatureRequestRuntime,
+        registry::SIGNATURE_REQUEST_DEADLINE,
         signature::{PreparedSignatureRequest, SignatureRequestError, SignatureRequestStale},
     },
 };
@@ -35,10 +36,11 @@ version = "0.1.0"
 kind = "server"
 entry = "@entry.server.main"
 source = "src/main.arcw"
-adapter = "inference-tensor"
+adapter = "sans-io"
 "#;
 
-const SOURCE: &str = "fn evaluate_tensor(value: TensorF32) -> TensorF32 {\n    infer.add_f32(value, value)\n}\n\
+const SOURCE: &str = "fn sum(lhs: i64, rhs: i64) -> i64 { lhs + rhs }\n\
+fn evaluate(value: i64) -> i64 {\n    sum(value, value)\n}\n\
 entry server @entry.server.main { goto @flow.main }\n\
 flow @flow.main main {}\n";
 
@@ -51,6 +53,10 @@ struct SignatureCacheFixture {
 
 impl SignatureCacheFixture {
     fn new(name: &str) -> Self {
+        Self::new_with_deadline(name, SIGNATURE_REQUEST_DEADLINE)
+    }
+
+    fn new_with_deadline(name: &str, request_deadline: Duration) -> Self {
         let project = TestProject::new(name);
         project.write("arcw.toml", MANIFEST);
         project.write("src/main.arcw", SOURCE);
@@ -59,8 +65,12 @@ impl SignatureCacheFixture {
         open_text(&mut session, uri.clone(), SOURCE);
         let session = Arc::new(RwLock::new(session));
         let (server, _client) = Connection::memory();
-        let runtime = SignatureRequestRuntime::new(&server, Arc::clone(&session))
-            .expect("signature request runtime");
+        let runtime = SignatureRequestRuntime::new_with_deadline_for_test(
+            &server,
+            Arc::clone(&session),
+            request_deadline,
+        )
+        .expect("signature request runtime");
         Self {
             _project: project,
             uri,
@@ -185,7 +195,7 @@ impl Drop for SignatureCacheFixture {
 fn cancelled_and_expired_requests_never_insert_cache_entries() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-cancel-deadline");
     let accepted = fixture.accepted();
-    let position = position_after(SOURCE, "infer.add_f32(");
+    let position = position_after(SOURCE, "sum(");
 
     let cancelled = fixture.prepare(1, position);
     fixture
@@ -228,9 +238,12 @@ fn cancelled_and_expired_requests_never_insert_cache_entries() {
 
 #[test]
 fn stale_request_and_final_stamp_rejection_never_insert_cache_entries() {
-    let fixture = SignatureCacheFixture::new("lsp-signature-cache-stale");
+    let fixture = SignatureCacheFixture::new_with_deadline(
+        "lsp-signature-cache-stale",
+        Duration::from_secs(10),
+    );
     let accepted = fixture.accepted();
-    let position = position_after(SOURCE, "infer.add_f32(");
+    let position = position_after(SOURCE, "sum(");
     let prepared = fixture.prepare(3, position);
     let result = fixture
         .execute(&prepared)
@@ -262,9 +275,13 @@ fn stale_request_and_final_stamp_rejection_never_insert_cache_entries() {
     assert_eq!(current.signature_cache_snapshot_for_test().entries, 0);
 
     let response = fixture.publish(&prepared, Ok(result));
+    let error = response.error.expect("stale response");
+    assert_eq!(error.code, ErrorCode::ContentModified as i32);
     assert_eq!(
-        response.error.expect("stale response").code,
-        ErrorCode::ContentModified as i32
+        error.data,
+        Some(serde_json::json!({
+            "code": "aw.signature.stale.document_changed"
+        }))
     );
     drop(prepared);
     assert_eq!(accepted.signature_cache_snapshot_for_test().entries, 0);
@@ -273,9 +290,12 @@ fn stale_request_and_final_stamp_rejection_never_insert_cache_entries() {
 
 #[test]
 fn extracted_cache_hit_still_requires_the_complete_final_stamp() {
-    let fixture = SignatureCacheFixture::new("lsp-signature-cache-stale-hit");
+    let fixture = SignatureCacheFixture::new_with_deadline(
+        "lsp-signature-cache-stale-hit",
+        Duration::from_secs(10),
+    );
     let accepted = fixture.accepted();
-    let position = position_after(SOURCE, "infer.add_f32(");
+    let position = position_after(SOURCE, "sum(");
     let first = fixture.prepare(13, position);
     let response = fixture.publish(&first, fixture.execute(&first));
     assert!(response.error.is_none(), "{:?}", response.error);
@@ -312,9 +332,13 @@ fn extracted_cache_hit_still_requires_the_complete_final_stamp() {
     assert!(!Arc::ptr_eq(&accepted, &current));
 
     let response = fixture.publish(&hit, Ok(result));
+    let error = response.error.expect("stale hit response");
+    assert_eq!(error.code, ErrorCode::ContentModified as i32);
     assert_eq!(
-        response.error.expect("stale hit response").code,
-        ErrorCode::ContentModified as i32
+        error.data,
+        Some(serde_json::json!({
+            "code": "aw.signature.stale.document_changed"
+        }))
     );
     drop(hit);
     assert_eq!(accepted.signature_cache_snapshot_for_test().entries, 0);
@@ -325,7 +349,7 @@ fn extracted_cache_hit_still_requires_the_complete_final_stamp() {
 fn cancellation_after_query_is_enforced_by_the_final_stamp_gate() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-final-cancel");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(4, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(4, position_after(SOURCE, "sum("));
     let result = fixture
         .execute(&prepared)
         .expect("native query completes before cancellation");
@@ -352,7 +376,7 @@ fn cancellation_after_query_is_enforced_by_the_final_stamp_gate() {
 fn deadline_expiring_during_projection_is_rechecked_before_enqueue() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-projection-deadline");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(18, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(18, position_after(SOURCE, "sum("));
     let result = fixture
         .execute(&prepared)
         .expect("native query completes before the projection deadline");
@@ -383,7 +407,7 @@ fn deadline_expiring_during_projection_is_rechecked_before_enqueue() {
 fn failed_response_enqueue_does_not_insert_or_finish() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-send-failure");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(5, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(5, position_after(SOURCE, "sum("));
     let result = fixture.execute(&prepared);
     let (sender, receiver) = crossbeam_channel::bounded(1);
     drop(receiver);
@@ -405,7 +429,7 @@ fn failed_response_enqueue_does_not_insert_or_finish() {
 fn cache_miss_releases_session_and_gate_before_cancellable_sema_work() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-unlocked-query");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(6, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(6, position_after(SOURCE, "sum("));
     let work = {
         let session = fixture.session.read().expect("session read");
         session
@@ -444,7 +468,7 @@ fn cache_miss_releases_session_and_gate_before_cancellable_sema_work() {
 fn document_close_evicts_exact_document_entries_before_unmapping() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-close");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(7, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(7, position_after(SOURCE, "sum("));
     let result = fixture.execute(&prepared);
     let response = fixture.publish(&prepared, result);
     assert!(response.error.is_none(), "{:?}", response.error);
@@ -472,7 +496,7 @@ fn document_close_evicts_exact_document_entries_before_unmapping() {
 fn successful_document_edit_clears_old_entries_and_publishes_a_fresh_cache() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-edit");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(8, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(8, position_after(SOURCE, "sum("));
     let response = fixture.publish(&prepared, fixture.execute(&prepared));
     assert!(response.error.is_none(), "{:?}", response.error);
     drop(prepared);
@@ -509,7 +533,7 @@ fn successful_document_edit_clears_old_entries_and_publishes_a_fresh_cache() {
 fn failed_document_rebuild_evicts_changed_document_entries_from_retained_generation() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-failed-edit");
     let accepted = fixture.accepted();
-    let prepared = fixture.prepare(9, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(9, position_after(SOURCE, "sum("));
     let response = fixture.publish(&prepared, fixture.execute(&prepared));
     assert!(response.error.is_none(), "{:?}", response.error);
     drop(prepared);
@@ -548,7 +572,7 @@ fn failed_document_rebuild_evicts_changed_document_entries_from_retained_generat
 fn clock_overflow_and_poison_recompute_the_same_native_semantic_result() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-fault-recovery");
     let accepted = fixture.accepted();
-    let position = position_after(SOURCE, "infer.add_f32(");
+    let position = position_after(SOURCE, "sum(");
 
     let first = fixture.prepare(15, position);
     let first_response = fixture.publish(&first, fixture.execute(&first));
@@ -585,7 +609,7 @@ fn workspace_removal_clears_cache_and_closes_profile_state() {
         Arc::clone(session.profile_for_uri(&fixture.uri).state())
     };
     let workspace = accepted.profile().workspace_key().clone();
-    let prepared = fixture.prepare(10, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(10, position_after(SOURCE, "sum("));
     let response = fixture.publish(&prepared, fixture.execute(&prepared));
     assert!(response.error.is_none(), "{:?}", response.error);
     drop(prepared);
@@ -616,7 +640,7 @@ fn session_shutdown_clears_cache_and_closes_profile_state() {
         let session = fixture.session.read().expect("session read");
         Arc::clone(session.profile_for_uri(&fixture.uri).state())
     };
-    let prepared = fixture.prepare(11, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(11, position_after(SOURCE, "sum("));
     let response = fixture.publish(&prepared, fixture.execute(&prepared));
     assert!(response.error.is_none(), "{:?}", response.error);
     drop(prepared);
@@ -639,7 +663,7 @@ fn session_shutdown_clears_cache_and_closes_profile_state() {
 #[test]
 fn stale_error_is_typed_before_publication() {
     let fixture = SignatureCacheFixture::new("lsp-signature-cache-stale-error");
-    let prepared = fixture.prepare(12, position_after(SOURCE, "infer.add_f32("));
+    let prepared = fixture.prepare(12, position_after(SOURCE, "sum("));
     fixture
         .runtime
         .as_ref()

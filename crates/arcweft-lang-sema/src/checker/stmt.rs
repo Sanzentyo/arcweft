@@ -5,7 +5,7 @@ use super::{
     BorrowStateDelta, EntityKind, Expr, LoopContext, Pattern, Stmt, SuspensionBoundary,
     TriggerPattern, TypeCheckError, TypeChecker, TypeJudgmentRule, TypeJudgmentSubject, TypeKind,
     YieldContext, default_presentation_slot_family, ident_pattern_name, is_local_ident,
-    pattern_bindings_with_fallback, stmts_diverge, type_ref_kind,
+    pattern_bindings_with_fallback, stmts_diverge,
 };
 use arcweft_lang_syntax::{
     ast::{
@@ -13,7 +13,7 @@ use arcweft_lang_syntax::{
         flow::{AuthoredExpr, StmtMatchArm},
     },
     reference::BorrowKind,
-    types::TypeRef,
+    types::AuthoredTypeRef,
 };
 
 impl TypeChecker<'_> {
@@ -64,13 +64,7 @@ impl TypeChecker<'_> {
                 expr,
                 else_body,
             } => {
-                self.check_let_else_stmt(
-                    pattern,
-                    ty.as_ref()
-                        .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
-                    expr,
-                    else_body,
-                );
+                self.check_let_else_stmt(pattern, ty.as_ref(), expr, else_body);
             }
             Stmt::LetChoice { .. }
             | Stmt::LetScope { .. }
@@ -159,8 +153,7 @@ impl TypeChecker<'_> {
         };
         self.check_let_stmt(
             pattern,
-            ty.as_ref()
-                .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
+            ty.as_ref(),
             expr,
             expr_source.as_deref(),
             *expr_range,
@@ -457,15 +450,16 @@ impl TypeChecker<'_> {
     fn check_let_stmt(
         &mut self,
         pattern: &Pattern,
-        annotation: Option<&TypeRef>,
+        annotation: Option<&AuthoredTypeRef>,
         expr: &Expr,
         expr_source: Option<&str>,
         expr_range: Option<TextRange>,
     ) {
+        self.resolve_pattern_type_annotations(pattern);
         self.last_checked_closure_effect_callable = None;
         self.last_checked_curried_signature_call = None;
         self.register_expr_source_ranges(expr, expr_source, expr_range);
-        let annotated_ty = annotation.map(type_ref_kind);
+        let annotated_ty = annotation.map(|authored| self.resolve_active_authored_type(authored));
         let ty = self
             .with_inferred_signature_partial_calls(true, |this| match expr_range {
                 Some(range) => {
@@ -474,17 +468,14 @@ impl TypeChecker<'_> {
                 None => this.check_expr_with_expected(expr, annotated_ty.as_ref()),
             })
             .or_else(|| annotated_ty.clone());
-        if let (Some(annotation), Some(actual)) = (annotation, ty.as_ref()) {
-            let expected = annotated_ty
-                .clone()
-                .unwrap_or_else(|| type_ref_kind(annotation));
-            if !self.types_compatible(&expected, actual) {
-                self.errors.push(TypeCheckError::new(format!(
-                    "let annotation expects {}, but expression has {}",
-                    type_kind_label(&expected),
-                    type_kind_label(actual)
-                )));
-            }
+        if let (Some(expected), Some(actual)) = (annotated_ty.as_ref(), ty.as_ref())
+            && !self.types_compatible(expected, actual)
+        {
+            self.errors.push(TypeCheckError::new(format!(
+                "let annotation expects {}, but expression has {}",
+                type_kind_label(expected),
+                type_kind_label(actual)
+            )));
         }
         let binding_ty = annotated_ty
             .as_ref()
@@ -582,13 +573,15 @@ impl TypeChecker<'_> {
     fn check_let_else_stmt(
         &mut self,
         pattern: &Pattern,
-        annotation: Option<&TypeRef>,
+        annotation: Option<&AuthoredTypeRef>,
         expr: &AuthoredExpr,
         else_body: &[Stmt],
     ) {
+        self.resolve_pattern_type_annotations(pattern);
+        let annotated_ty = annotation.map(|authored| self.resolve_active_authored_type(authored));
         let expr_type = self
             .check_authored_expr(expr)
-            .or_else(|| annotation.map(type_ref_kind));
+            .or_else(|| annotated_ty.clone());
         for stmt in else_body {
             self.check_stmt(stmt);
         }
@@ -600,7 +593,6 @@ impl TypeChecker<'_> {
         for (name, ty) in let_else_bindings(pattern, expr_type.as_ref()) {
             self.bind_local(name, ty);
         }
-        let annotated_ty = annotation.map(type_ref_kind);
         if let Some(borrow_ty) = annotated_ty.as_ref().or(expr_type.as_ref()) {
             self.register_borrow_bindings(pattern, borrow_ty);
         }

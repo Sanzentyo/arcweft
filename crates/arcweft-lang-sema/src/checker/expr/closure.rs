@@ -1,15 +1,15 @@
 use super::support::spread_item_type;
 use super::{CallArg, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
-use crate::checker::helpers::{pattern_bindings_with_fallback, type_kind_label, type_ref_kind};
+use crate::checker::helpers::{pattern_bindings_with_fallback, type_kind_label};
 use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_lang_syntax::expr::ClosureParam;
-use arcweft_lang_syntax::types::TypeRef;
+use arcweft_lang_syntax::types::AuthoredTypeRef;
 
 impl TypeChecker<'_> {
     pub(super) fn check_closure_expr(
         &mut self,
         params: &[ClosureParam],
-        declared_return_type: Option<&TypeRef>,
+        declared_return_type: Option<&AuthoredTypeRef>,
         body: &Expr,
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
@@ -28,7 +28,8 @@ impl TypeChecker<'_> {
         let (closure_effect_callable, inferred_effects, previous_effect_callable) =
             self.enter_closure_effect_callable(expression_id, expected_effect_bound);
         let local_snapshot = self.insert_scoped_locals(bindings);
-        let declared_return_type = declared_return_type.map(type_ref_kind);
+        let declared_return_type =
+            declared_return_type.map(|authored| self.resolve_active_authored_type(authored));
         let inferred_return_type = declared_return_type.is_none()
             && expected_function.is_none_or(|expected| is_unknown_type(expected.return_type));
         if let (Some(expected_return), Some(declared_return_type)) = (
@@ -102,10 +103,11 @@ impl TypeChecker<'_> {
         let mut bindings = Vec::new();
         let mut function_params = Vec::new();
         for (index, param) in params.iter().enumerate() {
+            self.resolve_pattern_type_annotations(param.pattern());
             let expected_param = expected.and_then(|expected| expected.params.get(index));
             let ty = param
                 .ty()
-                .map(|ty| type_ref_kind(ty.value()))
+                .map(|ty| self.resolve_active_authored_type(ty))
                 .or_else(|| expected_param.cloned())
                 .unwrap_or(TypeKind::I64);
             if let Some(expected_param) = expected_param

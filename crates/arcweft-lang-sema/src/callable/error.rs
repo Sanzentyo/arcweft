@@ -2,10 +2,15 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId, ProjectSymbolTargetId};
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationId, CallablePackageId, ProjectSymbolTargetId,
+    nominal::ProjectNominalSourceError,
+};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use thiserror::Error;
+
+use crate::nominal::{NominalResolutionIndexError, TypeResolutionInputError};
 
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
@@ -485,35 +490,35 @@ pub enum CallableDiagnosticCode {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CallableCatalogBuildError {
     #[error("duplicate typed callable ID {id:?}")]
-    DuplicateTypedId { id: CallableCandidateId },
+    DuplicateTypedId { id: Box<CallableCandidateId> },
     #[error("same-rank provider collision for {key:?}")]
     SameRankCollision {
-        key: CallableLookupKey,
+        key: Box<CallableLookupKey>,
         rank: CallableAuthorityRank,
-        first: CallableProviderId,
-        second: CallableProviderId,
+        first: Box<CallableProviderId>,
+        second: Box<CallableProviderId>,
     },
     #[error("duplicate provider overload for {key:?}")]
     DuplicateProviderOverload {
-        key: CallableLookupKey,
-        provider: CallableProviderId,
+        key: Box<CallableLookupKey>,
+        provider: Box<CallableProviderId>,
         overload: CallableOverloadIndex,
     },
     #[error("non-contiguous provider overload for {key:?}")]
     NonContiguousOverloads {
-        key: CallableLookupKey,
-        provider: CallableProviderId,
+        key: Box<CallableLookupKey>,
+        provider: Box<CallableProviderId>,
         expected: CallableOverloadIndex,
         actual: CallableOverloadIndex,
     },
     #[error("project binding collision at {path:?}")]
     ProjectBindingCollision {
-        path: ProjectCallablePath,
-        first: ProjectNameBinding,
-        second: ProjectNameBinding,
+        path: Box<ProjectCallablePath>,
+        first: Box<ProjectNameBinding>,
+        second: Box<ProjectNameBinding>,
     },
     #[error("project binding target {target:?} has no registered semantic type")]
-    MissingProjectBindingType { target: ProjectSymbolTargetId },
+    MissingProjectBindingType { target: Box<ProjectSymbolTargetId> },
     #[error(
         "callable symbol world package {actual:?} does not match HIR project package {expected:?}"
     )]
@@ -525,6 +530,25 @@ pub enum CallableCatalogBuildError {
     MissingProjectModuleSource { module: CanonicalModulePath },
     #[error("project callable identity mismatch for {declaration:?}")]
     ProjectIdentityMismatch { declaration: CallableDeclarationId },
+    #[error("project callable signature has invalid source evidence at {span:?}")]
+    InvalidProjectSignatureSource { span: SourceSpan },
+    #[error("project callable signature source binding failed at {span:?}: {reason:?}")]
+    ProjectSignatureSourceBinding {
+        span: SourceSpan,
+        reason: Box<ProjectNominalSourceError>,
+    },
+    #[error("project callable signature nominal input failed at {span:?}: {reason:?}")]
+    ProjectSignatureResolutionInput {
+        span: SourceSpan,
+        reason: Box<TypeResolutionInputError>,
+    },
+    #[error("project callable signature nominal fact was rejected at {span:?}: {reason:?}")]
+    ProjectSignatureResolutionIndex {
+        span: SourceSpan,
+        reason: Box<NominalResolutionIndexError>,
+    },
+    #[error("project callable signature type lacks accepted-world evidence at {span:?}")]
+    DetachedProjectSignatureType { span: SourceSpan },
     #[error(
         "extern Rust alias {path:?} for {package}::{export:?} matches {candidates} callable records"
     )]
@@ -559,6 +583,11 @@ impl CallableCatalogBuildError {
             | Self::ProjectWorldPackageMismatch { .. }
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
+            | Self::InvalidProjectSignatureSource { .. }
+            | Self::ProjectSignatureSourceBinding { .. }
+            | Self::ProjectSignatureResolutionInput { .. }
+            | Self::ProjectSignatureResolutionIndex { .. }
+            | Self::DetachedProjectSignatureType { .. }
             | Self::AmbiguousRustExternBinding { .. }
             | Self::InvalidRecord(_)
             | Self::InvalidPublication(_)

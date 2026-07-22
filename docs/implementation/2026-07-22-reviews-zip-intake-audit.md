@@ -25,7 +25,12 @@ treated as implementation-ready merely because its filename said
 ## Dependency order
 
 1. Finish Lang-01.1.1.2, which is already changing the shared type and symbol
-   substrate.
+   substrate, except for the final `Ref<Entity>` projection branch. That branch
+   waits for [Lang-01.1.1.2.1](../reviews/requests/2026-07-22-lang-01.1.1.2.1-entity-family-applied-type-projection-correction.md)
+   rather than restoring the deleted context-free helper. Adapter/Rust callable
+   nominal publication independently waits for
+   [Lang-01.1.1.2.2](../reviews/requests/2026-07-22-lang-01.1.1.2.2-adapter-callable-nominal-publication-projection-correction.md)
+   rather than equating `Named` and accepted nominal identities.
 2. Apply the returned Lang-01.3.1.2.2 correction before Stream runtime/AWBC/
    host/save work.
 3. Apply Lang-01.5.1.2.1 before closed content-root admission and remaining
@@ -33,9 +38,18 @@ treated as implementation-ready merely because its filename said
 4. Apply a repository-validated Lang-01.4.2.1 before adding the public extension
    manifest decoder or canonical encoder.
 
-The three follow-up requests are independent design tasks and may be sent in
-parallel. Their production implementations remain ordered by the shared
-substrate above.
+The five follow-up requests are independent design tasks and may be sent in
+parallel. Send each request to a separate fresh design task against the latest
+`main`, with production-code changes forbidden and repository-aware validation
+required. Their production implementations remain ordered as follows:
+
+1. Lang-01.1.1.2.1, to close the remaining entity-family type projection and
+   let the last legacy type helper disappear;
+2. Lang-01.1.1.2.2, to publish adapter/Rust callable nominals with the same
+   accepted owner-qualified identity as authored `extern` signatures;
+3. Lang-01.3.1.2.2, before Stream runtime/wire integration;
+4. Lang-01.5.1.2.1, before closed content-root admission; and
+5. Lang-01.4.2.1, before the extension-manifest decoder/encoder.
 
 ## Ongoing intake rule
 

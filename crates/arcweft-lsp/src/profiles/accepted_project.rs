@@ -16,7 +16,7 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_sema::{
-    check::analyze_registered_project_types,
+    check::{TypeCheckReport, analyze_registered_project_types},
     entry::{CheckedEntryId, check_project_entries},
     project_index::{ProjectSemanticIndex, project_semantic_index_from_checked_project},
     registration::{CharacterRegistrationLimits, RegisteredSemanticWorld},
@@ -179,6 +179,7 @@ struct AcceptedSourceRegistryBuilder {
 #[derive(Debug)]
 pub(crate) struct AcceptedProjectSnapshot {
     hir: Arc<HirProject>,
+    typecheck: Arc<TypeCheckReport>,
     semantic_index: Arc<ProjectSemanticIndex>,
     callable_references: Arc<[AcceptedCallableReference]>,
     entry_references: Arc<[AcceptedEntryReference]>,
@@ -795,6 +796,8 @@ impl AcceptedProjectSnapshot {
         let semantic_index = Arc::new(
             project_semantic_index_from_checked_project(
                 hir.as_ref(),
+                symbols,
+                &typecheck,
                 arcweft_lang_sema::project_index::ProgramHash::new(format!(
                     "lsp:source-set-v1:{source_set_revision}"
                 )),
@@ -881,6 +884,7 @@ impl AcceptedProjectSnapshot {
         entry_references.dedup();
         Ok(Self {
             hir,
+            typecheck: Arc::new(typecheck),
             semantic_index,
             callable_references: callable_references.into(),
             entry_references: entry_references.into(),
@@ -892,6 +896,10 @@ impl AcceptedProjectSnapshot {
 
     pub(crate) const fn hir_project(&self) -> &Arc<HirProject> {
         &self.hir
+    }
+
+    pub(crate) const fn typecheck(&self) -> &Arc<TypeCheckReport> {
+        &self.typecheck
     }
 
     pub(crate) const fn semantic_index(&self) -> &Arc<ProjectSemanticIndex> {

@@ -165,7 +165,7 @@ pub enum ProjectTypeLookupError {
     WrongKind {
         reference: TypePath,
         source: SourceSpan,
-        actual: ProjectTypeCandidate,
+        actual: Box<ProjectTypeCandidate>,
     },
     InvalidPath {
         source: SourceSpan,
@@ -180,6 +180,7 @@ pub struct VisibleProjectTypeBinding<'a> {
     target: ProjectTypeTarget<'a>,
     visibility: Option<Visibility>,
     binding_sites: &'a [SourceSpan],
+    reference_sites: &'a [SourceSpan],
 }
 
 /// One scope spelling whose binding set contains the expected target and at
@@ -238,6 +239,7 @@ pub(super) struct ScopeBinding {
     pub(super) visibility: Option<Visibility>,
     pub(super) owner: CanonicalModulePath,
     pub(super) sites: Vec<SourceSpan>,
+    pub(super) reference_sites: Vec<SourceSpan>,
 }
 
 #[derive(Clone, Debug)]
@@ -291,6 +293,11 @@ impl<'a> VisibleProjectTypeBinding<'a> {
 
     pub const fn binding_sites(&self) -> &[SourceSpan] {
         self.binding_sites
+    }
+
+    /// Exact imported-name tokens that refer to this target.
+    pub const fn reference_sites(&self) -> &[SourceSpan] {
+        self.reference_sites
     }
 }
 
@@ -581,10 +588,6 @@ impl ProjectSymbolTable {
         }
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "type lookup failures retain typed candidates and exact source evidence"
-    )]
     pub fn resolve_type_target(
         &self,
         module: &CanonicalModulePath,
@@ -666,7 +669,7 @@ impl ProjectSymbolTable {
                 Err(ProjectTypeLookupError::WrongKind {
                     reference: path.clone(),
                     source,
-                    actual,
+                    actual: Box::new(actual),
                 })
             }
         }
@@ -699,6 +702,7 @@ impl ProjectSymbolTable {
                     target,
                     visibility: binding.visibility,
                     binding_sites: &binding.sites,
+                    reference_sites: &binding.reference_sites,
                 })
             })
     }
@@ -914,6 +918,7 @@ impl ScopeBinding {
             visibility,
             owner,
             sites,
+            reference_sites: Vec::new(),
         }
     }
 
@@ -923,9 +928,19 @@ impl ScopeBinding {
         owner: &CanonicalModulePath,
         visibility: Option<Visibility>,
         site: SourceSpan,
+        reference_site: Option<SourceSpan>,
     ) -> Self {
         let sites = self.sites.iter().cloned().chain([site]);
-        Self::new(path, self.target.clone(), visibility, owner.clone(), sites)
+        let mut binding = Self::new(path, self.target.clone(), visibility, owner.clone(), sites);
+        binding.reference_sites = self
+            .reference_sites
+            .iter()
+            .cloned()
+            .chain(reference_site)
+            .collect();
+        sort_spans(&mut binding.reference_sites);
+        binding.reference_sites.dedup();
+        binding
     }
 }
 
@@ -1053,6 +1068,9 @@ fn coalesce_bindings(mut bindings: Vec<ScopeBinding>) -> Vec<ScopeBinding> {
             existing.sites.extend(binding.sites);
             sort_spans(&mut existing.sites);
             existing.sites.dedup();
+            existing.reference_sites.extend(binding.reference_sites);
+            sort_spans(&mut existing.reference_sites);
+            existing.reference_sites.dedup();
         } else {
             coalesced.push(binding);
         }

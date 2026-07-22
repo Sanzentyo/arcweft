@@ -10,6 +10,7 @@ mod dialogue_view_metadata;
 pub(crate) mod entry_roles;
 pub mod hover;
 pub mod inlay;
+mod nominal_types;
 pub mod references;
 pub mod rename;
 pub mod semantic_tokens;

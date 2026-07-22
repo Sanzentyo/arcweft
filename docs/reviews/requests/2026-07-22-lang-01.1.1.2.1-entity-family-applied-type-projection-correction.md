@@ -1,0 +1,113 @@
+# Lang-01.1.1.2.1 — Entity-family applied type projection correction
+
+## Sequence position
+
+This is the first contract-correction request split from Lang-01.1.1.2
+project nominal type resolution. It follows the accepted catalog and recursive
+resolver substrate from Lang-01.1.1.2 and must be decided before deleting the
+last context-free `TypeRef -> TypeKind` helper from every consumer.
+
+## Why this split is required
+
+The repository has a legitimate authored type family `Ref<Entity>` whose
+semantic result is `TypeKind::Ref(EntityType)`. Its argument is an
+`EntityKind`, not an ordinary `TypeKind`.
+
+The Lang-01.1.1.2 final contract closes `BuiltinTypeConstructor` without
+`Ref` and closes accepted-record semantics to:
+
+```rust
+enum AcceptedNominalSemantics {
+    Exact(TypeKind),
+    Opaque,
+    Character(CharacterNominalType),
+}
+```
+
+None of those accepted-record cases can express a dependent projection from
+one contextual entity-family argument to `TypeKind::Ref(EntityType)`:
+
+- `Exact` and `Character` require arity zero;
+- `Opaque` consumes ordinary `TypeKind` arguments and returns
+  `AcceptedNominalType`;
+- an open rule returns `OpenNominalType`;
+- adding `Ref` to the closed builtin table would contradict the returned
+  Lang-01.1.1.2 contract unless that contract is explicitly corrected.
+
+The recursive resolver now has typed source-backed
+`TypeNameResolution::EntityFamily(EntityKind)` evidence for the already
+specified `Speaker<T>` and `SpeakerPreset<T>` entity-family constructors. A
+final contract must decide whether and how that carrier is reused for `Ref`.
+
+## Required decisions
+
+1. Decide whether `Ref<Entity>` remains canonical authored syntax. If it is
+   removed, specify its complete replacement and all affected surface/runtime
+   contracts; do not leave this decision to the implementer.
+2. If it remains, select exactly one typed owner model:
+   - a corrected closed contextual-constructor table;
+   - a new explicitly typed accepted-record semantic projection;
+   - or another fully specified model that preserves `EntityKind` without
+     converting it to a display string or pretending it is an ordinary type.
+3. Specify the exact semantic result, arity/kind validation,
+   `TypeNameResolution` fact, diagnostic code/subject, poison behavior, and
+   source node evidence for valid and invalid arguments.
+4. Specify registration ownership and collision rules. A project nominal,
+   external export, or open rule must not shadow a language/domain-owned
+   contextual constructor accidentally.
+5. Specify detached-world behavior and whether the entity-family inventory is
+   available there.
+6. Specify how the checked result is consumed by callable schemas, entry
+   contracts, project index, hover/definition/completion/rename, bytecode, and
+   save/replay schema surfaces.
+7. State whether `Speaker<T>` and `SpeakerPreset<T>` use the identical argument
+   projection rule or merely share the entity-family node carrier.
+
+## Implementation order to prescribe
+
+1. Correct the owner/model enums and immutable catalog or contextual-constructor
+   records.
+2. Extend the single recursive `resolve_type_ref` operation; do not add a
+   second resolver.
+3. Migrate normal checker/callable/entry/project-index/LSP consumers to the
+   checked result.
+4. Delete the last helper branch that recognizes `Ref` by spelling.
+5. Add direct behavior tests and run the normal and Tier 2 validation slices
+   affected by reference identity/tooling.
+
+## Tests the returned contract must specify
+
+- valid `Ref<Character>` and at least one non-character entity family;
+- unknown, inaccessible, ambiguous, project-nominal, ordinary builtin, nested
+  generic, and wrong-arity arguments;
+- bare entity-family spelling outside an entity-family argument context;
+- source ranges for constructor and argument nodes;
+- deterministic diagnostic/poison/work accounting;
+- accepted and detached worlds;
+- collision attempts from project, external, exact accepted, and open names;
+- callable schema and entry contract use;
+- LSP hover, definition, completion, and rename ownership;
+- bytecode/save-replay round trip if the type crosses those boundaries.
+
+Tests must exercise typed public or crate-owned APIs. Do not prescribe source
+text gates or permanent removed-spelling diagnostics.
+
+## Constraints
+
+- Keep `syntax -> HIR -> sema -> runtime-plan/verify -> tooling` ownership.
+- Keep one source-backed recursive nominal resolver and one accepted result
+  index.
+- Do not restore `From<&TypeRef> for TypeKind`, spelling-based helpers,
+  uppercase heuristics, `Named("Ref<...>")`, compatibility aliases, dual
+  readers, or fallback success.
+- Do not redesign already implemented and verified Lang-01.1.1.2 source maps,
+  project declaration identities, accepted catalog, limits, diagnostics, or
+  poison substrate unless repository evidence demonstrates a concrete flaw.
+
+## Expected output
+
+Return a repository-aware, implementation-ready final-contract ZIP containing
+the corrected model, exact Rust/API shapes, ownership table, diagnostics and
+poison table, implementation order, exhaustive test matrix, traceability,
+non-goals, and verification evidence. Do not modify production code and do not
+leave the choice of owner model to the implementation agent.

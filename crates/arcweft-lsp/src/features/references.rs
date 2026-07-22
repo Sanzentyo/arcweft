@@ -22,6 +22,9 @@ pub fn references(
     if let Some(locations) = crate::features::entry_roles::references(profile, document, offset) {
         return locations;
     }
+    if let Some(locations) = crate::features::nominal_types::references(profile, document, offset) {
+        return locations;
+    }
     if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
         let locations = metadata
             .references(offset)

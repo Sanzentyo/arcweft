@@ -241,7 +241,7 @@ fn presentation_token_scalar_policies_reject_resolved_non_scalar_locals() {
     let tree = parse_ok(
         r"
 flow main {
-    let enabled: Bool = true
+    let enabled: bool = true
     image(asset = @asset:.bg.pulse, opacity = enabled)
 }
 ",
@@ -263,7 +263,7 @@ fn presentation_token_scalar_policies_reject_other_resolved_non_scalar_paths() {
     for (label, declarations, value) in [
         (
             "function value",
-            "fn resolved_flag() -> Bool { true }\n",
+            "fn resolved_flag() -> bool { true }\n",
             "resolved_flag",
         ),
         ("builtin state root", "", "state"),

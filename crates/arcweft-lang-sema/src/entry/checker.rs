@@ -9,7 +9,7 @@ use arcweft_lang_hir::{
     project::HirProject,
     symbol::{
         CallableDeclarationId, ProjectSymbolResolutionError, ProjectSymbolTable,
-        ProjectSymbolTargetId,
+        ProjectSymbolTargetId, ProjectTypeCandidate, nominal::ProjectNominalDeclarationKind,
     },
 };
 use arcweft_lang_syntax::{
@@ -21,13 +21,18 @@ use arcweft_lang_syntax::{
         symbol_path::{ProjectSymbolPath, SymbolPath},
     },
     expr::DottedPath,
-    types::TypeRef,
+    types::{AuthoredTypeRef, TypePath, TypeRef, TypeRefNodePath},
 };
 use arcweft_source::SourceSpan;
 
 use crate::{
     callable::{CallTargetFact, CallableFamily, CallableRecord, RegisteredCallableCatalog},
     check::TypeCheckReport,
+    nominal::{
+        ResolvedTypeNode, TypeArityTarget, TypeNameResolution, TypeResolutionFailure,
+        TypeResolutionReport,
+    },
+    types::TypeKind,
 };
 
 use super::{
@@ -42,7 +47,7 @@ mod nominal;
 mod roles;
 
 use contract::{EntryContractBuilder, ReducerContractNominals};
-use nominal::{NominalResolutionError, NominalSchemaResolver};
+use nominal::NominalSchemaExpander;
 use roles::{Role, unique_item};
 
 /// Source-backed failure produced while constructing checked entry bindings.
@@ -130,14 +135,13 @@ struct EntryCheckContext<'a> {
     symbols: &'a ProjectSymbolTable,
     callables: &'a RegisteredCallableCatalog,
     typecheck: &'a TypeCheckReport,
-    nominals: NominalSchemaResolver<'a>,
+    nominals: NominalSchemaExpander<'a>,
     functions: BTreeMap<CallableDeclarationId, (&'a HirModule, &'a HirFunction)>,
     flows: BTreeMap<String, Vec<(&'a HirModule, &'a HirFlow)>>,
 }
 
 struct ResolvedCallable<'a> {
     declaration: &'a CallableDeclarationId,
-    module_path: &'a CanonicalModulePath,
     module: &'a HirModule,
     function: &'a HirFunction,
     record: &'a CallableRecord,
@@ -151,7 +155,7 @@ impl<'a> EntryCheckContext<'a> {
         callables: &'a RegisteredCallableCatalog,
         typecheck: &'a TypeCheckReport,
     ) -> Self {
-        let nominals = NominalSchemaResolver::new(project);
+        let nominals = NominalSchemaExpander::new(symbols, &typecheck.nominal_resolutions);
         let mut functions = BTreeMap::new();
         let mut flows = BTreeMap::<String, Vec<_>>::new();
         for (_, module) in project.modules() {
@@ -457,14 +461,7 @@ impl<'a> EntryCheckContext<'a> {
             else {
                 unreachable!("role filter returns the matching typed entry member")
             };
-            self.resolve_nominal(
-                module_path,
-                module,
-                ty.value(),
-                *value_range,
-                "state",
-                &mut diagnostics,
-            )
+            self.resolve_nominal(module, ty, *value_range, "state", &mut diagnostics)
         });
         let initializer =
             unique_item(module, entry, Role::Initializer, &mut diagnostics).and_then(|item| {
@@ -490,14 +487,7 @@ impl<'a> EntryCheckContext<'a> {
             else {
                 unreachable!("role filter returns the matching typed entry member")
             };
-            self.resolve_nominal(
-                module_path,
-                module,
-                ty.value(),
-                *value_range,
-                "event",
-                &mut diagnostics,
-            )
+            self.resolve_nominal(module, ty, *value_range, "event", &mut diagnostics)
         });
         let reducer =
             unique_item(module, entry, Role::Reducer, &mut diagnostics).and_then(|item| {
@@ -521,9 +511,8 @@ impl<'a> EntryCheckContext<'a> {
         else {
             return Err(diagnostics);
         };
-        let contracts = EntryContractBuilder::new(&self.nominals, self.typecheck);
+        let contracts = EntryContractBuilder::new(self.typecheck, self.project.package());
         let initializer = match contracts.initializer(
-            initializer.module_path,
             initializer.module,
             initializer.function,
             initializer.record,
@@ -545,7 +534,6 @@ impl<'a> EntryCheckContext<'a> {
             }
         };
         let reducer = match contracts.reducer(
-            reducer.module_path,
             reducer.module,
             reducer.function,
             reducer.record,
@@ -569,8 +557,7 @@ impl<'a> EntryCheckContext<'a> {
                 return Err(diagnostics);
             }
         };
-        let initial_flow =
-            self.resolve_initial_flow(module_path, module, entry, state.key(), &mut diagnostics);
+        let initial_flow = self.resolve_initial_flow(module, entry, state.key(), &mut diagnostics);
         let Some(initial_flow) = initial_flow else {
             return Err(diagnostics);
         };
@@ -630,9 +617,8 @@ impl<'a> EntryCheckContext<'a> {
         let Some(controller) = controller else {
             return Err(diagnostics);
         };
-        let contracts = EntryContractBuilder::new(&self.nominals, self.typecheck);
+        let contracts = EntryContractBuilder::new(self.typecheck, self.project.package());
         let (contract, allowed_effects, inferred_effects) = match contracts.agent_controller(
-            controller.module_path,
             controller.module,
             controller.function,
             controller.record,
@@ -703,15 +689,15 @@ impl<'a> EntryCheckContext<'a> {
 
     fn resolve_nominal(
         &self,
-        module_path: &CanonicalModulePath,
         module: &HirModule,
-        ty: &TypeRef,
+        ty: &AuthoredTypeRef,
         range: TextRange,
         role: &str,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) -> Option<CheckedNominalRole> {
         let source = source_span(module, range);
-        let TypeRef::Path(path) = ty else {
+        let resolution_root = source_span(module, *ty.root_source().whole());
+        let TypeRef::Path(path) = ty.value() else {
             diagnostics.push(CheckedEntryDiagnostic::new(
                 "sema.entry.role_not_direct_nominal",
                 format!("{role} role must name one direct project struct or enum"),
@@ -719,77 +705,195 @@ impl<'a> EntryCheckContext<'a> {
             ));
             return None;
         };
-        match self
-            .nominals
-            .resolve_nominal(module_path, module, &path.canonical_string())
-        {
-            Ok(record) if record.is_generic() => {
-                diagnostics.push(
-                    CheckedEntryDiagnostic::new(
-                        "sema.entry.generic_nominal_root",
-                        format!(
-                            "{role} role type `{path}` must be a non-generic project struct or enum"
-                        ),
-                        source,
-                    )
-                    .with_related([record.source.clone()]),
-                );
-                None
-            }
-            Ok(record) => match self.nominals.schema(record) {
-                Ok(schema) => Some(CheckedNominalRole {
-                    key: record.key.clone(),
-                    schema_digest: digest::nominal_schema(&schema),
-                    schema,
+        let Some(report) = self.typecheck.nominal_resolutions.report(&resolution_root) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.missing_nominal_resolution",
+                format!("{role} role type `{path}` has no accepted nominal-resolution fact"),
+                source,
+            ));
+            return None;
+        };
+        let root = self
+            .typecheck
+            .nominal_resolutions
+            .node(&resolution_root, &TypeRefNodePath::root());
+        if Self::reject_alias_nominal_root(root, report, path, role, &source, diagnostics) {
+            return None;
+        }
+
+        if self.reject_failed_nominal_root(root, path, role, &source, diagnostics) {
+            return None;
+        }
+
+        self.finish_resolved_nominal_role(report, path, role, source, diagnostics)
+    }
+
+    fn finish_resolved_nominal_role(
+        &self,
+        report: &TypeResolutionReport,
+        path: &TypePath,
+        role: &str,
+        source: SourceSpan,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> Option<CheckedNominalRole> {
+        let TypeKind::ProjectNominal(nominal) = report.outcome().product().recovered() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.role_not_direct_nominal",
+                format!(
+                    "{role} role type `{path}` does not resolve to a direct project struct or enum"
+                ),
+                source,
+            ));
+            return None;
+        };
+        let Some(record) = self.symbols.nominal(nominal.declaration()) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.missing_nominal_declaration",
+                format!(
+                    "{role} role type `{path}` resolved outside the accepted project symbol world"
+                ),
+                source,
+            ));
+            return None;
+        };
+        if !nominal.arguments().is_empty() || !record.type_parameters().is_empty() {
+            diagnostics.push(
+                CheckedEntryDiagnostic::new(
+                    "sema.entry.generic_nominal_root",
+                    format!(
+                        "{role} role type `{path}` must be a non-generic project struct or enum"
+                    ),
                     source,
-                }),
-                Err(error) => {
-                    diagnostics.push(
-                        CheckedEntryDiagnostic::new(
-                            "sema.entry.invalid_nominal_schema",
-                            format!(
-                                "{role} role type `{path}` has no canonical data shape: {error}"
-                            ),
-                            source,
-                        )
-                        .with_related([record.source.clone()]),
-                    );
-                    None
-                }
-            },
-            Err(NominalResolutionError::Unknown) => {
-                diagnostics.push(CheckedEntryDiagnostic::new(
-                    "sema.entry.unknown_nominal",
-                    format!("{role} role type `{path}` is not visible from this module"),
-                    source,
-                ));
-                None
-            }
-            Err(NominalResolutionError::Alias(candidates)) => {
+                )
+                .with_related([record.source().whole().clone()]),
+            );
+            return None;
+        }
+        match self.nominals.schema(record) {
+            Ok(schema) => Some(CheckedNominalRole {
+                key: BoundNominalTypeKey::new(
+                    self.project.package().clone(),
+                    record.id().module().clone(),
+                    record.id().name().as_str(),
+                    match record.id().kind() {
+                        ProjectNominalDeclarationKind::Struct => BoundNominalKind::Struct,
+                        ProjectNominalDeclarationKind::Enum => BoundNominalKind::Enum,
+                        ProjectNominalDeclarationKind::TypeAlias => {
+                            unreachable!("type-alias roots are rejected above")
+                        }
+                    },
+                ),
+                schema_digest: digest::nominal_schema(&schema),
+                schema,
+                source,
+            }),
+            Err(error) => {
                 diagnostics.push(
                     CheckedEntryDiagnostic::new(
-                        "sema.entry.alias_nominal_root",
-                        format!(
-                            "{role} role type `{path}` is a type alias; bind one direct project struct or enum"
-                        ),
+                        "sema.entry.invalid_nominal_schema",
+                        format!("{role} role type `{path}` has no canonical data shape: {error}"),
                         source,
                     )
-                    .with_related(candidates),
-                );
-                None
-            }
-            Err(NominalResolutionError::Ambiguous(candidates)) => {
-                diagnostics.push(
-                    CheckedEntryDiagnostic::new(
-                        "sema.entry.ambiguous_nominal",
-                        format!("{role} role type `{path}` is ambiguous"),
-                        source,
-                    )
-                    .with_related(candidates),
+                    .with_related([record.source().whole().clone()]),
                 );
                 None
             }
         }
+    }
+
+    fn reject_alias_nominal_root(
+        root: Option<&ResolvedTypeNode>,
+        report: &TypeResolutionReport,
+        path: &TypePath,
+        role: &str,
+        source: &SourceSpan,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> bool {
+        if !matches!(
+            root.map(ResolvedTypeNode::outcome),
+            Some(TypeNameResolution::Alias(_))
+        ) {
+            return false;
+        }
+        let related = report
+            .outcome()
+            .product()
+            .aliases()
+            .first()
+            .map(|alias| alias.declaration_source().clone());
+        let diagnostic = CheckedEntryDiagnostic::new(
+            "sema.entry.alias_nominal_root",
+            format!(
+                "{role} role type `{path}` is a type alias; bind one direct project struct or enum"
+            ),
+            source.clone(),
+        );
+        diagnostics.push(match related {
+            Some(related) => diagnostic.with_related([related]),
+            None => diagnostic,
+        });
+        true
+    }
+
+    fn reject_failed_nominal_root(
+        &self,
+        root: Option<&ResolvedTypeNode>,
+        path: &TypePath,
+        role: &str,
+        source: &SourceSpan,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> bool {
+        let Some(TypeNameResolution::Failed(failure)) = root.map(ResolvedTypeNode::outcome) else {
+            return false;
+        };
+        let (code, message, related) = match failure {
+            TypeResolutionFailure::Ambiguous { candidates, .. } => (
+                "sema.entry.ambiguous_nominal",
+                format!("{role} role type `{path}` is ambiguous in the accepted project"),
+                resolution_candidate_sources(candidates),
+            ),
+            TypeResolutionFailure::Inaccessible { candidates, .. } => (
+                "sema.entry.inaccessible_nominal",
+                format!("{role} role type `{path}` is not visible from this entry module"),
+                resolution_candidate_sources(candidates),
+            ),
+            TypeResolutionFailure::WrongArity {
+                target: TypeArityTarget::Project(declaration),
+                ..
+            } if self
+                .symbols
+                .nominal(declaration)
+                .is_some_and(|record| !record.type_parameters().is_empty()) =>
+            {
+                let related = self
+                    .symbols
+                    .nominal(declaration)
+                    .map(|record| vec![record.source().whole().clone()])
+                    .unwrap_or_default();
+                (
+                    "sema.entry.generic_nominal_root",
+                    format!(
+                        "{role} role type `{path}` must be a non-generic project struct or enum"
+                    ),
+                    related,
+                )
+            }
+            TypeResolutionFailure::Unknown { .. } => (
+                "sema.entry.unresolved_nominal",
+                format!("{role} role type `{path}` is not declared in the accepted project"),
+                Vec::new(),
+            ),
+            _ => (
+                "sema.entry.role_not_direct_nominal",
+                format!(
+                    "{role} role type `{path}` does not resolve to a direct project struct or enum"
+                ),
+                Vec::new(),
+            ),
+        };
+        diagnostics
+            .push(CheckedEntryDiagnostic::new(code, message, source.clone()).with_related(related));
+        true
     }
 
     fn callable_resolution_sources(&self, error: &ProjectSymbolResolutionError) -> Vec<SourceSpan> {
@@ -889,9 +993,6 @@ impl<'a> EntryCheckContext<'a> {
         };
         Some(ResolvedCallable {
             declaration,
-            module_path: function
-                .module_path()
-                .expect("registered project functions retain a canonical module path"),
             module: function_module,
             function,
             record,
@@ -901,7 +1002,6 @@ impl<'a> EntryCheckContext<'a> {
 
     fn resolve_initial_flow(
         &self,
-        module_path: &CanonicalModulePath,
         module: &HirModule,
         entry: &HirEntryDecl,
         state: &BoundNominalTypeKey,
@@ -930,13 +1030,8 @@ impl<'a> EntryCheckContext<'a> {
         };
         match self.flows.get(target.body()).map(Vec::as_slice) {
             Some([(flow_module, flow)]) => {
-                let contracts = EntryContractBuilder::new(&self.nominals, self.typecheck);
-                match contracts.flow(
-                    flow.module_path().unwrap_or(module_path),
-                    flow_module,
-                    flow,
-                    state,
-                ) {
+                let contracts = EntryContractBuilder::new(self.typecheck, self.project.package());
+                match contracts.flow(flow_module, flow, state) {
                     Ok(contract) => Some(CheckedInitialFlowRole {
                         contract_digest: digest::flow_contract(&id, &contract),
                         state_parameter_name: flow
@@ -1032,6 +1127,19 @@ fn resolve_selected_agent_controller(
         .resolve_callable(module, &path, source)
         .ok()
         .map(|symbol| symbol.declaration().clone())
+}
+
+fn resolution_candidate_sources(candidates: &[ProjectTypeCandidate]) -> Vec<SourceSpan> {
+    candidates
+        .iter()
+        .flat_map(|candidate| {
+            candidate
+                .declaration()
+                .into_iter()
+                .chain(candidate.binding_sites())
+        })
+        .cloned()
+        .collect()
 }
 
 fn source_span(module: &HirModule, range: TextRange) -> SourceSpan {

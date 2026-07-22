@@ -1,3 +1,7 @@
+struct ChoiceView {
+    label: String
+}
+
 fn label(choice: ChoiceView) -> String {
     choice.label
 }

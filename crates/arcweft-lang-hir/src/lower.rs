@@ -189,10 +189,12 @@ impl HirLoweringState {
 
     fn finish(self) -> Result<HirModule, Vec<HirLowerError>> {
         if self.errors.is_empty() {
+            let module_path = self
+                .module_path
+                .unwrap_or_else(CanonicalModulePath::crate_root);
+            let declaration_modules = vec![module_path.clone(); self.declarations.len()];
             Ok(HirModule {
-                module_path: self
-                    .module_path
-                    .unwrap_or_else(CanonicalModulePath::crate_root),
+                module_path,
                 attributes: self.attributes,
                 uses: self.uses,
                 source_len: self.source_len,
@@ -200,6 +202,7 @@ impl HirLoweringState {
                 flows: self.flows,
                 functions: self.functions,
                 declarations: self.declarations,
+                declaration_modules,
                 style_patches: self.style_patches,
                 view_parts: self.view_parts,
                 source_map: None,

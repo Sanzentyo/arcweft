@@ -599,7 +599,10 @@ impl TypeChecker<'_> {
                         .map(|candidate| candidate.id().clone()),
                     next_group,
                 );
-                scope.insert(callable_name, LexicalCallBinding::FunctionValue(seed));
+                scope.insert(
+                    callable_name,
+                    LexicalCallBinding::FunctionValue(Box::new(seed)),
+                );
             } else {
                 scope.insert(
                     callable_name,

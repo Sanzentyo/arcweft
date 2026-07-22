@@ -16,6 +16,7 @@ use crate::expr::{Expr, parse_expr};
 use crate::pattern::parse_pattern_at;
 use crate::reference::{BorrowKind, ReferenceType};
 
+mod expression_path;
 mod reference;
 mod source;
 
@@ -183,9 +184,54 @@ fn parse_type_ref_value(source: &str) -> Result<TypeRef, TypeParseError> {
     if trimmed.is_empty() {
         return Err(TypeParseError::new("expected type"));
     }
-    let mut parsed = parse_function_type(trimmed)?;
+    let mut parsed = match parse_single_argument_generic_chain(trimmed)? {
+        Some(parsed) => parsed,
+        None => parse_function_type(trimmed)?,
+    };
     parsed.rebase_reference_ranges(subslice_offset(source, trimmed));
     Ok(parsed)
+}
+
+/// Parses the common unary-constructor chain without one Rust stack frame per
+/// type layer. The production nominal resolver accepts a recursive type depth
+/// of 256, so syntax parsing must be able to construct at least that depth
+/// before the semantic limit can make the acceptance decision.
+fn parse_single_argument_generic_chain(source: &str) -> Result<Option<TypeRef>, TypeParseError> {
+    let mut fragment = source;
+    let mut fragment_base = 0usize;
+    let mut layers = Vec::new();
+
+    while let Some((base, arguments)) = split_generic_type(fragment) {
+        let parts = split_type_args(arguments);
+        if parts.len() != 1 {
+            break;
+        }
+        let argument = parts[0].trim();
+        if argument.is_empty() || split_top_level_punctuation_once(argument, '=').is_some() {
+            break;
+        }
+        layers.push(base);
+        fragment_base = fragment_base
+            .checked_add(subslice_offset(fragment, argument))
+            .ok_or_else(|| TypeParseError::new("type source offset overflow"))?;
+        fragment = argument;
+    }
+
+    if layers.is_empty() {
+        return Ok(None);
+    }
+
+    let mut parsed = parse_function_type(fragment)?;
+    parsed.rebase_reference_ranges(fragment_base);
+    for base in layers.into_iter().rev() {
+        parsed = TypeRef::Generic {
+            base: TypePath::parse(base).map_err(|error| {
+                TypeParseError::new_owned(format!("invalid type constructor `{base}`: {error}"))
+            })?,
+            args: vec![parsed],
+        };
+    }
+    Ok(Some(parsed))
 }
 
 const MAX_TYPE_GENERIC_ARGUMENTS: usize = 256;
@@ -586,7 +632,6 @@ fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
     if alternatives.len() <= 1 {
         return parse_type_atom(source);
     }
-    let mut labels = Vec::new();
     let mut parsed = Vec::new();
     for alternative in alternatives {
         let alternative = alternative.trim();
@@ -598,13 +643,6 @@ fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
         reject_variant_row_type(alternative)?;
         let mut ty = parse_type_atom(alternative)?;
         ty.rebase_reference_ranges(subslice_offset(source, alternative));
-        let label = type_ref_parse_label(&ty);
-        if labels.iter().any(|existing| existing == &label) {
-            return Err(TypeParseError::new(&format!(
-                "duplicate alternative `{label}` in anonymous sum"
-            )));
-        }
-        labels.push(label);
         parsed.push(ty);
     }
     Ok(TypeRef::Choice(parsed))

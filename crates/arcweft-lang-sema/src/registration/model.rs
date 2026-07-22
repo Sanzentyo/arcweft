@@ -26,7 +26,7 @@ use thiserror::Error;
 
 use crate::{
     callable::{EnvironmentCallablePublication, RegisteredCallableCatalog},
-    env::TypeCheckEnv,
+    env::{TypeCheckEnv, identity::EnvironmentBindingId, nominal::AcceptedNominalCatalog},
     types::{CharacterNominalType, TypeKind},
 };
 
@@ -38,17 +38,6 @@ use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     source_index::CharacterDefinitionIndex,
 };
-
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct EnvironmentBindingId(String);
-
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum EnvironmentBindingIdError {
-    #[error("environment binding identity must not be empty")]
-    Empty,
-    #[error("environment binding identity contains a control character at byte {byte}")]
-    Control { byte: usize },
-}
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RegisteredExternalOwner {
@@ -180,16 +169,24 @@ pub struct CharacterInventoryDescriptorV1 {
 
 #[derive(Clone, Debug)]
 pub struct RegisteredTypeCheckEnv {
-    pub(crate) base: Arc<TypeCheckEnv>,
+    pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, BTreeSet<String>>,
-    pub(crate) external_owners: ExternalOwnerRegistry,
-    pub(crate) world: ProjectSymbolWorldId,
-    pub(crate) symbol_revision: ProjectSymbolRevision,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
     pub(crate) character_digest: CharacterInventoryDigest,
     pub(crate) character_revision: CharacterInventoryRevision,
+}
+
+/// Accepted nominal-resolution world available before callable publication.
+///
+/// This carrier owns the exact environment facts and external-owner mapping
+/// needed by authored type resolution without depending on the callable
+/// catalog whose signatures are being built.
+#[derive(Clone, Debug)]
+pub struct AcceptedNominalWorld {
+    base: Arc<TypeCheckEnv>,
+    external_owners: ExternalOwnerRegistry,
 }
 
 #[derive(Clone, Debug)]
@@ -258,26 +255,6 @@ pub enum CharacterInventoryIntegrityError {
         expected: CharacterInventoryDigest,
         actual: CharacterInventoryDigest,
     },
-}
-
-impl EnvironmentBindingId {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, EnvironmentBindingIdError> {
-        let value = value.into();
-        if value.is_empty() {
-            return Err(EnvironmentBindingIdError::Empty);
-        }
-        if let Some((byte, _)) = value
-            .char_indices()
-            .find(|(_, character)| character.is_control())
-        {
-            return Err(EnvironmentBindingIdError::Control { byte });
-        }
-        Ok(Self(value))
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 impl RegisteredExternalOwner {
@@ -691,12 +668,17 @@ impl RegisteredTypeCheckEnv {
         &self.callables
     }
 
-    pub const fn world(&self) -> &ProjectSymbolWorldId {
-        &self.world
+    /// Exact nominal world accepted before and retained with callable publication.
+    pub fn nominal_world(&self) -> &AcceptedNominalWorld {
+        &self.nominal_world
     }
 
-    pub const fn symbol_revision(&self) -> &ProjectSymbolRevision {
-        &self.symbol_revision
+    pub fn world(&self) -> &ProjectSymbolWorldId {
+        self.nominal_world.world()
+    }
+
+    pub fn symbol_revision(&self) -> &ProjectSymbolRevision {
+        self.nominal_world.symbol_revision()
     }
 
     pub const fn character_digest(&self) -> CharacterInventoryDigest {
@@ -715,12 +697,17 @@ impl RegisteredTypeCheckEnv {
     }
 
     pub fn environment_binding(&self, id: &EnvironmentBindingId) -> Option<&TypeKind> {
-        self.base.environment_binding(id)
+        self.nominal_world.environment_binding(id)
     }
 
     /// Exact base type-check environment accepted with this registered world.
     pub fn typecheck_env(&self) -> &TypeCheckEnv {
-        &self.base
+        self.nominal_world.typecheck_env()
+    }
+
+    /// Immutable exact/open nominal catalog accepted with this semantic world.
+    pub fn nominal_catalog(&self) -> &AcceptedNominalCatalog {
+        self.nominal_world.nominal_catalog()
     }
 
     pub fn character_manifest(&self, id: &CharacterId) -> Option<&CharacterManifest> {
@@ -729,6 +716,59 @@ impl RegisteredTypeCheckEnv {
 
     pub fn characters(&self) -> impl ExactSizeIterator<Item = (&CharacterId, &CharacterManifest)> {
         self.characters.iter()
+    }
+
+    #[cfg(test)]
+    pub(super) fn external_owners_mut_for_test(
+        &mut self,
+    ) -> &mut BTreeMap<ExternalDeclarationId, RegisteredExternalOwner> {
+        &mut Arc::make_mut(&mut self.nominal_world)
+            .external_owners
+            .owners
+    }
+}
+
+impl AcceptedNominalWorld {
+    pub(crate) fn new(
+        base: Arc<TypeCheckEnv>,
+        world: ProjectSymbolWorldId,
+        symbol_revision: ProjectSymbolRevision,
+        owners: BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
+    ) -> Self {
+        Self {
+            base,
+            external_owners: ExternalOwnerRegistry {
+                world,
+                revision: symbol_revision,
+                owners,
+            },
+        }
+    }
+
+    pub const fn world(&self) -> &ProjectSymbolWorldId {
+        &self.external_owners.world
+    }
+
+    pub const fn symbol_revision(&self) -> &ProjectSymbolRevision {
+        &self.external_owners.revision
+    }
+
+    pub fn environment_binding(&self, id: &EnvironmentBindingId) -> Option<&TypeKind> {
+        self.base.environment_binding(id)
+    }
+
+    pub fn typecheck_env(&self) -> &TypeCheckEnv {
+        &self.base
+    }
+
+    pub fn nominal_catalog(&self) -> &AcceptedNominalCatalog {
+        self.base.nominal_catalog()
+    }
+
+    pub(crate) fn external_owners(
+        &self,
+    ) -> &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner> {
+        &self.external_owners.owners
     }
 }
 

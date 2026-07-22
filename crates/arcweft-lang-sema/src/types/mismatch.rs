@@ -51,7 +51,15 @@ pub enum TypeMismatchPathSegment {
     FunctionEffects,
     FunctionParameter(usize),
     FunctionReturn,
-    GenericName,
+    GenericIdentity,
+    ProjectNominalDeclaration,
+    ProjectNominalArgument(usize),
+    AcceptedNominalDeclaration,
+    AcceptedNominalArgument(usize),
+    OpenNominalRule,
+    OpenNominalPath,
+    OpenNominalArgument(usize),
+    TypePoison,
     ProjectionTrait,
     ProjectionAssociation,
     ProjectionSubject,
@@ -492,7 +500,7 @@ impl TypeKind {
                 else {
                     unreachable!("equal discriminants")
                 };
-                if expected_len == actual_len {
+                if expected_len.accepts(actual_len) {
                     expected
                         .first_mismatch(actual_item)
                         .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::ArrayItem))
@@ -785,15 +793,98 @@ impl TypeKind {
                         })
                 }
             }
-            Self::GenericParam(expected_name) => {
-                let Self::GenericParam(actual_name) = actual else {
+            Self::GenericParam(expected_id) => {
+                let Self::GenericParam(actual_id) = actual else {
                     unreachable!("equal discriminants")
                 };
-                (expected_name != actual_name).then(|| {
+                (expected_id != actual_id).then(|| {
                     TypeMismatch::at(
                         self,
                         actual,
-                        TypeMismatchPathSegment::GenericName,
+                        TypeMismatchPathSegment::GenericIdentity,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
+            }
+            Self::ProjectNominal(expected) => {
+                let Self::ProjectNominal(actual_nominal) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                if expected.declaration() == actual_nominal.declaration() {
+                    nominal_arguments_mismatch(
+                        self,
+                        actual,
+                        expected.arguments(),
+                        actual_nominal.arguments(),
+                        TypeMismatchPathSegment::ProjectNominalArgument,
+                    )
+                } else {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::ProjectNominalDeclaration,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                }
+            }
+            Self::AcceptedNominal(expected) => {
+                let Self::AcceptedNominal(actual_nominal) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                if expected.declaration() == actual_nominal.declaration() {
+                    nominal_arguments_mismatch(
+                        self,
+                        actual,
+                        expected.arguments(),
+                        actual_nominal.arguments(),
+                        TypeMismatchPathSegment::AcceptedNominalArgument,
+                    )
+                } else {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::AcceptedNominalDeclaration,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                }
+            }
+            Self::OpenNominal(expected) => {
+                let Self::OpenNominal(actual_nominal) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                if expected.rule() != actual_nominal.rule() {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::OpenNominalRule,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                } else if expected.path() != actual_nominal.path() {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::OpenNominalPath,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                } else {
+                    nominal_arguments_mismatch(
+                        self,
+                        actual,
+                        expected.arguments(),
+                        actual_nominal.arguments(),
+                        TypeMismatchPathSegment::OpenNominalArgument,
+                    )
+                }
+            }
+            Self::Error(expected_poison) => {
+                let Self::Error(actual_poison) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected_poison != actual_poison).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::TypePoison,
                         TypeMismatchReason::NonTypeParameter,
                     )
                 })
@@ -999,4 +1090,34 @@ impl TypeKind {
             }
         }
     }
+}
+
+fn nominal_arguments_mismatch(
+    expected_type: &TypeKind,
+    actual_type: &TypeKind,
+    expected: &[TypeKind],
+    actual: &[TypeKind],
+    path: fn(usize) -> TypeMismatchPathSegment,
+) -> Option<TypeMismatch> {
+    if expected.len() != actual.len() {
+        return Some(TypeMismatch::at(
+            expected_type,
+            actual_type,
+            path(expected.len().min(actual.len())),
+            TypeMismatchReason::Arity {
+                expected: expected.len(),
+                actual: actual.len(),
+            },
+        ));
+    }
+
+    expected
+        .iter()
+        .zip(actual)
+        .enumerate()
+        .find_map(|(index, (expected, actual))| {
+            expected
+                .first_mismatch(actual)
+                .map(|mismatch| mismatch.prepend(path(index)))
+        })
 }

@@ -13,13 +13,13 @@ use arcweft_lang_syntax::{
     },
     cst::is_identifier,
     expr::{CallArg, Expr, parse_expr},
-    types::{FnParamKind, TypeRef},
+    types::FnParamKind,
 };
 use arcweft_presentation::rich_text::inferred_tag_family;
 
 use crate::{diagnostics::TypeCheckError, types::TypeKind};
 
-use super::helpers::{type_kind_label, type_ref_kind};
+use super::helpers::type_kind_label;
 
 mod span;
 
@@ -47,7 +47,11 @@ struct FxParameter {
 }
 
 impl FxCatalog {
-    pub(super) fn from_module(module: &HirModule, errors: &mut Vec<TypeCheckError>) -> Self {
+    pub(super) fn from_module(
+        module: &HirModule,
+        resolved_signatures: &BTreeMap<String, (Vec<TypeKind>, TypeKind)>,
+        errors: &mut Vec<TypeCheckError>,
+    ) -> Self {
         let text_proxy_types = module
             .declarations()
             .iter()
@@ -78,7 +82,16 @@ impl FxCatalog {
             if !function.has_attribute("fx") {
                 continue;
             }
-            let definition = validate_fx_signature(function, errors);
+            let Some((parameter_types, return_type)) =
+                resolved_signatures.get(&function.qualified_name())
+            else {
+                errors.push(TypeCheckError::new(format!(
+                    "Fx function `{}` has no resolved semantic signature",
+                    function.name()
+                )));
+                continue;
+            };
+            let definition = validate_fx_signature(function, parameter_types, return_type, errors);
             if catalog
                 .definitions
                 .insert(function.name().to_owned(), definition)
@@ -334,7 +347,81 @@ impl FxCatalog {
     }
 }
 
-fn validate_fx_signature(function: &HirFunction, errors: &mut Vec<TypeCheckError>) -> FxDefinition {
+fn validate_fx_signature(
+    function: &HirFunction,
+    parameter_types: &[TypeKind],
+    return_type: &TypeKind,
+    errors: &mut Vec<TypeCheckError>,
+) -> FxDefinition {
+    validate_fx_declaration(function, return_type, errors);
+
+    let signature = function.signature();
+    let mut names = BTreeSet::new();
+    let mut params = Vec::new();
+    let authored_params = signature
+        .param_groups()
+        .iter()
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+        .collect::<Vec<_>>();
+    if authored_params.len() != parameter_types.len() {
+        errors.push(TypeCheckError::new(format!(
+            "Fx function `{}` resolved {} parameter type(s) for {} authored parameter(s)",
+            function.name(),
+            parameter_types.len(),
+            authored_params.len()
+        )));
+        return FxDefinition {
+            params,
+            dependencies: Vec::new(),
+            direct_nodes: 0,
+        };
+    }
+    for (param, resolved_type) in authored_params.into_iter().zip(parameter_types) {
+        let Pattern::Ident(name) = param.pattern() else {
+            errors.push(TypeCheckError::new(format!(
+                "Fx function `{}` parameters must be simple identifiers",
+                function.name()
+            )));
+            continue;
+        };
+        if param.kind() == FnParamKind::Rest {
+            errors.push(TypeCheckError::new(format!(
+                "Fx function `{}` cannot declare a rest parameter",
+                function.name()
+            )));
+        }
+        if !names.insert(name.to_owned()) {
+            errors.push(TypeCheckError::new(format!(
+                "Fx function `{}` repeats parameter `{name}`",
+                function.name()
+            )));
+        }
+        if let Some(default) = param.default()
+            && !closed_fx_value(default)
+        {
+            errors.push(TypeCheckError::new(format!(
+                "default for Fx parameter `{}.{name}` must be const-evaluable and cannot reference parameters or runtime state",
+                function.name()
+            )));
+        }
+        params.push(FxParameter {
+            name: name.to_owned(),
+            ty: resolved_type.clone(),
+            has_default: param.default().is_some(),
+        });
+    }
+    FxDefinition {
+        params,
+        dependencies: Vec::new(),
+        direct_nodes: 0,
+    }
+}
+
+fn validate_fx_declaration(
+    function: &HirFunction,
+    return_type: &TypeKind,
+    errors: &mut Vec<TypeCheckError>,
+) {
     for attribute in function
         .attributes()
         .iter()
@@ -372,64 +459,11 @@ fn validate_fx_signature(function: &HirFunction, errors: &mut Vec<TypeCheckError
             function.name()
         )));
     }
-    if !matches!(
-        signature
-            .return_type()
-            .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
-        Some(TypeRef::Path(path)) if crate::types::direct_type_name(path) == Some("Fx")
-    ) {
+    if return_type != &TypeKind::Named("Fx".to_owned()) {
         errors.push(TypeCheckError::new(format!(
             "Fx function `{}` must declare return type `Fx`",
             function.name()
         )));
-    }
-
-    let mut names = BTreeSet::new();
-    let mut params = Vec::new();
-    for param in signature
-        .param_groups()
-        .iter()
-        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-    {
-        let Pattern::Ident(name) = param.pattern() else {
-            errors.push(TypeCheckError::new(format!(
-                "Fx function `{}` parameters must be simple identifiers",
-                function.name()
-            )));
-            continue;
-        };
-        if param.kind() == FnParamKind::Rest {
-            errors.push(TypeCheckError::new(format!(
-                "Fx function `{}` cannot declare a rest parameter",
-                function.name()
-            )));
-        }
-        if !names.insert(name.to_owned()) {
-            errors.push(TypeCheckError::new(format!(
-                "Fx function `{}` repeats parameter `{name}`",
-                function.name()
-            )));
-        }
-        if let Some(default) = param.default()
-            && !closed_fx_value(default)
-        {
-            errors.push(TypeCheckError::new(format!(
-                "default for Fx parameter `{}.{name}` must be const-evaluable and cannot reference parameters or runtime state",
-                function.name()
-            )));
-        }
-        params.push(FxParameter {
-            name: name.to_owned(),
-            ty: param
-                .ty()
-                .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value())),
-            has_default: param.default().is_some(),
-        });
-    }
-    FxDefinition {
-        params,
-        dependencies: Vec::new(),
-        direct_nodes: 0,
     }
 }
 

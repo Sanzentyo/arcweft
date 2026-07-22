@@ -470,15 +470,18 @@ impl EnvironmentCallableCatalog {
 pub struct RegisteredCallableCatalog {
     project: ProjectCallableCatalog,
     environment: EnvironmentCallableCatalog,
+    nominal_resolutions: crate::nominal::NominalResolutionIndex,
 }
 impl RegisteredCallableCatalog {
     pub(crate) fn new(
         project: ProjectCallableCatalog,
         environment: EnvironmentCallableCatalog,
+        nominal_resolutions: crate::nominal::NominalResolutionIndex,
     ) -> Self {
         Self {
             project,
             environment,
+            nominal_resolutions,
         }
     }
     pub const fn project(&self) -> &ProjectCallableCatalog {
@@ -486,6 +489,10 @@ impl RegisteredCallableCatalog {
     }
     pub const fn environment(&self) -> &EnvironmentCallableCatalog {
         &self.environment
+    }
+    /// Accepted source-backed nominal facts used to publish project signatures.
+    pub const fn nominal_resolutions(&self) -> &crate::nominal::NominalResolutionIndex {
+        &self.nominal_resolutions
     }
     pub fn project_binding(&self, key: &ProjectCallablePath) -> Option<&ProjectNameBinding> {
         self.project.binding(key)

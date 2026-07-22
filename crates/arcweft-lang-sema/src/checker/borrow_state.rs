@@ -10,12 +10,14 @@ use std::collections::BTreeSet;
 
 impl TypeChecker<'_> {
     pub(super) fn bind_function_param(&mut self, pattern: &Pattern, ty: &TypeKind) {
+        self.resolve_pattern_type_annotations(pattern);
         for (name, binding_ty) in pattern_bindings_with_nominal_types(
             pattern,
             ty,
             NominalTypeContext::new(
                 &self.nominal_fields,
                 &self.nominal_variant_payloads,
+                &self.project_nominal_shapes,
                 self.env,
             ),
         ) {

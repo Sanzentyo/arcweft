@@ -492,6 +492,11 @@ fn pulse(speed: f32) -> Fx {
   Fx.text(opacity = speed)
 }
 
+struct WarningState {
+  warning_color: Color
+  warning_id: i64
+}
+
 view Warning(state: WarningState) {
   Text("WARNING")
     .fx(notice(accent = state.warning_color), key = state.warning_id)
@@ -1263,6 +1268,10 @@ fn view_text_state_projection_is_retained_as_typed_source() {
 
     let parsed = arcweft_lang_syntax::parser::parse_source(
         r"
+struct StatusState {
+  message: String
+}
+
 view StatusPanel(state: StatusState) {
   Text(state.message)
 }

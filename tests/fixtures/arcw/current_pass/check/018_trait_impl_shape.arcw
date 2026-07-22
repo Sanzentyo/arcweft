@@ -1,3 +1,7 @@
+struct RouteInfo {
+    label: String
+}
+
 pub trait Named {
     type Item
     fn name(self) -> String

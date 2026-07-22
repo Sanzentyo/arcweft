@@ -3,20 +3,25 @@
 use super::{
     AssociatedTypeAssignment, AssociatedTypeId, AssociatedTypeRequirement, ImplId, TraitCatalog,
     TraitDecl, TraitId, TraitImpl, TraitMethodImpl, TraitMethodRequirement, TraitWitness,
-    TraitWitnessId, trait_type_ref_kind,
+    TraitWitnessId, trait_method_param_groups,
 };
-use crate::types::{IteratorStateKind, TypeKind};
+use crate::env::TypeCheckEnv;
+use crate::nominal::{
+    GenericTypeScope, NominalResolutionLimits, SelfTypeScope, TypeResolutionInput, resolve_type_ref,
+};
+use crate::types::{
+    ArrayLength, DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId,
+    IteratorStateKind, TypeKind,
+};
 use arcweft_lang_syntax::types::parse_fn_signature;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 pub(super) const ITERATOR: &str = "Iterator";
 pub(super) const INTO_ITERATOR: &str = "IntoIterator";
 pub(super) const ITEM: &str = "Item";
 pub(super) const INTO_ITER: &str = "IntoIter";
 
-const TYPE_PARAM_T: &str = "T";
-const TYPE_PARAM_E: &str = "E";
-const TYPE_PARAM_N: &str = "N";
+const STANDARD_ITERATOR_GENERIC_OWNER_BASE: u64 = 0x4157_4954_4552_0000;
 
 pub(super) fn install_standard_iterator_traits(
     catalog: &mut TraitCatalog,
@@ -45,24 +50,77 @@ pub(super) fn install_standard_iterator_impls(catalog: &mut TraitCatalog) {
         return;
     };
 
-    let t = TypeKind::GenericParam(TYPE_PARAM_T.to_owned());
-    let e = TypeKind::GenericParam(TYPE_PARAM_E.to_owned());
-    let n = TYPE_PARAM_N.to_owned();
+    install_range_iterator_impls(catalog, iterator, into_iterator);
+    install_sequence_iterator_impls(catalog, iterator, into_iterator);
 
+    let t = standard_generic_parameter(3, 0);
+    let e = standard_generic_parameter(3, 1);
+    install_container_into_iter(
+        catalog,
+        iterator,
+        into_iterator,
+        IteratorStateKind::Stream,
+        &TypeKind::Stream {
+            item: Box::new(t.clone()),
+            error: Box::new(e),
+        },
+        t.clone(),
+    );
+    let t = standard_generic_parameter(4, 0);
+    install_container_into_iter(
+        catalog,
+        iterator,
+        into_iterator,
+        IteratorStateKind::Vec,
+        &TypeKind::Vec(Box::new(t.clone())),
+        t.clone(),
+    );
+    let t = standard_generic_parameter(5, 0);
+    install_container_into_iter(
+        catalog,
+        iterator,
+        into_iterator,
+        IteratorStateKind::Array,
+        &TypeKind::Array {
+            item: Box::new(t.clone()),
+            len: ArrayLength::Generic(standard_generic_parameter_id(5, 1)),
+        },
+        t.clone(),
+    );
+    let t = standard_generic_parameter(6, 0);
+    install_container_into_iter(
+        catalog,
+        iterator,
+        into_iterator,
+        IteratorStateKind::Slice,
+        &TypeKind::Slice(Box::new(t.clone())),
+        t,
+    );
+}
+
+fn install_range_iterator_impls(
+    catalog: &mut TraitCatalog,
+    iterator: TraitId,
+    into_iterator: TraitId,
+) {
+    let t = standard_generic_parameter(1, 0);
+    let range_iterator = iterator_state(IteratorStateKind::Range, t.clone());
     push_builtin_impl(
         catalog,
         iterator,
-        iterator_state(IteratorStateKind::Range, t.clone()),
+        range_iterator.clone(),
         [(ITEM, t.clone())],
         [method_impl(
             iterator,
             "fn next(&mut self) -> Option<Self::Item>",
+            &range_iterator,
         )],
     );
+    let range = TypeKind::Range(Box::new(t.clone()));
     push_builtin_impl(
         catalog,
         into_iterator,
-        TypeKind::Range(Box::new(t.clone())),
+        range.clone(),
         [
             (ITEM, t.clone()),
             (
@@ -73,17 +131,27 @@ pub(super) fn install_standard_iterator_impls(catalog: &mut TraitCatalog) {
         [method_impl(
             into_iterator,
             "fn into_iter(self) -> Self::IntoIter",
+            &range,
         )],
     );
+}
 
+fn install_sequence_iterator_impls(
+    catalog: &mut TraitCatalog,
+    iterator: TraitId,
+    into_iterator: TraitId,
+) {
+    let t = standard_generic_parameter(2, 0);
+    let seq = TypeKind::Seq(Box::new(t.clone()));
     push_builtin_impl(
         catalog,
         iterator,
-        TypeKind::Seq(Box::new(t.clone())),
+        seq.clone(),
         [(ITEM, t.clone())],
         [method_impl(
             iterator,
             "fn next(&mut self) -> Option<Self::Item>",
+            &seq,
         )],
     );
     push_builtin_impl(
@@ -97,47 +165,26 @@ pub(super) fn install_standard_iterator_impls(catalog: &mut TraitCatalog) {
         [method_impl(
             into_iterator,
             "fn into_iter(self) -> Self::IntoIter",
+            &seq,
         )],
     );
+}
 
-    install_container_into_iter(
-        catalog,
-        iterator,
-        into_iterator,
-        IteratorStateKind::Stream,
-        TypeKind::Stream {
-            item: Box::new(t.clone()),
-            error: Box::new(e),
-        },
-        t.clone(),
-    );
-    install_container_into_iter(
-        catalog,
-        iterator,
-        into_iterator,
-        IteratorStateKind::Vec,
-        TypeKind::Vec(Box::new(t.clone())),
-        t.clone(),
-    );
-    install_container_into_iter(
-        catalog,
-        iterator,
-        into_iterator,
-        IteratorStateKind::Array,
-        TypeKind::Array {
-            item: Box::new(t.clone()),
-            len: n,
-        },
-        t.clone(),
-    );
-    install_container_into_iter(
-        catalog,
-        iterator,
-        into_iterator,
-        IteratorStateKind::Slice,
-        TypeKind::Slice(Box::new(t.clone())),
-        t,
-    );
+fn standard_generic_parameter(owner_ordinal: u64, parameter_ordinal: u16) -> TypeKind {
+    TypeKind::GenericParam(standard_generic_parameter_id(
+        owner_ordinal,
+        parameter_ordinal,
+    ))
+}
+
+fn standard_generic_parameter_id(
+    owner_ordinal: u64,
+    parameter_ordinal: u16,
+) -> GenericTypeParameterId {
+    let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(
+        STANDARD_ITERATOR_GENERIC_OWNER_BASE + owner_ordinal,
+    ));
+    GenericTypeParameterId::new(owner, parameter_ordinal)
 }
 
 fn install_container_into_iter(
@@ -145,7 +192,7 @@ fn install_container_into_iter(
     iterator: TraitId,
     into_iterator: TraitId,
     family: IteratorStateKind,
-    source: TypeKind,
+    source: &TypeKind,
     item: TypeKind,
 ) {
     let iter_ty = iterator_state(family, item.clone());
@@ -157,16 +204,18 @@ fn install_container_into_iter(
         [method_impl(
             iterator,
             "fn next(&mut self) -> Option<Self::Item>",
+            &iter_ty,
         )],
     );
     push_builtin_impl(
         catalog,
         into_iterator,
-        source,
+        source.clone(),
         [(ITEM, item), (INTO_ITER, iter_ty)],
         [method_impl(
             into_iterator,
             "fn into_iter(self) -> Self::IntoIter",
+            source,
         )],
     );
 }
@@ -214,23 +263,70 @@ fn ensure_method(trait_decl: &mut TraitDecl, source: &str) {
     {
         return;
     }
+    let self_parameter = standard_generic_parameter_id(
+        100 + u64::try_from(trait_decl.id.index()).expect("trait id fits u64"),
+        0,
+    );
+    let self_scope = SelfTypeScope::Known(TypeKind::GenericParam(self_parameter.clone()));
+    let generic_scope = GenericTypeScope::empty();
+    let environment = TypeCheckEnv::standard();
+    let resolve = |authored: &arcweft_lang_syntax::types::AuthoredTypeRef| {
+        resolve_type_ref(&TypeResolutionInput::detached(
+            authored,
+            None,
+            &environment,
+            &generic_scope,
+            self_scope.clone(),
+            NominalResolutionLimits::PRODUCTION,
+        ))
+        .expect("compiled detached nominal limits are valid")
+        .outcome()
+        .product()
+        .recovered()
+        .clone()
+    };
+    let param_groups = trait_method_param_groups(&signature, |ty| Some(resolve(ty)))
+        .expect("built-in iterator parameters use accepted detached semantic types");
+    let return_type = signature.return_type().map_or(TypeKind::Unit, resolve);
     trait_decl.methods.push(TraitMethodRequirement {
         trait_id: trait_decl.id,
         name: signature.name().to_owned(),
         signature,
+        self_parameter,
+        param_groups,
+        return_type,
     });
 }
 
-fn method_impl(trait_id: TraitId, source: &str) -> TraitMethodImpl {
+fn method_impl(trait_id: TraitId, source: &str, self_ty: &TypeKind) -> TraitMethodImpl {
     let signature = parse_fn_signature(source).unwrap_or_else(|error| {
         panic!("invalid built-in iterator impl signature `{source}`: {error}")
     });
-    let return_type = signature.return_type().map_or(TypeKind::Unit, |ty| {
-        trait_type_ref_kind(ty.value(), &HashSet::new())
-    });
+    let generic_scope = GenericTypeScope::empty();
+    let self_scope = SelfTypeScope::Known(self_ty.clone());
+    let environment = TypeCheckEnv::standard();
+    let resolve = |authored: &arcweft_lang_syntax::types::AuthoredTypeRef| {
+        resolve_type_ref(&TypeResolutionInput::detached(
+            authored,
+            None,
+            &environment,
+            &generic_scope,
+            self_scope.clone(),
+            NominalResolutionLimits::PRODUCTION,
+        ))
+        .expect("compiled detached nominal limits are valid")
+        .outcome()
+        .product()
+        .recovered()
+        .clone()
+    };
+    let param_groups = trait_method_param_groups(&signature, |ty| Some(resolve(ty)))
+        .expect("built-in iterator parameters use accepted detached semantic types");
+    let return_type = signature.return_type().map_or(TypeKind::Unit, resolve);
     TraitMethodImpl {
         trait_id: Some(trait_id),
         signature,
+        param_groups,
         return_type,
         body: None,
     }

@@ -110,17 +110,13 @@ pub(crate) struct LexicalCallableScope {
     dead_code,
     reason = "callable and function-value lexical bindings belong to the following ordered resolver cuts"
 )]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "the exact lexical resolver contract keeps the typed function-value seed inline"
-)]
 pub(crate) enum LexicalCallBinding {
     Callable {
         id: LocalCallableId,
         schema: Arc<CallableSignatureSchema>,
         effects: EffectRow,
     },
-    FunctionValue(ResolvedFunctionValueSeed),
+    FunctionValue(Box<ResolvedFunctionValueSeed>),
     Speaker {
         id: SpeakerCallableId,
         schema: Arc<CallableSignatureSchema>,
@@ -233,7 +229,6 @@ impl LexicalCallableScope {
 )]
 impl<'a> CallResolverRequest<'a> {
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::result_large_err)]
     pub(crate) fn try_new(
         callee: CallCallee<'a>,
         lexical: &'a LexicalCallableScope,
@@ -365,7 +360,6 @@ fn source_span_is_valid(document: &SourceDocumentIdentity, span: &SourceSpan) ->
         && u64::try_from(range.end()).is_ok_and(|end| end <= document.source_len())
 }
 
-#[allow(clippy::result_large_err)]
 pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> ResolveCallOutcome {
     if let Err(error) = check_query_step(&mut request) {
         return ResolveCallOutcome::Rejected(error);
@@ -416,7 +410,6 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_dialogue_call(
     request: &mut CallResolverRequest<'_>,
     id: super::DialogueCallableId,
@@ -459,7 +452,6 @@ fn resolve_dialogue_call(
         .map(ResolvedCallTarget::Candidates)
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_function_value(
     seed: &ResolvedFunctionValueSeed,
     request: &mut CallResolverRequest<'_>,
@@ -484,11 +476,10 @@ fn resolve_function_value(
         seed.source_candidate.clone(),
         seed.next_group,
     )
-    .map(ResolvedCallTarget::FunctionValue)
+    .map(|value| ResolvedCallTarget::FunctionValue(Box::new(value)))
 }
 
 #[allow(
-    clippy::result_large_err,
     clippy::too_many_lines,
     reason = "the ordered selected-family chain is the canonical precedence table"
 )]
@@ -632,7 +623,6 @@ fn resolve_selected_call(
     Ok(None)
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_data_last_method(
     request: &mut CallResolverRequest<'_>,
     receiver_type: &TypeKind,
@@ -691,7 +681,6 @@ fn resolve_data_last_method(
     finish_data_last_candidates(request, receiver_type, arguments, bases)
 }
 
-#[allow(clippy::result_large_err)]
 fn finish_data_last_candidates(
     request: &mut CallResolverRequest<'_>,
     receiver_type: &TypeKind,
@@ -791,7 +780,6 @@ fn authored_argument_slot_count(arguments: &[CallArg]) -> usize {
         .sum()
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_trait_method(
     request: &mut CallResolverRequest<'_>,
     receiver_type: &TypeKind,
@@ -860,7 +848,6 @@ fn resolve_trait_method(
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn trait_callable_id(
     request: &CallResolverRequest<'_>,
     trait_id: Option<crate::traits::TraitId>,
@@ -885,7 +872,6 @@ fn trait_callable_id(
     ))
 }
 
-#[allow(clippy::result_large_err)]
 fn resolved_trait_method(
     request: &mut CallResolverRequest<'_>,
     receiver_type: &TypeKind,
@@ -920,7 +906,6 @@ fn resolved_trait_method(
         .map(ResolvedCallTarget::Candidates)
 }
 
-#[allow(clippy::result_large_err)]
 fn resolved_language_method(
     request: &mut CallResolverRequest<'_>,
     id: CallableCandidateId,
@@ -942,7 +927,6 @@ fn resolved_language_method(
         .map(ResolvedCallTarget::Candidates)
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_selected_environment_method(
     request: &mut CallResolverRequest<'_>,
     receiver_type: &TypeKind,
@@ -969,7 +953,6 @@ fn resolve_selected_environment_method(
 }
 
 #[allow(
-    clippy::result_large_err,
     clippy::too_many_lines,
     reason = "the ordered free-family chain is the canonical precedence table"
 )]
@@ -1205,7 +1188,6 @@ fn resolve_free_call(
     Ok(None)
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_lexical_binding(
     name: &CallableName,
     binding: &LexicalCallBinding,
@@ -1257,7 +1239,6 @@ fn resolve_lexical_binding(
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_project_binding(
     binding: &ProjectNameBinding,
     path: &ProjectCallablePath,
@@ -1307,7 +1288,6 @@ fn resolve_project_binding(
     }
 }
 
-#[allow(clippy::result_large_err)]
 fn resolve_catalog_record(
     record: &CallableRecord,
     equivalent_sources: &[EquivalentCallableSource],
@@ -1377,7 +1357,6 @@ fn corrupt(
     ResolveCallError::CorruptCatalog { key, reason }
 }
 
-#[allow(clippy::result_large_err)]
 fn check_query_step(request: &mut CallResolverRequest<'_>) -> Result<(), ResolveCallError> {
     if let Some(control) = request.signature_control {
         control.check_signature_query_step(SignatureQueryStep::Resolver)?;
@@ -1489,10 +1468,6 @@ impl ResolvedCallable {
         )
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "the typed query error preserves the offending candidate identity"
-    )]
     pub fn try_new(
         id: CallableCandidateId,
         origin: SignatureOrigin,
@@ -1558,10 +1533,6 @@ impl ResolvedCallable {
         self.authority
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "the typed resolver error preserves the complete offending candidate"
-    )]
     pub(crate) fn try_curried(
         &self,
         group: CallableGroupIndex,
@@ -1591,10 +1562,6 @@ impl ResolvedCallable {
         )
     }
 
-    #[allow(
-        clippy::result_large_err,
-        reason = "the typed resolver error preserves the complete presentation candidate"
-    )]
     pub(crate) fn try_with_presentation_character_owner(
         &self,
         owner: ResolvedCharacterOwner,
@@ -1793,10 +1760,6 @@ pub struct ResolvedFunctionValue {
     current_group: CallableGroupIndex,
 }
 impl ResolvedFunctionValue {
-    #[allow(
-        clippy::result_large_err,
-        reason = "the typed query error preserves the offending candidate identity"
-    )]
     pub fn try_new(
         id: FunctionValueSignatureId,
         callable: ResolvedCallable,
@@ -1841,13 +1804,9 @@ impl ResolvedFunctionValue {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "resolver products preserve the exact typed function-value contract"
-)]
 pub enum ResolvedCallTarget {
     Candidates(NonEmptyResolvedCandidates),
-    FunctionValue(ResolvedFunctionValue),
+    FunctionValue(Box<ResolvedFunctionValue>),
     NonCallable(ResolvedNonCallableTarget),
 }
 
@@ -1856,10 +1815,6 @@ pub struct NonEmptyResolvedCandidates {
     candidates: Arc<[ResolvedCallable]>,
 }
 impl NonEmptyResolvedCandidates {
-    #[allow(
-        clippy::result_large_err,
-        reason = "the typed query error preserves the offending candidate identity"
-    )]
     pub(crate) fn try_new(
         candidates: Vec<ResolvedCallable>,
         limits: &CallableLimits,
@@ -1921,10 +1876,6 @@ pub enum NonCallableSource {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(
-    clippy::large_enum_variant,
-    reason = "the accepted query outcome retains its exact typed resolver product"
-)]
 pub enum ResolveCallOutcome {
     Resolved(ResolvedCallTarget),
     Missing(UnknownCallTarget),

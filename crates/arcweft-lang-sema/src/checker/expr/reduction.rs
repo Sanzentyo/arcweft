@@ -1,10 +1,6 @@
 //! Dependent type checking for core `Reduction` constructors.
 
-use arcweft_lang_syntax::{
-    expr::CallArg,
-    reference::BorrowKind,
-    types::{TypeRef, parse_type_ref},
-};
+use arcweft_lang_syntax::{expr::CallArg, reference::BorrowKind};
 
 use super::super::helpers::type_kind_label;
 use super::{TypeCheckError, TypeChecker, TypeKind};
@@ -86,13 +82,14 @@ impl TypeChecker<'_> {
 }
 
 fn reduction_state_type(ty: &TypeKind) -> Option<TypeKind> {
-    let TypeKind::Named(label) = ty else {
+    let TypeKind::AcceptedNominal(nominal) = ty else {
         return None;
     };
-    let authored = parse_type_ref(label).ok()?;
-    let TypeRef::Generic { base, args } = authored.value() else {
+    if crate::types::direct_type_name(nominal.declaration().canonical_path()) != Some("Reduction") {
+        return None;
+    }
+    let [state] = nominal.arguments() else {
         return None;
     };
-    (crate::types::direct_type_name(base) == Some("Reduction") && args.len() == 1)
-        .then(|| TypeKind::from(&args[0]))
+    Some(state.clone())
 }

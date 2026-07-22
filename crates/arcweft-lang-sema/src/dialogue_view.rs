@@ -5,9 +5,9 @@
 //! runtime supplies. Lowering consults this inventory instead of recognizing a
 //! particular type-name spelling.
 
-use crate::checker::helpers::type_ref_kind;
-use crate::types::TypeKind;
+use crate::{nominal::ProjectNominalShapeCatalog, types::TypeKind};
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
+use arcweft_lang_hir::symbol::ProjectSymbolTable;
 use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::items::StructItem;
 use std::collections::{BTreeMap, BTreeSet};
@@ -139,11 +139,14 @@ impl DialogueViewModelRegistry {
         }
     }
 
-    /// Builds the inventory visible to one HIR module.
-    pub fn from_hir(module: &HirModule) -> Result<Self, Vec<DialogueViewModelError>> {
+    pub(crate) fn from_project_shapes(
+        module: &HirModule,
+        symbols: &ProjectSymbolTable,
+        shapes: &ProjectNominalShapeCatalog,
+    ) -> Result<Self, Vec<DialogueViewModelError>> {
         let mut registry = Self::standard();
         let mut errors = Vec::new();
-        for declaration in module.declarations() {
+        for (module_path, declaration) in module.declarations_with_modules() {
             let HirTopLevelDecl::Struct(item) = declaration else {
                 continue;
             };
@@ -152,7 +155,20 @@ impl DialogueViewModelRegistry {
                 .iter()
                 .any(|attribute| attribute.name() == DIALOGUE_VIEW_ATTRIBUTE)
             {
-                match DialogueViewModel::try_from_struct(item) {
+                let declaration = module
+                    .project_source_span(module_path, *item.name_range())
+                    .and_then(|source| {
+                        symbols
+                            .nominal_symbols()
+                            .find(|declaration| declaration.source().name() == &source)
+                    });
+                let mut field_type = |_: &StructItem, field_name: &str| {
+                    declaration
+                        .and_then(|declaration| shapes.struct_fields(declaration.id()))
+                        .and_then(|fields| fields.get(field_name))
+                        .cloned()
+                };
+                match DialogueViewModel::try_from_struct(item, &mut field_type) {
                     Ok(model) => {
                         registry.models.insert(model.type_name.clone(), model);
                     }
@@ -179,7 +195,10 @@ impl DialogueViewModelRegistry {
 }
 
 impl DialogueViewModel {
-    fn try_from_struct(item: &StructItem) -> Result<Self, DialogueViewModelError> {
+    fn try_from_struct(
+        item: &StructItem,
+        field_type: &mut impl FnMut(&StructItem, &str) -> Option<TypeKind>,
+    ) -> Result<Self, DialogueViewModelError> {
         let attribute = item
             .attrs()
             .iter()
@@ -218,7 +237,7 @@ impl DialogueViewModel {
             DialogueViewProjection::Reveal,
             DialogueViewProjection::PrimaryAction,
         ] {
-            let Some(field) = item
+            let Some(_) = item
                 .fields()
                 .iter()
                 .find(|field| field.name() == projection.field())
@@ -228,7 +247,12 @@ impl DialogueViewModel {
                     field: projection.field(),
                 });
             };
-            let actual = type_ref_kind(field.ty().value());
+            let actual = field_type(item, projection.field()).ok_or_else(|| {
+                DialogueViewModelError::MissingFieldTypeEvidence {
+                    type_name: item.name().to_owned(),
+                    field: projection.field(),
+                }
+            })?;
             let expected = projection.value_type();
             if actual != expected {
                 return Err(DialogueViewModelError::FieldType {
@@ -260,6 +284,13 @@ pub enum DialogueViewModelError {
     #[error("dialogue View model `{type_name}` repeats field `{field}`")]
     DuplicateField { type_name: String, field: String },
     #[error(
+        "dialogue View model `{type_name}` field `{field}` has no accepted type-resolution evidence"
+    )]
+    MissingFieldTypeEvidence {
+        type_name: String,
+        field: &'static str,
+    },
+    #[error(
         "dialogue View model `{type_name}` field `{field}` must have type {expected:?}, found {actual:?}"
     )]
     FieldType {
@@ -272,20 +303,35 @@ pub enum DialogueViewModelError {
 
 #[cfg(test)]
 mod tests {
-    use super::{DialogueViewModelRegistry, DialogueViewProjection};
-    use crate::checker::typecheck_hir;
-    use crate::env::TypeCheckEnv;
+    use super::DialogueViewProjection;
+    use crate::{
+        checker::{TypeCheckReport, analyze_registered_project_types, typecheck_hir},
+        env::TypeCheckEnv,
+        registration::ProjectRegistrationFacts,
+        test_support::character_project::{register, root_project_source},
+    };
     use arcweft_lang_hir::lower::lower_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
 
+    fn registered_report(source: &str) -> TypeCheckReport {
+        let (document, project, world) = root_project_source("dialogue-view-model", source);
+        let facts =
+            ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
+                .expect("dialogue View registration facts");
+        let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
+            .expect("dialogue View semantic world");
+        analyze_registered_project_types(&project.linked_module(), &registered)
+    }
+
     #[test]
     fn attributed_public_record_registers_the_dialogue_view_role() {
-        let parsed = parse_source(
-            "#[dialogue_view]\npub struct StoryDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n",
-        );
+        let source = "#[dialogue_view]\npub struct StoryDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n";
+        let parsed = parse_source(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower dialogue View record");
-        let registry = DialogueViewModelRegistry::from_hir(&hir).expect("valid role contract");
+        lower_to_hir(parsed.typed_tree()).expect("lower dialogue View record");
+        let report = registered_report(source);
+        assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+        let registry = report.dialogue_view_models;
         let model = registry.model("StoryDialogue").expect("registered model");
         assert_eq!(
             model.projection("content"),
@@ -295,25 +341,36 @@ mod tests {
 
     #[test]
     fn attributed_record_must_satisfy_the_closed_field_contract() {
-        let parsed = parse_source(
-            "#[dialogue_view]\npub struct BrokenDialogue {\n speaker: String\n content: String\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n",
-        );
+        let source = "#[dialogue_view]\npub struct BrokenDialogue {\n speaker: String\n content: String\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n";
+        let parsed = parse_source(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View record");
-        let errors = DialogueViewModelRegistry::from_hir(&hir).expect_err("invalid role contract");
-        assert!(errors[0].to_string().contains("content"));
+        lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View record");
+        let report = registered_report(source);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|error| error.to_string().contains("content")),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     #[test]
     fn attributed_record_rejects_fields_outside_the_closed_runtime_projection() {
-        let parsed = parse_source(
-            "#[dialogue_view]\npub struct ExtendedDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n mood: String\n}\n",
-        );
+        let source = "#[dialogue_view]\npub struct ExtendedDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n mood: String\n}\n";
+        let parsed = parse_source(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View record");
-        let errors = DialogueViewModelRegistry::from_hir(&hir)
-            .expect_err("extra runtime projection must be rejected");
-        assert!(errors[0].to_string().contains("mood"));
+        lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View record");
+        let report = registered_report(source);
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|error| error.to_string().contains("mood")),
+            "{:?}",
+            report.diagnostics
+        );
     }
 
     #[test]

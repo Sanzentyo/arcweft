@@ -1,3 +1,5 @@
+type ArcResult<T> = Result<T, ArcError>
+
 flow @flow.await_context await_context -> ArcResult<String>
 effects { log.write }
 {

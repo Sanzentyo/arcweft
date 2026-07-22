@@ -3,7 +3,7 @@ use super::{
     EntitySymbol, EntityType, Expr, FunctionParam, FunctionSignature, HirFlowItem, Literal,
     MatchExprArm, Pattern, ProjectCallableSymbol, ProjectSemanticIndex, ProjectSemanticIndexError,
     PublicId, QualifiedName, SemanticHash, SourceAnchor, SourceName, Stmt, SyntaxFnParam,
-    SyntaxFnSignature, TypeKind, TypeRef, parse_type_ref, type_ref_kind,
+    SyntaxFnSignature, TypeKind,
 };
 use arcweft_lang_hir::model::HirFunction;
 use arcweft_lang_syntax::{
@@ -622,8 +622,9 @@ pub(super) fn project_function_symbol(
     declaration: CallableDeclarationId,
     function: &HirFunction,
     source_name: &SourceName,
-) -> ProjectCallableSymbol {
-    let signature = function_signature_from_syntax(function.signature());
+    checked_types: &super::nominal::CheckedTypeProjection<'_>,
+) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
+    let signature = function_signature_from_syntax(function.signature(), checked_types)?;
     let source = SourceAnchor::from_span(
         source_name
             .span(arcweft_source::SourceRange::new(
@@ -634,13 +635,19 @@ pub(super) fn project_function_symbol(
     );
     let semantic_hash =
         SemanticHash::new(project_function_semantic_label(&declaration, &signature));
-    ProjectCallableSymbol::function(declaration, signature, source, semantic_hash)
+    Ok(ProjectCallableSymbol::function(
+        declaration,
+        signature,
+        source,
+        semantic_hash,
+    ))
 }
 
 pub(super) fn project_view_callable_symbol(
     declaration: CallableDeclarationId,
     item: &EntityDeclItem,
     source_name: &SourceName,
+    checked_types: &super::nominal::CheckedTypeProjection<'_>,
 ) -> Result<ProjectCallableSymbol, ProjectSemanticIndexError> {
     debug_assert_eq!(item.kind(), EntityDeclKind::View);
     let name = item.local_binding_name().ok_or_else(|| {
@@ -656,7 +663,7 @@ pub(super) fn project_view_callable_symbol(
             name: name.to_owned(),
             message: "View declaration has no retained typed signature".to_owned(),
         })?;
-    let signature = function_signature_from_syntax(syntax_signature);
+    let signature = function_signature_from_syntax(syntax_signature, checked_types)?;
     let source = SourceAnchor::from_span(
         source_name
             .span(arcweft_source::SourceRange::new(
@@ -820,14 +827,18 @@ fn project_function_semantic_label(
     )
 }
 
-fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSignature {
-    let return_type = curried_project_signature_return_type(signature);
+fn function_signature_from_syntax(
+    signature: &SyntaxFnSignature,
+    checked_types: &super::nominal::CheckedTypeProjection<'_>,
+) -> Result<FunctionSignature, ProjectSemanticIndexError> {
+    let return_type = curried_project_signature_return_type(signature, checked_types)?;
     let params = signature
         .param_groups()
         .first()
         .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(project_function_param);
+        .map(|param| project_function_param(param, checked_types))
+        .collect::<Result<Vec<_>, _>>()?;
     let remaining_param_groups = signature
         .param_groups()
         .iter()
@@ -836,46 +847,60 @@ fn function_signature_from_syntax(signature: &SyntaxFnSignature) -> FunctionSign
             group
                 .params()
                 .iter()
-                .map(project_function_param)
-                .collect::<Vec<_>>()
+                .map(|param| project_function_param(param, checked_types))
+                .collect::<Result<Vec<_>, _>>()
         })
-        .collect::<Vec<_>>();
-    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(FunctionSignature::new(return_type, params)
+        .with_remaining_param_groups(remaining_param_groups))
 }
 
-fn project_function_param(param: &SyntaxFnParam) -> FunctionParam {
+fn project_function_param(
+    param: &SyntaxFnParam,
+    checked_types: &super::nominal::CheckedTypeProjection<'_>,
+) -> Result<FunctionParam, ProjectSemanticIndexError> {
     let name = callable_param_name(param.pattern()).unwrap_or("_");
     let ty = param
         .ty()
-        .map_or(TypeKind::Unit, |ty| project_type_ref_kind(ty.value()));
-    if param.is_rest() {
+        .map(|ty| checked_types.recovered(ty))
+        .transpose()?
+        .unwrap_or(TypeKind::Unit);
+    Ok(if param.is_rest() {
         FunctionParam::rest(name, ty)
     } else if param.default().is_some() {
         FunctionParam::defaulted(name, ty)
     } else {
         FunctionParam::required(name, ty)
-    }
+    })
 }
 
-fn curried_project_signature_return_type(signature: &SyntaxFnSignature) -> TypeKind {
-    let return_type = signature.return_type().map_or_else(
-        || TypeKind::Named("_".to_owned()),
-        |ty| project_type_ref_kind(ty.value()),
-    );
+fn curried_project_signature_return_type(
+    signature: &SyntaxFnSignature,
+    checked_types: &super::nominal::CheckedTypeProjection<'_>,
+) -> Result<TypeKind, ProjectSemanticIndexError> {
+    let return_type = signature
+        .return_type()
+        .map(|ty| checked_types.recovered(ty))
+        .transpose()?
+        .unwrap_or(TypeKind::Unit);
     signature
         .param_groups()
         .iter()
         .skip(1)
         .rev()
-        .fold(return_type, |return_type, group| {
-            TypeKind::function(
-                group.params().iter().map(|param| {
+        .try_fold(return_type, |return_type, group| {
+            let params = group
+                .params()
+                .iter()
+                .map(|param| {
                     param
                         .ty()
-                        .map_or(TypeKind::Unit, |ty| project_type_ref_kind(ty.value()))
-                }),
-                return_type,
-            )
+                        .map(|ty| checked_types.recovered(ty))
+                        .transpose()
+                        .map(|ty| ty.unwrap_or(TypeKind::Unit))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(TypeKind::function(params, return_type))
         })
 }
 
@@ -887,101 +912,6 @@ fn callable_param_name(pattern: &Pattern) -> Option<&str> {
         | Pattern::Whole { name, .. } => Some(name.as_str()),
         _ => None,
     }
-}
-
-pub(super) fn signal_value_type(
-    id: &str,
-    signature_tail: &str,
-) -> Result<Option<TypeKind>, ProjectSemanticIndexError> {
-    let Some(type_source) = signature_tail.trim().strip_prefix(':') else {
-        return Ok(None);
-    };
-    let type_ref = parse_type_ref(type_source.trim()).map_err(|error| {
-        ProjectSemanticIndexError::InvalidSignalType {
-            id: id.to_owned(),
-            message: error.to_string(),
-        }
-    })?;
-    Ok(Some(signal_declared_value_type(type_ref.value())))
-}
-
-fn signal_declared_value_type(ty: &TypeRef) -> TypeKind {
-    match ty {
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Watch") && args.len() == 1 =>
-        {
-            project_type_ref_kind(&args[0])
-        }
-        _ => project_type_ref_kind(ty),
-    }
-}
-
-fn project_type_ref_kind(ty: &TypeRef) -> TypeKind {
-    match ty {
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Ref") && args.len() == 1 =>
-        {
-            if let TypeRef::Path(name) = &args[0] {
-                crate::types::direct_type_name(name)
-                    .and_then(entity_kind_from_type_name)
-                    .map_or_else(|| type_ref_kind(ty), TypeKind::entity_ref)
-            } else {
-                type_ref_kind(ty)
-            }
-        }
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Option") && args.len() == 1 =>
-        {
-            TypeKind::Option(Box::new(project_type_ref_kind(&args[0])))
-        }
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Vec") && args.len() == 1 =>
-        {
-            TypeKind::Vec(Box::new(project_type_ref_kind(&args[0])))
-        }
-        _ => type_ref_kind(ty),
-    }
-}
-
-fn entity_kind_from_type_name(name: &str) -> Option<EntityKind> {
-    Some(match name {
-        "Agent" => EntityKind::Agent,
-        "Entry" => EntityKind::Entry,
-        "Flow" => EntityKind::Flow,
-        "Choice" => EntityKind::Choice,
-        "ChoiceOption" => EntityKind::ChoiceOption,
-        "Character" => EntityKind::Character,
-        "View" => EntityKind::View,
-        "Action" => EntityKind::Action,
-        "Activity" => EntityKind::Activity,
-        "DialogueLine" => EntityKind::DialogueLine,
-        "Text" => EntityKind::Text,
-        "Content" => EntityKind::Content,
-        "Style" => EntityKind::Style,
-        "Asset" => EntityKind::Asset,
-        "Image" => EntityKind::Image,
-        "Animation" => EntityKind::Animation,
-        "Capture" => EntityKind::Capture,
-        "Hook" => EntityKind::Hook,
-        "Signal" => EntityKind::Signal,
-        "Metric" => EntityKind::Metric,
-        "Scene" => EntityKind::Scene,
-        "Source" => EntityKind::Source,
-        "Test" => EntityKind::Test,
-        "Bench" => EntityKind::Bench,
-        "Layer" => EntityKind::Layer,
-        "Voice" => EntityKind::Voice,
-        "Se" => EntityKind::Se,
-        "Bgm" => EntityKind::Bgm,
-        "AudioBus" => EntityKind::AudioBus,
-        "MixerSnapshot" => EntityKind::MixerSnapshot,
-        "Ducking" => EntityKind::Ducking,
-        "Motion" => EntityKind::Motion,
-        "Rig" => EntityKind::Rig,
-        "Slot" => EntityKind::Slot,
-        "Target" => EntityKind::Target,
-        _ => return None,
-    })
 }
 
 pub(super) fn entity_decl_kind(kind: EntityDeclKind) -> EntityKind {

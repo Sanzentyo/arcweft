@@ -255,7 +255,7 @@ fn cyclic_alias_in_nominal_schema_is_rejected() {
 
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code() == "sema.entry.invalid_nominal_schema"
-            && diagnostic.message().contains("recursive type alias")
+            && diagnostic.message().contains("poisoned type")
     }));
 }
 

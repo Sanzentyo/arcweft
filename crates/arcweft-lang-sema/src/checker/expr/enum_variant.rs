@@ -144,12 +144,15 @@ impl TypeChecker<'_> {
         if prefix.is_some_and(|prefix| nominal_type_name(ty) != Some(prefix)) {
             return None;
         }
-        nominal_type_name(ty)
-            .and_then(|enum_name| {
-                self.nominal_variant_payloads
-                    .get(enum_name)?
-                    .get(variant)
-                    .cloned()
+        self.project_nominal_shapes
+            .variant_payload(ty, variant)
+            .or_else(|| {
+                nominal_type_name(ty).and_then(|enum_name| {
+                    self.nominal_variant_payloads
+                        .get(enum_name)?
+                        .get(variant)
+                        .cloned()
+                })
             })
             .or_else(|| env_variant_payload_for_type(self, ty, variant))
     }
@@ -161,12 +164,15 @@ impl TypeChecker<'_> {
     ) -> Option<EnumVariantPayload> {
         let variant = variant.strip_prefix('.').unwrap_or(variant);
         let variant = variant.rsplit_once('.').map_or(variant, |(_, name)| name);
-        nominal_type_name(ty)
-            .and_then(|enum_name| {
-                self.nominal_variant_payloads
-                    .get(enum_name)?
-                    .get(variant)
-                    .cloned()
+        self.project_nominal_shapes
+            .variant_payload(ty, variant)
+            .or_else(|| {
+                nominal_type_name(ty).and_then(|enum_name| {
+                    self.nominal_variant_payloads
+                        .get(enum_name)?
+                        .get(variant)
+                        .cloned()
+                })
             })
             .or_else(|| env_variant_payload_for_type(self, ty, variant))
     }
@@ -175,6 +181,7 @@ impl TypeChecker<'_> {
 pub(super) fn nominal_type_name(ty: &TypeKind) -> Option<&str> {
     match ty {
         TypeKind::Named(name) => Some(name),
+        TypeKind::ProjectNominal(nominal) => Some(nominal.declaration().name().as_str()),
         TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => nominal_type_name(inner),
         _ => None,
     }

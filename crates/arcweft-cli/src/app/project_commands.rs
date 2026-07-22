@@ -2162,6 +2162,8 @@ fn append_release_dynamic_goto_diagnostics(
     }
     let Ok(index) = project_semantic_index_from_checked_project(
         compiled.hir_project(),
+        compiled.registered_world().symbols(),
+        compiled.typecheck_report(),
         ProgramHash::new("project.release"),
         compiled.checked_entries(),
     ) else {

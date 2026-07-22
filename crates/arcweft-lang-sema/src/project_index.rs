@@ -4,7 +4,7 @@
 //! callable host surfaces. This module keeps that view typed and source-aware
 //! without adding parser-specific command shapes.
 
-use crate::checker::helpers::type_ref_kind;
+use crate::checker::TypeCheckReport;
 use crate::entry::{CheckedEntryCatalog, CheckedEntryId};
 use crate::env::{
     AgentActionEnvSignature, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
@@ -17,7 +17,10 @@ use arcweft_lang_hir::{
     entry::HirEntryItem,
     model::{HirFlowItem, HirModule, HirTopLevelDecl},
     project::HirProject,
-    symbol::{CallableDeclarationId, CallableDeclarationOwner, CallablePackageId},
+    symbol::{
+        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId, ProjectSymbolTable,
+        nominal::ProjectNominalDeclarationId,
+    },
 };
 use arcweft_lang_syntax::{
     ast::{
@@ -29,9 +32,9 @@ use arcweft_lang_syntax::{
         pattern::Pattern,
     },
     expr::{CallArg, Expr, Literal, MatchExprArm},
-    types::{FnParam as SyntaxFnParam, FnSignature as SyntaxFnSignature, TypeRef, parse_type_ref},
+    types::{FnParam as SyntaxFnParam, FnSignature as SyntaxFnSignature},
 };
-use arcweft_source::{SourceAnchor, SourceDocument};
+use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentIdentity, SourceSpan};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -39,11 +42,13 @@ mod agent_prelude;
 mod entities;
 mod entry_roles;
 mod flow_control;
+mod nominal;
 mod relations;
 
 pub use entry_roles::{
     ProjectEntryRecord, ProjectEntryRoleEdge, ProjectEntryRoleKind, ProjectEntryRoleTarget,
 };
+pub use nominal::{ProjectNominalIndexRecord, ProjectNominalReferenceEdge};
 
 type SourceName = SourceDocument;
 
@@ -51,7 +56,7 @@ type SourceName = SourceDocument;
 mod tests;
 
 /// Semantic index schema supported by this crate.
-pub const PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION: u32 = 1;
+pub const PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION: u32 = 2;
 
 /// Stable hash of the project program that produced a semantic index.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -241,6 +246,8 @@ pub struct ProjectSemanticIndex {
     project_callables: BTreeMap<CallableDeclarationId, ProjectCallableSymbol>,
     entry_records: BTreeMap<CheckedEntryId, ProjectEntryRecord>,
     entry_role_edges: Vec<ProjectEntryRoleEdge>,
+    project_nominals: BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord>,
+    project_nominal_references: Box<[ProjectNominalReferenceEdge]>,
     types: BTreeMap<TypeName, TypeKind>,
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
@@ -273,14 +280,26 @@ pub enum ProjectSemanticIndexError {
         kind: &'static str,
         message: String,
     },
-    #[error("invalid signal type for `{id}`: {message}")]
-    InvalidSignalType { id: String, message: String },
     #[error("invalid callable signature for `{name}`: {message}")]
     InvalidCallableSignature { name: String, message: String },
     #[error("invalid callable identity for `{name}`: {message}")]
     InvalidCallableIdentity { name: String, message: String },
     #[error("HIR project module `{module}` is not bound to its source document")]
     MissingProjectSource { module: String },
+    #[error(
+        "accepted type-check report has no semantic type for {document:?} bytes {range:?}: {reason}"
+    )]
+    MissingCheckedType {
+        document: SourceDocumentIdentity,
+        range: (usize, usize),
+        reason: String,
+    },
+    #[error("accepted nominal reference {root:?} node {node} lacks {reason}")]
+    MissingNominalReferenceEvidence {
+        root: SourceSpan,
+        node: String,
+        reason: &'static str,
+    },
 }
 
 impl ProgramHash {
@@ -717,6 +736,8 @@ impl ProjectSemanticIndex {
             project_callables: BTreeMap::new(),
             entry_records: BTreeMap::new(),
             entry_role_edges: Vec::new(),
+            project_nominals: BTreeMap::new(),
+            project_nominal_references: Box::new([]),
             types: BTreeMap::new(),
             debug_queries: BTreeMap::new(),
             relations: Vec::new(),
@@ -826,6 +847,23 @@ impl ProjectSemanticIndex {
 
     pub fn entry_role_edges(&self) -> &[ProjectEntryRoleEdge] {
         &self.entry_role_edges
+    }
+
+    pub fn project_nominals(
+        &self,
+    ) -> &BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord> {
+        &self.project_nominals
+    }
+
+    pub fn project_nominal_references(&self) -> &[ProjectNominalReferenceEdge] {
+        &self.project_nominal_references
+    }
+
+    pub fn project_nominal(
+        &self,
+        declaration: &ProjectNominalDeclarationId,
+    ) -> Option<&ProjectNominalIndexRecord> {
+        self.project_nominals.get(declaration)
     }
 
     pub fn types(&self) -> &BTreeMap<TypeName, TypeKind> {
@@ -952,13 +990,16 @@ pub fn project_semantic_index_from_hir(
         ProjectSemanticIndex::new(program_hash),
         document,
         None,
+        None,
     )?;
     relations::index_project_symbol_dependency_relations(module, index)
 }
 
-/// Builds the final project-wide schema-v1 index from canonical package HIR and checked entries.
+/// Builds the final project-wide schema-v2 index from canonical checked project facts.
 pub fn project_semantic_index_from_checked_project(
     project: &HirProject,
+    symbols: &ProjectSymbolTable,
+    typecheck: &TypeCheckReport,
     program_hash: ProgramHash,
     entries: &CheckedEntryCatalog,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
@@ -969,11 +1010,22 @@ pub fn project_semantic_index_from_checked_project(
                 module: module_path.to_string(),
             }
         })?;
-        index = index_hir_module_symbols(module, index, document, Some(project.package()))?;
+        let checked_types = nominal::CheckedTypeProjection::new(document, typecheck);
+        index = index_hir_module_symbols(
+            module,
+            index,
+            document,
+            Some(project.package()),
+            Some(&checked_types),
+        )?;
     }
     for (_, module) in project.modules() {
         index = relations::index_project_symbol_dependency_relations(module, index)?;
     }
+    let (project_nominals, project_nominal_references) =
+        nominal::checked_project_nominals(symbols, typecheck)?;
+    index.project_nominals = project_nominals;
+    index.project_nominal_references = project_nominal_references;
     Ok(index.with_checked_entry_catalog(entries))
 }
 
@@ -982,6 +1034,7 @@ fn index_hir_module_symbols(
     mut index: ProjectSemanticIndex,
     document: &SourceDocument,
     package: Option<&CallablePackageId>,
+    checked_types: Option<&nominal::CheckedTypeProjection<'_>>,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for flow in module.flows() {
         if let Some(id) = flow.id() {
@@ -1002,7 +1055,7 @@ fn index_hir_module_symbols(
             );
         }
     }
-    if let Some(package) = package {
+    if let (Some(package), Some(checked_types)) = (package, checked_types) {
         for function in module.functions() {
             let declaration =
                 CallableDeclarationId::for_function(package, function).map_err(|error| {
@@ -1015,7 +1068,8 @@ fn index_hir_module_symbols(
                 declaration,
                 function,
                 document,
-            ));
+                checked_types,
+            )?);
         }
     }
     for declaration in module.declarations() {
@@ -1025,6 +1079,7 @@ fn index_hir_module_symbols(
             document,
             package,
             module.module_path(),
+            checked_types,
         )?;
     }
     Ok(index)
@@ -1036,6 +1091,7 @@ fn index_top_level_declaration(
     document: &SourceDocument,
     package: Option<&CallablePackageId>,
     module: &CanonicalModulePath,
+    checked_types: Option<&nominal::CheckedTypeProjection<'_>>,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     match declaration {
         HirTopLevelDecl::Source(source) => {
@@ -1050,16 +1106,11 @@ fn index_top_level_declaration(
             }
         }
         HirTopLevelDecl::EntityDecl(item) => {
-            index = index_view_callable(index, item, document, package, module)?;
-            let value = if item.kind() == EntityDeclKind::Signal {
-                entities::signal_value_type(item.id().body(), item.signature_tail())?
-            } else {
-                None
-            };
+            index = index_view_callable(index, item, document, package, module, checked_types)?;
             index = index.with_entity(entities::entity_symbol(
                 item.id(),
                 entities::entity_decl_kind(item.kind()),
-                value,
+                None,
                 document,
                 entities::entity_decl_kind_label(item.kind()),
             )?);
@@ -1121,11 +1172,12 @@ fn index_view_callable(
     document: &SourceDocument,
     package: Option<&CallablePackageId>,
     module: &CanonicalModulePath,
+    checked_types: Option<&nominal::CheckedTypeProjection<'_>>,
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     if item.kind() != EntityDeclKind::View {
         return Ok(index);
     }
-    let Some(package) = package else {
+    let (Some(package), Some(checked_types)) = (package, checked_types) else {
         return Ok(index);
     };
     let name = item.local_binding_name().ok_or_else(|| {
@@ -1146,7 +1198,10 @@ fn index_view_callable(
     })?;
     Ok(
         index.with_project_callable(entities::project_view_callable_symbol(
-            callable, item, document,
+            callable,
+            item,
+            document,
+            checked_types,
         )?),
     )
 }

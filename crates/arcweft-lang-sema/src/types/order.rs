@@ -8,8 +8,8 @@ impl TypeKind {
     /// Compares semantic types structurally for deterministic in-memory indexes.
     ///
     /// This is deliberately not an `Ord` implementation: type equality remains
-    /// the semantic contract, while the ordering is an internal publication
-    /// detail used only to canonicalize otherwise unordered inventories.
+    /// the semantic contract, while the ordering only canonicalizes semantic
+    /// choices and otherwise unordered in-memory inventories.
     #[allow(
         clippy::too_many_lines,
         reason = "one exhaustive structural comparator keeps every TypeKind payload ordering adjacent to its variant tag"
@@ -159,8 +159,22 @@ impl TypeKind {
                 ) => type_slice_ordering(left_params, right_params)
                     .then_with(|| left_return.stable_ordering(right_return))
                     .then_with(|| effect_row_ordering(left_effects, right_effects)),
-                (Self::GenericParam(left), Self::GenericParam(right))
-                | (Self::Named(left), Self::Named(right)) => left.cmp(right),
+                (Self::GenericParam(left), Self::GenericParam(right)) => left.cmp(right),
+                (Self::ProjectNominal(left), Self::ProjectNominal(right)) => left
+                    .declaration()
+                    .cmp(right.declaration())
+                    .then_with(|| type_slice_ordering(left.arguments(), right.arguments())),
+                (Self::AcceptedNominal(left), Self::AcceptedNominal(right)) => left
+                    .declaration()
+                    .cmp(right.declaration())
+                    .then_with(|| type_slice_ordering(left.arguments(), right.arguments())),
+                (Self::OpenNominal(left), Self::OpenNominal(right)) => left
+                    .rule()
+                    .cmp(right.rule())
+                    .then_with(|| left.path().cmp(right.path()))
+                    .then_with(|| type_slice_ordering(left.arguments(), right.arguments())),
+                (Self::Error(left), Self::Error(right)) => left.cmp(right),
+                (Self::Named(left), Self::Named(right)) => left.cmp(right),
                 (
                     Self::Projection {
                         subject: left_subject,
@@ -379,16 +393,20 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::Shared(_) => 60,
         TypeKind::Function { .. } => 61,
         TypeKind::GenericParam(_) => 62,
-        TypeKind::Projection { .. } => 63,
-        TypeKind::Speaker(_) => 64,
-        TypeKind::SpeakerPreset(_) => 65,
-        TypeKind::CharacterPatch(_) => 66,
-        TypeKind::FocusPatch => 67,
-        TypeKind::CharacterNominal(_) => 68,
-        TypeKind::Named(_) => 69,
-        TypeKind::Tuple(_) => 70,
-        TypeKind::Choice(_) => 71,
-        TypeKind::Unit => 72,
-        TypeKind::Never => 73,
+        TypeKind::ProjectNominal(_) => 63,
+        TypeKind::AcceptedNominal(_) => 64,
+        TypeKind::OpenNominal(_) => 65,
+        TypeKind::Error(_) => 66,
+        TypeKind::Projection { .. } => 67,
+        TypeKind::Speaker(_) => 68,
+        TypeKind::SpeakerPreset(_) => 69,
+        TypeKind::CharacterPatch(_) => 70,
+        TypeKind::FocusPatch => 71,
+        TypeKind::CharacterNominal(_) => 72,
+        TypeKind::Named(_) => 73,
+        TypeKind::Tuple(_) => 74,
+        TypeKind::Choice(_) => 75,
+        TypeKind::Unit => 76,
+        TypeKind::Never => 77,
     }
 }

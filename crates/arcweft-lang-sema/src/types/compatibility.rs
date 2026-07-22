@@ -10,12 +10,18 @@ impl TypeKind {
     /// checking and callable applicability. Keeping it on the owned type
     /// prevents resolver families from growing parallel compatibility tables.
     pub(crate) fn accepts(&self, actual: &Self) -> bool {
+        if matches!(self, Self::Error(_)) || matches!(actual, Self::Error(_)) {
+            return true;
+        }
         if self.first_mismatch(actual).is_none() || matches!(self, Self::Named(name) if name == "_")
         {
             return true;
         }
         if matches!(actual, Self::Never) {
             return true;
+        }
+        if let Some(compatible) = nominal_types_compatible(self, actual) {
+            return compatible;
         }
         match (self, actual) {
             (Self::Bytes, Self::Vec(inner) | Self::Slice(inner) | Self::Seq(inner)) => {
@@ -69,7 +75,7 @@ impl TypeKind {
                     item: actual_item,
                     len: actual_len,
                 },
-            ) => expected_len == actual_len && expected_item.accepts(actual_item),
+            ) => expected_len.accepts(actual_len) && expected_item.accepts(actual_item),
             (Self::Tuple(expected), Self::Tuple(actual)) => {
                 expected.len() == actual.len()
                     && expected
@@ -100,6 +106,33 @@ impl TypeKind {
             _ => false,
         }
     }
+}
+
+fn nominal_types_compatible(expected: &TypeKind, actual: &TypeKind) -> Option<bool> {
+    Some(match (expected, actual) {
+        (TypeKind::ProjectNominal(expected), TypeKind::ProjectNominal(actual)) => {
+            expected.declaration() == actual.declaration()
+                && nominal_arguments_compatible(expected.arguments(), actual.arguments())
+        }
+        (TypeKind::AcceptedNominal(expected), TypeKind::AcceptedNominal(actual)) => {
+            expected.declaration() == actual.declaration()
+                && nominal_arguments_compatible(expected.arguments(), actual.arguments())
+        }
+        (TypeKind::OpenNominal(expected), TypeKind::OpenNominal(actual)) => {
+            expected.rule() == actual.rule()
+                && expected.path() == actual.path()
+                && nominal_arguments_compatible(expected.arguments(), actual.arguments())
+        }
+        _ => return None,
+    })
+}
+
+fn nominal_arguments_compatible(expected: &[TypeKind], actual: &[TypeKind]) -> bool {
+    expected.len() == actual.len()
+        && expected
+            .iter()
+            .zip(actual)
+            .all(|(expected, actual)| expected.accepts(actual))
 }
 
 fn effect_rows_compatible(expected: &EffectRow, actual: &EffectRow) -> bool {
@@ -145,7 +178,8 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::Ref(_)
         | TypeKind::CaptureRef
         | TypeKind::AgentResource
-        | TypeKind::AgentResourceBody => true,
+        | TypeKind::AgentResourceBody
+        | TypeKind::Error(_) => true,
         TypeKind::Vec(inner)
         | TypeKind::Array { item: inner, .. }
         | TypeKind::Slice(inner)
@@ -165,15 +199,27 @@ fn choice_injection_target<'a>(
 ) -> Option<&'a TypeKind> {
     let mut compatible_alternatives = alternatives
         .iter()
+        .filter(|alternative| !matches!(alternative, TypeKind::Error(_)))
         .filter(|alternative| alternative.accepts(actual));
-    let selected = compatible_alternatives.next()?;
-    compatible_alternatives.next().is_none().then_some(selected)
+    match (
+        compatible_alternatives.next(),
+        compatible_alternatives.next(),
+    ) {
+        (Some(selected), None) => Some(selected),
+        (Some(_), Some(_)) => None,
+        (None, _) => alternatives
+            .iter()
+            .find(|alternative| matches!(alternative, TypeKind::Error(_))),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::TypeKind;
-    use crate::types::EntityKind;
+    use crate::types::{
+        ArrayLength, DetachedTypeOwnerId, EntityKind, GenericTypeOwnerId, GenericTypeParameterId,
+        TypePoisonId,
+    };
 
     #[test]
     fn family_entity_reference_accepts_payload_specialization() {
@@ -194,5 +240,40 @@ mod tests {
         assert!(expected.accepts(&matching));
         assert!(!expected.accepts(&wrong_payload));
         assert!(!expected.accepts(&wrong_family));
+    }
+
+    #[test]
+    fn poison_inside_recovered_shapes_does_not_create_follow_on_mismatches() {
+        let poison = TypeKind::Error(TypePoisonId::from_index(3));
+
+        assert!(TypeKind::Vec(Box::new(TypeKind::I32)).accepts(&TypeKind::Vec(Box::new(poison))));
+        assert!(
+            TypeKind::AgentValue.accepts(&TypeKind::Vec(Box::new(TypeKind::Error(
+                TypePoisonId::from_index(4)
+            ))))
+        );
+        assert!(
+            TypeKind::Choice(vec![
+                TypeKind::Error(TypePoisonId::from_index(5)),
+                TypeKind::I32,
+            ])
+            .accepts(&TypeKind::I32)
+        );
+    }
+
+    #[test]
+    fn array_lengths_are_exact_when_concrete_and_open_when_generic_or_recovered() {
+        let generic = ArrayLength::Generic(GenericTypeParameterId::new(
+            GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(41)),
+            0,
+        ));
+
+        assert!(ArrayLength::Const(3).accepts(&ArrayLength::Const(3)));
+        assert!(!ArrayLength::Const(3).accepts(&ArrayLength::Const(4)));
+        assert_eq!(ArrayLength::Const(3).source_label(), "3");
+        assert_eq!(ArrayLength::Inferred.source_label(), "_");
+        assert!(generic.accepts(&ArrayLength::Const(4)));
+        assert!(ArrayLength::Inferred.accepts(&ArrayLength::Const(4)));
+        assert!(ArrayLength::Error(TypePoisonId::from_index(6)).accepts(&ArrayLength::Const(4)));
     }
 }

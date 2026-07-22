@@ -260,12 +260,47 @@ pub fn publish_diagnostics_from_analysis(
     analysis: &DocumentAnalysis,
 ) -> PublishDiagnosticsParams {
     let mut diagnostics = analysis.diagnostics.clone();
+    reconcile_accepted_nominal_diagnostics(snapshot, profile, &mut diagnostics);
     diagnostics.extend(profile_diagnostics(profile));
     PublishDiagnosticsParams::new(
         snapshot.uri().clone(),
         diagnostics,
         Some(snapshot.version()),
     )
+}
+
+fn reconcile_accepted_nominal_diagnostics(
+    snapshot: &DocumentSnapshot,
+    profile: &LspProfile,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(accepted) = profile.accepted_environment() else {
+        return;
+    };
+    let project = accepted.project();
+    let Some(source) = project.sources().by_uri(snapshot.uri()) else {
+        return;
+    };
+    if source.document().text() != snapshot.text() {
+        return;
+    }
+
+    diagnostics.retain(|diagnostic| {
+        !matches!(
+            diagnostic.code.as_ref(),
+            Some(NumberOrString::String(code)) if code.starts_with("sema.nominal.")
+        )
+    });
+    let projector = DiagnosticProjector::new(source.document(), snapshot.line_index());
+    diagnostics.extend(
+        project
+            .typecheck()
+            .nominal_resolutions
+            .diagnostics()
+            .iter()
+            .filter_map(arcweft_lang_sema::nominal::NominalTypeDiagnostic::to_source_diagnostic)
+            .filter_map(|diagnostic| projector.project(&diagnostic).ok()),
+    );
 }
 
 fn resolve_diagnostics(

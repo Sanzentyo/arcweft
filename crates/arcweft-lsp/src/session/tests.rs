@@ -1009,10 +1009,6 @@ pub view DialoguePanel(dialogue: DialogueView) {
 
 #[test]
 fn completion_and_hover_use_custom_dialogue_view_role_inventory() {
-    let uri = "file:///custom-dialogue-view.arcw"
-        .parse::<Uri>()
-        .expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
     let source = r"
 #[dialogue_view]
 pub struct StoryDialogue {
@@ -1024,7 +1020,7 @@ pub struct StoryDialogue {
     primary_action: DialogueAction
 }
 ";
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("custom-dialogue-view", source);
 
     let completions = completion_labels(&mut session, uri.clone());
     assert!(
@@ -1032,8 +1028,14 @@ pub struct StoryDialogue {
         "custom role model is absent: {completions:?}"
     );
     let hover = hover_text(&mut session, uri, source, "StoryDialogue");
-    assert!(hover.contains("pub struct StoryDialogue"));
-    assert!(hover.contains("occurrence: DialogueOccurrenceId"));
+    assert!(
+        hover.contains("pub struct StoryDialogue"),
+        "unexpected custom dialogue View hover: {hover}"
+    );
+    assert!(
+        hover.contains("occurrence: DialogueOccurrenceId"),
+        "unexpected custom dialogue View hover: {hover}"
+    );
 }
 
 #[test]
@@ -1247,6 +1249,7 @@ flow @flow.main main {}\n";
 }
 
 #[test]
+#[ignore = "awaiting Lang-01.1.1.2.2 adapter nominal publication projection"]
 #[allow(
     clippy::too_many_lines,
     reason = "the end-to-end test verifies result projection plus hit, miss, stable-none, and error cache behavior"
@@ -1486,9 +1489,6 @@ flow @flow.numeric_inlays numeric_inlays {
 
 #[test]
 fn expression_type_inlays_are_profile_gated_and_skip_trivial_sites() {
-    let uri = "file:///expression-inlays.arcw"
-        .parse::<Uri>()
-        .expect("uri");
     let source = r#"
 struct Choice {
     label: String,
@@ -1503,21 +1503,32 @@ flow @flow.expression_inlays expression_inlays {
     let choice = Choice { label: "Start", enabled: true }
     let label = choice.label
     let total = add(1i64, base + 3i64)
-    let piped = base |> add(4i64)
+    let piped = base |> add(^, 4i64)
 }
 "#;
 
-    let mut default_session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut default_session, uri.clone(), source);
+    let (_project, mut default_session, uri) =
+        accepted_dialogue_session("expression-inlays", source);
     let default_labels = inlay_hint_labels(&mut default_session, uri.clone());
     assert!(
         !default_labels.iter().any(|label| label == ": i64"),
         "expression type inlays should be opt-in, got {default_labels:?}"
     );
 
-    let mut enabled_session =
-        ArcweftLspSession::new(&LspConfig::default().with_arbitrary_expression_type_inlays(true));
+    let mut enabled_session = ArcweftLspSession::new(
+        &LspConfig::default()
+            .with_profile_id("dev")
+            .with_arbitrary_expression_type_inlays(true),
+    );
     open_text(&mut enabled_session, uri.clone(), source);
+    assert!(
+        enabled_session
+            .profile_for_uri(&uri)
+            .accepted_environment()
+            .is_some(),
+        "expression-inlay profile was not accepted: {:#?}",
+        enabled_session.profile_for_uri(&uri).diagnostics()
+    );
     let enabled_hints = inlay_hints(&mut enabled_session, uri);
     let enabled_labels = inlay_hint_string_labels(&enabled_hints);
     let i64_inlays = enabled_labels

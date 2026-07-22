@@ -1,10 +1,9 @@
 use super::{
-    AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef, EntityRefSyntax,
-    EnumVariantPayload, Expr, FnParam, FnSignature, LifetimeScopeKind, Literal, NominalTypeContext,
-    Pattern, Stmt, TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
+    ArrayLength, AwaitBranchKind, CallArg, ChoiceAction, EntityDeclKind, EntityKind, EntityRef,
+    EntityRefSyntax, EnumVariantPayload, Expr, Literal, NominalTypeContext, Pattern, Stmt,
+    TypeCheckError, TypeKind, TypeRef, VariantPatternPayload,
 };
-use crate::{effect_row::EffectRow, effects::EffectSet};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub(super) fn entity_kind(entity: &EntityRef) -> Option<EntityKind> {
     let head = entity.body().split(['.', '@', ':']).next()?;
@@ -283,7 +282,11 @@ pub(super) fn let_else_bindings(
             bindings.extend(let_else_bindings(pattern, expr_type));
             bindings
         }
-        Pattern::Typed { name, ty } => vec![(name.to_owned(), type_ref_kind(ty.value()))],
+        Pattern::Typed { name, .. } => expr_type
+            .cloned()
+            .map(|ty| (name.to_owned(), ty))
+            .into_iter()
+            .collect(),
         Pattern::Literal(_) | Pattern::Entity(_) | Pattern::Discard | Pattern::Raw(_) => Vec::new(),
     }
 }
@@ -324,14 +327,22 @@ fn let_else_bindings_with_nominal_types(
         Pattern::Record { path, fields, .. } => fields
             .iter()
             .flat_map(|field| {
-                let field_ty = nominal_types.fields.and_then(|nominal_fields| {
-                    nominal_record_field_type(
-                        path.as_deref(),
-                        expr_type,
-                        field.name(),
-                        nominal_fields,
-                    )
-                });
+                let field_ty = expr_type
+                    .and_then(|ty| {
+                        nominal_types
+                            .project
+                            .and_then(|project| project.field_type(ty, field.name()))
+                    })
+                    .or_else(|| {
+                        nominal_types.fields.and_then(|nominal_fields| {
+                            nominal_record_field_type(
+                                path.as_deref(),
+                                expr_type,
+                                field.name(),
+                                nominal_fields,
+                            )
+                        })
+                    });
                 let_else_bindings_with_nominal_types(
                     field.pattern(),
                     field_ty.as_ref(),
@@ -345,6 +356,7 @@ fn let_else_bindings_with_nominal_types(
                     name,
                     ty,
                     nominal_types.variant_payloads,
+                    nominal_types.project,
                     nominal_types.env,
                 )
             });
@@ -799,7 +811,7 @@ pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
             let item = simple_expr_type(value)?;
             Some(TypeKind::Array {
                 item: Box::new(item),
-                len: array_repeat_len_label(len)?,
+                len: array_repeat_length(len)?,
             })
         }
         Expr::RecordLiteral(_) => Some(TypeKind::Named("Record".to_owned())),
@@ -807,21 +819,15 @@ pub(super) fn simple_expr_type(expr: &Expr) -> Option<TypeKind> {
     }
 }
 
-pub(super) fn array_repeat_len_label(expr: &Expr) -> Option<String> {
+pub(super) fn array_repeat_length(expr: &Expr) -> Option<ArrayLength> {
     match expr {
-        Expr::Literal(Literal::Int(literal)) => {
-            literal.magnitude().ok().map(|value| value.to_string())
-        }
+        Expr::Literal(Literal::Int(literal)) => literal
+            .magnitude()
+            .ok()
+            .and_then(|value| usize::try_from(value).ok())
+            .map(ArrayLength::Const),
         _ => None,
     }
-}
-
-pub(super) fn array_len_matches(label: &str, actual: usize) -> bool {
-    label
-        .parse::<usize>()
-        .ok()
-        .or_else(|| label.strip_prefix('N')?.parse::<usize>().ok())
-        .is_none_or(|expected| expected == actual)
 }
 
 pub(super) fn default_presentation_slot_family(expr: &Expr) -> Option<&'static str> {
@@ -852,138 +858,6 @@ pub(super) fn await_branch_pattern_type(
         AwaitBranchKind::Ready => ready.clone(),
         AwaitBranchKind::Error => error.clone(),
         AwaitBranchKind::Denied => TypeKind::Named("AwaitDenied".to_owned()),
-    }
-}
-
-pub(crate) fn type_ref_kind(ty: &TypeRef) -> TypeKind {
-    TypeKind::from(ty)
-}
-
-pub(super) fn function_param_local_type(param: &FnParam) -> TypeKind {
-    function_param_local_type_with_generics(param, &HashSet::new())
-}
-
-pub(super) fn function_param_local_type_with_generics(
-    param: &FnParam,
-    generic_names: &HashSet<String>,
-) -> TypeKind {
-    let ty = param.ty().map_or(TypeKind::Unit, |ty| {
-        type_ref_kind_with_generics(ty.value(), generic_names)
-    });
-    if param.is_rest() {
-        TypeKind::Vec(Box::new(ty))
-    } else {
-        ty
-    }
-}
-
-pub(crate) fn signature_generic_names(signature: &FnSignature) -> HashSet<String> {
-    signature
-        .generic_params()
-        .iter()
-        .filter_map(|param| param.as_type())
-        .map(|name| name.as_str().to_owned())
-        .collect()
-}
-
-pub(crate) fn type_ref_kind_with_generics(
-    ty: &TypeRef,
-    generic_names: &HashSet<String>,
-) -> TypeKind {
-    match ty {
-        TypeRef::Path(path)
-            if crate::types::direct_type_name(path)
-                .is_some_and(|name| generic_names.contains(name)) =>
-        {
-            TypeKind::GenericParam(
-                crate::types::direct_type_name(path)
-                    .expect("guard requires one direct type name")
-                    .to_owned(),
-            )
-        }
-        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
-            subject: Box::new(type_ref_kind_with_generics(subject, generic_names)),
-            trait_name: None,
-            assoc: assoc.as_str().to_owned(),
-        },
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Vec") && args.len() == 1 =>
-        {
-            TypeKind::Vec(Box::new(type_ref_kind_with_generics(
-                &args[0],
-                generic_names,
-            )))
-        }
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Option") && args.len() == 1 =>
-        {
-            TypeKind::Option(Box::new(type_ref_kind_with_generics(
-                &args[0],
-                generic_names,
-            )))
-        }
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Result") && args.len() == 2 =>
-        {
-            TypeKind::Result {
-                ok: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-                error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
-            }
-        }
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Need") && args.len() == 2 =>
-        {
-            TypeKind::Need {
-                ready: Box::new(type_ref_kind_with_generics(&args[0], generic_names)),
-                error: Box::new(type_ref_kind_with_generics(&args[1], generic_names)),
-            }
-        }
-        TypeRef::Reference(reference) => TypeKind::BorrowRef {
-            kind: reference.kind(),
-            lifetime: reference
-                .region()
-                .name()
-                .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-            inner: Box::new(type_ref_kind_with_generics(
-                reference.referent(),
-                generic_names,
-            )),
-        },
-        TypeRef::Slice(inner) => {
-            TypeKind::Slice(Box::new(type_ref_kind_with_generics(inner, generic_names)))
-        }
-        TypeRef::Choice(alternatives) => normalize_choice_type(
-            alternatives
-                .iter()
-                .map(|alternative| type_ref_kind_with_generics(alternative, generic_names))
-                .collect::<Vec<_>>(),
-        ),
-        _ => type_ref_kind(ty),
-    }
-}
-
-pub(super) fn stream_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
-    match ty {
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Stream") && args.len() == 2 =>
-        {
-            Some((type_ref_kind(&args[0]), type_ref_kind(&args[1])))
-        }
-        TypeRef::Generic { base, .. } if crate::types::direct_type_name(base) == Some("Source") => {
-            None
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn source_return_types(ty: &TypeRef) -> Option<(TypeKind, TypeKind)> {
-    match ty {
-        TypeRef::Generic { base, args }
-            if crate::types::direct_type_name(base) == Some("Source") && args.len() == 2 =>
-        {
-            Some((type_ref_kind(&args[0]), type_ref_kind(&args[1])))
-        }
-        _ => None,
     }
 }
 
@@ -1066,15 +940,6 @@ pub(super) fn type_ref_label(ty: &TypeRef) -> String {
     }
 }
 
-pub(crate) fn type_ref_effect_row(
-    effects: Option<&arcweft_lang_syntax::types::TypeEffectRow>,
-) -> EffectRow {
-    effects.map_or_else(EffectRow::unknown, |effects| {
-        EffectSet::from_labels(effects.effects())
-            .map_or_else(|_| EffectRow::unknown(), EffectRow::closed)
-    })
-}
-
 pub(crate) fn type_ref_effect_row_label(
     effects: Option<&arcweft_lang_syntax::types::TypeEffectRow>,
 ) -> Option<String> {
@@ -1085,22 +950,6 @@ pub(crate) fn type_ref_effect_row_label(
             format!("{{ {} }}", effects.effects().join(", "))
         }
     })
-}
-
-pub(super) fn normalize_choice_type(alternatives: Vec<TypeKind>) -> TypeKind {
-    let mut flattened = alternatives
-        .into_iter()
-        .flat_map(|ty| match ty {
-            TypeKind::Choice(alternatives) => alternatives,
-            ty => vec![ty],
-        })
-        .collect::<Vec<_>>();
-    flattened.sort_by_key(type_kind_label);
-    flattened.dedup();
-    match flattened.as_slice() {
-        [single] => single.clone(),
-        _ => TypeKind::Choice(flattened),
-    }
 }
 
 pub(super) fn type_kind_label(ty: &TypeKind) -> String {

@@ -2,7 +2,7 @@ use super::{
     CallArg, EffectId, EffectSet, EnumVariantPayload, Expr, FnParam, FnSignature, FunctionParam,
     FunctionParamHigherOrderBinding, FunctionParamSelector, FunctionParamSelectorSegment,
     FunctionSignature, HashMap, NominalTypeContext, Pattern, RecordPatternField, TypeCheckEnv,
-    TypeKind, VariantPatternPayload, expr_path_label, is_local_ident, type_ref_kind,
+    TypeKind, VariantPatternPayload, expr_path_label, is_local_ident,
     variant_payload_type_for_name,
 };
 
@@ -15,68 +15,54 @@ pub(super) fn available_effect_set(env: &TypeCheckEnv) -> Option<EffectSet> {
     })
 }
 
-pub(crate) fn function_signature_type(signature: &FnSignature) -> FunctionSignature {
-    function_signature_type_with_nominal_types(signature, NominalTypeContext::empty())
-}
-
-pub(super) fn function_signature_type_with_nominal_types(
+pub(crate) fn function_signature_from_resolved(
     signature: &FnSignature,
+    parameter_types: &[Vec<TypeKind>],
+    return_type: TypeKind,
     nominal_types: NominalTypeContext<'_>,
 ) -> FunctionSignature {
-    let return_type = curried_signature_return_type(signature);
-    let params = signature
+    let mut curried_return = return_type;
+    for types in parameter_types.iter().skip(1).rev() {
+        curried_return = TypeKind::function(types.iter().cloned(), curried_return);
+    }
+    let first = signature
         .param_groups()
         .first()
         .into_iter()
         .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(|param| function_param_type(param, nominal_types))
+        .zip(parameter_types.first().into_iter().flatten())
+        .map(|(parameter, ty)| function_param_type_from_resolved(parameter, ty, nominal_types))
         .collect::<Vec<_>>();
-    let remaining_param_groups = signature
+    let remaining = signature
         .param_groups()
         .iter()
         .skip(1)
-        .map(|group| {
+        .zip(parameter_types.iter().skip(1))
+        .map(|(group, types)| {
             group
                 .params()
                 .iter()
-                .map(|param| function_param_type(param, nominal_types))
+                .zip(types)
+                .map(|(parameter, ty)| {
+                    function_param_type_from_resolved(parameter, ty, nominal_types)
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    FunctionSignature::new(return_type, params).with_remaining_param_groups(remaining_param_groups)
+    FunctionSignature::new(curried_return, first).with_remaining_param_groups(remaining)
 }
 
-fn curried_signature_return_type(signature: &FnSignature) -> TypeKind {
-    let return_type = signature
-        .return_type()
-        .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value()));
-    signature
-        .param_groups()
-        .iter()
-        .skip(1)
-        .rev()
-        .fold(return_type, |return_type, group| {
-            TypeKind::function(
-                group.params().iter().map(|param| {
-                    param
-                        .ty()
-                        .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value()))
-                }),
-                return_type,
-            )
-        })
-}
-
-fn function_param_type(param: &FnParam, nominal_types: NominalTypeContext<'_>) -> FunctionParam {
-    let ty = param
-        .ty()
-        .map_or(TypeKind::Unit, |ty| type_ref_kind(ty.value()));
+fn function_param_type_from_resolved(
+    param: &FnParam,
+    ty: &TypeKind,
+    nominal_types: NominalTypeContext<'_>,
+) -> FunctionParam {
     FunctionParam::new(
         pattern_param_name(param.pattern()),
         ty.clone(),
         param.kind(),
         param.default().is_some(),
-        function_param_higher_order_bindings(param.pattern(), &ty, nominal_types),
+        function_param_higher_order_bindings(param.pattern(), ty, nominal_types),
     )
 }
 
@@ -228,9 +214,13 @@ fn collect_record_function_param_higher_order_bindings(
     bindings: &mut Vec<FunctionParamHigherOrderBinding>,
 ) {
     for field in fields {
-        let Some(field_ty) = pattern_type_hint(field.pattern())
-            .or_else(|| record_pattern_field_type(pattern, ty, field.name(), nominal_types.fields))
-        else {
+        let Some(field_ty) = record_pattern_field_type(
+            pattern,
+            ty,
+            field.name(),
+            nominal_types.fields,
+            nominal_types.project,
+        ) else {
             continue;
         };
         collect_function_param_higher_order_bindings(
@@ -257,25 +247,26 @@ fn collect_variant_record_function_param_higher_order_bindings(
         variant,
         ty,
         nominal_types.variant_payloads,
+        nominal_types.project,
         nominal_types.env,
     );
     let payload_selector = selector_with_variant_payload(selector, variant);
     for field in fields {
-        let Some(field_ty) = pattern_type_hint(field.pattern()).or_else(|| {
-            nominal_payload
-                .as_ref()
-                .and_then(|payload| payload.record_field_type(field.name()))
-                .or_else(|| {
-                    payload_ty.as_ref().and_then(|payload_ty| {
-                        record_pattern_field_type(
-                            pattern,
-                            payload_ty,
-                            field.name(),
-                            nominal_types.fields,
-                        )
-                    })
+        let Some(field_ty) = nominal_payload
+            .as_ref()
+            .and_then(|payload| payload.record_field_type(field.name()))
+            .or_else(|| {
+                payload_ty.as_ref().and_then(|payload_ty| {
+                    record_pattern_field_type(
+                        pattern,
+                        payload_ty,
+                        field.name(),
+                        nominal_types.fields,
+                        nominal_types.project,
+                    )
                 })
-        }) else {
+            })
+        else {
             continue;
         };
         collect_function_param_higher_order_bindings(
@@ -300,6 +291,7 @@ fn collect_variant_tuple_function_param_higher_order_bindings(
         variant,
         ty,
         nominal_types.variant_payloads,
+        nominal_types.project,
         nominal_types.env,
     );
     let Some(payload_ty) = nominal_payload
@@ -485,7 +477,9 @@ pub(super) fn selected_higher_order_argument<'a>(
                             value = payload;
                             actual = None;
                         }
-                        Expr::Record { path, .. } if variant_constructor_matches(path, variant) => {
+                        Expr::Record { path, .. }
+                            if variant_constructor_matches(path.as_label(), variant) =>
+                        {
                             actual = None;
                         }
                         _ => return None,
@@ -509,28 +503,19 @@ fn variant_constructor_matches(path: &str, variant: &str) -> bool {
             .is_some_and(|(_, name)| name == variant)
 }
 
-fn pattern_type_hint(pattern: &Pattern) -> Option<TypeKind> {
-    match pattern {
-        Pattern::Typed { ty, .. } => Some(type_ref_kind(ty.value())),
-        Pattern::Tuple(items) => items
-            .iter()
-            .map(pattern_type_hint)
-            .collect::<Option<Vec<_>>>()
-            .map(TypeKind::Tuple),
-        Pattern::Whole { pattern, .. } => pattern_type_hint(pattern),
-        _ => None,
-    }
-}
-
 fn record_pattern_field_type(
     pattern: &Pattern,
     ty: &TypeKind,
     field: &str,
     nominal_fields: Option<&HashMap<String, HashMap<String, TypeKind>>>,
+    project: Option<&crate::nominal::ProjectNominalShapeCatalog>,
 ) -> Option<TypeKind> {
     let Pattern::Record { path, .. } = pattern else {
         return None;
     };
+    if let Some(field_ty) = project.and_then(|project| project.field_type(ty, field)) {
+        return Some(field_ty);
+    }
     let record_name = path.as_deref().or_else(|| match ty {
         TypeKind::Named(name) => Some(name.as_str()),
         TypeKind::BorrowRef { inner, .. } | TypeKind::Shared(inner) => {
@@ -548,18 +533,22 @@ pub(super) fn enum_variant_payload_type_for_name(
     variant: &str,
     ty: &TypeKind,
     nominal_variant_payloads: Option<&HashMap<String, HashMap<String, EnumVariantPayload>>>,
+    project: Option<&crate::nominal::ProjectNominalShapeCatalog>,
     env: Option<&TypeCheckEnv>,
 ) -> Option<EnumVariantPayload> {
     let variant = normalize_variant_name(variant);
     let variant = variant
         .rsplit_once('.')
         .map_or(variant.as_str(), |(_, name)| name);
-    nominal_record_type_name(ty)
-        .and_then(|enum_name| {
-            nominal_variant_payloads?
-                .get(enum_name)?
-                .get(variant)
-                .cloned()
+    project
+        .and_then(|project| project.variant_payload(ty, variant))
+        .or_else(|| {
+            nominal_record_type_name(ty).and_then(|enum_name| {
+                nominal_variant_payloads?
+                    .get(enum_name)?
+                    .get(variant)
+                    .cloned()
+            })
         })
         .or_else(|| env_variant_payload_type_for_name(ty, variant, env))
 }

@@ -47,15 +47,6 @@ effects { fs.read }
         }),
         "let annotation should preserve the closed source effect row"
     );
-    assert_eq!(
-        crate::checker::helpers::type_ref_kind(
-            parse_type_ref("String -> String effects { fs.read }")
-                .expect("function type effect row parses")
-                .value()
-        )
-        .source_label(),
-        "String -> String effects { fs.read }"
-    );
 }
 
 #[test]

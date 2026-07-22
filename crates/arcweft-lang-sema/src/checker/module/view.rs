@@ -1,18 +1,43 @@
 //! Semantic validation owned by authored View declarations.
 
-use crate::checker::helpers::{
-    entity_syntax_kind, ident_pattern_name, type_kind_label, type_ref_kind,
-};
+use crate::checker::helpers::{entity_syntax_kind, ident_pattern_name, type_kind_label};
 use crate::checker::{ActionParam, ActionSignature, EntityKind, TypeCheckError, TypeChecker};
 use crate::dialogue_view::DialogueViewProjection;
+use crate::nominal::{GenericTypeScope, SelfTypeScope};
 use crate::types::TypeKind;
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
 use arcweft_lang_syntax::ast::items::{EntityDeclItem, EntityDeclKind};
 use arcweft_lang_syntax::ast::view::{ViewActionInvokeAction, ViewActionPayload, ViewBody};
-use arcweft_lang_syntax::types::{FnParam, TypeRef, parse_fn_signature};
+use arcweft_lang_syntax::types::{FnParam, parse_fn_signature};
 use std::collections::HashMap;
 
 impl TypeChecker<'_> {
+    pub(super) fn collect_action_signatures(
+        &mut self,
+        module: &HirModule,
+    ) -> HashMap<String, ActionSignature> {
+        let mut signatures = HashMap::new();
+        for (declaration_module, declaration) in module.declarations_with_modules() {
+            let HirTopLevelDecl::EntityDecl(item) = declaration else {
+                continue;
+            };
+            if item.kind() != EntityDeclKind::Action {
+                continue;
+            }
+            self.reset_semantic_root_scope(Some(declaration_module));
+            match self.action_signature_from_decl(item) {
+                Ok(signature) => {
+                    signatures.insert(item.id().body().to_owned(), signature);
+                }
+                Err(message) => self.errors.push(TypeCheckError::new(format!(
+                    "invalid action signature for `{}`: {message}",
+                    item.id().body()
+                ))),
+            }
+        }
+        signatures
+    }
+
     pub(super) fn check_view_declaration(&mut self, item: &EntityDeclItem) {
         self.check_view_action_invokes(item);
         self.check_view_fx_applications(item);
@@ -44,16 +69,22 @@ impl TypeChecker<'_> {
             )));
             return;
         };
+        let owner = self.generic_owner_for_signature(signature, *item.range());
+        let generics = self.generic_scope_for_signature(signature, &owner);
+        self.resolve_generic_parameter_bounds(
+            signature.generic_params(),
+            &generics,
+            &SelfTypeScope::Absent,
+        );
         let parameters = signature
             .param_groups()
             .iter()
             .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
             .filter_map(|parameter| {
                 let name = parameter.pattern().simple_binding_name()?;
-                let TypeRef::Path(type_name) = parameter.ty()?.value() else {
-                    return None;
-                };
-                crate::types::direct_type_name(type_name).map(|type_name| (name, type_name))
+                let resolved =
+                    self.resolve_function_param_type(parameter, &generics, SelfTypeScope::Absent);
+                dialogue_model_name(&resolved).map(|type_name| (name, type_name.to_owned()))
             })
             .collect::<HashMap<_, _>>();
 
@@ -64,7 +95,7 @@ impl TypeChecker<'_> {
     fn check_view_dialogue_text_nodes(
         &mut self,
         view: &ViewBody,
-        parameters: &HashMap<&str, &str>,
+        parameters: &HashMap<&str, String>,
     ) {
         for text in view.text_nodes() {
             let Some(label) = text.source().dotted_selector_label() else {
@@ -113,7 +144,7 @@ impl TypeChecker<'_> {
     fn check_view_dialogue_action_projections(
         &mut self,
         view: &ViewBody,
-        parameters: &HashMap<&str, &str>,
+        parameters: &HashMap<&str, String>,
     ) {
         for action in view.action_projections() {
             let Some(label) = action.dotted_selector_label() else {
@@ -181,6 +212,51 @@ impl TypeChecker<'_> {
         self.check_action_invoke_payload(&action_id, &signature, action);
     }
 
+    fn action_signature_from_decl(
+        &mut self,
+        item: &EntityDeclItem,
+    ) -> Result<ActionSignature, String> {
+        let signature_tail = item.signature_tail().trim();
+        if signature_tail.is_empty() {
+            return Ok(ActionSignature::new([]));
+        }
+
+        let signature = parse_fn_signature(&format!("fn action{signature_tail}"))
+            .map_err(|error| error.to_string())?;
+        if signature.return_type().is_some() {
+            return Err("action declarations do not return values".to_owned());
+        }
+
+        let params = signature
+            .param_groups()
+            .iter()
+            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
+            .map(|param| self.action_param_from_fn_param(param))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ActionSignature::new(params))
+    }
+
+    fn action_param_from_fn_param(&mut self, param: &FnParam) -> Result<ActionParam, String> {
+        if param.is_rest() {
+            return Err("action payload parameters cannot be rest parameters".to_owned());
+        }
+        if param.receiver_kind().is_some() {
+            return Err("action payload parameters cannot include a receiver".to_owned());
+        }
+        let Some(name) = ident_pattern_name(param.pattern()) else {
+            return Err("action payload parameters must use identifier patterns".to_owned());
+        };
+        let ty = param
+            .ty()
+            .ok_or_else(|| "action payload parameters must declare a type".to_owned())?;
+        let resolved = self.resolve_detached_authored_type(
+            ty,
+            &GenericTypeScope::empty(),
+            SelfTypeScope::Absent,
+        );
+        Ok(ActionParam::new(name, resolved, param.default().is_some()))
+    }
+
     fn check_action_invoke_payload(
         &mut self,
         action_id: &str,
@@ -237,73 +313,6 @@ impl TypeChecker<'_> {
     }
 }
 
-pub(super) fn collect_action_signatures(
-    module: &HirModule,
-    errors: &mut Vec<TypeCheckError>,
-) -> HashMap<String, ActionSignature> {
-    module
-        .declarations()
-        .iter()
-        .filter_map(|declaration| match declaration {
-            HirTopLevelDecl::EntityDecl(item) if item.kind() == EntityDeclKind::Action => {
-                Some(item)
-            }
-            _ => None,
-        })
-        .filter_map(|item| match action_signature_from_decl(item) {
-            Ok(signature) => Some((item.id().body().to_owned(), signature)),
-            Err(message) => {
-                errors.push(TypeCheckError::new(format!(
-                    "invalid action signature for `{}`: {message}",
-                    item.id().body()
-                )));
-                None
-            }
-        })
-        .collect()
-}
-
-fn action_signature_from_decl(item: &EntityDeclItem) -> Result<ActionSignature, String> {
-    let signature_tail = item.signature_tail().trim();
-    if signature_tail.is_empty() {
-        return Ok(ActionSignature::new([]));
-    }
-
-    let signature = parse_fn_signature(&format!("fn action{signature_tail}"))
-        .map_err(|error| error.to_string())?;
-    if signature.return_type().is_some() {
-        return Err("action declarations do not return values".to_owned());
-    }
-
-    let params = signature
-        .param_groups()
-        .iter()
-        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-        .map(action_param_from_fn_param)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ActionSignature::new(params))
-}
-
-fn action_param_from_fn_param(param: &FnParam) -> Result<ActionParam, String> {
-    if param.is_rest() {
-        return Err("action payload parameters cannot be rest parameters".to_owned());
-    }
-    if param.receiver_kind().is_some() {
-        return Err("action payload parameters cannot include a receiver".to_owned());
-    }
-    let Some(name) = ident_pattern_name(param.pattern()) else {
-        return Err("action payload parameters must use identifier patterns".to_owned());
-    };
-    let ty = param
-        .ty()
-        .ok_or_else(|| "action payload parameters must declare a type".to_owned())?;
-    Ok(ActionParam::new(
-        name,
-        type_ref_kind(ty.value()),
-        param.default().is_some(),
-    ))
-}
-
 fn action_payload_type(payload: &ViewActionPayload) -> TypeKind {
     match payload {
         ViewActionPayload::LiteralString(_) | ViewActionPayload::TextControlProjection { .. } => {
@@ -314,4 +323,16 @@ fn action_payload_type(payload: &ViewActionPayload) -> TypeKind {
 
 fn action_param_label(param: &ActionParam) -> String {
     format!("{}: {}", param.name(), type_kind_label(param.ty()))
+}
+
+fn dialogue_model_name(ty: &TypeKind) -> Option<&str> {
+    match ty {
+        TypeKind::ProjectNominal(nominal) => Some(nominal.declaration().name().as_str()),
+        TypeKind::AcceptedNominal(nominal) => {
+            crate::types::direct_type_name(nominal.declaration().canonical_path())
+        }
+        TypeKind::OpenNominal(nominal) => crate::types::direct_type_name(nominal.path()),
+        TypeKind::Named(name) => Some(name),
+        _ => None,
+    }
 }

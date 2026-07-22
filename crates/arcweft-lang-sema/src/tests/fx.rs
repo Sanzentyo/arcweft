@@ -3,7 +3,7 @@ use super::support::*;
 fn typecheck(source: &str) -> Result<(), Vec<crate::diagnostics::TypeCheckError>> {
     let tree = parse_ok(source);
     let hir = lower_to_hir(&tree).expect("Fx fixture lowers");
-    typecheck_hir(&hir, &TypeCheckEnv::new())
+    typecheck_hir(&hir, &TypeCheckEnv::standard())
 }
 
 #[test]

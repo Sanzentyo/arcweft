@@ -32,7 +32,13 @@ use arcweft_lang_sema::{
     },
     effect_row::EffectRow,
     effects::EffectSet,
-    env::{EnumVariantPayload, FunctionParam, FunctionSignature, TypeCheckEnv},
+    env::{
+        EnumVariantPayload, FunctionParam, FunctionSignature, TypeCheckEnv,
+        nominal::{
+            AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId,
+            AcceptedNominalRecord, AcceptedNominalSemantics,
+        },
+    },
     registration::{
         CharacterRegistrar, CharacterRegistrationRequest, ExternalRegistrationFact,
         ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredSemanticWorld,
@@ -41,7 +47,7 @@ use arcweft_lang_sema::{
         SignatureNotApplicable, SignatureQuery, SignatureQueryControl, SignatureQueryOutcome,
         query_signature,
     },
-    types::{EntityKind, TypeKind},
+    types::{CharacterNominalType, EntityKind, TypeKind},
 };
 use arcweft_lang_syntax::{
     ast::{
@@ -50,6 +56,7 @@ use arcweft_lang_syntax::{
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
     parser::parse_source,
+    types::{TypePath, TypeRef, parse_type_ref},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
@@ -57,6 +64,14 @@ struct SignatureFixture {
     document: Arc<SourceDocument>,
     project: HirProject,
     world: RegisteredSemanticWorld,
+}
+
+fn type_path(source: &str) -> TypePath {
+    let authored = parse_type_ref(source).expect("fixture type path parses");
+    let TypeRef::Path(path) = authored.value() else {
+        panic!("fixture type path is direct")
+    };
+    path.clone()
 }
 
 impl SignatureFixture {
@@ -580,26 +595,22 @@ flow @flow.main main {
 #[test]
 fn s20_s21_selected_environment_method_is_typed_and_unknown_method_is_not_synthesized() {
     const SOURCE: &str = r"
-struct ActorStage {}
-struct Actor { stage: ActorStage }
+struct Actor { stage: i32 }
 
-fn main() -> Unit {
-    let actor: Actor = actor_value()
+fn main(actor: Actor) -> Unit {
     let shown: String = actor.stage.show(1i32)
     let missing = actor.stage.move(2i32)
     ()
 }
 ";
-    let environment = TypeCheckEnv::standard()
-        .with_function("actor_value", TypeKind::Named("Actor".to_owned()))
-        .with_method_signature(
-            TypeKind::Named("ActorStage".to_owned()),
-            "show",
-            FunctionSignature::new(
-                TypeKind::String,
-                [FunctionParam::required("look", TypeKind::I32)],
-            ),
-        );
+    let environment = TypeCheckEnv::standard().with_method_signature(
+        TypeKind::I32,
+        "show",
+        FunctionSignature::new(
+            TypeKind::String,
+            [FunctionParam::required("look", TypeKind::I32)],
+        ),
+    );
     let fixture = SignatureFixture::new("surface-methods", SOURCE, environment, Vec::new());
     let show = fixture.help("actor.stage.show(1i32)", "1i32");
     assert!(matches!(
@@ -617,13 +628,13 @@ fn main() -> Unit {
 }
 
 #[test]
-fn s22_s23_source_owned_callable_families_keep_authored_types_without_nominal_fabrication() {
+fn s22_s23_source_owned_callable_families_require_accepted_nominal_evidence() {
     const SOURCE: &str = r"
 extern capability character_host {
-    fn accept_look(look: CharacterLook) -> Unit
+    fn accept_look(look: AliceLook) -> Unit
 }
 
-fn project_look(look: CharacterLook) -> Unit {
+fn project_look(look: AliceLook) -> Unit {
     ()
 }
 
@@ -633,10 +644,26 @@ fn main() -> Unit {
     ()
 }
 ";
-    let alice = TypeKind::character_look(
-        CharacterId::try_new("character.alice").expect("Alice character ID"),
-    );
-    let environment = TypeCheckEnv::standard().with_function("alice_look_value", alice);
+    let alice_id = CharacterId::try_new("character.alice").expect("Alice character ID");
+    let alice = TypeKind::character_look(alice_id.clone());
+    let environment = TypeCheckEnv::standard()
+        .try_with_nominal_record(
+            AcceptedNominalRecord::try_new(
+                AcceptedNominalId::new(
+                    AcceptedNominalOwnerId::Character(alice_id.clone()),
+                    type_path("AliceLook"),
+                ),
+                0,
+                AcceptedNominalSemantics::Character(CharacterNominalType::Look {
+                    character: alice_id,
+                }),
+                AcceptedNominalOrigin::Character,
+                None,
+            )
+            .expect("Alice look nominal record"),
+        )
+        .expect("Alice look nominal registers")
+        .with_function("alice_look_value", alice.clone());
     let fixture =
         SignatureFixture::new("surface-source-callables", SOURCE, environment, Vec::new());
     for (call, cursor) in [
@@ -653,10 +680,7 @@ fn main() -> Unit {
         ));
         assert_eq!(
             active_parameter(&help),
-            (
-                "look",
-                &CallableParameterType::Exact(TypeKind::Named("CharacterLook".to_owned()))
-            )
+            ("look", &CallableParameterType::Exact(alice.clone()))
         );
     }
 }
@@ -775,8 +799,7 @@ impl StageMotion for ActorStage {
     }
 }
 
-fn main() -> Unit {
-    let actor: Actor = actor_value()
+fn main(actor: Actor) -> Unit {
     let moved: String = actor.stage.move(2i32)
     ()
 }
@@ -784,7 +807,7 @@ fn main() -> Unit {
     let fixture = SignatureFixture::new(
         "surface-trait-method",
         SOURCE,
-        TypeCheckEnv::standard().with_function("actor_value", TypeKind::Named("Actor".to_owned())),
+        TypeCheckEnv::standard(),
         Vec::new(),
     );
     let help = fixture.help("actor.stage.move(2i32)", "2i32");

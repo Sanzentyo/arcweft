@@ -435,12 +435,12 @@ fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
         Some(TypeRef::Choice(alternatives)) if alternatives.len() == 3
     ));
 
-    let duplicate = parse_type_ref("String | String").expect_err("duplicate branch is rejected");
-    assert!(
-        duplicate
-            .to_string()
-            .contains("duplicate alternative `String`")
-    );
+    let duplicate = parse_type_ref("String | String")
+        .expect("duplicate spelling survives parsing for normalized semantic comparison");
+    assert!(matches!(
+        duplicate.value(),
+        TypeRef::Choice(alternatives) if alternatives.len() == 2
+    ));
 
     let rows = parse_type_ref("Text(String) | Binary(Bytes)")
         .expect_err("variant rows are not anonymous sums");
@@ -507,20 +507,58 @@ flow @flow.bad bad {
 
 #[test]
 fn anonymous_sum_rejects_alias_collapse_and_numeric_ambiguity() {
-    let aliases = parse_ok(
+    let alias_errors = typecheck_registered_source(
+        "anonymous-sum-alias-collapse",
         r"
 type Name = String
 type Email = String
 type Contact = Name | Email
 ",
-    );
-    let alias_hir = lower_to_hir(&aliases).expect("alias collapse fixture lowers");
-    let alias_errors =
-        typecheck_hir(&alias_hir, &TypeCheckEnv::new()).expect_err("alias collapse is rejected");
+        TypeCheckEnv::new(),
+    )
+    .expect_err("alias collapse is rejected");
     assert!(
         alias_errors
             .iter()
             .any(|error| error.message().contains("erase to the same type"))
+    );
+
+    let signature_errors = typecheck_registered_source(
+        "anonymous-sum-signature-alias-collapse",
+        r"
+type A = i32
+fn duplicate() -> A | i32 {
+    1i32
+}
+",
+        TypeCheckEnv::standard(),
+    )
+    .expect_err("a callable signature is checked after registered nominal facts are reused");
+    assert!(
+        signature_errors.iter().any(|error| error
+            .message()
+            .contains("anonymous sum alternatives `A` and `i32` erase to the same type `i32`")),
+        "{signature_errors:#?}"
+    );
+
+    let poison_errors = typecheck_registered_source(
+        "anonymous-sum-signature-poison-exclusion",
+        r"
+type Invalid = Missing | i32 | i32
+",
+        TypeCheckEnv::standard(),
+    )
+    .expect_err("unknown alternatives are excluded without hiding valid duplicates");
+    assert_eq!(poison_errors.len(), 2, "{poison_errors:#?}");
+    assert!(matches!(
+        poison_errors[0].kind(),
+        TypeCheckErrorKind::Nominal { diagnostic }
+            if diagnostic.kind().code() == crate::nominal::NominalTypeDiagnosticCode::UnknownType
+    ));
+    assert!(
+        poison_errors[1]
+            .message()
+            .contains("duplicate alternative `i32` in anonymous sum")
     );
 
     let numeric = parse_ok(

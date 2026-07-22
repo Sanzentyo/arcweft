@@ -349,6 +349,8 @@ fn body_only_change_preserves_binding_and_changes_compile_artifact_identity() {
 fn checked_project_index(compiled: &CompiledProject) -> ProjectSemanticIndex {
     project_semantic_index_from_checked_project(
         compiled.hir_project(),
+        compiled.registered_world().symbols(),
+        compiled.typecheck_report(),
         ProgramHash::new("program-agent-entry-test"),
         compiled.checked_entries(),
     )

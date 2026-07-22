@@ -36,7 +36,16 @@ pub fn hover(
         .line_index()
         .try_byte_offset_from_position(position)
         .ok()?;
+    let word = word_at_position_range(document, position);
     if let Some(hover) = crate::features::entry_roles::hover(profile, document, offset) {
+        return Some(hover);
+    }
+    if let Some((word, _)) = word.as_ref()
+        && let Some(hover) = dialogue_view_model_hover(profile, document, word)
+    {
+        return Some(hover);
+    }
+    if let Some(hover) = crate::features::nominal_types::hover(profile, document, offset) {
         return Some(hover);
     }
     if let Some(text) = ViewPartMetadataIndex::for_document(profile, document)
@@ -50,7 +59,6 @@ pub fn hover(
     if let Some(hover) = effective_dialogue_style_hover(profile, document, offset) {
         return Some(hover);
     }
-    let word = word_at_position_range(document, position);
     if let Some((word, word_range)) = word.as_ref()
         && let Some(hover) = callable_effect_row_hover(profile, document, word, *word_range)
     {
@@ -129,16 +137,10 @@ fn dialogue_view_hover(
     document: &DocumentSnapshot,
     word: &str,
 ) -> Option<Hover> {
+    if let Some(hover) = dialogue_view_model_hover(profile, document, word) {
+        return Some(hover);
+    }
     for model in dialogue_view_types(profile, Some(document)) {
-        if model.name == word {
-            return Some(Hover {
-                contents: HoverContents::Scalar(MarkedString::String(format!(
-                    "Dialogue View input model\n\n{}",
-                    model.declaration()
-                ))),
-                range: None,
-            });
-        }
         if let Some((projection, ty)) = DialogueViewTypeMetadata::fields()
             .into_iter()
             .find(|(projection, _)| projection.field() == word)
@@ -158,6 +160,23 @@ fn dialogue_view_hover(
         }
     }
     None
+}
+
+fn dialogue_view_model_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    word: &str,
+) -> Option<Hover> {
+    let model = dialogue_view_types(profile, Some(document))
+        .into_iter()
+        .find(|model| model.name == word)?;
+    Some(Hover {
+        contents: HoverContents::Scalar(MarkedString::String(format!(
+            "Dialogue View input model\n\n{}",
+            model.declaration()
+        ))),
+        range: None,
+    })
 }
 
 fn closure_effect_row_hover(

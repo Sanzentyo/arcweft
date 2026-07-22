@@ -23,6 +23,14 @@ use arcweft_source::{SourceRange, SourceSpan};
 
 use crate::{
     callable::{PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogBuilder},
+    env::{
+        TypeCheckEnv,
+        nominal::{
+            AcceptedNominalCatalogError, AcceptedNominalId, AcceptedNominalOrigin,
+            AcceptedNominalOwnerId, AcceptedNominalRecord, AcceptedNominalSemantics,
+            OpenNominalEnvironment,
+        },
+    },
     types::{CharacterNominalType, EntityKind, EntityType, TypeKind},
 };
 
@@ -34,8 +42,8 @@ use super::{
     },
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
-        CharacterInventoryRevision, CharacterRegistrar, CharacterRegistrationRequest,
-        ExternalOwnerRegistry, RegisteredExternalOwner, RegisteredSemanticWorld,
+        AcceptedNominalWorld, CharacterInventoryRevision, CharacterRegistrar,
+        CharacterRegistrationRequest, RegisteredExternalOwner, RegisteredSemanticWorld,
         RegisteredTypeCheckEnv,
     },
     source_index::CharacterDefinitionIndex,
@@ -58,7 +66,8 @@ impl ManifestRecord {
 impl CharacterRegistrar {
     #[allow(
         clippy::too_many_lines,
-        reason = "registration is one fail-closed transaction from validated facts to an accepted semantic world"
+        clippy::needless_pass_by_value,
+        reason = "registration consumes one request as a fail-closed transaction into an accepted semantic world"
     )]
     pub fn register(
         request: CharacterRegistrationRequest<'_>,
@@ -176,9 +185,30 @@ impl CharacterRegistrar {
             ]));
         }
 
+        let accepted_base = match accepted_external_environment(&request, &link, &owners) {
+            Ok(environment) => environment,
+            Err(error) => {
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        };
+        let nominal_world = Arc::new(AcceptedNominalWorld::new(
+            accepted_base,
+            request.facts.world().clone(),
+            *request.facts.symbol_revision(),
+            owners,
+        ));
+
         let mut callable_builder =
             RegisteredCallableCatalogBuilder::new(PRODUCTION_CALLABLE_LIMITS);
-        if let Err(error) = callable_builder.add_project(request.project, link.table()) {
+        if let Err(error) =
+            callable_builder.add_project(request.project, link.table(), &nominal_world)
+        {
             return Err(CharacterRegistrationReport::from_diagnostics(vec![
                 CharacterRegistrationDiagnostic::new(
                     CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
@@ -190,15 +220,17 @@ impl CharacterRegistrar {
         if let Err(error) =
             callable_builder.add_project_bindings(request.project, link.table(), |target| {
                 match target {
-                    ProjectSymbolTargetId::External(declaration) => match owners.get(declaration) {
-                        Some(RegisteredExternalOwner::Character(_)) => {
-                            Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
+                    ProjectSymbolTargetId::External(declaration) => {
+                        match nominal_world.external_owners().get(declaration) {
+                            Some(RegisteredExternalOwner::Character(_)) => {
+                                Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
+                            }
+                            Some(RegisteredExternalOwner::Environment(id)) => {
+                                nominal_world.environment_binding(id).cloned()
+                            }
+                            None => None,
                         }
-                        Some(RegisteredExternalOwner::Environment(id)) => {
-                            request.base.environment_binding(id).cloned()
-                        }
-                        None => None,
-                    },
+                    }
                     ProjectSymbolTargetId::Module(_) => Some(TypeKind::Named("Module".to_owned())),
                     ProjectSymbolTargetId::Nominal(declaration) => {
                         Some(TypeKind::Named(declaration.name().as_str().to_owned()))
@@ -215,8 +247,8 @@ impl CharacterRegistrar {
                 ),
             ]));
         }
-        let standard_publication = match request
-            .base
+        let standard_publication = match nominal_world
+            .typecheck_env()
             .standard_callable_publication(&PRODUCTION_CALLABLE_LIMITS)
         {
             Ok(publication) => publication,
@@ -266,17 +298,10 @@ impl CharacterRegistrar {
 
         let symbols = Arc::new(link.into_table());
         let environment = Arc::new(RegisteredTypeCheckEnv {
-            base: request.base,
+            nominal_world,
             callables,
             characters,
             character_variants,
-            external_owners: ExternalOwnerRegistry {
-                world: request.facts.world().clone(),
-                revision: *request.facts.symbol_revision(),
-                owners,
-            },
-            world: request.facts.world().clone(),
-            symbol_revision: *request.facts.symbol_revision(),
             character_descriptor: descriptor,
             character_digest: digest,
             character_revision: revision,
@@ -311,6 +336,63 @@ impl CharacterRegistrar {
             character_definitions,
         })
     }
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "accepted catalog construction preserves its complete typed atomic-failure evidence"
+)]
+fn accepted_external_environment(
+    request: &CharacterRegistrationRequest<'_>,
+    link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
+    owners: &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
+) -> Result<Arc<TypeCheckEnv>, AcceptedNominalCatalogError> {
+    request
+        .base
+        .nominal_catalog()
+        .validate_scopes_for(OpenNominalEnvironment::Accepted)?;
+    let mut environment = request.base.as_ref().clone();
+    for (seed_id, declaration) in link.seed_declarations() {
+        let Some(owner) = owners.get(&declaration) else {
+            continue;
+        };
+        let seed = request
+            .facts
+            .external_declarations()
+            .declaration(seed_id)
+            .expect("linked external seeds belong to the accepted registration facts");
+        let (accepted_owner, semantics, origin) = match owner {
+            RegisteredExternalOwner::Environment(id) => (
+                AcceptedNominalOwnerId::Environment(id.clone()),
+                AcceptedNominalSemantics::Exact(
+                    request
+                        .base
+                        .environment_binding(id)
+                        .expect("environment owners were validated before catalog publication")
+                        .clone(),
+                ),
+                AcceptedNominalOrigin::Adapter,
+            ),
+            RegisteredExternalOwner::Character(character) => (
+                AcceptedNominalOwnerId::Character(character.clone()),
+                AcceptedNominalSemantics::Exact(TypeKind::Ref(EntityType::new(
+                    EntityKind::Character,
+                    None,
+                ))),
+                AcceptedNominalOrigin::Character,
+            ),
+        };
+        for binding in seed.direct_bindings() {
+            environment.try_insert_nominal_record(AcceptedNominalRecord::try_new(
+                AcceptedNominalId::new(accepted_owner.clone(), binding.path().clone().into()),
+                0,
+                semantics.clone(),
+                origin,
+                Some(binding.source().clone()),
+            )?)?;
+        }
+    }
+    Ok(Arc::new(environment))
 }
 
 fn validate_project_sources(

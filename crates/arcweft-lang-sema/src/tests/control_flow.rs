@@ -671,7 +671,7 @@ flow @flow.branching branching {
             == TypeJudgmentSubject::LetBinding {
                 pattern: "Ident(\"face\")".to_owned(),
             }
-            && judgment.ty == TypeKind::Choice(vec![TypeKind::String, TypeKind::I64])
+            && judgment.ty == TypeKind::Choice(vec![TypeKind::I64, TypeKind::String])
     }));
 }
 
@@ -862,8 +862,8 @@ flow @flow.branching branching {
             }
             && judgment.ty
                 == TypeKind::Choice(vec![
-                    TypeKind::entity_ref(EntityKind::Flow),
                     TypeKind::String,
+                    TypeKind::entity_ref(EntityKind::Flow),
                 ])
     }));
 }

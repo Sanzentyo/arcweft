@@ -17,10 +17,7 @@ use arcweft_bundle::{
 };
 use arcweft_id::{IdError, PublicId};
 use arcweft_lang_hir::{model::HirModule, project::HirProject};
-use arcweft_lang_sema::{
-    check::TypeCheckReport,
-    dialogue_view::{DialogueViewModelError, DialogueViewModelRegistry},
-};
+use arcweft_lang_sema::{check::TypeCheckReport, dialogue_view::DialogueViewModelRegistry};
 use arcweft_presentation::{fx::FxDefinition, image::ImageObjectId};
 use arcweft_project::sources::ProjectSources;
 use arcweft_resource_model::registry::{ResourceTypeRegistry, ResourceTypeRegistryDigest};
@@ -65,8 +62,6 @@ pub(crate) struct ViewProjectLowerer<'a> {
 pub(crate) enum ViewProjectLowerError {
     #[error("type checking produced {count} blocking diagnostic(s) before View lowering")]
     UncheckedTypeReport { count: usize },
-    #[error("dialogue View model validation failed: {errors:?}")]
-    DialogueModels { errors: Vec<DialogueViewModelError> },
     #[error("View `{view}` occurs more than once in the project source inventory")]
     DuplicateViewSource { view: ViewId },
     #[error("View `{view}` has an invalid source range: {source}")]
@@ -370,14 +365,13 @@ impl<'a> ViewProjectLowerer<'a> {
                 count: self.typecheck.diagnostics.len(),
             });
         }
-        let dialogue_view_models = DialogueViewModelRegistry::from_hir(self.linked_hir)
-            .map_err(|errors| ViewProjectLowerError::DialogueModels { errors })?;
+        let dialogue_view_models = &self.typecheck.dialogue_view_models;
         let ViewBundleSidecars {
             program,
             text,
             input,
             image_objects,
-        } = self.lower_authored_sidecars(&dialogue_view_models)?;
+        } = self.lower_authored_sidecars(dialogue_view_models)?;
         reject_image_object_collisions(
             self.source_image_objects,
             &image_objects,

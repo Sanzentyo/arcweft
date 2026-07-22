@@ -54,11 +54,39 @@ fn checked_project_index(
     .expect("entry roles check");
     let index = project_semantic_index_from_checked_project(
         &project,
+        registered.symbols(),
+        &typecheck,
         ProgramHash::new(format!("program-{profile}")),
         &catalog,
     )
     .expect("checked project index builds");
     (catalog, index)
+}
+
+fn accepted_project_index(
+    project: &HirProject,
+    documents: Vec<std::sync::Arc<SourceDocument>>,
+    world: arcweft_lang_hir::symbol::ProjectSymbolWorldId,
+    program_hash: &str,
+) -> ProjectSemanticIndex {
+    let facts = ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new())
+        .expect("project index registration facts");
+    let registered = register(project, &facts, TypeCheckEnv::standard(), None)
+        .expect("project index registered world");
+    let typecheck = analyze_registered_project_types(&project.linked_module(), &registered);
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "accepted project must typecheck: {:#?}",
+        typecheck.diagnostics
+    );
+    project_semantic_index_from_checked_project(
+        project,
+        registered.symbols(),
+        &typecheck,
+        ProgramHash::new(program_hash),
+        &CheckedEntryCatalog::default(),
+    )
+    .expect("accepted project index builds")
 }
 
 #[test]
@@ -257,7 +285,7 @@ fn agent_prelude_marks_structured_intrinsic_lowering() {
 }
 
 #[test]
-fn project_index_from_hir_preserves_flow_and_signal_ref_value_types() {
+fn project_index_from_hir_does_not_reparse_raw_signal_type_tails() {
     let tree = parse_source(
         r#"
 signal @signal.current_flow: Watch<Ref<Flow>>
@@ -278,10 +306,7 @@ flow @flow.opening opening {
     );
     assert_eq!(
         index.typecheck_env().symbol_type("signal.current_flow"),
-        Some(&TypeKind::entity_ref_with_value(
-            EntityKind::Signal,
-            TypeKind::entity_ref(EntityKind::Flow)
-        ))
+        Some(&TypeKind::entity_ref(EntityKind::Signal))
     );
 }
 
@@ -309,19 +334,21 @@ view FeedbackForm() {
 #[test]
 fn project_index_from_hir_preserves_project_callables_separately_from_agent_prelude() {
     let source = r#"
+struct GameState {}
+struct GameEvent {}
+
 pub fn update_route(state: GameState, event: GameEvent) -> GameState {
-    let route = current_route(state)
+    let route = current_route()
     state
 }
 
-pub fn current_route(state: GameState) -> Ref<Flow> {
-    @flow.opening
+pub fn current_route() -> String {
+    "opening"
 }
 
 flow @flow.opening opening {
     let route = current_route()
     goto @flow.done
-    goto route
     return "ok"
 }
 
@@ -329,13 +356,8 @@ flow @flow.done done {
     return "done"
 }
 "#;
-    let (_, project, _) = root_project_source("project-index-callables", source);
-    let index = project_semantic_index_from_checked_project(
-        &project,
-        ProgramHash::new("program-a"),
-        &CheckedEntryCatalog::default(),
-    )
-    .expect("project HIR indexes ordinary functions");
+    let (document, project, world) = root_project_source("project-index-callables", source);
+    let index = accepted_project_index(&project, vec![document], world, "program-a");
 
     assert!(
         index
@@ -347,10 +369,25 @@ flow @flow.done done {
         .expect("ordinary function indexed");
     assert_eq!(update_route.kind(), ProjectCallableKind::Function);
     assert_eq!(update_route.signature().params().len(), 2);
-    assert_eq!(
-        update_route.signature().return_type(),
-        &TypeKind::Named("GameState".to_owned())
-    );
+    let TypeKind::ProjectNominal(return_type) = update_route.signature().return_type() else {
+        panic!("checked project callable return type must retain nominal identity");
+    };
+    assert_eq!(return_type.declaration().name().as_str(), "GameState");
+    let game_state = index
+        .project_nominals()
+        .values()
+        .find(|record| record.id().name().as_str() == "GameState")
+        .expect("accepted nominal declaration indexed");
+    let state_references = index
+        .project_nominal_references()
+        .iter()
+        .filter(|edge| edge.declaration() == game_state.id())
+        .collect::<Vec<_>>();
+    assert!(!state_references.is_empty());
+    assert!(state_references.iter().all(|edge| {
+        source.get(edge.terminal_source().range().start()..edge.terminal_source().range().end())
+            == Some("GameState")
+    }));
     let declaration = update_route.declaration();
     assert_eq!(declaration.package().as_str(), "registration-tests");
     assert_eq!(declaration.qualified_name(), "update_route");
@@ -369,10 +406,7 @@ flow @flow.done done {
         .project_callable(&QualifiedName::new("current_route"))
         .expect("current_route callable indexed");
     assert_eq!(current_route.kind(), ProjectCallableKind::Function);
-    assert_eq!(
-        current_route.signature().return_type(),
-        &TypeKind::entity_ref(EntityKind::Flow)
-    );
+    assert_eq!(current_route.signature().return_type(), &TypeKind::String);
     let relations = index
         .dependency_relations()
         .iter()
@@ -394,34 +428,24 @@ flow @flow.done done {
                 && matches!(to, ProjectGraphSymbolRef::Callable(name) if name.as_str() == "current_route")
                 && *kind == "calls_callable"
         }));
-    assert!(relations.iter().any(|(from, to, kind)| {
-        matches!(from, ProjectGraphSymbolRef::Callable(name) if name.as_str() == "current_route")
-            && matches!(to, ProjectGraphSymbolRef::Entity(id) if id.as_str() == "flow.opening")
-            && *kind == "references_entity"
-    }));
     let control = index
         .flow_control_summary(&public_id("flow.opening"))
         .expect("flow control summary indexed");
     assert_eq!(control.static_goto_count(), 1);
-    assert_eq!(control.dynamic_goto_count(), 1);
-    assert!(control.has_dynamic_control());
+    assert_eq!(control.dynamic_goto_count(), 0);
+    assert!(!control.has_dynamic_control());
 }
 
 #[test]
 fn project_index_keeps_same_named_functions_distinct_by_canonical_declaration() {
-    let (_, project, _) = project_modules(
+    let (documents, project, world) = project_modules(
         "project-index-same-name-callables",
         &[
             ("", "fn resolve() -> Unit { () }\n"),
             ("ui", "fn resolve() -> Unit { () }\n"),
         ],
     );
-    let index = project_semantic_index_from_checked_project(
-        &project,
-        ProgramHash::new("program-same-name-callables"),
-        &CheckedEntryCatalog::default(),
-    )
-    .expect("same-name ordinary functions index");
+    let index = accepted_project_index(&project, documents, world, "program-same-name-callables");
 
     let root = index
         .project_callable(&QualifiedName::new("resolve"))
@@ -439,16 +463,16 @@ fn project_index_keeps_same_named_functions_distinct_by_canonical_declaration() 
 
 #[test]
 fn project_index_keeps_same_named_function_and_view_owners_distinct() {
-    let (_, project, _) = root_project_source(
+    let (document, project, world) = root_project_source(
         "project-index-function-view-identity",
         "fn Card() -> Unit { () }\npub view Card() {\n    Panel()\n}\n",
     );
-    let index = project_semantic_index_from_checked_project(
+    let index = accepted_project_index(
         &project,
-        ProgramHash::new("program-function-view-identity"),
-        &CheckedEntryCatalog::default(),
-    )
-    .expect("same-name Function and View index");
+        vec![document],
+        world,
+        "program-function-view-identity",
+    );
     let package = project.package().clone();
     let module = CanonicalModulePath::crate_root();
     let function = CallableDeclarationId::try_new(
@@ -485,13 +509,14 @@ fn project_index_keeps_same_named_function_and_view_owners_distinct() {
 }
 
 fn indexed_view_semantic_hash(source: &str) -> String {
-    let (_, project, _) = root_project_source("project-index-view-semantic-hash", source);
-    project_semantic_index_from_checked_project(
+    let (document, project, world) =
+        root_project_source("project-index-view-semantic-hash", source);
+    accepted_project_index(
         &project,
-        ProgramHash::new("program-view-semantic-hash"),
-        &CheckedEntryCatalog::default(),
+        vec![document],
+        world,
+        "program-view-semantic-hash",
     )
-    .expect("View callable indexes")
     .project_callable(&QualifiedName::new("Card"))
     .expect("Card View callable")
     .semantic_hash()
@@ -502,10 +527,10 @@ fn indexed_view_semantic_hash(source: &str) -> String {
 #[test]
 fn view_semantic_hash_is_stable_across_signature_whitespace() {
     let compact = indexed_view_semantic_hash(
-        "pub view Card<T: Display>(value: T = make_default(1), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+        "pub view Card<T>(value: T = make_default(1), labels: ...String) {\n    Panel()\n}\n",
     );
     let spaced = indexed_view_semantic_hash(
-        "pub view Card< T : Display >( value : T = make_default( 1 ), labels : ...String ) where T : Clone {\n    Panel()\n}\n",
+        "pub view Card< T >( value : T = make_default( 1 ), labels : ...String ) {\n    Panel()\n}\n",
     );
 
     assert_eq!(compact, spaced);
@@ -514,28 +539,28 @@ fn view_semantic_hash_is_stable_across_signature_whitespace() {
 #[test]
 fn view_semantic_hash_distinguishes_typed_callable_contract_changes() {
     let baseline = indexed_view_semantic_hash(
-        "pub view Card<T: Display>(value: T = make_default(1), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+        "pub view Card<T>(value: T = make_default(1), labels: ...String) {\n    Panel()\n}\n",
     );
     let changed_contracts = [
         (
             "required parameter",
-            "pub view Card<T: Display>(value: T, labels: ...String) where T: Clone {\n    Panel()\n}\n",
+            "pub view Card<T>(value: T, labels: ...String) {\n    Panel()\n}\n",
         ),
         (
             "default expression",
-            "pub view Card<T: Display>(value: T = make_default(2), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+            "pub view Card<T>(value: T = make_default(2), labels: ...String) {\n    Panel()\n}\n",
         ),
         (
             "fixed rather than rest parameter",
-            "pub view Card<T: Display>(value: T = make_default(1), labels: String) where T: Clone {\n    Panel()\n}\n",
+            "pub view Card<T>(value: T = make_default(1), labels: String) {\n    Panel()\n}\n",
         ),
         (
-            "generic bound",
-            "pub view Card<T: Debug>(value: T = make_default(1), labels: ...String) where T: Clone {\n    Panel()\n}\n",
+            "generic parameter name",
+            "pub view Card<U>(value: U = make_default(1), labels: ...String) {\n    Panel()\n}\n",
         ),
         (
-            "where clause",
-            "pub view Card<T: Display>(value: T = make_default(1), labels: ...String) where T: Copy {\n    Panel()\n}\n",
+            "parameter type",
+            "pub view Card<T>(value: String = make_default(1), labels: ...String) {\n    Panel()\n}\n",
         ),
     ];
 

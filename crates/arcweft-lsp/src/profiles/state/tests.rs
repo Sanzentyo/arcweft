@@ -24,11 +24,11 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_sema::{
-    env::TypeCheckEnv,
+    env::{TypeCheckEnv, identity::EnvironmentBindingId},
     registration::{
         CharacterRegistrar, CharacterRegistrationDiagnosticKind, CharacterRegistrationRequest,
-        EnvironmentBindingId, ExternalRegistrationFact, ProjectRegistrationFacts,
-        RegisteredExternalOwner, RegisteredTypeCheckEnv,
+        ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredExternalOwner,
+        RegisteredTypeCheckEnv,
     },
     signature::{
         SignatureQuery, SignatureQueryControl, SignatureQueryOutcome, SignatureRecovery,

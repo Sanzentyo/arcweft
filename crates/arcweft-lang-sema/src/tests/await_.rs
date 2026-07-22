@@ -411,7 +411,7 @@ flow @flow.borrow borrow {
 ",
     );
     let hir = lower_to_hir(&tree).expect("borrow across await fixture lowers");
-    let env = TypeCheckEnv::new()
+    let env = TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
             TypeKind::Named("ImageHandle".to_owned()),
@@ -453,7 +453,7 @@ flow @flow.borrow borrow {
             "Rgba8".to_owned(),
         )))),
     };
-    let env = TypeCheckEnv::new()
+    let env = TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
             TypeKind::Named("ImageHandle".to_owned()),
@@ -492,7 +492,7 @@ flow @flow.borrow borrow {
             "Rgba8".to_owned(),
         )))),
     };
-    let env = TypeCheckEnv::new()
+    let env = TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_symbol("should_drop", TypeKind::Bool)
         .with_method(
@@ -538,7 +538,7 @@ flow @flow.borrow borrow {
             "Rgba8".to_owned(),
         )))),
     };
-    let env = TypeCheckEnv::new()
+    let env = TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_symbol("mode", TypeKind::Named("Mode".to_owned()))
         .with_method(
@@ -576,7 +576,7 @@ flow @flow.borrow borrow {
             "Rgba8".to_owned(),
         )))),
     };
-    let env = TypeCheckEnv::new()
+    let env = TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
             TypeKind::Named("ImageHandle".to_owned()),

@@ -45,6 +45,7 @@ pub struct HirModule {
     pub(crate) flows: Vec<HirFlow>,
     pub(crate) functions: Vec<HirFunction>,
     pub(crate) declarations: Vec<HirTopLevelDecl>,
+    pub(crate) declaration_modules: Vec<CanonicalModulePath>,
     pub(crate) style_patches: Vec<HirStylePatch>,
     pub(crate) view_parts: Vec<HirViewPartOwner>,
     pub(crate) source_map: Option<HirSourceMap>,
@@ -461,6 +462,20 @@ impl HirModule {
 
     pub fn declarations(&self) -> &[HirTopLevelDecl] {
         &self.declarations
+    }
+
+    /// Top-level declarations paired with the canonical module that authored
+    /// each declaration.
+    ///
+    /// A linked HIR module combines declarations whose local byte ranges may
+    /// overlap. Keeping the typed module owner alongside each declaration lets
+    /// semantic consumers bind those ranges through the correct source
+    /// document without inspecting source text or guessing from a range.
+    pub fn declarations_with_modules(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &HirTopLevelDecl)> {
+        debug_assert_eq!(self.declaration_modules.len(), self.declarations.len());
+        self.declaration_modules.iter().zip(&self.declarations)
     }
 
     /// Typed authored View declarations in deterministic linked-HIR order.

@@ -1,6 +1,12 @@
+use super::identity::EnvironmentBindingId;
 use super::{
     effects::EffectCapability,
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
+    nominal::{
+        AcceptedNominalCatalog, AcceptedNominalCatalogError, AcceptedNominalId,
+        AcceptedNominalOrigin, AcceptedNominalOwnerId, AcceptedNominalRecord,
+        AcceptedNominalSemantics, RustPackageId, standard_exact_record,
+    },
 };
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CONTENT_TYPE, DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE,
@@ -8,10 +14,9 @@ use crate::dialogue_view::{
     STANDARD_DIALOGUE_VIEW_TYPE,
 };
 use crate::effect_row::EffectRow;
-use crate::registration::EnvironmentBindingId;
 use crate::types::{CharacterNominalType, EntityType, TypeKind};
 use arcweft_data::DataFormat;
-use arcweft_lang_syntax::types::FnParamKind;
+use arcweft_lang_syntax::types::{FnParamKind, TypePath};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -21,6 +26,15 @@ use thiserror::Error;
 pub enum DebugPathKind {
     State,
     Observation,
+}
+
+/// Missing-field policy for an environment-owned record constructor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum NominalRecordLiteralPolicy {
+    /// Every declared field must be authored in the literal.
+    Complete,
+    /// Omitted fields use the nominal record's declared runtime defaults.
+    DefaultMissing,
 }
 
 /// Function or method signature tracked by the semantic environment.
@@ -99,6 +113,7 @@ pub struct AgentActionEnvParam {
 /// Small, explicit environment used to validate that HIR can feed type checking.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeCheckEnv {
+    pub(crate) nominal_catalog: AcceptedNominalCatalog,
     pub(crate) symbols: HashMap<String, TypeKind>,
     pub(crate) enum_variants: HashMap<TypeKind, HashSet<String>>,
     pub(crate) enum_variant_payloads: HashMap<TypeKind, HashMap<String, EnumVariantPayload>>,
@@ -111,8 +126,9 @@ pub struct TypeCheckEnv {
     pub(crate) debug_paths: HashMap<(DebugPathKind, String), TypeKind>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
-    pub(crate) rust_packages: HashMap<String, RustPackageExports>,
+    pub(crate) rust_packages: HashMap<RustPackageId, RustPackageExports>,
     pub(crate) nominal_records: HashMap<String, HashMap<String, TypeKind>>,
+    nominal_record_literal_policies: HashMap<String, NominalRecordLiteralPolicy>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
 }
 
@@ -469,8 +485,10 @@ impl TypeCheckEnv {
 
     /// Registers builtins that are available to ordinary Arcweft source files.
     #[must_use]
-    pub fn with_standard_builtins(self) -> Self {
-        self.with_standard_dialogue_view_types()
+    fn with_standard_builtins(self) -> Self {
+        self.with_standard_accepted_nominals()
+            .with_standard_presentation_nominals()
+            .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
             .with_function("fmt", TypeKind::DisplayText)
             .with_function_signature(
@@ -534,6 +552,54 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
+    }
+
+    #[must_use]
+    fn with_standard_presentation_nominals(self) -> Self {
+        let environment = [
+            ("Fx", TypeKind::Named("Fx".to_owned())),
+            ("Color", TypeKind::Named("Color".to_owned())),
+            ("Length", TypeKind::Named("Length".to_owned())),
+            ("Angle", TypeKind::Named("Angle".to_owned())),
+            ("AudioLevel", TypeKind::Named("AudioLevel".to_owned())),
+            ("Tempo", TypeKind::Named("Tempo".to_owned())),
+            ("Rgba8", TypeKind::Named("Rgba8".to_owned())),
+            (
+                "FxSampleContext",
+                TypeKind::Named("FxSampleContext".to_owned()),
+            ),
+        ]
+        .into_iter()
+        .fold(self, |environment, (name, semantics)| {
+            environment
+                .try_with_nominal_record(
+                    standard_exact_record(name, semantics, AcceptedNominalOrigin::Domain)
+                        .expect("standard presentation atoms have valid typed identities"),
+                )
+                .expect("standard presentation atoms have distinct paths")
+        });
+
+        environment.with_standard_defaulted_nominal_record(
+            "Transform2D",
+            [
+                (
+                    "translate_x".to_owned(),
+                    TypeKind::Named("Length".to_owned()),
+                ),
+                (
+                    "translate_y".to_owned(),
+                    TypeKind::Named("Length".to_owned()),
+                ),
+                ("scale_x".to_owned(), TypeKind::F32),
+                ("scale_y".to_owned(), TypeKind::F32),
+                ("skew_x".to_owned(), TypeKind::Named("Angle".to_owned())),
+                ("skew_y".to_owned(), TypeKind::Named("Angle".to_owned())),
+                ("rotation".to_owned(), TypeKind::Named("Angle".to_owned())),
+                ("origin_x".to_owned(), TypeKind::Named("Length".to_owned())),
+                ("origin_y".to_owned(), TypeKind::Named("Length".to_owned())),
+                ("opacity".to_owned(), TypeKind::F32),
+            ],
+        )
     }
 
     #[must_use]
@@ -634,27 +700,27 @@ impl TypeCheckEnv {
 
     #[must_use]
     fn with_standard_dialogue_view_types(self) -> Self {
-        self.with_nominal_record(
+        self.with_standard_nominal_record(
             DIALOGUE_CONTENT_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
         )
-        .with_nominal_record(
+        .with_standard_nominal_record(
             DIALOGUE_OCCURRENCE_ID_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
         )
-        .with_nominal_record(
+        .with_standard_nominal_record(
             DIALOGUE_STAGE_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
         )
-        .with_nominal_record(
+        .with_standard_nominal_record(
             DIALOGUE_REVEAL_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
         )
-        .with_nominal_record(
+        .with_standard_nominal_record(
             DIALOGUE_ACTION_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
         )
-        .with_nominal_record(
+        .with_standard_nominal_record(
             STANDARD_DIALOGUE_VIEW_TYPE,
             [
                 (
@@ -686,26 +752,75 @@ impl TypeCheckEnv {
         .with_dialogue_view_models(DialogueViewModelRegistry::standard())
     }
 
-    /// Registers one nominal record and its typed fields.
+    /// Registers one standard nominal record and its typed fields.
     #[must_use]
-    pub fn with_nominal_record(
+    fn with_standard_nominal_record(
         mut self,
         name: impl Into<String>,
         fields: impl IntoIterator<Item = (String, TypeKind)>,
     ) -> Self {
-        self.nominal_records.insert(
+        self.insert_standard_nominal_record(
             name.into(),
+            fields,
+            NominalRecordLiteralPolicy::Complete,
+        );
+        self
+    }
+
+    #[must_use]
+    fn with_standard_defaulted_nominal_record(
+        mut self,
+        name: impl Into<String>,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+    ) -> Self {
+        self.insert_standard_nominal_record(
+            name.into(),
+            fields,
+            NominalRecordLiteralPolicy::DefaultMissing,
+        );
+        self
+    }
+
+    fn insert_standard_nominal_record(
+        &mut self,
+        name: String,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        literal_policy: NominalRecordLiteralPolicy,
+    ) {
+        let accepted = standard_exact_record(
+            &name,
+            TypeKind::Named(name.clone()),
+            AcceptedNominalOrigin::NominalRecord,
+        )
+        .expect("nominal record names are valid non-reserved type paths");
+        self.nominal_catalog = self
+            .nominal_catalog
+            .try_with_record(
+                accepted,
+                crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
+            )
+            .expect("nominal record paths are unique in one semantic environment");
+        self.nominal_records.insert(
+            name.clone(),
             fields
                 .into_iter()
                 .map(|(name, ty)| (name, normalize_type_kind(ty)))
                 .collect(),
         );
-        self
+        self.nominal_record_literal_policies
+            .insert(name, literal_policy);
     }
 
     /// Standard and adapter-provided nominal records visible to source files.
     pub fn nominal_records(&self) -> &HashMap<String, HashMap<String, TypeKind>> {
         &self.nominal_records
+    }
+
+    pub(crate) fn nominal_record_literal_policy(&self, name: &str) -> NominalRecordLiteralPolicy {
+        self.nominal_record_literal_policies
+            .get(name)
+            .copied()
+            .unwrap_or(NominalRecordLiteralPolicy::Complete)
     }
 
     /// Registers the semantic-role inventory used by dialogue View parameters.
@@ -999,19 +1114,40 @@ impl TypeCheckEnv {
         self
     }
 
-    /// Registers one Rust type export under the adapter crate package.
-    #[must_use]
-    pub fn with_rust_type_export(
+    /// Atomically registers one typed Rust export and its exact accepted fact.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the validated [`TypePath`] invariant is violated and the
+    /// path contains no segment. Public constructors cannot create that state.
+    pub fn try_with_rust_type_export(
         mut self,
-        package: impl Into<String>,
-        name: impl Into<String>,
-    ) -> Self {
+        package: RustPackageId,
+        path: TypePath,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        let name = path
+            .segments()
+            .last()
+            .expect("typed paths contain at least one segment")
+            .as_str()
+            .to_owned();
+        let accepted = AcceptedNominalRecord::try_new(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::RustPackage(package.clone()), path),
+            0,
+            AcceptedNominalSemantics::Opaque,
+            AcceptedNominalOrigin::RustExport,
+            None,
+        )?;
+        self.nominal_catalog = self.nominal_catalog.try_with_record(
+            accepted,
+            crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
+        )?;
         self.rust_packages
-            .entry(package.into())
+            .entry(package)
             .or_default()
             .types
-            .insert(name.into());
-        self
+            .insert(name);
+        Ok(self)
     }
 
     pub(crate) fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
@@ -1087,7 +1223,7 @@ impl TypeCheckEnv {
         self.available_effects.as_ref()
     }
 
-    pub(crate) fn rust_package(&self, package: &str) -> Option<&RustPackageExports> {
+    pub(crate) fn rust_package(&self, package: &RustPackageId) -> Option<&RustPackageExports> {
         self.rust_packages.get(package)
     }
 }

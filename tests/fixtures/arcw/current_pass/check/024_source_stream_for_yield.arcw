@@ -1,3 +1,6 @@
+struct IteratorItem {}
+struct CaptureError {}
+
 fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
     for frame in frames {
         yield frame

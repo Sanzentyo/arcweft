@@ -29,9 +29,13 @@ use crate::fact_layer::{EffectScope, capability_from_expr};
 use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,
 };
+use crate::nominal::{GenericTypeScope, NominalResolutionIndex, SelfTypeScope};
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
-use crate::traits::{ProjectionError, TraitCatalog, TraitPredicate, collect_trait_catalog};
-use crate::types::{EntityKind, MapKind, TypeKind};
+use crate::traits::{
+    ProjectionError, TraitCatalog, TraitPredicate, collect_trait_catalog,
+    trait_predicate_inputs_for_signature,
+};
+use crate::types::{ArrayLength, EntityKind, MapKind, TypeKind};
 use arcweft_lang_hir::{
     model::{HirFlowItem, HirModule, HirTopLevelDecl},
     symbol::{CallableDeclarationId, ProjectSymbolTable},
@@ -55,6 +59,7 @@ use arcweft_lang_syntax::{
     expr::{CallArg, Expr, LifetimeAccessMode, LifetimeKey, LifetimeScopeKind, Literal},
     types::{FnParam, FnSignature, TypeRef},
 };
+use arcweft_source::SourceSpan;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod assertion;
@@ -71,6 +76,7 @@ pub mod iterator;
 pub mod lifetime_access;
 pub mod line_plan;
 pub mod module;
+mod nominal_resolution;
 pub mod presentation;
 mod registered_candidate_transaction;
 #[cfg(test)]
@@ -95,17 +101,14 @@ use fx::FxCatalog;
 use helpers::{
     await_branch_pattern_type, builtin_path_type, choice_output_type,
     default_presentation_slot_family, entity_kind, entity_kind_for_decl, entity_syntax_kind,
-    expr_path_label, function_param_local_type, function_param_local_type_with_generics,
-    ident_pattern_name, is_character_entity_literal, is_drop_callee, is_local_ident,
-    iter_item_type, merge_line_output, normalize_choice_type, pattern_bindings_with_fallback,
-    pattern_bindings_with_nominal_types, signature_generic_names, source_return_types,
-    stmts_diverge, stream_return_types, type_ref_kind, type_ref_kind_with_generics,
-    unify_loop_break_types, variant_payload_type_for_name,
+    expr_path_label, ident_pattern_name, is_character_entity_literal, is_drop_callee,
+    is_local_ident, iter_item_type, merge_line_output, pattern_bindings_with_fallback,
+    pattern_bindings_with_nominal_types, stmts_diverge, unify_loop_break_types,
+    variant_payload_type_for_name,
 };
 use signature::{
     available_effect_set, enum_variant_payload_type_for_name, function_param_higher_order_bindings,
-    function_signature_type, function_signature_type_with_nominal_types,
-    selected_higher_order_argument,
+    function_signature_from_resolved, selected_higher_order_argument,
 };
 
 /// Verifies that lowered HIR no longer contains raw expression fragments.
@@ -260,6 +263,9 @@ pub struct TypeJudgment {
     pub rule: TypeJudgmentRule,
     pub expected: Option<TypeJudgmentExpected>,
     pub source_range: Option<TextRange>,
+    /// Exact accepted source identity and range when this judgment came from a
+    /// source-bound project module.
+    pub source: Option<SourceSpan>,
 }
 
 impl TypeJudgment {
@@ -391,6 +397,10 @@ pub struct TypeCheckReport {
     pub typed_lowering_evidence: Vec<TypedLoweringEvidence>,
     pub closure_captures: Vec<ClosureCaptureInventory>,
     pub numeric_fallbacks: Vec<NumericFallback>,
+    /// Accepted source-backed nominal facts for this exact project transaction.
+    pub nominal_resolutions: NominalResolutionIndex,
+    /// Checked dialogue View projection models produced from semantic field types.
+    pub dialogue_view_models: DialogueViewModelRegistry,
     /// Invocation behavior derived from checked return types and callable-owned body facts.
     ///
     /// Reports produced without a linked project symbol table leave this empty because a
@@ -607,9 +617,9 @@ struct TypeChecker<'a> {
     global_function_signatures: HashMap<String, FunctionSignature>,
     global_function_effects: HashMap<String, Vec<String>>,
     ordinary_source_functions: HashSet<String>,
-    global_type_aliases: HashMap<String, TypeKind>,
     action_signatures: HashMap<String, ActionSignature>,
     nominal_fields: HashMap<String, HashMap<String, TypeKind>>,
+    project_nominal_shapes: crate::nominal::ProjectNominalShapeCatalog,
     dialogue_view_models: DialogueViewModelRegistry,
     nominal_variant_payloads: HashMap<String, HashMap<String, EnumVariantPayload>>,
     trait_catalog: TraitCatalog,
@@ -645,6 +655,11 @@ struct TypeChecker<'a> {
     closure_inference_stack: Vec<ClosureInferenceContext>,
     closure_captures: Vec<ClosureCaptureInventory>,
     numeric_fallbacks: Vec<NumericFallback>,
+    nominal_resolution_cache: crate::nominal::CheckedTypeReferenceCache,
+    nominal_resolutions: NominalResolutionIndex,
+    checked_anonymous_choice_roots: HashSet<arcweft_source::SourceSpan>,
+    active_generic_scope: crate::nominal::GenericTypeScope,
+    active_self_scope: crate::nominal::SelfTypeScope,
     callable_executions: Vec<CheckedCallableExecution>,
     allow_signed_min_literal: bool,
     local_function_effects: HashMap<String, CallableId>,
@@ -723,9 +738,10 @@ struct ActionParam {
 }
 
 #[derive(Clone, Copy)]
-struct NominalTypeContext<'a> {
+pub(crate) struct NominalTypeContext<'a> {
     fields: Option<&'a HashMap<String, HashMap<String, TypeKind>>>,
     variant_payloads: Option<&'a HashMap<String, HashMap<String, EnumVariantPayload>>>,
+    project: Option<&'a crate::nominal::ProjectNominalShapeCatalog>,
     env: Option<&'a TypeCheckEnv>,
 }
 
@@ -768,10 +784,11 @@ impl ActionParam {
 }
 
 impl<'a> NominalTypeContext<'a> {
-    const fn empty() -> Self {
+    pub(crate) const fn empty() -> Self {
         Self {
             fields: None,
             variant_payloads: None,
+            project: None,
             env: None,
         }
     }
@@ -779,11 +796,13 @@ impl<'a> NominalTypeContext<'a> {
     const fn new(
         fields: &'a HashMap<String, HashMap<String, TypeKind>>,
         variant_payloads: &'a HashMap<String, HashMap<String, EnumVariantPayload>>,
+        project: &'a crate::nominal::ProjectNominalShapeCatalog,
         env: &'a TypeCheckEnv,
     ) -> Self {
         Self {
             fields: Some(fields),
             variant_payloads: Some(variant_payloads),
+            project: Some(project),
             env: Some(env),
         }
     }
@@ -983,12 +1002,12 @@ impl<'a> TypeChecker<'a> {
         call_target_fact_mode: CallTargetFactMode,
         call_resolver_control: CallResolverControl<'a>,
     ) -> Self {
-        let registered_environment =
-            registered_world.map(crate::registration::RegisteredSemanticWorld::environment);
+        let (registered_environment, nominal_resolutions, nominal_diagnostics) =
+            Self::initial_nominal_resolution_state(registered_world);
         TypeChecker {
             env,
             checked_module,
-            errors: Vec::new(),
+            errors: nominal_diagnostics,
             warnings: Vec::new(),
             active_borrow_lifetimes: BTreeMap::new(),
             active_borrow_total: 0,
@@ -999,9 +1018,9 @@ impl<'a> TypeChecker<'a> {
             global_function_signatures: HashMap::new(),
             global_function_effects: HashMap::new(),
             ordinary_source_functions: HashSet::new(),
-            global_type_aliases: HashMap::new(),
             action_signatures: HashMap::new(),
             nominal_fields: env.nominal_records.clone(),
+            project_nominal_shapes: crate::nominal::ProjectNominalShapeCatalog::default(),
             dialogue_view_models: env.dialogue_view_models.clone(),
             nominal_variant_payloads: HashMap::new(),
             trait_catalog: TraitCatalog::default(),
@@ -1019,11 +1038,7 @@ impl<'a> TypeChecker<'a> {
             lifetime_guarantees: HashSet::new(),
             dropped_lifetime_keys: HashSet::new(),
             available_lifetimes: Vec::new(),
-            effect_capabilities: env
-                .capabilities
-                .iter()
-                .map(|capability| capability.as_str().to_owned())
-                .collect(),
+            effect_capabilities: Self::initial_effect_capabilities(env),
             effect_collector: EffectCollector::new(available_effect_set(env)),
             assertion_effect_conditions: BTreeMap::new(),
             next_assertion_effect_scope: 0,
@@ -1041,6 +1056,11 @@ impl<'a> TypeChecker<'a> {
             closure_inference_stack: Vec::new(),
             closure_captures: Vec::new(),
             numeric_fallbacks: Vec::new(),
+            nominal_resolution_cache: crate::nominal::CheckedTypeReferenceCache::default(),
+            nominal_resolutions,
+            checked_anonymous_choice_roots: HashSet::new(),
+            active_generic_scope: crate::nominal::GenericTypeScope::empty(),
+            active_self_scope: crate::nominal::SelfTypeScope::Absent,
             callable_executions: Vec::new(),
             allow_signed_min_literal: false,
             local_function_effects: HashMap::new(),
@@ -1080,6 +1100,35 @@ impl<'a> TypeChecker<'a> {
             registered_candidate_transaction_depth: 0,
             registered_candidate_journal: Vec::new(),
         }
+    }
+
+    fn initial_nominal_resolution_state(
+        registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
+    ) -> (
+        Option<&'a crate::registration::RegisteredTypeCheckEnv>,
+        NominalResolutionIndex,
+        Vec<TypeCheckError>,
+    ) {
+        let registered_environment =
+            registered_world.map(crate::registration::RegisteredSemanticWorld::environment);
+        let resolutions = registered_environment
+            .map_or_else(NominalResolutionIndex::production, |environment| {
+                environment.callable_catalog().nominal_resolutions().clone()
+            });
+        let diagnostics = resolutions
+            .diagnostics()
+            .iter()
+            .cloned()
+            .map(TypeCheckError::nominal)
+            .collect();
+        (registered_environment, resolutions, diagnostics)
+    }
+
+    fn initial_effect_capabilities(env: &TypeCheckEnv) -> HashSet<String> {
+        env.capabilities
+            .iter()
+            .map(|capability| capability.as_str().to_owned())
+            .collect()
     }
 
     pub(super) fn records_call_target_facts(
@@ -1328,6 +1377,7 @@ impl<'a> TypeChecker<'a> {
             }
         });
         let is_expr_subject = matches!(subject, TypeJudgmentSubject::Expr { .. });
+        let source = source_range.and_then(|range| self.source_span_for_current_range(range));
         self.judgments.push(TypeJudgment {
             id,
             subject,
@@ -1335,6 +1385,7 @@ impl<'a> TypeChecker<'a> {
             rule,
             expected: stored_expected,
             source_range,
+            source,
         });
         self.stats.judgments += 1;
         if is_expr_subject {
@@ -1941,9 +1992,31 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn collect_and_store_trait_catalog(&mut self, module: &HirModule) {
-        let (catalog, diagnostics) = collect_trait_catalog(module);
+        let (catalog, diagnostics) = collect_trait_catalog(
+            module,
+            &mut |declaration_module, authored, generics, self_scope| {
+                self.resolve_authored_type_in_module(
+                    declaration_module,
+                    authored,
+                    generics,
+                    self_scope,
+                )
+            },
+        );
         self.trait_catalog = catalog;
         self.errors.extend(diagnostics);
+    }
+
+    fn trait_predicates_for_signature(
+        &mut self,
+        signature: &FnSignature,
+        generics: &GenericTypeScope,
+        self_scope: &SelfTypeScope,
+    ) -> Vec<TraitPredicate> {
+        let inputs = trait_predicate_inputs_for_signature(signature, generics, |authored, node| {
+            self.resolve_authored_type_node(authored, node, generics, self_scope.clone())
+        });
+        self.trait_catalog.predicates_from_inputs(inputs)
     }
 
     fn active_trait_predicates(&self) -> Vec<TraitPredicate> {
@@ -2074,6 +2147,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn nominal_field_type(&self, receiver: &TypeKind, field: &str) -> Option<TypeKind> {
+        if let Some(ty) = self.project_nominal_shapes.field_type(receiver, field) {
+            return Some(ty);
+        }
         match receiver {
             TypeKind::Named(name) if name == TypeKind::ACTION_EVENT_TYPE_NAME => {
                 TypeKind::action_event_field(field)

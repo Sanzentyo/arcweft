@@ -2,8 +2,8 @@ use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_sema::{
     effect_row::EffectRow,
     types::{
-        CharacterNominalFamily, EntityKind, EntityType, IteratorStateKind, MapKind, TypeKind,
-        TypeMismatchPathSegment, TypeMismatchReason,
+        ArrayLength, CharacterNominalFamily, EntityKind, EntityType, IteratorStateKind, MapKind,
+        TypeKind, TypeMismatchPathSegment, TypeMismatchReason,
     },
 };
 use arcweft_lang_syntax::{expr::LifetimeScopeKind, reference::BorrowKind};
@@ -108,11 +108,11 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
         (
             TypeKind::Array {
                 item: Box::new(expected.clone()),
-                len: "4".to_owned(),
+                len: ArrayLength::Const(4),
             },
             TypeKind::Array {
                 item: Box::new(actual.clone()),
-                len: "4".to_owned(),
+                len: ArrayLength::Const(4),
             },
             TypeMismatchPathSegment::ArrayItem,
         ),
@@ -361,11 +361,11 @@ fn ordinary_outer_and_non_type_mismatches_are_not_reclassified() {
 
     let length = TypeKind::Array {
         item: Box::new(look("character.a")),
-        len: "2".to_owned(),
+        len: ArrayLength::Const(2),
     }
     .first_mismatch(&TypeKind::Array {
         item: Box::new(look("character.b")),
-        len: "3".to_owned(),
+        len: ArrayLength::Const(3),
     })
     .expect("array length mismatch takes precedence");
     assert_eq!(length.path(), &[TypeMismatchPathSegment::ArrayLength]);

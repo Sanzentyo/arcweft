@@ -4,7 +4,6 @@ use super::helpers::let_else_bindings;
 use super::{
     LocalBindingSnapshot, SourceBackpressurePolicy, SourceEventPattern, SourceHeader,
     SourcePrivacyPolicy, SourceReplayPolicy, TypeCheckError, TypeChecker, TypeKind, YieldContext,
-    source_return_types,
 };
 use arcweft_lang_syntax::{
     ast::{
@@ -21,10 +20,13 @@ impl TypeChecker<'_> {
                 "function-like `source name() -> Source<T, E>` is not canonical; use `source @source.id: Source<T, E> { ... }`".to_owned(),
             ));
         }
-        let Some((item_ty, error_ty)) = item
+        let resolved_source = item
             .source_ty()
-            .and_then(|ty| source_return_types(ty.value()))
-        else {
+            .map(|ty| self.resolve_active_authored_type(ty));
+        let Some((item_ty, error_ty)) = resolved_source.and_then(|ty| match ty {
+            TypeKind::Source { item, error } => Some((*item, *error)),
+            _ => None,
+        }) else {
             self.errors.push(TypeCheckError::new(
                 "`source` must declare `: Source<T, E>`".to_owned(),
             ));

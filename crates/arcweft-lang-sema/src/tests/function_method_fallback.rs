@@ -1,5 +1,28 @@
 use super::support::*;
 
+fn analyze_registered_method_fixture(
+    profile: &str,
+    source: &str,
+) -> crate::checker::TypeCheckReport {
+    let (document, project, world) =
+        crate::test_support::character_project::root_project_source(profile, source);
+    let facts = crate::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registered method fixture facts");
+    let registered = crate::test_support::character_project::register(
+        &project,
+        &facts,
+        TypeCheckEnv::standard(),
+        None,
+    )
+    .expect("registered method fixture world");
+    crate::checker::analyze_registered_project_types(&project.linked_module(), &registered)
+}
+
 #[test]
 fn method_chain_falls_back_to_data_last_callable_when_no_method_matches() {
     let tree = parse_ok(
@@ -575,7 +598,8 @@ flow @flow.method_priority method_priority {
 
 #[test]
 fn method_chain_prefers_trait_method_over_data_last_callable_fallback() {
-    let tree = parse_ok(
+    let report = analyze_registered_method_fixture(
+        "trait-method-priority",
         r#"
 struct Score {}
 
@@ -589,51 +613,30 @@ impl Threshold for Score {
     }
 }
 
-flow @flow.method_trait_priority method_trait_priority {
+fn above(min: i64, value: Score) -> bool {
+    true
+}
+
+flow @flow.method_trait_priority method_trait_priority(score: Score) {
     let text: String = score.above(80i64)
     log.info(text)
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("trait method priority fixture lowers");
-    validate_typecheck_ready(&hir).expect("trait method priority fixture is structured");
-    let env = TypeCheckEnv::new()
-        .with_symbol("score", TypeKind::Named("Score".to_owned()))
-        .with_function_signature(
-            "above",
-            FunctionSignature::new(
-                TypeKind::Bool,
-                [
-                    FunctionParam::required("min", TypeKind::I64),
-                    FunctionParam::required("value", TypeKind::Named("Score".to_owned())),
-                ],
-            ),
-        );
-
-    let report = analyze_types(&hir, &env);
     assert!(
         report.diagnostics.is_empty(),
         "unexpected diagnostics: {:?}",
         report.diagnostics
     );
     assert!(
-        report.warnings.iter().any(|warning| {
+        report.retained_call_target_facts().any(|facts| {
             matches!(
-                warning.kind(),
-                TypeCheckWarningKind::ShadowedDataLastMethodFallback {
-                    method,
-                    receiver: TypeKind::Named(receiver),
-                    selected,
-                    fallbacks
-                } if method == "above"
-                    && receiver == "Score"
-                    && selected.contains("trait `Threshold` method `Score.above`")
-                    && fallbacks.len() == 1
-                    && fallbacks[0].contains("environment fn `above`")
+                facts.target(),
+                crate::callable::CallTargetFact::Selected { selected, .. }
+                    if selected.id().family() == crate::callable::CallableFamily::TraitMethod
             )
         }),
-        "expected trait-method shadowed fallback warning, got {:?}",
-        report.warnings
+        "accepted project checking must select the trait method before project data-last fallback"
     );
     assert!(
         !report.typed_lowering_evidence.iter().any(|evidence| {
@@ -649,7 +652,8 @@ flow @flow.method_trait_priority method_trait_priority {
 
 #[test]
 fn trait_method_value_reference_reports_unsupported_method_value() {
-    let tree = parse_ok(
+    let report = analyze_registered_method_fixture(
+        "trait-method-value",
         r#"
 struct Score {}
 
@@ -663,25 +667,20 @@ impl Threshold for Score {
     }
 }
 
-flow @flow.method_trait_value method_trait_value {
+flow @flow.method_trait_value method_trait_value(score: Score) {
     let method = score.above
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("trait method value fixture lowers");
-    validate_typecheck_ready(&hir).expect("trait method value fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::Named("Score".to_owned()));
-
-    let report = analyze_types(&hir, &env);
     assert!(
         report.diagnostics.iter().any(|diagnostic| {
             matches!(
                 diagnostic.kind(),
                 TypeCheckErrorKind::UnsupportedMethodValueReference {
-                    receiver: TypeKind::Named(receiver),
+                    receiver: TypeKind::ProjectNominal(receiver),
                     method,
                     reason
-                } if receiver == "Score"
+                } if receiver.declaration().name().as_str() == "Score"
                     && method == "above"
                     && reason.contains("receiver-binding contract")
             ) && diagnostic.stable_code() == "sema.typecheck.unsupported_method_value_reference"

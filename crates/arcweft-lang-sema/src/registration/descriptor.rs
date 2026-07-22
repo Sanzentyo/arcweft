@@ -8,9 +8,9 @@ use arcweft_lang_syntax::ast::{module_path::CanonicalModulePath, symbol_path::Sy
 use arcweft_source::SourceSpan;
 
 use super::model::{
-    CharacterInventoryDescriptorV1, CharacterInventoryDigest, CharacterInventoryIntegrityError,
-    ExternalOwnerLookupError, RegisteredCharacterResolutionError, RegisteredExternalOwner,
-    RegisteredExternalOwnerKind, RegisteredTypeCheckEnv,
+    AcceptedNominalWorld, CharacterInventoryDescriptorV1, CharacterInventoryDigest,
+    CharacterInventoryIntegrityError, ExternalOwnerLookupError, RegisteredCharacterResolutionError,
+    RegisteredExternalOwner, RegisteredExternalOwnerKind, RegisteredTypeCheckEnv,
 };
 
 #[allow(
@@ -85,7 +85,7 @@ pub(super) fn descriptor_canonical_len(descriptor: &CharacterInventoryDescriptor
     encoder.encoded_len
 }
 
-impl RegisteredTypeCheckEnv {
+impl AcceptedNominalWorld {
     #[allow(
         clippy::result_large_err,
         reason = "owner lookup errors retain both complete typed world identities and revisions"
@@ -96,19 +96,16 @@ impl RegisteredTypeCheckEnv {
         declaration: ExternalDeclarationId,
         expected: RegisteredExternalOwnerKind,
     ) -> Result<&RegisteredExternalOwner, ExternalOwnerLookupError> {
-        if symbols.world() != &self.external_owners.world
-            || symbols.revision() != &self.external_owners.revision
-        {
+        if symbols.world() != self.world() || symbols.revision() != self.symbol_revision() {
             return Err(ExternalOwnerLookupError::Stale {
-                expected_world: self.external_owners.world.clone(),
+                expected_world: self.world().clone(),
                 actual_world: symbols.world().clone(),
-                expected_revision: self.external_owners.revision,
+                expected_revision: *self.symbol_revision(),
                 actual_revision: *symbols.revision(),
             });
         }
         let owner = self
-            .external_owners
-            .owners
+            .external_owners()
             .get(&declaration)
             .ok_or(ExternalOwnerLookupError::Unknown { declaration })?;
         let actual = owner.kind();
@@ -120,6 +117,22 @@ impl RegisteredTypeCheckEnv {
             });
         }
         Ok(owner)
+    }
+}
+
+impl RegisteredTypeCheckEnv {
+    #[allow(
+        clippy::result_large_err,
+        reason = "owner lookup errors retain both complete typed world identities and revisions"
+    )]
+    pub fn external_owner(
+        &self,
+        symbols: &ProjectSymbolTable,
+        declaration: ExternalDeclarationId,
+        expected: RegisteredExternalOwnerKind,
+    ) -> Result<&RegisteredExternalOwner, ExternalOwnerLookupError> {
+        self.nominal_world
+            .external_owner(symbols, declaration, expected)
     }
 
     #[allow(
@@ -178,13 +191,19 @@ impl RegisteredTypeCheckEnv {
                 actual_revision: *symbols.revision(),
             });
         }
-        let descriptor = build_descriptor(symbols, &self.characters, &self.external_owners.owners)?;
+        let descriptor = build_descriptor(
+            symbols,
+            &self.characters,
+            self.nominal_world.external_owners(),
+        )?;
         for (declaration, _, expected) in &descriptor.externals {
-            let actual = self.external_owners.owners.get(declaration).ok_or(
-                CharacterInventoryIntegrityError::MissingExternalSymbol {
+            let actual = self
+                .nominal_world
+                .external_owners()
+                .get(declaration)
+                .ok_or(CharacterInventoryIntegrityError::MissingExternalSymbol {
                     declaration: *declaration,
-                },
-            )?;
+                })?;
             match actual {
                 RegisteredExternalOwner::Character(actual) if actual == expected => {}
                 RegisteredExternalOwner::Character(actual) => {

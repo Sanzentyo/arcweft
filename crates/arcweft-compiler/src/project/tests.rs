@@ -2,8 +2,9 @@ use super::*;
 use arcweft_lang_hir::symbol::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
 };
-use arcweft_lang_sema::registration::{
-    EnvironmentBindingId, ExternalRegistrationFact, RegisteredExternalOwner,
+use arcweft_lang_sema::{
+    env::identity::EnvironmentBindingId,
+    registration::{ExternalRegistrationFact, RegisteredExternalOwner},
 };
 use arcweft_lang_syntax::ast::{
     common::Visibility,

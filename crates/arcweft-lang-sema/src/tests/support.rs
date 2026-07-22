@@ -65,6 +65,27 @@ pub(super) fn parse_errors(source: impl Into<String>) -> Vec<ParseError> {
     parsed.errors().to_vec()
 }
 
+pub(super) fn typecheck_registered_source(
+    profile: &str,
+    source: &str,
+    environment: TypeCheckEnv,
+) -> Result<(), Vec<crate::diagnostics::TypeCheckError>> {
+    let (document, project, world) =
+        crate::test_support::character_project::root_project_source(profile, source);
+    let facts = crate::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registered type-check fixture facts");
+    let registered =
+        crate::test_support::character_project::register(&project, &facts, environment, None)
+            .expect("registered type-check fixture world");
+    crate::checker::analyze_registered_project_types(&project.linked_module(), &registered)
+        .into_result()
+}
+
 pub(super) fn flow_source(body: &str) -> String {
     let mut source = String::from("flow fixture {\n");
     for line in body.lines() {
@@ -137,7 +158,7 @@ pub(super) fn selected_call_args(expr: &Expr) -> Option<&[CallArg]> {
 }
 
 pub(super) fn borrow_capture_env() -> TypeCheckEnv {
-    TypeCheckEnv::new()
+    TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
             TypeKind::Named("ImageHandle".to_owned()),
@@ -160,7 +181,7 @@ pub(super) fn borrow_capture_read_text_env() -> TypeCheckEnv {
 }
 
 pub(super) fn read_text_env() -> TypeCheckEnv {
-    TypeCheckEnv::new()
+    TypeCheckEnv::standard()
         .with_function_signature(
             "adapter.read_text",
             FunctionSignature::new(

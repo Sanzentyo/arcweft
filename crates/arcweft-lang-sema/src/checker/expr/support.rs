@@ -1,4 +1,5 @@
-use super::super::helpers::{named_type_label, type_ref_kind};
+use super::super::TypeChecker;
+use super::super::helpers::named_type_label;
 use crate::diagnostics::TypeCheckError;
 use crate::env::FunctionParam;
 use crate::types::{EntityKind, MapKind, TypeKind};
@@ -17,10 +18,15 @@ pub(super) struct AgentInvokeArgs<'a> {
     pub(super) action_args: Option<&'a Expr>,
 }
 
-pub(super) fn choice_pattern_coverage(pattern: &Pattern) -> ChoicePatternCoverage {
+pub(super) fn choice_pattern_coverage(
+    checker: &mut TypeChecker<'_>,
+    pattern: &Pattern,
+) -> ChoicePatternCoverage {
     match pattern {
-        Pattern::Typed { ty, .. } => ChoicePatternCoverage::Type(type_ref_kind(ty.value())),
-        Pattern::Whole { pattern, .. } => choice_pattern_coverage(pattern),
+        Pattern::Typed { ty, .. } => {
+            ChoicePatternCoverage::Type(checker.resolve_active_authored_type(ty))
+        }
+        Pattern::Whole { pattern, .. } => choice_pattern_coverage(checker, pattern),
         Pattern::Ident(_) | Pattern::MutIdent(_) | Pattern::Discard => ChoicePatternCoverage::All,
         Pattern::Literal(_)
         | Pattern::Entity(_)

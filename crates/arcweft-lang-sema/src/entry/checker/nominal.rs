@@ -1,67 +1,29 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt,
-    str::FromStr,
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
-use arcweft_data::{FieldShape, TypeShape, VariantShape};
-use arcweft_lang_hir::{
-    model::{HirModule, HirTopLevelDecl},
-    project::HirProject,
-};
-use arcweft_lang_syntax::{
-    ast::{
-        common::UseTreeKind,
-        items::{EnumItem, StructItem, TypeAliasItem},
-        module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
-        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
+use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
+use arcweft_lang_hir::symbol::{
+    ProjectSymbolTable,
+    nominal::{
+        ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
+        ProjectNominalDeclarationKind, SourceBackedTypeRef,
     },
-    types::{AuthoredTypeRef, TypeRef},
 };
-use arcweft_source::SourceSpan;
 
-use crate::types::TypeKind;
+use crate::{
+    nominal::NominalResolutionIndex,
+    types::{GenericTypeOwnerId, GenericTypeParameterId, MapKind, TypeKind},
+};
 
-use super::{BoundNominalKind, BoundNominalTypeKey, source_span};
-
-pub(super) struct NominalRecord<'a> {
-    pub(super) key: BoundNominalTypeKey,
-    module_path: CanonicalModulePath,
-    module: &'a HirModule,
-    declaration: NominalDeclaration<'a>,
-    pub(super) source: SourceSpan,
-}
-
-enum NominalDeclaration<'a> {
-    Struct(&'a StructItem),
-    Enum(&'a EnumItem),
-}
-
-impl NominalRecord<'_> {
-    pub(super) fn is_generic(&self) -> bool {
-        match self.declaration {
-            NominalDeclaration::Struct(item) => !item.generic_params().is_empty(),
-            NominalDeclaration::Enum(item) => !item.generic_params().is_empty(),
-        }
-    }
-}
-
-struct AliasRecord<'a> {
-    module_path: CanonicalModulePath,
-    module: &'a HirModule,
-    item: &'a TypeAliasItem,
-    source: SourceSpan,
-}
-
-pub(super) struct NominalSchemaResolver<'a> {
-    records: BTreeMap<(CanonicalModulePath, String), Vec<NominalRecord<'a>>>,
-    aliases: BTreeMap<(CanonicalModulePath, String), Vec<AliasRecord<'a>>>,
-}
-
-pub(super) enum NominalResolutionError {
-    Unknown,
-    Alias(Vec<SourceSpan>),
-    Ambiguous(Vec<SourceSpan>),
+/// Entry-owned data-shape projection over already checked nominal types.
+///
+/// Name selection, imports, aliases, arity, and generic argument validation are
+/// owned by the normal semantic nominal resolver. This adapter only projects
+/// its accepted `TypeKind` products into the persistence schema required by an
+/// entry; it never resolves authored paths itself.
+pub(super) struct NominalSchemaExpander<'a> {
+    symbols: &'a ProjectSymbolTable,
+    resolutions: &'a NominalResolutionIndex,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -94,216 +56,133 @@ impl fmt::Display for NominalSchemaError {
     }
 }
 
-impl<'a> NominalSchemaResolver<'a> {
-    pub(super) fn new(project: &'a HirProject) -> Self {
-        let mut records = BTreeMap::<_, Vec<_>>::new();
-        let mut aliases = BTreeMap::<_, Vec<_>>::new();
-        for (module_path, module) in project.modules() {
-            for declaration in module.declarations() {
-                let record = match declaration {
-                    HirTopLevelDecl::Struct(item) => Some(NominalRecord {
-                        key: BoundNominalTypeKey::new(
-                            project.package().clone(),
-                            module_path.clone(),
-                            item.name(),
-                            BoundNominalKind::Struct,
-                        ),
-                        module_path: module_path.clone(),
-                        module,
-                        declaration: NominalDeclaration::Struct(item),
-                        source: source_span(module, *item.range()),
-                    }),
-                    HirTopLevelDecl::Enum(item) => Some(NominalRecord {
-                        key: BoundNominalTypeKey::new(
-                            project.package().clone(),
-                            module_path.clone(),
-                            item.name(),
-                            BoundNominalKind::Enum,
-                        ),
-                        module_path: module_path.clone(),
-                        module,
-                        declaration: NominalDeclaration::Enum(item),
-                        source: source_span(module, *item.range()),
-                    }),
-                    HirTopLevelDecl::TypeAlias(item) => {
-                        aliases
-                            .entry((module_path.clone(), item.name().to_owned()))
-                            .or_default()
-                            .push(AliasRecord {
-                                module_path: module_path.clone(),
-                                module,
-                                item,
-                                source: source_span(module, *item.range()),
-                            });
-                        None
-                    }
-                    _ => None,
-                };
-                if let Some(record) = record {
-                    records
-                        .entry((module_path.clone(), record.key.name().to_owned()))
-                        .or_default()
-                        .push(record);
-                }
-            }
-        }
-        Self { records, aliases }
-    }
-
-    pub(super) fn resolve_nominal(
-        &'a self,
-        current: &CanonicalModulePath,
-        module: &HirModule,
-        raw: &str,
-    ) -> Result<&'a NominalRecord<'a>, NominalResolutionError> {
-        let visible = visible_type_keys(current, module, raw);
-        let mut candidates = visible
-            .iter()
-            .flat_map(|key| self.records.get(key).into_iter().flatten())
-            .collect::<Vec<_>>();
-        let mut aliases = visible
-            .into_iter()
-            .flat_map(|key| self.aliases.get(&key).into_iter().flatten())
-            .collect::<Vec<_>>();
-        candidates.sort_by(|left, right| left.key.cmp(&right.key));
-        candidates.dedup_by(|left, right| left.key == right.key);
-        aliases.sort_by(|left, right| {
-            left.module_path
-                .cmp(&right.module_path)
-                .then_with(|| left.item.name().cmp(right.item.name()))
-        });
-        aliases.dedup_by(|left, right| {
-            left.module_path == right.module_path && left.item.name() == right.item.name()
-        });
-        match (candidates.as_slice(), aliases.as_slice()) {
-            ([record], []) => Ok(*record),
-            ([], []) => Err(NominalResolutionError::Unknown),
-            ([], aliases) => Err(NominalResolutionError::Alias(
-                aliases.iter().map(|alias| alias.source.clone()).collect(),
-            )),
-            _ => Err(NominalResolutionError::Ambiguous(
-                candidates
-                    .iter()
-                    .map(|record| record.source.clone())
-                    .chain(aliases.iter().map(|alias| alias.source.clone()))
-                    .collect(),
-            )),
+impl<'a> NominalSchemaExpander<'a> {
+    pub(super) const fn new(
+        symbols: &'a ProjectSymbolTable,
+        resolutions: &'a NominalResolutionIndex,
+    ) -> Self {
+        Self {
+            symbols,
+            resolutions,
         }
     }
 
     pub(super) fn schema(
         &self,
-        record: &NominalRecord<'_>,
+        declaration: &ProjectNominalDeclaration,
     ) -> Result<TypeShape, NominalSchemaError> {
-        self.schema_with_stack(record, &mut BTreeSet::new())
+        if !declaration.type_parameters().is_empty() {
+            return Err(NominalSchemaError::new(format!(
+                "generic project type `{}` requires checked type arguments",
+                declaration.id().qualified_name()
+            )));
+        }
+        self.schema_with_stack(declaration, &[], &BTreeMap::new(), &mut BTreeSet::new())
     }
 
     fn schema_with_stack(
         &self,
-        record: &NominalRecord<'_>,
-        stack: &mut BTreeSet<BoundNominalTypeKey>,
+        declaration: &ProjectNominalDeclaration,
+        arguments: &[TypeKind],
+        inherited: &BTreeMap<GenericTypeParameterId, TypeKind>,
+        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
     ) -> Result<TypeShape, NominalSchemaError> {
-        if !stack.insert(record.key.clone()) {
-            return Ok(TypeShape::Named(canonical_nominal_name(&record.key)));
+        if !stack.insert(declaration.id().clone()) {
+            return Ok(TypeShape::Named(canonical_nominal_name(declaration.id())));
         }
-        let result = match record.declaration {
-            NominalDeclaration::Struct(item) => item
-                .fields()
+
+        if declaration.type_parameters().len() != arguments.len() {
+            stack.remove(declaration.id());
+            return Err(NominalSchemaError::new(format!(
+                "checked project type `{}` expected {} argument(s), found {}",
+                declaration.id().qualified_name(),
+                declaration.type_parameters().len(),
+                arguments.len()
+            )));
+        }
+
+        let mut substitutions = inherited.clone();
+        for (parameter, argument) in declaration.type_parameters().iter().zip(arguments) {
+            substitutions.insert(
+                GenericTypeParameterId::new(
+                    GenericTypeOwnerId::Nominal(declaration.id().clone()),
+                    parameter.ordinal(),
+                ),
+                argument.clone(),
+            );
+        }
+
+        let result = match declaration.body() {
+            ProjectNominalBody::Struct { fields } => fields
                 .iter()
                 .map(|field| {
-                    self.type_shape(
-                        &record.module_path,
-                        record.module,
-                        field.ty().value(),
-                        stack,
-                        &mut BTreeSet::new(),
-                    )
-                    .map_err(|error| error.within(format!("field `{}`", field.name())))
-                    .map(|shape| FieldShape::new(field.name(), field.name(), shape))
+                    self.resolved_shape(field.ty(), &substitutions, stack)
+                        .map_err(|error| error.within(format!("field `{}`", field.name())))
+                        .map(|shape| {
+                            FieldShape::new(field.name().as_str(), field.name().as_str(), shape)
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()
-                .map(|fields| TypeShape::record(canonical_nominal_name(&record.key), fields)),
-            NominalDeclaration::Enum(item) => item
-                .variants()
+                .map(|fields| TypeShape::record(canonical_nominal_name(declaration.id()), fields)),
+            ProjectNominalBody::Enum { variants } => variants
                 .iter()
                 .map(|variant| {
-                    let unit = VariantShape::unit(variant.name(), variant.name());
+                    let unit = VariantShape::unit(variant.name().as_str(), variant.name().as_str());
                     let Some(payload) = variant.payload() else {
                         return Ok(unit);
                     };
-                    self.type_shape(
-                        &record.module_path,
-                        record.module,
-                        payload.value(),
-                        stack,
-                        &mut BTreeSet::new(),
-                    )
-                    .map_err(|error| error.within(format!("variant `{}` payload", variant.name())))
-                    .map(|shape| unit.with_payload(shape))
+                    self.resolved_shape(payload, &substitutions, stack)
+                        .map_err(|error| {
+                            error.within(format!("variant `{}` payload", variant.name()))
+                        })
+                        .map(|shape| unit.with_payload(shape))
                 })
-                .collect::<Result<Vec<_>, NominalSchemaError>>()
+                .collect::<Result<Vec<_>, _>>()
                 .map(|variants| {
-                    TypeShape::enumeration(canonical_nominal_name(&record.key), variants)
+                    TypeShape::enumeration(canonical_nominal_name(declaration.id()), variants)
                 }),
+            ProjectNominalBody::TypeAlias { .. } => Err(NominalSchemaError::new(
+                "entry data schemas must start from a project struct or enum, not an alias",
+            )),
         };
-        stack.remove(&record.key);
+
+        stack.remove(declaration.id());
         result
+    }
+
+    fn resolved_shape(
+        &self,
+        authored: &SourceBackedTypeRef,
+        substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
+        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
+    ) -> Result<TypeShape, NominalSchemaError> {
+        let root = authored
+            .spans()
+            .source_at(&arcweft_lang_syntax::types::TypeRefNodePath::root())
+            .expect("bound nominal type source maps contain their root")
+            .whole();
+        let ty = self.resolutions.recovered_type(root).ok_or_else(|| {
+            NominalSchemaError::new(format!(
+                "accepted type-check report has no nominal-resolution fact for {root:?}"
+            ))
+        })?;
+        self.type_shape(ty, substitutions, stack, &mut BTreeSet::new())
     }
 
     fn type_shape(
         &self,
-        current: &CanonicalModulePath,
-        module: &HirModule,
-        ty: &TypeRef,
-        nominal_stack: &mut BTreeSet<BoundNominalTypeKey>,
-        alias_stack: &mut BTreeSet<(CanonicalModulePath, String)>,
+        ty: &TypeKind,
+        substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
+        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
+        generic_stack: &mut BTreeSet<GenericTypeParameterId>,
     ) -> Result<TypeShape, NominalSchemaError> {
-        if let TypeRef::Path(path) = ty {
-            let path_label = path.canonical_string();
-            if let Ok(nominal) = self.resolve_nominal(current, module, &path_label) {
-                return self.schema_with_stack(nominal, nominal_stack);
-            }
-            if let Some(alias) = self
-                .resolve_alias(current, module, &path_label)
-                .map_err(NominalSchemaError::new)?
-            {
-                let key = (alias.module_path.clone(), alias.item.name().to_owned());
-                if !alias_stack.insert(key.clone()) {
-                    return Err(NominalSchemaError::new(format!(
-                        "recursive type alias `{}`",
-                        alias.item.name()
-                    )));
-                }
-                let shape = self.type_shape(
-                    &alias.module_path,
-                    alias.module,
-                    alias.item.target().value(),
-                    nominal_stack,
-                    alias_stack,
-                );
-                alias_stack.remove(&key);
-                return shape;
-            }
-        }
+        let mut recurse = |inner: &TypeKind,
+                           generic_stack: &mut BTreeSet<GenericTypeParameterId>|
+         -> Result<TypeShape, NominalSchemaError> {
+            self.type_shape(inner, substitutions, stack, generic_stack)
+        };
 
-        self.type_kind_shape(
-            current,
-            module,
-            TypeKind::from(ty),
-            nominal_stack,
-            alias_stack,
-        )
-    }
-
-    fn type_kind_shape(
-        &self,
-        current: &CanonicalModulePath,
-        module: &HirModule,
-        kind: TypeKind,
-        nominal_stack: &mut BTreeSet<BoundNominalTypeKey>,
-        alias_stack: &mut BTreeSet<(CanonicalModulePath, String)>,
-    ) -> Result<TypeShape, NominalSchemaError> {
-        Ok(match kind {
+        Ok(match ty {
             TypeKind::Unit => TypeShape::Unit,
             TypeKind::Bool => TypeShape::Bool,
             TypeKind::I8 => TypeShape::I8,
@@ -323,194 +202,72 @@ impl<'a> NominalSchemaResolver<'a> {
             TypeKind::String => TypeShape::String,
             TypeKind::Char => TypeShape::Char,
             TypeKind::Bytes => TypeShape::Bytes {
-                format: arcweft_data::BytesFormat::Binary,
+                format: BytesFormat::Binary,
             },
-            TypeKind::Option(inner) => TypeShape::option(
-                self.type_kind_shape(current, module, *inner, nominal_stack, alias_stack)
-                    .map_err(|error| error.within("optional value"))?,
+            TypeKind::Option(inner) => TypeShape::option(recurse(inner, generic_stack)?),
+            TypeKind::Vec(inner) | TypeKind::Seq(inner) => {
+                TypeShape::seq(recurse(inner, generic_stack)?)
+            }
+            TypeKind::Map {
+                kind: MapKind::Ordered | MapKind::Sorted | MapKind::BTree,
+                key,
+                value,
+            } => TypeShape::map(
+                recurse(key, generic_stack).map_err(|error| error.within("map key"))?,
+                recurse(value, generic_stack).map_err(|error| error.within("map value"))?,
             ),
-            TypeKind::Vec(inner) | TypeKind::Seq(inner) => TypeShape::seq(
-                self.type_kind_shape(current, module, *inner, nominal_stack, alias_stack)
-                    .map_err(|error| error.within("sequence item"))?,
-            ),
-            TypeKind::Map { key, value, .. } => TypeShape::map(
-                self.type_kind_shape(current, module, *key, nominal_stack, alias_stack)
-                    .map_err(|error| error.within("map key"))?,
-                self.type_kind_shape(current, module, *value, nominal_stack, alias_stack)
-                    .map_err(|error| error.within("map value"))?,
-            ),
-            TypeKind::Named(path) => {
-                if let Ok(nominal) = self.resolve_nominal(current, module, &path) {
-                    self.schema_with_stack(nominal, nominal_stack)?
-                } else if let Some(alias) = self
-                    .resolve_alias(current, module, &path)
-                    .map_err(NominalSchemaError::new)?
-                {
-                    let key = (alias.module_path.clone(), alias.item.name().to_owned());
-                    if !alias_stack.insert(key.clone()) {
-                        return Err(NominalSchemaError::new(format!(
-                            "recursive type alias `{}`",
-                            alias.item.name()
-                        )));
-                    }
-                    let shape = self.type_shape(
-                        &alias.module_path,
-                        alias.module,
-                        alias.item.target().value(),
-                        nominal_stack,
-                        alias_stack,
-                    );
-                    alias_stack.remove(&key);
-                    shape?
-                } else {
+            TypeKind::ProjectNominal(nominal) => {
+                let declaration = self.symbols.nominal(nominal.declaration()).ok_or_else(|| {
+                    NominalSchemaError::new(format!(
+                        "checked project nominal `{}` is absent from its symbol world",
+                        nominal.declaration().qualified_name()
+                    ))
+                })?;
+                self.schema_with_stack(declaration, nominal.arguments(), substitutions, stack)?
+            }
+            TypeKind::GenericParam(parameter) => {
+                if !generic_stack.insert(parameter.clone()) {
                     return Err(NominalSchemaError::new(format!(
-                        "unresolved data type `{path}`"
+                        "cyclic generic substitution for parameter #{}",
+                        parameter.ordinal()
                     )));
                 }
+                let replacement = substitutions.get(parameter).ok_or_else(|| {
+                    NominalSchemaError::new(format!(
+                        "unbound generic parameter #{} in checked data schema",
+                        parameter.ordinal()
+                    ))
+                })?;
+                let shape = recurse(replacement, generic_stack)?;
+                generic_stack.remove(parameter);
+                shape
+            }
+            TypeKind::Error(poison) => {
+                return Err(NominalSchemaError::new(format!(
+                    "poisoned type {} cannot define a persisted data schema",
+                    poison.index()
+                )));
             }
             unsupported => {
                 return Err(NominalSchemaError::new(format!(
-                    "semantic type `{}` is not a canonical data shape",
+                    "checked type `{}` is not a canonical persisted data shape",
                     unsupported.source_label()
                 )));
             }
         })
     }
-
-    pub(super) fn resolve_alias_target(
-        &self,
-        current: &CanonicalModulePath,
-        module: &HirModule,
-        raw: &str,
-    ) -> Result<Option<(&CanonicalModulePath, &HirModule, &AuthoredTypeRef, String)>, String> {
-        self.resolve_alias(current, module, raw).map(|alias| {
-            alias.map(|alias| {
-                (
-                    &alias.module_path,
-                    alias.module,
-                    alias.item.target(),
-                    alias.item.name().to_owned(),
-                )
-            })
-        })
-    }
-
-    fn resolve_alias(
-        &self,
-        current: &CanonicalModulePath,
-        module: &HirModule,
-        raw: &str,
-    ) -> Result<Option<&AliasRecord<'a>>, String> {
-        let candidates = visible_type_keys(current, module, raw)
-            .into_iter()
-            .flat_map(|key| self.aliases.get(&key).into_iter().flatten())
-            .collect::<Vec<_>>();
-        match candidates.as_slice() {
-            [alias] => Ok(Some(*alias)),
-            [] => Ok(None),
-            _ => Err(format!("type path `{raw}` is ambiguous")),
-        }
-    }
 }
 
-fn canonical_nominal_name(key: &BoundNominalTypeKey) -> String {
-    let kind = match key.kind() {
-        BoundNominalKind::Struct => "struct",
-        BoundNominalKind::Enum => "enum",
+fn canonical_nominal_name(id: &ProjectNominalDeclarationId) -> String {
+    let kind = match id.kind() {
+        ProjectNominalDeclarationKind::Struct => "struct",
+        ProjectNominalDeclarationKind::Enum => "enum",
+        ProjectNominalDeclarationKind::TypeAlias => "type_alias",
     };
     format!(
         "package={};module={};kind={kind};name={}",
-        key.package().as_str(),
-        key.module(),
-        key.name()
+        id.world().package(),
+        id.module(),
+        id.name()
     )
-}
-
-fn visible_type_keys(
-    current: &CanonicalModulePath,
-    module: &HirModule,
-    raw: &str,
-) -> Vec<(CanonicalModulePath, String)> {
-    let normalized = raw.replace("::", ".");
-    let mut keys = Vec::new();
-    if !normalized.contains('.') {
-        keys.push((current.clone(), normalized.clone()));
-        for import in module.uses() {
-            match import.tree().kind() {
-                UseTreeKind::Path { path, alias } => {
-                    let binding = alias.as_ref().map_or_else(
-                        || path.path().last_segment().as_str(),
-                        |alias| alias.name().as_str(),
-                    );
-                    if binding == normalized
-                        && let Some(key) = nominal_key_from_project_path(current, path.path())
-                    {
-                        keys.push(key);
-                    }
-                }
-                UseTreeKind::Group {
-                    module: path,
-                    names,
-                } => {
-                    if let Some(target_module) = module_from_project_path(current, path.path()) {
-                        for name in names {
-                            if name.binding_name() == normalized {
-                                keys.push((target_module.clone(), name.name().as_str().to_owned()));
-                            }
-                        }
-                    }
-                }
-                UseTreeKind::Glob { module: path } => {
-                    if let Some(target_module) = module_from_project_path(current, path.path()) {
-                        keys.push((target_module, normalized.clone()));
-                    }
-                }
-            }
-        }
-    } else if let Ok(path) = ProjectSymbolPath::from_str(&normalized)
-        && let Some(key) = nominal_key_from_project_path(current, &path)
-    {
-        keys.push(key);
-    }
-    keys.sort();
-    keys.dedup();
-    keys
-}
-
-fn nominal_key_from_project_path(
-    current: &CanonicalModulePath,
-    path: &ProjectSymbolPath,
-) -> Option<(CanonicalModulePath, String)> {
-    let (leaf, qualifiers) = path.segments().split_last()?;
-    let module = resolve_module_segments(current, path.root(), qualifiers)?;
-    Some((module, leaf.as_str().to_owned()))
-}
-
-fn module_from_project_path(
-    current: &CanonicalModulePath,
-    path: &ProjectSymbolPath,
-) -> Option<CanonicalModulePath> {
-    resolve_module_segments(current, path.root(), path.segments())
-}
-
-fn resolve_module_segments(
-    current: &CanonicalModulePath,
-    root: ModulePathRoot,
-    segments: &[ProjectSymbolSegment],
-) -> Option<CanonicalModulePath> {
-    let mut module = match root {
-        ModulePathRoot::ImplicitCrate | ModulePathRoot::Crate => CanonicalModulePath::crate_root(),
-        ModulePathRoot::SelfModule => current.clone(),
-        ModulePathRoot::Super(levels) => {
-            let mut module = current.clone();
-            for _ in 0..levels {
-                module = module.parent()?;
-            }
-            module
-        }
-    };
-    for segment in segments {
-        module = module.join(ModuleSegment::new(segment.as_str().to_owned()).ok()?);
-    }
-    Some(module)
 }

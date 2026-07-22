@@ -4,21 +4,27 @@
 //! preserve syntax; later runtime-plan cuts consume typed witnesses instead of
 //! rediscovering trait relationships from strings.
 
+mod builder;
+mod catalog;
 mod format;
 mod standard_iter;
 
-use crate::diagnostics::{TraitDiagnostic, TypeCheckError};
+pub(crate) use builder::{collect_trait_catalog, trait_predicate_inputs_for_signature};
+
 use crate::env::{FunctionParam, FunctionSignature};
-use crate::types::TypeKind;
+use crate::nominal::{GenericTypeBinding, GenericTypeScope, TypeSourceEvidence};
+use crate::types::{DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId, TypeKind};
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
+use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, Stmt};
-use arcweft_lang_syntax::ast::items::{ImplItem, ImplMember, TraitItem, TraitMember};
+use arcweft_lang_syntax::ast::items::{ImplItem, TraitItem};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::ast::pattern::Pattern;
 use arcweft_lang_syntax::types::{
-    AssociatedTypeBinding, FnParam, FnSignature, GenericParam, TypeRef,
+    AssociatedTypeBinding, AuthoredTypeRef, FnParam, FnSignature, GenericParam, TypeRef,
 };
-use format::{label_has_generic, type_head, type_kind_label};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use format::type_kind_label;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Stable sema id for a trait declaration in one checked module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -132,6 +138,9 @@ pub struct TraitMethodRequirement {
     trait_id: TraitId,
     name: String,
     signature: FnSignature,
+    self_parameter: GenericTypeParameterId,
+    param_groups: Vec<Vec<FunctionParam>>,
+    return_type: TypeKind,
 }
 
 /// Inherent or trait impl after semantic normalization.
@@ -150,6 +159,14 @@ pub struct TraitImpl {
 pub struct TraitPredicate {
     subject: TypeKind,
     trait_id: TraitId,
+    assoc_equalities: Vec<AssocEquality>,
+}
+
+/// Source-resolved predicate input awaiting catalog trait selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TraitPredicateInput {
+    subject: TypeKind,
+    trait_name: String,
     assoc_equalities: Vec<AssocEquality>,
 }
 
@@ -172,6 +189,7 @@ pub struct AssociatedTypeAssignment {
 pub struct TraitMethodImpl {
     trait_id: Option<TraitId>,
     signature: FnSignature,
+    param_groups: Vec<Vec<FunctionParam>>,
     return_type: TypeKind,
     body: Option<TraitMethodBody>,
 }
@@ -298,464 +316,6 @@ pub enum IntoIteratorResolutionError {
     },
 }
 
-impl TraitCatalog {
-    pub fn traits(&self) -> &[TraitDecl] {
-        &self.traits
-    }
-
-    pub fn impls(&self) -> &[TraitImpl] {
-        &self.impls
-    }
-
-    pub fn witnesses(&self) -> &[TraitWitness] {
-        &self.witnesses
-    }
-
-    pub fn trait_impl(&self, id: ImplId) -> Option<&TraitImpl> {
-        self.impls.get(id.index())
-    }
-
-    pub fn witness(&self, id: TraitWitnessId) -> Option<&TraitWitness> {
-        self.witnesses.get(id.index())
-    }
-
-    pub fn trait_id(&self, name: &str) -> Option<TraitId> {
-        self.by_name.get(name).copied()
-    }
-
-    pub fn trait_decl(&self, id: TraitId) -> Option<&TraitDecl> {
-        self.traits.get(id.index())
-    }
-
-    pub fn trait_name(&self, id: TraitId) -> Option<&str> {
-        self.trait_decl(id).map(TraitDecl::name)
-    }
-
-    pub fn witness_method(
-        &self,
-        witness: TraitWitnessId,
-        method_name: &str,
-    ) -> Option<TraitMethodForWitness<'_>> {
-        let witness_decl = self.witness(witness)?;
-        let impl_decl = self.trait_impl(witness_decl.impl_id)?;
-        let method = impl_decl.methods.get(method_name)?;
-        Some(TraitMethodForWitness {
-            impl_id: impl_decl.id,
-            trait_id: witness_decl.trait_id,
-            witness,
-            self_ty: &witness_decl.self_ty,
-            method,
-        })
-    }
-
-    pub fn resolve_into_iterator(
-        &self,
-        source: &TypeKind,
-        predicates: &[TraitPredicate],
-    ) -> Result<IntoIteratorResolution, IntoIteratorResolutionError> {
-        let into_iterator = match self.resolve_trait_conformance_by_name(
-            source,
-            standard_iter::INTO_ITERATOR,
-            &[],
-            predicates,
-        ) {
-            TraitConformanceResolution::Missing => {
-                return self.resolve_iterator_identity_into_iterator(source, predicates);
-            }
-            TraitConformanceResolution::Ambiguous(candidates) => {
-                return Err(IntoIteratorResolutionError::AmbiguousIntoIterator {
-                    source: Box::new(source.clone()),
-                    candidates,
-                });
-            }
-            TraitConformanceResolution::Unique(conformance) => conformance,
-        };
-        let item_ty = into_iterator
-            .associated_type(standard_iter::ITEM)
-            .cloned()
-            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
-        let into_iter_ty = into_iterator
-            .associated_type(standard_iter::INTO_ITER)
-            .cloned()
-            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
-        let item_eq = [AssocEquality::new(standard_iter::ITEM, item_ty.clone())];
-        let iterator = match self.resolve_trait_conformance_by_name(
-            &into_iter_ty,
-            standard_iter::ITERATOR,
-            &item_eq,
-            predicates,
-        ) {
-            TraitConformanceResolution::Missing => {
-                return Err(IntoIteratorResolutionError::MissingIteratorForIntoIter {
-                    source: Box::new(source.clone()),
-                    into_iter: Box::new(into_iter_ty),
-                    item: Box::new(item_ty),
-                });
-            }
-            TraitConformanceResolution::Ambiguous(candidates) => {
-                return Err(IntoIteratorResolutionError::AmbiguousIteratorForIntoIter {
-                    source: Box::new(source.clone()),
-                    into_iter: Box::new(into_iter_ty),
-                    candidates,
-                });
-            }
-            TraitConformanceResolution::Unique(conformance) => conformance,
-        };
-        Ok(IntoIteratorResolution {
-            source_ty: source.clone(),
-            item_ty,
-            into_iter_ty,
-            kind: IntoIteratorResolutionKind::Explicit {
-                into_iterator,
-                iterator,
-            },
-        })
-    }
-
-    fn resolve_iterator_identity_into_iterator(
-        &self,
-        source: &TypeKind,
-        predicates: &[TraitPredicate],
-    ) -> Result<IntoIteratorResolution, IntoIteratorResolutionError> {
-        let iterator = match self.resolve_trait_conformance_by_name(
-            source,
-            standard_iter::ITERATOR,
-            &[],
-            predicates,
-        ) {
-            TraitConformanceResolution::Missing => {
-                return Err(IntoIteratorResolutionError::MissingIntoIterator {
-                    source: Box::new(source.clone()),
-                });
-            }
-            TraitConformanceResolution::Ambiguous(candidates) => {
-                return Err(IntoIteratorResolutionError::AmbiguousIteratorForIntoIter {
-                    source: Box::new(source.clone()),
-                    into_iter: Box::new(source.clone()),
-                    candidates,
-                });
-            }
-            TraitConformanceResolution::Unique(conformance) => conformance,
-        };
-        let item_ty = iterator
-            .associated_type(standard_iter::ITEM)
-            .cloned()
-            .unwrap_or_else(|| TypeKind::Named("_".to_owned()));
-        Ok(IntoIteratorResolution {
-            source_ty: source.clone(),
-            item_ty,
-            into_iter_ty: source.clone(),
-            kind: IntoIteratorResolutionKind::IteratorIdentity { iterator },
-        })
-    }
-
-    pub fn resolve_trait_conformance_by_name(
-        &self,
-        subject: &TypeKind,
-        trait_name: &str,
-        assoc_equalities: &[AssocEquality],
-        predicates: &[TraitPredicate],
-    ) -> TraitConformanceResolution {
-        let Some(trait_id) = self.trait_id(trait_name) else {
-            return TraitConformanceResolution::Missing;
-        };
-        let mut candidates = self
-            .impls
-            .iter()
-            .filter(|impl_decl| impl_decl.trait_id == Some(trait_id))
-            .filter_map(|impl_decl| conformance_from_impl(impl_decl, subject, assoc_equalities))
-            .collect::<Vec<_>>();
-        candidates.extend(predicates.iter().filter_map(|predicate| {
-            conformance_from_predicate(predicate, subject, trait_id, assoc_equalities)
-        }));
-        match candidates.as_slice() {
-            [] => TraitConformanceResolution::Missing,
-            [candidate] => TraitConformanceResolution::Unique(candidate.clone()),
-            _ => TraitConformanceResolution::Ambiguous(candidates),
-        }
-    }
-
-    pub fn predicates_for_signature(&self, signature: &FnSignature) -> Vec<TraitPredicate> {
-        let generic_bounds = signature
-            .generic_params()
-            .iter()
-            .flat_map(|param| match param {
-                GenericParam::Lifetime(_) => Vec::new(),
-                GenericParam::Type(param) => param
-                    .bounds()
-                    .iter()
-                    .filter_map(|bound| {
-                        self.predicate_from_bound(
-                            TypeKind::GenericParam(param.name().as_str().to_owned()),
-                            bound.value(),
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            });
-        let where_bounds = signature.where_clauses().iter().flat_map(|clause| {
-            let subject = trait_type_ref_kind(clause.subject().value(), &HashSet::new());
-            clause
-                .bounds()
-                .iter()
-                .filter_map(move |bound| self.predicate_from_bound(subject.clone(), bound.value()))
-                .collect::<Vec<_>>()
-        });
-        generic_bounds.chain(where_bounds).collect()
-    }
-
-    pub fn resolve_method(
-        &self,
-        receiver: &TypeKind,
-        method_name: &str,
-        predicates: &[TraitPredicate],
-    ) -> TraitMethodResolution {
-        if let Some(method) = self
-            .inherent_methods
-            .get(&(receiver.clone(), method_name.to_owned()))
-            .cloned()
-        {
-            return TraitMethodResolution::Inherent {
-                implementation: method.0,
-                method: method.1,
-            };
-        }
-
-        let mut candidates = Vec::new();
-        for witness in &self.witnesses {
-            if &witness.self_ty != receiver {
-                continue;
-            }
-            let Some(impl_decl) = self.impls.get(witness.impl_id.index()) else {
-                continue;
-            };
-            let Some(method) = impl_decl.methods.get(method_name) else {
-                continue;
-            };
-            candidates.push((Some(witness.id), witness.trait_id, method.clone()));
-        }
-
-        for predicate in predicates
-            .iter()
-            .filter(|predicate| predicate.subject() == receiver)
-        {
-            for requirement in self.inherited_methods(predicate.trait_id()) {
-                if requirement.name != method_name {
-                    continue;
-                }
-                let return_type = requirement
-                    .signature
-                    .return_type()
-                    .map_or(TypeKind::Unit, |ty| {
-                        substitute_trait_self(ty.value(), receiver, predicate.assoc_equalities())
-                    });
-                candidates.push((
-                    None,
-                    requirement.trait_id,
-                    TraitMethodImpl {
-                        trait_id: Some(requirement.trait_id),
-                        signature: requirement.signature.clone(),
-                        return_type,
-                        body: None,
-                    },
-                ));
-            }
-        }
-
-        match candidates.as_slice() {
-            [] => TraitMethodResolution::Missing,
-            [(witness, trait_id, method)] => TraitMethodResolution::Unique {
-                witness: *witness,
-                trait_id: *trait_id,
-                method: method.clone(),
-            },
-            _ => TraitMethodResolution::Ambiguous(
-                candidates
-                    .into_iter()
-                    .map(|(witness, trait_id, method)| TraitMethodCandidate {
-                        trait_id,
-                        trait_name: self
-                            .trait_name(trait_id)
-                            .unwrap_or("<unknown-trait>")
-                            .to_owned(),
-                        witness,
-                        method_name: method.signature.name().to_owned(),
-                    })
-                    .collect(),
-            ),
-        }
-    }
-
-    pub fn resolve_projection(
-        &self,
-        subject: &TypeKind,
-        assoc: &str,
-        predicates: &[TraitPredicate],
-    ) -> Result<ProjectionResolution, ProjectionError> {
-        let mut matches = Vec::new();
-        for witness in &self.witnesses {
-            if &witness.self_ty != subject {
-                continue;
-            }
-            let Some(impl_decl) = self.impls.get(witness.impl_id.index()) else {
-                continue;
-            };
-            if let Some(assignment) = impl_decl.associated_types.get(assoc) {
-                matches.push(ProjectionResolution::Resolved(assignment.value.clone()));
-            }
-        }
-        for predicate in predicates
-            .iter()
-            .filter(|predicate| predicate.subject() == subject)
-        {
-            let Some(trait_decl) = self.trait_decl(predicate.trait_id()) else {
-                continue;
-            };
-            if !self.trait_has_assoc(trait_decl.id, assoc) {
-                continue;
-            }
-            if let Some(equality) = predicate
-                .assoc_equalities()
-                .iter()
-                .find(|equality| equality.name() == assoc)
-            {
-                matches.push(ProjectionResolution::Resolved(equality.ty().clone()));
-            } else {
-                matches.push(ProjectionResolution::Deferred(TypeKind::Projection {
-                    subject: Box::new(subject.clone()),
-                    trait_name: Some(trait_decl.name.clone()),
-                    assoc: assoc.to_owned(),
-                }));
-            }
-        }
-        match matches.as_slice() {
-            [] => Err(ProjectionError::UnknownAssociatedType {
-                subject: subject.clone(),
-                assoc: assoc.to_owned(),
-            }),
-            [resolution] => Ok(resolution.clone()),
-            _ => Err(ProjectionError::Ambiguous {
-                subject: subject.clone(),
-                assoc: assoc.to_owned(),
-            }),
-        }
-    }
-
-    /// Resolves every associated-type projection carried by a method result.
-    ///
-    /// Trait selection and projection are catalog-owned semantic operations.
-    /// Call resolvers and the checker consume this one result instead of
-    /// recursively reinterpreting projection-bearing types independently.
-    pub fn resolve_type_projections(
-        &self,
-        ty: TypeKind,
-        predicates: &[TraitPredicate],
-    ) -> Result<TypeKind, ProjectionError> {
-        match ty {
-            TypeKind::Projection { subject, assoc, .. } => {
-                match self.resolve_projection(&subject, &assoc, predicates)? {
-                    ProjectionResolution::Resolved(ty) | ProjectionResolution::Deferred(ty) => {
-                        Ok(ty)
-                    }
-                }
-            }
-            TypeKind::Vec(inner) => self
-                .resolve_type_projections(*inner, predicates)
-                .map(|inner| TypeKind::Vec(Box::new(inner))),
-            TypeKind::Seq(inner) => self
-                .resolve_type_projections(*inner, predicates)
-                .map(|inner| TypeKind::Seq(Box::new(inner))),
-            TypeKind::Range(inner) => self
-                .resolve_type_projections(*inner, predicates)
-                .map(|inner| TypeKind::Range(Box::new(inner))),
-            TypeKind::Slice(inner) => self
-                .resolve_type_projections(*inner, predicates)
-                .map(|inner| TypeKind::Slice(Box::new(inner))),
-            TypeKind::Option(inner) => self
-                .resolve_type_projections(*inner, predicates)
-                .map(|inner| TypeKind::Option(Box::new(inner))),
-            TypeKind::Result { ok, error } => Ok(TypeKind::Result {
-                ok: Box::new(self.resolve_type_projections(*ok, predicates)?),
-                error: Box::new(self.resolve_type_projections(*error, predicates)?),
-            }),
-            other => Ok(other),
-        }
-    }
-
-    fn predicate_from_bound(&self, subject: TypeKind, bound: &TypeRef) -> Option<TraitPredicate> {
-        let (name, bindings) = trait_bound_parts(bound)?;
-        let trait_id = self.trait_id(name)?;
-        Some(TraitPredicate::new(
-            subject,
-            trait_id,
-            bindings
-                .iter()
-                .map(|binding| {
-                    AssocEquality::new(
-                        binding.name().as_str(),
-                        trait_type_ref_kind(binding.value(), &HashSet::new()),
-                    )
-                })
-                .collect::<Vec<_>>(),
-        ))
-    }
-
-    fn trait_has_assoc(&self, trait_id: TraitId, assoc: &str) -> bool {
-        self.inherited_associated_types(trait_id)
-            .iter()
-            .any(|requirement| requirement.name == assoc)
-    }
-
-    fn inherited_associated_types(&self, trait_id: TraitId) -> Vec<AssociatedTypeRequirement> {
-        let mut visited = BTreeSet::new();
-        let mut out = Vec::new();
-        self.push_inherited_associated_types(trait_id, &mut visited, &mut out);
-        out
-    }
-
-    fn push_inherited_associated_types(
-        &self,
-        trait_id: TraitId,
-        visited: &mut BTreeSet<TraitId>,
-        out: &mut Vec<AssociatedTypeRequirement>,
-    ) {
-        if !visited.insert(trait_id) {
-            return;
-        }
-        let Some(trait_decl) = self.trait_decl(trait_id) else {
-            return;
-        };
-        for supertrait in &trait_decl.supertraits {
-            self.push_inherited_associated_types(*supertrait, visited, out);
-        }
-        out.extend(trait_decl.associated_types.iter().cloned());
-    }
-
-    fn inherited_methods(&self, trait_id: TraitId) -> Vec<TraitMethodRequirement> {
-        let mut visited = BTreeSet::new();
-        let mut out = Vec::new();
-        self.push_inherited_methods(trait_id, &mut visited, &mut out);
-        out
-    }
-
-    fn push_inherited_methods(
-        &self,
-        trait_id: TraitId,
-        visited: &mut BTreeSet<TraitId>,
-        out: &mut Vec<TraitMethodRequirement>,
-    ) {
-        if !visited.insert(trait_id) {
-            return;
-        }
-        let Some(trait_decl) = self.trait_decl(trait_id) else {
-            return;
-        };
-        for supertrait in &trait_decl.supertraits {
-            self.push_inherited_methods(*supertrait, visited, out);
-        }
-        out.extend(trait_decl.methods.iter().cloned());
-    }
-}
-
 impl TraitDecl {
     pub const fn id(&self) -> TraitId {
         self.id
@@ -829,45 +389,20 @@ impl TraitMethodImpl {
     /// Projects this selected method into the semantic function signature used
     /// by the shared callable schema.
     pub(crate) fn call_signature(&self, return_type: TypeKind) -> FunctionSignature {
-        let return_type = self.signature.param_groups().iter().skip(1).rev().fold(
-            return_type,
-            |return_type, group| {
-                TypeKind::function(
-                    group
-                        .params()
-                        .iter()
-                        .filter(|param| !is_trait_receiver_param(param))
-                        .map(|param| {
-                            param.ty().map_or(TypeKind::Unit, |ty| {
-                                crate::checker::helpers::type_ref_kind(ty.value())
-                            })
-                        }),
-                    return_type,
-                )
-            },
-        );
-        let params = self
-            .signature
-            .param_groups()
-            .first()
-            .into_iter()
-            .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-            .filter(|param| !is_trait_receiver_param(param))
-            .map(trait_method_param)
-            .collect::<Vec<_>>();
+        let return_type =
+            self.param_groups
+                .iter()
+                .skip(1)
+                .rev()
+                .fold(return_type, |return_type, group| {
+                    TypeKind::function(group.iter().map(|param| param.ty().clone()), return_type)
+                });
+        let params = self.param_groups.first().cloned().unwrap_or_default();
         let remaining_param_groups = self
-            .signature
-            .param_groups()
+            .param_groups
             .iter()
             .skip(1)
-            .map(|group| {
-                group
-                    .params()
-                    .iter()
-                    .filter(|param| !is_trait_receiver_param(param))
-                    .map(trait_method_param)
-                    .collect::<Vec<_>>()
-            })
+            .cloned()
             .collect::<Vec<_>>();
         FunctionSignature::new(return_type, params)
             .with_remaining_param_groups(remaining_param_groups)
@@ -975,440 +510,6 @@ impl IntoIteratorResolution {
     }
 }
 
-/// Builds a typed trait catalog and returns diagnostics for invalid declarations.
-pub fn collect_trait_catalog(module: &HirModule) -> (TraitCatalog, Vec<TypeCheckError>) {
-    let mut builder = TraitCatalogBuilder::new(module);
-    builder.collect_traits(module);
-    builder.collect_impls(module);
-    builder.finish()
-}
-
-struct TraitCatalogBuilder {
-    catalog: TraitCatalog,
-    diagnostics: Vec<TypeCheckError>,
-    local_nominals: HashSet<String>,
-    next_assoc_id: usize,
-}
-
-impl TraitCatalogBuilder {
-    fn new(module: &HirModule) -> Self {
-        Self {
-            catalog: TraitCatalog::default(),
-            diagnostics: Vec::new(),
-            local_nominals: collect_local_nominals(module),
-            next_assoc_id: 0,
-        }
-    }
-
-    fn collect_traits(&mut self, module: &HirModule) {
-        standard_iter::install_standard_iterator_traits(&mut self.catalog, &mut self.next_assoc_id);
-        for item in module.declarations().iter().filter_map(as_trait_item) {
-            let id = TraitId::from_index(self.catalog.traits.len());
-            if self.catalog.by_name.contains_key(item.name()) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::duplicate_trait(item.name()),
-                ));
-                continue;
-            }
-            self.catalog.by_name.insert(item.name().to_owned(), id);
-            self.catalog.traits.push(TraitDecl {
-                id,
-                name: item.name().to_owned(),
-                supertraits: Vec::new(),
-                associated_types: Vec::new(),
-                methods: Vec::new(),
-            });
-        }
-
-        for item in module.declarations().iter().filter_map(as_trait_item) {
-            let Some(id) = self.catalog.trait_id(item.name()) else {
-                continue;
-            };
-            let supertraits = self.resolve_supertraits(item);
-            let associated_types = self.collect_trait_associated_types(id, item);
-            let methods = self.collect_trait_methods(id, item);
-            if let Some(trait_decl) = self.catalog.traits.get_mut(id.index()) {
-                trait_decl.supertraits = supertraits;
-                trait_decl.associated_types = associated_types;
-                trait_decl.methods = methods;
-            }
-        }
-    }
-
-    fn collect_impls(&mut self, module: &HirModule) {
-        standard_iter::install_standard_iterator_impls(&mut self.catalog);
-        for item in module.declarations().iter().filter_map(as_impl_item) {
-            self.collect_impl(item);
-        }
-    }
-
-    fn collect_impl(&mut self, item: &ImplItem) {
-        if item.visibility().is_some() {
-            self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                TraitDiagnostic::pub_impl_unsupported(impl_head_label(item)),
-            ));
-        }
-
-        let trait_name = item
-            .trait_ref()
-            .and_then(|reference| trait_bound_parts(reference.value()))
-            .map(|(name, _)| name);
-        let trait_id = trait_name.and_then(|name| self.resolve_trait_name(name));
-        if item.trait_ref().is_some() && trait_id.is_none() {
-            return;
-        }
-
-        let generic_params = impl_generic_names(item.generics());
-        let target = trait_type_ref_kind(item.target().value(), &generic_params);
-
-        if let Some(trait_id) = trait_id
-            && !self.impl_satisfies_orphan_rule(trait_id, &target)
-        {
-            self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                TraitDiagnostic::orphan_impl(
-                    self.catalog
-                        .trait_name(trait_id)
-                        .unwrap_or("<unknown-trait>"),
-                    type_kind_label(&target),
-                ),
-            ));
-        }
-
-        let id = ImplId::from_index(self.catalog.impls.len());
-        let mut impl_decl = TraitImpl {
-            id,
-            trait_id,
-            target: target.clone(),
-            associated_types: BTreeMap::new(),
-            methods: BTreeMap::new(),
-            witness: None,
-        };
-
-        self.collect_impl_members(item, &mut impl_decl, &generic_params);
-        self.check_coherence(&impl_decl);
-        if let Some(trait_id) = impl_decl.trait_id {
-            self.validate_trait_impl(&impl_decl, trait_id);
-            let witness = TraitWitnessId::from_index(self.catalog.witnesses.len());
-            impl_decl.witness = Some(witness);
-            self.catalog.witnesses.push(TraitWitness {
-                id: witness,
-                impl_id: id,
-                trait_id,
-                self_ty: target.clone(),
-            });
-            self.catalog.exact_impls.insert((trait_id, target), id);
-        } else {
-            self.register_inherent_methods(&impl_decl);
-        }
-        self.catalog.impls.push(impl_decl);
-    }
-
-    fn resolve_supertraits(&mut self, item: &TraitItem) -> Vec<TraitId> {
-        item.supertraits()
-            .iter()
-            .filter_map(|bound| {
-                trait_bound_parts(bound.value()).and_then(|(name, _)| self.resolve_trait_name(name))
-            })
-            .collect()
-    }
-
-    fn collect_trait_associated_types(
-        &mut self,
-        trait_id: TraitId,
-        item: &TraitItem,
-    ) -> Vec<AssociatedTypeRequirement> {
-        let mut seen = BTreeSet::new();
-        let mut out = Vec::new();
-        for member in item.members() {
-            let TraitMember::AssociatedType {
-                name,
-                params,
-                value,
-            } = member
-            else {
-                continue;
-            };
-            if !seen.insert(name.clone()) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::duplicate_associated_type(item.name(), name),
-                ));
-                continue;
-            }
-            if !params.is_empty() {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::associated_type_constructor_unsupported(item.name(), name),
-                ));
-            }
-            if value.is_some() {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::associated_type_default_unsupported(item.name(), name),
-                ));
-            }
-            let id = AssociatedTypeId::from_index(self.next_assoc_id);
-            self.next_assoc_id += 1;
-            out.push(AssociatedTypeRequirement {
-                id,
-                trait_id,
-                name: name.clone(),
-            });
-        }
-        out
-    }
-
-    fn collect_trait_methods(
-        &mut self,
-        trait_id: TraitId,
-        item: &TraitItem,
-    ) -> Vec<TraitMethodRequirement> {
-        let mut seen = BTreeSet::new();
-        let mut out = Vec::new();
-        for member in item.members() {
-            let TraitMember::Function {
-                signature, body, ..
-            } = member
-            else {
-                if let TraitMember::Raw(raw) = member {
-                    self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                        TraitDiagnostic::raw_trait_member(item.name(), raw),
-                    ));
-                }
-                continue;
-            };
-            if !seen.insert(signature.name().to_owned()) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::duplicate_method(item.name(), signature.name()),
-                ));
-                continue;
-            }
-            if body.is_some() {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::trait_default_method_unsupported(
-                        item.name(),
-                        signature.name(),
-                    ),
-                ));
-            }
-            out.push(TraitMethodRequirement {
-                trait_id,
-                name: signature.name().to_owned(),
-                signature: signature.clone(),
-            });
-        }
-        out
-    }
-
-    fn collect_impl_members(
-        &mut self,
-        item: &ImplItem,
-        impl_decl: &mut TraitImpl,
-        generic_params: &HashSet<String>,
-    ) {
-        let mut assoc_seen = BTreeSet::new();
-        let mut method_seen = BTreeSet::new();
-        for member in item.members() {
-            match member {
-                ImplMember::AssociatedType {
-                    name,
-                    params,
-                    value,
-                } => {
-                    if impl_decl.trait_id.is_none() {
-                        self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                            TraitDiagnostic::associated_type_in_inherent_impl(name),
-                        ));
-                    }
-                    if !params.is_empty() {
-                        self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                            TraitDiagnostic::associated_type_constructor_unsupported(
-                                impl_trait_name(item).unwrap_or("<inherent>"),
-                                name,
-                            ),
-                        ));
-                    }
-                    if !assoc_seen.insert(name.clone()) {
-                        self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                            TraitDiagnostic::duplicate_associated_type_assignment(
-                                impl_trait_name(item).unwrap_or("<inherent>"),
-                                name,
-                            ),
-                        ));
-                    }
-                    impl_decl.associated_types.insert(
-                        name.clone(),
-                        AssociatedTypeAssignment {
-                            name: name.clone(),
-                            value: trait_type_ref_kind(value.value(), generic_params),
-                        },
-                    );
-                }
-                ImplMember::Function {
-                    signature,
-                    body_statements,
-                    body_value,
-                    ..
-                } => {
-                    if !method_seen.insert(signature.name().to_owned()) {
-                        self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                            TraitDiagnostic::duplicate_method(
-                                impl_trait_name(item).unwrap_or("<inherent>"),
-                                signature.name(),
-                            ),
-                        ));
-                    }
-                    let return_type = signature.return_type().map_or(TypeKind::Unit, |ty| {
-                        substitute_self_type(
-                            ty.value(),
-                            &impl_decl.target,
-                            impl_decl,
-                            generic_params,
-                        )
-                    });
-                    impl_decl.methods.insert(
-                        signature.name().to_owned(),
-                        TraitMethodImpl {
-                            trait_id: impl_decl.trait_id,
-                            signature: signature.clone(),
-                            return_type,
-                            body: TraitMethodBody::new(body_statements, body_value.as_deref()),
-                        },
-                    );
-                }
-                ImplMember::Raw(raw) => {
-                    self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                        TraitDiagnostic::raw_impl_member(impl_head_label(item), raw),
-                    ));
-                }
-            }
-        }
-    }
-
-    fn validate_trait_impl(&mut self, impl_decl: &TraitImpl, trait_id: TraitId) {
-        let required_assoc = self.catalog.inherited_associated_types(trait_id);
-        let required_methods = self.catalog.inherited_methods(trait_id);
-        let required_assoc_names = required_assoc
-            .iter()
-            .map(|assoc| assoc.name.as_str())
-            .collect::<BTreeSet<_>>();
-        let required_method_names = required_methods
-            .iter()
-            .map(|method| method.name.as_str())
-            .collect::<BTreeSet<_>>();
-        let trait_name = self
-            .catalog
-            .trait_name(trait_id)
-            .unwrap_or("<unknown-trait>");
-        let target = type_kind_label(&impl_decl.target);
-
-        for assoc in &required_assoc {
-            if !impl_decl.associated_types.contains_key(&assoc.name) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::missing_associated_type(trait_name, &target, &assoc.name),
-                ));
-            }
-        }
-        for assignment in impl_decl.associated_types.keys() {
-            if !required_assoc_names.contains(assignment.as_str()) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::unknown_associated_type(trait_name, assignment),
-                ));
-            }
-        }
-
-        for method in &required_methods {
-            let Some(actual) = impl_decl.methods.get(&method.name) else {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::missing_required_method(trait_name, &target, &method.name),
-                ));
-                continue;
-            };
-            if !actual.body().is_some_and(TraitMethodBody::is_present) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::missing_required_method_body(
-                        trait_name,
-                        &target,
-                        &method.name,
-                    ),
-                ));
-            }
-            if !signatures_compatible(&method.signature, &actual.signature, impl_decl) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::impl_method_signature_mismatch(trait_name, &method.name),
-                ));
-            }
-        }
-        for method in impl_decl.methods.keys() {
-            if !required_method_names.contains(method.as_str()) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::unknown_trait_method(trait_name, method),
-                ));
-            }
-        }
-    }
-
-    fn check_coherence(&mut self, impl_decl: &TraitImpl) {
-        let Some(trait_id) = impl_decl.trait_id else {
-            return;
-        };
-        if self
-            .catalog
-            .exact_impls
-            .contains_key(&(trait_id, impl_decl.target.clone()))
-        {
-            self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                TraitDiagnostic::duplicate_impl(
-                    self.catalog
-                        .trait_name(trait_id)
-                        .unwrap_or("<unknown-trait>"),
-                    type_kind_label(&impl_decl.target),
-                ),
-            ));
-        }
-        for existing in &self.catalog.impls {
-            if existing.trait_id != Some(trait_id) {
-                continue;
-            }
-            if impl_targets_overlap(&existing.target, &impl_decl.target) {
-                self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::overlapping_impl(
-                        self.catalog
-                            .trait_name(trait_id)
-                            .unwrap_or("<unknown-trait>"),
-                        type_kind_label(&existing.target),
-                        type_kind_label(&impl_decl.target),
-                    ),
-                ));
-            }
-        }
-    }
-
-    fn register_inherent_methods(&mut self, impl_decl: &TraitImpl) {
-        for (name, method) in &impl_decl.methods {
-            self.catalog.inherent_methods.insert(
-                (impl_decl.target.clone(), name.clone()),
-                (impl_decl.id, method.clone()),
-            );
-        }
-    }
-
-    fn impl_satisfies_orphan_rule(&self, trait_id: TraitId, target: &TypeKind) -> bool {
-        self.catalog.trait_decl(trait_id).is_some()
-            || local_type_name(target).is_some_and(|name| self.local_nominals.contains(name))
-    }
-
-    fn resolve_trait_name(&mut self, name: &str) -> Option<TraitId> {
-        self.catalog.trait_id(name).or_else(|| {
-            self.diagnostics.push(TypeCheckError::trait_diagnostic(
-                TraitDiagnostic::unknown_trait(name),
-            ));
-            None
-        })
-    }
-
-    fn finish(self) -> (TraitCatalog, Vec<TypeCheckError>) {
-        (self.catalog, self.diagnostics)
-    }
-}
-
 fn conformance_from_impl(
     impl_decl: &TraitImpl,
     subject: &TypeKind,
@@ -1468,18 +569,100 @@ fn assoc_equalities_match(
     })
 }
 
-fn match_type_pattern(pattern: &TypeKind, actual: &TypeKind) -> Option<HashMap<String, TypeKind>> {
-    let mut substitutions = HashMap::new();
+#[derive(Default)]
+struct TypePatternSubstitutions {
+    generics: HashMap<GenericTypeParameterId, TypeKind>,
+}
+
+fn match_type_pattern(pattern: &TypeKind, actual: &TypeKind) -> Option<TypePatternSubstitutions> {
+    let mut substitutions = TypePatternSubstitutions::default();
     match_type_pattern_into(pattern, actual, &mut substitutions).then_some(substitutions)
 }
 
 fn match_type_pattern_into(
     pattern: &TypeKind,
     actual: &TypeKind,
-    substitutions: &mut HashMap<String, TypeKind>,
+    substitutions: &mut TypePatternSubstitutions,
 ) -> bool {
     if let TypeKind::GenericParam(name) = pattern {
         return match_generic_param_pattern(name, actual, substitutions);
+    }
+    match (pattern, actual) {
+        (
+            TypeKind::Array {
+                item: pattern_item,
+                len: pattern_len,
+            },
+            TypeKind::Array {
+                item: actual_item,
+                len: actual_len,
+            },
+        ) => {
+            return pattern_len == actual_len
+                && match_type_pattern_into(pattern_item, actual_item, substitutions);
+        }
+        (
+            TypeKind::Function {
+                params: pattern_params,
+                return_type: pattern_return,
+                effects: pattern_effects,
+            },
+            TypeKind::Function {
+                params: actual_params,
+                return_type: actual_return,
+                effects: actual_effects,
+            },
+        ) => {
+            return pattern_effects == actual_effects
+                && match_type_pattern_sequence(pattern_params, actual_params, substitutions)
+                && match_type_pattern_into(pattern_return, actual_return, substitutions);
+        }
+        (TypeKind::ProjectNominal(pattern), TypeKind::ProjectNominal(actual)) => {
+            return pattern.declaration() == actual.declaration()
+                && match_type_pattern_sequence(
+                    pattern.arguments(),
+                    actual.arguments(),
+                    substitutions,
+                );
+        }
+        (TypeKind::AcceptedNominal(pattern), TypeKind::AcceptedNominal(actual)) => {
+            return pattern.declaration() == actual.declaration()
+                && match_type_pattern_sequence(
+                    pattern.arguments(),
+                    actual.arguments(),
+                    substitutions,
+                );
+        }
+        (TypeKind::OpenNominal(pattern), TypeKind::OpenNominal(actual)) => {
+            return pattern.rule() == actual.rule()
+                && pattern.path() == actual.path()
+                && match_type_pattern_sequence(
+                    pattern.arguments(),
+                    actual.arguments(),
+                    substitutions,
+                );
+        }
+        (
+            TypeKind::Projection {
+                subject: pattern_subject,
+                trait_name: pattern_trait,
+                assoc: pattern_assoc,
+            },
+            TypeKind::Projection {
+                subject: actual_subject,
+                trait_name: actual_trait,
+                assoc: actual_assoc,
+            },
+        ) => {
+            return pattern_trait == actual_trait
+                && pattern_assoc == actual_assoc
+                && match_type_pattern_into(pattern_subject, actual_subject, substitutions);
+        }
+        (TypeKind::Tuple(pattern), TypeKind::Tuple(actual))
+        | (TypeKind::Choice(pattern), TypeKind::Choice(actual)) => {
+            return match_type_pattern_sequence(pattern, actual, substitutions);
+        }
+        _ => {}
     }
     if let Some((lhs, rhs)) = unary_type_pattern(pattern, actual) {
         return match_type_pattern_into(lhs, rhs, substitutions);
@@ -1500,21 +683,32 @@ fn match_type_pattern_into(
     if let Some((lhs, rhs)) = iterator_state_type_pattern(pattern, actual) {
         return match_type_pattern_into(lhs, rhs, substitutions);
     }
-    if let (TypeKind::Named(lhs), TypeKind::Named(rhs)) = (pattern, actual) {
-        return match_named_pattern(lhs, rhs, substitutions);
-    }
     pattern == actual
 }
 
-fn match_generic_param_pattern(
-    name: &str,
-    actual: &TypeKind,
-    substitutions: &mut HashMap<String, TypeKind>,
+fn match_type_pattern_sequence(
+    pattern: &[TypeKind],
+    actual: &[TypeKind],
+    substitutions: &mut TypePatternSubstitutions,
 ) -> bool {
-    if let Some(existing) = substitutions.get(name) {
+    pattern.len() == actual.len()
+        && pattern
+            .iter()
+            .zip(actual)
+            .all(|(pattern, actual)| match_type_pattern_into(pattern, actual, substitutions))
+}
+
+fn match_generic_param_pattern(
+    parameter: &GenericTypeParameterId,
+    actual: &TypeKind,
+    substitutions: &mut TypePatternSubstitutions,
+) -> bool {
+    if let Some(existing) = substitutions.generics.get(parameter) {
         existing == actual
     } else {
-        substitutions.insert(name.to_owned(), actual.clone());
+        substitutions
+            .generics
+            .insert(parameter.clone(), actual.clone());
         true
     }
 }
@@ -1529,11 +723,9 @@ fn unary_type_pattern<'a>(
         | (TypeKind::Slice(lhs), TypeKind::Slice(rhs))
         | (TypeKind::Range(lhs), TypeKind::Range(rhs))
         | (TypeKind::Option(lhs), TypeKind::Option(rhs))
+        | (TypeKind::Probe(lhs), TypeKind::Probe(rhs))
         | (TypeKind::ThreadHandle(lhs), TypeKind::ThreadHandle(rhs))
-        | (TypeKind::Shared(lhs), TypeKind::Shared(rhs))
-        | (TypeKind::Array { item: lhs, .. }, TypeKind::Array { item: rhs, .. }) => {
-            Some((lhs, rhs))
-        }
+        | (TypeKind::Shared(lhs), TypeKind::Shared(rhs)) => Some((lhs, rhs)),
         _ => None,
     }
 }
@@ -1650,43 +842,14 @@ fn iterator_state_type_pattern<'a>(
     }
 }
 
-fn match_named_pattern(
-    pattern: &str,
-    actual: &str,
-    substitutions: &mut HashMap<String, TypeKind>,
-) -> bool {
-    if pattern == actual {
-        return true;
+fn substitute_type(ty: &TypeKind, substitutions: &TypePatternSubstitutions) -> TypeKind {
+    if let Some(nominal) = substitute_nominal_type(ty, substitutions) {
+        return nominal;
     }
-    let Some((pattern_base, pattern_arg)) = split_one_generic_arg(pattern) else {
-        return false;
-    };
-    let Some((actual_base, actual_arg)) = split_one_generic_arg(actual) else {
-        return false;
-    };
-    if pattern_base != actual_base {
-        return false;
-    }
-    if let Some(existing) = substitutions.get(pattern_arg) {
-        existing == &TypeKind::Named(actual_arg.to_owned())
-    } else {
-        substitutions.insert(
-            pattern_arg.to_owned(),
-            TypeKind::Named(actual_arg.to_owned()),
-        );
-        true
-    }
-}
 
-fn split_one_generic_arg(value: &str) -> Option<(&str, &str)> {
-    let (base, rest) = value.split_once('<')?;
-    let arg = rest.strip_suffix('>')?.trim();
-    (!arg.contains(',')).then_some((base.trim(), arg))
-}
-
-fn substitute_type(ty: &TypeKind, substitutions: &HashMap<String, TypeKind>) -> TypeKind {
     match ty {
         TypeKind::GenericParam(name) => substitutions
+            .generics
             .get(name)
             .cloned()
             .unwrap_or_else(|| ty.clone()),
@@ -1741,8 +904,259 @@ fn substitute_type(ty: &TypeKind, substitutions: &HashMap<String, TypeKind>) -> 
             item: Box::new(substitute_type(item, substitutions)),
             len: len.clone(),
         },
+        TypeKind::Probe(inner) => TypeKind::Probe(Box::new(substitute_type(inner, substitutions))),
+        TypeKind::Function {
+            params,
+            return_type,
+            effects,
+        } => substitute_function_type(params, return_type, effects, substitutions),
+        TypeKind::ProjectNominal(_) | TypeKind::AcceptedNominal(_) | TypeKind::OpenNominal(_) => {
+            unreachable!("nominal substitutions return before the structural match")
+        }
+        TypeKind::Projection {
+            subject,
+            trait_name,
+            assoc,
+        } => TypeKind::Projection {
+            subject: Box::new(substitute_type(subject, substitutions)),
+            trait_name: trait_name.clone(),
+            assoc: assoc.clone(),
+        },
+        TypeKind::Tuple(items) => TypeKind::Tuple(
+            items
+                .iter()
+                .map(|item| substitute_type(item, substitutions))
+                .collect(),
+        ),
+        TypeKind::Choice(items) => TypeKind::Choice(
+            items
+                .iter()
+                .map(|item| substitute_type(item, substitutions))
+                .collect(),
+        ),
         other => other.clone(),
     }
+}
+
+fn substitute_function_type(
+    params: &[TypeKind],
+    return_type: &TypeKind,
+    effects: &crate::effect_row::EffectRow,
+    substitutions: &TypePatternSubstitutions,
+) -> TypeKind {
+    TypeKind::function_with_effects(
+        params
+            .iter()
+            .map(|param| substitute_type(param, substitutions)),
+        substitute_type(return_type, substitutions),
+        effects.clone(),
+    )
+}
+
+fn substitute_nominal_type(
+    ty: &TypeKind,
+    substitutions: &TypePatternSubstitutions,
+) -> Option<TypeKind> {
+    let arguments = |items: &[TypeKind]| {
+        items
+            .iter()
+            .map(|argument| substitute_type(argument, substitutions))
+            .collect::<Vec<_>>()
+    };
+    match ty {
+        TypeKind::ProjectNominal(nominal) => Some(TypeKind::ProjectNominal(
+            crate::types::ProjectNominalType::new(
+                nominal.declaration().clone(),
+                arguments(nominal.arguments()),
+            ),
+        )),
+        TypeKind::AcceptedNominal(nominal) => Some(TypeKind::AcceptedNominal(
+            crate::types::AcceptedNominalType::new(
+                nominal.declaration().clone(),
+                arguments(nominal.arguments()),
+            ),
+        )),
+        TypeKind::OpenNominal(nominal) => {
+            Some(TypeKind::OpenNominal(crate::types::OpenNominalType::new(
+                nominal.rule().clone(),
+                nominal.path().clone(),
+                arguments(nominal.arguments()),
+            )))
+        }
+        _ => None,
+    }
+}
+
+fn instantiate_trait_requirement_type(
+    ty: &TypeKind,
+    self_parameter: &GenericTypeParameterId,
+    receiver: &TypeKind,
+    assoc_equalities: &[AssocEquality],
+) -> TypeKind {
+    let mut substitutions = TypePatternSubstitutions::default();
+    substitutions
+        .generics
+        .insert(self_parameter.clone(), receiver.clone());
+    let substituted = substitute_type(ty, &substitutions);
+    resolve_predicate_associated_types(substituted, receiver, assoc_equalities)
+}
+
+fn instantiate_trait_requirement_params(
+    groups: &[Vec<FunctionParam>],
+    self_parameter: &GenericTypeParameterId,
+    receiver: &TypeKind,
+    assoc_equalities: &[AssocEquality],
+) -> Vec<Vec<FunctionParam>> {
+    groups
+        .iter()
+        .map(|group| {
+            group
+                .iter()
+                .map(|param| {
+                    FunctionParam::new(
+                        param.name().map(str::to_owned),
+                        instantiate_trait_requirement_type(
+                            param.ty(),
+                            self_parameter,
+                            receiver,
+                            assoc_equalities,
+                        ),
+                        param.kind(),
+                        param.has_default(),
+                        [],
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn resolve_predicate_associated_types(
+    ty: TypeKind,
+    receiver: &TypeKind,
+    assoc_equalities: &[AssocEquality],
+) -> TypeKind {
+    let resolve = |ty| resolve_predicate_associated_types(ty, receiver, assoc_equalities);
+    match ty {
+        TypeKind::Projection {
+            subject,
+            trait_name,
+            assoc,
+        } => resolve_predicate_projection(*subject, trait_name, assoc, receiver, assoc_equalities),
+        TypeKind::Vec(inner) => TypeKind::Vec(Box::new(resolve(*inner))),
+        TypeKind::Seq(inner) => TypeKind::Seq(Box::new(resolve(*inner))),
+        TypeKind::Slice(inner) => TypeKind::Slice(Box::new(resolve(*inner))),
+        TypeKind::Range(inner) => TypeKind::Range(Box::new(resolve(*inner))),
+        TypeKind::Option(inner) => TypeKind::Option(Box::new(resolve(*inner))),
+        TypeKind::Probe(inner) => TypeKind::Probe(Box::new(resolve(*inner))),
+        TypeKind::ThreadHandle(inner) => TypeKind::ThreadHandle(Box::new(resolve(*inner))),
+        TypeKind::Shared(inner) => TypeKind::Shared(Box::new(resolve(*inner))),
+        TypeKind::BorrowRef {
+            kind,
+            lifetime,
+            inner,
+        } => TypeKind::BorrowRef {
+            kind,
+            lifetime,
+            inner: Box::new(resolve(*inner)),
+        },
+        TypeKind::IteratorState { family, item } => TypeKind::IteratorState {
+            family,
+            item: Box::new(resolve(*item)),
+        },
+        TypeKind::Need { ready, error } => TypeKind::Need {
+            ready: Box::new(resolve(*ready)),
+            error: Box::new(resolve(*error)),
+        },
+        TypeKind::Stream { item, error } => TypeKind::Stream {
+            item: Box::new(resolve(*item)),
+            error: Box::new(resolve(*error)),
+        },
+        TypeKind::Source { item, error } => TypeKind::Source {
+            item: Box::new(resolve(*item)),
+            error: Box::new(resolve(*error)),
+        },
+        TypeKind::Result { ok, error } => TypeKind::Result {
+            ok: Box::new(resolve(*ok)),
+            error: Box::new(resolve(*error)),
+        },
+        TypeKind::Map { kind, key, value } => TypeKind::Map {
+            kind,
+            key: Box::new(resolve(*key)),
+            value: Box::new(resolve(*value)),
+        },
+        TypeKind::Array { item, len } => TypeKind::Array {
+            item: Box::new(resolve(*item)),
+            len,
+        },
+        TypeKind::Function {
+            params,
+            return_type,
+            effects,
+        } => TypeKind::function_with_effects(
+            params.into_iter().map(&resolve),
+            resolve(*return_type),
+            effects,
+        ),
+        TypeKind::ProjectNominal(nominal) => {
+            TypeKind::ProjectNominal(crate::types::ProjectNominalType::new(
+                nominal.declaration().clone(),
+                nominal
+                    .arguments()
+                    .iter()
+                    .cloned()
+                    .map(&resolve)
+                    .collect::<Vec<_>>(),
+            ))
+        }
+        TypeKind::AcceptedNominal(nominal) => {
+            TypeKind::AcceptedNominal(crate::types::AcceptedNominalType::new(
+                nominal.declaration().clone(),
+                nominal
+                    .arguments()
+                    .iter()
+                    .cloned()
+                    .map(&resolve)
+                    .collect::<Vec<_>>(),
+            ))
+        }
+        TypeKind::OpenNominal(nominal) => {
+            TypeKind::OpenNominal(crate::types::OpenNominalType::new(
+                nominal.rule().clone(),
+                nominal.path().clone(),
+                nominal
+                    .arguments()
+                    .iter()
+                    .cloned()
+                    .map(&resolve)
+                    .collect::<Vec<_>>(),
+            ))
+        }
+        TypeKind::Tuple(items) => TypeKind::Tuple(items.into_iter().map(&resolve).collect()),
+        TypeKind::Choice(items) => TypeKind::Choice(items.into_iter().map(resolve).collect()),
+        other => other,
+    }
+}
+
+fn resolve_predicate_projection(
+    subject: TypeKind,
+    trait_name: Option<String>,
+    assoc: String,
+    receiver: &TypeKind,
+    assoc_equalities: &[AssocEquality],
+) -> TypeKind {
+    let subject = resolve_predicate_associated_types(subject, receiver, assoc_equalities);
+    assoc_equalities
+        .iter()
+        .find(|equality| subject == *receiver && equality.name() == assoc)
+        .map_or(
+            TypeKind::Projection {
+                subject: Box::new(subject),
+                trait_name,
+                assoc,
+            },
+            |equality| equality.ty().clone(),
+        )
 }
 
 fn as_trait_item(decl: &HirTopLevelDecl) -> Option<&TraitItem> {
@@ -1772,214 +1186,173 @@ fn collect_local_nominals(module: &HirModule) -> HashSet<String> {
         .collect()
 }
 
-fn impl_generic_names(generics: &[GenericParam]) -> HashSet<String> {
-    generics
-        .iter()
-        .filter_map(GenericParam::as_type)
-        .map(|name| name.as_str().to_owned())
-        .collect()
+fn generic_owner_for_range(
+    module: &HirModule,
+    declaration_module: &CanonicalModulePath,
+    range: TextRange,
+) -> GenericTypeOwnerId {
+    module
+        .project_source_span(declaration_module, range)
+        .map_or_else(
+            || detached_generic_owner_from_range(range),
+            GenericTypeOwnerId::AcceptedSource,
+        )
 }
 
-fn signatures_compatible(
-    required: &FnSignature,
-    actual: &FnSignature,
+fn generic_owner_for_signature(
+    module: &HirModule,
+    declaration_module: &CanonicalModulePath,
+    signature: &FnSignature,
+    fallback: TextRange,
+) -> GenericTypeOwnerId {
+    let range = signature
+        .generic_params()
+        .first()
+        .map_or(fallback, |parameter| match parameter {
+            GenericParam::Lifetime(lifetime) => lifetime.range(),
+            GenericParam::Type(parameter) => parameter.range(),
+        });
+    generic_owner_for_range(module, declaration_module, range)
+}
+
+fn generic_type_scope(
+    module: &HirModule,
+    declaration_module: &CanonicalModulePath,
+    generics: &[GenericParam],
+    owner: &GenericTypeOwnerId,
+) -> GenericTypeScope {
+    let bindings = generics
+        .iter()
+        .filter_map(GenericParam::as_type_param)
+        .enumerate()
+        .map(|(ordinal, parameter)| {
+            let source = module
+                .project_source_span(declaration_module, parameter.name_range())
+                .map_or_else(
+                    || TypeSourceEvidence::detached(parameter.name_range()),
+                    |project| TypeSourceEvidence::accepted(parameter.name_range(), project),
+                );
+            GenericTypeBinding::new(
+                GenericTypeParameterId::new(
+                    owner.clone(),
+                    u16::try_from(ordinal).expect("syntax generic-parameter limit fits u16"),
+                ),
+                parameter.name().clone(),
+                source,
+            )
+        });
+    GenericTypeScope::try_new(bindings)
+        .expect("syntax owner must not declare duplicate generic type parameters")
+}
+
+fn nested_generic_type_scope(
+    module: &HirModule,
+    declaration_module: &CanonicalModulePath,
+    generics: &[GenericParam],
+    owner: &GenericTypeOwnerId,
+    parent: &GenericTypeScope,
+) -> GenericTypeScope {
+    let child = generic_type_scope(module, declaration_module, generics, owner);
+    let mut bindings = child.bindings().cloned().collect::<Vec<_>>();
+    bindings.extend(
+        parent
+            .bindings()
+            .filter(|binding| child.binding(binding.name()).is_none())
+            .cloned(),
+    );
+    GenericTypeScope::try_new(bindings)
+        .expect("child generic names shadow parent bindings before scope construction")
+}
+
+pub(crate) fn detached_generic_owner_from_range(range: TextRange) -> GenericTypeOwnerId {
+    let mut value = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in range
+        .start()
+        .to_le_bytes()
+        .into_iter()
+        .chain(range.end().to_le_bytes())
+    {
+        value ^= u64::from(byte);
+        value = value.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(value))
+}
+
+fn method_signatures_compatible(
+    required: &TraitMethodRequirement,
+    actual: &TraitMethodImpl,
     impl_decl: &TraitImpl,
 ) -> bool {
-    if required.name() != actual.name()
-        || required.param_groups().len() != actual.param_groups().len()
+    if required.signature.name() != actual.signature.name()
+        || required.param_groups.len() != actual.param_groups.len()
     {
         return false;
     }
-    let generic_params = HashSet::new();
-    for (required_group, actual_group) in required.param_groups().iter().zip(actual.param_groups())
-    {
-        if required_group.params().len() != actual_group.params().len() {
+    let assoc_equalities = impl_decl
+        .associated_types
+        .values()
+        .map(|assignment| AssocEquality::new(&assignment.name, assignment.value.clone()))
+        .collect::<Vec<_>>();
+    let required_groups = instantiate_trait_requirement_params(
+        &required.param_groups,
+        &required.self_parameter,
+        &impl_decl.target,
+        &assoc_equalities,
+    );
+    let mut substitutions = TypePatternSubstitutions::default();
+    for (required_group, actual_group) in required_groups.iter().zip(&actual.param_groups) {
+        if required_group.len() != actual_group.len() {
             return false;
         }
-        for (required_param, actual_param) in
-            required_group.params().iter().zip(actual_group.params())
-        {
-            if function_param_type(
-                required_param,
-                &impl_decl.target,
-                impl_decl,
-                &generic_params,
-            ) != function_param_type(actual_param, &impl_decl.target, impl_decl, &generic_params)
+        for (required_param, actual_param) in required_group.iter().zip(actual_group) {
+            if required_param.kind() != actual_param.kind()
+                || required_param.has_default() != actual_param.has_default()
+                || !match_type_pattern_into(
+                    required_param.ty(),
+                    actual_param.ty(),
+                    &mut substitutions,
+                )
             {
                 return false;
             }
         }
     }
-    let expected = required.return_type().map_or(TypeKind::Unit, |ty| {
-        substitute_self_type(ty.value(), &impl_decl.target, impl_decl, &generic_params)
-    });
-    let actual = actual.return_type().map_or(TypeKind::Unit, |ty| {
-        substitute_self_type(ty.value(), &impl_decl.target, impl_decl, &generic_params)
-    });
-    expected == actual
+    let required_return = instantiate_trait_requirement_type(
+        &required.return_type,
+        &required.self_parameter,
+        &impl_decl.target,
+        &assoc_equalities,
+    );
+    match_type_pattern_into(&required_return, &actual.return_type, &mut substitutions)
 }
 
-fn function_param_type(
-    param: &FnParam,
-    self_ty: &TypeKind,
-    impl_decl: &TraitImpl,
-    generic_params: &HashSet<String>,
-) -> TypeKind {
-    param.ty().map_or(TypeKind::Unit, |ty| {
-        substitute_self_type(ty.value(), self_ty, impl_decl, generic_params)
-    })
-}
-
-fn substitute_self_type(
-    ty: &TypeRef,
-    self_ty: &TypeKind,
-    impl_decl: &TraitImpl,
-    generic_params: &HashSet<String>,
-) -> TypeKind {
-    match ty {
-        TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self") => {
-            self_ty.clone()
-        }
-        TypeRef::Projection { subject, assoc } if matches!(subject.as_ref(), TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self")) => {
-            impl_decl.associated_types.get(assoc.as_str()).map_or_else(
-                || trait_type_ref_kind(ty, generic_params),
-                |assignment| assignment.value.clone(),
-            )
-        }
-        TypeRef::Generic { base, args } => {
-            let arg_types = args
-                .iter()
-                .map(|arg| substitute_self_type(arg, self_ty, impl_decl, generic_params))
-                .collect::<Vec<_>>();
-            generic_type_kind(base, &arg_types)
-        }
-        TypeRef::Choice(alternatives) => TypeKind::Choice(
-            alternatives
-                .iter()
-                .map(|alternative| {
-                    substitute_self_type(alternative, self_ty, impl_decl, generic_params)
-                })
-                .collect(),
-        ),
-        TypeRef::Reference(reference) => TypeKind::BorrowRef {
-            kind: reference.kind(),
-            lifetime: None,
-            inner: Box::new(substitute_self_type(
-                reference.referent(),
-                self_ty,
-                impl_decl,
-                generic_params,
-            )),
-        },
-        TypeRef::Slice(inner) => TypeKind::Slice(Box::new(substitute_self_type(
-            inner,
-            self_ty,
-            impl_decl,
-            generic_params,
-        ))),
-        _ => trait_type_ref_kind(ty, generic_params),
-    }
-}
-
-fn substitute_trait_self(
-    ty: &TypeRef,
-    self_ty: &TypeKind,
-    assoc_equalities: &[AssocEquality],
-) -> TypeKind {
-    match ty {
-        TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self") => {
-            self_ty.clone()
-        }
-        TypeRef::Projection { subject, assoc } if matches!(subject.as_ref(), TypeRef::Path(path) if crate::types::direct_type_name(path) == Some("Self")) => {
-            assoc_equalities
-                .iter()
-                .find(|equality| equality.name() == assoc.as_str())
-                .map_or_else(
-                    || TypeKind::Projection {
-                        subject: Box::new(self_ty.clone()),
-                        trait_name: None,
-                        assoc: assoc.as_str().to_owned(),
-                    },
-                    |equality| equality.ty().clone(),
-                )
-        }
-        _ => trait_type_ref_kind(ty, &HashSet::new()),
-    }
-}
-
-fn trait_type_ref_kind(ty: &TypeRef, generic_params: &HashSet<String>) -> TypeKind {
-    match ty {
-        TypeRef::Never => TypeKind::Never,
-        TypeRef::ConstInt(value) => TypeKind::Named(value.to_string()),
-        TypeRef::Path(path)
-            if crate::types::direct_type_name(path)
-                .is_some_and(|name| name == "Self" || generic_params.contains(name)) =>
+pub(super) fn trait_method_param_groups(
+    signature: &FnSignature,
+    mut resolve: impl FnMut(&AuthoredTypeRef) -> Option<TypeKind>,
+) -> Option<Vec<Vec<FunctionParam>>> {
+    let mut groups = Vec::with_capacity(signature.param_groups().len());
+    for group in signature.param_groups() {
+        let mut params = Vec::with_capacity(group.params().len());
+        for param in group
+            .params()
+            .iter()
+            .filter(|param| !is_trait_receiver_param(param))
         {
-            TypeKind::GenericParam(
-                crate::types::direct_type_name(path)
-                    .expect("guard requires a direct generic name")
-                    .to_owned(),
-            )
+            let ty = param.ty().map_or(Some(TypeKind::Unit), &mut resolve)?;
+            params.push(trait_method_param(param, ty));
         }
-        TypeRef::Path(path) => primitive_or_named(path),
-        TypeRef::Tuple(items) => TypeKind::Tuple(
-            items
-                .iter()
-                .map(|item| trait_type_ref_kind(item, generic_params))
-                .collect(),
-        ),
-        TypeRef::Function {
-            params,
-            return_type,
-            effects,
-        } => TypeKind::function_with_effects(
-            params
-                .iter()
-                .map(|param| trait_type_ref_kind(param, generic_params)),
-            trait_type_ref_kind(return_type, generic_params),
-            crate::checker::helpers::type_ref_effect_row(effects.as_ref()),
-        ),
-        TypeRef::Projection { subject, assoc } => TypeKind::Projection {
-            subject: Box::new(trait_type_ref_kind(subject, generic_params)),
-            trait_name: None,
-            assoc: assoc.as_str().to_owned(),
-        },
-        TypeRef::Generic { base, args } => {
-            let arg_types = args
-                .iter()
-                .map(|arg| trait_type_ref_kind(arg, generic_params))
-                .collect::<Vec<_>>();
-            generic_type_kind(base, &arg_types)
-        }
-        TypeRef::TraitBound(bound) => primitive_or_named(bound.path()),
-        TypeRef::Choice(alternatives) => TypeKind::Choice(
-            alternatives
-                .iter()
-                .map(|alternative| trait_type_ref_kind(alternative, generic_params))
-                .collect(),
-        ),
-        TypeRef::Reference(reference) => TypeKind::BorrowRef {
-            kind: reference.kind(),
-            lifetime: None,
-            inner: Box::new(trait_type_ref_kind(reference.referent(), generic_params)),
-        },
-        TypeRef::Slice(inner) => {
-            TypeKind::Slice(Box::new(trait_type_ref_kind(inner, generic_params)))
-        }
-        TypeRef::Recovery(id) => TypeKind::Named(format!("<recovered-type:{}>", id.index())),
+        groups.push(params);
     }
+    Some(groups)
 }
 
-fn trait_method_param(param: &FnParam) -> FunctionParam {
+fn trait_method_param(param: &FnParam, ty: TypeKind) -> FunctionParam {
     let name = match param.pattern() {
         Pattern::Ident(name) | Pattern::MutIdent(name) | Pattern::Typed { name, .. } => {
             name.as_str()
         }
         _ => "_",
     };
-    let ty = param.ty().map_or(TypeKind::Unit, |ty| {
-        crate::checker::helpers::type_ref_kind(ty.value())
-    });
     if param.is_rest() {
         FunctionParam::rest(name, ty)
     } else if param.default().is_some() {
@@ -1991,53 +1364,6 @@ fn trait_method_param(param: &FnParam) -> FunctionParam {
 
 fn is_trait_receiver_param(param: &FnParam) -> bool {
     param.receiver_kind().is_some()
-        || matches!(
-            param
-                .ty()
-                .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
-            Some(TypeRef::Path(path)) if crate::types::direct_type_name(path) == Some("Self")
-        )
-}
-
-fn generic_type_kind(base: &arcweft_lang_syntax::types::TypePath, args: &[TypeKind]) -> TypeKind {
-    let direct = crate::types::direct_type_name(base);
-    match (direct, args) {
-        (Some("Vec"), [item]) => TypeKind::Vec(Box::new(item.clone())),
-        (Some("Seq"), [item]) => TypeKind::Seq(Box::new(item.clone())),
-        (Some("Range"), [item]) => TypeKind::Range(Box::new(item.clone())),
-        (Some("Option"), [item]) => TypeKind::Option(Box::new(item.clone())),
-        (Some("Result"), [ok, error]) => TypeKind::Result {
-            ok: Box::new(ok.clone()),
-            error: Box::new(error.clone()),
-        },
-        _ => TypeKind::Named(format!(
-            "{}<{}>",
-            base.canonical_string(),
-            args.iter()
-                .map(type_kind_label)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-    }
-}
-
-fn primitive_or_named(path: &arcweft_lang_syntax::types::TypePath) -> TypeKind {
-    let direct = crate::types::direct_type_name(path);
-    direct
-        .and_then(TypeKind::primitive_name)
-        .unwrap_or_else(|| {
-            if direct.is_some_and(|name| {
-                name.chars().next().is_some_and(char::is_uppercase) && name.chars().count() == 1
-            }) {
-                TypeKind::GenericParam(
-                    direct
-                        .expect("guard requires a direct type name")
-                        .to_owned(),
-                )
-            } else {
-                TypeKind::Named(path.canonical_string())
-            }
-        })
 }
 
 fn trait_bound_parts(bound: &TypeRef) -> Option<(&str, &[AssociatedTypeBinding])> {
@@ -2073,7 +1399,7 @@ fn impl_trait_name(item: &ImplItem) -> Option<&str> {
 
 fn local_type_name(ty: &TypeKind) -> Option<&str> {
     match ty {
-        TypeKind::Named(name) | TypeKind::GenericParam(name) => Some(type_head(name)),
+        TypeKind::Named(name) => Some(name),
         TypeKind::Vec(inner)
         | TypeKind::Seq(inner)
         | TypeKind::Range(inner)
@@ -2088,10 +1414,6 @@ fn impl_targets_overlap(left: &TypeKind, right: &TypeKind) -> bool {
         return true;
     }
     match (left, right) {
-        (TypeKind::Named(left), TypeKind::Named(right)) => {
-            type_head(left) == type_head(right)
-                && (label_has_generic(left) || label_has_generic(right))
-        }
         (TypeKind::Vec(left), TypeKind::Vec(right))
         | (TypeKind::Seq(left), TypeKind::Seq(right))
         | (TypeKind::Range(left), TypeKind::Range(right))

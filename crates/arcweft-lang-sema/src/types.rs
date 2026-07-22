@@ -1,24 +1,97 @@
-use crate::{
-    effect_row::{EffectRow, EffectRowTail},
-    effects::EffectSet,
-};
+use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_syntax::{
     ast::module_path::ModulePathRoot,
     expr::{IntSuffix, LifetimeScopeKind},
     reference::BorrowKind,
-    types::{TypePath, TypeRef},
+    types::TypePath,
 };
-use core::fmt::{self, Write as _};
+use core::fmt;
 
 mod character_nominal;
 mod compatibility;
 mod mismatch;
+mod nominal;
 mod openness;
 mod order;
+mod substitution;
 
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
+pub use nominal::{
+    AcceptedNominalType, DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId,
+    OpenNominalType, ProjectNominalType, TypePoisonId,
+};
+
+/// Statically known or deliberately unresolved length of an array type.
+///
+/// Array lengths are semantic values, not source spellings. In particular,
+/// generic array lengths retain the declaration-owned parameter identity that
+/// introduced them; they are never represented by a convention such as
+/// `"N"`. `Inferred` is reserved for checker-local inference where no authored
+/// length was supplied, while authored resolution failures retain their
+/// diagnostic identity through `Error`.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ArrayLength {
+    /// A concrete compile-time length.
+    Const(usize),
+    /// A declaration-owned generic constant length.
+    Generic(GenericTypeParameterId),
+    /// A resolver-owned error already reported for this length.
+    Error(TypePoisonId),
+    /// A checker-local length that remains to be inferred.
+    Inferred,
+}
+
+impl ArrayLength {
+    /// Returns whether this length leaves overload applicability open.
+    #[must_use]
+    pub(crate) const fn has_open_components(&self) -> bool {
+        matches!(self, Self::Generic(_) | Self::Error(_) | Self::Inferred)
+    }
+
+    /// Returns whether this length is known to equal `actual`.
+    #[must_use]
+    pub(crate) const fn matches_const(&self, actual: usize) -> bool {
+        match self {
+            Self::Const(expected) => *expected == actual,
+            Self::Generic(_) | Self::Error(_) | Self::Inferred => true,
+        }
+    }
+
+    /// Returns whether an expected array length can accept an actual one.
+    ///
+    /// A concrete length is exact. Generic, recovery, and inference lengths
+    /// deliberately remain open here; the owner-specific generic substitution
+    /// machinery retains the identity when an operation needs to bind it.
+    #[must_use]
+    pub(crate) fn accepts(&self, actual: &Self) -> bool {
+        match self {
+            Self::Const(expected) => {
+                matches!(actual, Self::Const(found) if expected == found)
+                    || matches!(actual, Self::Error(_))
+            }
+            Self::Generic(_) | Self::Error(_) | Self::Inferred => true,
+        }
+    }
+
+    /// Returns the diagnostic and tooling spelling for this semantic length.
+    #[must_use]
+    pub(crate) fn source_label(&self) -> String {
+        match self {
+            Self::Const(value) => value.to_string(),
+            Self::Generic(parameter) => parameter.source_label(),
+            Self::Error(poison) => format!("<array-length-error:{}>", poison.index()),
+            Self::Inferred => "_".to_owned(),
+        }
+    }
+}
+
+impl fmt::Display for ArrayLength {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.source_label())
+    }
+}
 
 /// Entity family used by semantic references and ID checks.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -173,7 +246,7 @@ pub enum TypeKind {
     Vec(Box<TypeKind>),
     Array {
         item: Box<TypeKind>,
-        len: String,
+        len: ArrayLength,
     },
     Slice(Box<TypeKind>),
     Seq(Box<TypeKind>),
@@ -217,7 +290,16 @@ pub enum TypeKind {
         return_type: Box<TypeKind>,
         effects: EffectRow,
     },
-    GenericParam(String),
+    /// Generic parameter selected by a declaration-owned typed identity.
+    GenericParam(GenericTypeParameterId),
+    /// Source-backed project struct or enum selected through the project table.
+    ProjectNominal(ProjectNominalType),
+    /// Exact opaque type selected through the accepted environment catalog.
+    AcceptedNominal(AcceptedNominalType),
+    /// Type admitted by one explicit open-nominal environment rule.
+    OpenNominal(OpenNominalType),
+    /// Recovery carrier for a previously recorded authoritative type failure.
+    Error(TypePoisonId),
     Projection {
         subject: Box<TypeKind>,
         trait_name: Option<String>,
@@ -229,6 +311,10 @@ pub enum TypeKind {
     FocusPatch,
     /// Manifest-backed character enum with structural nominal identity.
     CharacterNominal(CharacterNominalType),
+    /// Internal or host-produced semantic value without an authored `TypeRef` origin.
+    ///
+    /// Authored type resolution must use `crate::nominal::resolve_type_ref` and
+    /// never constructs this variant as a path fallback.
     Named(String),
     Tuple(Vec<TypeKind>),
     Choice(Vec<TypeKind>),
@@ -262,264 +348,9 @@ impl From<IntSuffix> for TypeKind {
     }
 }
 
-impl From<&TypeRef> for TypeKind {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the exhaustive surface-TypeRef projection is one closed conversion boundary"
-    )]
-    fn from(ty: &TypeRef) -> Self {
-        match ty {
-            TypeRef::Never => Self::Never,
-            TypeRef::ConstInt(value) => Self::Named(value.to_string()),
-            TypeRef::Path(path) => direct_type_name(path)
-                .and_then(Self::primitive_name)
-                .unwrap_or_else(|| Self::Named(path.canonical_string())),
-            TypeRef::Tuple(items) => Self::Tuple(items.iter().map(Self::from).collect()),
-            TypeRef::Function {
-                params,
-                return_type,
-                effects,
-            } => Self::function_with_effects(
-                params.iter().map(Self::from),
-                Self::from(return_type.as_ref()),
-                effects.as_ref().map_or_else(EffectRow::unknown, |effects| {
-                    EffectSet::from_labels(effects.effects())
-                        .map_or_else(|_| EffectRow::unknown(), EffectRow::closed)
-                }),
-            ),
-            TypeRef::Choice(alternatives) => {
-                let mut flattened = alternatives
-                    .iter()
-                    .map(Self::from)
-                    .flat_map(|ty| match ty {
-                        Self::Choice(alternatives) => alternatives,
-                        ty => vec![ty],
-                    })
-                    .collect::<Vec<_>>();
-                flattened.sort_by_key(Self::source_label);
-                flattened.dedup();
-                match flattened.as_slice() {
-                    [single] => single.clone(),
-                    _ => Self::Choice(flattened),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Vec") && args.len() == 1 =>
-            {
-                Self::Vec(Box::new(Self::from(&args[0])))
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Array") && args.len() == 2 =>
-            {
-                Self::Array {
-                    item: Box::new(Self::from(&args[0])),
-                    len: canonical_type_ref_label(&args[1]),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Seq") && args.len() == 1 =>
-            {
-                Self::Seq(Box::new(Self::from(&args[0])))
-            }
-            TypeRef::Generic { base, args }
-                if matches!(
-                    direct_type_name(base),
-                    Some("OrderedMap" | "SortedMap" | "BTreeMap")
-                ) && args.len() == 2 =>
-            {
-                Self::Map {
-                    kind: match direct_type_name(base) {
-                        Some("OrderedMap") => MapKind::Ordered,
-                        Some("SortedMap") => MapKind::Sorted,
-                        Some("BTreeMap") => MapKind::BTree,
-                        _ => unreachable!("map names are filtered by the match guard"),
-                    },
-                    key: Box::new(Self::from(&args[0])),
-                    value: Box::new(Self::from(&args[1])),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Result") && args.len() == 2 =>
-            {
-                Self::Result {
-                    ok: Box::new(Self::from(&args[0])),
-                    error: Box::new(Self::from(&args[1])),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("ArcResult") && args.len() == 1 =>
-            {
-                Self::Result {
-                    ok: Box::new(Self::from(&args[0])),
-                    error: Box::new(Self::Named("ArcError".to_owned())),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Option") && args.len() == 1 =>
-            {
-                Self::Option(Box::new(Self::from(&args[0])))
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Speaker") && args.len() == 1 =>
-            {
-                entity_kind_from_type_ref(&args[0])
-                    .map_or_else(|| Self::Named(canonical_type_ref_label(ty)), Self::Speaker)
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("SpeakerPreset") && args.len() == 1 =>
-            {
-                entity_kind_from_type_ref(&args[0]).map_or_else(
-                    || Self::Named(canonical_type_ref_label(ty)),
-                    Self::SpeakerPreset,
-                )
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Need") && args.len() == 2 =>
-            {
-                Self::Need {
-                    ready: Box::new(Self::from(&args[0])),
-                    error: Box::new(Self::from(&args[1])),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Stream") && args.len() == 2 =>
-            {
-                Self::Stream {
-                    item: Box::new(Self::from(&args[0])),
-                    error: Box::new(Self::from(&args[1])),
-                }
-            }
-            TypeRef::Generic { base, args }
-                if direct_type_name(base) == Some("Source") && args.len() == 2 =>
-            {
-                Self::Source {
-                    item: Box::new(Self::from(&args[0])),
-                    error: Box::new(Self::from(&args[1])),
-                }
-            }
-            TypeRef::Projection { subject, assoc } => Self::Projection {
-                subject: Box::new(Self::from(subject.as_ref())),
-                trait_name: None,
-                assoc: assoc.as_str().to_owned(),
-            },
-            TypeRef::TraitBound(bound) => direct_type_name(bound.path())
-                .and_then(Self::primitive_name)
-                .unwrap_or_else(|| Self::Named(bound.path().canonical_string())),
-            TypeRef::Reference(reference) => Self::BorrowRef {
-                kind: reference.kind(),
-                lifetime: reference
-                    .region()
-                    .name()
-                    .map(|lifetime| LifetimeScopeKind::parse(lifetime.name())),
-                inner: Box::new(Self::from(reference.referent())),
-            },
-            TypeRef::Slice(inner) => Self::Slice(Box::new(Self::from(inner.as_ref()))),
-            TypeRef::Recovery(id) => Self::Named(format!("<recovered-type:{}>", id.index())),
-            TypeRef::Generic { .. } => Self::Named(canonical_type_ref_label(ty)),
-        }
-    }
-}
-
-fn entity_kind_from_type_ref(ty: &TypeRef) -> Option<EntityKind> {
-    let TypeRef::Path(path) = ty else {
-        return None;
-    };
-    direct_type_name(path).and_then(EntityKind::from_type_name)
-}
-
 pub(crate) fn direct_type_name(path: &TypePath) -> Option<&str> {
     (path.root() == ModulePathRoot::ImplicitCrate && path.segments().len() == 1)
         .then(|| path.path().last_segment().as_str())
-}
-
-fn canonical_type_ref_label(ty: &TypeRef) -> String {
-    match ty {
-        TypeRef::Never => "Never".to_owned(),
-        TypeRef::ConstInt(value) => value.to_string(),
-        TypeRef::Path(path) => path.canonical_string(),
-        TypeRef::Tuple(items) => format!(
-            "({})",
-            items
-                .iter()
-                .map(canonical_type_ref_label)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        TypeRef::Function {
-            params,
-            return_type,
-            effects,
-        } => {
-            let params = if params.len() == 1 {
-                canonical_type_ref_label(&params[0])
-            } else {
-                format!(
-                    "({})",
-                    params
-                        .iter()
-                        .map(canonical_type_ref_label)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
-            let mut label = format!("{params} -> {}", canonical_type_ref_label(return_type));
-            if let Some(effects) = effects {
-                let row = if effects.effects().is_empty() {
-                    "{ }".to_owned()
-                } else {
-                    format!("{{ {} }}", effects.effects().join(", "))
-                };
-                write!(&mut label, " effects {row}")
-                    .expect("writing canonical type text to String cannot fail");
-            }
-            label
-        }
-        TypeRef::Choice(alternatives) => alternatives
-            .iter()
-            .map(canonical_type_ref_label)
-            .collect::<Vec<_>>()
-            .join(" | "),
-        TypeRef::Generic { base, args } => format!(
-            "{}<{}>",
-            base.canonical_string(),
-            args.iter()
-                .map(canonical_type_ref_label)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-        TypeRef::TraitBound(bound) => {
-            let mut args = bound
-                .args()
-                .iter()
-                .map(canonical_type_ref_label)
-                .collect::<Vec<_>>();
-            args.extend(bound.associated().iter().map(|binding| {
-                format!(
-                    "{} = {}",
-                    binding.name().as_str(),
-                    canonical_type_ref_label(binding.value())
-                )
-            }));
-            format!("{}<{}>", bound.path(), args.join(", "))
-        }
-        TypeRef::Projection { subject, assoc } => {
-            format!("{}::{}", canonical_type_ref_label(subject), assoc.as_str())
-        }
-        TypeRef::Reference(reference) => {
-            let lifetime = reference
-                .region()
-                .name()
-                .map(|lifetime| format!("'{} ", lifetime.name()))
-                .unwrap_or_default();
-            format!(
-                "&{lifetime}{}{}",
-                reference.kind().source_qualifier(),
-                canonical_type_ref_label(reference.referent())
-            )
-        }
-        TypeRef::Slice(inner) => format!("[{}]", canonical_type_ref_label(inner)),
-        TypeRef::Recovery(id) => format!("<recovered-type:{}>", id.index()),
-    }
 }
 
 impl EntityType {
@@ -574,6 +405,9 @@ impl TypeKind {
         &self,
         resolve: &mut impl FnMut(&EffectRow) -> Result<EffectRow, E>,
     ) -> Result<Self, E> {
+        if let Some(resolved) = self.resolve_nominal_effect_rows_with(resolve) {
+            return resolved;
+        }
         let resolved = match self {
             Self::Range(inner) => Self::Range(Box::new(inner.resolve_effect_rows_with(resolve)?)),
             Self::IteratorState { family, item } => Self::IteratorState {
@@ -670,6 +504,44 @@ impl TypeKind {
         Ok(resolved)
     }
 
+    fn resolve_nominal_effect_rows_with<E>(
+        &self,
+        resolve: &mut impl FnMut(&EffectRow) -> Result<EffectRow, E>,
+    ) -> Option<Result<Self, E>> {
+        let mut resolve_arguments = |arguments: &[Self]| {
+            arguments
+                .iter()
+                .map(|argument| argument.resolve_effect_rows_with(resolve))
+                .collect::<Result<Vec<_>, E>>()
+        };
+        Some(match self {
+            Self::ProjectNominal(nominal) => {
+                resolve_arguments(nominal.arguments()).map(|arguments| {
+                    Self::ProjectNominal(ProjectNominalType::new(
+                        nominal.declaration().clone(),
+                        arguments,
+                    ))
+                })
+            }
+            Self::AcceptedNominal(nominal) => {
+                resolve_arguments(nominal.arguments()).map(|arguments| {
+                    Self::AcceptedNominal(AcceptedNominalType::new(
+                        nominal.declaration().clone(),
+                        arguments,
+                    ))
+                })
+            }
+            Self::OpenNominal(nominal) => resolve_arguments(nominal.arguments()).map(|arguments| {
+                Self::OpenNominal(OpenNominalType::new(
+                    nominal.rule().clone(),
+                    nominal.path().clone(),
+                    arguments,
+                ))
+            }),
+            _ => return None,
+        })
+    }
+
     /// Returns the canonical Arcweft surface spelling for this semantic type.
     ///
     /// This is intended for diagnostics and tooling displays, not for stable
@@ -739,7 +611,12 @@ impl TypeKind {
                 return_type,
                 effects,
             } => Self::function_source_label(params, return_type, effects),
-            Self::GenericParam(name) | Self::Named(name) => name.clone(),
+            Self::GenericParam(parameter) => parameter.source_label(),
+            Self::ProjectNominal(nominal) => nominal.source_label(),
+            Self::AcceptedNominal(nominal) => nominal.source_label(),
+            Self::OpenNominal(nominal) => nominal.source_label(),
+            Self::Error(poison) => format!("<type-error:{}>", poison.index()),
+            Self::Named(name) => name.clone(),
             Self::Projection {
                 subject,
                 trait_name,
@@ -965,35 +842,11 @@ impl TypeKind {
                 ty => vec![ty],
             })
             .collect::<Vec<_>>();
-        flattened.sort_by_key(Self::choice_sort_label);
+        flattened.sort_by(Self::stable_ordering);
         flattened.dedup();
         match flattened.as_slice() {
             [single] => single.clone(),
             _ => Self::Choice(flattened),
-        }
-    }
-
-    fn choice_sort_label(ty: &Self) -> String {
-        match ty {
-            Self::Bool => "bool".to_owned(),
-            Self::I8 => "i8".to_owned(),
-            Self::I16 => "i16".to_owned(),
-            Self::I32 => "i32".to_owned(),
-            Self::I64 => "i64".to_owned(),
-            Self::I128 => "i128".to_owned(),
-            Self::ISize => "isize".to_owned(),
-            Self::U8 => "u8".to_owned(),
-            Self::U16 => "u16".to_owned(),
-            Self::U32 => "u32".to_owned(),
-            Self::U64 => "u64".to_owned(),
-            Self::U128 => "u128".to_owned(),
-            Self::USize => "usize".to_owned(),
-            Self::F32 => "f32".to_owned(),
-            Self::F64 => "f64".to_owned(),
-            Self::String => "String".to_owned(),
-            Self::Char => "char".to_owned(),
-            Self::Duration => "Duration".to_owned(),
-            other => format!("{other:?}"),
         }
     }
 

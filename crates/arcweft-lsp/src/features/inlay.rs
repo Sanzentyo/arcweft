@@ -11,9 +11,10 @@ use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::flow::{FlowItem, Stmt};
 use arcweft_lang_syntax::ast::items::{Item, TypedSyntaxTree};
 use arcweft_lang_syntax::parser::parse_source;
+use arcweft_source::SourceDocumentIdentity;
 use arcweft_verify_lsp::inferred_id_inlay_hints_with_mapper;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel};
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 /// Computes Arcweft inlay hints for one source snapshot.
 pub fn hints(profile: &LspProfile, document: &DocumentSnapshot) -> Vec<InlayHint> {
@@ -32,21 +33,38 @@ fn inferred_let_type_inlay_hints(
         return Vec::new();
     }
     let tree = parsed.typed_tree();
-    let Ok(hir) = lower_to_hir(tree) else {
-        return Vec::new();
+    let accepted_report = profile.accepted_environment().and_then(|accepted| {
+        let project = accepted.project();
+        let source = project.sources().by_uri(document.uri())?;
+        (source.document().text() == document.text()).then(|| {
+            (
+                Arc::clone(project.typecheck()),
+                source.document().identity().clone(),
+            )
+        })
+    });
+    let local_report;
+    let (report, source_identity) = if let Some((report, identity)) = accepted_report.as_ref() {
+        (report.as_ref(), Some(identity))
+    } else {
+        let Ok(hir) = lower_to_hir(tree) else {
+            return Vec::new();
+        };
+        let registry = registry_from_hir(&hir);
+        if validate_hir_references(&hir, &registry).is_err()
+            || validate_typecheck_ready(&hir).is_err()
+        {
+            return Vec::new();
+        }
+        local_report = analyze_types(&hir, &profile.typecheck_env());
+        (&local_report, None)
     };
-    let registry = registry_from_hir(&hir);
-    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
-    {
-        return Vec::new();
-    }
-    let report = analyze_types(&hir, &profile.typecheck_env());
     if !report.diagnostics.is_empty() {
         return Vec::new();
     }
 
-    let judgments = let_type_judgments(&report);
-    let numeric_fallback_ranges = numeric_fallback_ranges(&report);
+    let judgments = let_type_judgments(report, source_identity);
+    let numeric_fallback_ranges = numeric_fallback_ranges(report, source_identity);
     let mut judgment_cursor = 0usize;
     let mut hints = function_let_sites(tree, document.text())
         .into_iter()
@@ -73,12 +91,19 @@ fn inferred_let_type_inlay_hints(
         })
         .collect::<Vec<_>>();
     if profile.arbitrary_expression_type_inlays() {
-        hints.extend(expression_type_inlay_hints(&report, document));
+        hints.extend(expression_type_inlay_hints(
+            report,
+            document,
+            source_identity,
+        ));
     }
     hints
 }
 
-fn numeric_fallback_ranges(report: &TypeCheckReport) -> Vec<TextRange> {
+fn numeric_fallback_ranges(
+    report: &TypeCheckReport,
+    source_identity: Option<&SourceDocumentIdentity>,
+) -> Vec<TextRange> {
     let fallback_ids = report
         .numeric_fallbacks
         .iter()
@@ -87,6 +112,7 @@ fn numeric_fallback_ranges(report: &TypeCheckReport) -> Vec<TextRange> {
     report
         .judgments
         .iter()
+        .filter(|judgment| judgment_belongs_to_source(judgment, source_identity))
         .filter_map(|judgment| {
             let TypeJudgmentSubject::Expr { id, .. } = &judgment.subject else {
                 return None;
@@ -99,10 +125,14 @@ fn numeric_fallback_ranges(report: &TypeCheckReport) -> Vec<TextRange> {
         .collect()
 }
 
-fn let_type_judgments(report: &TypeCheckReport) -> Vec<LetTypeJudgment<'_>> {
+fn let_type_judgments<'a>(
+    report: &'a TypeCheckReport,
+    source_identity: Option<&SourceDocumentIdentity>,
+) -> Vec<LetTypeJudgment<'a>> {
     report
         .judgments
         .iter()
+        .filter(|judgment| judgment_belongs_to_source(judgment, source_identity))
         .filter_map(|judgment| {
             let TypeJudgmentSubject::LetBinding { pattern } = &judgment.subject else {
                 return None;
@@ -155,11 +185,13 @@ fn let_inlay_for_site(
 fn expression_type_inlay_hints(
     report: &TypeCheckReport,
     document: &DocumentSnapshot,
+    source_identity: Option<&SourceDocumentIdentity>,
 ) -> Vec<InlayHint> {
     let mut emitted = HashSet::new();
     report
         .judgments
         .iter()
+        .filter(|judgment| judgment_belongs_to_source(judgment, source_identity))
         .filter_map(|judgment| {
             let TypeJudgmentSubject::Expr { kind, .. } = &judgment.subject else {
                 return None;
@@ -189,6 +221,18 @@ fn expression_type_inlay_hints(
         .collect()
 }
 
+fn judgment_belongs_to_source(
+    judgment: &arcweft_lang_sema::check::TypeJudgment,
+    source_identity: Option<&SourceDocumentIdentity>,
+) -> bool {
+    source_identity.is_none_or(|identity| {
+        judgment
+            .source
+            .as_ref()
+            .is_some_and(|source| source.source() == identity)
+    })
+}
+
 fn should_emit_expression_type_inlay(kind: &str, ty: &TypeKind, source: &str) -> bool {
     if matches!(ty, TypeKind::Function { .. } | TypeKind::Never) {
         return false;
@@ -213,8 +257,14 @@ fn should_emit_expression_type_inlay(kind: &str, ty: &TypeKind, source: &str) ->
 }
 
 fn aggregate_literal_inlay_site(kind: &str, ty: &TypeKind, source: &str) -> bool {
-    matches!(ty, TypeKind::Named(_))
-        && matches!(kind, "call" | "record" | "record_literal")
+    matches!(
+        ty,
+        TypeKind::ProjectNominal(_)
+            | TypeKind::AcceptedNominal(_)
+            | TypeKind::OpenNominal(_)
+            | TypeKind::CharacterNominal(_)
+            | TypeKind::Named(_)
+    ) && matches!(kind, "call" | "record" | "record_literal")
         && source.trim_end().ends_with('}')
         && source.contains('{')
 }

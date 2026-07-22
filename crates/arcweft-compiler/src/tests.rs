@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arcweft_core::{
     engine::{Engine, FlowExit, FlowFiberStatus},
     pattern::RuntimePattern,
@@ -12,11 +14,13 @@ use arcweft_core::{
 };
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_id::PublicId;
-use arcweft_lang_hir::lower::lower_to_hir;
 use arcweft_lang_hir::symbol::{
-    CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+    CallableDeclarationId, CallableDeclarationOwner, CallablePackageId, ProjectSymbolWorldId,
 };
-use arcweft_lang_sema::env::{FunctionParam, FunctionSignature, TypeCheckEnv};
+use arcweft_lang_hir::{
+    lower::{lower_document_to_hir, lower_to_hir},
+    project::{HirProject, HirProjectModule},
+};
 use arcweft_lang_sema::project_index::{
     EntitySymbol, ProgramHash, ProjectCallableSymbol, ProjectGraphDependencyRelation,
     ProjectGraphDependencyRelationKind, ProjectGraphRelation, ProjectGraphRelationKind,
@@ -24,6 +28,11 @@ use arcweft_lang_sema::project_index::{
     project_semantic_index_from_hir,
 };
 use arcweft_lang_sema::types::{EntityKind, EntityType, TypeKind};
+use arcweft_lang_sema::{
+    check::analyze_registered_project_types,
+    env::{FunctionParam, FunctionSignature, TypeCheckEnv},
+    registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
+};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
@@ -352,8 +361,7 @@ flow @flow.main main {
 
 #[test]
 fn lowers_user_defined_into_iterator_to_executable_trait_calls() {
-    let parsed = parse_source_text(
-        r"
+    let source = r"
 struct Counter { start: i64, end: i64 }
 struct CounterIter { current: i64, end: i64 }
 
@@ -380,11 +388,57 @@ flow @flow.main main {
         let copy = value
     }
 }
-",
+";
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("memory:///compiler-iterator-witness.arcw")
+                .expect("source ID"),
+            SourceName::path("memory:///compiler-iterator-witness.arcw"),
+            source,
+        )
+        .expect("source document"),
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(typecheck.diagnostics.is_empty());
+    let parsed = parse_source(source);
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("fixture lowers");
+    let package = CallablePackageId::try_new("compiler-iterator-witness").expect("package ID");
+    let project = HirProject::new(
+        package.as_str(),
+        [HirProjectModule::try_new(
+            CanonicalModulePath::crate_root(),
+            document.identity().clone(),
+            hir,
+        )
+        .expect("root module")],
+    )
+    .expect("HIR project");
+    let world = ProjectSymbolWorldId::try_new(
+        package,
+        document.identity().id().clone(),
+        "compiler-iterator-witness",
+    )
+    .expect("symbol world");
+    let registration = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&document)],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts");
+    let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        &project,
+        &registration,
+        None,
+    ))
+    .expect("registered semantic world");
+    let hir = project.linked_module();
+    let typecheck = analyze_registered_project_types(&hir, &registered);
+    assert!(
+        typecheck.diagnostics.is_empty(),
+        "{:?}",
+        typecheck.diagnostics
+    );
 
     let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,

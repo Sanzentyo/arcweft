@@ -6,9 +6,9 @@ use arcweft_lang_hir::symbol::{
     ExternalDeclarationSeed, ExternalDeclarationSeedError, ProjectDirectBinding,
     ProjectDirectBindingError,
 };
-use arcweft_lang_sema::registration::{
-    EnvironmentBindingId, EnvironmentBindingIdError, ExternalRegistrationFact,
-    RegisteredExternalOwner,
+use arcweft_lang_sema::{
+    env::identity::{EnvironmentBindingId, EnvironmentBindingIdError},
+    registration::{ExternalRegistrationFact, RegisteredExternalOwner},
 };
 use arcweft_lang_syntax::ast::{
     common::Visibility,

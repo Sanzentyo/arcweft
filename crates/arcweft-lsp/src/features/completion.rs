@@ -18,6 +18,11 @@ pub fn completions(
     items.extend(character_metadata_completions(profile));
     items.extend(enum_variant_completions(profile));
     items.extend(dialogue_view_completions(profile, document));
+    if let Some(document) = document {
+        items.extend(crate::features::nominal_types::completions(
+            profile, document,
+        ));
+    }
     dedup_completion_items(items)
 }
 

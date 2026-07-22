@@ -66,6 +66,18 @@ impl SignatureRequestRuntime {
         Ok(Self { registry, executor })
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_with_deadline_for_test(
+        connection: &Connection,
+        session: Arc<RwLock<ArcweftLspSession>>,
+        request_deadline: std::time::Duration,
+    ) -> Result<Self, RequestRuntimeError> {
+        let registry = RequestRegistry::try_new_with_deadline(request_deadline)
+            .map_err(RequestRuntimeError::DeadlineSchedulerSpawn)?;
+        let executor = SignatureRequestExecutor::new(connection, session)?;
+        Ok(Self { registry, executor })
+    }
+
     pub(crate) const fn registry(&self) -> &Arc<RequestRegistry> {
         &self.registry
     }

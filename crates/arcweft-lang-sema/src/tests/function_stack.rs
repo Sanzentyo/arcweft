@@ -1,5 +1,28 @@
 use super::support::*;
 
+fn analyze_registered_function_stack_fixture(
+    profile: &str,
+    source: &str,
+) -> crate::checker::TypeCheckReport {
+    let (document, project, world) =
+        crate::test_support::character_project::root_project_source(profile, source);
+    let facts = crate::registration::ProjectRegistrationFacts::try_new(
+        world,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registered function-stack fixture facts");
+    let registered = crate::test_support::character_project::register(
+        &project,
+        &facts,
+        TypeCheckEnv::standard(),
+        None,
+    )
+    .expect("registered function-stack fixture world");
+    crate::checker::analyze_registered_project_types(&project.linked_module(), &registered)
+}
+
 #[test]
 fn records_function_value_call_lowering_evidence() {
     let tree = parse_ok(
@@ -998,7 +1021,8 @@ flow @flow.curried_function_kind_calls curried_function_kind_calls {
 
 #[test]
 fn curried_trait_method_preserves_call_group_semantics() {
-    let tree = parse_ok(
+    let report = analyze_registered_function_stack_fixture(
+        "curried-trait-method",
         r"
 struct Score {}
 
@@ -1012,7 +1036,7 @@ impl Threshold for Score {
     }
 }
 
-flow @flow.curried_trait_method curried_trait_method {
+flow @flow.curried_trait_method curried_trait_method(score: Score) {
     let predicate: i64 -> bool = score.above(80i64)
     let ok: bool = predicate(81i64)
     let direct: bool = score.above(80i64)(82i64)
@@ -1021,11 +1045,6 @@ flow @flow.curried_trait_method curried_trait_method {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried trait method fixture lowers");
-    validate_typecheck_ready(&hir).expect("curried trait method fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::Named("Score".to_owned()));
-
-    let report = analyze_types(&hir, &env);
     assert!(
         report.diagnostics.is_empty(),
         "unexpected diagnostics: {:?}",
@@ -1050,7 +1069,8 @@ flow @flow.curried_trait_method curried_trait_method {
 
 #[test]
 fn curried_trait_method_rejects_flattened_call_group() {
-    let tree = parse_ok(
+    let report = analyze_registered_function_stack_fixture(
+        "curried-trait-flattened",
         r"
 struct Score {}
 
@@ -1064,24 +1084,28 @@ impl Threshold for Score {
     }
 }
 
-flow @flow.curried_trait_flattened curried_trait_flattened {
+flow @flow.curried_trait_flattened curried_trait_flattened(score: Score) {
     let wrong = score.above(80i64, 81i64)
     log.info(wrong)
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried trait flattened fixture lowers");
-    validate_typecheck_ready(&hir).expect("curried trait flattened fixture is structured");
-    let env = TypeCheckEnv::new().with_symbol("score", TypeKind::Named("Score".to_owned()));
-
-    let report = analyze_types(&hir, &env);
     assert!(
-        report
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message().contains("curried parameter groups")),
-        "expected flattened trait method call-group diagnostic, got {:?}",
-        report.diagnostics
+        report.retained_call_target_facts().any(|facts| {
+            matches!(
+                facts.target(),
+                crate::callable::CallTargetFact::Rejected { candidates }
+                    if candidates.iter().any(|candidate| {
+                        candidate.id().family() == crate::callable::CallableFamily::TraitMethod
+                            && candidate.schema().groups().len() == 2
+                    })
+            ) && facts.diagnostics().iter().any(|diagnostic| {
+                diagnostic.code()
+                    == crate::callable::CallableDiagnosticCode::TooManyPositionalArguments
+            })
+        }),
+        "flattened trait-method arguments must be rejected against the first of two retained call groups: {:?}",
+        report.diagnostics,
     );
 }
 

@@ -1,16 +1,16 @@
 //! Expression type-checking entry points and expression-kind dispatch.
 
 use super::helpers::{
-    array_len_matches, array_repeat_len_label, collection_index_type, expr_path_label,
-    first_arg_type, is_drop_name, let_else_bindings, numeric_literal_suffix_type,
-    optional_type_kind_label, result_ok_type, stmts_diverge, type_kind_label,
-    well_known_capacity_method_type, well_known_field_type, well_known_static_capacity_method_type,
+    array_repeat_length, collection_index_type, expr_path_label, first_arg_type, is_drop_name,
+    let_else_bindings, numeric_literal_suffix_type, optional_type_kind_label, result_ok_type,
+    stmts_diverge, type_kind_label, well_known_capacity_method_type, well_known_field_type,
+    well_known_static_capacity_method_type,
 };
 use super::{
-    BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr, FunctionSignature,
-    Pattern, Stmt, TypeCheckError, TypeChecker, TypeExpressionId, TypeJudgmentRule,
-    TypeJudgmentSubject, TypeKind, TypedLoweringEvidence, TypedLoweringEvidenceKind, YieldContext,
-    entity_syntax_kind,
+    ArrayLength, BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr,
+    FunctionSignature, Pattern, Stmt, TypeCheckError, TypeChecker, TypeExpressionId,
+    TypeJudgmentRule, TypeJudgmentSubject, TypeKind, TypedLoweringEvidence,
+    TypedLoweringEvidenceKind, YieldContext, entity_syntax_kind,
 };
 use crate::diagnostics::TraitDiagnostic;
 use crate::traits::TraitMethodResolution;
@@ -18,11 +18,10 @@ use arcweft_lang_syntax::ast::dialogue::DialogueContent;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
-    AwaitExpr, BinaryOp, CallArg, CallExpr, ComputationBlockKind, Literal, MatchExprArm,
-    Placeholder, SelectExpr, UnaryOp,
+    AwaitExpr, BinaryOp, CallArg, CallExpr, ComputationBlockKind, DottedPath, Literal,
+    MatchExprArm, Placeholder, SelectExpr, UnaryOp,
 };
 use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
-use arcweft_lang_syntax::types::AuthoredTypeRef;
 
 mod agent;
 mod binary;
@@ -56,6 +55,12 @@ use support::{
 enum InherentMethodCallOutcome {
     Missing,
     Checked(Option<TypeKind>),
+}
+
+enum ProjectRecordResolution {
+    Missing,
+    Rejected,
+    Resolved(TypeKind),
 }
 
 impl TypeChecker<'_> {
@@ -209,7 +214,9 @@ impl TypeChecker<'_> {
             Expr::Range { start, end, .. } => {
                 Some(self.check_range_expr(start.as_deref(), end.as_deref(), expected))
             }
-            Expr::Record { path, fields } => Some(self.check_record_expr(path, fields, expected)),
+            Expr::Record { path, fields } => {
+                Some(self.check_record_expr(expr, path, fields, expected))
+            }
             Expr::RecordLiteral(fields) => Some(self.check_record_literal_expr(fields)),
             Expr::Binary { lhs, op, rhs } => self.check_binary_expr(lhs, *op, rhs, expected),
             Expr::Closure {
@@ -218,7 +225,7 @@ impl TypeChecker<'_> {
                 body,
             } => Some(self.check_closure_expr(
                 params,
-                return_type.as_ref().map(AuthoredTypeRef::value),
+                return_type.as_ref(),
                 body,
                 expected,
                 expression_id,
@@ -257,13 +264,15 @@ impl TypeChecker<'_> {
                 expected,
             ),
             Expr::Match { scrutinee, arms } => self.check_match_expr(scrutinee, arms, expected),
-            Expr::Raw(raw) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "raw expression is not type-checkable: {raw}"
-                )));
-                None
-            }
+            Expr::Raw(raw) => self.reject_raw_expr(raw),
         }
+    }
+
+    fn reject_raw_expr(&mut self, raw: &str) -> Option<TypeKind> {
+        self.errors.push(TypeCheckError::new(format!(
+            "raw expression is not type-checkable: {raw}"
+        )));
+        None
     }
 
     fn check_borrow_expr(&mut self, borrow: &BorrowExpr) -> Option<TypeKind> {
@@ -353,31 +362,79 @@ impl TypeChecker<'_> {
 
     fn check_record_expr(
         &mut self,
-        path: &str,
+        expr: &Expr,
+        path: &DottedPath,
         fields: &[(String, Expr)],
         expected: Option<&TypeKind>,
     ) -> TypeKind {
+        let label = path.as_label();
         if let Some(expected) = expected
-            && let Some(payload) = self.enum_variant_payload_for_path(expected, path)
+            && let Some(payload) = self.enum_variant_payload_for_path(expected, label)
         {
-            self.check_enum_record_constructor_payload(path, fields, &payload);
+            self.check_enum_record_constructor_payload(label, fields, &payload);
             return expected.clone();
         }
-        if let Some(expected_fields) = self.nominal_fields.get(path).cloned() {
-            for (name, value) in fields {
-                if let Some(expected) = expected_fields.get(name) {
-                    self.expect_expr_type(
-                        value,
-                        expected,
-                        &format!("record field `{path}.{name}`"),
+        match self.resolve_project_record_constructor(expr, path, expected) {
+            ProjectRecordResolution::Resolved(record_type) => {
+                if let Some(expected_fields) =
+                    self.project_nominal_shapes.fields_for_type(&record_type)
+                {
+                    self.check_record_constructor_fields(
+                        label,
+                        fields,
+                        &expected_fields,
+                        crate::env::NominalRecordLiteralPolicy::Complete,
                     );
                 } else {
                     self.errors.push(TypeCheckError::new(format!(
-                        "record `{path}` has no field `{name}`"
+                        "project record constructor `{label}` has no accepted struct shape"
                     )));
-                    self.check_expr(value);
+                    self.check_record_fields(fields);
                 }
+                return record_type;
             }
+            ProjectRecordResolution::Rejected => {
+                self.check_record_fields(fields);
+                return TypeKind::Unit;
+            }
+            ProjectRecordResolution::Missing => {}
+        }
+        if let Some(expected_fields) = self.nominal_fields.get(label).cloned() {
+            let expected_fields = expected_fields.into_iter().collect();
+            self.check_record_constructor_fields(
+                label,
+                fields,
+                &expected_fields,
+                self.env.nominal_record_literal_policy(label),
+            );
+            TypeKind::Named(label.to_owned())
+        } else {
+            self.errors.push(TypeCheckError::new(format!(
+                "unknown record constructor `{label}`"
+            )));
+            self.check_record_fields(fields);
+            TypeKind::Unit
+        }
+    }
+
+    fn check_record_constructor_fields(
+        &mut self,
+        path: &str,
+        fields: &[(String, Expr)],
+        expected_fields: &std::collections::BTreeMap<String, TypeKind>,
+        literal_policy: crate::env::NominalRecordLiteralPolicy,
+    ) {
+        for (name, value) in fields {
+            if let Some(expected) = expected_fields.get(name) {
+                self.expect_expr_type(value, expected, &format!("record field `{path}.{name}`"));
+            } else {
+                self.errors.push(TypeCheckError::new(format!(
+                    "record `{path}` has no field `{name}`"
+                )));
+                self.check_expr(value);
+            }
+        }
+        if literal_policy == crate::env::NominalRecordLiteralPolicy::Complete {
             for required in expected_fields.keys() {
                 if !fields.iter().any(|(name, _)| name == required) {
                     self.errors.push(TypeCheckError::new(format!(
@@ -385,10 +442,84 @@ impl TypeChecker<'_> {
                     )));
                 }
             }
-        } else {
-            self.check_record_fields(fields);
         }
-        TypeKind::Named(path.to_owned())
+    }
+
+    fn resolve_project_record_constructor(
+        &mut self,
+        expr: &Expr,
+        path: &DottedPath,
+        expected: Option<&TypeKind>,
+    ) -> ProjectRecordResolution {
+        let Ok(type_path) = arcweft_lang_syntax::types::TypePath::try_from(path) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "record constructor path `{path}` is not a valid type path"
+            )));
+            return ProjectRecordResolution::Rejected;
+        };
+        let Some(symbols) = self.project_symbols else {
+            return ProjectRecordResolution::Missing;
+        };
+        let Some(module) = self.current_module.as_ref() else {
+            return ProjectRecordResolution::Missing;
+        };
+        let Some(range) = self.source_range_for_expr(expr) else {
+            return ProjectRecordResolution::Missing;
+        };
+        let Some(head_end) = range.start().checked_add(path.as_label().len()) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "record constructor `{path}` source range overflowed"
+            )));
+            return ProjectRecordResolution::Rejected;
+        };
+        if head_end > range.end() {
+            self.errors.push(TypeCheckError::new(format!(
+                "record constructor `{path}` is outside its accepted expression source"
+            )));
+            return ProjectRecordResolution::Rejected;
+        }
+        let Some(source) = self.source_span_for_current_range(
+            arcweft_lang_syntax::ast::common::TextRange::new(range.start(), head_end),
+        ) else {
+            return ProjectRecordResolution::Missing;
+        };
+
+        let declaration = match symbols.resolve_type_target(module, &type_path, source) {
+            Ok(arcweft_lang_hir::symbol::ProjectTypeTarget::Nominal(declaration)) => declaration,
+            Ok(arcweft_lang_hir::symbol::ProjectTypeTarget::External(_))
+            | Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::Unknown { .. }) => {
+                return ProjectRecordResolution::Missing;
+            }
+            Err(error) => {
+                self.errors.push(TypeCheckError::new(format!(
+                    "record constructor `{path}` did not resolve to one accessible project type: {error:?}"
+                )));
+                return ProjectRecordResolution::Rejected;
+            }
+        };
+        if !matches!(
+            declaration.body(),
+            arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Struct { .. }
+        ) {
+            self.errors.push(TypeCheckError::new(format!(
+                "record constructor `{path}` must name a project struct"
+            )));
+            return ProjectRecordResolution::Rejected;
+        }
+        if let Some(TypeKind::ProjectNominal(expected)) = expected
+            && expected.declaration() == declaration.id()
+        {
+            return ProjectRecordResolution::Resolved(TypeKind::ProjectNominal(expected.clone()));
+        }
+        if !declaration.type_parameters().is_empty() {
+            self.errors.push(TypeCheckError::new(format!(
+                "generic project record constructor `{path}` requires an expected instantiated type"
+            )));
+            return ProjectRecordResolution::Rejected;
+        }
+        ProjectRecordResolution::Resolved(TypeKind::ProjectNominal(
+            crate::types::ProjectNominalType::new(declaration.id().clone(), []),
+        ))
     }
 
     fn check_record_literal_expr(&mut self, fields: &[(String, Expr)]) -> TypeKind {
@@ -641,7 +772,7 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
     ) -> TypeKind {
         if let Some(TypeKind::Array { item, len }) = expected {
-            if !array_len_matches(len, items_len) {
+            if !len.matches_const(items_len) {
                 self.errors.push(TypeCheckError::new(format!(
                     "array literal length mismatch: expected {len}, found {items_len}"
                 )));
@@ -684,18 +815,18 @@ impl TypeChecker<'_> {
         let item_type = self
             .check_expr_with_expected(value, expected_item)
             .unwrap_or(TypeKind::Unit);
-        let len_label = array_repeat_len_label(len).unwrap_or_else(|| {
+        let length = array_repeat_length(len).unwrap_or_else(|| {
             self.errors.push(TypeCheckError::new(
                 "array repeat length must be an integer constant".to_owned(),
             ));
-            "_".to_owned()
+            ArrayLength::Inferred
         });
         self.expect_expr_type(len, &TypeKind::I64, "array repeat length");
 
         if let Some(TypeKind::Array { item, len }) = expected {
-            if len != &len_label && len_label != "_" {
+            if len != &length && !length.has_open_components() {
                 self.errors.push(TypeCheckError::new(format!(
-                    "array repeat length mismatch: expected {len}, found {len_label}"
+                    "array repeat length mismatch: expected {len}, found {length}"
                 )));
             }
             if !self.types_compatible(item.as_ref(), &item_type) {
@@ -713,7 +844,7 @@ impl TypeChecker<'_> {
 
         TypeKind::Array {
             item: Box::new(item_type),
-            len: len_label,
+            len: length,
         }
     }
 
@@ -2311,7 +2442,7 @@ impl TypeChecker<'_> {
         };
         let coverage = patterns
             .into_iter()
-            .map(choice_pattern_coverage)
+            .map(|pattern| choice_pattern_coverage(self, pattern))
             .collect::<Vec<_>>();
         let missing = alternatives
             .iter()

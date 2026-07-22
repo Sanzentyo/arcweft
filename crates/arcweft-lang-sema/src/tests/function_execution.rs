@@ -42,7 +42,7 @@ fn analyze_project(source: &str) -> TypeCheckReport {
     let sources =
         CanonicalizationSourceSet::try_new(project.package().clone(), [(root, source_span)])
             .expect("canonicalization source set");
-    analyze_project_types_for_canonicalization(&project, &TypeCheckEnv::new(), &sources)
+    analyze_project_types_for_canonicalization(&project, &TypeCheckEnv::standard(), &sources)
         .expect("project semantic analysis")
 }
 

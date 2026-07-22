@@ -397,6 +397,7 @@ impl HirModule {
     fn assign_declaration_module(&mut self, path: &CanonicalModulePath) {
         self.module_path.clone_from(path);
         self.bind_project_module(path);
+        self.declaration_modules = vec![path.clone(); self.declarations.len()];
         for flow in &mut self.flows {
             flow.module_path = Some(path.clone());
             assign_flow_item_modules(&mut flow.body, path);
@@ -447,6 +448,8 @@ impl HirModule {
         self.flows.append(&mut module.flows);
         self.functions.append(&mut module.functions);
         self.declarations.append(&mut module.declarations);
+        self.declaration_modules
+            .append(&mut module.declaration_modules);
         self.style_patches.append(&mut module.style_patches);
         self.view_parts.append(&mut module.view_parts);
     }
@@ -586,9 +589,10 @@ mod tests {
 
     #[test]
     fn linked_view_preserves_root_attributes_and_appends_child_body() {
-        let root_source = "#![generated(tool)]\nflow @root root {}";
+        let root_source = "#![generated(tool)]\nflow @root root {}\nstruct RootState {}";
         let (root_document, root) = lower_bound("root-linked", root_source);
-        let child_source = "flow @child child {}\npub fn helper() -> i32 { 1 }";
+        let child_source =
+            "flow @child child {}\npub fn helper() -> i32 { 1 }\nenum ChildEvent { Ready }";
         let (child_document, child) = lower_bound("child-linked", child_source);
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
@@ -601,14 +605,25 @@ mod tests {
                     root,
                 )
                 .expect("root module binding"),
-                HirProjectModule::try_new(child_path, child_document.identity().clone(), child)
-                    .expect("child module binding"),
+                HirProjectModule::try_new(
+                    child_path.clone(),
+                    child_document.identity().clone(),
+                    child,
+                )
+                .expect("child module binding"),
             ],
         )
         .unwrap();
         let linked = project.linked_module();
         assert_eq!(linked.attributes().len(), 1);
         assert_eq!(linked.flows().len(), 2);
+        assert_eq!(
+            linked
+                .declarations_with_modules()
+                .map(|(module, _)| module.clone())
+                .collect::<Vec<_>>(),
+            [CanonicalModulePath::crate_root(), child_path.clone()]
+        );
         assert_eq!(project.package().as_str(), "game");
         let child = project
             .modules()

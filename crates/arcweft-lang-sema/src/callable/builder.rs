@@ -1,9 +1,4 @@
 //! Fail-closed construction of the immutable registered callable catalog.
-#![allow(
-    clippy::result_large_err,
-    reason = "catalog construction preserves complete typed collision evidence in its fail-closed error"
-)]
-
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -22,17 +17,16 @@ use arcweft_lang_syntax::{
 };
 
 use crate::{
-    checker::{
-        helpers::{signature_generic_names, type_ref_kind_with_generics},
-        signature::function_signature_type,
-    },
     effect_row::EffectRow,
     effects::EffectSet,
     env::{FunctionSignature, TypeCheckEnv},
-    types::TypeKind,
+    nominal::{CheckedTypeReferenceCache, NominalResolutionIndex},
+    registration::AcceptedNominalWorld,
+    types::{GenericTypeOwnerId, TypeKind},
 };
 
 use super::limits::CatalogBuildWork;
+use super::nominal_signature::ProjectSignatureResolver;
 use super::{
     CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError, CallableCandidateId,
     CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema, CallableGroupIndex,
@@ -57,6 +51,8 @@ pub(crate) struct RegisteredCallableCatalogBuilder {
     project_bindings: Vec<(ProjectCallablePath, ProjectNameBinding)>,
     rust_extern_aliases: Vec<RustExternAliasSeed>,
     environment_publications: Vec<EnvironmentCallablePublication>,
+    nominal_resolutions: NominalResolutionIndex,
+    nominal_cache: CheckedTypeReferenceCache,
     work: CatalogBuildWork,
 }
 
@@ -82,6 +78,8 @@ impl RegisteredCallableCatalogBuilder {
             project_bindings: Vec::new(),
             rust_extern_aliases: Vec::new(),
             environment_publications: Vec::new(),
+            nominal_resolutions: NominalResolutionIndex::production(),
+            nominal_cache: CheckedTypeReferenceCache::default(),
             work: CatalogBuildWork::new(limits.max_catalog_build_work()),
         }
     }
@@ -90,6 +88,7 @@ impl RegisteredCallableCatalogBuilder {
         &mut self,
         project: &HirProject,
         symbols: &ProjectSymbolTable,
+        nominal_world: &AcceptedNominalWorld,
     ) -> Result<(), CallableCatalogBuildError> {
         if project.package() != symbols.world().package() {
             return Err(CallableCatalogBuildError::ProjectWorldPackageMismatch {
@@ -120,11 +119,12 @@ impl RegisteredCallableCatalogBuilder {
             let mut declarations = Vec::with_capacity(sources.len());
             for source_record in sources {
                 let ordinal = self.project_records.len();
-                let record = Arc::new(project_record(
+                let record = Arc::new(self.project_record(
                     source_record,
                     ordinal,
-                    &self.limits,
-                    &mut self.work,
+                    project,
+                    symbols,
+                    nominal_world,
                 )?);
                 declarations.push(source_record.declaration().clone());
                 if source_record.declaration().owner() == CallableDeclarationOwner::ExternCapability
@@ -164,7 +164,7 @@ impl RegisteredCallableCatalogBuilder {
                     source.clone(),
                     declarations,
                 ));
-            self.add_rust_extern_aliases(project, module, hir)?;
+            self.add_rust_extern_aliases(project, symbols, nominal_world, module, hir)?;
         }
         Ok(())
     }
@@ -172,6 +172,8 @@ impl RegisteredCallableCatalogBuilder {
     fn add_rust_extern_aliases(
         &mut self,
         project: &HirProject,
+        symbols: &ProjectSymbolTable,
+        nominal_world: &AcceptedNominalWorld,
         module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
         hir: &arcweft_lang_hir::model::HirModule,
     ) -> Result<(), CallableCatalogBuildError> {
@@ -202,15 +204,134 @@ impl RegisteredCallableCatalogBuilder {
                     .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
                 let path = CallablePath::try_new(path)
                     .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+                let declaration_source = hir.source_span(*item.range()).ok_or_else(|| {
+                    CallableCatalogBuildError::MissingProjectModuleSource {
+                        module: module.clone(),
+                    }
+                })?;
+                if function
+                    .signature()
+                    .generic_params()
+                    .iter()
+                    .any(|parameter| parameter.as_type_param().is_some())
+                {
+                    return Err(CallableCatalogBuildError::InvalidProjectSignatureSource {
+                        span: declaration_source,
+                    });
+                }
                 self.rust_extern_aliases.push(RustExternAliasSeed {
                     path: ProjectCallablePath::new(project.package().clone(), module.clone(), path),
                     package: package.clone(),
                     export,
-                    signature: function_signature_type(function.signature()),
+                    signature: ProjectSignatureResolver::new(
+                        project,
+                        symbols,
+                        nominal_world,
+                        &mut self.nominal_resolutions,
+                        &mut self.nominal_cache,
+                    )
+                    .resolve_function_signature(
+                        module,
+                        hir,
+                        function.signature(),
+                        &GenericTypeOwnerId::AcceptedSource(declaration_source),
+                    )?,
                 });
             }
         }
         Ok(())
+    }
+
+    fn project_record(
+        &mut self,
+        source: &HirCallableSignatureSource,
+        ordinal: usize,
+        project: &HirProject,
+        symbols: &ProjectSymbolTable,
+        nominal_world: &AcceptedNominalWorld,
+    ) -> Result<CallableRecord, CallableCatalogBuildError> {
+        self.work.charge(1)?;
+        let path_segment_count = source
+            .path()
+            .qualifiers()
+            .len()
+            .checked_add(1)
+            .ok_or(CallableCatalogBuildError::WorkOverflow)?;
+        self.work.charge(
+            u64::try_from(path_segment_count)
+                .map_err(|_| CallableCatalogBuildError::WorkOverflow)?,
+        )?;
+        let resolved = ProjectSignatureResolver::new(
+            project,
+            symbols,
+            nominal_world,
+            &mut self.nominal_resolutions,
+            &mut self.nominal_cache,
+        )
+        .resolve_project_signature(source)?;
+        let parameters = project_parameters(
+            source,
+            &resolved.parameter_types,
+            &self.limits,
+            &mut self.work,
+        )?;
+        let declared = EffectSet::from_labels(
+            source
+                .effects()
+                .declared()
+                .iter()
+                .map(arcweft_lang_hir::callable_source::HirEffectName::as_str),
+        )
+        .map_err(|_| identity_mismatch(source))?;
+        let effects = if source.declaration().owner() == CallableDeclarationOwner::ExternCapability
+        {
+            CallableEffectSchema::fixed(EffectRow::closed(declared))
+        } else {
+            CallableEffectSchema::project(source.declaration().clone(), EffectRow::closed(declared))
+        };
+        let schema = Arc::new(CallableSignatureSchema::try_new(
+            parameters.groups,
+            resolved.return_type,
+            effects,
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                if source
+                    .signature()
+                    .param_groups()
+                    .iter()
+                    .flat_map(FnParamGroup::params)
+                    .any(FnParam::is_rest)
+                {
+                    SpreadArgumentPolicy::TypedRest
+                } else {
+                    SpreadArgumentPolicy::Reject
+                },
+            ),
+            CallableValidator::Ordinary,
+            &self.limits,
+        )?);
+        let documentation = project_documentation(source, parameters.documentation)?;
+        let callable_source = CallableSource::try_new(
+            Some(source.declaration().clone()),
+            Some(source.signature_span().clone()),
+            Some(source.name_span().clone()),
+            source.result_span().cloned(),
+            parameters.sources,
+        )
+        .map_err(|_| identity_mismatch(source))?;
+        CallableRecord::try_new(
+            CallableCandidateId::Project(source.declaration().clone()),
+            CallableLookupKey::Free(callable_path(source)?),
+            CallableAuthorityRank::Project,
+            CallableProviderId::Project(source.package().clone()),
+            schema,
+            documentation,
+            Some(callable_source),
+            None,
+            EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
+                .map_err(|_| identity_mismatch(source))?,
+        )
+        .map_err(CallableCatalogBuildError::InvalidRecord)
     }
 
     /// Publishes every source-visible project spelling after registration has
@@ -253,7 +374,7 @@ impl RegisteredCallableCatalogBuilder {
                     path: path.clone(),
                     ty: non_callable_type(target).ok_or_else(|| {
                         CallableCatalogBuildError::MissingProjectBindingType {
-                            target: target.clone(),
+                            target: Box::new(target.clone()),
                         }
                     })?,
                 },
@@ -304,7 +425,11 @@ impl RegisteredCallableCatalogBuilder {
             self.project_bindings,
             &mut self.work,
         )?;
-        Ok(RegisteredCallableCatalog::new(project, environment))
+        Ok(RegisteredCallableCatalog::new(
+            project,
+            environment,
+            self.nominal_resolutions,
+        ))
     }
 }
 
@@ -344,90 +469,9 @@ fn bind_rust_extern_aliases(
     Ok(())
 }
 
-fn project_record(
-    source: &HirCallableSignatureSource,
-    ordinal: usize,
-    limits: &CallableLimits,
-    work: &mut CatalogBuildWork,
-) -> Result<CallableRecord, CallableCatalogBuildError> {
-    work.charge(1)?;
-    let path_segment_count = source
-        .path()
-        .qualifiers()
-        .len()
-        .checked_add(1)
-        .ok_or(CallableCatalogBuildError::WorkOverflow)?;
-    work.charge(
-        u64::try_from(path_segment_count).map_err(|_| CallableCatalogBuildError::WorkOverflow)?,
-    )?;
-    let generic_names = signature_generic_names(source.signature());
-    let parameters = project_parameters(source, &generic_names, limits, work)?;
-    let declared = EffectSet::from_labels(
-        source
-            .effects()
-            .declared()
-            .iter()
-            .map(arcweft_lang_hir::callable_source::HirEffectName::as_str),
-    )
-    .map_err(|_| identity_mismatch(source))?;
-    let effects = if source.declaration().owner() == CallableDeclarationOwner::ExternCapability {
-        CallableEffectSchema::fixed(EffectRow::closed(declared))
-    } else {
-        CallableEffectSchema::project(source.declaration().clone(), EffectRow::closed(declared))
-    };
-    let schema = Arc::new(CallableSignatureSchema::try_new(
-        parameters.groups,
-        source
-            .signature()
-            .return_type()
-            .map_or(TypeKind::Unit, |ty| {
-                type_ref_kind_with_generics(ty.value(), &generic_names)
-            }),
-        effects,
-        CallableArgumentPolicy::new(
-            UnknownNamedArgumentPolicy::Reject,
-            if source
-                .signature()
-                .param_groups()
-                .iter()
-                .flat_map(FnParamGroup::params)
-                .any(FnParam::is_rest)
-            {
-                SpreadArgumentPolicy::TypedRest
-            } else {
-                SpreadArgumentPolicy::Reject
-            },
-        ),
-        CallableValidator::Ordinary,
-        limits,
-    )?);
-    let documentation = project_documentation(source, parameters.documentation)?;
-    let callable_source = CallableSource::try_new(
-        Some(source.declaration().clone()),
-        Some(source.signature_span().clone()),
-        Some(source.name_span().clone()),
-        source.result_span().cloned(),
-        parameters.sources,
-    )
-    .map_err(|_| identity_mismatch(source))?;
-    CallableRecord::try_new(
-        CallableCandidateId::Project(source.declaration().clone()),
-        CallableLookupKey::Free(callable_path(source)?),
-        CallableAuthorityRank::Project,
-        CallableProviderId::Project(source.package().clone()),
-        schema,
-        documentation,
-        Some(callable_source),
-        None,
-        EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
-            .map_err(|_| identity_mismatch(source))?,
-    )
-    .map_err(CallableCatalogBuildError::InvalidRecord)
-}
-
 fn project_parameters(
     source: &HirCallableSignatureSource,
-    generic_names: &HashSet<String>,
+    resolved_groups: &[Vec<TypeKind>],
     limits: &CallableLimits,
     work: &mut CatalogBuildWork,
 ) -> Result<ProjectParameterPublication, CallableCatalogBuildError> {
@@ -477,9 +521,13 @@ fn project_parameters(
                 CallableParameter::try_new(
                     parameter_id,
                     parameter_name(parameter).map_err(|_| identity_mismatch(source))?,
-                    CallableParameterType::Exact(parameter.ty().map_or(TypeKind::Unit, |ty| {
-                        type_ref_kind_with_generics(ty.value(), generic_names)
-                    })),
+                    CallableParameterType::Exact(
+                        resolved_groups
+                            .get(group_index)
+                            .and_then(|group| group.get(parameter_index))
+                            .cloned()
+                            .ok_or_else(|| identity_mismatch(source))?,
+                    ),
                     parameter_passing(parameter),
                     if parameter.default().is_some() {
                         CallableParameterPresence::Defaulted
@@ -606,7 +654,7 @@ fn finish_project(
         let declaration = declaration.clone();
         if by_declaration.insert(declaration.clone(), record).is_some() {
             return Err(CallableCatalogBuildError::DuplicateTypedId {
-                id: CallableCandidateId::Project(declaration),
+                id: Box::new(CallableCandidateId::Project(declaration)),
             });
         }
     }
@@ -617,9 +665,9 @@ fn finish_project(
             && first != binding
         {
             return Err(CallableCatalogBuildError::ProjectBindingCollision {
-                path,
-                first,
-                second: binding,
+                path: Box::new(path),
+                first: Box::new(first),
+                second: Box::new(binding),
             });
         }
     }
@@ -647,7 +695,9 @@ fn finish_environment(
             );
             let candidate = CallableCandidateId::Environment(id.clone());
             if by_id.contains_key(&id) {
-                return Err(CallableCatalogBuildError::DuplicateTypedId { id: candidate });
+                return Err(CallableCatalogBuildError::DuplicateTypedId {
+                    id: Box::new(candidate),
+                });
             }
             let record = Arc::new(CallableRecord::try_new(
                 candidate,
@@ -712,10 +762,10 @@ fn validate_environment_groups(
                 work.charge(1)?;
                 if *rank == record.authority() && first != record.provider() {
                     return Err(CallableCatalogBuildError::SameRankCollision {
-                        key: record.key().clone(),
+                        key: Box::new(record.key().clone()),
                         rank: record.authority(),
-                        first: first.clone(),
-                        second: record.provider().clone(),
+                        first: Box::new(first.clone()),
+                        second: Box::new(record.provider().clone()),
                     });
                 }
             }
@@ -733,8 +783,8 @@ fn validate_environment_groups(
             let actual = environment_overload(record);
             if !seen.insert(actual) {
                 return Err(CallableCatalogBuildError::DuplicateProviderOverload {
-                    key,
-                    provider,
+                    key: Box::new(key),
+                    provider: Box::new(provider),
                     overload: actual,
                 });
             }
@@ -742,8 +792,8 @@ fn validate_environment_groups(
                 .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
             if actual != expected {
                 return Err(CallableCatalogBuildError::NonContiguousOverloads {
-                    key,
-                    provider,
+                    key: Box::new(key),
+                    provider: Box::new(provider),
                     expected,
                     actual,
                 });

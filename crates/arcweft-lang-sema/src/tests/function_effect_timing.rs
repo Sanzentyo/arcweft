@@ -1,5 +1,47 @@
 use super::support::*;
 
+fn effect_timing_errors(
+    source: &str,
+    environment: &TypeCheckEnv,
+) -> Vec<crate::diagnostics::TypeCheckError> {
+    let tree = parse_ok(source);
+    let hir = lower_to_hir(&tree).expect("effect timing fixture lowers");
+    validate_typecheck_ready(&hir).expect("effect timing fixture is structured");
+    typecheck_hir(&hir, environment).expect_err("called callback must compose body effects")
+}
+
+fn accepted_nominal_environment(
+    name: &str,
+    fields: impl IntoIterator<Item = (&'static str, TypeKind)>,
+) -> TypeCheckEnv {
+    let authored = parse_type_ref(name).expect("test nominal path parses");
+    let TypeRef::Path(path) = authored.value() else {
+        panic!("test nominal is a direct type path");
+    };
+    let accepted = crate::env::nominal::AcceptedNominalRecord::try_new(
+        crate::env::nominal::AcceptedNominalId::new(
+            crate::env::nominal::AcceptedNominalOwnerId::Standard,
+            path.clone(),
+        ),
+        0,
+        crate::env::nominal::AcceptedNominalSemantics::Exact(TypeKind::Named(name.to_owned())),
+        crate::env::nominal::AcceptedNominalOrigin::Test,
+        None,
+    )
+    .expect("test nominal record is accepted");
+    let mut environment = read_text_env()
+        .try_with_nominal_record(accepted)
+        .expect("test nominal record has a distinct path");
+    environment.nominal_records.insert(
+        name.to_owned(),
+        fields
+            .into_iter()
+            .map(|(field, ty)| (field.to_owned(), ty))
+            .collect(),
+    );
+    environment
+}
+
 #[test]
 fn curried_source_body_effects_begin_only_at_the_final_call_group() {
     let tree = parse_ok(
@@ -1124,7 +1166,17 @@ effects { }
 
 #[test]
 fn destructured_record_inline_closure_composes_when_binding_is_called() {
-    let tree = parse_ok(
+    let environment = accepted_nominal_environment(
+        "LoaderSpec",
+        [
+            (
+                "load",
+                TypeKind::function([TypeKind::String], TypeKind::String),
+            ),
+            ("path", TypeKind::String),
+        ],
+    );
+    let errors = effect_timing_errors(
         r#"
 struct LoaderSpec {
     load: String -> String,
@@ -1146,12 +1198,8 @@ effects { }
     })
 }
 "#,
+        &environment,
     );
-    let hir = lower_to_hir(&tree).expect("record destructured higher-order fixture lowers");
-    validate_typecheck_ready(&hir).expect("record destructured higher-order fixture is structured");
-
-    let errors = typecheck_hir(&hir, &read_text_env())
-        .expect_err("record destructured inline callback must compose body effects");
     assert!(
         errors.iter().any(|error| {
             matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
@@ -1166,7 +1214,17 @@ effects { }
 
 #[test]
 fn untyped_destructured_record_callback_uses_nominal_field_type() {
-    let tree = parse_ok(
+    let environment = accepted_nominal_environment(
+        "LoaderSpec",
+        [
+            (
+                "load",
+                TypeKind::function([TypeKind::String], TypeKind::String),
+            ),
+            ("path", TypeKind::String),
+        ],
+    );
+    let errors = effect_timing_errors(
         r#"
 struct LoaderSpec {
     load: String -> String,
@@ -1188,12 +1246,8 @@ effects { }
     })
 }
 "#,
+        &environment,
     );
-    let hir = lower_to_hir(&tree).expect("untyped record destructured fixture lowers");
-    validate_typecheck_ready(&hir).expect("untyped record destructured fixture is structured");
-
-    let errors = typecheck_hir(&hir, &read_text_env())
-        .expect_err("untyped record destructured callback must compose body effects");
     assert!(
         errors.iter().any(|error| {
             matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
@@ -1276,7 +1330,14 @@ effects { }
 
 #[test]
 fn user_enum_tuple_variant_destructured_callback_composes_when_payload_is_called() {
-    let tree = parse_ok(
+    let environment = accepted_nominal_environment("LoaderSpec", [])
+        .try_with_enum_variant_payload(
+            TypeKind::Named("LoaderSpec".to_owned()),
+            "WithLoad",
+            EnumVariantPayload::tuple([TypeKind::function([TypeKind::String], TypeKind::String)]),
+        )
+        .expect("accepted enum payload");
+    let errors = effect_timing_errors(
         r#"
 enum LoaderSpec {
     WithLoad(String -> String),
@@ -1294,12 +1355,8 @@ effects { }
     }))
 }
 "#,
+        &environment,
     );
-    let hir = lower_to_hir(&tree).expect("user enum tuple variant fixture lowers");
-    validate_typecheck_ready(&hir).expect("user enum tuple variant fixture is structured");
-
-    let errors = typecheck_hir(&hir, &read_text_env())
-        .expect_err("user enum tuple variant destructured callback must compose body effects");
     assert!(
         errors.iter().any(|error| {
             matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
@@ -1314,7 +1371,14 @@ effects { }
 
 #[test]
 fn env_enum_tuple_variant_destructured_callback_composes_when_payload_is_called() {
-    let tree = parse_ok(
+    let environment = accepted_nominal_environment("ExternalLoaderSpec", [])
+        .try_with_enum_variant_payload(
+            TypeKind::Named("ExternalLoaderSpec".to_owned()),
+            "WithLoad",
+            EnumVariantPayload::tuple([TypeKind::function([TypeKind::String], TypeKind::String)]),
+        )
+        .expect("accepted environment enum payload");
+    let errors = effect_timing_errors(
         r#"
 fn use_loader(.WithLoad(load): ExternalLoaderSpec) -> String {
     return load("story.arcw")
@@ -1328,19 +1392,8 @@ effects { }
     }))
 }
 "#,
+        &environment,
     );
-    let hir = lower_to_hir(&tree).expect("env enum tuple variant fixture lowers");
-    validate_typecheck_ready(&hir).expect("env enum tuple variant fixture is structured");
-    let env = read_text_env()
-        .try_with_enum_variant_payload(
-            TypeKind::Named("ExternalLoaderSpec".to_owned()),
-            "WithLoad",
-            EnumVariantPayload::tuple([TypeKind::function([TypeKind::String], TypeKind::String)]),
-        )
-        .expect("ordinary enum payload");
-
-    let errors = typecheck_hir(&hir, &env)
-        .expect_err("env enum tuple variant destructured callback must compose body effects");
     assert!(
         errors.iter().any(|error| {
             matches!(error.kind(), TypeCheckErrorKind::Effect { .. })
@@ -1355,7 +1408,17 @@ effects { }
 
 #[test]
 fn env_enum_record_variant_destructured_callback_composes_when_payload_is_called() {
-    let tree = parse_ok(
+    let environment = accepted_nominal_environment("ExternalLoaderRecordSpec", [])
+        .try_with_enum_variant_payload(
+            TypeKind::Named("ExternalLoaderRecordSpec".to_owned()),
+            "WithLoad",
+            EnumVariantPayload::record([(
+                "load",
+                TypeKind::function([TypeKind::String], TypeKind::String),
+            )]),
+        )
+        .expect("accepted environment enum payload");
+    let errors = effect_timing_errors(
         r#"
 fn use_loader(.WithLoad { load }: ExternalLoaderRecordSpec) -> String {
     return load("story.arcw")
@@ -1367,22 +1430,8 @@ effects { }
     let body = use_loader(WithLoad { load: |path: String| -> String { adapter.read_text(path = path) } })
 }
 "#,
+        &environment,
     );
-    let hir = lower_to_hir(&tree).expect("env enum record variant fixture lowers");
-    validate_typecheck_ready(&hir).expect("env enum record variant fixture is structured");
-    let env = read_text_env()
-        .try_with_enum_variant_payload(
-            TypeKind::Named("ExternalLoaderRecordSpec".to_owned()),
-            "WithLoad",
-            EnumVariantPayload::record([(
-                "load",
-                TypeKind::function([TypeKind::String], TypeKind::String),
-            )]),
-        )
-        .expect("ordinary enum payload");
-
-    let errors = typecheck_hir(&hir, &env)
-        .expect_err("env enum record variant destructured callback must compose body effects");
     assert!(
         errors.iter().any(|error| {
             matches!(error.kind(), TypeCheckErrorKind::Effect { .. })

@@ -69,6 +69,11 @@ impl ProjectSymbolTable {
     ) -> Result<Vec<ScopeBinding>, ImportResolutionError> {
         match import.tree().kind() {
             UseTreeKind::Path { path, alias } => {
+                let reference_site = path
+                    .segment_ranges()
+                    .last()
+                    .copied()
+                    .map(|range| source_span(project, importer, range));
                 let path = LinkedProjectSymbolPath::try_new(path.path())?;
                 let targets = self.targets_for_symbol_path(importer, path.reference())?;
                 let binding_path = alias.as_ref().map_or_else(
@@ -82,7 +87,14 @@ impl ProjectSymbolTable {
                         .expect("one use alias is a valid implicit project binding")
                     },
                 );
-                Self::bind_named_targets(project, importer, import, &binding_path, targets)
+                Self::bind_named_targets(
+                    project,
+                    importer,
+                    import,
+                    &binding_path,
+                    targets,
+                    reference_site.as_ref(),
+                )
             }
             UseTreeKind::Glob { module } => {
                 let path = LinkedProjectSymbolPath::try_new(module.path())?;
@@ -101,6 +113,7 @@ impl ProjectSymbolTable {
                                     importer,
                                     import.visibility(),
                                     site.clone(),
+                                    None,
                                 ));
                             }
                         }
@@ -133,12 +146,14 @@ impl ProjectSymbolTable {
                             .expect("one use alias is a valid implicit project binding")
                         },
                     );
+                    let reference_site = source_span(project, importer, selected.name_range());
                     bindings.extend(Self::bind_named_targets(
                         project,
                         importer,
                         import,
                         &binding_path,
                         targets,
+                        Some(&reference_site),
                     )?);
                 }
                 (!bindings.is_empty())
@@ -154,6 +169,7 @@ impl ProjectSymbolTable {
         import: &UseItem,
         path: &ProjectSymbolPath,
         targets: Vec<ScopeBinding>,
+        reference_site: Option<&arcweft_source::SourceSpan>,
     ) -> Result<Vec<ScopeBinding>, ImportResolutionError> {
         let distinct = targets
             .iter()
@@ -173,7 +189,15 @@ impl ProjectSymbolTable {
         let site = source_span(project, importer, *import.range());
         Ok(targets
             .into_iter()
-            .map(|target| target.rebound(path.clone(), importer, import.visibility(), site.clone()))
+            .map(|target| {
+                target.rebound(
+                    path.clone(),
+                    importer,
+                    import.visibility(),
+                    site.clone(),
+                    reference_site.cloned(),
+                )
+            })
             .collect())
     }
 

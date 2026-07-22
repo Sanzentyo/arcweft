@@ -938,6 +938,7 @@ mod tests {
                 rule: TypeJudgmentRule::Expr,
                 expected: None,
                 source_range: None,
+                source: None,
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(1),
@@ -949,6 +950,7 @@ mod tests {
                 rule: TypeJudgmentRule::Expected,
                 expected: Some(TypeJudgmentExpected::SameAsJudgment),
                 source_range: None,
+                source: None,
             },
             TypeJudgment {
                 id: TypeJudgmentId::from_index(2),
@@ -959,6 +961,7 @@ mod tests {
                 rule: TypeJudgmentRule::Return,
                 expected: Some(TypeJudgmentExpected::SameAsJudgment),
                 source_range: None,
+                source: None,
             },
         ];
         let mut report = empty_type_report();

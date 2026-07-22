@@ -15,12 +15,11 @@ pub use diagnostic::{
 };
 pub use limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits};
 pub use model::{
-    CharacterInventoryDescriptorV1, CharacterInventoryDigest, CharacterInventoryIntegrityError,
-    CharacterInventoryRevision, CharacterRegistrar, CharacterRegistrationRequest,
-    EnvironmentBindingId, EnvironmentBindingIdError, ExternalOwnerLookupError,
-    ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredCharacterResolutionError,
-    RegisteredExternalOwner, RegisteredExternalOwnerKind, RegisteredSemanticWorld,
-    RegisteredTypeCheckEnv,
+    AcceptedNominalWorld, CharacterInventoryDescriptorV1, CharacterInventoryDigest,
+    CharacterInventoryIntegrityError, CharacterInventoryRevision, CharacterRegistrar,
+    CharacterRegistrationRequest, ExternalOwnerLookupError, ExternalRegistrationFact,
+    ProjectRegistrationFacts, RegisteredCharacterResolutionError, RegisteredExternalOwner,
+    RegisteredExternalOwnerKind, RegisteredSemanticWorld, RegisteredTypeCheckEnv,
 };
 pub use source_index::{
     CharacterDeclarationSet, CharacterDeclarationSource, CharacterDefinitionIndex,

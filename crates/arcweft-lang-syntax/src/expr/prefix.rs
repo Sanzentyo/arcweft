@@ -77,7 +77,7 @@ impl ExprParser {
                 if self.peek() == &Token::LBrace && !self.control_body_brace_is_boundary {
                     self.bump();
                     return Ok(Expr::Record {
-                        path,
+                        path: DottedPath::parse_dotted(path),
                         fields: self.parse_record_fields()?,
                     });
                 }

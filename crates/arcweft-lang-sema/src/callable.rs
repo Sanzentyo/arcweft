@@ -13,6 +13,7 @@ mod error;
 mod facts;
 mod identity;
 mod limits;
+mod nominal_signature;
 mod presentation;
 mod publication;
 mod resolver;

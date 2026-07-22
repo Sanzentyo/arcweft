@@ -16,7 +16,7 @@ use arcweft_source::{
     SourceRange, SourceRevision, SourceSpan, SourceSpanError,
 };
 
-use crate::callable::CallableDiagnosticCode;
+use crate::{callable::CallableDiagnosticCode, env::nominal::AcceptedNominalCatalogError};
 
 use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
@@ -47,6 +47,7 @@ pub enum CharacterRegistrationCode {
     SourceDigestCollision,
     Project(ProjectSymbolDiagnosticCode),
     CallableCatalog(CallableDiagnosticCode),
+    AcceptedNominalCatalog,
     ExternalUnknown,
     ExternalDuplicate,
     ExternalConflict,
@@ -82,6 +83,7 @@ impl CharacterRegistrationCode {
             Self::SourceDigestCollision => "aw.character.source.digest_collision",
             Self::Project(code) => code.as_str(),
             Self::CallableCatalog(_) => "aw.callable.catalog.registration",
+            Self::AcceptedNominalCatalog => "aw.nominal.catalog.registration",
             Self::ExternalUnknown => "aw.character.registration.external_unknown",
             Self::ExternalDuplicate => "aw.character.registration.external_duplicate",
             Self::ExternalConflict => "aw.character.registration.external_conflict",
@@ -178,6 +180,9 @@ pub enum CharacterRegistrationDiagnosticKind {
     },
     CallableCatalog {
         code: CallableDiagnosticCode,
+    },
+    AcceptedNominalCatalog {
+        error: AcceptedNominalCatalogError,
     },
     ExternalUnknown {
         declaration: ExternalDeclarationId,
@@ -299,6 +304,9 @@ impl CharacterRegistrationDiagnosticKind {
             }
             CharacterRegistrationDiagnosticKind::CallableCatalog { code } => {
                 CharacterRegistrationCode::CallableCatalog(*code)
+            }
+            CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { .. } => {
+                CharacterRegistrationCode::AcceptedNominalCatalog
             }
             CharacterRegistrationDiagnosticKind::ExternalUnknown { .. } => {
                 CharacterRegistrationCode::ExternalUnknown

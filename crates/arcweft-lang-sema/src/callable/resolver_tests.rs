@@ -16,17 +16,20 @@ use crate::{
         module::analyze_registered_project_types_for_call_facts,
     },
     effect_row::EffectRow,
-    env::{FunctionParam, FunctionSignature, TypeCheckEnv},
+    env::{
+        FunctionParam, FunctionSignature, TypeCheckEnv, identity::EnvironmentBindingId,
+        nominal::RustPackageId,
+    },
     registration::{
-        CharacterRegistrar, CharacterRegistrationRequest, EnvironmentBindingId,
-        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredSemanticWorld,
+        CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
+        RegisteredExternalOwner, RegisteredSemanticWorld,
     },
     test_support::character_project::{
         external_fact, one_character_facts, project_path, root_project_source, sample_manifest,
         source_document,
     },
     traits::TraitCatalog,
-    types::TypeKind,
+    types::{AcceptedNominalType, TypeKind},
 };
 
 use super::facts::CallTargetFact;
@@ -474,24 +477,17 @@ impl Threshold for Score {
     }
 }
 
-flow @flow.main main {
+fn above(min: i64, value: Score) -> bool {
+    true
+}
+
+flow @flow.main main(score: Score) {
     let accepted: String = score.above(80i64)
 }
 "#;
     let (document, project, symbol_world) = root_project_source("registered-trait-method", SOURCE);
     let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
-    let base = TypeCheckEnv::standard()
-        .with_symbol("score", TypeKind::Named("Score".to_owned()))
-        .with_function_signature(
-            "above",
-            FunctionSignature::new(
-                TypeKind::Bool,
-                [
-                    FunctionParam::required("min", TypeKind::I64),
-                    FunctionParam::required("value", TypeKind::Named("Score".to_owned())),
-                ],
-            ),
-        );
+    let base = TypeCheckEnv::standard();
     let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(base),
         &project,
@@ -980,6 +976,21 @@ flow @flow.main main {
 "#;
     let (document, project, symbol_world) = root_project_source("rust-extern-alias", SOURCE);
     let facts = one_character_facts(&document, symbol_world, &sample_manifest("layers/body.png"));
+    let rank_path: arcweft_lang_syntax::types::TypePath = project_path(["Rank"]).into();
+    let base = TypeCheckEnv::standard()
+        .try_with_rust_type_export(
+            RustPackageId::try_new("truck_game").expect("package id"),
+            rank_path.clone(),
+        )
+        .expect("Rust type export");
+    let rank = base
+        .nominal_catalog()
+        .exact(&rank_path)
+        .expect("typed Rust rank export");
+    let rank_type = TypeKind::AcceptedNominal(AcceptedNominalType::new(
+        rank.id().clone(),
+        Box::<[TypeKind]>::default(),
+    ));
     let adapter = AdapterPackageId::try_new("adapter.rust").expect("adapter id");
     let rust = RustCallableProvenance::try_new(
         adapter.clone(),
@@ -993,11 +1004,7 @@ flow @flow.main main {
         EnvironmentCallableKind::RustFunction,
         CallableLookupKey::Free(callable_path(&["score_to_rank"])),
         CallableOverloadIndex::try_from_usize(0).expect("overload"),
-        ordinary_single_parameter_schema(
-            "score",
-            TypeKind::I32,
-            TypeKind::Named("Rank".to_owned()),
-        ),
+        ordinary_single_parameter_schema("score", TypeKind::I32, rank_type),
         CallableDocumentation::missing(),
         None,
         Some(rust),
@@ -1010,7 +1017,6 @@ flow @flow.main main {
         &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("Rust callable publication");
-    let base = TypeCheckEnv::standard().with_rust_type_export("truck_game", "Rank");
     let world = CharacterRegistrar::register(
         CharacterRegistrationRequest::new(Arc::new(base), &project, &facts, None)
             .with_callable_publication(publication),
