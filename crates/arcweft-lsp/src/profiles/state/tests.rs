@@ -245,7 +245,7 @@ fn compile_fixture(
 }
 
 fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
-    let source = "flow @flow.main main { return \"ok\" }\n";
+    let source = "flow @flow.main main() -> String { return \"ok\" }\n";
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-project://cache-tests/src/main.arcw")

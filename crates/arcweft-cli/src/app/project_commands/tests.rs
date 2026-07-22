@@ -69,7 +69,7 @@ let route = @flow.done
 goto route
 }
 
-flow done {
+flow done() -> String {
 return "done"
 }
 "#,
@@ -282,7 +282,7 @@ flow opening {
 goto @flow.done
 }
 
-flow done {
+flow done() -> String {
 return "done"
 }
 "#,

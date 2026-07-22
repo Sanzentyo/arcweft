@@ -1394,7 +1394,6 @@ speaker: text         -> speaker.say()[text]
 speaker(args): text   -> speaker.say(args)[text] for character refs
 speaker_preset(args): text
                       -> speaker_preset(args)[text]
-await? expr with ...  -> try await expr with ...
 parent::path          -> super::path
 ｜base《ruby》       -> |[base](ruby)
 |base{ruby}          -> |[base](ruby)

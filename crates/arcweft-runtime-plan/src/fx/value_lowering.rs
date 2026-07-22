@@ -345,7 +345,12 @@ fn lower_color(expr: &Expr) -> Result<FxColor, RuntimePlanLowerError> {
     if !matches!(function, "rgb" | "rgba") {
         return Err(runtime_expected_error(expr, FxRuntimeType::Color));
     }
-    let [CallArg::Positional(Expr::Literal(Literal::String(hex)))] = call.args() else {
+    let [CallArg::Positional(value)] = call.args() else {
+        return Err(error(format!(
+            "Fx `{function}` currently requires one hexadecimal string literal"
+        )));
+    };
+    let Expr::Literal(Literal::String(hex)) = value.as_ref() else {
         return Err(error(format!(
             "Fx `{function}` currently requires one hexadecimal string literal"
         )));

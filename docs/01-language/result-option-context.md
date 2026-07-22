@@ -1,6 +1,8 @@
 # Result / Option, `?`, and Context
 
-Arcweft includes Rust-like `Result`, `Option`, and postfix `?`, plus standard context helpers inspired by `anyhow::Context`.
+Arcweft includes Rust-like `Result` and `Option`, two retained Try spellings
+(`expr?` and `try expr`), and standard context helpers inspired by
+`anyhow::Context`.
 
 ## Result and Option
 
@@ -16,10 +18,11 @@ pub enum Option<T> {
 }
 ```
 
-## Postfix `?` on Result
+## Try on Result
 
 ```arcw
 let config = load_config()?
+let cached = try load_cached_config()
 ```
 
 Conceptually:
@@ -27,13 +30,16 @@ Conceptually:
 ```arcw
 let config = match load_config() {
     .Ok(v) => v
-    .Err(e) => return .Err(From.from(e))
+    .Err(e) => return .Err(e)
 }
 ```
 
 The error path has type `!`, so the expression has type `T`.
 
-Arcweft also reserves prefix `try expr` as equivalent propagation syntax. It is mainly useful when another prefix construct must group before propagation, most notably `try await expr with { ... }`.
+`try expr` and `expr?` are both canonical authored forms of the same general
+Try operation. Neither is deprecated or an alias for the other. Source-facing
+tools preserve the authored form. Prefix Try binds at prefix precedence `90`,
+while postfix Try binds at postfix precedence `100`.
 
 When the surrounding result type uses an anonymous error sum, `?` widens only
 through exact branch injection:
@@ -48,7 +54,14 @@ fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
 No trait-based implicit conversion is used to choose anonymous sum branches; use
 an explicit conversion when the target branch is not the expression's exact type.
 
-## Postfix `?` on Option
+More generally, Try does not invoke an implicit `From`, `Into`, `ArcError`, or
+function-name conversion. After nominal and generic resolution, the enclosing
+`Result<_, ExpectedError>` must accept the operand's
+`Result<_, ActualError>` error type under the ordinary directional type rule.
+An explicit `map_err`, `context`, or other typed conversion is checked before
+Try and may therefore change that error type.
+
+## Try on Option
 
 In an `Option`-returning function:
 
@@ -59,23 +72,29 @@ fn selected_route(state: GameState) -> Option<Ref<Flow>> {
 }
 ```
 
-In an `ArcResult<T>` context, `Option<T>?` is allowed as convenience and converts `None` to `ArcError.missing_value()` with a default source trace.
+An `Option<T>` Try expression is valid only in an enclosing `Option<_>`
+propagation boundary. It does not implicitly convert `None` into an error for
+`ArcResult` or another `Result` type.
 
 ```arcw
 fn selected_route(state: GameState) -> ArcResult<Ref<Flow>> {
-    let route = state.route_override?
+    let route = state.route_override
+        .context("route override is missing")?
     Ok(route)
 }
 ```
 
-For public/user-facing code, prefer explicit context:
+The conversion is explicit because `context(...)` changes the checked operand
+from `Option<T>` to `ArcResult<T>` before Try is applied. `ok_or(...)` and
+`ok_or_else(...)` provide the corresponding conversion into a typed `Result`.
 
 ```arcw
-let route = state.route_override
-    .context("route override is missing")?
+let route = state.route_override.ok_or(MissingRouteError.new())?
 ```
 
-In a typed `Result<T, E>` context that is not `ArcResult`, `Option<T>?` is accepted only if the error type implements the standard conversion from `MissingValueError`. Otherwise use `.ok_or(...)`, `.ok_or_else(...)`, or `.context(...)`.
+The reverse direction is equally explicit: a `Result<T, E>` Try expression is
+not accepted in an `Option<_>` boundary. Use an ordinary conversion such as
+`.ok()` before applying Try when discarding the error is intentional.
 
 ## Context helpers
 
@@ -146,7 +165,8 @@ The second name is intentionally `transpose_option` rather than another overload
 
 ## `?` with `await`
 
-`await need with:` returns `Result<T, E>`. The ergonomic form for propagation is `try await`.
+`await need with:` returns `Result<T, E>`. Both propagating Await spellings are
+retained:
 
 ```arcw
 let bg = try await asset.image(@asset:.bg.room)
@@ -170,8 +190,9 @@ with:
 let bg = bg_result?
 ```
 
-`await? expr with:` is accepted as prefix sugar for `try await expr with:`, but
-formatter and examples should prefer `try await` for handwritten code.
+`await? expr with:` has the same propagation semantics as `try await expr
+with:`, but its source form remains distinct. Formatters and refactorings retain
+the authored spelling.
 
 ```arcw
 let bg = await? asset.image(@asset:.bg.room)

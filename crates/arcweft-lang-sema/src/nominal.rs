@@ -31,8 +31,9 @@ pub use model::{
     AliasExpansionFact, BuiltinTypeConstructor, DetachedNominalEvidence, DetachedNominalReason,
     DetachedTypeRef, ExternalNominalResolution, PoisonedTypeRef, ResolvedAliasReference,
     ResolvedOpenNominal, ResolvedTypeNode, ResolvedTypeProduct, ResolvedTypeRefOutcome,
-    StructuralTypeNodeKind, TypeArgumentExpectation, TypeArityExpectation, TypeArityTarget,
-    TypeNameResolution, TypeResolutionFailure, TypeResolutionReport, TypeSourceEvidence,
+    StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
+    TypeArityTarget, TypeNameResolution, TypeResolutionFailure, TypeResolutionReport,
+    TypeSourceEvidence,
 };
 pub use resolver::resolve_type_ref;
 pub(crate) use shapes::ProjectNominalShapeCatalog;

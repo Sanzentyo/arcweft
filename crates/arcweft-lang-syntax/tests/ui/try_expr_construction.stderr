@@ -1,0 +1,10 @@
+error[E0624]: associated function `new` is private
+ --> tests/ui/try_expr_construction.rs:9:30
+  |
+9 |     let _try_expr = TryExpr::new(Box::new(operand), source);
+  |                              ^^^ private associated function
+  |
+ ::: src/expr.rs
+  |
+  |     pub(crate) const fn new(operand: Box<Expr>, source: TryExprSource) -> Self {
+  |     -------------------------------------------------------------------------- private associated function defined here

@@ -125,7 +125,7 @@ entry cli @entry.main {
 
 signal @signal.current_flow: Watch<Ref<Flow>>
 
-flow @flow.opening opening {
+flow @flow.opening opening() -> String {
     narrator.say(id=@say.opening)[hello]
     let current = @signal.current_flow
     include @flow.intro
@@ -289,7 +289,7 @@ fn project_index_from_hir_does_not_reparse_raw_signal_type_tails() {
     let tree = parse_source(
         r#"
 signal @signal.current_flow: Watch<Ref<Flow>>
-flow @flow.opening opening {
+flow @flow.opening opening() -> String {
     return "ok"
 }
 "#,
@@ -346,13 +346,13 @@ pub fn current_route() -> String {
     "opening"
 }
 
-flow @flow.opening opening {
+flow @flow.opening opening() -> String {
     let route = current_route()
     goto @flow.done
     return "ok"
 }
 
-flow @flow.done done {
+flow @flow.done done() -> String {
     return "done"
 }
 "#;

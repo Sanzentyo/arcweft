@@ -49,13 +49,19 @@ impl TypeChecker<'_> {
     }
 
     fn check_fx_stack_args(&mut self, args: &[CallArg]) {
-        let [CallArg::Positional(Expr::BracketSeq(children))] = args else {
+        let [CallArg::Positional(value)] = args else {
             self.errors.push(TypeCheckError::new(
                 "`Fx.stack` requires one positional ordered Fx list".to_owned(),
             ));
             for arg in args {
                 self.check_expr(arg.value());
             }
+            return;
+        };
+        let Expr::BracketSeq(children) = value.as_ref() else {
+            self.errors.push(TypeCheckError::new(
+                "`Fx.stack` requires one positional ordered Fx list".to_owned(),
+            ));
             return;
         };
         let expected = TypeKind::Named("Fx".to_owned());

@@ -623,11 +623,24 @@ pub enum ImplMember {
     },
     Function {
         signature: FnSignature,
+        signature_source: FunctionSignatureSource,
         body: String,
         body_statements: Vec<Stmt>,
         body_value: Option<Box<AuthoredExpr>>,
     },
     Raw(String),
+}
+
+impl ImplMember {
+    /// Exact signature source for an impl function member.
+    pub const fn function_signature_source(&self) -> Option<&FunctionSignatureSource> {
+        match self {
+            Self::Function {
+                signature_source, ..
+            } => Some(signature_source),
+            Self::AssociatedType { .. } | Self::Raw(_) => None,
+        }
+    }
 }
 
 /// Impl declaration with structured members and original body text.

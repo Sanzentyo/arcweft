@@ -1329,7 +1329,7 @@ impl<'a> SemanticAnalyzer<'a> {
             } => {
                 let mut block_state = state.clone();
                 self.collect_stmts(statements, &mut block_state);
-                if let Some(value) = value {
+                if let Some(value) = value.as_ref() {
                     self.collect_expr(value, &mut block_state);
                 }
                 state.live_must_drop.extend(block_state.live_must_drop);
@@ -1756,7 +1756,7 @@ impl<'a> SemanticAnalyzer<'a> {
         match trigger {
             TriggerPattern::Signal { target, value } => {
                 self.collect_expr(target, state);
-                if let Some(value) = value {
+                if let Some(value) = value.as_ref().as_ref() {
                     self.collect_pattern(value);
                 }
             }

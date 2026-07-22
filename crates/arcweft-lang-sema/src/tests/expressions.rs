@@ -13,9 +13,11 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     let args = selected_call_args(&method).expect("expected outer map call");
     assert!(matches!(
         args,
-        [CallArg::Positional(Expr::Select(select))]
+        [CallArg::Positional(value)]
+            if matches!(value.as_ref(), Expr::Select(select)
             if matches!(select.target(), Expr::Placeholder(Placeholder::Partial))
                 && select.member().as_str() == "label"
+            )
     ));
 
     let indexed = parse_expr("state.affection[@character.alice]").expect("index expr parses");
@@ -121,7 +123,7 @@ struct Choice {
     enabled: bool,
 }
 
-flow main {
+flow main() -> i64 {
   let clamped = 10i64 |> clamp(0i64, ^, 100i64)
   let next = clamped |> plus_one
   let summed: i64 = 2i64 |> add(1i64)

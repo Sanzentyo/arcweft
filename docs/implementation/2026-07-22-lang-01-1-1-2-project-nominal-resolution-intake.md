@@ -3,7 +3,7 @@
 ## Baseline and source package
 
 - implementation baseline: `126f7ece0f69`
-- package: `docs/reviews/arcweft-lang-01.1.1.2-project-nominal-type-resolution-production-reconciliation-final-contract.zip`
+- package: `docs/reviews/packages/arcweft-lang-01.1.1.2-project-nominal-type-resolution-production-reconciliation-final-contract.zip`
 - package SHA-256: `FF695EADEF1A4C833D86F53CA5E9010C7DF3D3643418109980B0E9F1D6CFE1AB`
 - package status: implementation-ready, with no open design questions
 
@@ -117,11 +117,13 @@ The old call-surface fixtures that supplied project-authored types through
 accepted nominal record. Production did not gain a spelling comparison,
 `Named`/project compatibility rule, or fabricated `CharacterLook` fallback.
 
-This checkpoint is still not the final package cut. The nine `TM-*` rows that
-couple nominal poison to prefix Try, postfix Try, and propagating Await belong
-to the selected Lang-01.1.1.1 propagation implementation and remain open. The
-full 242-row matrix trace, workspace Clippy/test, applicable Tier 2 route, and
-structural audit must be recorded after that propagation boundary is merged.
+The nine `TM-*` rows that couple nominal poison to prefix Try, postfix Try, and
+propagating Await are now implemented by the selected Lang-01.1.1.1 propagation
+slice. Focused syntax, HIR, sema, runtime-plan, verifier, Agent, CLI, and LSP
+tests pass with exact source-backed diagnostic evidence. The full 242-row
+nominal matrix trace and the combined workspace/Clippy/Tier 2/structural gates
+remain part of the reviewable-cut validation rather than a reason to reopen the
+typed propagation design.
 
 ## Active completion audit
 
@@ -144,18 +146,21 @@ requirements from the returned contract:
 - every applicable `TEST_MATRIX.csv` family, focused crate command, Tier 2
   route, and structural-audit requirement must have direct evidence.
 
-`Ref<Entity>` is the one isolated design defect in the returned contract. It is
-tracked by [Lang-01.1.1.2.1](../reviews/requests/2026-07-22-lang-01.1.1.2.1-entity-family-applied-type-projection-correction.md);
-the rest of this list remains implementation work and is not deferred with it.
+The returned Lang-01.1.1.2.1 package closes the isolated `Ref<EntityFamily>`
+design defect. `Ref`, `Speaker`, and `SpeakerPreset` now share one typed
+entity-family argument expectation and projection authority. Direct `Ref` is a
+reserved language constructor, while qualified names such as `pkg.Ref` remain
+catalog-owned. See
+[the implementation record](2026-07-22-lang-01-1-1-2-1-entity-family-projection.md).
 
 The implementation audit also found that adapter/Rust callable publication
 still projects `ArcweftRustTypeRef::Named` through `AdapterTypeKind::Named` into
 `TypeKind::Named`, while authored `extern` signatures now resolve the same
 export to an owner-qualified `AcceptedNominalType`. The returned contract
 requires external-owner projection but explicitly does not design callable
-publication, so the missing owner/context/registration-order decision is
-tracked separately by [Lang-01.1.1.2.2](../reviews/requests/2026-07-22-lang-01.1.1.2.2-adapter-callable-nominal-publication-projection-correction.md).
-No `Named` compatibility comparison is admitted while that request is pending.
+publication. Lang-01.1.1.2.2 has now returned with that complete publication
+contract and is the next implementation slice. No `Named` compatibility
+comparison is admitted during that integration.
 
 ## Current checkout validation and open gates
 
@@ -197,19 +202,16 @@ child modules, syntax type-source tests moved out of the 1,049-line production
 module, and adapter-manifest tests moved out of the 797-line production module.
 All moved test groups and their focused Clippy routes pass.
 
-The normal workspace route is not claimed complete. Its remaining failures are
-direct executable evidence for already isolated boundaries:
+The normal workspace route is not claimed complete. The two current-pass
+`Ref<Flow>` fixtures now pass through the checked entity-family projection.
+Its remaining failures are direct executable evidence for already isolated
+boundaries:
 
-1. `current_pass/check/014_struct_enum_type_alias.arcw` and
-   `015_state_defaults.arcw` use canonical `Ref<Flow>`. They remain rejected
-   until [Lang-01.1.1.2.1](../reviews/requests/2026-07-22-lang-01.1.1.2.1-entity-family-applied-type-projection-correction.md)
-   selects the typed entity-family projection. An opaque `Ref` fallback is not
-   admitted.
-2. The ignored LSP adapter signature-help acceptance test uses `TensorF32` and
+1. The ignored LSP adapter signature-help acceptance test uses `TensorF32` and
    remains blocked by [Lang-01.1.1.2.2](../reviews/requests/2026-07-22-lang-01.1.1.2.2-adapter-callable-nominal-publication-projection-correction.md).
    Its ignore annotation names that exact request and must be removed in the
    integration cut.
-3. The two `spec_should_pass` filesystem capability fixtures retain
+2. The two `spec_should_pass` filesystem capability fixtures retain
    `type FsError` inside `extern capability`. Proof-concurrency Stage 1 already
    gives that member a private typed syntax node but explicitly defers the
    atomic public AST/HIR switch. The public `ExternCapabilityItem` therefore

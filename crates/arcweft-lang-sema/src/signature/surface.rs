@@ -586,7 +586,7 @@ impl SurfaceScanner<'_> {
                 statements, value, ..
             } => {
                 self.scan_stmts(statements)?;
-                if let Some(value) = value {
+                if let Some(value) = value.as_ref() {
                     self.scan_expr(value)?;
                 }
             }
@@ -951,7 +951,7 @@ impl SurfaceScanner<'_> {
         match trigger {
             TriggerPattern::Signal { target, value } => {
                 self.scan_expr(target)?;
-                if let Some(value) = value {
+                if let Some(value) = value.as_ref().as_ref() {
                     self.scan_pattern(value)?;
                 }
             }

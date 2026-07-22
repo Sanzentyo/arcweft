@@ -1,4 +1,4 @@
 entry activity @entry.minigame { goto @flow.activity_main }
-flow @flow.activity_main activity_main {
+flow @flow.activity_main activity_main() -> String {
     return "mounted"
 }

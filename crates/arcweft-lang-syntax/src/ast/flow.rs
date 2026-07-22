@@ -20,6 +20,7 @@ pub struct Flow {
     explicit_name: bool,
     signature_tail: String,
     signature: Option<crate::types::FnSignature>,
+    signature_source: FlowSignatureSource,
     contracts: Vec<ContractClause>,
     body: Vec<FlowItem>,
     range: TextRange,
@@ -36,9 +37,33 @@ pub(crate) struct FlowInit {
     pub(crate) explicit_name: bool,
     pub(crate) signature_tail: String,
     pub(crate) signature: Option<crate::types::FnSignature>,
+    pub(crate) signature_source: FlowSignatureSource,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: Vec<FlowItem>,
     pub(crate) range: TextRange,
+}
+
+/// Exact source ranges for one parsed `flow` signature.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct FlowSignatureSource {
+    header: TextRange,
+    result: Option<TextRange>,
+}
+
+impl FlowSignatureSource {
+    pub(crate) const fn new(header: TextRange, result: Option<TextRange>) -> Self {
+        Self { header, result }
+    }
+
+    /// Range from the `flow` keyword through the final signature token.
+    pub const fn header(self) -> TextRange {
+        self.header
+    }
+
+    /// Exact authored result-type range, when the flow declares one.
+    pub const fn result(self) -> Option<TextRange> {
+        self.result
+    }
 }
 
 /// Flow/function contract clause.
@@ -564,6 +589,7 @@ impl Flow {
             explicit_name: init.explicit_name,
             signature_tail: init.signature_tail,
             signature: init.signature,
+            signature_source: init.signature_source,
             contracts: init.contracts,
             body: init.body,
             range: init.range,
@@ -600,6 +626,11 @@ impl Flow {
 
     pub const fn signature(&self) -> Option<&crate::types::FnSignature> {
         self.signature.as_ref()
+    }
+
+    /// Exact source ranges for the flow signature.
+    pub const fn signature_source(&self) -> FlowSignatureSource {
+        self.signature_source
     }
 
     pub fn contracts(&self) -> &[ContractClause] {

@@ -1,6 +1,9 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
+mod dialogue_policy;
 mod view;
+
+use dialogue_policy::dialogue_has_default_inline_failure_policy;
 
 pub(crate) use super::call_target_facts::SignatureFocusedAnalysis;
 use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallTargetFactReport};
@@ -27,6 +30,10 @@ use crate::effect_model::{
 use crate::effects::EffectSet;
 use crate::env::nominal::RustPackageId;
 use crate::nominal::{GenericTypeScope, SelfTypeScope};
+use crate::propagation::{
+    CheckedReturnType, PropagationBarrierEvidence, PropagationBoundaryEvidence,
+    PropagationBoundaryKind, ReturnPropagationFrame,
+};
 use crate::style::check_view_styles;
 use crate::types::GenericTypeOwnerId;
 use crate::view_part::{ViewPartDiagnostic, check_view_parts};
@@ -703,7 +710,9 @@ impl TypeChecker<'_> {
             let expected_return = flow
                 .signature()
                 .and_then(|signature| signature.return_type())
-                .map(|ty| self.resolve_authored_type(ty, &generic_scope, SelfTypeScope::Absent));
+                .map_or(TypeKind::Unit, |ty| {
+                    self.resolve_authored_type(ty, &generic_scope, SelfTypeScope::Absent)
+                });
             if let Some(id) = flow.id() {
                 self.expect_entity_kind(id, &EntityKind::Flow, "flow id");
             }
@@ -716,7 +725,15 @@ impl TypeChecker<'_> {
                 .name()
                 .map(flow_callable_id)
                 .map(|id| self.effect_collector.enter(id));
-            self.with_expected_return(expected_return.as_ref(), |this| {
+            let signature_source = flow.signature_source();
+            let frame = self.return_boundary(
+                PropagationBoundaryKind::Flow,
+                None,
+                CheckedReturnType::Known(expected_return),
+                signature_source.header(),
+                signature_source.result(),
+            );
+            self.with_return_propagation_frame(Some(frame), |this| {
                 this.check_flow_items(flow.body());
             });
             if let Some(previous_callable) = previous_callable {
@@ -762,10 +779,14 @@ impl TypeChecker<'_> {
         let higher_order_param_scope =
             self.build_higher_order_param_scope(function, &generic_scope);
         self.bind_function_parameters(function, &generic_scope);
-        let expected_return = function
-            .signature()
-            .return_type()
-            .map(|ty| self.resolve_authored_type(ty, &generic_scope, SelfTypeScope::Absent));
+        let expected_return = Some(
+            function
+                .signature()
+                .return_type()
+                .map_or(TypeKind::Unit, |ty| {
+                    self.resolve_authored_type(ty, &generic_scope, SelfTypeScope::Absent)
+                }),
+        );
         let execution = Self::classify_callable_execution(function, expected_return.as_ref());
         for contract in function.contracts() {
             self.check_function_contract_clause(contract, expected_return.as_ref());
@@ -792,22 +813,14 @@ impl TypeChecker<'_> {
             &SelfTypeScope::Absent,
         );
         self.trait_predicate_stack.push(predicates);
-        let actual = if function.kind() == FunctionKind::Stream
-            || matches!(execution, CallableExecutionMode::StreamFactory { .. })
-        {
-            self.check_stream_function(function, expected_return.as_ref());
-            None
-        } else {
-            let actual = self.with_expected_return(expected_return.as_ref(), |this| {
-                this.check_function_body_expr(
-                    function.statements(),
-                    function.value(),
-                    expected_return.as_ref(),
-                )
-            });
-            self.connect_function_return_effect_callable(function.name(), actual.as_ref());
-            actual
-        };
+        let generator = function.kind() == FunctionKind::Stream
+            || matches!(execution, CallableExecutionMode::StreamFactory { .. });
+        let actual = self.check_function_body_in_propagation_frame(
+            function,
+            expected_return.as_ref(),
+            generator,
+            callable_declaration.as_ref(),
+        );
         self.trait_predicate_stack.pop();
         self.higher_order_param_scope_stack.pop();
         self.typed_lowering_owner = previous_typed_lowering_owner;
@@ -820,6 +833,46 @@ impl TypeChecker<'_> {
                 .push(CheckedCallableExecution::new(declaration, execution));
         }
         self.report_function_return_mismatch(function, expected_return, actual);
+    }
+
+    fn check_function_body_in_propagation_frame(
+        &mut self,
+        function: &HirFunction,
+        expected_return: Option<&TypeKind>,
+        generator: bool,
+        callable_declaration: Option<&CallableDeclarationId>,
+    ) -> Option<TypeKind> {
+        let frame = if generator {
+            self.generator_terminal(function.signature_source().signature())
+        } else {
+            Some(
+                self.return_boundary(
+                    PropagationBoundaryKind::Function,
+                    callable_declaration.cloned(),
+                    CheckedReturnType::Known(
+                        expected_return
+                            .expect("ordinary function return boundary is always checked")
+                            .clone(),
+                    ),
+                    function.signature_source().signature(),
+                    function.signature_source().result(),
+                ),
+            )
+        };
+        self.with_return_propagation_frame(frame, |this| {
+            if generator {
+                this.check_stream_function(function, expected_return);
+                None
+            } else {
+                let actual = this.check_function_body_expr(
+                    function.statements(),
+                    function.value(),
+                    expected_return,
+                );
+                this.connect_function_return_effect_callable(function.name(), actual.as_ref());
+                actual
+            }
+        })
     }
 
     fn bind_function_parameters(&mut self, function: &HirFunction, generics: &GenericTypeScope) {
@@ -1194,15 +1247,61 @@ impl TypeChecker<'_> {
         );
     }
 
-    fn with_expected_return<R>(
+    pub(super) fn with_return_propagation_frame<R>(
         &mut self,
-        expected: Option<&TypeKind>,
+        frame: Option<ReturnPropagationFrame>,
         check: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        self.expected_returns.push(expected.cloned());
+        if let Some(frame) = frame {
+            self.return_propagation_frames.push(frame);
+            let result = check(self);
+            self.return_propagation_frames.pop();
+            return result;
+        }
+
+        // A source-less synthetic owner must not leak through to an outer
+        // propagation boundary. Such fixtures are rejected when a propagation
+        // expression needs structured source evidence.
+        let outer = std::mem::take(&mut self.return_propagation_frames);
         let result = check(self);
-        self.expected_returns.pop();
+        self.return_propagation_frames = outer;
         result
+    }
+
+    pub(super) fn current_checked_return(&self) -> Option<&TypeKind> {
+        self.return_propagation_frames
+            .last()
+            .and_then(ReturnPropagationFrame::checked_return)
+    }
+
+    pub(super) fn return_boundary(
+        &self,
+        kind: PropagationBoundaryKind,
+        declaration: Option<CallableDeclarationId>,
+        checked_return: CheckedReturnType,
+        header: arcweft_lang_syntax::ast::common::TextRange,
+        result: Option<arcweft_lang_syntax::ast::common::TextRange>,
+    ) -> ReturnPropagationFrame {
+        let Some(header) = self.source_span_for_current_range(header) else {
+            return ReturnPropagationFrame::SourceLessBoundary(checked_return);
+        };
+        let result = result.and_then(|range| self.source_span_for_current_range(range));
+        ReturnPropagationFrame::Boundary(PropagationBoundaryEvidence::new(
+            kind,
+            declaration,
+            checked_return,
+            header,
+            result,
+        ))
+    }
+
+    pub(super) fn generator_terminal(
+        &self,
+        owner: arcweft_lang_syntax::ast::common::TextRange,
+    ) -> Option<ReturnPropagationFrame> {
+        self.source_span_for_current_range(owner).map(|owner| {
+            ReturnPropagationFrame::GeneratorTerminal(PropagationBarrierEvidence::new(owner))
+        })
     }
 
     fn with_runtime_for_iteration_evidence<R>(&mut self, check: impl FnOnce(&mut Self) -> R) -> R {
@@ -1751,6 +1850,7 @@ impl TypeChecker<'_> {
         for member in item.members() {
             let ImplMember::Function {
                 signature,
+                signature_source,
                 body_statements,
                 body_value,
                 ..
@@ -1775,13 +1875,25 @@ impl TypeChecker<'_> {
                     self.bind_impl_method_param(param, &self_ty, &member_generics, &self_scope);
                 }
             }
-            let expected_return = signature
-                .return_type()
-                .map(|ty| self.resolve_authored_type(ty, &member_generics, self_scope.clone()));
+            let expected_return = Some(signature.return_type().map_or(TypeKind::Unit, |ty| {
+                self.resolve_authored_type(ty, &member_generics, self_scope.clone())
+            }));
             let predicates =
                 self.trait_predicates_for_signature(signature, &member_generics, &self_scope);
             self.trait_predicate_stack.push(predicates);
-            let actual = self.with_expected_return(expected_return.as_ref(), |this| {
+            let frame = self.return_boundary(
+                PropagationBoundaryKind::Method,
+                None,
+                CheckedReturnType::Known(
+                    expected_return
+                        .as_ref()
+                        .expect("method return boundary is always checked")
+                        .clone(),
+                ),
+                signature_source.signature(),
+                signature_source.result(),
+            );
+            let actual = self.with_return_propagation_frame(Some(frame), |this| {
                 this.check_function_body_expr(
                     body_statements,
                     body_value.as_deref(),
@@ -2124,40 +2236,6 @@ impl TypeChecker<'_> {
             TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
         }
     }
-
-    fn check_dialogue_default_inline_failure_policy(
-        &mut self,
-        dialogue: &arcweft_lang_hir::model::HirDialogue,
-    ) {
-        let policy_args = dialogue
-            .args()
-            .iter()
-            .filter(|arg| {
-                matches!(
-                    arg.name(),
-                    "inline_fallback" | "inline_error" | "inline_error_policy"
-                )
-            })
-            .collect::<Vec<_>>();
-        if policy_args.len() > 1 {
-            self.errors
-                .push(TypeCheckError::inline_failure_policy_conflict(format!(
-                    "{} default inline policy",
-                    dialogue.callee()
-                )));
-        }
-        for arg in policy_args {
-            if matches!(arg.name(), "inline_error" | "inline_error_policy")
-                && let Some(policy) = unknown_default_inline_failure_policy(arg.value())
-            {
-                self.errors
-                    .push(TypeCheckError::unknown_inline_failure_policy(
-                        format!("{} default inline policy", dialogue.callee()),
-                        policy,
-                    ));
-            }
-        }
-    }
 }
 
 fn collect_flow_params(module: &HirModule) -> std::collections::HashMap<String, HashSet<String>> {
@@ -2173,109 +2251,6 @@ fn collect_flow_params(module: &HirModule) -> std::collections::HashMap<String, 
             ))
         })
         .collect()
-}
-
-fn dialogue_has_default_inline_failure_policy(
-    dialogue: &arcweft_lang_hir::model::HirDialogue,
-) -> bool {
-    dialogue.args().iter().any(|arg| {
-        matches!(
-            arg.name(),
-            "inline_fallback" | "inline_error" | "inline_error_policy"
-        )
-    })
-}
-
-fn unknown_default_inline_failure_policy(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Path(path) => unknown_default_inline_failure_atom(path),
-        Expr::ShortVariant(name) => unknown_default_inline_failure_atom(&format!(".{name}")),
-        Expr::Select(select) => match select.target() {
-            Expr::Path(namespace) => {
-                unknown_default_inline_failure_field(namespace.as_label(), select.member().as_str())
-            }
-            _ => None,
-        },
-        Expr::Call(call) => unknown_default_inline_failure_constructor(call.callee(), call.args()),
-        _ => None,
-    }
-}
-
-fn unknown_default_inline_failure_constructor(
-    callee: &Expr,
-    args: &[arcweft_lang_syntax::expr::CallArg],
-) -> Option<String> {
-    let constructor = match callee {
-        Expr::Path(path) if path == "fallback" => "fallback",
-        Expr::Select(select) if matches!(select.target(), Expr::Path(namespace) if namespace == "InlineFailure") => {
-            select.member().as_str()
-        }
-        _ => return None,
-    };
-    if constructor != "fallback" {
-        return Some(default_inline_policy_label(callee));
-    }
-    args.iter().find_map(|arg| match arg {
-        arcweft_lang_syntax::expr::CallArg::Positional(value) => {
-            unknown_default_inline_fallback_value(value)
-        }
-        arcweft_lang_syntax::expr::CallArg::Named { name, value }
-            if name == "value" || name == "text" =>
-        {
-            unknown_default_inline_fallback_value(value)
-        }
-        arcweft_lang_syntax::expr::CallArg::Named { .. }
-        | arcweft_lang_syntax::expr::CallArg::Spread { .. } => None,
-    })
-}
-
-fn unknown_default_inline_fallback_value(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Path(path) => unknown_default_inline_fallback_atom(path),
-        Expr::ShortVariant(name) => unknown_default_inline_fallback_atom(&format!(".{name}")),
-        Expr::Select(select) => match select.target() {
-            Expr::Path(namespace) => unknown_default_inline_fallback_field(
-                namespace.as_label(),
-                select.member().as_str(),
-            ),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn unknown_default_inline_failure_atom(path: &str) -> Option<String> {
-    let variant = path.strip_prefix('.')?;
-    (!matches!(variant, "fail" | "discard" | "line_error")).then(|| path.to_owned())
-}
-
-fn unknown_default_inline_failure_field(namespace: &str, field: &str) -> Option<String> {
-    (namespace == "InlineFailure" && !matches!(field, "fail" | "discard" | "line_error"))
-        .then(|| format!("{namespace}.{field}"))
-}
-
-fn unknown_default_inline_fallback_atom(path: &str) -> Option<String> {
-    let variant = path.strip_prefix('.')?;
-    (!matches!(variant, "expr_source" | "call_source" | "value_plain")).then(|| path.to_owned())
-}
-
-fn unknown_default_inline_fallback_field(namespace: &str, field: &str) -> Option<String> {
-    (namespace == "InlineFallback"
-        && !matches!(field, "expr_source" | "call_source" | "value_plain"))
-    .then(|| format!("{namespace}.{field}"))
-}
-
-fn default_inline_policy_label(expr: &Expr) -> String {
-    match expr {
-        Expr::Path(path) => path.as_label().to_owned(),
-        Expr::ShortVariant(name) => format!(".{name}"),
-        Expr::Select(select) => format!(
-            "{}.{}",
-            default_inline_policy_label(select.target()),
-            select.member().as_str()
-        ),
-        _ => format!("{expr:?}"),
-    }
 }
 
 fn type_ref_contains_choice(ty: &TypeRef) -> bool {

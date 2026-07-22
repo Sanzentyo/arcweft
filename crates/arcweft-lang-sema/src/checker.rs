@@ -30,6 +30,7 @@ use crate::lifetime::{
     collect_type_kind_lifetimes, lifetime_key, lifetime_value_type, type_contains_borrow_ref,
 };
 use crate::nominal::{GenericTypeScope, NominalResolutionIndex, SelfTypeScope};
+use crate::propagation::ReturnPropagationFrame;
 use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 use crate::traits::{
     ProjectionError, TraitCatalog, TraitPredicate, collect_trait_catalog,
@@ -116,8 +117,9 @@ use signature::{
 /// This is not the type checker. It is the parser/HIR contract check that keeps
 /// later name resolution and type checking from silently reparsing source text.
 pub fn validate_typecheck_ready(module: &HirModule) -> Result<(), Vec<TypeCheckReadinessError>> {
-    let errors = collect_symbol_uses(module)
-        .into_iter()
+    let uses = collect_symbol_uses(module);
+    let mut errors = uses
+        .iter()
         .filter(|symbol| symbol.kind() == SymbolUseKind::RawExpr)
         .map(|symbol| {
             TypeCheckReadinessError::new(format!(
@@ -126,6 +128,16 @@ pub fn validate_typecheck_ready(module: &HirModule) -> Result<(), Vec<TypeCheckR
             ))
         })
         .collect::<Vec<_>>();
+
+    if module.source_document().is_none()
+        && uses
+            .iter()
+            .any(|symbol| symbol.kind() == SymbolUseKind::PropagationOperator)
+    {
+        errors.push(TypeCheckReadinessError::new(
+            "error propagation requires HIR bound to an exact source document".to_owned(),
+        ));
+    }
 
     if errors.is_empty() {
         Ok(())
@@ -641,7 +653,7 @@ struct TypeChecker<'a> {
     effect_collector: EffectCollector,
     assertion_effect_conditions: BTreeMap<CallableId, usize>,
     next_assertion_effect_scope: u64,
-    expected_returns: Vec<Option<TypeKind>>,
+    return_propagation_frames: Vec<ReturnPropagationFrame>,
     partial_placeholder_stack: Vec<TypeKind>,
     pipe_left_stack: Vec<PipeLeftBinding>,
     allow_inferred_signature_partial_calls: bool,
@@ -1042,7 +1054,7 @@ impl<'a> TypeChecker<'a> {
             effect_collector: EffectCollector::new(available_effect_set(env)),
             assertion_effect_conditions: BTreeMap::new(),
             next_assertion_effect_scope: 0,
-            expected_returns: Vec::new(),
+            return_propagation_frames: Vec::new(),
             partial_placeholder_stack: Vec::new(),
             pipe_left_stack: Vec::new(),
             allow_inferred_signature_partial_calls: true,

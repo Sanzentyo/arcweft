@@ -15,6 +15,13 @@ use arcweft_lang_syntax::{
 
 impl TypeChecker<'_> {
     pub(super) fn check_source_item(&mut self, item: &SourceItem) {
+        let frame = self.generator_terminal(*item.range());
+        self.with_return_propagation_frame(frame, |this| {
+            this.check_source_generator(item);
+        });
+    }
+
+    fn check_source_generator(&mut self, item: &SourceItem) {
         if item.name().is_some() {
             self.errors.push(TypeCheckError::new(
                 "function-like `source name() -> Source<T, E>` is not canonical; use `source @source.id: Source<T, E> { ... }`".to_owned(),

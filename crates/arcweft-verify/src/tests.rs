@@ -40,6 +40,31 @@ fn promotion_without_proof_is_an_obligation() {
 }
 
 #[test]
+fn verifier_projects_prefix_and_postfix_try_to_the_same_obligations() {
+    let prefix = report(
+        "flow @flow.opening opening {\n  let summary = try promote('flow)\n}\n",
+        VerificationMode::Test,
+    );
+    let postfix = report(
+        "flow @flow.opening opening {\n  let summary = promote('flow)?\n}\n",
+        VerificationMode::Test,
+    );
+
+    assert_eq!(prefix.obligations.len(), postfix.obligations.len());
+    for (prefix, postfix) in prefix.obligations.iter().zip(&postfix.obligations) {
+        assert_eq!(prefix.kind, postfix.kind);
+        assert_eq!(prefix.discharge, postfix.discharge);
+        assert_eq!(prefix.subject, postfix.subject);
+    }
+    assert_eq!(prefix.diagnostics.len(), postfix.diagnostics.len());
+    for (prefix, postfix) in prefix.diagnostics.iter().zip(&postfix.diagnostics) {
+        assert_eq!(prefix.id, postfix.id);
+        assert_eq!(prefix.severity, postfix.severity);
+        assert_eq!(prefix.obligation, postfix.obligation);
+    }
+}
+
+#[test]
 fn prove_assertion_conditions_create_ordered_unresolved_obligations() {
     let source = "flow assertions {\n  assert.prove(true, false)\n}\n";
     let report = report(source, VerificationMode::Test);

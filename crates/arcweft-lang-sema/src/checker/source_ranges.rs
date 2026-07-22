@@ -66,7 +66,9 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn source_span_for_current_range(&self, range: TextRange) -> Option<SourceSpan> {
-        let module = self.current_module.as_ref()?;
+        let Some(module) = self.current_module.as_ref() else {
+            return self.checked_module.source_span(range);
+        };
         self.checked_module
             .project_source_span(module, range)
             .or_else(|| {
@@ -77,8 +79,10 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn source_document_for_current_module(&self) -> Option<&SourceDocument> {
-        let module = self.current_module.as_ref()?;
-        self.checked_module.project_source_document(module)
+        self.current_module.as_ref().map_or_else(
+            || self.checked_module.source_document(),
+            |module| self.checked_module.project_source_document(module),
+        )
     }
 
     pub(super) fn source_span_for_expr(&self, expr: &Expr) -> Option<SourceSpan> {

@@ -63,7 +63,10 @@ fn parse_trigger_call(
                 let rest = args.drain(1..).collect::<Vec<_>>().join(", ");
                 parse_pattern(rest.trim())
             });
-            Some(TriggerPattern::Signal { target, value })
+            Some(TriggerPattern::Signal {
+                target,
+                value: Box::new(value),
+            })
         }
         "disconnected" if args.is_empty() => {
             Some(TriggerPattern::Event(parse_pattern("disconnected")))

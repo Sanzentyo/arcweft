@@ -797,24 +797,24 @@ pub image card {
   visible = true
 }
 
-flow manual_live {
+flow manual_live() -> String {
   let sprite = image(@image.card, lifetime = .manual)
   return "mounted"
 }
 
-flow manual_released {
+flow manual_released() -> String {
   let sprite = image(@image.card, lifetime = .manual)
   sprite.release()
   return "released"
 }
 
-flow manual_destroyed {
+flow manual_destroyed() -> String {
   let sprite = image(@image.card, lifetime = .manual)
   sprite.destroy()
   return "destroyed"
 }
 
-flow scoped_disposed {
+flow scoped_disposed() -> String {
   let sprite = image(@image.card)
   return "disposed"
 }
@@ -845,30 +845,30 @@ view WebPanel() {
   }
 }
 
-flow view_manual_live {
+flow view_manual_live() -> String {
   let panel = view(@view.WebPanel, lifetime = .manual)
   return "mounted"
 }
 
-flow view_manual_released {
+flow view_manual_released() -> String {
   let panel = view(@view.WebPanel, lifetime = .manual)
   panel.release()
   return "released"
 }
 
-flow view_manual_unmounted {
+flow view_manual_unmounted() -> String {
   let panel = view(@view.WebPanel, lifetime = .manual)
   panel.unmount()
   return "unmounted"
 }
 
-flow view_manual_destroyed {
+flow view_manual_destroyed() -> String {
   let panel = view(@view.WebPanel, lifetime = .manual)
   panel.destroy()
   return "destroyed"
 }
 
-flow view_scoped_disposed {
+flow view_scoped_disposed() -> String {
   let panel = view(@view.WebPanel)
   return "disposed"
 }

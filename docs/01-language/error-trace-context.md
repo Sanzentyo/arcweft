@@ -191,9 +191,9 @@ let bg = (await asset.image(@asset:.bg.room) with:
 ).context("while loading opening background")?
 ```
 
-`await? expr with:` is accepted as prefix sugar for `try await expr with:`, but
-diagnostics and formatter output should prefer `try await` unless the user
-explicitly asks for prefix-`?` style.
+`await? expr with:` has the same propagation semantics as `try await expr
+with:`. Diagnostics retain the exact authored operator range, and formatters
+preserve the authored spelling rather than canonicalizing between the two.
 
 Rejected because postfix `?` groups with the expression before `with:`:
 

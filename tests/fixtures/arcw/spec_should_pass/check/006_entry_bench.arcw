@@ -2,6 +2,6 @@ entry bench @entry.bench {
     goto @flow.main
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     return "bench"
 }

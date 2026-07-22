@@ -33,7 +33,6 @@ fn contract_fixture_environment() -> TypeCheckEnv {
     ]
     .into_iter()
     .fold(TypeCheckEnv::standard(), accept_fixture_domain_type);
-    environment = accept_fixture_opaque_domain_type(environment, "Ref", 1);
     environment = accept_fixture_opaque_domain_type(environment, "ChoiceOption", 0);
     environment.nominal_records.insert(
         "ChoiceView".to_owned(),
@@ -49,11 +48,7 @@ fn contract_fixture_environment() -> TypeCheckEnv {
     );
     environment.nominal_records.insert(
         "Summary".to_owned(),
-        [(
-            "route".to_owned(),
-            fixture_accepted_type("Ref", [TypeKind::Named("Flow".to_owned())]),
-        )]
-        .into(),
+        [("route".to_owned(), TypeKind::entity_ref(EntityKind::Flow))].into(),
     );
     environment
 }
@@ -88,13 +83,6 @@ fn accept_fixture_opaque_domain_type(
     environment
         .try_with_nominal_record(record)
         .expect("fixture domain type has a distinct path")
-}
-
-fn fixture_accepted_type(name: &str, arguments: impl Into<Box<[TypeKind]>>) -> TypeKind {
-    TypeKind::AcceptedNominal(crate::types::AcceptedNominalType::new(
-        fixture_nominal_id(name),
-        arguments,
-    ))
 }
 
 fn fixture_nominal_id(name: &str) -> crate::env::nominal::AcceptedNominalId {
@@ -132,7 +120,20 @@ fn assert_check_pipeline(path: &Path) {
         parsed.errors(),
     );
     let tree = parsed.into_typed_tree();
-    let hir = lower_to_hir(&tree)
+    let label = path
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .expect("fixture filename is UTF-8");
+    let document = arcweft_source::SourceDocument::try_new(
+        arcweft_source::SourceDocumentId::try_new(format!(
+            "memory:///contract-fixtures/{label}.arcw"
+        ))
+        .expect("valid fixture document ID"),
+        arcweft_source::SourceName::Generated,
+        source.as_str(),
+    )
+    .expect("valid fixture source document");
+    let hir = lower_document_to_hir(&document, &tree)
         .unwrap_or_else(|errors| panic!("{} HIR errors: {errors:?}", path.display()));
     let registry = registry_from_hir(&hir);
     validate_hir_references(&hir, &registry)

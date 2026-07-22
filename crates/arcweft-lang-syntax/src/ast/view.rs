@@ -118,7 +118,7 @@ pub struct ViewLet {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ViewButtonLabel {
     Literal(String),
-    Expr(Expr),
+    Expr(Box<Expr>),
     Empty,
 }
 
@@ -220,7 +220,7 @@ pub enum ViewAwaitBranchKind {
 pub enum ViewModifier {
     Style(ViewStyleModifier),
     /// Applies one typed `#[fx] fn -> Fx` call to the preceding View value.
-    Fx(ViewFxApplication),
+    Fx(Box<ViewFxApplication>),
     Part(ViewPartModifier),
     Label(Expr),
     AgentTarget(EntityRefSyntax),
@@ -1837,7 +1837,10 @@ fn expression_path_is(expr: &Expr, segments: &[&str]) -> bool {
 
 fn first_positional_entity_arg(args: &[CallArg]) -> Option<&EntityRefSyntax> {
     args.iter().find_map(|arg| match arg {
-        CallArg::Positional(Expr::EntityRef(reference)) => Some(reference),
-        CallArg::Named { .. } | CallArg::Spread { .. } | CallArg::Positional(_) => None,
+        CallArg::Positional(expr) => match expr.as_ref() {
+            Expr::EntityRef(reference) => Some(reference),
+            _ => None,
+        },
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
     })
 }

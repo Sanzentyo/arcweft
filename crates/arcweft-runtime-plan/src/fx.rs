@@ -235,7 +235,12 @@ impl<'a> FxGraphCompiler<'a> {
         args: &[CallArg],
         bindings: &BTreeMap<String, FxStaticValue>,
     ) -> Result<FxNode, RuntimePlanLowerError> {
-        let [CallArg::Positional(Expr::BracketSeq(children))] = args else {
+        let [CallArg::Positional(value)] = args else {
+            return Err(RuntimePlanLowerError::new(
+                "Fx.stack requires one ordered graph list".to_owned(),
+            ));
+        };
+        let Expr::BracketSeq(children) = value.as_ref() else {
             return Err(RuntimePlanLowerError::new(
                 "Fx.stack requires one ordered graph list".to_owned(),
             ));

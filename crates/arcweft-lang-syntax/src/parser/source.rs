@@ -183,11 +183,11 @@ fn parse_source_header(line: &str, base: usize) -> Option<SourceHeader> {
     if let Some(rest) = line.strip_prefix("from ") {
         let source = rest.trim();
         let start = base + slice_offset(line, source);
-        return Some(SourceHeader::From(AuthoredExpr::with_source(
+        return Some(SourceHeader::From(Box::new(AuthoredExpr::with_source(
             parse_expr_lossy(source),
             source.to_owned(),
             Some(TextRange::new(start, start + source.len())),
-        )));
+        ))));
     }
     let (key, value) = split_top_level_binding(line)?;
     let value = value.trim();

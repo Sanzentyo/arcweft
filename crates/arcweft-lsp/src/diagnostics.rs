@@ -697,6 +697,93 @@ mod tests {
     }
 
     #[test]
+    fn propagation_diagnostics_project_exact_try_and_await_operators() {
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        for (parameter_type, expression, code, utf16, utf8) in [
+            (
+                "Result<i64, String>",
+                "try value",
+                "sema.try.error_mismatch",
+                12..15,
+                14..17,
+            ),
+            (
+                "Result<i64, String>",
+                "value?",
+                "sema.try.error_mismatch",
+                17..18,
+                19..20,
+            ),
+            (
+                "Need<i64, String>",
+                "try await value",
+                "sema.await.error_mismatch",
+                12..15,
+                14..17,
+            ),
+            (
+                "Need<i64, String>",
+                "await? value",
+                "sema.await.error_mismatch",
+                17..18,
+                19..20,
+            ),
+        ] {
+            let source = format!(
+                "fn demo(value: {parameter_type}) -> Result<i64, i64> {{\n    let 前 = {expression}\n    Ok(前)\n}}\n"
+            );
+            let result_start = source
+                .find("Result<i64, i64>")
+                .expect("fixture declares a Result return");
+            let result_end = result_start + "Result<i64, i64>".len();
+            let result_start = u32::try_from(result_start).expect("fixture position fits LSP");
+            let result_end = u32::try_from(result_end).expect("fixture position fits LSP");
+            for (encoding, expected) in [
+                (PositionEncoding::Utf16, utf16.clone()),
+                (PositionEncoding::Utf8, utf8.clone()),
+            ] {
+                let analysis = DocumentAnalysis::analyze(&source, encoding, &profile);
+                let diagnostic = analysis
+                    .diagnostics()
+                    .iter()
+                    .find(|diagnostic| {
+                        diagnostic.code == Some(NumberOrString::String(code.to_owned()))
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "missing {code} for {expression} under {encoding:?}: {:#?}",
+                            analysis.diagnostics()
+                        )
+                    });
+
+                assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+                assert_eq!(
+                    diagnostic.range,
+                    Range::new(
+                        Position::new(1, expected.start),
+                        Position::new(1, expected.end),
+                    )
+                );
+                let related = diagnostic
+                    .related_information
+                    .as_ref()
+                    .expect("return boundary is projected as related information");
+                assert!(
+                    related.iter().any(|information| {
+                        information.message == "enclosing return error is declared here"
+                            && information.location.range
+                                == Range::new(
+                                    Position::new(0, result_start),
+                                    Position::new(0, result_end),
+                                )
+                    }),
+                    "related propagation boundary was {related:#?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn diagnostics_do_not_bypass_registered_callable_catalog() {
         let source = r#"
 flow @.main main {

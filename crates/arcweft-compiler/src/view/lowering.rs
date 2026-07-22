@@ -1283,7 +1283,7 @@ fn lower_fx_application(
                             ),
                         }
                     })?;
-                    (name.clone(), value, *expected)
+                    (name.clone(), value.as_ref(), *expected)
                 }
                 CallArg::Spread { value } => {
                     return Err(ViewValueCompileError::UnsupportedExpression {

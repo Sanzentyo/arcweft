@@ -621,8 +621,7 @@ impl ViewValueProgramCompiler {
         let args = args
             .iter()
             .map(|argument| match argument {
-                CallArg::Positional(value) => Ok(value),
-                CallArg::Named { value, .. } => Ok(value.as_ref()),
+                CallArg::Positional(value) | CallArg::Named { value, .. } => Ok(value.as_ref()),
                 CallArg::Spread { value } => Err(unsupported(value)),
             })
             .collect::<Result<Vec<_>, _>>()?;

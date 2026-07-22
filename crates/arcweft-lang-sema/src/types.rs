@@ -22,6 +22,7 @@ pub use nominal::{
     AcceptedNominalType, DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId,
     OpenNominalType, ProjectNominalType, TypePoisonId,
 };
+pub(crate) use substitution::TypeParameterSubstitutions;
 
 /// Statically known or deliberately unresolved length of an array type.
 ///
@@ -137,49 +138,99 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
+    /// Fixed entity families that may appear as contextual authored type atoms.
+    pub const AUTHORED_FAMILIES: &'static [Self] = &[
+        Self::Agent,
+        Self::Entry,
+        Self::Flow,
+        Self::Choice,
+        Self::ChoiceOption,
+        Self::Character,
+        Self::View,
+        Self::Action,
+        Self::Activity,
+        Self::DialogueLine,
+        Self::Text,
+        Self::Content,
+        Self::Input,
+        Self::Button,
+        Self::Style,
+        Self::Asset,
+        Self::Image,
+        Self::Animation,
+        Self::Capture,
+        Self::Hook,
+        Self::Signal,
+        Self::Metric,
+        Self::Scene,
+        Self::Source,
+        Self::Test,
+        Self::Bench,
+        Self::Layer,
+        Self::Voice,
+        Self::Se,
+        Self::Bgm,
+        Self::AudioBus,
+        Self::MixerSnapshot,
+        Self::Ducking,
+        Self::Motion,
+        Self::Rig,
+        Self::Slot,
+        Self::Target,
+    ];
+
+    /// Canonical source spelling for a fixed authored entity family.
+    #[must_use]
+    pub const fn authored_type_name(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::Agent => "Agent",
+            Self::Entry => "Entry",
+            Self::Flow => "Flow",
+            Self::Choice => "Choice",
+            Self::ChoiceOption => "ChoiceOption",
+            Self::Character => "Character",
+            Self::View => "View",
+            Self::Action => "Action",
+            Self::Activity => "Activity",
+            Self::DialogueLine => "DialogueLine",
+            Self::Text => "Text",
+            Self::Content => "Content",
+            Self::Input => "Input",
+            Self::Button => "Button",
+            Self::Style => "Style",
+            Self::Asset => "Asset",
+            Self::Image => "Image",
+            Self::Animation => "Animation",
+            Self::Capture => "Capture",
+            Self::Hook => "Hook",
+            Self::Signal => "Signal",
+            Self::Metric => "Metric",
+            Self::Scene => "Scene",
+            Self::Source => "Source",
+            Self::Test => "Test",
+            Self::Bench => "Bench",
+            Self::Layer => "Layer",
+            Self::Voice => "Voice",
+            Self::Se => "Se",
+            Self::Bgm => "Bgm",
+            Self::AudioBus => "AudioBus",
+            Self::MixerSnapshot => "MixerSnapshot",
+            Self::Ducking => "Ducking",
+            Self::Motion => "Motion",
+            Self::Rig => "Rig",
+            Self::Slot => "Slot",
+            Self::Target => "Target",
+            Self::Other(_) => return None,
+        })
+    }
+
     /// Resolves the canonical Arcweft type name for an entity family.
     #[must_use]
     pub fn from_type_name(name: &str) -> Option<Self> {
-        Some(match name {
-            "Agent" => Self::Agent,
-            "Entry" => Self::Entry,
-            "Flow" => Self::Flow,
-            "Choice" => Self::Choice,
-            "ChoiceOption" => Self::ChoiceOption,
-            "Character" => Self::Character,
-            "View" => Self::View,
-            "Action" => Self::Action,
-            "Activity" => Self::Activity,
-            "DialogueLine" => Self::DialogueLine,
-            "Text" => Self::Text,
-            "Content" => Self::Content,
-            "Input" => Self::Input,
-            "Button" => Self::Button,
-            "Style" => Self::Style,
-            "Asset" => Self::Asset,
-            "Image" => Self::Image,
-            "Animation" => Self::Animation,
-            "Capture" => Self::Capture,
-            "Hook" => Self::Hook,
-            "Signal" => Self::Signal,
-            "Metric" => Self::Metric,
-            "Scene" => Self::Scene,
-            "Source" => Self::Source,
-            "Test" => Self::Test,
-            "Bench" => Self::Bench,
-            "Layer" => Self::Layer,
-            "Voice" => Self::Voice,
-            "Se" => Self::Se,
-            "Bgm" => Self::Bgm,
-            "AudioBus" => Self::AudioBus,
-            "MixerSnapshot" => Self::MixerSnapshot,
-            "Ducking" => Self::Ducking,
-            "Motion" => Self::Motion,
-            "Rig" => Self::Rig,
-            "Slot" => Self::Slot,
-            "Target" => Self::Target,
-            _ => return None,
-        })
+        Self::AUTHORED_FAMILIES
+            .iter()
+            .find(|family| family.authored_type_name() == Some(name))
+            .cloned()
     }
 }
 
@@ -921,6 +972,22 @@ impl fmt::Display for TypeKind {
 #[cfg(test)]
 mod speaker_line_tests {
     use super::{EntityKind, SpeakerLineType, TypeKind};
+
+    #[test]
+    fn authored_entity_families_round_trip_without_other() {
+        assert!(!EntityKind::AUTHORED_FAMILIES.is_empty());
+        for family in EntityKind::AUTHORED_FAMILIES {
+            let name = family
+                .authored_type_name()
+                .expect("the authored inventory contains only fixed families");
+            assert_eq!(EntityKind::from_type_name(name).as_ref(), Some(family));
+        }
+        assert_eq!(
+            EntityKind::Other("Plugin".to_owned()).authored_type_name(),
+            None
+        );
+        assert_eq!(EntityKind::from_type_name("Plugin"), None);
+    }
 
     #[test]
     fn semantic_types_are_the_only_speaker_line_classifier() {

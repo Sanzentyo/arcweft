@@ -16,6 +16,6 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.generation_edge generation_edge {
+flow @flow.generation_edge generation_edge() -> String {
     return "done"
 }

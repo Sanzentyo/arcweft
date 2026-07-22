@@ -2,6 +2,6 @@ flow @flow.main main {
     goto @flow.done
 }
 
-flow @flow.done done {
+flow @flow.done done() -> String {
     return "done"
 }

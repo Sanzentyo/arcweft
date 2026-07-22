@@ -767,6 +767,7 @@ fn assert_mappable_impl(item: &Item) {
             body,
             body_statements,
             body_value,
+            ..
         }
             if signature.name() == "map"
                 && signature
@@ -872,14 +873,13 @@ fn parses_self_receiver_and_function_type_parameters() {
 
 #[test]
 fn parses_task_fn_as_structured_function_item() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 task fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let bg = try await load_bg()
     Ok(OpeningAssets { bg })
 }
-",
-    );
+";
+    let tree = parse_ok(source);
 
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected task function item");
@@ -902,7 +902,7 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
         Some(Expr::Call(call)) if matches!(call.callee(), Expr::Path(path) if path == "Ok")
     ));
 
-    let hir = lower_to_hir(&tree).expect("task function lowers");
+    let hir = lower_bound_hir("structured-task-function", source);
     assert_eq!(hir.functions().len(), 1);
     assert_eq!(hir.functions()[0].kind(), FunctionKind::Task);
     validate_typecheck_ready(&hir).expect("task function body has structured expressions");
@@ -1005,15 +1005,13 @@ source @source:. metrics() {
 
 #[test]
 fn typechecks_structured_function_body_for_hir_readiness() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 fn load_score() -> Result<i32, ScoreError> {
     let score = read_score()?
     return Ok(score)
 }
-",
-    );
-    let hir = lower_to_hir(&tree).expect("function lowers");
+";
+    let hir = lower_bound_hir("structured-function-try", source);
 
     assert_eq!(hir.functions().len(), 1);
     assert!(matches!(

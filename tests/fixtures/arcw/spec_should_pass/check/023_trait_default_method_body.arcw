@@ -2,4 +2,4 @@ pub trait Named {
     fn name(self) -> String
 }
 
-flow @flow.main main { return "done" }
+flow @flow.main main() -> String { return "done" }

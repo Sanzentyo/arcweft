@@ -7,7 +7,8 @@ use super::document::ShadowDocumentParser;
 use super::path::emit_path;
 use super::rich_text_grammar::emit_dialogue_rich_text;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_open_delimiter, find_top_level_boundary, trimmed_end,
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
+    find_top_level_boundary, trimmed_end,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -558,7 +559,11 @@ fn emit_try(
 ) -> CompletedNode {
     parser.insert_start(left.start_event, SyntaxKind::TryExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::Operand);
-    parser.bump();
+    if parser.at("?") {
+        parser.bump();
+    } else {
+        emit_missing_delimiter(parser, SyntaxKind::MissingTokenNode, SyntaxRole::Token);
+    }
     parser.finish();
     CompletedNode {
         start_event: left.start_event,
@@ -592,4 +597,40 @@ const fn is_literal(kind: SyntaxKind) -> bool {
             | SyntaxKind::RawStringToken
             | SyntaxKind::CharacterToken
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::grammar::budget::GrammarBudget;
+    use crate::grammar::event::SyntaxEvent;
+    use crate::parser::lexer::DocumentLexer;
+
+    #[test]
+    fn selected_postfix_try_slot_recovers_a_missing_operator_at_operand_end() {
+        let source = "value";
+        let tokens = DocumentLexer::new(source).lex();
+        let mut events = Vec::new();
+        let mut budget = GrammarBudget::default();
+        {
+            let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+
+            let operand =
+                parse_prefix_with_dialogue(&mut parser, tokens.len(), SyntaxRole::Element(0), None);
+            assert!(parser.is_at_end());
+            emit_try(&mut parser, operand, SyntaxRole::Element(0));
+        }
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            SyntaxEvent::StartNode {
+                kind: SyntaxKind::MissingTokenNode,
+                role: SyntaxRole::Token,
+            }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            SyntaxEvent::MissingToken { at, .. } if *at == source.len()
+        )));
+    }
 }

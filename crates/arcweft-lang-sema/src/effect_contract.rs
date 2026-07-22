@@ -131,7 +131,7 @@ fn append_scope(base: String, args: &[CallArg]) -> Result<String, EffectContract
 
 fn effect_scope_arg(argument: &CallArg) -> Result<String, EffectContractLowerError> {
     let expression = match argument {
-        CallArg::Positional(expression) => expression,
+        CallArg::Positional(expression) => expression.as_ref(),
         CallArg::Named { value, .. } | CallArg::Spread { value } => {
             return Err(EffectContractLowerError::UnsupportedScopeArgument {
                 expr: value.clone(),

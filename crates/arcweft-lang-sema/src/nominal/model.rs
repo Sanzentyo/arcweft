@@ -4,7 +4,7 @@ use arcweft_lang_hir::symbol::{
     ExternalDeclarationId, ProjectTypeCandidate, nominal::ProjectNominalDeclarationId,
 };
 use arcweft_lang_syntax::{
-    ast::common::TextRange,
+    ast::{common::TextRange, module_path::ModulePathRoot},
     types::{TypePath, TypeRefNodePath},
 };
 use arcweft_source::SourceSpan;
@@ -64,6 +64,7 @@ pub enum BuiltinTypeConstructor {
     Need,
     Stream,
     Source,
+    Ref,
     Speaker,
     SpeakerPreset,
 }
@@ -225,6 +226,14 @@ pub enum TypeArgumentExpectation {
     EntityFamily,
 }
 
+/// Semantic category supplied to one authored type-constructor argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TypeArgumentKind {
+    Type(TypeKind),
+    ConstInt(usize),
+    EntityFamily(EntityKind),
+}
+
 /// Typed evidence retained when a detached world cannot prove a project name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DetachedNominalEvidence {
@@ -262,7 +271,7 @@ pub enum TypeResolutionFailure {
         target: TypeArityTarget,
         argument: u16,
         expected: TypeArgumentExpectation,
-        actual: TypeKind,
+        actual: TypeArgumentKind,
     },
     WrongArity {
         target: TypeArityTarget,
@@ -315,6 +324,52 @@ impl TypeSourceEvidence {
 }
 
 impl BuiltinTypeConstructor {
+    /// Complete deterministic language-owned constructor inventory.
+    pub const ALL: &'static [Self] = &[
+        Self::Bool,
+        Self::I8,
+        Self::I16,
+        Self::I32,
+        Self::I64,
+        Self::I128,
+        Self::ISize,
+        Self::U8,
+        Self::U16,
+        Self::U32,
+        Self::U64,
+        Self::U128,
+        Self::USize,
+        Self::F32,
+        Self::F64,
+        Self::String,
+        Self::Char,
+        Self::Bytes,
+        Self::Unit,
+        Self::Never,
+        Self::Vec,
+        Self::Slice,
+        Self::Seq,
+        Self::Option,
+        Self::Probe,
+        Self::ThreadHandle,
+        Self::Shared,
+        Self::Array,
+        Self::OrderedMap,
+        Self::SortedMap,
+        Self::BTreeMap,
+        Self::Result,
+        Self::Need,
+        Self::Stream,
+        Self::Source,
+        Self::Ref,
+        Self::Speaker,
+        Self::SpeakerPreset,
+    ];
+
+    /// Constructors whose sole argument is a contextual entity-family atom.
+    pub const ENTITY_FAMILY_PROJECTIONS: &'static [Self] =
+        &[Self::Ref, Self::Speaker, Self::SpeakerPreset];
+
     /// Canonical reserved source spelling.
     pub const fn spelling(self) -> &'static str {
         match self {
@@ -353,6 +408,7 @@ impl BuiltinTypeConstructor {
             Self::Need => "Need",
             Self::Stream => "Stream",
             Self::Source => "Source",
+            Self::Ref => "Ref",
             Self::Speaker => "Speaker",
             Self::SpeakerPreset => "SpeakerPreset",
         }
@@ -388,6 +444,7 @@ impl BuiltinTypeConstructor {
             | Self::Probe
             | Self::ThreadHandle
             | Self::Shared
+            | Self::Ref
             | Self::Speaker
             | Self::SpeakerPreset => 1,
             Self::Array
@@ -399,6 +456,82 @@ impl BuiltinTypeConstructor {
             | Self::Stream
             | Self::Source => 2,
         }
+    }
+
+    /// Selects one unqualified language-owned constructor from an authored path.
+    #[must_use]
+    pub fn from_type_path(path: &TypePath) -> Option<Self> {
+        if path.root() != ModulePathRoot::ImplicitCrate {
+            return None;
+        }
+        let [segment] = path.segments() else {
+            return None;
+        };
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|constructor| constructor.spelling() == segment.as_str())
+    }
+
+    /// Expected semantic category for an in-range constructor argument.
+    #[must_use]
+    pub const fn argument_expectation(self, index: u16) -> Option<TypeArgumentExpectation> {
+        if index >= self.arity() {
+            return None;
+        }
+        Some(match (self, index) {
+            (Self::Array, 1) => TypeArgumentExpectation::ConstInt,
+            (Self::Ref | Self::Speaker | Self::SpeakerPreset, 0) => {
+                TypeArgumentExpectation::EntityFamily
+            }
+            _ => TypeArgumentExpectation::Type,
+        })
+    }
+
+    /// Projects a contextual entity-family atom through this closed constructor.
+    #[must_use]
+    pub fn project_entity_family(self, family: EntityKind) -> Option<TypeKind> {
+        Some(match self {
+            Self::Ref => TypeKind::entity_ref(family),
+            Self::Speaker => TypeKind::Speaker(family),
+            Self::SpeakerPreset => TypeKind::SpeakerPreset(family),
+            _ => return None,
+        })
+    }
+}
+
+impl TypeArgumentKind {
+    pub(crate) fn stable_ordering(&self, other: &Self) -> core::cmp::Ordering {
+        fn rank(value: &TypeArgumentKind) -> u8 {
+            match value {
+                TypeArgumentKind::Type(_) => 0,
+                TypeArgumentKind::ConstInt(_) => 1,
+                TypeArgumentKind::EntityFamily(_) => 2,
+            }
+        }
+
+        rank(self)
+            .cmp(&rank(other))
+            .then_with(|| match (self, other) {
+                (Self::Type(left), Self::Type(right)) => left.stable_ordering(right),
+                (Self::ConstInt(left), Self::ConstInt(right)) => left.cmp(right),
+                (Self::EntityFamily(left), Self::EntityFamily(right)) => {
+                    entity_family_ordering(left, right)
+                }
+                _ => core::cmp::Ordering::Equal,
+            })
+    }
+}
+
+fn entity_family_ordering(left: &EntityKind, right: &EntityKind) -> core::cmp::Ordering {
+    match (left.authored_type_name(), right.authored_type_name()) {
+        (Some(left), Some(right)) => left.cmp(right),
+        (Some(_), None) => core::cmp::Ordering::Less,
+        (None, Some(_)) => core::cmp::Ordering::Greater,
+        (None, None) => match (left, right) {
+            (EntityKind::Other(left), EntityKind::Other(right)) => left.cmp(right),
+            _ => core::cmp::Ordering::Equal,
+        },
     }
 }
 
@@ -764,13 +897,59 @@ mod tests {
 
     #[test]
     fn builtin_table_has_contractual_spellings_and_arities() {
+        assert_eq!(
+            BuiltinTypeConstructor::ALL
+                .iter()
+                .filter(|constructor| **constructor == BuiltinTypeConstructor::Ref)
+                .count(),
+            1
+        );
         assert_eq!(BuiltinTypeConstructor::Bool.spelling(), "bool");
         assert_eq!(BuiltinTypeConstructor::Bool.arity(), 0);
         assert_eq!(BuiltinTypeConstructor::Vec.arity(), 1);
         assert_eq!(BuiltinTypeConstructor::Array.arity(), 2);
+        assert_eq!(BuiltinTypeConstructor::Ref.spelling(), "Ref");
+        assert_eq!(BuiltinTypeConstructor::Ref.arity(), 1);
+        assert_eq!(
+            BuiltinTypeConstructor::Ref.argument_expectation(0),
+            Some(TypeArgumentExpectation::EntityFamily)
+        );
+        assert_eq!(BuiltinTypeConstructor::Ref.argument_expectation(1), None);
+        assert_eq!(
+            BuiltinTypeConstructor::ENTITY_FAMILY_PROJECTIONS,
+            &[
+                BuiltinTypeConstructor::Ref,
+                BuiltinTypeConstructor::Speaker,
+                BuiltinTypeConstructor::SpeakerPreset,
+            ]
+        );
+        assert_eq!(
+            BuiltinTypeConstructor::Ref.project_entity_family(EntityKind::Flow),
+            Some(TypeKind::entity_ref(EntityKind::Flow))
+        );
         assert_eq!(
             BuiltinTypeConstructor::SpeakerPreset.spelling(),
             "SpeakerPreset"
+        );
+    }
+
+    #[test]
+    fn type_argument_kind_has_a_total_stable_category_order() {
+        let mut values = [
+            TypeArgumentKind::EntityFamily(EntityKind::Flow),
+            TypeArgumentKind::ConstInt(3),
+            TypeArgumentKind::Type(TypeKind::String),
+            TypeArgumentKind::EntityFamily(EntityKind::Character),
+        ];
+        values.sort_by(TypeArgumentKind::stable_ordering);
+        assert_eq!(
+            values,
+            [
+                TypeArgumentKind::Type(TypeKind::String),
+                TypeArgumentKind::ConstInt(3),
+                TypeArgumentKind::EntityFamily(EntityKind::Character),
+                TypeArgumentKind::EntityFamily(EntityKind::Flow),
+            ]
         );
     }
 

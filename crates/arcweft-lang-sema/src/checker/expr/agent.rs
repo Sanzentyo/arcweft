@@ -760,7 +760,9 @@ impl TypeChecker<'_> {
                 "{name} requires at least one predicate argument"
             )));
         }
-        if let [CallArg::Positional(Expr::BracketSeq(items))] = args {
+        if let [CallArg::Positional(value)] = args
+            && let Expr::BracketSeq(items) = value.as_ref()
+        {
             if items.is_empty() {
                 self.errors.push(TypeCheckError::new(format!(
                     "{name} predicate list cannot be empty"
@@ -1291,6 +1293,6 @@ impl TypeChecker<'_> {
                 "{name} requires one positional argument"
             )));
         }
-        first
+        first.map(Box::as_ref)
     }
 }

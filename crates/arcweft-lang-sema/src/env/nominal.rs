@@ -819,6 +819,7 @@ fn is_reserved_path(path: &TypePath) -> bool {
             | "Need"
             | "Stream"
             | "Source"
+            | "Ref"
             | "Speaker"
             | "SpeakerPreset"
     )

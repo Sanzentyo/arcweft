@@ -235,7 +235,10 @@ fn collect_call_source_ranges<'a>(
     let Some(callback) = call.callback_block_syntax() else {
         return;
     };
-    let [CallArg::Positional(closure @ Expr::Closure { body, .. })] = call.args() else {
+    let [CallArg::Positional(closure)] = call.args() else {
+        return;
+    };
+    let closure @ Expr::Closure { body, .. } = closure.as_ref() else {
         return;
     };
     if let Some((_, closure_range)) = owned_source_slice(

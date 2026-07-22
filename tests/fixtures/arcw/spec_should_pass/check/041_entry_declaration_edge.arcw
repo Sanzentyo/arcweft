@@ -2,6 +2,6 @@ entry cli @entry.main {
     goto @flow.opening
 }
 
-flow @flow.opening opening {
+flow @flow.opening opening() -> String {
     return "done"
 }

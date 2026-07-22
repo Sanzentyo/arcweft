@@ -87,7 +87,7 @@ pub(super) fn collect_fx_applications<'a>(
     };
     applications.extend(modifiers.into_iter().flatten().filter_map(|modifier| {
         if let ViewModifier::Fx(application) = modifier {
-            Some(application)
+            Some(application.as_ref())
         } else {
             None
         }

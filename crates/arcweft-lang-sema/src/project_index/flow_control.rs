@@ -455,8 +455,9 @@ fn summarize_call_args_control(args: &[CallArg]) -> ProjectFlowControlSummary {
     let mut summary = ProjectFlowControlSummary::default();
     for arg in args {
         let value = match arg {
-            CallArg::Positional(value) => value,
-            CallArg::Named { value, .. } | CallArg::Spread { value } => value,
+            CallArg::Positional(value)
+            | CallArg::Named { value, .. }
+            | CallArg::Spread { value } => value,
         };
         summary.merge(summarize_expr_control(value));
     }

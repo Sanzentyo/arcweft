@@ -19,6 +19,8 @@ use super::{
 use std::borrow::Cow;
 use std::ops::Range;
 
+use crate::ast::flow::FlowSignatureSource;
+
 impl<'a> Parser<'a> {
     pub(super) fn parse_flow(&mut self) -> Option<Flow> {
         let attrs = self.take_pending_attrs();
@@ -44,9 +46,10 @@ impl<'a> Parser<'a> {
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>();
         let first = header_lines.first().copied()?;
+        let first_base = start_line.start + slice_offset(start_line.text.as_ref(), first);
         let (visibility, after_visibility) = parse_visibility_prefix(first);
         let after_flow = parse_flow_head(after_visibility.trim_start())?;
-        let after_flow_base = start_line.start + slice_offset(first, after_flow);
+        let after_flow_base = first_base + slice_offset(first, after_flow);
         let (id, after_id) =
             parse_optional_decl_id_ref(after_flow, "flow", after_flow_base, &mut self.errors);
         let (explicit_name, signature_tail) = parse_name_and_tail(after_id.trim());
@@ -55,7 +58,7 @@ impl<'a> Parser<'a> {
         let (signature_tail, inline_contracts) = split_inline_flow_contracts(&signature_tail);
         let signature_tail_source = signature_tail.trim();
         let signature_tail_base =
-            start_line.start + first.rfind(signature_tail_source).unwrap_or(first.len());
+            first_base + first.rfind(signature_tail_source).unwrap_or(first.len());
         let mut signature =
             match parse_flow_signature(name.as_deref(), &signature_tail, signature_tail_base) {
                 Ok(signature) => signature,
@@ -86,6 +89,7 @@ impl<'a> Parser<'a> {
         let mut contracts = inline_contracts;
         contracts.extend(parse_contract_clauses(&header_lines[1..]));
         let body_items = self.parse_flow_body_from_block(&block, start_line.start + head.len());
+        let signature_source = flow_signature_source(first, first_base, signature.as_ref())?;
 
         Some(Flow::new(FlowInit {
             attrs,
@@ -96,6 +100,7 @@ impl<'a> Parser<'a> {
             explicit_name: has_explicit_name,
             signature_tail,
             signature,
+            signature_source,
             contracts,
             body: body_items,
             range: TextRange::new(start_line.start, block.end),
@@ -733,6 +738,26 @@ impl<'a> Parser<'a> {
             CstStructuredFlowBlockKind::Scope => self.parse_scope_block().map(FlowItem::Scope),
         }
     }
+}
+
+fn flow_signature_source(
+    first: &str,
+    line_base: usize,
+    signature: Option<&crate::types::FnSignature>,
+) -> Option<FlowSignatureSource> {
+    let (_, after_visibility) = parse_visibility_prefix(first);
+    let flow_source = after_visibility.trim_start();
+    let flow_start = slice_offset(first, flow_source);
+    let (signature_source, _) = split_top_level_keyword_once(flow_source, "effects");
+    let signature_source = signature_source.trim_end();
+    let header = TextRange::new(
+        line_base.checked_add(flow_start)?,
+        line_base.checked_add(flow_start.checked_add(signature_source.len())?)?,
+    );
+    let result = signature
+        .and_then(crate::types::FnSignature::return_type)
+        .map(|result| *result.root_source().whole());
+    Some(FlowSignatureSource::new(header, result))
 }
 
 fn add_punctuation_depth(depth: &mut CstPunctuationDeltas, delta: CstPunctuationDeltas) {

@@ -1,4 +1,4 @@
-flow @flow.opening opening {
+flow @flow.opening opening() -> String {
     return "done"
 }
 

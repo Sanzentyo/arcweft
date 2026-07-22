@@ -1248,6 +1248,38 @@ return "done"
     }
 
     #[test]
+    fn persistent_function_signature_digest_tracks_entity_family_arguments() {
+        fn digest_for(source: &str) -> BuildDigest {
+            let parsed = parse_source_text(source);
+            assert!(parsed.errors().is_empty());
+            let tree = parsed.into_typed_tree();
+            let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+            let function = hir.functions().first().expect("function is present");
+            signature_digest("function", function.name(), Some(function.signature()))
+                .expect("signature digest builds")
+        }
+
+        let character = r"
+pub fn retain(value: Ref<Character>) -> Ref<Character> {
+    value
+}
+";
+        let repeated_character = r"
+pub fn retain(value: Ref<Character>) -> Ref<Character> {
+    value
+}
+";
+        let flow = r"
+pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
+    value
+}
+";
+
+        assert_eq!(digest_for(character), digest_for(repeated_character));
+        assert_ne!(digest_for(character), digest_for(flow));
+    }
+
+    #[test]
     fn persistent_fact_builder_rejects_wrong_key_kind() {
         let parsed = parse_source_text(SOURCE);
         let key = key(CompilerObjectKind::HirBody, &parsed);

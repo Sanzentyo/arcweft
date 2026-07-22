@@ -6,6 +6,6 @@ fn label(choice: ChoiceView) -> String {
     choice.label
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     return "done"
 }

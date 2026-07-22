@@ -4,6 +4,16 @@ use crate::{
 };
 
 impl TypeKind {
+    /// Returns whether an earlier authoritative resolution failure prevents a
+    /// second compatibility diagnostic from adding useful information.
+    ///
+    /// The underscore name is the checker-local recovery type retained by a
+    /// few inference paths. `Error` carries the typed poison identity for an
+    /// already reported resolution failure.
+    pub(crate) fn is_unresolved_for_compatibility(&self) -> bool {
+        matches!(self, Self::Named(name) if name == "_") || matches!(self, Self::Error(_))
+    }
+
     /// Returns whether a value of `actual` can satisfy this expected type.
     ///
     /// This is the shared semantic compatibility rule used by argument

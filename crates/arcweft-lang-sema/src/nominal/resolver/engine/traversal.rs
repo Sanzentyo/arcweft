@@ -11,8 +11,8 @@ use crate::{
 
 use super::{
     BuiltinTypeConstructor, NodeValue, NominalResolutionLimitKind, ResolvedTypeNode, Resolver,
-    SourceContext, StructuralTypeNodeKind, TypeNameResolution, TypePoisonOrigin,
-    TypeResolutionFailure, TypeResolutionInputError,
+    SourceContext, StructuralTypeNodeKind, TypeArgumentExpectation, TypeNameResolution,
+    TypePoisonOrigin, TypeResolutionFailure, TypeResolutionInputError,
 };
 
 struct SingleArgumentGenericFrame<'a> {
@@ -20,7 +20,7 @@ struct SingleArgumentGenericFrame<'a> {
     child: TypeRefNodePath,
     base: &'a TypePath,
     depth: u16,
-    entity_family_argument: bool,
+    argument_expectation: Option<TypeArgumentExpectation>,
 }
 
 impl Resolver<'_, '_> {
@@ -130,20 +130,17 @@ impl Resolver<'_, '_> {
                 child: child.clone(),
                 base,
                 depth,
-                entity_family_argument: matches!(
-                    super::builtin(base),
-                    Some(BuiltinTypeConstructor::Speaker | BuiltinTypeConstructor::SpeakerPreset)
-                ),
+                argument_expectation: BuiltinTypeConstructor::from_type_path(base)
+                    .and_then(|constructor| constructor.argument_expectation(0)),
             });
             path = child;
             value = &args[0];
             depth = depth.saturating_add(1);
         }
 
-        let resolved = if frames
-            .last()
-            .is_some_and(|frame| frame.entity_family_argument)
-        {
+        let resolved = if frames.last().is_some_and(|frame| {
+            frame.argument_expectation == Some(TypeArgumentExpectation::EntityFamily)
+        }) {
             self.resolve_entity_family_node(context, value, &path, depth)?
         } else {
             self.resolve_node(context, value, &path, depth)?
@@ -282,16 +279,16 @@ impl Resolver<'_, '_> {
             return Ok(self.failed_node(context, path, failure, Vec::new()));
         }
         let mut resolved_args = Vec::with_capacity(args.len());
-        let entity_family_argument = matches!(
-            super::builtin(base),
-            Some(BuiltinTypeConstructor::Speaker | BuiltinTypeConstructor::SpeakerPreset)
-        );
+        let constructor = BuiltinTypeConstructor::from_type_path(base);
         for (index, argument) in args.iter().enumerate() {
             let child = context.child_path(
                 path,
                 TypeRefNodeStep::GenericArgument(u16::try_from(index).expect("parser cap")),
             );
-            let resolved = if entity_family_argument && index == 0 {
+            let expectation = u16::try_from(index)
+                .ok()
+                .and_then(|index| constructor.and_then(|value| value.argument_expectation(index)));
+            let resolved = if expectation == Some(TypeArgumentExpectation::EntityFamily) {
                 self.resolve_entity_family_node(context, argument, &child, depth + 1)?
             } else {
                 self.resolve_node(context, argument, &child, depth + 1)?

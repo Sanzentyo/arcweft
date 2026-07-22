@@ -1080,6 +1080,31 @@ fn private_bound_expression_fragment_owns_one_attached_expression_lineage() {
 }
 
 #[test]
+fn private_bound_expression_fragment_retains_postfix_try_root_and_exact_span() {
+    let name = SourceName::path("bound-postfix-try-fragment.arcw");
+    let source = "before value? after";
+    let fragment_start = source.find("value?").unwrap();
+    let fragment_end = fragment_start + "value?".len();
+    let snapshot = SourceSnapshotId::initial(name.clone());
+    let document = source_document(&name, source);
+    let span = source_span(&document, SourceRange::new(fragment_start, fragment_end));
+    let mut database = SyntaxDatabase::default();
+    let fragment = database
+        .parse_bound_expression_fragment(&snapshot, &document, &span)
+        .expect("postfix Try fragment attaches to one private lineage");
+
+    assert_eq!(fragment.span(), &span);
+    assert_eq!(fragment.status(), super::ParseStatus::Clean);
+    assert!(fragment.diagnostics().is_empty());
+    assert_eq!(fragment.root().kind(), GrammarKind::TryExpression);
+    assert_eq!(
+        fragment.root().range(),
+        SourceRange::new(fragment_start, fragment_end)
+    );
+    assert_eq!(fragment.syntax().root_handle().rowan().to_string(), source);
+}
+
+#[test]
 fn private_empty_expression_fragment_is_recovered_without_a_detached_value() {
     let name = SourceName::path("bound-empty-expression-fragment.arcw");
     let source = "   ";

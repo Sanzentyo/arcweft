@@ -2,11 +2,15 @@
 
 use super::helpers::{let_else_bindings, pattern_bindings_with_fallback, type_kind_label};
 use super::{
-    BorrowStateDelta, Expr, LifetimeScopeKind, LoopContext, SuspensionBoundary, TypeCheckError,
+    BorrowStateDelta, LifetimeScopeKind, LoopContext, SuspensionBoundary, TypeCheckError,
     TypeChecker, TypeCheckerScopeSnapshot, TypeKind, YieldContext, await_branch_pattern_type,
     type_contains_borrow_ref, unify_loop_break_types,
 };
-use arcweft_lang_syntax::{ast::flow::AuthoredExpr, expr::AwaitPropagation};
+use crate::propagation::{CheckedReturnType, ReturnPropagationFrame};
+use arcweft_lang_syntax::{
+    ast::flow::AuthoredExpr,
+    expr::{AwaitExpr, AwaitPropagation},
+};
 
 impl TypeChecker<'_> {
     pub(super) fn check_yield_stmt(&mut self, expr: &AuthoredExpr) {
@@ -63,16 +67,15 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_await_expr(
-        &mut self,
-        expr: &Expr,
-        propagation: AwaitPropagation,
-    ) -> Option<TypeKind> {
+    pub(super) fn check_await_expr(&mut self, awaited: &AwaitExpr) -> Option<TypeKind> {
         self.reject_active_borrows(SuspensionBoundary::Await);
-        match self.check_expr(expr) {
-            Some(TypeKind::Need { ready, .. })
-                if propagation == AwaitPropagation::PropagateError =>
+        match self.check_expr(awaited.operand()) {
+            Some(TypeKind::Need { ready, error })
+                if awaited.propagation() == AwaitPropagation::PropagateError =>
             {
+                if !error.is_unresolved_for_compatibility() {
+                    self.check_await_error_propagation(error.as_ref(), awaited);
+                }
                 Some(*ready)
             }
             Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
@@ -85,6 +88,43 @@ impl TypeChecker<'_> {
             }
             None => None,
         }
+    }
+
+    fn check_await_error_propagation(&mut self, actual_error: &TypeKind, awaited: &AwaitExpr) {
+        let operator = awaited
+            .source()
+            .propagation()
+            .and_then(|source| self.source_span_for_current_range(source.range()));
+        let Some(operator) = operator else {
+            self.errors.push(TypeCheckError::new(
+                "await propagation requires accepted operator source evidence".to_owned(),
+            ));
+            return;
+        };
+        let target = self.return_propagation_frames.last().cloned();
+        if let Some(ReturnPropagationFrame::Boundary(boundary)) = target.as_ref()
+            && let CheckedReturnType::Known(TypeKind::Result { error, .. }) =
+                boundary.checked_return()
+        {
+            if error.is_unresolved_for_compatibility() {
+                return;
+            }
+            if !self.types_compatible(error.as_ref(), actual_error) {
+                self.errors.push(TypeCheckError::await_error_mismatch(
+                    error.as_ref().clone(),
+                    actual_error.clone(),
+                    operator,
+                    boundary.clone(),
+                ));
+            }
+            return;
+        }
+        self.errors
+            .push(TypeCheckError::await_propagation_target_missing(
+                actual_error.clone(),
+                operator,
+                target.and_then(|frame| frame.target()),
+            ));
     }
 
     pub(super) fn check_await_item(

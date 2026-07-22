@@ -1,9 +1,12 @@
 use super::{effect_trace::with_effect_trace_notes, trait_diagnostic::TraitDiagnostic};
+use crate::propagation::{
+    PropagationBoundaryEvidence, PropagationTargetEvidence, TryPropagationOperand,
+};
 use crate::{
     effect_diagnostics::EffectDiagnostic, nominal::NominalTypeDiagnostic, style::StyleDiagnostic,
     types::TypeKind,
 };
-use arcweft_source::{Diagnostic, DiagnosticSeverity};
+use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use thiserror::Error;
 
 /// Semantic type-checking diagnostic.
@@ -116,6 +119,32 @@ pub enum TypeCheckErrorKind {
     Style { diagnostic: StyleDiagnostic },
     /// A source-backed nominal resolution diagnostic.
     Nominal { diagnostic: NominalTypeDiagnostic },
+    /// A propagating Await has no compatible lexical Result boundary.
+    AwaitPropagationTargetMissing {
+        actual_error: TypeKind,
+        operator: SourceSpan,
+        target: Option<PropagationTargetEvidence>,
+    },
+    /// A propagating Await error is incompatible with its lexical Result boundary.
+    AwaitErrorMismatch {
+        expected: TypeKind,
+        actual: TypeKind,
+        operator: SourceSpan,
+        boundary: PropagationBoundaryEvidence,
+    },
+    /// A general Try has no compatible Result/Option lexical boundary.
+    TryPropagationTargetMissing {
+        operand: TryPropagationOperand,
+        operator: SourceSpan,
+        target: Option<PropagationTargetEvidence>,
+    },
+    /// A general Try Result error is incompatible with its lexical Result boundary.
+    TryErrorMismatch {
+        expected: TypeKind,
+        actual: TypeKind,
+        operator: SourceSpan,
+        boundary: PropagationBoundaryEvidence,
+    },
 }
 
 /// Syntax-to-HIR readiness error for the future type checker.
@@ -164,6 +193,81 @@ impl TypeCheckError {
         Self {
             message,
             kind: TypeCheckErrorKind::Nominal { diagnostic },
+        }
+    }
+
+    pub(crate) fn await_propagation_target_missing(
+        actual_error: TypeKind,
+        operator: SourceSpan,
+        target: Option<PropagationTargetEvidence>,
+    ) -> Self {
+        Self {
+            message: format!(
+                "propagating await requires an enclosing Result return for error type {}",
+                actual_error.source_label()
+            ),
+            kind: TypeCheckErrorKind::AwaitPropagationTargetMissing {
+                actual_error,
+                operator,
+                target,
+            },
+        }
+    }
+
+    pub(crate) fn await_error_mismatch(
+        expected: TypeKind,
+        actual: TypeKind,
+        operator: SourceSpan,
+        boundary: PropagationBoundaryEvidence,
+    ) -> Self {
+        Self {
+            message: format!(
+                "await error type {} is not accepted by enclosing error type {}",
+                actual.source_label(),
+                expected.source_label()
+            ),
+            kind: TypeCheckErrorKind::AwaitErrorMismatch {
+                expected,
+                actual,
+                operator,
+                boundary,
+            },
+        }
+    }
+
+    pub(crate) fn try_propagation_target_missing(
+        operand: TryPropagationOperand,
+        operator: SourceSpan,
+        target: Option<PropagationTargetEvidence>,
+    ) -> Self {
+        Self {
+            message: "try expression has no compatible lexical return boundary".to_owned(),
+            kind: TypeCheckErrorKind::TryPropagationTargetMissing {
+                operand,
+                operator,
+                target,
+            },
+        }
+    }
+
+    pub(crate) fn try_error_mismatch(
+        expected: TypeKind,
+        actual: TypeKind,
+        operator: SourceSpan,
+        boundary: PropagationBoundaryEvidence,
+    ) -> Self {
+        Self {
+            message: format!(
+                "try error type {} is not accepted by enclosing error type {}",
+                actual.source_label(),
+                expected.source_label()
+            ),
+            kind: TypeCheckErrorKind::TryErrorMismatch {
+                expected,
+                actual,
+                operator,
+                boundary,
+            },
         }
     }
 
@@ -548,6 +652,37 @@ impl TypeCheckError {
             TypeCheckErrorKind::Nominal {
                 diagnostic: nominal,
             } => nominal.to_source_diagnostic().unwrap_or(diagnostic),
+            TypeCheckErrorKind::AwaitPropagationTargetMissing {
+                operator, target, ..
+            }
+            | TypeCheckErrorKind::TryPropagationTargetMissing {
+                operator, target, ..
+            } => {
+                let diagnostic = diagnostic.with_label(DiagnosticLabel::primary(
+                    operator.clone(),
+                    Some("error propagation occurs here".to_owned()),
+                ));
+                target.as_ref().map_or(diagnostic.clone(), |target| {
+                    diagnostic.with_label(DiagnosticLabel::secondary(
+                        target.related().clone(),
+                        Some("nearest lexical propagation owner".to_owned()),
+                    ))
+                })
+            }
+            TypeCheckErrorKind::AwaitErrorMismatch {
+                operator, boundary, ..
+            }
+            | TypeCheckErrorKind::TryErrorMismatch {
+                operator, boundary, ..
+            } => diagnostic
+                .with_label(DiagnosticLabel::primary(
+                    operator.clone(),
+                    Some("incompatible propagated error".to_owned()),
+                ))
+                .with_label(DiagnosticLabel::secondary(
+                    boundary.related().clone(),
+                    Some("enclosing return error is declared here".to_owned()),
+                )),
         }
     }
 }
@@ -622,5 +757,13 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         TypeCheckErrorKind::Trait { diagnostic } => diagnostic.code().to_owned(),
         TypeCheckErrorKind::Style { diagnostic } => diagnostic.code().as_str().to_owned(),
         TypeCheckErrorKind::Nominal { diagnostic } => diagnostic.kind().code().as_str().to_owned(),
+        TypeCheckErrorKind::AwaitPropagationTargetMissing { .. } => {
+            "sema.await.propagation_target_missing".to_owned()
+        }
+        TypeCheckErrorKind::AwaitErrorMismatch { .. } => "sema.await.error_mismatch".to_owned(),
+        TypeCheckErrorKind::TryPropagationTargetMissing { .. } => {
+            "sema.try.propagation_target_missing".to_owned()
+        }
+        TypeCheckErrorKind::TryErrorMismatch { .. } => "sema.try.error_mismatch".to_owned(),
     }
 }

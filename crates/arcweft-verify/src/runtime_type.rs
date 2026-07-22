@@ -755,7 +755,7 @@ impl TypeEvidence {
         let has_expr = types
             .judgments
             .iter()
-            .any(|judgment| judgment.rule == TypeJudgmentRule::Expr);
+            .any(|judgment| matches!(judgment.subject, TypeJudgmentSubject::Expr { .. }));
         let has_expected = types
             .judgments
             .iter()
@@ -924,6 +924,16 @@ mod tests {
     fn required_type_evidence_checks_report_shape() {
         assert!(has_required_type_evidence(&type_report()));
         assert!(!has_required_type_evidence(&empty_type_report()));
+
+        let mut expected_only = type_report();
+        expected_only
+            .judgments
+            .retain(|judgment| judgment.rule != TypeJudgmentRule::Expr);
+        expected_only.stats.judgments = expected_only.judgments.len();
+        assert!(
+            has_required_type_evidence(&expected_only),
+            "an expression checked with an expected type is still expression evidence"
+        );
     }
 
     fn type_report() -> TypeCheckReport {

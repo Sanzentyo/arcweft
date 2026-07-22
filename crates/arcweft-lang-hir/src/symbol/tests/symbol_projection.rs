@@ -133,7 +133,7 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
 
 #[test]
 fn reserved_type_names_and_cross_family_duplicates_block_publication() {
-    let (document, reserved_project) = project("struct Result {\n    value: i32,\n}\n");
+    let (document, reserved_project) = project("struct Ref {\n    value: i32,\n}\n");
     let report = ProjectSymbolTable::link(
         &reserved_project,
         &declarations(&document, Vec::new(), "reserved-type-name"),
@@ -143,8 +143,8 @@ fn reserved_type_names_and_cross_family_duplicates_block_publication() {
         report.diagnostics(),
         [ProjectSymbolLinkError::ReservedTypeName { module, name, source }]
             if module == &CanonicalModulePath::crate_root()
-                && name == "Result"
-                && &document.text()[source.range().start()..source.range().end()] == "Result"
+                && name == "Ref"
+                && &document.text()[source.range().start()..source.range().end()] == "Ref"
     ));
 
     let (document, project) = project(concat!(

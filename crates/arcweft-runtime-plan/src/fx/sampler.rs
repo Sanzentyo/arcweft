@@ -513,7 +513,7 @@ fn positional_args<'a>(
 ) -> Result<Vec<&'a Expr>, RuntimePlanLowerError> {
     args.iter()
         .map(|arg| match arg {
-            CallArg::Positional(value) => Ok(value),
+            CallArg::Positional(value) => Ok(value.as_ref()),
             CallArg::Named { .. } | CallArg::Spread { .. } => Err(error(format!(
                 "Fx sampler intrinsic `{name}` accepts positional arguments only"
             ))),

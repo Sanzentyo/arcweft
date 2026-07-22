@@ -43,7 +43,7 @@ pub(crate) struct SourceItemParts {
 /// Policy/header entry in a declarative `source` block.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SourceHeader {
-    From(AuthoredExpr),
+    From(Box<AuthoredExpr>),
     Backpressure {
         policy: SourceBackpressurePolicy,
         range: TextRange,

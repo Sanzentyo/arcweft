@@ -224,7 +224,7 @@ fn jlreq_from_value(value: &str) -> RichTextJlreqStrictness {
 
 fn first_positional_expr(args: &[CallArg]) -> Option<&Expr> {
     args.iter().find_map(|arg| match arg {
-        CallArg::Positional(expr) => Some(expr),
+        CallArg::Positional(expr) => Some(expr.as_ref()),
         CallArg::Named { name, value } if name == "family" || name == "value" => Some(value),
         CallArg::Named { .. } | CallArg::Spread { .. } => None,
     })

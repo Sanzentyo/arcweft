@@ -2,8 +2,8 @@ use super::call_syntax::{
     CallbackBlockSyntaxInit, CallbackParameterHeaderSyntaxInit, CallbackParameterSyntaxInit,
 };
 use super::{
-    CallbackBlockSyntax, CallbackParameterTypeSyntax, ClosureParam, Expr, ExprOp, ExprParseError,
-    ExprParser, LexedToken, MAX_CALLBACK_PARAMETERS, Token,
+    CallbackBlockSyntax, CallbackParameterTypeSyntax, ClosureExprSource, ClosureParam, Expr,
+    ExprOp, ExprParseError, ExprParser, LexedToken, MAX_CALLBACK_PARAMETERS, Token,
 };
 use crate::ast::common::TextRange;
 use crate::cst::{split_top_level_punctuation, split_top_level_punctuation_once};
@@ -13,12 +13,24 @@ use crate::types::{AuthoredTypeRef, parse_type_ref};
 #[derive(Default)]
 struct ClosureReturnParse {
     return_type: Option<AuthoredTypeRef>,
+    result: Option<TextRange>,
     block_body: Option<ClosureBlockBody>,
 }
 
 struct ClosureBlockBody {
     source: String,
     base: usize,
+    range: TextRange,
+}
+
+struct ParsedClosureBody {
+    expr: Expr,
+    range: TextRange,
+}
+
+struct ClosureParameterTokens {
+    params: Vec<LexedToken>,
+    close: LexedToken,
 }
 
 struct BracedTokens {
@@ -34,40 +46,72 @@ struct ParsedCallbackParts<'a> {
 }
 
 impl ExprParser {
-    pub(super) fn parse_zero_arg_closure(&mut self) -> Result<Expr, ExprParseError> {
+    pub(super) fn parse_zero_arg_closure(
+        &mut self,
+        opening_pipes: TextRange,
+    ) -> Result<Expr, ExprParseError> {
         let closure_return = self.parse_closure_return_type()?;
         let body = self.parse_closure_body(closure_return.block_body)?;
+        let header_end = closure_return
+            .result
+            .map_or(opening_pipes.end(), |range| range.end());
         Ok(Expr::Closure {
             params: Vec::new(),
             return_type: closure_return.return_type,
-            body: Box::new(body),
+            source: ClosureExprSource::new(
+                TextRange::new(opening_pipes.start(), body.range.end()),
+                TextRange::new(opening_pipes.start(), header_end),
+                closure_return.result,
+                body.range,
+            ),
+            body: Box::new(body.expr),
         })
     }
 
-    pub(super) fn parse_closure_after_open_pipe(&mut self) -> Result<Expr, ExprParseError> {
-        let param_tokens = self.take_closure_param_tokens()?;
-        let params_source = if param_tokens.is_empty() {
+    pub(super) fn parse_closure_after_open_pipe(
+        &mut self,
+        opening_pipe: TextRange,
+    ) -> Result<Expr, ExprParseError> {
+        let parameter_tokens = self.take_closure_param_tokens()?;
+        let params_source = if parameter_tokens.params.is_empty() {
             ""
         } else {
-            required_token_span_source(&param_tokens, &self.source, self.base, "closure parameter")?
+            required_token_span_source(
+                &parameter_tokens.params,
+                &self.source,
+                self.base,
+                "closure parameter",
+            )?
         };
         let params_base = token_absolute_range(
-            param_tokens
+            parameter_tokens
+                .params
                 .first()
                 .ok_or_else(|| ExprParseError::new("expected closure parameter"))?,
-            param_tokens
+            parameter_tokens
+                .params
                 .last()
                 .ok_or_else(|| ExprParseError::new("expected closure parameter"))?,
             self.base,
         )?
         .start();
         let params = parse_closure_params(params_source, params_base)?;
+        let closing_pipe = self.absolute_range(&parameter_tokens.close)?;
         let closure_return = self.parse_closure_return_type()?;
         let body = self.parse_closure_body(closure_return.block_body)?;
+        let header_end = closure_return
+            .result
+            .map_or(closing_pipe.end(), |range| range.end());
         Ok(Expr::Closure {
             params,
             return_type: closure_return.return_type,
-            body: Box::new(body),
+            source: ClosureExprSource::new(
+                TextRange::new(opening_pipe.start(), body.range.end()),
+                TextRange::new(opening_pipe.start(), header_end),
+                closure_return.result,
+                body.range,
+            ),
+            body: Box::new(body.expr),
         })
     }
 
@@ -105,6 +149,10 @@ impl ExprParser {
         let open_brace = self.absolute_range(&tokens.open)?;
         let close_brace = self.absolute_range(&tokens.close)?;
         let callback_range = TextRange::new(open_brace.start(), close_brace.end());
+        let header_end = match &parts.header {
+            CallbackParameterHeaderSyntaxInit::ImplicitZero => open_brace.end(),
+            CallbackParameterHeaderSyntaxInit::Explicit { fat_arrow, .. } => fat_arrow.end(),
+        };
         let callback = CallbackBlockSyntax::try_from_parser(
             &self.validation_source,
             self.validation_base,
@@ -132,6 +180,12 @@ impl ExprParser {
                 params: parts.params,
                 return_type: None,
                 body: Box::new(body),
+                source: ClosureExprSource::new(
+                    callback_range,
+                    TextRange::new(open_brace.start(), header_end),
+                    None,
+                    body_range,
+                ),
             },
             callback,
         ))
@@ -187,9 +241,11 @@ impl ExprParser {
         })?;
         Ok(ClosureReturnParse {
             return_type: Some(return_type),
+            result: Some(type_range),
             block_body: Some(ClosureBlockBody {
                 source: body_source.to_owned(),
                 base: body_base,
+                range: closure_range,
             }),
         })
     }
@@ -197,18 +253,25 @@ impl ExprParser {
     fn parse_closure_body(
         &mut self,
         block_body: Option<ClosureBlockBody>,
-    ) -> Result<Expr, ExprParseError> {
+    ) -> Result<ParsedClosureBody, ExprParseError> {
         let Some(block_body) = block_body else {
-            return self.parse_expr_bp(0);
+            let parsed = self.parse_expr_bp_spanned(0)?;
+            return Ok(ParsedClosureBody {
+                expr: parsed.expr,
+                range: parsed.range,
+            });
         };
         let parsed = crate::parser::parse_callback_block_expr_body_recovering_at(
             &block_body.source,
             block_body.base,
         )?;
-        self.retain_nested_parsed_expr(parsed)
+        Ok(ParsedClosureBody {
+            expr: self.retain_nested_parsed_expr(parsed)?,
+            range: block_body.range,
+        })
     }
 
-    fn take_closure_param_tokens(&mut self) -> Result<Vec<LexedToken>, ExprParseError> {
+    fn take_closure_param_tokens(&mut self) -> Result<ClosureParameterTokens, ExprParseError> {
         let mut paren_depth = 0_u32;
         let mut bracket_depth = 0_u32;
         let mut brace_depth = 0_u32;
@@ -219,7 +282,10 @@ impl ExprParser {
                 Token::Op(ExprOp::ClosurePipe)
                     if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 =>
                 {
-                    return Ok(tokens);
+                    return Ok(ClosureParameterTokens {
+                        params: tokens,
+                        close: lexed,
+                    });
                 }
                 Token::LParen => {
                     paren_depth = paren_depth

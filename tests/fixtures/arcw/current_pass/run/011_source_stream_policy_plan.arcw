@@ -18,6 +18,6 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.generation generation {
+flow @flow.generation generation() -> String {
     return "done"
 }

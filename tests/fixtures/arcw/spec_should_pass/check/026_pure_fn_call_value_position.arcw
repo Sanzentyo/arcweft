@@ -3,7 +3,7 @@ fn add(a: i32, b: i32) -> i32 {
     a + b
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let n = add(1i32, 2i32)
     log.info("n", value = n)
     return "done"

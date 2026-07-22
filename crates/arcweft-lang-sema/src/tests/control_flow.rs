@@ -347,9 +347,8 @@ flow @flow.validate validate {
 
 #[test]
 fn parses_and_typechecks_result_computation_block_binding() {
-    let tree = parse_ok(
-        r#"
-flow @flow.compute compute {
+    let source = r#"
+flow @flow.compute compute() -> Result<Unit, ArcError> {
     let route = result {
         let id = parse_choice_id(raw)?
         ensure(id_valid, "choice id must be valid")
@@ -357,8 +356,8 @@ flow @flow.compute compute {
     }
     goto @flow.title
 }
-"#,
-    );
+"#;
+    let tree = parse_ok(source);
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -378,7 +377,7 @@ flow @flow.compute compute {
     assert_eq!(kind, &ComputationBlockKind::Result);
     assert_eq!(statements.len(), 2);
 
-    let hir = lower_to_hir(&tree).expect("result computation block fixture lowers");
+    let hir = lower_bound_hir("result-computation-block", source);
     validate_typecheck_ready(&hir).expect("result computation block is typecheck-ready");
     let env = TypeCheckEnv::new()
         .with_symbol("raw", TypeKind::String)
@@ -387,7 +386,7 @@ flow @flow.compute compute {
             "parse_choice_id",
             TypeKind::Result {
                 ok: Box::new(TypeKind::String),
-                error: Box::new(TypeKind::Named("ParseError".to_owned())),
+                error: Box::new(TypeKind::Named("ArcError".to_owned())),
             },
         )
         .with_function(
@@ -870,13 +869,12 @@ flow @flow.branching branching {
 
 #[test]
 fn parses_and_typechecks_postfix_try_expression() {
-    let tree = parse_ok(
-        r"
-flow @flow.trying trying {
+    let source = r"
+flow @flow.trying trying() -> Result<Unit, ConfigError> {
     let config = load_config()?
 }
-",
-    );
+";
+    let tree = parse_ok(source);
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -892,7 +890,7 @@ flow @flow.trying trying {
     assert_eq!(pattern, &Pattern::Ident("config".to_owned()));
     assert!(matches!(try_expr.operand(), Expr::Call(_)));
 
-    let hir = lower_to_hir(&tree).expect("postfix try fixture lowers");
+    let hir = lower_bound_hir("postfix-try-flow", source);
     validate_typecheck_ready(&hir).expect("postfix try expression is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -909,20 +907,21 @@ flow @flow.trying trying {
 
 #[test]
 fn parses_and_typechecks_prefix_try_expression() {
-    let tree = parse_ok(
-        r"
-flow @flow.trying trying {
+    let source = r"
+flow @flow.trying trying() -> Result<Unit, Error> {
     let config = try load_config()
 }
-",
-    );
-    let hir = lower_to_hir(&tree).expect("prefix try fixture lowers");
+";
+    let hir = lower_bound_hir("prefix-try-flow", source);
     validate_typecheck_ready(&hir).expect("prefix try expression is typecheck-ready");
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_function(
             "load_config",
-            TypeKind::Named("Result<Config, Error>".to_owned()),
+            TypeKind::Result {
+                ok: Box::new(TypeKind::Named("Config".to_owned())),
+                error: Box::new(TypeKind::Named("Error".to_owned())),
+            },
         ),
     )
     .expect("typecheck succeeds");

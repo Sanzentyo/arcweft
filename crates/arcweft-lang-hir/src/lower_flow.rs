@@ -28,6 +28,7 @@ pub(crate) fn lower_flow(flow: &Flow) -> Result<HirFlow, HirLowerError> {
         id,
         name: flow.name().map(str::to_owned),
         signature: flow.signature().cloned(),
+        signature_source: flow.signature_source(),
         contracts: flow.contracts().to_vec(),
         body,
         range: *flow.range(),

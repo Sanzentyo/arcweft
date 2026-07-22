@@ -1,3 +1,4 @@
+use crate::{diagnostics::TypeCheckErrorKind, propagation::PropagationBoundaryKind};
 use crate::{
     effect_model::CallableId,
     entry::{CheckedEntryBinding, CheckedEntryId},
@@ -260,6 +261,24 @@ fn cyclic_alias_in_nominal_schema_is_rejected() {
 }
 
 #[test]
+fn entity_refs_are_checked_then_rejected_as_persisted_entry_data() {
+    let source = SOURCE.replace(
+        "struct GameState {\n    score: i32\n}",
+        "struct GameState { route: Ref<Flow> }",
+    );
+    let diagnostics = checked_project(&[("", &source)])
+        .expect_err("entity references are not canonical persisted data shapes");
+
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code() == "sema.entry.invalid_nominal_schema"
+            && diagnostic.message().contains("Ref<Flow>")
+            && diagnostic
+                .message()
+                .contains("not a canonical persisted data shape")
+    }));
+}
+
+#[test]
 fn authored_agent_budget_changes_policy_and_binding_digests() {
     let source = |budget: &str| {
         format!(
@@ -328,6 +347,91 @@ entry agent @entry.agent.controller {
     let diagnostics = checked_project(&[("", unselected)])
         .expect_err("unselected ordinary function must not receive Agent callable scope");
     assert_unbound_agent_call(&diagnostics, unselected, "observe()");
+}
+
+#[test]
+fn agent_role_reuses_the_ordinary_function_propagation_identity() {
+    let function = r"
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+    let value = input()?
+    Ok(value)
+}
+";
+    let with_entry = format!(
+        r"{function}
+entry agent @entry.agent.smoke {{
+    controller = controller
+}}
+"
+    );
+    let environment = || {
+        TypeCheckEnv::standard().with_function(
+            "input",
+            TypeKind::Result {
+                ok: Box::new(TypeKind::Unit),
+                error: Box::new(TypeKind::String),
+            },
+        )
+    };
+
+    let (document, project, world) = root_project_source("agent-propagation-role", &with_entry);
+    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
+        .expect("Agent propagation registration facts");
+    let registered =
+        register(&project, &facts, environment(), None).expect("Agent propagation semantic world");
+    let report =
+        crate::checker::analyze_registered_project_types(&project.linked_module(), &registered);
+    let mismatch = report
+        .diagnostics
+        .iter()
+        .find(|error| error.stable_code() == "sema.try.error_mismatch")
+        .expect("controller body keeps the ordinary propagation diagnostic");
+    let TypeCheckErrorKind::TryErrorMismatch { boundary, .. } = mismatch.kind() else {
+        panic!("unexpected propagation diagnostic: {mismatch:#?}")
+    };
+    assert_eq!(boundary.kind(), PropagationBoundaryKind::Function);
+    let declaration = boundary
+        .declaration()
+        .expect("registered ordinary function has a declaration identity");
+
+    let catalog = check_project_entries(
+        &project,
+        registered.symbols(),
+        registered.environment().callable_catalog(),
+        &report,
+    )
+    .expect("body diagnostics do not create a second entry-role identity");
+    let controller = catalog
+        .get(&CheckedEntryId::try_new("entry.agent.smoke").unwrap())
+        .expect("checked Agent entry")
+        .agent()
+        .expect("Agent binding")
+        .controller();
+    assert_eq!(controller.declaration(), declaration);
+
+    let (document, project, world) = root_project_source("agent-propagation-role", function);
+    let facts = ProjectRegistrationFacts::try_new(world, vec![document], Vec::new(), Vec::new())
+        .expect("ordinary propagation registration facts");
+    let registered = register(&project, &facts, environment(), None)
+        .expect("ordinary propagation semantic world");
+    let ordinary =
+        crate::checker::analyze_registered_project_types(&project.linked_module(), &registered);
+    let ordinary_mismatch = ordinary
+        .diagnostics
+        .iter()
+        .find(|error| error.stable_code() == "sema.try.error_mismatch")
+        .expect("ordinary function keeps the same propagation diagnostic");
+    let TypeCheckErrorKind::TryErrorMismatch {
+        boundary: ordinary_boundary,
+        ..
+    } = ordinary_mismatch.kind()
+    else {
+        panic!("unexpected ordinary propagation diagnostic: {ordinary_mismatch:#?}")
+    };
+    assert_eq!(ordinary_boundary.declaration(), Some(declaration));
+    assert_eq!(ordinary_mismatch.message(), mismatch.message());
 }
 
 #[test]

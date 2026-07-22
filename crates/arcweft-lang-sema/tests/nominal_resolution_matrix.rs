@@ -17,9 +17,10 @@ use arcweft_lang_sema::{
         },
     },
     nominal::{
-        CheckedTypeReferenceCache, GenericTypeBinding, GenericTypeScope, NominalResolutionLimits,
-        ResolvedTypeRefOutcome, SelfTypeScope, TypeNameResolution, TypeResolutionInput,
-        TypeResolutionInputError, TypeSourceEvidence, resolve_type_ref,
+        BuiltinTypeConstructor, CheckedTypeReferenceCache, GenericTypeBinding, GenericTypeScope,
+        NominalResolutionLimits, NominalTypeDiagnosticKind, ResolvedTypeRefOutcome, SelfTypeScope,
+        TypeArgumentExpectation, TypeArgumentKind, TypeNameResolution, TypeResolutionFailure,
+        TypeResolutionInput, TypeResolutionInputError, TypeSourceEvidence, resolve_type_ref,
     },
     registration::{
         CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
@@ -133,6 +134,26 @@ fn field_type(
         panic!("matrix declaration is struct")
     };
     fields.first().expect("matrix field").ty()
+}
+
+fn field_type_named<'a>(
+    world: &'a RegisteredSemanticWorld,
+    declaration_name: &str,
+    field_name: &str,
+) -> &'a arcweft_lang_hir::symbol::nominal::SourceBackedTypeRef {
+    let declaration = world
+        .symbols()
+        .nominal_symbols()
+        .find(|declaration| declaration.id().name().as_str() == declaration_name)
+        .unwrap_or_else(|| panic!("matrix declaration {declaration_name}"));
+    let ProjectNominalBody::Struct { fields } = declaration.body() else {
+        panic!("matrix declaration is struct")
+    };
+    fields
+        .iter()
+        .find(|field| field.name().as_str() == field_name)
+        .unwrap_or_else(|| panic!("matrix field {declaration_name}.{field_name}"))
+        .ty()
 }
 
 fn accepted_input<'a>(
@@ -324,6 +345,158 @@ fn matrix_external_and_open_catalog_cases_are_direct() {
         &child,
     );
     assert_external_and_open_catalog_cases(&environment, &child);
+}
+
+#[test]
+fn matrix_ref_entity_family_projection_is_contextual_in_the_accepted_world() {
+    let world = registered(
+        concat!(
+            "pub struct RouteInfo {\n",
+            "    route: Ref<Flow>,\n",
+            "    speaker: Ref<Character>,\n",
+            "}\n",
+        ),
+        "matrix-ref-entity-family",
+    );
+    let module = CanonicalModulePath::crate_root();
+    let generics = GenericTypeScope::empty();
+    for (field, family) in [
+        ("route", arcweft_lang_sema::types::EntityKind::Flow),
+        ("speaker", arcweft_lang_sema::types::EntityKind::Character),
+    ] {
+        let authored = field_type_named(&world, "RouteInfo", field);
+        let report = resolve_type_ref(
+            &accepted_input(authored, &module, &world, &generics, SelfTypeScope::Absent)
+                .expect("accepted Ref input"),
+        )
+        .expect("accepted Ref resolution");
+        let ResolvedTypeRefOutcome::Complete(product) = report.outcome() else {
+            panic!("Ref<{family:?}> is accepted")
+        };
+        assert_eq!(product.recovered(), &TypeKind::entity_ref(family.clone()));
+        assert_eq!(report.work_charged(), 2);
+        assert!(matches!(
+            product.nodes()[0].outcome(),
+            TypeNameResolution::EntityFamily(actual) if actual == &family
+        ));
+        assert!(matches!(
+            product.nodes()[1].outcome(),
+            TypeNameResolution::Builtin(BuiltinTypeConstructor::Ref)
+        ));
+        assert!(
+            product
+                .nodes()
+                .iter()
+                .all(|node| node.source().project().is_some()),
+            "accepted node facts retain exact project source"
+        );
+    }
+}
+
+#[test]
+fn matrix_qualified_ref_name_remains_catalog_owned_while_direct_ref_is_builtin() {
+    let environment = TypeCheckEnv::standard()
+        .try_with_nominal_record(
+            AcceptedNominalRecord::try_new(
+                AcceptedNominalId::new(
+                    AcceptedNominalOwnerId::RustPackage(
+                        RustPackageId::try_new("matrix-qualified-ref").expect("package"),
+                    ),
+                    type_path("pkg.Ref"),
+                ),
+                0,
+                AcceptedNominalSemantics::Opaque,
+                AcceptedNominalOrigin::RustExport,
+                None,
+            )
+            .expect("qualified Ref record"),
+        )
+        .expect("qualified Ref record registers");
+
+    let qualified = resolve_detached(
+        "pkg.Ref",
+        &environment,
+        None,
+        &GenericTypeScope::empty(),
+        SelfTypeScope::Absent,
+    );
+    assert!(matches!(
+        qualified.outcome().product().nodes()[0].outcome(),
+        TypeNameResolution::Accepted(_)
+    ));
+
+    let direct = resolve_detached(
+        "Ref<Flow>",
+        &environment,
+        None,
+        &GenericTypeScope::empty(),
+        SelfTypeScope::Absent,
+    );
+    assert!(matches!(
+        direct
+            .outcome()
+            .product()
+            .nodes()
+            .last()
+            .map(arcweft_lang_sema::nominal::ResolvedTypeNode::outcome),
+        Some(TypeNameResolution::Builtin(BuiltinTypeConstructor::Ref))
+    ));
+    assert_eq!(
+        direct.outcome().product().recovered(),
+        &TypeKind::entity_ref(arcweft_lang_sema::types::EntityKind::Flow)
+    );
+}
+
+#[test]
+fn matrix_ref_rejects_a_project_nominal_argument_and_removes_its_reference_edge_fact() {
+    let world = registered(
+        concat!(
+            "pub struct ProjectType { value: String }\n",
+            "pub struct Use { value: Ref<ProjectType> }\n",
+        ),
+        "matrix-ref-project-kind",
+    );
+    let module = CanonicalModulePath::crate_root();
+    let authored = field_type_named(&world, "Use", "value");
+    let report = resolve_type_ref(
+        &accepted_input(
+            authored,
+            &module,
+            &world,
+            &GenericTypeScope::empty(),
+            SelfTypeScope::Absent,
+        )
+        .expect("accepted invalid Ref input"),
+    )
+    .expect("invalid Ref resolves to typed poison");
+    let ResolvedTypeRefOutcome::Poisoned(poisoned) = report.outcome() else {
+        panic!("a project nominal is not an entity family")
+    };
+    assert!(matches!(poisoned.product().recovered(), TypeKind::Error(_)));
+    assert!(matches!(
+        report.diagnostics(),
+        [diagnostic]
+            if matches!(
+                diagnostic.kind(),
+                NominalTypeDiagnosticKind::WrongArgumentKind {
+                    target: arcweft_lang_sema::nominal::TypeArityTarget::Builtin(
+                        BuiltinTypeConstructor::Ref
+                    ),
+                    argument: 0,
+                    expected: TypeArgumentExpectation::EntityFamily,
+                    actual: TypeArgumentKind::Type(TypeKind::ProjectNominal(_)),
+                }
+            )
+    ));
+    let child = &poisoned.product().nodes()[0];
+    assert!(matches!(
+        child.outcome(),
+        TypeNameResolution::Failed(TypeResolutionFailure::WrongArgumentKind { .. })
+    ));
+    assert!(matches!(
+        child.recovered(),
+        Some(TypeKind::ProjectNominal(_))
+    ));
 }
 
 #[test]

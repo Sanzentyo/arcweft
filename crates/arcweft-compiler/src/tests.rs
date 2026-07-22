@@ -280,7 +280,7 @@ goto @flow.done
 goto route
 }
 
-flow @flow.done done {
+flow @flow.done done() -> String {
 return "done"
 }
 "#,
@@ -474,7 +474,7 @@ flow @flow.main main {
 fn runtime_plan_uses_typecheck_evidence_for_function_value_calls() {
     let parsed = parse_source_text(
         r#"
-flow @flow.main main {
+flow @flow.main main() -> String {
     let ok: bool = f(1i64)
     return "done"
 }
@@ -556,7 +556,7 @@ flow @flow.main main {
 fn runtime_plan_uses_expected_function_evidence_for_placeholder_args() {
     let parsed = parse_source_text(
         r#"
-flow @flow.main main {
+flow @flow.main main() -> String {
     let accepted: bool = accept(_ > 80i64)
     return "done"
 }
@@ -614,7 +614,7 @@ flow @flow.main main {
 fn runtime_plan_report_carries_closure_capture_metadata() {
     let parsed = parse_source_text(
         r#"
-flow @flow.main main {
+flow @flow.main main() -> String {
     let limit: i64 = 80i64
     let is_high = |score: i64| -> bool {
         score >= limit
@@ -670,7 +670,7 @@ fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let high = _ > 80i64
     let high_grouped = (_ > 80i64)
     let add_one = add(_, 1i64)
@@ -767,7 +767,7 @@ fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
 
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let named_missing = add(right = 1i64)
     return named_missing(2i64)
 }
@@ -815,7 +815,7 @@ fn above(min: i64, value: i64) -> bool {
     return value > min
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let score = 90i64
     let ok = score.above(80i64)
     let named = score.above(min = 80i64)
@@ -900,7 +900,7 @@ fn trim(prefix: String)(value: String) -> String {
     return value
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let compare = above
     let score = 90i64
     let source = score.above(80i64)
@@ -984,7 +984,7 @@ fn between(min: i64, max: i64, value: i64) -> bool {
     return value > min
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let score = 75i64
     let direct = score.between([60i64, 90i64]...)
     let mixed = score.between([60i64]..., max = 90i64)
@@ -1084,7 +1084,7 @@ fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let partial = 2i64 |> add
     let positional = 2i64 |> add(1i64)
     let named = 2i64 |> add(lhs = 1i64)
@@ -1160,7 +1160,7 @@ flow @flow.main main {
 fn runtime_plan_binds_pipe_left_once_inside_if_let_expression() {
     let parsed = parse_source_text(
         r"
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let maybe = Some(7i64)
     let selected: i64 = maybe |> if let .Some(value) = ^ when value > 1i64 {
         value
@@ -1226,7 +1226,7 @@ flow @flow.main main {
 fn runtime_plan_binds_pipe_left_once_inside_match_expression() {
     let parsed = parse_source_text(
         r"
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let ready = true
     let selected: i64 = ready |> match ^ {
         true => 7i64
@@ -1295,7 +1295,7 @@ fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let add_two = add(2i64)
     let seven: i64 = add_two(5i64)
     return "done"
@@ -1354,7 +1354,7 @@ fn choose(left: String, right: String) -> (String, String) {
     return (left, right)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let via_right: (String, String) = "pipe-left" |> choose(right = "named-right")
     let via_left: (String, String) = "pipe-right" |> choose(left = "named-left")
     return "done"
@@ -1432,7 +1432,7 @@ flow @flow.main main {
 fn runtime_plan_lowers_destructured_closure_parameter_application() {
     let parsed = parse_source_text(
         r#"
-flow @flow.main main {
+flow @flow.main main() -> String {
     let choose = |(left, right): (String, String)| right
     let value: String = choose(("head", "tail"))
     return value
@@ -1490,7 +1490,7 @@ fn choose(left: String, right: String) -> String {
     return right
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let choose_right = choose(right = "tail")
     let value: String = choose_right("head")
     return "done"
@@ -1563,7 +1563,7 @@ fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let add_one = add([1i64]...)
     let exact: i64 = add([1i64]..., 2i64)
     let value: i64 = add_one(2i64)
@@ -1654,7 +1654,7 @@ fn pair(left: String)(right: String) -> (String, String) {
     return (left, right)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let with_left = pair("left")
     let tupled: (String, String) = with_left("right")
     let direct: (String, String) = pair("x")("y")
@@ -1746,7 +1746,7 @@ fn add(a: i64)(b: i64) -> i64 {
     return a + b
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let add_one = add(1i64)
     let ok: i64 = add_one([2i64]...)
     return "done"
@@ -1822,7 +1822,7 @@ fn sum(a: i64, b: i64) -> i64 {
     return a + b
 }
 
-flow main {
+flow main() -> String {
     let callback: (i64, i64) -> i64 = sum
     let total: i64 = callback([1i64, 2i64]...)
     let wide: u128 = 340282366920938463463374607431768211455
@@ -1858,7 +1858,7 @@ fn pairer(left: String) -> String -> (String, String) {
     return |right: String| (left, right)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let with_left = pairer("left")
     let tupled: (String, String) = with_left("right")
     return "done"
@@ -1939,7 +1939,7 @@ fn choose_right(pair: (String, String)) -> String {
     return choose(pair)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let value: String = choose_right(("head", "tail"))
     return value
 }
@@ -2040,7 +2040,7 @@ fn finish_with_tail(value: i64, id: i64 -> i64) -> i64 {
     return finish(value)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let id = |item: i64| item
     let value: i64 = finish_with_tail(7i64, id)
     return value
@@ -2144,7 +2144,7 @@ fn finish_with_alias(label: String, value: i64) -> (String, i64) {
     return (label, add_label(5i64))
 }
 
-flow @flow.main main {
+flow @flow.main main() -> (String, i64) {
     let value: (String, i64) = finish_with_alias("score", 7i64)
     return value
 }
@@ -2246,7 +2246,7 @@ fn tail_pair(tail: String) -> (String, String) {
     return pair(right = tail, left = "head")
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let value: (String, String) = tail_pair("tail")
     return "done"
 }
@@ -2331,7 +2331,7 @@ fn tail_pair(tail: String) -> (String, String) {
     return make_pair("head", tail)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let value: (String, String) = tail_pair("tail")
     return "done"
 }
@@ -2423,7 +2423,7 @@ fn finish_with_pipe(label: String, value: i64) -> (String, i64, i64) {
     return (label, add_label(5i64), exact)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> (String, i64, i64) {
     let value: (String, i64, i64) = finish_with_pipe("score", 7i64)
     return value
 }
@@ -2541,7 +2541,7 @@ fn tail_pair(tail: String) -> (String, String) {
     return tail |> pair(left = "head")
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let value: (String, String) = tail_pair("tail")
     return "done"
 }
@@ -2605,7 +2605,7 @@ fn choose_score(value: i64, ready: bool) -> i64 {
     }
 }
 
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let value: i64 = choose_score(3i64, true)
     return value
 }
@@ -2695,7 +2695,7 @@ fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
     return selected
 }
 
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let value: i64 = choose_optional(Some(7i64), 1i64)
     return value
 }
@@ -2788,7 +2788,7 @@ fn use_loader(path: String, load: String -> String) -> String {
     return load(path)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let load = |path: String| path
     let body: String = use_loader("story.arcw", load)
     return body
@@ -2861,7 +2861,7 @@ fn apply_suffix(prefix: String, combine: String -> String -> String, suffix: Str
     return with_prefix(suffix)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let combine = |left: String| -> String -> String {
         return |right: String| left
     }
@@ -2955,7 +2955,7 @@ fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let trim_tail = trim_right(right = " tail ")
     let value: String = trim_tail("head")
     return "done"
@@ -3002,7 +3002,7 @@ fn normalize(left: String, right: String) -> String {
     return trim_right(left, right)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let normalize_tail = normalize(right = " tail ")
     let value: String = normalize_tail("head")
     return "done"
@@ -3045,7 +3045,7 @@ fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let trim_head = trim_right("head")
     let value: String = trim_head(" tail ")
     return "done"
@@ -3088,7 +3088,7 @@ fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let trim = trim_right
     let value: String = trim("head", " tail ")
     return "done"
@@ -3134,7 +3134,7 @@ fn normalize(left: String, right: String) -> String {
     return trim_right(left, right)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let normalize_value = normalize
     let value: String = normalize_value("head", " tail ")
     return "done"
@@ -3176,7 +3176,7 @@ task fn load_label(name: String) -> String {
     return name
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let loader = load_label
     return "done"
 }
@@ -3217,7 +3217,7 @@ dialogue fn format_line(name: String) -> String {
     return name
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let formatter = format_line
     return "done"
 }
@@ -3260,7 +3260,7 @@ stream fn passthrough(frames: Stream<i64, String>) -> Stream<i64, String> {
     }
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let transform = passthrough
     return "done"
 }
@@ -3301,7 +3301,7 @@ fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let trim_tail: String -> String = "head" |> trim_right
     let value: String = trim_tail(" tail ")
     return "done"
@@ -3349,7 +3349,7 @@ fn normalize(left: String, right: String) -> String {
     return trim_right(left, right)
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let normalize_tail: String -> String = "head" |> normalize
     let value: String = normalize_tail(" tail ")
     return "done"
@@ -3392,7 +3392,7 @@ task fn load_label(prefix: String, name: String) -> String {
     return name
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let load_named: String -> String = "Ada" |> load_label
     let value: String = load_named("prefix")
     return "done"
@@ -3435,7 +3435,7 @@ dialogue fn format_line(prefix: String, name: String) -> String {
     return name
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let format_named: String -> String = "Ada" |> format_line
     let value: String = format_named("prefix")
     return "done"
@@ -3478,7 +3478,7 @@ stream fn tag_frame(prefix: String, name: String) -> Stream<String, String> {
     yield name
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let tag_named: String -> Stream<String, String> = "Ada" |> tag_frame
     let values: Stream<String, String> = tag_named("prefix")
     return "done"
@@ -3521,7 +3521,7 @@ fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let f = add
     let partial = 2i64 |> f
     let exact = 2i64 |> f(1i64)
@@ -3590,7 +3590,7 @@ fn add(left: i64)(right: i64) -> i64 {
     return left + right
 }
 
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let sum: i64 = 2i64 |> add(40i64)
     return sum
 }
@@ -3640,7 +3640,7 @@ fn chain(a: i64)(b: i64)(c: i64, d: i64) -> i64 {
     return a + b + c + d
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let tupled = tuple_tail(1i64, 2i64)(3i64)
     let sum = chain(1i64)(2i64)(3i64, 4i64)
     return "done"
@@ -3678,7 +3678,7 @@ flow @flow.main main {
 fn runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs() {
     let parsed = parse_source_text(
         r"
-flow @flow.main main {
+flow @flow.main main() -> i64 {
     let warmup = 1i64
     return warmup
 }
@@ -3752,7 +3752,7 @@ pub source @source.values: Source<i64, String> {
 fn runtime_plan_keeps_presentation_named_numeric_evidence_aligned() {
     let parsed = parse_source_text(
         r#"
-flow main {
+flow main() -> String {
     image(asset = @asset:.bg.pulse, id = "image.pulse", x = 1px, opacity = 0.5, depth = 7, param.count = 9, visible = true)
     return "done"
 }
@@ -3794,7 +3794,7 @@ impl Iterator for Hoge {
     }
 }
 
-flow @flow.main main -> i32 {
+flow @flow.main main() -> i32 {
     let source = Hoge { current: 0i32, end: 3i32 }
     for value in source {
         return value

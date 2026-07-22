@@ -266,7 +266,7 @@ fn parse_choice_plan_item(trimmed: &str) -> ChoicePlanItem {
         }
         if let Some(trigger) = head.strip_prefix("cancel on ") {
             return ChoicePlanItem::Cancel {
-                trigger: parse_trigger_pattern(trigger.trim()),
+                trigger: Box::new(parse_trigger_pattern(trigger.trim())),
                 body: parse_stmt_lines(block_body.trim()),
             };
         }

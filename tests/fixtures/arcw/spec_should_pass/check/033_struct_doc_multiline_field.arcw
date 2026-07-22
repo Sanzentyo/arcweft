@@ -5,4 +5,4 @@ pub struct Settings {
     visual: VisualConfig,
 }
 
-flow @flow.main main { return "done" }
+flow @flow.main main() -> String { return "done" }

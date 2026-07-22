@@ -43,6 +43,9 @@ pub fn completions_at(
         if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
             items.extend(metadata.completions(document.text(), offset));
         }
+        items.extend(crate::features::nominal_types::contextual_completions(
+            profile, document, offset,
+        ));
     }
     dedup_completion_items(items)
 }

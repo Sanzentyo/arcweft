@@ -273,7 +273,7 @@ impl ExprParser {
             )
         } else {
             (
-                CallArg::Positional(value.expr),
+                CallArg::Positional(Box::new(value.expr)),
                 CallArgumentFormSyntax::Positional,
                 value.range,
             )
@@ -421,7 +421,7 @@ impl ExprParser {
             )
         } else {
             (
-                CallArg::Positional(value),
+                CallArg::Positional(Box::new(value)),
                 CallArgumentFormSyntax::Positional,
                 value_range,
             )

@@ -1,7 +1,7 @@
 pub character @character.alice Alice as alice {
 }
 
-flow @flow.dialogue_scope_edge dialogue_scope_edge {
+flow @flow.dialogue_scope_edge dialogue_scope_edge() -> String {
     @<character.alice>.say[まずは本文。[mark .release][p]]
     with:
         init:

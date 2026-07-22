@@ -29,10 +29,10 @@ use super::{
     DetachedNominalReason, ExternalNominalResolution, GenericContext, NameResult, NodeValue,
     NominalDiagnosticRelated, NominalRelatedMessage, NominalResolutionLimitKind, ProjectNameLookup,
     ProjectSelection, ResolvedAliasReference, ResolvedOpenNominal, Resolver, SelfTypeScope,
-    SourceContext, TypeArgumentExpectation, TypeArityExpectation, TypeArityTarget,
-    TypeNameResolution, TypePoisonOrigin, TypeResolutionFailure, TypeResolutionInputError,
-    TypeResolutionWorld, builtin, canonical_cycle, canonical_poisons, evidence_from_project,
-    open_expectation,
+    SourceContext, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
+    TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypeResolutionFailure,
+    TypeResolutionInputError, TypeResolutionWorld, canonical_cycle, canonical_poisons,
+    evidence_from_project, open_expectation,
 };
 
 impl Resolver<'_, '_> {
@@ -54,7 +54,7 @@ impl Resolver<'_, '_> {
             return Ok(scoped);
         }
 
-        if let Some(builtin) = builtin(path) {
+        if let Some(builtin) = BuiltinTypeConstructor::from_type_path(path) {
             let expected = TypeArityExpectation::Exact(builtin.arity());
             if !expected.contains(actual) {
                 return Ok(self.failed_name(
@@ -830,14 +830,15 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::Source => {
                 self.apply_binary_builtin(context, constructor, arguments, child_causes)
             }
-            BuiltinTypeConstructor::Speaker | BuiltinTypeConstructor::SpeakerPreset => self
-                .apply_entity_family_builtin(
-                    context,
-                    constructor,
-                    arguments.remove(0),
-                    child_causes,
-                    target,
-                ),
+            BuiltinTypeConstructor::Ref
+            | BuiltinTypeConstructor::Speaker
+            | BuiltinTypeConstructor::SpeakerPreset => self.apply_entity_family_builtin(
+                context,
+                constructor,
+                arguments.remove(0),
+                child_causes,
+                target,
+            ),
         }
     }
 
@@ -909,7 +910,7 @@ impl Resolver<'_, '_> {
                         target,
                         argument: 1,
                         expected: TypeArgumentExpectation::ConstInt,
-                        actual,
+                        actual: TypeArgumentKind::Type(actual),
                     };
                     let poison = self.emit_failure(
                         &failure,
@@ -993,18 +994,16 @@ impl Resolver<'_, '_> {
         child_causes: Vec<TypePoisonId>,
         target: TypeArityTarget,
     ) -> NodeValue {
-        if let Some(family) = value.entity_family {
-            let ty = if constructor == BuiltinTypeConstructor::Speaker {
-                TypeKind::Speaker(family)
-            } else {
-                TypeKind::SpeakerPreset(family)
-            };
+        if let Some(family) = value.entity_family.as_ref() {
+            let ty = constructor
+                .project_entity_family(family.clone())
+                .expect("entity-family dispatch is closed by the owner enum");
             return NodeValue::typed(ty, child_causes);
         }
-        if let Some(actual) = value.ty {
-            if let TypeKind::Error(poison) = actual {
-                return NodeValue::error(poison, child_causes);
-            }
+        if let Some(TypeKind::Error(poison)) = value.ty.as_ref() {
+            return NodeValue::error(*poison, child_causes);
+        }
+        if let Some(actual) = value.argument_kind() {
             let failure = TypeResolutionFailure::WrongArgumentKind {
                 target,
                 argument: 0,
@@ -1015,13 +1014,11 @@ impl Resolver<'_, '_> {
             self.replace_node_outcome(&path, TypeNameResolution::Failed(failure));
             return NodeValue::error(poison, child_causes);
         }
-        let poison = self.allocate_poison();
-        self.record_poison(
-            poison,
-            TypePoisonOrigin::UpstreamTypeDiagnostic,
-            context.evidence(&path, true),
-            false,
-        );
+        let poison = value
+            .causes
+            .first()
+            .copied()
+            .expect("a valueless argument is already poisoned");
         NodeValue::error(poison, child_causes)
     }
 }

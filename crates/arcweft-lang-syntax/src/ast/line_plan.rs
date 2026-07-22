@@ -115,7 +115,7 @@ pub enum TriggerPattern {
     Event(Pattern),
     Signal {
         target: Expr,
-        value: Option<Pattern>,
+        value: Box<Option<Pattern>>,
     },
     Timeout(Expr),
     Mark(Pattern),
@@ -190,7 +190,7 @@ impl TriggerPattern {
         match self {
             Self::Input(pattern) => format!("input {}", pattern_label(pattern)),
             Self::Event(pattern) => format!("event {}", pattern_label(pattern)),
-            Self::Signal { target, value } => value.as_ref().map_or_else(
+            Self::Signal { target, value } => value.as_ref().as_ref().map_or_else(
                 || format!("signal {}", expr_label(target)),
                 |value| format!("signal {} {}", expr_label(target), pattern_label(value)),
             ),

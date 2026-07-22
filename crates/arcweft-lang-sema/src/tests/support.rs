@@ -13,7 +13,7 @@ pub(super) use crate::semantic::{
 };
 pub(super) use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 pub(super) use crate::types::{EntityKind, MapKind, TypeKind};
-pub(super) use arcweft_lang_hir::lower::lower_to_hir;
+pub(super) use arcweft_lang_hir::lower::{lower_document_to_hir, lower_to_hir};
 pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};
 pub(super) use arcweft_lang_syntax::{
     ast::{
@@ -54,6 +54,18 @@ pub(super) fn parse_ok(
         parsed.errors()
     );
     parsed.into_typed_tree()
+}
+
+pub(super) fn lower_bound_hir(label: &str, source: &str) -> arcweft_lang_hir::model::HirModule {
+    let document = arcweft_source::SourceDocument::try_new(
+        arcweft_source::SourceDocumentId::try_new(format!("memory:///{label}.arcw"))
+            .expect("valid test document ID"),
+        arcweft_source::SourceName::Generated,
+        source,
+    )
+    .expect("valid test source document");
+    let tree = parse_ok(source);
+    lower_document_to_hir(&document, &tree).expect("document-bound test source lowers")
 }
 
 pub(super) fn parse_errors(source: impl Into<String>) -> Vec<ParseError> {

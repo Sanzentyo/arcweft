@@ -571,14 +571,6 @@ pub(super) fn is_drop_name(name: &str) -> bool {
     matches!(name, "drop" | "drop_optional" | "on_drop")
 }
 
-pub(super) fn result_ok_type(name: &str) -> Option<TypeKind> {
-    let inner = name
-        .strip_prefix("Result<")
-        .and_then(|value| value.strip_suffix('>'))?;
-    let ok = inner.split_once(',').map_or(inner, |(ok, _)| ok).trim();
-    Some(named_type_label(ok))
-}
-
 pub(super) fn well_known_static_capacity_method_type(name: &str) -> Option<TypeKind> {
     if let Some(item) = name
         .strip_prefix("Vec<")

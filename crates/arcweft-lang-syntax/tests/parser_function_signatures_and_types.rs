@@ -1,5 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{common::TextRange, items::Item},
+    expr::{Expr, TryOperatorSource},
     parser::parse_source,
     reference::BorrowKind,
     types::{
@@ -455,6 +456,15 @@ fn source_function_annotations_keep_document_absolute_type_ranges() {
         ),
         "Missing"
     );
+    assert_eq!(
+        slice(
+            function
+                .signature_source()
+                .result()
+                .expect("function signature return range"),
+        ),
+        "Missing"
+    );
     let GenericParam::Type(type_parameter) = &signature.generic_params()[0] else {
         panic!("fixture generic must be a type parameter")
     };
@@ -474,4 +484,53 @@ fn source_function_annotations_keep_document_absolute_type_ranges() {
             .collect::<Vec<_>>(),
         vec!["Missing", "Bound"]
     );
+}
+
+#[test]
+fn source_function_defaults_keep_document_absolute_expression_ranges() {
+    let source = concat!(
+        "// UTF-8 prefix 名前\n",
+        "#[fx]\n",
+        "fn inspect(value: i64 = input?) -> Unit {}\n",
+    );
+    let parsed = parse_source(source);
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let Item::Function(function) = &parsed.typed_tree().items()[0] else {
+        panic!("fixture must parse as a function")
+    };
+    let default = function.signature().param_groups()[0].params()[0]
+        .default()
+        .expect("default expression");
+    let Expr::Try(tried) = default else {
+        panic!("default must retain the typed Try node")
+    };
+    let operator = source.find('?').expect("question token");
+
+    assert_eq!(
+        tried.source().operator(),
+        TryOperatorSource::PostfixQuestion {
+            question: TextRange::new(operator, operator + 1),
+        }
+    );
+    assert_eq!(
+        &source[tried.source().whole().start()..tried.source().whole().end()],
+        "input?"
+    );
+}
+
+#[test]
+fn function_signature_source_keeps_exact_result_range_without_a_prefix_line() {
+    let source = "fn demo(value: Result<i64, String>) -> Result<i64, i64> {\n    Ok(value?)\n}\n";
+    let parsed = parse_source(source);
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let Item::Function(function) = &parsed.typed_tree().items()[0] else {
+        panic!("fixture must parse as a function")
+    };
+    let result = function
+        .signature_source()
+        .result()
+        .expect("declared result source");
+
+    assert_eq!(result, TextRange::new(39, 55));
+    assert_eq!(&source[result.start()..result.end()], "Result<i64, i64>");
 }

@@ -138,6 +138,49 @@ fn accepted_callable_schema_uses_exact_project_nominal_identity() {
 }
 
 #[test]
+fn accepted_callable_schema_projects_ref_entity_family_arguments() {
+    let (root, project, world) = root_project_source(
+        "callable-ref-entity-family",
+        concat!(
+            "fn retain_character(value: Ref<Character>) -> Ref<Character> { value }\n",
+            "fn retain_flow(value: Ref<Flow>) -> Ref<Flow> { value }\n",
+        ),
+    );
+    let facts = one_character_facts(&root, world, &sample_manifest("layers/body.png"));
+    let registered = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("entity-family Ref callables register");
+    let catalog = registered.environment().callable_catalog().project();
+
+    for (name, family) in [
+        ("retain_character", EntityKind::Character),
+        ("retain_flow", EntityKind::Flow),
+    ] {
+        let declaration = registered
+            .symbols()
+            .callable_symbols()
+            .find(|symbol| symbol.declaration().name() == name)
+            .unwrap_or_else(|| panic!("{name} callable symbol"))
+            .declaration();
+        let record = catalog.record(declaration).expect("callable record");
+        assert_eq!(
+            record.schema().groups()[0].parameters()[0].ty(),
+            &CallableParameterType::Exact(TypeKind::entity_ref(family.clone()))
+        );
+        assert_eq!(record.schema().result(), &TypeKind::entity_ref(family));
+    }
+    assert_eq!(
+        registered
+            .environment()
+            .callable_catalog()
+            .nominal_resolutions()
+            .roots()
+            .len(),
+        4,
+        "each parameter and result keeps one checked Ref source root"
+    );
+}
+
+#[test]
 fn poisoned_callable_schema_registers_recovery_and_retains_diagnostics() {
     let (root, project, world) = root_project_source(
         "callable-poisoned-nominal",

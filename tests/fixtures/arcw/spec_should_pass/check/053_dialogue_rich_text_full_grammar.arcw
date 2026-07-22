@@ -113,7 +113,7 @@ entry cli @entry.rich_text_full_grammar {
     goto @flow.rich_text_full_grammar
 }
 
-flow @flow.rich_text_full_grammar rich_text_full_grammar {
+flow @flow.rich_text_full_grammar rich_text_full_grammar() -> String {
     let player_name = "澪"
     let score: i32 = 42
     let debug_label = "debug-ok"

@@ -170,3 +170,34 @@ fn agent_repl_serialized_entity_ref_source(entity: &EntityRefSyntax) -> Option<S
         .as_absolute()
         .map(|entity| format!("@{}", entity.body()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_lang_syntax::parser::{FragmentKind, ParseOptions, parse_fragment};
+
+    #[test]
+    fn cli_snapshot_retains_both_general_try_spellings_with_one_kind() {
+        for (source, expected_expression) in [
+            (
+                "let observed = try observe(@flow.opening)",
+                "try observe(@flow.opening)",
+            ),
+            (
+                "let observed = observe(@flow.opening)?",
+                "observe(@flow.opening)?",
+            ),
+        ] {
+            let fragment =
+                parse_fragment(source, FragmentKind::Statements, ParseOptions::default());
+            assert!(fragment.errors().is_empty(), "{:?}", fragment.errors());
+            let bindings = agent_repl_serialized_bindings(&fragment);
+            let binding = bindings
+                .get("observed")
+                .expect("Try-wrapped observation remains serializable");
+
+            assert_eq!(binding.snapshot_kind, "observation");
+            assert_eq!(binding.source, expected_expression);
+        }
+    }
+}

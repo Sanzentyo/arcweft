@@ -1847,10 +1847,24 @@ fn parse_impl_member(
                 ImplMember::Raw(item.to_owned())
             }
             Ok(signature) => {
+                let head_base = item_base
+                    + subslice_offset(item, head).expect("impl signature remains in member source");
+                let Some(signature_source) =
+                    function_signature_source(head, head_base, None, &signature)
+                else {
+                    errors.push(simple_error(
+                        head_base,
+                        head.len(),
+                        "impl function signature source ranges could not be retained",
+                        "a source-backed impl function signature",
+                    ));
+                    return ImplMember::Raw(item.to_owned());
+                };
                 let (body_statements, body_value) =
                     parse_scope_authored_expr_body_recovering_with_base(body, body_base, errors);
                 ImplMember::Function {
                     signature,
+                    signature_source,
                     body: body.to_owned(),
                     body_statements,
                     body_value: body_value.map(Box::new),
@@ -1869,11 +1883,17 @@ fn parse_impl_member(
                 ));
                 ImplMember::Raw(item.to_owned())
             },
-            |signature| ImplMember::Function {
-                signature,
-                body: String::new(),
-                body_statements: Vec::new(),
-                body_value: None,
+            |signature| {
+                function_signature_source(item, item_base, None, &signature).map_or_else(
+                    || ImplMember::Raw(item.to_owned()),
+                    |signature_source| ImplMember::Function {
+                        signature,
+                        signature_source,
+                        body: String::new(),
+                        body_statements: Vec::new(),
+                        body_value: None,
+                    },
+                )
             },
         );
     }

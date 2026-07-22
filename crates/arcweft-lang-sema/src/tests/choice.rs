@@ -378,7 +378,10 @@ flow @flow.opening opening {
 fn typechecks_choice_plan_structured_bodies() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+enum FlowExit { Goto(Ref<Flow>) }
+struct FlowError {}
+
+flow @flow.opening opening() -> Result<FlowExit, FlowError> {
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     }
@@ -393,7 +396,6 @@ flow @flow.opening opening {
     let hir = lower_to_hir(&tree).expect("choice plan lowers");
     validate_typecheck_ready(&hir).expect("choice plan bodies have structured expressions");
     let env = TypeCheckEnv::new()
-        .with_function("Ok", TypeKind::Named("Result".to_owned()))
         .with_function("FlowExit.Goto", TypeKind::Named("FlowExit".to_owned()))
         .with_function("log.info", TypeKind::Unit);
     typecheck_hir(&hir, &env).expect("choice plan bodies typecheck");

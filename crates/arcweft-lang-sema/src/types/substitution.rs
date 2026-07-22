@@ -3,8 +3,36 @@
 use std::collections::BTreeMap;
 
 use super::{
-    AcceptedNominalType, GenericTypeParameterId, OpenNominalType, ProjectNominalType, TypeKind,
+    AcceptedNominalType, EntityType, GenericTypeParameterId, OpenNominalType, ProjectNominalType,
+    TypeKind,
 };
+
+/// One call-site instantiation of declaration-owned generic type parameters.
+///
+/// Inference observes already checked argument types and only commits a set of
+/// bindings when every repeated generic identity remains consistent. Source
+/// spellings never participate in the lookup.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct TypeParameterSubstitutions {
+    bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
+}
+
+impl TypeParameterSubstitutions {
+    /// Infers bindings from one declared parameter shape and actual argument.
+    pub(crate) fn observe(&mut self, declared: &TypeKind, actual: &TypeKind) -> bool {
+        let mut bindings = self.bindings.clone();
+        if !observe_type_parameters(declared, actual, &mut bindings) {
+            return false;
+        }
+        self.bindings = bindings;
+        true
+    }
+
+    /// Applies all call-site bindings to a semantic type.
+    pub(crate) fn apply(&self, ty: &TypeKind) -> TypeKind {
+        ty.substitute_type_parameters(&self.bindings)
+    }
+}
 
 impl TypeKind {
     /// Replaces declaration-owned generic parameters throughout this type.
@@ -35,6 +63,12 @@ impl TypeKind {
                 lifetime: lifetime.clone(),
                 inner: Box::new(inner.substitute_type_parameters(substitutions)),
             },
+            Self::Ref(entity) => Self::Ref(EntityType::new(
+                entity.kind().clone(),
+                entity
+                    .value()
+                    .map(|value| value.substitute_type_parameters(substitutions)),
+            )),
             Self::IteratorState { family, item } => Self::IteratorState {
                 family: *family,
                 item: Box::new(item.substitute_type_parameters(substitutions)),
@@ -147,6 +181,249 @@ impl TypeKind {
     }
 }
 
+fn observe_type_parameters(
+    declared: &TypeKind,
+    actual: &TypeKind,
+    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
+) -> bool {
+    if declared.is_unresolved_for_compatibility() || actual.is_unresolved_for_compatibility() {
+        return true;
+    }
+    match declared {
+        TypeKind::GenericParam(parameter) => {
+            if let Some(bound) = bindings.get(parameter) {
+                bound == actual
+            } else {
+                bindings.insert(parameter.clone(), actual.clone());
+                true
+            }
+        }
+        TypeKind::ProjectNominal(declared) => match actual {
+            TypeKind::ProjectNominal(actual) if declared.declaration() == actual.declaration() => {
+                observe_type_slices(declared.arguments(), actual.arguments(), bindings)
+            }
+            _ => true,
+        },
+        TypeKind::AcceptedNominal(declared) => match actual {
+            TypeKind::AcceptedNominal(actual) if declared.declaration() == actual.declaration() => {
+                observe_type_slices(declared.arguments(), actual.arguments(), bindings)
+            }
+            _ => true,
+        },
+        TypeKind::OpenNominal(declared) => match actual {
+            TypeKind::OpenNominal(actual)
+                if declared.rule() == actual.rule() && declared.path() == actual.path() =>
+            {
+                observe_type_slices(declared.arguments(), actual.arguments(), bindings)
+            }
+            _ => true,
+        },
+        TypeKind::Ref(declared) => match actual {
+            TypeKind::Ref(actual) if declared.kind() == actual.kind() => {
+                match (declared.value(), actual.value()) {
+                    (Some(declared), Some(actual)) => {
+                        observe_type_parameters(declared, actual, bindings)
+                    }
+                    _ => true,
+                }
+            }
+            _ => true,
+        },
+        _ => observe_unary_type_parameters(declared, actual, bindings)
+            .or_else(|| observe_composite_type_parameters(declared, actual, bindings))
+            .unwrap_or(true),
+    }
+}
+
+fn observe_unary_type_parameters(
+    declared: &TypeKind,
+    actual: &TypeKind,
+    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
+) -> Option<bool> {
+    let pair = match (declared, actual) {
+        (TypeKind::Range(declared), TypeKind::Range(actual))
+        | (TypeKind::Probe(declared), TypeKind::Probe(actual))
+        | (TypeKind::Vec(declared), TypeKind::Vec(actual))
+        | (TypeKind::Slice(declared), TypeKind::Slice(actual))
+        | (TypeKind::Seq(declared), TypeKind::Seq(actual))
+        | (TypeKind::Option(declared), TypeKind::Option(actual))
+        | (TypeKind::ThreadHandle(declared), TypeKind::ThreadHandle(actual))
+        | (TypeKind::Shared(declared), TypeKind::Shared(actual)) => (declared, actual),
+        (TypeKind::Array { item: declared, .. }, TypeKind::Array { item: actual, .. }) => {
+            (declared, actual)
+        }
+        (
+            TypeKind::BorrowRef {
+                kind: declared_kind,
+                lifetime: declared_lifetime,
+                inner: declared,
+            },
+            TypeKind::BorrowRef {
+                kind: actual_kind,
+                lifetime: actual_lifetime,
+                inner: actual,
+            },
+        ) if declared_kind == actual_kind && declared_lifetime == actual_lifetime => {
+            (declared, actual)
+        }
+        (
+            TypeKind::IteratorState {
+                family: declared_family,
+                item: declared,
+            },
+            TypeKind::IteratorState {
+                family: actual_family,
+                item: actual,
+            },
+        ) if declared_family == actual_family => (declared, actual),
+        (
+            TypeKind::Range(_)
+            | TypeKind::Probe(_)
+            | TypeKind::Vec(_)
+            | TypeKind::Slice(_)
+            | TypeKind::Seq(_)
+            | TypeKind::Option(_)
+            | TypeKind::ThreadHandle(_)
+            | TypeKind::Shared(_)
+            | TypeKind::Array { .. }
+            | TypeKind::BorrowRef { .. }
+            | TypeKind::IteratorState { .. },
+            _,
+        ) => return Some(true),
+        _ => return None,
+    };
+    Some(observe_type_parameters(pair.0, pair.1, bindings))
+}
+
+fn observe_composite_type_parameters(
+    declared: &TypeKind,
+    actual: &TypeKind,
+    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
+) -> Option<bool> {
+    let observed = match (declared, actual) {
+        (
+            TypeKind::Need {
+                ready: declared_first,
+                error: declared_second,
+            }
+            | TypeKind::Stream {
+                item: declared_first,
+                error: declared_second,
+            }
+            | TypeKind::Source {
+                item: declared_first,
+                error: declared_second,
+            }
+            | TypeKind::Result {
+                ok: declared_first,
+                error: declared_second,
+            },
+            TypeKind::Need {
+                ready: actual_first,
+                error: actual_second,
+            }
+            | TypeKind::Stream {
+                item: actual_first,
+                error: actual_second,
+            }
+            | TypeKind::Source {
+                item: actual_first,
+                error: actual_second,
+            }
+            | TypeKind::Result {
+                ok: actual_first,
+                error: actual_second,
+            },
+        ) if core::mem::discriminant(declared) == core::mem::discriminant(actual) => {
+            observe_type_parameters(declared_first, actual_first, bindings)
+                && observe_type_parameters(declared_second, actual_second, bindings)
+        }
+        (
+            TypeKind::Map {
+                kind: declared_kind,
+                key: declared_key,
+                value: declared_value,
+            },
+            TypeKind::Map {
+                kind: actual_kind,
+                key: actual_key,
+                value: actual_value,
+            },
+        ) if declared_kind == actual_kind => {
+            observe_type_parameters(declared_key, actual_key, bindings)
+                && observe_type_parameters(declared_value, actual_value, bindings)
+        }
+        (
+            TypeKind::Function {
+                params: declared_params,
+                return_type: declared_return,
+                ..
+            },
+            TypeKind::Function {
+                params: actual_params,
+                return_type: actual_return,
+                ..
+            },
+        ) => {
+            observe_type_slices(declared_params, actual_params, bindings)
+                && observe_type_parameters(declared_return, actual_return, bindings)
+        }
+        (
+            TypeKind::Projection {
+                subject: declared_subject,
+                trait_name: declared_trait,
+                assoc: declared_assoc,
+            },
+            TypeKind::Projection {
+                subject: actual_subject,
+                trait_name: actual_trait,
+                assoc: actual_assoc,
+            },
+        ) if declared_trait == actual_trait && declared_assoc == actual_assoc => {
+            observe_type_parameters(declared_subject, actual_subject, bindings)
+        }
+        (
+            TypeKind::Need { .. }
+            | TypeKind::Stream { .. }
+            | TypeKind::Source { .. }
+            | TypeKind::Result { .. }
+            | TypeKind::Map { .. }
+            | TypeKind::Function { .. }
+            | TypeKind::Projection { .. },
+            _,
+        ) => true,
+        _ => return observe_sequence_type_parameters(declared, actual, bindings),
+    };
+    Some(observed)
+}
+
+fn observe_sequence_type_parameters(
+    declared: &TypeKind,
+    actual: &TypeKind,
+    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
+) -> Option<bool> {
+    Some(match (declared, actual) {
+        (TypeKind::Tuple(declared), TypeKind::Tuple(actual))
+        | (TypeKind::Choice(declared), TypeKind::Choice(actual)) => {
+            observe_type_slices(declared, actual, bindings)
+        }
+        (TypeKind::Tuple(_) | TypeKind::Choice(_), _) => true,
+        _ => return None,
+    })
+}
+
+fn observe_type_slices(
+    declared: &[TypeKind],
+    actual: &[TypeKind],
+    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
+) -> bool {
+    declared.len() == actual.len()
+        && declared
+            .iter()
+            .zip(actual)
+            .all(|(declared, actual)| observe_type_parameters(declared, actual, bindings))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +448,52 @@ mod tests {
                 ok: Box::new(TypeKind::Vec(Box::new(TypeKind::String))),
                 error: Box::new(TypeKind::GenericParam(untouched)),
             }
+        );
+    }
+
+    #[test]
+    fn observation_specializes_a_nested_result_error() {
+        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(11));
+        let error = GenericTypeParameterId::new(owner, 0);
+        let declared = TypeKind::Result {
+            ok: Box::new(TypeKind::I64),
+            error: Box::new(TypeKind::GenericParam(error.clone())),
+        };
+        let actual = TypeKind::Result {
+            ok: Box::new(TypeKind::I64),
+            error: Box::new(TypeKind::String),
+        };
+        let mut substitutions = TypeParameterSubstitutions::default();
+
+        assert!(substitutions.observe(&declared, &actual));
+        assert_eq!(
+            substitutions.apply(&TypeKind::GenericParam(error)),
+            TypeKind::String
+        );
+    }
+
+    #[test]
+    fn conflicting_observation_does_not_commit_partial_bindings() {
+        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(12));
+        let item = GenericTypeParameterId::new(owner.clone(), 0);
+        let error = GenericTypeParameterId::new(owner, 1);
+        let mut substitutions = TypeParameterSubstitutions::default();
+        assert!(substitutions.observe(&TypeKind::GenericParam(item.clone()), &TypeKind::I64));
+
+        let declared = TypeKind::Tuple(vec![
+            TypeKind::GenericParam(error.clone()),
+            TypeKind::GenericParam(item.clone()),
+        ]);
+        let actual = TypeKind::Tuple(vec![TypeKind::Bool, TypeKind::String]);
+        assert!(!substitutions.observe(&declared, &actual));
+
+        assert_eq!(
+            substitutions.apply(&TypeKind::GenericParam(item)),
+            TypeKind::I64
+        );
+        assert_eq!(
+            substitutions.apply(&TypeKind::GenericParam(error.clone())),
+            TypeKind::GenericParam(error)
         );
     }
 }

@@ -1197,7 +1197,7 @@ flow @flow.main main {
 fn runtime_plan_lowers_range_for_source_as_runtime_range_expr() {
     let tree = parse_ok(
         r"
-flow @flow.range range {
+flow @flow.range range() -> i32 {
     let a = 2
     for i in 0..a {
         log.info(i)

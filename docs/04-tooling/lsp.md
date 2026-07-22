@@ -27,7 +27,8 @@
   - `speaker:` → `speaker.say()[...]`
   - `speaker(args):` → `speaker.say(args)[...]` for character refs
   - `speaker_preset(args):` → `speaker_preset(args)[...]`
-  - `await? expr with ...` → `try await expr with ...`
+  - preserve `try expr` / `expr?` and `try await` / `await?` authored spellings;
+    source-facing actions do not canonicalize between retained forms
   - `parent::path` → `super::path`
   - preserve the callee kind when expanding dialogue sugar, so lexical speaker
     presets are not rewritten into forced `.say(...)` calls

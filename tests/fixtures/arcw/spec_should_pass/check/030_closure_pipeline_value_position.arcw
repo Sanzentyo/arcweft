@@ -1,4 +1,4 @@
-flow @flow.main main {
+flow @flow.main main() -> String {
     let xs = [1i64, 2i64, 3i64]
     let ys = xs.map(|x| x + 1i64).collect<Vec<i64>>()
     log.info("ys", value = ys)

@@ -756,6 +756,17 @@ AwaitPendingBlock := 'with' ':' Newline AwaitCase+
 `await? expr with:` is sugar for `try await expr with:`.
 The indentation form `with:` is syntax sugar for the canonical brace form `with { ... }`. Formatters may keep `with:` for scenario-like readability, but lowering should treat it as brace-block syntax.
 
+General prefix `try expr` and postfix `expr?` are both retained authored forms
+of the same Try operation. Prefix Try binds at prefix precedence `90`; postfix
+Try binds at postfix precedence `100`. Source-facing tools preserve which form
+was authored instead of rewriting one into the other.
+
+`try await expr` and `await? expr` are parsed directly as one propagating Await
+node, not as a general Try wrapped around Await. Grouping remains significant:
+`(await need)?` is Try wrapping a result-preserving Await, while `await need?`
+is a result-preserving Await whose operand is a postfix Try. A general prefix
+Try around a result-preserving Await therefore requires `try (await need)`.
+
 Only the following await grouping is rejected for ambiguity:
 
 ```text

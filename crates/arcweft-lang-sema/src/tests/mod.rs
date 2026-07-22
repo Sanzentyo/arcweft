@@ -21,6 +21,7 @@ mod lower_hir;
 mod parser_basics;
 mod patterns;
 mod presentation;
+mod propagation;
 mod resolve_symbols;
 mod script_tests;
 mod semantic;

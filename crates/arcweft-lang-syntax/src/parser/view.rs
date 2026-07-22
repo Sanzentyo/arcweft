@@ -47,7 +47,7 @@ enum ViewHead {
         label: ViewButtonLabel,
         args: Vec<ViewArg>,
         id: Option<EntityRefSyntax>,
-        enabled: Option<Expr>,
+        enabled: Box<Option<Expr>>,
         focusable: bool,
     },
     ViewCall {
@@ -1035,7 +1035,7 @@ fn parse_view_head(
             label: button_label(&args),
             args: args.clone(),
             id: named_entity_arg(&args, "id").or_else(|| first_entity_arg(&args)),
-            enabled: named_arg(&args, "enabled").cloned(),
+            enabled: Box::new(named_arg(&args, "enabled").cloned()),
             focusable: named_arg_bool(&args, "focusable").unwrap_or(true),
         },
         other if is_view_container_element(other) => ViewHead::Element {
@@ -1135,7 +1135,7 @@ fn parse_view_modifier(
         let (source, range) = source_map.lines_source(lines, consumed)?;
         let arguments = call_arg(source.trim(), ".fx")?;
         return parse_view_fx_application(arguments, fx_ordinal, range, base, source_map, errors)
-            .map(|application| (ViewModifier::Fx(application), consumed));
+            .map(|application| (ViewModifier::Fx(Box::new(application)), consumed));
     }
     if let Some(value) = call_arg(line, ".style") {
         let value_range = source_map.mapped_location(value);
@@ -1699,7 +1699,7 @@ fn button_label(args: &[ViewArg]) -> ViewButtonLabel {
     };
     match expr {
         Expr::Literal(Literal::String(value)) => ViewButtonLabel::Literal(value.clone()),
-        expr => ViewButtonLabel::Expr(expr.clone()),
+        expr => ViewButtonLabel::Expr(Box::new(expr.clone())),
     }
 }
 

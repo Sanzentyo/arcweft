@@ -482,6 +482,7 @@ impl TypeChecker<'_> {
                 facts,
                 poison,
                 diagnostics,
+                ..
             } = checked.arguments;
             let checked_target = CheckedCallTarget::selected(
                 candidate,
@@ -599,16 +600,19 @@ impl TypeChecker<'_> {
             | CallableValidator::Trait(_)
             | CallableValidator::Drop
             | CallableValidator::Promotion(_)
-            | CallableValidator::Speaker => RegisteredCandidateCheck {
-                arguments: self.check_registered_schema_args(
+            | CallableValidator::Speaker => {
+                let arguments = self.check_registered_schema_args(
                     site.label,
                     schema,
                     site.group,
                     site.call,
                     records_facts,
-                ),
-                result: schema_result_type(schema, site.group),
-            },
+                );
+                let result = arguments
+                    .substitutions
+                    .apply(&schema_result_type(schema, site.group));
+                RegisteredCandidateCheck { arguments, result }
+            }
             CallableValidator::ReductionConstructor(kind) => self
                 .check_registered_reduction_constructor(
                     *kind,

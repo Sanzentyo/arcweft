@@ -3,7 +3,7 @@ entry cli @entry.main { goto @flow.line_handles }
 pub character @character.alice Alice as alice {
 }
 
-flow @flow.line_handles line_handles {
+flow @flow.line_handles line_handles() -> String {
     let (_, cue) = alice(voice=auto)[聞いて。[p]]
     with:
         let actor = alice.stage.acquire(scope=line)

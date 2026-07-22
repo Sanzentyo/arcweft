@@ -2,15 +2,13 @@ use super::support::*;
 
 #[test]
 fn typechecks_task_fn_try_await_without_wait_view() {
-    let tree = parse_ok(
-        r"
-task fn load_bg_task() -> Image {
+    let source = r"
+task fn load_bg_task() -> Result<Image, AssetError> {
     let bg = try await load_bg()
-    bg
+    Ok(bg)
 }
-",
-    );
-    let hir = lower_to_hir(&tree).expect("task function lowers");
+";
+    let hir = lower_bound_hir("task-fn-try-await", source);
     validate_typecheck_ready(&hir).expect("try await expression is structured");
 
     let env = TypeCheckEnv::new().with_function(
@@ -596,7 +594,10 @@ flow @flow.borrow borrow {
 fn typechecks_await_wait_view_branches() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+enum FlowExit { Goto(Ref<Flow>) }
+struct AvatarError {}
+
+flow @flow.loading loading() -> Result<FlowExit, AvatarError> {
     try await load_avatar() with {
         pending p => progress.set(p.ratio)
         ready img => Image(img)
@@ -617,7 +618,6 @@ flow @flow.loading loading {
         )
         .with_function("Image", TypeKind::Named("View".to_owned()))
         .with_function("Icon", TypeKind::Named("View".to_owned()))
-        .with_function("Ok", TypeKind::Named("Result".to_owned()))
         .with_function("FlowExit.Goto", TypeKind::Named("FlowExit".to_owned()))
         .with_symbol("img", TypeKind::Named("Image".to_owned()));
 

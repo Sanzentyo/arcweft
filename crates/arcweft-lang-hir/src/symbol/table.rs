@@ -1044,6 +1044,7 @@ fn is_reserved_type_name(name: &str) -> bool {
             | "Need"
             | "Stream"
             | "Source"
+            | "Ref"
             | "Speaker"
             | "SpeakerPreset"
     )

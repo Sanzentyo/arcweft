@@ -548,7 +548,13 @@ fn validate_constructor_args(
 ) {
     match kind {
         FxConstructorKind::Stack => {
-            let [CallArg::Positional(Expr::BracketSeq(children))] = args else {
+            let [CallArg::Positional(value)] = args else {
+                errors.push(TypeCheckError::new(format!(
+                    "Fx function `{owner}` must call `Fx.stack` with one ordered graph list"
+                )));
+                return;
+            };
+            let Expr::BracketSeq(children) = value.as_ref() else {
                 errors.push(TypeCheckError::new(format!(
                     "Fx function `{owner}` must call `Fx.stack` with one ordered graph list"
                 )));

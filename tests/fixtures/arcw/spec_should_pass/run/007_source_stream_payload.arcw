@@ -7,4 +7,4 @@ source @source.events: Source<Record, String> {
     privacy = transient
     on item ev => yield ev
 }
-flow @flow.main main { return "done" }
+flow @flow.main main() -> String { return "done" }

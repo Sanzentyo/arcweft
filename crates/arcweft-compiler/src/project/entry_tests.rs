@@ -225,7 +225,7 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
 #[test]
 fn checked_non_stateful_entry_keeps_its_exact_common_binding() {
     let source = r#"
-flow @flow.main main {
+flow @flow.main main() -> String {
     return "done"
 }
 

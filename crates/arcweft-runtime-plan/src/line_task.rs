@@ -795,8 +795,11 @@ fn line_memo_request(expr: &Expr) -> Option<LineMemoRequest> {
     }
     let (first, rest) = call.args().split_first()?;
     let name = match first {
-        CallArg::Positional(Expr::Path(path)) => path.as_label().to_owned(),
-        CallArg::Positional(Expr::ShortVariant(name)) => name.as_str().to_owned(),
+        CallArg::Positional(value) => match value.as_ref() {
+            Expr::Path(path) => path.as_label().to_owned(),
+            Expr::ShortVariant(name) => name.as_str().to_owned(),
+            _ => return None,
+        },
         _ => return None,
     };
     let options = rest

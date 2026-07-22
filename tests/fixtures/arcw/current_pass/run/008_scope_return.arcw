@@ -1,6 +1,6 @@
 entry cli @entry.main { goto @flow.main }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     let value = scope calc {
         10i32 + 32i32
     }

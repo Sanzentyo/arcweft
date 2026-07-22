@@ -295,7 +295,7 @@ impl CallExpr {
         }
         Ok(Self {
             callee: Box::new(callee),
-            args: vec![CallArg::Positional(closure)],
+            args: vec![CallArg::Positional(Box::new(closure))],
             syntax: CallSurfaceSyntax::CallbackBlock(syntax),
         })
     }

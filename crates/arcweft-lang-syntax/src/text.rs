@@ -786,11 +786,13 @@ fn function_ruby_token(expr: &Expr) -> Option<DialogueToken> {
     if !matches!(call.callee(), Expr::Path(path) if path == "ruby") {
         return None;
     }
-    let [
-        CallArg::Positional(Expr::Literal(Literal::String(base))),
-        CallArg::Positional(Expr::Literal(Literal::String(ruby))),
-    ] = call.args()
-    else {
+    let [CallArg::Positional(base), CallArg::Positional(ruby)] = call.args() else {
+        return None;
+    };
+    let Expr::Literal(Literal::String(base)) = base.as_ref() else {
+        return None;
+    };
+    let Expr::Literal(Literal::String(ruby)) = ruby.as_ref() else {
         return None;
     };
     Some(DialogueToken::Ruby {

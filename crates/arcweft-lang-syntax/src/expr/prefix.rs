@@ -31,7 +31,7 @@ impl ExprParser {
             }
             Token::Ident(keyword) if keyword == "await" => self.parse_await_expr(prefix_range),
             Token::Ident(keyword) if keyword == "try" => {
-                let operand = self.parse_expr_bp_spanned(90)?;
+                let operand = self.parse_prefixed_operand(prefix_range)?;
                 let whole = TextRange::new(prefix_range.start(), operand.range.end());
                 Ok(Expr::Try(TryExpr::new(
                     Box::new(operand.expr),
@@ -47,8 +47,8 @@ impl ExprParser {
             Token::Ident(keyword) if keyword == "thread" => self.parse_thread_expr(),
             Token::Ident(keyword) if keyword == "if" => self.parse_if_expr_after_keyword(),
             Token::Ident(keyword) if keyword == "match" => self.parse_match_expr_after_keyword(),
-            Token::Op(ExprOp::Or) => self.parse_zero_arg_closure(),
-            Token::Op(ExprOp::ClosurePipe) => self.parse_closure_after_open_pipe(),
+            Token::Op(ExprOp::Or) => self.parse_zero_arg_closure(prefix_range),
+            Token::Op(ExprOp::ClosurePipe) => self.parse_closure_after_open_pipe(prefix_range),
             Token::Op(ExprOp::Range | ExprOp::RangeInclusive) => {
                 let inclusive = matches!(self.previous(), Some(Token::Op(ExprOp::RangeInclusive)));
                 let end = if matches!(
@@ -140,7 +140,7 @@ impl ExprParser {
     fn parse_try_await_expr(&mut self, try_keyword: TextRange) -> Result<Expr, ExprParseError> {
         let await_keyword = self.bump_lexed();
         let await_keyword = self.absolute_range(&await_keyword)?;
-        let operand = self.parse_expr_bp_spanned(90)?;
+        let operand = self.parse_prefixed_operand(try_keyword)?;
         Ok(Expr::Await(AwaitExpr::new(
             Box::new(operand.expr),
             AwaitPropagation::PropagateError,
@@ -162,7 +162,7 @@ impl ExprParser {
         } else {
             None
         };
-        let operand = self.parse_expr_bp_spanned(90)?;
+        let operand = self.parse_prefixed_operand(await_keyword)?;
         Ok(Expr::Await(AwaitExpr::new(
             Box::new(operand.expr),
             if propagation_source.is_some() {
@@ -177,6 +177,24 @@ impl ExprParser {
                 propagation_source,
             ),
         )))
+    }
+
+    fn parse_prefixed_operand(
+        &mut self,
+        operator_range: TextRange,
+    ) -> Result<super::pratt::SpannedExpr, ExprParseError> {
+        let depth = self
+            .prefix_depth
+            .checked_add(1)
+            .ok_or_else(|| ExprParseError::prefix_depth_limit(operator_range))?;
+        if depth > 64 {
+            return Err(ExprParseError::prefix_depth_limit(operator_range));
+        }
+        let prior_depth = self.prefix_depth;
+        self.prefix_depth = depth;
+        let operand = self.parse_expr_bp_spanned(90);
+        self.prefix_depth = prior_depth;
+        operand
     }
 
     fn parse_prefix_chain(&mut self, first: LexedToken) -> Result<Expr, ExprParseError> {

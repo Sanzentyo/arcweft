@@ -324,8 +324,11 @@ impl TypeChecker<'_> {
 
     fn first_positional_entity_kind(args: &[CallArg]) -> Option<EntityKind> {
         args.iter().find_map(|arg| match arg {
-            CallArg::Positional(Expr::EntityRef(entity)) => entity_syntax_kind(entity),
-            CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+            CallArg::Positional(value) => match value.as_ref() {
+                Expr::EntityRef(entity) => entity_syntax_kind(entity),
+                _ => None,
+            },
+            CallArg::Named { .. } | CallArg::Spread { .. } => None,
         })
     }
 
@@ -338,7 +341,7 @@ impl TypeChecker<'_> {
             })
             .or_else(|| {
                 args.iter().find_map(|arg| match arg {
-                    CallArg::Positional(value) => Some(value),
+                    CallArg::Positional(value) => Some(value.as_ref()),
                     CallArg::Named { .. } | CallArg::Spread { .. } => None,
                 })
             });
@@ -379,7 +382,7 @@ impl TypeChecker<'_> {
         let Some(arg) = args
             .iter()
             .filter_map(|arg| match arg {
-                CallArg::Positional(value) => Some(value),
+                CallArg::Positional(value) => Some(value.as_ref()),
                 CallArg::Named { .. } | CallArg::Spread { .. } => None,
             })
             .nth(index)

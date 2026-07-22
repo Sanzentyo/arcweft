@@ -27,6 +27,6 @@ entry game @entry.game {
     goto @flow.main
 }
 
-flow @flow.main main(state: GameState) {
+flow @flow.main main(state: GameState) -> String {
     return "game"
 }

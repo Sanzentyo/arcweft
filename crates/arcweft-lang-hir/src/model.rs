@@ -4,7 +4,10 @@ use arcweft_lang_syntax::{
         choice::{ChoiceAction, ChoiceItem, ChoicePlan},
         common::{DocBlock, TextRange, UseItem, Visibility},
         dialogue::{DialogueContent, LineArg, SpeakerLineSurface},
-        flow::{AuthoredExpr, AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
+        flow::{
+            AuthoredExpr, AwaitBranchKind, ContractClause, FlowSignatureSource, SelectBranchHead,
+            Stmt,
+        },
         ids::{EntityRef, EntityRefSyntax},
         items::{
             Attribute, EntityDeclItem, EntityDeclKind, EnumItem, ExternCapabilityItem,
@@ -66,6 +69,7 @@ pub struct HirFlow {
     pub(crate) id: Option<EntityRef>,
     pub(crate) name: Option<String>,
     pub(crate) signature: Option<FnSignature>,
+    pub(crate) signature_source: FlowSignatureSource,
     pub(crate) contracts: Vec<ContractClause>,
     pub(crate) body: Vec<HirFlowItem>,
     pub(crate) range: TextRange,
@@ -554,6 +558,11 @@ impl HirFlow {
 
     pub const fn signature(&self) -> Option<&FnSignature> {
         self.signature.as_ref()
+    }
+
+    /// Exact source ranges retained from the authored flow signature.
+    pub const fn signature_source(&self) -> FlowSignatureSource {
+        self.signature_source
     }
 
     pub fn body(&self) -> &[HirFlowItem] {

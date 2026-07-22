@@ -2272,7 +2272,7 @@ entry game @entry.main {
     goto @flow.main
 }
 
-flow main(state: GameState) { return "done" }
+flow main(state: GameState) -> String { return "done" }
 "#,
     )
     .expect("temporary source writes");
@@ -2342,7 +2342,7 @@ entry cli @entry.main {
     goto @flow.main
 }
 
-flow main {
+flow main() -> String {
     narrator: [fx wave()]A[/fx][p]
     return "done"
 }
@@ -2412,7 +2412,7 @@ source-dir = "src"
         r#"
 entry cli @entry.main { goto @flow.main }
 
-flow main {
+flow main() -> String {
     return "done"
 }
 "#,
@@ -2477,7 +2477,7 @@ source-dir = "src"
         r#"
 entry cli @entry.main { goto @flow.main }
 
-flow main { return "done" }
+flow main() -> String { return "done" }
 "#,
     )
     .expect("temporary project source writes");

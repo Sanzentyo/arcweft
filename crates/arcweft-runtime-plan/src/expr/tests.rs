@@ -244,15 +244,7 @@ fn add_i64_helper() -> RuntimePureHelper {
 
 #[test]
 fn strict_runtime_lowers_closure_to_function_expr() {
-    let expr = Expr::Closure {
-        params: vec![ClosureParam::new(Pattern::Ident("score".to_owned()), None)],
-        return_type: None,
-        body: Box::new(Expr::Binary {
-            lhs: Box::new(Expr::Path("score".into())),
-            op: BinaryOp::Gt,
-            rhs: Box::new(int(80, Some(IntSuffix::I64))),
-        }),
-    };
+    let expr = parsed_expr("|score| score > 80i64");
 
     let lowered = lower_runtime_expr_strict(&expr).expect("closure lowers");
 
@@ -270,17 +262,7 @@ fn strict_runtime_lowers_closure_to_function_expr() {
 
 #[test]
 fn strict_runtime_lowers_destructured_closure_param_to_match_body() {
-    let expr = Expr::Closure {
-        params: vec![ClosureParam::new(
-            Pattern::Tuple(vec![
-                Pattern::Ident("left".to_owned()),
-                Pattern::Ident("right".to_owned()),
-            ]),
-            None,
-        )],
-        return_type: None,
-        body: Box::new(Expr::Path("right".into())),
-    };
+    let expr = parsed_expr("|(left, right)| right");
 
     let lowered = lower_runtime_expr_strict(&expr).expect("destructured closure lowers");
 
@@ -572,6 +554,14 @@ fn strict_runtime_rejects_try_and_await_without_control_boundaries() {
 
     assert!(try_error.contains("error-propagation boundary"));
     assert!(await_error.contains("suspension-aware statement lowering"));
+}
+
+#[test]
+fn lossy_runtime_projection_treats_prefix_and_postfix_try_equivalently() {
+    let prefix = lower_runtime_expr(&parsed_expr("try value"));
+    let postfix = lower_runtime_expr(&parsed_expr("value?"));
+
+    assert_eq!(prefix, postfix);
 }
 
 #[test]

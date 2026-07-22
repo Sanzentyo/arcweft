@@ -588,7 +588,11 @@ fn trigger_contains_recovery(trigger: &TriggerPattern) -> bool {
         | TriggerPattern::Task(pattern)
         | TriggerPattern::Scope(pattern) => pattern_contains_recovery(pattern),
         TriggerPattern::Signal { target, value } => {
-            expr_contains_recovery(target) || value.as_ref().is_some_and(pattern_contains_recovery)
+            expr_contains_recovery(target)
+                || value
+                    .as_ref()
+                    .as_ref()
+                    .is_some_and(pattern_contains_recovery)
         }
         TriggerPattern::Timeout(expr) | TriggerPattern::Expr(expr) => expr_contains_recovery(expr),
     }

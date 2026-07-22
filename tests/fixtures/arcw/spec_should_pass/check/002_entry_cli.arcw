@@ -2,6 +2,6 @@ entry cli @entry.cli {
     goto @flow.main
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     return "cli"
 }

@@ -1511,17 +1511,15 @@ fn closure_boundary() -> i64 {
 
 #[test]
 fn closure_return_statement_checks_declared_return_type() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 flow @flow.closure_return_statement_mismatch closure_return_statement_mismatch {
     let bad = || -> bool {
         return 1i64
     }
     log.info(bad())
 }
-",
-    );
-    let hir = lower_to_hir(&tree).expect("closure return statement fixture lowers");
+";
+    let hir = lower_bound_hir("closure-return-mismatch", source);
     validate_typecheck_ready(&hir).expect("closure return statement fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());

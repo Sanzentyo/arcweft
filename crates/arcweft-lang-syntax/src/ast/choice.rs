@@ -37,7 +37,7 @@ pub enum ChoicePlanItem {
         body: Vec<Stmt>,
     },
     Cancel {
-        trigger: TriggerPattern,
+        trigger: Box<TriggerPattern>,
         body: Vec<Stmt>,
     },
     OnSelect {

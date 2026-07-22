@@ -422,7 +422,7 @@ fn typechecks_receive_action_event_value_projection() {
         r"
 pub action feedback.submit(value: String)
 
-flow action_wait {
+flow action_wait() -> String {
   let event = receive action(@action:.feedback.submit)
   let value: String = event.value
   return value
@@ -1077,7 +1077,7 @@ ensures no_effect fs.read
 fn unused_explicit_upper_bound_is_not_reported_as_warning() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening
+flow @flow.opening opening() -> String
 effects { fs.read }
 {
     return "ok"
@@ -1108,7 +1108,7 @@ effects { fs.read }
 fn typecheck_report_counts_type_and_borrow_work() {
     let tree = parse_ok(
         r#"
-flow @flow.borrow_stats borrow_stats {
+flow @flow.borrow_stats borrow_stats() -> String {
     let pixels: &'asset [Rgba8] = pixels()
     let alias = pixels
     drop(pixels)
@@ -1162,7 +1162,7 @@ flow @flow.borrow_stats borrow_stats {
 fn typechecks_std_float_constants_and_functions() {
     let tree = parse_ok(
         r"
-flow @flow.float_std float_std {
+flow @flow.float_std float_std() -> f32 {
     let root = std.f32.sqrt(4.0f32)
     let exact = std.f32.to_bits(std.f32.nan)
     let restored = std.f32.from_bits(exact)
@@ -1262,35 +1262,33 @@ fn result_constructors(cond: bool) -> Result<i64, i64> {
 
 #[test]
 fn option_try_requires_option_return_context() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 fn bad_option_try(maybe: Option<i64>) -> Result<i64, i64> {
     let value: i64 = maybe?
     return Ok(value)
 }
-",
-    );
-    let hir = lower_to_hir(&tree).expect("bad option try fixture lowers");
+";
+    let hir = lower_bound_hir("bad-option-try", source);
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("Option ? outside Option return is rejected");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("`?` on Option<T> requires an enclosing Option return")
-    }));
+    assert!(errors.iter().any(|error| matches!(
+        error.kind(),
+        TypeCheckErrorKind::TryPropagationTargetMissing {
+            operand: crate::propagation::TryPropagationOperand::Option,
+            ..
+        }
+    )));
 }
 
 #[test]
 fn option_try_returns_inner_type_in_option_context() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 fn option_try(maybe: Option<i64>) -> Option<i64> {
     let value: i64 = maybe?
     return Some(value)
 }
-",
-    );
-    let hir = lower_to_hir(&tree).expect("option try fixture lowers");
+";
+    let hir = lower_bound_hir("option-try", source);
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("Option ? typechecks in Option return");
 }
 
@@ -1398,7 +1396,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.for_pure for_pure {
+flow @flow.for_pure for_pure() -> String {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     for item in values {
         let scored = score(item, 2i64)
@@ -2191,7 +2189,7 @@ fn ret() -> i64 {
 #[test]
 fn control_transfer_statement_judgments_carry_source_ranges() {
     let source = r"
-flow @flow.control_source_ranges control_source_ranges {
+flow @flow.control_source_ranges control_source_ranges() -> Ref<Flow> {
     goto @flow.next
     close @flow.next
     let chosen = loop {
@@ -2878,7 +2876,7 @@ flow @flow.block_value_source_ranges block_value_source_ranges {
 #[test]
 fn effect_and_prefix_expression_judgments_carry_source_ranges() {
     let source = r"
-flow @flow.await_question_source_ranges await_question_source_ranges {
+flow @flow.await_question_source_ranges await_question_source_ranges() -> Result<Unit, AssetError> {
     let bg = await? load_bg()
 }
 
@@ -2890,8 +2888,7 @@ fn option_source_ranges(maybe: Option<i64>, flag: bool) -> Option<i64> {
     return Some(prefix + negated)
 }
 ";
-    let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("effect/prefix source range fixture lowers");
+    let hir = lower_bound_hir("effect-prefix-source-ranges", source);
     let env = TypeCheckEnv::new().with_function(
         "load_bg",
         TypeKind::Need {
@@ -3094,7 +3091,7 @@ fn numeric_sequence_literals_use_expected_item_fast_path() {
         .join(", ");
     let tree = parse_ok(format!(
         r#"
-flow @flow.numeric_seq numeric_seq {{
+flow @flow.numeric_seq numeric_seq() -> String {{
     let values: Vec<i64> = [{values}]
     return "done"
 }}
@@ -4083,7 +4080,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.arrays arrays {
+flow @flow.arrays arrays() -> i64 {
     let values: Array<i64, 4> = [2i64; 4]
     let shifted: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = shifted.sum()
@@ -4101,7 +4098,7 @@ flow @flow.arrays arrays {
 fn typechecks_sequence_len_as_usize() {
     let tree = parse_ok(
         r#"
-flow @flow.sequence_len sequence_len {
+flow @flow.sequence_len sequence_len() -> String {
     let flags: Vec<bool> = [true, false, true]
     let letters: Vec<char> = ["a"c, "b"c]
     let delays: Vec<Duration> = [1ms, 2ms]

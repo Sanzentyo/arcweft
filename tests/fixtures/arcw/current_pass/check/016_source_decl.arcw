@@ -7,6 +7,6 @@ source @source.events: Source<String, String> {
     on item ev => yield ev
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     return "done"
 }

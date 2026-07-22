@@ -9,8 +9,8 @@ use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity};
 use crate::types::TypePoisonId;
 
 use super::{
-    NominalResolutionLimitKind, TypeArgumentExpectation, TypeArityExpectation, TypeArityTarget,
-    TypeSourceEvidence,
+    NominalResolutionLimitKind, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
+    TypeArityTarget, TypeSourceEvidence,
 };
 
 /// Stable code for one semantic nominal diagnostic family.
@@ -49,7 +49,7 @@ pub enum NominalTypeDiagnosticKind {
         target: TypeArityTarget,
         argument: u16,
         expected: TypeArgumentExpectation,
-        actual: crate::types::TypeKind,
+        actual: TypeArgumentKind,
     },
     WrongArity {
         target: TypeArityTarget,

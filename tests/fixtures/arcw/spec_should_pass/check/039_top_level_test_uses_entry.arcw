@@ -1,5 +1,5 @@
 entry cli @entry.main { goto @flow.opening }
-flow @flow.opening opening { return "done" }
+flow @flow.opening opening() -> String { return "done" }
 
 test @test.entry_starts scenario {
     goto @flow.opening

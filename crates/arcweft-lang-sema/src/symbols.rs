@@ -15,7 +15,7 @@ use arcweft_lang_syntax::{
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
-    expr::{CallExpr, Expr, MatchExprArm},
+    expr::{AwaitPropagation, CallExpr, Expr, MatchExprArm},
 };
 
 /// Kind of symbol-like syntax discovered in lowered HIR.
@@ -27,6 +27,8 @@ pub enum SymbolUseKind {
     Call,
     Method,
     RawExpr,
+    /// Typed error propagation that requires a bound source document.
+    PropagationOperator,
 }
 
 /// A symbol-like use that later name resolution and type checking must handle.
@@ -826,7 +828,7 @@ fn collect_trigger_pattern(trigger: &TriggerPattern, uses: &mut Vec<SymbolUse>) 
         | TriggerPattern::Scope(pattern) => collect_pattern(pattern, uses),
         TriggerPattern::Signal { target, value } => {
             collect_expr(target, uses);
-            if let Some(value) = value {
+            if let Some(value) = value.as_ref() {
                 collect_pattern(value, uses);
             }
         }
@@ -890,8 +892,22 @@ fn collect_expr(expr: &Expr, uses: &mut Vec<SymbolUse>) {
         }
         Expr::Closure { body, .. } => collect_expr(body, uses),
         Expr::Unary { expr, .. } => collect_expr(expr, uses),
-        Expr::Try(try_expr) => collect_expr(try_expr.operand(), uses),
-        Expr::Await(awaited) => collect_expr(awaited.operand(), uses),
+        Expr::Try(try_expr) => {
+            uses.push(SymbolUse::new(
+                SymbolUseKind::PropagationOperator,
+                "error propagation".to_owned(),
+            ));
+            collect_expr(try_expr.operand(), uses);
+        }
+        Expr::Await(awaited) => {
+            if awaited.propagation() == AwaitPropagation::PropagateError {
+                uses.push(SymbolUse::new(
+                    SymbolUseKind::PropagationOperator,
+                    "await error propagation".to_owned(),
+                ));
+            }
+            collect_expr(awaited.operand(), uses);
+        }
         Expr::Borrow(borrow) => collect_expr(borrow.operand(), uses),
         Expr::Deref(deref) => collect_expr(deref.operand(), uses),
         Expr::Thread { block } => collect_syntax_flow_block(block.body(), uses),

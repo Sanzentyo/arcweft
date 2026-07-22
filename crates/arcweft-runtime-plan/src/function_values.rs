@@ -572,7 +572,7 @@ fn runtime_function_value_data_last_pipe_rhs_supported(
     match rhs {
         Expr::Path(path) => runtime_function_value_data_last_callable_supported(
             path.as_label(),
-            &[CallArg::Positional(lhs.clone())],
+            &[CallArg::Positional(Box::new(lhs.clone()))],
             context,
         ),
         Expr::Call(call) => {
@@ -580,7 +580,7 @@ fn runtime_function_value_data_last_pipe_rhs_supported(
                 return false;
             };
             let mut pipe_args = call.args().to_vec();
-            pipe_args.push(CallArg::Positional(lhs.clone()));
+            pipe_args.push(CallArg::Positional(Box::new(lhs.clone())));
             runtime_function_value_data_last_callable_supported(
                 path.as_label(),
                 &pipe_args,
@@ -691,6 +691,7 @@ fn runtime_function_value_expr_function_signature(
             params,
             return_type,
             body,
+            ..
         } => runtime_function_value_closure_supported(params, body, context).then(|| {
             function_local_signature_from_closure(
                 params,
@@ -739,7 +740,7 @@ fn runtime_function_value_pipe_function_signature(
     match rhs {
         Expr::Path(path) => runtime_function_value_data_last_signature(
             path.as_label(),
-            &[CallArg::Positional(lhs.clone())],
+            &[CallArg::Positional(Box::new(lhs.clone()))],
             context,
         ),
         Expr::Call(call) => {
@@ -747,7 +748,7 @@ fn runtime_function_value_pipe_function_signature(
                 return None;
             };
             let mut pipe_args = call.args().to_vec();
-            pipe_args.push(CallArg::Positional(lhs.clone()));
+            pipe_args.push(CallArg::Positional(Box::new(lhs.clone())));
             runtime_function_value_data_last_signature(path.as_label(), &pipe_args, context)
         }
         _ => None,

@@ -1,4 +1,4 @@
-flow @flow.main main {
+flow @flow.main main() -> String {
     let answer = scope calc {
         let x = 40i32
         x + 2i32

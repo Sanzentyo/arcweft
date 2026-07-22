@@ -471,8 +471,9 @@ fn index_call_arg_symbol_dependency_relations(
 ) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
     for arg in args {
         let value = match arg {
-            CallArg::Positional(value) => value,
-            CallArg::Named { value, .. } | CallArg::Spread { value } => value,
+            CallArg::Positional(value)
+            | CallArg::Named { value, .. }
+            | CallArg::Spread { value } => value,
         };
         index = index_expr_symbol_dependency_relations(parent, value, index)?;
     }

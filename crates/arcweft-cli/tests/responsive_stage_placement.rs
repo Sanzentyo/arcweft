@@ -174,7 +174,7 @@ entry cli @entry.main {
     goto @flow.main
 }
 
-flow main {
+flow main() -> String {
     return "missing image asset"
 }
 "#,
@@ -235,7 +235,7 @@ entry cli @entry.main {
     goto @flow.main
 }
 
-flow main {
+flow main() -> String {
     return "View collision"
 }
 "#,

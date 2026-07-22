@@ -4,7 +4,7 @@ flow @.main main {
     goto @flow:.next
 }
 
-flow @flow:.next next {
+flow @flow:.next next() -> String {
     return "done"
 }
 

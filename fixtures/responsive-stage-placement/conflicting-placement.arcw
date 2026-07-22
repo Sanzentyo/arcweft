@@ -34,6 +34,6 @@ entry cli @entry.conflicting_placement {
     goto @flow.main
 }
 
-flow main {
+flow main() -> String {
     return "placement_conflict_fixture"
 }

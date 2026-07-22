@@ -1,10 +1,9 @@
 //! Expression type-checking entry points and expression-kind dispatch.
 
 use super::helpers::{
-    array_repeat_length, collection_index_type, expr_path_label, first_arg_type, is_drop_name,
-    let_else_bindings, numeric_literal_suffix_type, optional_type_kind_label, result_ok_type,
-    stmts_diverge, type_kind_label, well_known_capacity_method_type, well_known_field_type,
-    well_known_static_capacity_method_type,
+    array_repeat_length, expr_path_label, first_arg_type, is_drop_name, let_else_bindings,
+    numeric_literal_suffix_type, optional_type_kind_label, stmts_diverge, type_kind_label,
+    well_known_capacity_method_type, well_known_field_type, well_known_static_capacity_method_type,
 };
 use super::{
     ArrayLength, BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr,
@@ -13,16 +12,17 @@ use super::{
     TypedLoweringEvidenceKind, YieldContext, entity_syntax_kind,
 };
 use crate::diagnostics::TraitDiagnostic;
+use crate::propagation::{CheckedReturnType, ReturnPropagationFrame, TryPropagationOperand};
 use crate::traits::TraitMethodResolution;
 use arcweft_lang_syntax::ast::dialogue::DialogueContent;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
     AwaitExpr, BinaryOp, CallArg, CallExpr, ComputationBlockKind, DottedPath, Literal,
-    MatchExprArm, Placeholder, SelectExpr, UnaryOp,
+    MatchExprArm, Placeholder, SelectExpr, TryExpr, UnaryOp,
 };
-use arcweft_lang_syntax::reference::{BorrowExpr, DerefExpr};
 
+mod access;
 mod agent;
 mod binary;
 mod callable;
@@ -46,7 +46,7 @@ use support::{
     agent_action_result_field_type, agent_action_target_field_type, agent_bbox_field_type,
     agent_capture_ref_field_type, agent_entity_ref_field_type, agent_observation_field_type,
     agent_observed_object_field_type, agent_resource_body_field_type, agent_resource_field_type,
-    agent_result, choice_pattern_coverage, collection_index_key_type, expr_kind_name,
+    agent_result, choice_pattern_coverage, expr_kind_name,
     has_multiple_numeric_choice_alternatives, inline_failure_builtin_variant_type,
     is_character_speaker_type, is_unit_number_type, join_branch_types, looks_like_os_absolute_path,
     spread_item_type, std_float_constant_type, unique_numeric_choice_alternative,
@@ -208,7 +208,7 @@ impl TypeChecker<'_> {
             )),
             Expr::Index { target, index } => self.check_index_expr(target, index),
             Expr::Pipe { lhs, rhs } => self.check_pipe_expr(lhs, rhs, expression_id),
-            Expr::Try(try_expr) => self.check_try_expr(try_expr.operand()),
+            Expr::Try(try_expr) => self.check_try_expr(try_expr),
             Expr::Await(awaited) => self.check_await_expr_node(awaited),
             Expr::Thread { block } => Some(self.check_thread_expr(block)),
             Expr::Range { start, end, .. } => {
@@ -223,10 +223,12 @@ impl TypeChecker<'_> {
                 params,
                 return_type,
                 body,
+                source,
             } => Some(self.check_closure_expr(
                 params,
                 return_type.as_ref(),
                 body,
+                *source,
                 expected,
                 expression_id,
             )),
@@ -240,7 +242,7 @@ impl TypeChecker<'_> {
                 kind,
                 statements,
                 value,
-            } => self.check_computation_block(*kind, statements, value.as_deref()),
+            } => self.check_computation_block(expr, *kind, statements, value.as_deref()),
             Expr::NamedBlock {
                 statements, value, ..
             } => self.check_block_expr_with_expected(statements, value.as_deref(), expected),
@@ -275,29 +277,6 @@ impl TypeChecker<'_> {
         None
     }
 
-    fn check_borrow_expr(&mut self, borrow: &BorrowExpr) -> Option<TypeKind> {
-        self.check_expr(borrow.operand())
-            .map(|inner| TypeKind::BorrowRef {
-                kind: borrow.kind(),
-                lifetime: None,
-                inner: Box::new(inner),
-            })
-    }
-
-    fn check_deref_expr(&mut self, deref: &DerefExpr) -> Option<TypeKind> {
-        match self.check_expr(deref.operand()) {
-            Some(TypeKind::BorrowRef { inner, .. }) => Some(*inner),
-            Some(other) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "dereference operand must be a reference, found {}",
-                    type_kind_label(&other)
-                )));
-                None
-            }
-            None => None,
-        }
-    }
-
     fn in_seq_context(&self) -> bool {
         self.yield_stack
             .last()
@@ -311,7 +290,7 @@ impl TypeChecker<'_> {
                 "`seq` blocks are pure and cannot await".to_owned(),
             ));
         }
-        self.check_await_expr(awaited.operand(), awaited.propagation())
+        self.check_await_expr(awaited)
     }
 
     fn check_thread_expr(&mut self, block: &ThreadBlock) -> TypeKind {
@@ -1908,33 +1887,6 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_index_expr(&mut self, target: &Expr, index: &Expr) -> Option<TypeKind> {
-        let target_type = self.check_expr(target);
-        if let Some(expected_index) = target_type
-            .as_ref()
-            .and_then(collection_index_key_type)
-            .or_else(|| {
-                target_type
-                    .as_ref()
-                    .and_then(|target_type| self.env.index_type(target_type).map(|_| TypeKind::I64))
-            })
-        {
-            self.expect_expr_type(index, &expected_index, "collection index");
-        } else {
-            self.check_expr(index);
-        }
-        target_type.and_then(|target_type| {
-            collection_index_type(&target_type)
-                .or_else(|| self.env.index_type(&target_type).cloned())
-                .or_else(|| {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "type {target_type:?} is not indexable"
-                    )));
-                    None
-                })
-        })
-    }
-
     fn check_virtual_path_call(&mut self, callee: &str, args: &[CallArg]) {
         if !callee.starts_with("fs.") {
             return;
@@ -2072,22 +2024,20 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_try_expr(&mut self, expr: &Expr) -> Option<TypeKind> {
-        match self.check_expr(expr) {
+    fn check_try_expr(&mut self, expr: &TryExpr) -> Option<TypeKind> {
+        let operator = self.source_span_for_current_range(expr.source().operator_range());
+        match self.check_expr(expr.operand()) {
             Some(TypeKind::Result { ok, error }) => {
-                self.check_try_result_context(error.as_ref());
+                if !error.is_unresolved_for_compatibility() {
+                    self.check_try_result_propagation(error.as_ref(), operator);
+                }
                 Some(*ok)
             }
             Some(TypeKind::Option(inner)) => {
-                self.check_try_option_context();
+                self.check_try_option_propagation(operator);
                 Some(*inner)
             }
-            Some(TypeKind::Named(name)) => result_ok_type(&name).or_else(|| {
-                self.errors.push(TypeCheckError::new(format!(
-                    "`?` requires Result<T, E> or Option<T>, found {name}"
-                )));
-                None
-            }),
+            Some(other) if other.is_unresolved_for_compatibility() => None,
             Some(other) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "`?` requires Result<T, E> or Option<T>, found {}",
@@ -2099,34 +2049,69 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_try_result_context(&mut self, actual_error: &TypeKind) {
-        match self.expected_returns.last().cloned().flatten() {
-            Some(TypeKind::Result { error, .. }) => {
-                let expected_error = error.as_ref().clone();
-                if !self.types_compatible(&expected_error, actual_error) {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "`?` error type {actual_error:?} cannot be injected into return error type {expected_error:?}"
-                    )));
-                }
+    fn check_try_result_propagation(
+        &mut self,
+        actual_error: &TypeKind,
+        operator: Option<arcweft_source::SourceSpan>,
+    ) {
+        let Some(operator) = operator else {
+            self.errors.push(TypeCheckError::new(
+                "try propagation requires accepted operator source evidence".to_owned(),
+            ));
+            return;
+        };
+        let target = self.return_propagation_frames.last().cloned();
+        if let Some(ReturnPropagationFrame::Boundary(boundary)) = target.as_ref()
+            && let CheckedReturnType::Known(TypeKind::Result { error, .. }) =
+                boundary.checked_return()
+        {
+            if error.is_unresolved_for_compatibility() {
+                return;
             }
-            Some(return_ty) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "`?` on Result<T, E> requires an enclosing Result return, found {return_ty:?}"
-                )));
+            if !self.types_compatible(error.as_ref(), actual_error) {
+                self.errors.push(TypeCheckError::try_error_mismatch(
+                    error.as_ref().clone(),
+                    actual_error.clone(),
+                    operator,
+                    boundary.clone(),
+                ));
             }
-            None => {}
+            return;
         }
+        self.errors
+            .push(TypeCheckError::try_propagation_target_missing(
+                TryPropagationOperand::Result {
+                    actual_error: actual_error.clone(),
+                },
+                operator,
+                target.and_then(|frame| frame.target()),
+            ));
     }
 
-    fn check_try_option_context(&mut self) {
-        match self.expected_returns.last().and_then(Option::as_ref) {
-            Some(TypeKind::Option(_)) | None => {}
-            Some(return_ty) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "`?` on Option<T> requires an enclosing Option return, found {return_ty:?}"
-                )));
-            }
+    fn check_try_option_propagation(&mut self, operator: Option<arcweft_source::SourceSpan>) {
+        let Some(operator) = operator else {
+            self.errors.push(TypeCheckError::new(
+                "try propagation requires accepted operator source evidence".to_owned(),
+            ));
+            return;
+        };
+        let target = self.return_propagation_frames.last().cloned();
+        if matches!(
+            target.as_ref(),
+            Some(ReturnPropagationFrame::Boundary(boundary))
+                if matches!(
+                    boundary.checked_return(),
+                    CheckedReturnType::Known(TypeKind::Option(_))
+                )
+        ) {
+            return;
         }
+        self.errors
+            .push(TypeCheckError::try_propagation_target_missing(
+                TryPropagationOperand::Option,
+                operator,
+                target.and_then(|frame| frame.target()),
+            ));
     }
 
     pub(super) fn check_block_expr(
@@ -2211,6 +2196,7 @@ impl TypeChecker<'_> {
 
     fn check_computation_block(
         &mut self,
+        owner: &Expr,
         kind: ComputationBlockKind,
         statements: &[Stmt],
         value: Option<&Expr>,
@@ -2220,25 +2206,37 @@ impl TypeChecker<'_> {
                 self.check_block_expr(statements, value)
             }
             ComputationBlockKind::Seq => {
-                self.yield_stack.push(YieldContext::Seq {
-                    item_ty: None,
-                    yield_count: 0,
+                let frame = self
+                    .source_range_for_expr(owner)
+                    .and_then(|range| self.generator_terminal(range));
+                let item_ty = self.with_return_propagation_frame(frame, |this| {
+                    this.yield_stack.push(YieldContext::Seq {
+                        item_ty: None,
+                        yield_count: 0,
+                    });
+                    this.check_block_expr(statements, value);
+                    let Some(YieldContext::Seq { item_ty, .. }) = this.yield_stack.pop() else {
+                        return None;
+                    };
+                    item_ty
                 });
-                self.check_block_expr(statements, value);
-                let Some(YieldContext::Seq { item_ty, .. }) = self.yield_stack.pop() else {
-                    return None;
-                };
                 Some(TypeKind::Seq(Box::new(item_ty.unwrap_or(TypeKind::Unit))))
             }
             ComputationBlockKind::Stream => {
-                self.yield_stack.push(YieldContext::Seq {
-                    item_ty: None,
-                    yield_count: 0,
+                let frame = self
+                    .source_range_for_expr(owner)
+                    .and_then(|range| self.generator_terminal(range));
+                let item_ty = self.with_return_propagation_frame(frame, |this| {
+                    this.yield_stack.push(YieldContext::Seq {
+                        item_ty: None,
+                        yield_count: 0,
+                    });
+                    this.check_block_expr(statements, value);
+                    let Some(YieldContext::Seq { item_ty, .. }) = this.yield_stack.pop() else {
+                        return None;
+                    };
+                    item_ty
                 });
-                self.check_block_expr(statements, value);
-                let Some(YieldContext::Seq { item_ty, .. }) = self.yield_stack.pop() else {
-                    return None;
-                };
                 Some(TypeKind::Stream {
                     item: Box::new(item_ty.unwrap_or(TypeKind::Unit)),
                     error: Box::new(TypeKind::Unit),

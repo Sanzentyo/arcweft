@@ -22,4 +22,8 @@ pub use crate::{
         EffectRowError, EffectRowReport, EffectRowSummary, EffectRowTail, EffectSubstitution,
         EffectVar, EffectVarSupply,
     },
+    propagation::{
+        CheckedReturnType, PropagationBarrierEvidence, PropagationBoundaryEvidence,
+        PropagationBoundaryKind, PropagationTargetEvidence, TryPropagationOperand,
+    },
 };

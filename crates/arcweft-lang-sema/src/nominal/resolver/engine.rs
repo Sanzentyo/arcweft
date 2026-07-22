@@ -26,13 +26,13 @@ use super::super::{
     NominalRelatedMessage, NominalResolutionLimitKind, NominalTypeDiagnostic,
     NominalTypeDiagnosticKind, PoisonedTypeRef, ResolvedAliasReference, ResolvedOpenNominal,
     ResolvedTypeNode, ResolvedTypeProduct, ResolvedTypeRefOutcome, SelfTypeScope,
-    StructuralTypeNodeKind, TypeArgumentExpectation, TypeArityExpectation, TypeArityTarget,
-    TypeNameResolution, TypePoisonOrigin, TypePoisonRecord, TypeResolutionFailure,
+    StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
+    TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypePoisonRecord, TypeResolutionFailure,
     TypeResolutionInput, TypeResolutionInputError, TypeResolutionReport, TypeResolutionWorld,
     TypeSourceEvidence,
 };
 use support::{
-    ProjectNameLookup, ProjectSelection, builtin, canonical_cycle, canonical_poisons,
+    ProjectNameLookup, ProjectSelection, canonical_cycle, canonical_poisons,
     collect_recovery_poisons, diagnostic_kind, diagnostic_ordering, direct_name, direct_segment,
     evidence_from_project, open_expectation, related_ordering,
 };
@@ -123,6 +123,19 @@ impl NodeValue {
 
     fn recovered_or(&self, fallback: TypeKind) -> TypeKind {
         self.ty.clone().unwrap_or(fallback)
+    }
+
+    fn argument_kind(&self) -> Option<TypeArgumentKind> {
+        if let Some(family) = &self.entity_family {
+            return Some(TypeArgumentKind::EntityFamily(family.clone()));
+        }
+        if let Some(value) = self.const_int {
+            return Some(TypeArgumentKind::ConstInt(value));
+        }
+        match &self.ty {
+            Some(TypeKind::Error(_)) | None => None,
+            Some(ty) => Some(TypeArgumentKind::Type(ty.clone())),
+        }
     }
 }
 

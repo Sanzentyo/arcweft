@@ -663,7 +663,7 @@ fn enum_name(expr: &Expr) -> Option<&str> {
 
 fn positional_args(args: &[CallArg]) -> impl Iterator<Item = &Expr> {
     args.iter().filter_map(|arg| match arg {
-        CallArg::Positional(value) => Some(value),
+        CallArg::Positional(value) => Some(value.as_ref()),
         CallArg::Named { .. } | CallArg::Spread { .. } => None,
     })
 }

@@ -81,7 +81,7 @@ fn seed(document: Arc<SourceDocument>, uri: &str) -> AcceptedSourceDocumentSeed 
 fn exact_root_dependency_and_declaration_free_hir_are_retained() {
     let root = document(
         "arcweft-project://accepted/root.arcw",
-        "flow @flow.main main { return \"ok\" }\n",
+        "flow @flow.main main() -> String { return \"ok\" }\n",
     );
     let dependency = document("arcweft-project://accepted/empty.arcw", "\n");
     let dependency_path = CanonicalModulePath::from_segments([

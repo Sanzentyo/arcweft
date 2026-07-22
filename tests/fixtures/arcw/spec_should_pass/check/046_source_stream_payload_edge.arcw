@@ -14,6 +14,6 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on error err => log.info("source error")
 }
 
-flow @flow.source_stream_edge source_stream_edge {
+flow @flow.source_stream_edge source_stream_edge() -> String {
     return "done"
 }

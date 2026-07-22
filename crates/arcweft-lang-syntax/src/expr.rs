@@ -554,6 +554,7 @@ pub enum Expr {
         params: Vec<ClosureParam>,
         return_type: Option<AuthoredTypeRef>,
         body: Box<Expr>,
+        source: ClosureExprSource,
     },
     Unary {
         op: UnaryOp,
@@ -631,7 +632,7 @@ impl Expr {
 /// One argument in a call or method-call argument list.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallArg {
-    Positional(Expr),
+    Positional(Box<Expr>),
     Named { name: String, value: Box<Expr> },
     Spread { value: Box<Expr> },
 }
@@ -803,6 +804,51 @@ pub enum Placeholder {
 pub struct ClosureParam {
     pattern: Pattern,
     ty: Option<AuthoredTypeRef>,
+}
+
+/// Exact source ranges for one parsed closure expression.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ClosureExprSource {
+    whole: TextRange,
+    header: TextRange,
+    result: Option<TextRange>,
+    body: TextRange,
+}
+
+impl ClosureExprSource {
+    pub(crate) const fn new(
+        whole: TextRange,
+        header: TextRange,
+        result: Option<TextRange>,
+        body: TextRange,
+    ) -> Self {
+        Self {
+            whole,
+            header,
+            result,
+            body,
+        }
+    }
+
+    /// Complete closure expression without surrounding trivia.
+    pub const fn whole(self) -> TextRange {
+        self.whole
+    }
+
+    /// Closure header through the closing pipe or explicit result type.
+    pub const fn header(self) -> TextRange {
+        self.header
+    }
+
+    /// Exact explicit result-type range, when authored.
+    pub const fn result(self) -> Option<TextRange> {
+        self.result
+    }
+
+    /// Complete authored closure body expression.
+    pub const fn body(self) -> TextRange {
+        self.body
+    }
 }
 
 impl ClosureParam {
@@ -1284,25 +1330,41 @@ fn parse_closure_fragment(
     } else {
         None
     };
-    let parsed_body = match &closure.body {
-        ClosureBodySource::Expr(body) => parse_expr_fragment_with_owner(
-            body,
-            checked_source_offset(base, source, body)?,
-            owner_source,
-            owner_base,
-            CallRecoveryBoundarySyntax::EndOfExpression,
-        )?,
-        ClosureBodySource::Block(body) => {
+    let (parsed_body, body_range) = match &closure.body {
+        ClosureBodySource::Expr(body) => {
             let body_base = checked_source_offset(base, source, body)?;
-            crate::parser::parse_callback_block_expr_body_recovering_at(body, body_base)?
+            (
+                parse_expr_fragment_with_owner(
+                    body,
+                    body_base,
+                    owner_source,
+                    owner_base,
+                    CallRecoveryBoundarySyntax::EndOfExpression,
+                )?,
+                TextRange::new(body_base, body_base + body.len()),
+            )
+        }
+        ClosureBodySource::Block { inner, whole } => {
+            let inner_base = checked_source_offset(base, source, inner)?;
+            let whole_base = checked_source_offset(base, source, whole)?;
+            (
+                crate::parser::parse_callback_block_expr_body_recovering_at(inner, inner_base)?,
+                TextRange::new(whole_base, whole_base + whole.len()),
+            )
         }
     };
+    let header_base = checked_source_offset(base, source, closure.header)?;
+    let header = TextRange::new(header_base, header_base + closure.header.len());
+    let result = return_type
+        .as_ref()
+        .map(|return_type| *return_type.root_source().whole());
     let diagnostics = parsed_body.diagnostics;
     Ok(ParsedExpr {
         expr: Expr::Closure {
             params,
             return_type,
             body: Box::new(parsed_body.expr),
+            source: ClosureExprSource::new(TextRange::new(base, end), header, result, body_range),
         },
         range: TextRange::new(base, end),
         diagnostics,

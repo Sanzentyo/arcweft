@@ -477,7 +477,9 @@ fn is_agent_diagnostics_call(expr: &Expr) -> bool {
 }
 
 fn lower_agent_predicate_args(args: &[CallArg]) -> Result<Vec<RuntimeExpr>, String> {
-    if let [CallArg::Positional(Expr::BracketSeq(items))] = args {
+    if let [CallArg::Positional(value)] = args
+        && let Expr::BracketSeq(items) = value.as_ref()
+    {
         return items
             .iter()
             .map(|item| {

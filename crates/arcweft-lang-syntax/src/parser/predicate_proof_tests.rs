@@ -421,6 +421,61 @@ fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
 }
 
 #[test]
+fn prefix_try_uses_the_ordinary_expression_grammar_and_missing_operand_recovery() {
+    let valid_source = "proof unwrap(value: Result<Int, Error>) = try value\n";
+    let valid = parse_shadow_document(&document(valid_source)).unwrap();
+    assert_eq!(
+        valid
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::TryExpression)
+            .count(),
+        1
+    );
+    assert_eq!(
+        valid
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::PathExpression)
+            .count(),
+        1
+    );
+    assert_eq!(valid.green().to_string(), valid_source);
+
+    let missing_source = "proof missing() = try\n";
+    let missing = parse_shadow_document(&document(missing_source)).unwrap();
+    assert_eq!(
+        missing
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::TryExpression)
+            .count(),
+        1
+    );
+    assert!(
+        missing
+            .index()
+            .entries()
+            .iter()
+            .any(|entry| entry.kind() == SyntaxKind::MissingExpression)
+    );
+    assert_eq!(missing.green().to_string(), missing_source);
+
+    let plain_source = "proof plain(value: Result<Int, Error>) = value\n";
+    let plain = parse_shadow_document(&document(plain_source)).unwrap();
+    assert!(
+        plain
+            .index()
+            .entries()
+            .iter()
+            .all(|entry| entry.kind() != SyntaxKind::TryExpression)
+    );
+}
+
+#[test]
 fn control_expressions_emit_typed_conditions_patterns_branches_and_arms() {
     let source = "proof choose(value: Option<Int>, ready: Bool) -> Int = if let .Some(x) = value when ready { x } else { match value { .Some(v) when v > 0 => v, .None => 0 } }\n";
     let built = parse_shadow_document(&document(source)).unwrap();

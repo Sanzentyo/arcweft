@@ -12,7 +12,7 @@ use crate::cst::{
     split_top_level_punctuation, split_top_level_punctuation_once,
     strip_prefix_arcweft_punctuation, take_doc_comment_prefix,
 };
-use crate::expr::{Expr, parse_expr};
+use crate::expr::{Expr, parse_expr_at};
 use crate::pattern::parse_pattern_at;
 use crate::reference::{BorrowKind, ReferenceType};
 
@@ -454,7 +454,8 @@ fn parse_fn_param(source: &str, base: usize) -> Result<FnParam, TypeParseError> 
                 "function parameter default requires an expression",
             ));
         }
-        let default = parse_expr(default).map_err(|error| {
+        let default_base = base + subslice_offset(trimmed, default);
+        let default = parse_expr_at(default, default_base).map_err(|error| {
             TypeParseError::new_owned(format!("invalid function parameter default: {error}"))
         })?;
         (ty.trim(), Some(default))

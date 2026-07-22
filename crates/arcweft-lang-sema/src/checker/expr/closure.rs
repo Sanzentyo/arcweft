@@ -2,7 +2,8 @@ use super::support::spread_item_type;
 use super::{CallArg, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind};
 use crate::checker::helpers::{pattern_bindings_with_fallback, type_kind_label};
 use crate::effect_row::{EffectRow, EffectRowTail};
-use arcweft_lang_syntax::expr::ClosureParam;
+use crate::propagation::{CheckedReturnType, PropagationBoundaryKind};
+use arcweft_lang_syntax::expr::{ClosureExprSource, ClosureParam};
 use arcweft_lang_syntax::types::AuthoredTypeRef;
 
 impl TypeChecker<'_> {
@@ -11,6 +12,7 @@ impl TypeChecker<'_> {
         params: &[ClosureParam],
         declared_return_type: Option<&AuthoredTypeRef>,
         body: &Expr,
+        source: ClosureExprSource,
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> TypeKind {
@@ -46,11 +48,23 @@ impl TypeChecker<'_> {
         let expected_return = declared_return_type
             .as_ref()
             .or_else(|| expected_function.map(|expected| expected.return_type));
-        self.expected_returns.push(expected_return.cloned());
+        let checked_return = expected_return
+            .filter(|return_type| !is_unknown_type(return_type))
+            .map_or(CheckedReturnType::Unconstrained, |return_type| {
+                CheckedReturnType::Known(return_type.clone())
+            });
+        let frame = self.return_boundary(
+            PropagationBoundaryKind::Closure,
+            None,
+            checked_return,
+            source.header(),
+            source.result(),
+        );
         self.push_closure_inference_context(inferred_return_type);
-        let body_type = self.check_expr_with_expected(body, expected_return);
+        let body_type = self.with_return_propagation_frame(Some(frame), |this| {
+            this.check_expr_with_expected(body, expected_return)
+        });
         self.pop_closure_inference_context();
-        self.expected_returns.pop();
         self.restore_scoped_locals(local_snapshot);
         self.restore_effect_callable(previous_effect_callable);
         self.pop_closure_capture_frame();

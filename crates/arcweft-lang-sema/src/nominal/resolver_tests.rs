@@ -261,10 +261,179 @@ fn entity_family_arguments_are_contextual_typed_facts() {
                 NominalTypeDiagnosticKind::WrongArgumentKind {
                     argument: 0,
                     expected: super::TypeArgumentExpectation::EntityFamily,
-                    actual: TypeKind::String,
+                    actual: super::TypeArgumentKind::Type(TypeKind::String),
                     ..
                 }
             )
+    ));
+}
+
+#[test]
+fn ref_entity_family_projection_preserves_typed_nodes_ranges_and_work() {
+    for (source, family) in [
+        ("Ref<Character>", crate::types::EntityKind::Character),
+        ("Ref<Flow>", crate::types::EntityKind::Flow),
+    ] {
+        let report = resolve_detached(
+            source,
+            &TypeCheckEnv::new(),
+            &GenericTypeScope::empty(),
+            SelfTypeScope::Absent,
+            NominalResolutionLimits::PRODUCTION,
+        );
+        let ResolvedTypeRefOutcome::Complete(product) = report.outcome() else {
+            panic!("{source} is complete in a detached world")
+        };
+        assert_eq!(product.recovered(), &TypeKind::entity_ref(family.clone()));
+        assert_eq!(report.work_charged(), 2);
+        assert_eq!(product.nodes().len(), 2);
+        let child = &product.nodes()[0];
+        let root = &product.nodes()[1];
+        assert!(matches!(
+            child.outcome(),
+            TypeNameResolution::EntityFamily(actual) if actual == &family
+        ));
+        assert!(matches!(
+            root.outcome(),
+            TypeNameResolution::Builtin(super::BuiltinTypeConstructor::Ref)
+        ));
+        assert_eq!(root.source().local(), TextRange::new(0, source.len()));
+        assert_eq!(
+            root.terminal_source().expect("Ref terminal").local(),
+            TextRange::new(0, 3)
+        );
+        assert_eq!(child.source().local(), TextRange::new(4, source.len() - 1));
+    }
+}
+
+#[test]
+fn ref_projection_rejects_wrong_argument_categories_without_fallback() {
+    let cases = [
+        (
+            "Ref<String>",
+            super::TypeArgumentKind::Type(TypeKind::String),
+        ),
+        ("Ref<3>", super::TypeArgumentKind::ConstInt(3)),
+        (
+            "Ref<Option<String>>",
+            super::TypeArgumentKind::Type(TypeKind::Option(Box::new(TypeKind::String))),
+        ),
+        (
+            "Ref<Speaker<Character>>",
+            super::TypeArgumentKind::Type(TypeKind::Speaker(crate::types::EntityKind::Character)),
+        ),
+    ];
+    for (source, expected_actual) in cases {
+        let report = resolve_detached(
+            source,
+            &TypeCheckEnv::new(),
+            &GenericTypeScope::empty(),
+            SelfTypeScope::Absent,
+            NominalResolutionLimits::PRODUCTION,
+        );
+        let ResolvedTypeRefOutcome::Poisoned(poisoned) = report.outcome() else {
+            panic!("{source} must be an authoritative wrong-kind failure")
+        };
+        assert!(matches!(poisoned.product().recovered(), TypeKind::Error(_)));
+        assert!(matches!(
+            report.diagnostics(),
+            [diagnostic]
+                if matches!(
+                    diagnostic.kind(),
+                    NominalTypeDiagnosticKind::WrongArgumentKind {
+                        target: super::TypeArityTarget::Builtin(
+                            super::BuiltinTypeConstructor::Ref
+                        ),
+                        argument: 0,
+                        expected: super::TypeArgumentExpectation::EntityFamily,
+                        actual,
+                    } if actual == &expected_actual
+                )
+        ));
+        let child = poisoned
+            .product()
+            .nodes()
+            .iter()
+            .find(|node| node.node().steps() == [TypeRefNodeStep::GenericArgument(0)])
+            .expect("Ref argument node");
+        assert!(matches!(
+            child.outcome(),
+            TypeNameResolution::Failed(TypeResolutionFailure::WrongArgumentKind { .. })
+        ));
+    }
+}
+
+#[test]
+fn ref_projection_retains_arity_and_detached_unavailable_evidence() {
+    let bare = resolve_detached(
+        "Ref",
+        &TypeCheckEnv::new(),
+        &GenericTypeScope::empty(),
+        SelfTypeScope::Absent,
+        NominalResolutionLimits::PRODUCTION,
+    );
+    assert!(matches!(
+        bare.diagnostics(),
+        [diagnostic]
+            if matches!(
+                diagnostic.kind(),
+                NominalTypeDiagnosticKind::WrongArity {
+                    target: super::TypeArityTarget::Builtin(
+                        super::BuiltinTypeConstructor::Ref
+                    ),
+                    expected: super::TypeArityExpectation::Exact(1),
+                    actual: 0,
+                }
+            )
+    ));
+    assert_eq!(
+        bare.work_charged(),
+        2,
+        "the existing accounting charges the visited node and its diagnostic"
+    );
+
+    let excess = resolve_detached(
+        "Ref<Character, String>",
+        &TypeCheckEnv::new(),
+        &GenericTypeScope::empty(),
+        SelfTypeScope::Absent,
+        NominalResolutionLimits::PRODUCTION,
+    );
+    assert!(matches!(
+        excess.diagnostics(),
+        [diagnostic]
+            if matches!(
+                diagnostic.kind(),
+                NominalTypeDiagnosticKind::WrongArity { actual: 2, .. }
+            )
+    ));
+    assert_eq!(
+        excess.work_charged(),
+        4,
+        "the existing accounting charges three nodes and the arity diagnostic"
+    );
+
+    let unknown = resolve_detached(
+        "Ref<Missing>",
+        &TypeCheckEnv::new(),
+        &GenericTypeScope::empty(),
+        SelfTypeScope::Absent,
+        NominalResolutionLimits::PRODUCTION,
+    );
+    let ResolvedTypeRefOutcome::Detached(detached) = unknown.outcome() else {
+        panic!("an unavailable detached argument stays detached")
+    };
+    assert!(unknown.diagnostics().is_empty());
+    assert_eq!(detached.unavailable().len(), 1);
+    assert!(matches!(
+        detached
+            .product()
+            .nodes()
+            .last()
+            .map(super::ResolvedTypeNode::outcome),
+        Some(TypeNameResolution::Builtin(
+            super::BuiltinTypeConstructor::Ref
+        ))
     ));
 }
 

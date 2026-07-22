@@ -158,6 +158,51 @@ fn nested_try_precedence_and_utf8_nonzero_base_ranges_are_exact() {
 }
 
 #[test]
+fn try_ranges_apply_nonzero_fragment_bases_without_rescanning() {
+    let Expr::Try(postfix) = parse_expr_at("value?", 37).expect("rebased postfix Try") else {
+        panic!("expected postfix Try")
+    };
+    assert_eq!(postfix.source().whole(), TextRange::new(37, 43));
+    assert_eq!(postfix.source().operand(), TextRange::new(37, 42));
+    assert_eq!(postfix.source().operator_range(), TextRange::new(42, 43));
+
+    let Expr::Try(prefix) = parse_expr_at("try value", 10).expect("rebased prefix Try") else {
+        panic!("expected prefix Try")
+    };
+    assert_eq!(prefix.source().whole(), TextRange::new(10, 19));
+    assert_eq!(prefix.source().operand(), TextRange::new(14, 19));
+    assert_eq!(prefix.source().operator_range(), TextRange::new(10, 13));
+}
+
+#[test]
+fn try_source_recursion_uses_typed_ranges_at_a_nonzero_base() {
+    let source = "try /* gap */ (await need)?";
+    let base = 23;
+    let expression = parse_expr_at(source, base).expect("nested source expression");
+    let ranges = collect_expr_source_ranges(
+        &expression,
+        source,
+        TextRange::new(base, base + source.len()),
+    );
+
+    assert!(matches!(ranges[0].expr(), Expr::Try(_)));
+    assert_eq!(ranges[0].range(), TextRange::new(base, base + source.len()));
+    assert!(
+        ranges
+            .iter()
+            .any(|entry| matches!(entry.expr(), Expr::Await(_)))
+    );
+}
+
+#[test]
+fn missing_try_operands_keep_zero_width_ranges_at_nonzero_utf8_bases() {
+    for base in [41, "値".len()] {
+        let error = parse_expr_at("try", base).expect_err("missing operand must fail");
+        assert_eq!(error.range(), TextRange::new(base + 3, base + 3));
+    }
+}
+
+#[test]
 fn source_range_collection_uses_typed_try_coordinates() {
     let source = "try (await need)?";
     let expr = parse_expr(source).expect("nested await and try parse");

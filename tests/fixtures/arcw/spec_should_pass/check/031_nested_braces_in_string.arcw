@@ -2,7 +2,7 @@ fn template() -> String {
     "json { still string }"
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     log.info(template())
     return "done"
 }

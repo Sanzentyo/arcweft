@@ -157,11 +157,37 @@ fn indent_body(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::binding::ReplBindingSnapshotKind;
     use crate::cell::{ReplCellId, ReplCellInput};
     use crate::error::{ReplParseCoordinateSpace, ReplTransactionError};
     use arcweft_lang_syntax::parser::recovery::ParseErrorKind;
 
     use super::classify_repl_cell;
+
+    #[test]
+    fn repl_binding_projection_accepts_both_general_try_spellings() {
+        for (source, expected_expression) in [
+            (
+                "let observed = try observe(@flow.opening)",
+                "try observe(@flow.opening)",
+            ),
+            (
+                "let observed = observe(@flow.opening)?",
+                "observe(@flow.opening)?",
+            ),
+        ] {
+            let cell =
+                classify_repl_cell(ReplCellId::new(1), &ReplCellInput::statement(source), "")
+                    .expect("both retained Try spellings classify as complete statements");
+            let [binding] = cell.bindings.as_slice() else {
+                panic!("one binding expected for {source}");
+            };
+
+            assert_eq!(binding.name, "observed");
+            assert_eq!(binding.snapshot_kind, ReplBindingSnapshotKind::Observation);
+            assert_eq!(binding.source, expected_expression);
+        }
+    }
 
     #[test]
     fn repl_item_consumer_rejects_removed_role_declarations_before_synthesis() {

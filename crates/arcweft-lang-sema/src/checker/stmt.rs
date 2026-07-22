@@ -177,7 +177,7 @@ impl TypeChecker<'_> {
         expr_source: Option<&str>,
         expr_range: Option<TextRange>,
     ) {
-        let expected = self.expected_returns.last().cloned().flatten();
+        let expected = self.current_checked_return().cloned();
         self.register_expr_source_ranges(expr, expr_source, expr_range);
         let ty = match expr_range {
             Some(range) => self.check_expr_with_expected_at_range(expr, expected.as_ref(), range),
@@ -554,7 +554,7 @@ impl TypeChecker<'_> {
             | TriggerPattern::Select(pattern)
             | TriggerPattern::Task(pattern)
             | TriggerPattern::Scope(pattern) => Some(pattern),
-            TriggerPattern::Signal { value, .. } => value.as_ref(),
+            TriggerPattern::Signal { value, .. } => value.as_ref().as_ref(),
             TriggerPattern::Timeout(_) | TriggerPattern::Expr(_) => None,
         };
         if let Some(pattern) = pattern {

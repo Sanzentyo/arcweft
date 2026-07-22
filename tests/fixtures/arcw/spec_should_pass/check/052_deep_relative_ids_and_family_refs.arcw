@@ -14,6 +14,6 @@ flow @.root root {
     }
 }
 
-flow @flow:.next next {
+flow @flow:.next next() -> String {
     return "next"
 }

@@ -96,7 +96,7 @@ let bg = try await asset.image(@asset:.bg.room) with:
         progress.set(p.ratio)
 ```
 
-Arcweft also accepts this equivalent prefix sugar:
+Arcweft also retains the equivalent attached-question spelling:
 
 ```arcw
 let bg = await? asset.image(@asset:.bg.room) with:
@@ -142,7 +142,11 @@ let bg = await? asset.image(@asset:.bg.room) with:
         scene.show(@scene.loading)
 ```
 
-Parenthesized `(await ...)?` remains valid for generated code or rare expression composition, but the formatter should prefer `try await`.
+Parenthesized `(await ...)?` remains valid and is semantically distinct from
+`await ...?`: the former is a general Try around Await, while the latter applies
+Try to the Await operand. A formatter preserves that grouping and the authored
+Try/Await spelling; it does not prefer or canonicalize either propagating Await
+form.
 
 ## Context with await
 
@@ -158,7 +162,7 @@ with:
         progress.set(p.ratio)
 ```
 
-This is preferred over parenthesizing the whole await.
+This form avoids parenthesizing the whole Await when propagation is intended.
 
 If the context must refer to the whole await operation, block form is allowed:
 
@@ -170,7 +174,8 @@ let bg = (await asset.image(@asset:.bg.room) with:
 ).context("opening background failed")?
 ```
 
-But user-authored code should normally use `try await`.
+The parenthesized form remains appropriate when the surrounding general Try is
+the intended semantic grouping.
 
 ## Await in flow
 
@@ -213,6 +218,9 @@ await? expr with:
 
 expr?
   ordinary Rust-like postfix try operator
+
+try expr
+  equivalent general Try operation with retained prefix spelling
 
 await expr? with:
   rejected

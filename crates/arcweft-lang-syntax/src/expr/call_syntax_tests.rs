@@ -5,10 +5,10 @@ use super::call_syntax::{
 use super::{
     ArgumentListSyntax, ArgumentListTerminatorSyntax, CallArg, CallArgumentFormSyntax,
     CallArgumentRecoverySyntax, CallExpr, CallRecoveryBoundarySyntax, CallRecoveryTokenKind,
-    CallbackBlockCallSyntax, CallbackBlockSyntax, CallbackParameterTypeSyntax, ClosureParam,
-    DottedPath, Expr, ExprParseScope, Lexer, MAX_CALL_ARGUMENTS, MAX_CALLBACK_PARAMETERS,
-    MAX_EXPR_DIAGNOSTICS, MAX_NESTED_CALLS, ParenthesizedCallSyntax, ParsedExpr, Token,
-    collect_expr_source_ranges, parse_expr, parse_expr_fragment_recovering_at,
+    CallbackBlockCallSyntax, CallbackBlockSyntax, CallbackParameterTypeSyntax, ClosureExprSource,
+    ClosureParam, DottedPath, Expr, ExprParseScope, Lexer, MAX_CALL_ARGUMENTS,
+    MAX_CALLBACK_PARAMETERS, MAX_EXPR_DIAGNOSTICS, MAX_NESTED_CALLS, ParenthesizedCallSyntax,
+    ParsedExpr, Token, collect_expr_source_ranges, parse_expr, parse_expr_fragment_recovering_at,
     parse_expr_recovering_at,
 };
 use crate::ast::common::TextRange;
@@ -1055,8 +1055,10 @@ fn parser_invariant_accepts_parenthesized_utf8_ranges() {
     let call = CallExpr::try_parenthesized(
         Expr::Path("f".into()),
         vec![
-            CallArg::Positional(Expr::Path("α".into())),
-            CallArg::Positional(Expr::Literal(super::Literal::String("猫".to_owned()))),
+            CallArg::Positional(Box::new(Expr::Path("α".into()))),
+            CallArg::Positional(Box::new(Expr::Literal(super::Literal::String(
+                "猫".to_owned(),
+            )))),
         ],
         syntax,
     )
@@ -1297,6 +1299,7 @@ fn callback_block_has_exact_typed_header_and_body() {
         )],
         return_type: None,
         body: Box::new(Expr::Path(DottedPath::parse_dotted("item.text"))),
+        source: ClosureExprSource::new(range(10, 38), range(10, 26), None, range(27, 36)),
     };
     let call = CallExpr::try_callback_block(
         Expr::Path(DottedPath::parse_dotted("items.map")),

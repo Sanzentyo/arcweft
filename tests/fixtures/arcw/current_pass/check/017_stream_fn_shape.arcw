@@ -2,6 +2,6 @@ fn uppercase_events() -> Stream<String, String> {
     yield "hello"
 }
 
-flow @flow.main main {
+flow @flow.main main() -> String {
     return "done"
 }

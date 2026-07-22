@@ -8,6 +8,7 @@ use crate::checker::{CurriedSignatureCallValue, PendingCurriedHigherOrderArg};
 use crate::effect_model::CallableId;
 use crate::effect_row::EffectRow;
 use crate::env::FunctionParam;
+use crate::types::TypeParameterSubstitutions;
 
 impl TypeChecker<'_> {
     pub(super) fn check_path_call_expr(
@@ -288,6 +289,7 @@ impl TypeChecker<'_> {
             supplied,
             unsupported_arg_syntax,
         } = self.collect_function_value_arg_slots(callee, args);
+        let mut substitutions = TypeParameterSubstitutions::default();
         if supplied.len() > params.len() {
             arity_mismatch = true;
             self.errors
@@ -298,16 +300,19 @@ impl TypeChecker<'_> {
                 ));
         }
         for (index, (value, expected)) in supplied.iter().zip(params).enumerate() {
-            let actual = self.check_function_value_arg_slot(value, Some(expected));
-            if let Some(actual) = actual.as_ref()
-                && !self.types_compatible(expected, actual)
-            {
-                self.errors.push(TypeCheckError::argument_type_mismatch(
-                    function_value_call_label(callee),
-                    format!("#{index}"),
-                    expected.clone(),
-                    actual.clone(),
-                ));
+            let expected_for_check = substitutions.apply(expected);
+            let actual = self.check_function_value_arg_slot(value, Some(&expected_for_check));
+            if let Some(actual) = actual.as_ref() {
+                let inferred = substitutions.observe(expected, actual);
+                let specialized_expected = substitutions.apply(expected);
+                if !inferred || !self.types_compatible(&specialized_expected, actual) {
+                    self.errors.push(TypeCheckError::argument_type_mismatch(
+                        function_value_call_label(callee),
+                        format!("#{index}"),
+                        specialized_expected,
+                        actual.clone(),
+                    ));
+                }
             }
             if curried_signature_call.is_some()
                 && let Some(group_params) = curried_group_params
@@ -326,12 +331,16 @@ impl TypeChecker<'_> {
         for value in supplied.iter().skip(params.len()) {
             self.check_function_value_arg_slot(value, None);
         }
+        let specialized_return = substitutions.apply(return_type);
         let result_ty = if supplied.len() >= params.len() {
-            return_type.clone()
+            specialized_return
         } else {
             TypeKind::function_with_effects(
-                params[supplied.len()..].to_vec(),
-                return_type.clone(),
+                params[supplied.len()..]
+                    .iter()
+                    .map(|param| substitutions.apply(param))
+                    .collect::<Vec<_>>(),
+                specialized_return,
                 effects.clone(),
             )
         };

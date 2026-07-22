@@ -13,8 +13,8 @@ use arcweft_source::SourceSpan;
 use crate::{env::nominal::OpenNominalArity, types::TypePoisonId};
 
 use super::{
-    BuiltinTypeConstructor, NameResult, NominalDiagnosticRelated, NominalTypeDiagnostic,
-    NominalTypeDiagnosticKind, TypeArityExpectation, TypeResolutionFailure, TypeSourceEvidence,
+    NameResult, NominalDiagnosticRelated, NominalTypeDiagnostic, NominalTypeDiagnosticKind,
+    TypeArityExpectation, TypeResolutionFailure, TypeSourceEvidence,
 };
 
 pub(super) enum ProjectSelection {
@@ -26,49 +26,6 @@ pub(super) enum ProjectNameLookup {
     Absent,
     Selected(ProjectSelection),
     Failed(Box<NameResult>),
-}
-
-pub(super) fn builtin(path: &TypePath) -> Option<BuiltinTypeConstructor> {
-    Some(match direct_name(path)? {
-        "bool" => BuiltinTypeConstructor::Bool,
-        "i8" => BuiltinTypeConstructor::I8,
-        "i16" => BuiltinTypeConstructor::I16,
-        "i32" => BuiltinTypeConstructor::I32,
-        "i64" => BuiltinTypeConstructor::I64,
-        "i128" => BuiltinTypeConstructor::I128,
-        "isize" => BuiltinTypeConstructor::ISize,
-        "u8" => BuiltinTypeConstructor::U8,
-        "u16" => BuiltinTypeConstructor::U16,
-        "u32" => BuiltinTypeConstructor::U32,
-        "u64" => BuiltinTypeConstructor::U64,
-        "u128" => BuiltinTypeConstructor::U128,
-        "usize" => BuiltinTypeConstructor::USize,
-        "f32" => BuiltinTypeConstructor::F32,
-        "f64" => BuiltinTypeConstructor::F64,
-        "String" => BuiltinTypeConstructor::String,
-        "char" => BuiltinTypeConstructor::Char,
-        "Bytes" => BuiltinTypeConstructor::Bytes,
-        "Unit" => BuiltinTypeConstructor::Unit,
-        "Never" => BuiltinTypeConstructor::Never,
-        "Vec" => BuiltinTypeConstructor::Vec,
-        "Slice" => BuiltinTypeConstructor::Slice,
-        "Seq" => BuiltinTypeConstructor::Seq,
-        "Option" => BuiltinTypeConstructor::Option,
-        "Probe" => BuiltinTypeConstructor::Probe,
-        "ThreadHandle" => BuiltinTypeConstructor::ThreadHandle,
-        "Shared" => BuiltinTypeConstructor::Shared,
-        "Array" => BuiltinTypeConstructor::Array,
-        "OrderedMap" => BuiltinTypeConstructor::OrderedMap,
-        "SortedMap" => BuiltinTypeConstructor::SortedMap,
-        "BTreeMap" => BuiltinTypeConstructor::BTreeMap,
-        "Result" => BuiltinTypeConstructor::Result,
-        "Need" => BuiltinTypeConstructor::Need,
-        "Stream" => BuiltinTypeConstructor::Stream,
-        "Source" => BuiltinTypeConstructor::Source,
-        "Speaker" => BuiltinTypeConstructor::Speaker,
-        "SpeakerPreset" => BuiltinTypeConstructor::SpeakerPreset,
-        _ => return None,
-    })
 }
 
 pub(super) fn direct_name(path: &TypePath) -> Option<&str> {

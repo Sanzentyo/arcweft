@@ -1,4 +1,4 @@
-flow @flow.main main {
+flow @flow.main main() -> String {
     let r = 0i64..10i64
     log.info("range", value = r)
     return "done"

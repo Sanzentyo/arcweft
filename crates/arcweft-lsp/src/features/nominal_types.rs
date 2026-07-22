@@ -9,7 +9,10 @@ use arcweft_lang_hir::symbol::{
     ProjectTypeTarget,
     nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
 };
-use arcweft_lang_sema::types::TypeKind;
+use arcweft_lang_sema::{
+    nominal::{BuiltinTypeConstructor, TypeArgumentExpectation, TypeNameResolution},
+    types::{EntityKind, TypeKind},
+};
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 use arcweft_source::SourceSpan;
 use arcweft_verify_lsp::LspPositionMapper;
@@ -33,6 +36,19 @@ struct NominalCursor {
     alias_trace: Box<[ProjectNominalDeclarationId]>,
 }
 
+#[derive(Clone)]
+enum LanguageNominalOwner {
+    Builtin(BuiltinTypeConstructor),
+    EntityFamily(EntityKind),
+}
+
+#[derive(Clone)]
+struct LanguageNominalCursor {
+    owner: LanguageNominalOwner,
+    source: SourceSpan,
+    normalized: Option<TypeKind>,
+}
+
 pub(crate) fn hover(
     profile: &LspProfile,
     document: &DocumentSnapshot,
@@ -40,6 +56,39 @@ pub(crate) fn hover(
 ) -> Option<Hover> {
     let accepted = profile.accepted_environment()?;
     let project = exact_project(accepted.project(), document)?;
+    if let Some(cursor) = language_symbol_at(project, document, offset) {
+        let text = match cursor.owner {
+            LanguageNominalOwner::Builtin(constructor) => {
+                let mut text = format!(
+                    "language-owned type constructor `{}<EntityFamily>`",
+                    constructor.spelling()
+                );
+                if let Some(normalized) = cursor
+                    .normalized
+                    .filter(|normalized| !matches!(normalized, TypeKind::Error(_)))
+                {
+                    write!(text, "\n\nnormalized type: `{}`", normalized.source_label())
+                        .expect("writing to a String cannot fail");
+                }
+                text
+            }
+            LanguageNominalOwner::EntityFamily(family) => format!(
+                "entity family `{}`",
+                family
+                    .authored_type_name()
+                    .expect("resolver facts expose only authored fixed families")
+            ),
+        };
+        return Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::String(text)),
+            range: Some(
+                document.line_index().range_from_byte_span(
+                    cursor.source.range().start(),
+                    cursor.source.range().end(),
+                ),
+            ),
+        });
+    }
     let cursor = symbol_at(project, document, offset)?;
     let record = project
         .semantic_index()
@@ -108,6 +157,9 @@ pub(crate) fn definition(
 ) -> Option<GotoDefinitionResponse> {
     let accepted = profile.accepted_environment()?;
     let project = exact_project(accepted.project(), document)?;
+    if language_symbol_at(project, document, offset).is_some() {
+        return None;
+    }
     let cursor = symbol_at(project, document, offset)?;
     let source = project
         .semantic_index()
@@ -125,6 +177,9 @@ pub(crate) fn references(
 ) -> Option<Vec<Location>> {
     let accepted = profile.accepted_environment()?;
     let project = exact_project(accepted.project(), document)?;
+    if language_symbol_at(project, document, offset).is_some() {
+        return Some(Vec::new());
+    }
     let cursor = symbol_at(project, document, offset)?;
     let index = project.semantic_index();
     let mut spans = BTreeSet::new();
@@ -219,7 +274,78 @@ pub(crate) fn completions(
                 ..CompletionItem::default()
             }),
     );
+    items.extend(
+        BuiltinTypeConstructor::ALL
+            .iter()
+            .copied()
+            .map(|constructor| CompletionItem {
+                label: constructor.spelling().to_owned(),
+                kind: Some(CompletionItemKind::CLASS),
+                detail: Some(format!(
+                    "language-owned type constructor (arity {})",
+                    constructor.arity()
+                )),
+                documentation: Some(Documentation::String(
+                    "Arcweft language-owned type constructor.".to_owned(),
+                )),
+                ..CompletionItem::default()
+            }),
+    );
     items
+}
+
+pub(crate) fn contextual_completions(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Vec<CompletionItem> {
+    let Some(accepted) = profile.accepted_environment() else {
+        return Vec::new();
+    };
+    let Some(project) = exact_project(accepted.project(), document) else {
+        return Vec::new();
+    };
+    let identity = project
+        .sources()
+        .by_uri(document.uri())
+        .map(|source| source.document().identity());
+    let Some(identity) = identity else {
+        return Vec::new();
+    };
+    let is_entity_family_slot = project
+        .typecheck()
+        .nominal_resolutions
+        .nodes()
+        .any(|(_, node)| {
+            let TypeNameResolution::Builtin(constructor) = node.outcome() else {
+                return false;
+            };
+            constructor.argument_expectation(0) == Some(TypeArgumentExpectation::EntityFamily)
+                && node
+                    .source()
+                    .project()
+                    .is_some_and(|source| span_contains_offset(source, identity, offset))
+                && !node
+                    .terminal_source()
+                    .and_then(|source| source.project())
+                    .is_some_and(|source| span_contains_offset(source, identity, offset))
+        });
+    if !is_entity_family_slot {
+        return Vec::new();
+    }
+    EntityKind::AUTHORED_FAMILIES
+        .iter()
+        .filter_map(EntityKind::authored_type_name)
+        .map(|name| CompletionItem {
+            label: name.to_owned(),
+            kind: Some(CompletionItemKind::TYPE_PARAMETER),
+            detail: Some("Arcweft entity family".to_owned()),
+            documentation: Some(Documentation::String(
+                "Fixed language-owned entity family accepted by this constructor.".to_owned(),
+            )),
+            ..CompletionItem::default()
+        })
+        .collect()
 }
 
 pub(crate) fn prepare_rename(
@@ -229,6 +355,9 @@ pub(crate) fn prepare_rename(
 ) -> Option<PrepareRenameResponse> {
     let accepted = profile.accepted_environment()?;
     let project = exact_project(accepted.project(), document)?;
+    if language_symbol_at(project, document, offset).is_some() {
+        return None;
+    }
     let cursor = symbol_at(project, document, offset)?;
     let record = project
         .semantic_index()
@@ -256,6 +385,9 @@ pub(crate) fn rename(
     let new_name = ModuleSegment::new(new_name).ok()?;
     let accepted = profile.accepted_environment()?;
     let project = exact_project(accepted.project(), document)?;
+    if language_symbol_at(project, document, offset).is_some() {
+        return None;
+    }
     let cursor = symbol_at(project, document, offset)?;
     let index = project.semantic_index();
     if index.project_nominals().keys().any(|candidate| {
@@ -373,6 +505,47 @@ fn symbol_at(
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
         })
+}
+
+fn language_symbol_at(
+    project: &AcceptedProjectSnapshot,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<LanguageNominalCursor> {
+    let identity = project
+        .sources()
+        .by_uri(document.uri())?
+        .document()
+        .identity();
+    project
+        .typecheck()
+        .nominal_resolutions
+        .nodes()
+        .filter_map(|(_, node)| {
+            let (owner, source) = match node.outcome() {
+                TypeNameResolution::Builtin(constructor)
+                    if BuiltinTypeConstructor::ENTITY_FAMILY_PROJECTIONS.contains(constructor) =>
+                {
+                    (
+                        LanguageNominalOwner::Builtin(*constructor),
+                        node.terminal_source()?.project()?,
+                    )
+                }
+                TypeNameResolution::EntityFamily(family) => (
+                    LanguageNominalOwner::EntityFamily(family.clone()),
+                    node.terminal_source()
+                        .and_then(|source| source.project())
+                        .or_else(|| node.source().project())?,
+                ),
+                _ => return None,
+            };
+            span_contains_offset(source, identity, offset).then(|| LanguageNominalCursor {
+                owner,
+                source: source.clone(),
+                normalized: node.recovered().cloned(),
+            })
+        })
+        .min_by_key(|cursor| cursor.source.range().end() - cursor.source.range().start())
 }
 
 fn span_contains_offset(
@@ -702,6 +875,104 @@ entry agent @entry.agent.main {
             3,
             "TOOL-RENAME-ALIAS: original alias declaration and original-spelling uses only"
         );
+    }
+
+    #[test]
+    fn entity_family_constructor_tooling_uses_checked_language_owned_nodes() {
+        const SOURCE: &str = r"
+pub struct RouteInfo {
+    route: Ref<Flow>,
+    speaker: Ref<Character>,
+}
+
+fn smoke() -> Result<Unit, AgentError>
+effects {}
+{
+    Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = smoke
+}
+";
+        let project = TestProject::new("entity-family-tooling");
+        project.write_manifest();
+        project.write("src/main.arcw", SOURCE);
+        let main_path = project.path("src/main.arcw");
+        let profile =
+            LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
+                .resolve_for_document_path(&main_path);
+        assert!(
+            profile.diagnostics().is_empty(),
+            "accepted project diagnostics: {:?}",
+            profile.diagnostics()
+        );
+        let document = open(&main_path, SOURCE);
+        let ref_offset = SOURCE.find("Ref<Flow>").expect("Ref use") + 1;
+        let family_offset = SOURCE.find("Flow>").expect("Flow family") + 1;
+
+        let HoverContents::Scalar(MarkedString::String(ref_hover)) =
+            hover(&profile, &document, ref_offset)
+                .expect("Ref hover")
+                .contents
+        else {
+            panic!("expected Ref string hover");
+        };
+        assert!(ref_hover.contains("language-owned type constructor `Ref<EntityFamily>`"));
+        assert!(ref_hover.contains("normalized type: `Ref<Flow>`"));
+
+        let HoverContents::Scalar(MarkedString::String(family_hover)) =
+            hover(&profile, &document, family_offset)
+                .expect("entity-family hover")
+                .contents
+        else {
+            panic!("expected entity-family string hover");
+        };
+        assert_eq!(family_hover, "entity family `Flow`");
+        assert!(definition(&profile, &document, ref_offset).is_none());
+        assert!(definition(&profile, &document, family_offset).is_none());
+        assert_eq!(
+            references(&profile, &document, ref_offset),
+            Some(Vec::new())
+        );
+        assert!(prepare_rename(&profile, &document, ref_offset).is_none());
+        assert!(prepare_rename(&profile, &document, family_offset).is_none());
+        assert!(
+            rename(
+                &profile,
+                &DocumentStore::default(),
+                &document,
+                family_offset,
+                "Scene"
+            )
+            .is_none()
+        );
+
+        let global = crate::features::completion::completions(&profile, Some(&document));
+        for constructor in ["Ref", "Speaker", "SpeakerPreset"] {
+            assert_eq!(
+                global
+                    .iter()
+                    .filter(|item| item.label == constructor)
+                    .count(),
+                1,
+                "{constructor} is published once from the typed builtin inventory"
+            );
+        }
+        let contextual = crate::features::completion::completions_at(
+            &profile,
+            Some(&document),
+            document
+                .line_index()
+                .position_from_byte_offset(family_offset),
+        );
+        for family in ["Character", "Flow", "View"] {
+            assert!(
+                contextual.iter().any(|item| item.label == family),
+                "{family} is an authored entity-family completion"
+            );
+        }
+        assert!(!contextual.iter().any(|item| item.label == "Other"));
     }
 
     #[test]

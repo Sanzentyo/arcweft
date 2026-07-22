@@ -34,7 +34,7 @@ pub struct ExpectedToken {
 /// Parsed fragment payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParsedFragmentKind {
-    Expression(Expr),
+    Expression(Box<Expr>),
     Statements(Vec<Stmt>),
     Items(Vec<Item>),
 }
@@ -71,7 +71,7 @@ pub fn parse_fragment(source: &str, kind: FragmentKind, options: ParseOptions) -
     match kind {
         FragmentKind::Expression => parse_expr(source).map_or_else(
             |_| ParsedFragment::invalid(),
-            |expr| ParsedFragment::complete(ParsedFragmentKind::Expression(expr)),
+            |expr| ParsedFragment::complete(ParsedFragmentKind::Expression(Box::new(expr))),
         ),
         FragmentKind::Statements => ParsedFragment::complete(ParsedFragmentKind::Statements(
             super::control_flow::parse_stmt_lines(source),

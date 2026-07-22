@@ -38,7 +38,10 @@ placement = "embedded"
 compression = "none"
 "#,
     );
-    project.write("src/main.arcw", "flow @flow.main main { return \"ok\" }\n");
+    project.write(
+        "src/main.arcw",
+        "flow @flow.main main() -> String { return \"ok\" }\n",
+    );
     project.write_manifest("akane");
     project.write_manifest("aoi");
 

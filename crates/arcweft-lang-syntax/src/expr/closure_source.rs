@@ -6,13 +6,14 @@ use crate::cst::{
 
 pub(super) struct ClosureSource<'a> {
     pub(super) params: &'a str,
+    pub(super) header: &'a str,
     pub(super) return_type: Option<&'a str>,
     pub(super) body: ClosureBodySource<'a>,
 }
 
 pub(super) enum ClosureBodySource<'a> {
     Expr(&'a str),
-    Block(&'a str),
+    Block { inner: &'a str, whole: &'a str },
 }
 
 pub(super) fn split(source: &str) -> Result<Option<ClosureSource<'_>>, ExprParseError> {
@@ -31,6 +32,7 @@ pub(super) fn split(source: &str) -> Result<Option<ClosureSource<'_>>, ExprParse
     else {
         return Ok(Some(ClosureSource {
             params,
+            header: &source[..'|'.len_utf8() + close + '|'.len_utf8()],
             return_type: None,
             body: ClosureBodySource::Expr(body),
         }));
@@ -54,7 +56,15 @@ pub(super) fn split(source: &str) -> Result<Option<ClosureSource<'_>>, ExprParse
     }
     Ok(Some(ClosureSource {
         params,
+        header: &source[..subslice_offset(source, return_type) + return_type.len()],
         return_type: Some(return_type),
-        body: ClosureBodySource::Block(after_arrow[open + '{'.len_utf8()..close].trim()),
+        body: ClosureBodySource::Block {
+            inner: after_arrow[open + '{'.len_utf8()..close].trim(),
+            whole: &after_arrow[open..close + '}'.len_utf8()],
+        },
     }))
+}
+
+fn subslice_offset(source: &str, fragment: &str) -> usize {
+    (fragment.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)
 }

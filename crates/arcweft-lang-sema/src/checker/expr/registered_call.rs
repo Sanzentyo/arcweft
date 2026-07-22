@@ -32,6 +32,7 @@ use crate::{
     },
     effect_model::EffectSite,
     effect_row::EffectRow,
+    types::TypeParameterSubstitutions,
 };
 
 use super::support::FixedLiteralSpreadSlot;
@@ -39,7 +40,7 @@ use super::support::FixedLiteralSpreadSlot;
 mod arguments;
 mod facts;
 
-use arguments::{RegisteredArgumentCheck, RegisteredArgumentContext};
+use arguments::{RegisteredArgumentCheck, RegisteredArgumentContext, RegisteredArgumentInference};
 use facts::ArgumentFactBuilder;
 
 pub(super) enum RegisteredFreeCallOutcome {
@@ -303,7 +304,7 @@ impl TypeChecker<'_> {
             return None;
         }
         let value = call.args().iter().find_map(|argument| match argument {
-            CallArg::Positional(value) => Some(value),
+            CallArg::Positional(value) => Some(value.as_ref()),
             CallArg::Named { name, value } if name == "character" => Some(value.as_ref()),
             CallArg::Named { .. } | CallArg::Spread { .. } => None,
         })?;
@@ -1089,6 +1090,7 @@ impl TypeChecker<'_> {
                 let expected_state = kind.state_type(schema.result());
                 let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
                 let mut poison = CallPoison::Clean;
+                let mut substitutions = TypeParameterSubstitutions::default();
                 let mut inferred_state = None;
                 if call.args().len() != 1 {
                     self.errors.push(TypeCheckError::new(format!(
@@ -1116,7 +1118,9 @@ impl TypeChecker<'_> {
                         break;
                     }
                     let (value, mapped, shape_poison) = match arg {
-                        CallArg::Positional(value) => (value, parameter, CallPoison::Clean),
+                        CallArg::Positional(value) => {
+                            (value.as_ref(), parameter, CallPoison::Clean)
+                        }
                         CallArg::Named { name, value } => {
                             self.errors.push(TypeCheckError::new(format!(
                                 "`Reduction.unchanged` state must be positional, got named `{name}`"
@@ -1135,7 +1139,7 @@ impl TypeChecker<'_> {
                         mapped,
                         FixedLiteralSpreadSlot::Expr(value),
                         argument_index,
-                        &mut fact_builders,
+                        RegisteredArgumentInference::new(&mut fact_builders, &mut substitutions),
                         shape_poison,
                     );
                     poison = poison.merge(checked.poison);
@@ -1204,6 +1208,7 @@ impl TypeChecker<'_> {
         let mut fact_builders = self.registered_argument_fact_builders(call, records_facts);
         let mut poison = CallPoison::Clean;
         let mut inferred_payload = None;
+        let mut substitutions = TypeParameterSubstitutions::default();
         if call.args().len() != 1 {
             self.errors.push(TypeCheckError::new(format!(
                 "`{label}` requires exactly one positional payload"
@@ -1228,7 +1233,7 @@ impl TypeChecker<'_> {
                 break;
             }
             let (value, mapped, shape_poison) = match arg {
-                CallArg::Positional(value) => (value, parameter, CallPoison::Clean),
+                CallArg::Positional(value) => (value.as_ref(), parameter, CallPoison::Clean),
                 CallArg::Named { name, value } => {
                     self.errors.push(TypeCheckError::new(format!(
                         "`{label}` payload must be positional, got named `{name}`"
@@ -1247,7 +1252,7 @@ impl TypeChecker<'_> {
                 mapped,
                 FixedLiteralSpreadSlot::Expr(value),
                 argument_index,
-                &mut fact_builders,
+                RegisteredArgumentInference::new(&mut fact_builders, &mut substitutions),
                 shape_poison,
             );
             poison = poison.merge(checked.poison);
@@ -1385,12 +1390,15 @@ impl TypeChecker<'_> {
             call,
             records_facts,
         );
-        let result = schema_result_type(candidate.schema(), current_group);
+        let result = argument_check
+            .substitutions
+            .apply(&schema_result_type(candidate.schema(), current_group));
         if records_facts && let Some(call_span) = call_span {
             let RegisteredArgumentCheck {
                 facts,
                 poison,
                 diagnostics,
+                ..
             } = argument_check;
             self.record_call_target_facts(
                 expression,

@@ -133,7 +133,7 @@ flow @flow.opening opening {
     assert!(matches!(call.callee(), Expr::Path(path) if path == "show"));
     assert!(matches!(
         &call.args()[0],
-        CallArg::Positional(Expr::EntityRef(_))
+        CallArg::Positional(value) if matches!(value.as_ref(), Expr::EntityRef(_))
     ));
     assert!(matches!(
         &call.args()[2],

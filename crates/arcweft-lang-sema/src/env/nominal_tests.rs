@@ -157,7 +157,7 @@ fn duplicate_exact_path_is_rejected_deterministically() {
 #[test]
 fn exact_records_reject_reserved_paths_and_nonzero_exact_arity() {
     let reserved = AcceptedNominalRecord::try_new(
-        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Result")),
+        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Ref")),
         0,
         AcceptedNominalSemantics::Opaque,
         AcceptedNominalOrigin::Standard,
@@ -166,7 +166,7 @@ fn exact_records_reject_reserved_paths_and_nonzero_exact_arity() {
     assert!(matches!(
         reserved,
         Err(AcceptedNominalCatalogError::ReservedPath { path: reserved })
-            if reserved == path("Result")
+            if reserved == path("Ref")
     ));
 
     assert!(matches!(
@@ -187,6 +187,29 @@ fn exact_records_reject_reserved_paths_and_nonzero_exact_arity() {
 
 #[test]
 fn open_patterns_reject_global_or_unbounded_namespaces() {
+    for pattern in [
+        OpenNominalPattern::Exact(path("Ref")),
+        OpenNominalPattern::Namespace {
+            prefix: path("Ref"),
+            min_tail_segments: 1,
+            max_tail_segments: 1,
+        },
+    ] {
+        assert!(matches!(
+            rule(
+                "adapter.reserved",
+                0,
+                OpenNominalScope::AcceptedWorld,
+                pattern,
+                OpenNominalArity::Exact(1),
+            ),
+            Err(AcceptedNominalCatalogError::InvalidOpenPattern {
+                reason: OpenNominalPatternError::ReservedPath,
+                ..
+            })
+        ));
+    }
+
     let zero_tail = rule(
         "adapter.test",
         0,

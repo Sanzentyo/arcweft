@@ -108,8 +108,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parses_multiline_line_result_binding_with_plan() {
-    let tree = parse_ok(
-        r"
+    let source = r"
 flow @flow.opening opening {
     let handles = alice.say(voice=auto)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
@@ -121,8 +120,8 @@ flow @flow.opening opening {
         もう一度。[p]
     ] with: out .Done
 }
-",
-    );
+";
+    let tree = parse_ok(source);
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -156,12 +155,11 @@ flow @flow.opening opening {
         } if matches!(plan.items(), [LinePlanItem::Out(Expr::ShortVariant(path))] if path == "Done")
     ));
 
-    let hir = lower_to_hir(&tree).expect("multiline line result bindings lower");
+    let hir = lower_bound_hir("multiline-line-plan-parse", source);
     validate_typecheck_ready(&hir).expect("multiline line result bindings are typecheck-ready");
 
-    let check_tree = parse_ok(
-        r"
-flow @flow.opening opening {
+    let check_source = r"
+flow @flow.opening opening() -> Result<Unit, LineCancel> {
     let handles = alice.say(voice=auto)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
@@ -177,10 +175,8 @@ flow @flow.opening opening {
 
         out Ok(())
 }
-",
-    );
-    let check_hir =
-        lower_to_hir(&check_tree).expect("typecheck multiline line result binding lowers");
+";
+    let check_hir = lower_bound_hir("multiline-line-result", check_source);
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
@@ -200,7 +196,7 @@ flow @flow.opening opening {
 fn typechecks_bound_timed_cue_line_result_and_outer_use() {
     let tree = parse_ok(
         r#"
-flow @flow.line_handles line_handles {
+flow @flow.line_handles line_handles() -> String {
     let (_, cue) = alice.say(voice=auto)[聞いて。[p]]
     with:
         let actor = alice.stage.acquire(scope=line)
@@ -883,7 +879,7 @@ flow @flow.opening opening {
     assert!(matches!(call.callee(), Expr::Path(path) if path == "memo"));
     assert_eq!(call.args().len(), 3);
     assert!(
-        matches!(&call.args()[0], CallArg::Positional(Expr::ShortVariant(path)) if path == "rich_text")
+        matches!(&call.args()[0], CallArg::Positional(value) if matches!(value.as_ref(), Expr::ShortVariant(path) if path == "rich_text"))
     );
     assert!(
         matches!(&call.args()[1], CallArg::Named { name, value } if name == "key" && matches!(value.as_ref(), Expr::Tuple(items) if items.len() == 3))

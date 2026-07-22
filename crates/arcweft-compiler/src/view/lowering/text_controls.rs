@@ -278,8 +278,11 @@ fn expr_path_matches(expr: &Expr, segments: &[&str]) -> bool {
 
 fn first_positional_entity_arg(args: &[CallArg]) -> Option<&EntityRefSyntax> {
     args.iter().find_map(|arg| match arg {
-        CallArg::Positional(Expr::EntityRef(reference)) => Some(reference),
-        CallArg::Positional(_) | CallArg::Named { .. } | CallArg::Spread { .. } => None,
+        CallArg::Positional(value) => match value.as_ref() {
+            Expr::EntityRef(reference) => Some(reference),
+            _ => None,
+        },
+        CallArg::Named { .. } | CallArg::Spread { .. } => None,
     })
 }
 

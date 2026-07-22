@@ -14,6 +14,7 @@ use crate::{
         SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     checker::{CallableDiagnosticDraft, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind},
+    types::TypeParameterSubstitutions,
 };
 
 #[derive(Clone)]
@@ -21,6 +22,7 @@ pub(super) struct RegisteredArgumentCheck {
     pub(super) facts: Vec<CheckedCallArgumentFact>,
     pub(super) poison: CallPoison,
     pub(super) diagnostics: Vec<CallableDiagnosticDraft>,
+    pub(super) substitutions: TypeParameterSubstitutions,
 }
 
 impl RegisteredArgumentCheck {
@@ -32,12 +34,19 @@ impl RegisteredArgumentCheck {
             facts,
             poison,
             diagnostics: Vec::new(),
+            substitutions: TypeParameterSubstitutions::default(),
         }
     }
 
     #[must_use]
     fn with_diagnostics(mut self, diagnostics: Vec<CallableDiagnosticDraft>) -> Self {
         self.diagnostics = diagnostics;
+        self
+    }
+
+    #[must_use]
+    pub(super) fn with_substitutions(mut self, substitutions: TypeParameterSubstitutions) -> Self {
+        self.substitutions = substitutions;
         self
     }
 }
@@ -56,6 +65,7 @@ struct RegisteredArgumentMappingState {
     poison: CallPoison,
     spread_shape_rejected: bool,
     positional_mapping_stopped: bool,
+    substitutions: TypeParameterSubstitutions,
 }
 
 impl RegisteredArgumentMappingState {
@@ -79,7 +89,12 @@ impl RegisteredArgumentMappingState {
             poison: CallPoison::Clean,
             spread_shape_rejected: false,
             positional_mapping_stopped: false,
+            substitutions: TypeParameterSubstitutions::default(),
         }
+    }
+
+    fn inference(&mut self) -> RegisteredArgumentInference<'_> {
+        RegisteredArgumentInference::new(&mut self.fact_builders, &mut self.substitutions)
     }
 }
 
@@ -88,6 +103,23 @@ pub(super) struct RegisteredSlotCheck {
     pub(super) inferred: Option<TypeKind>,
     pub(super) expression: Option<TypeExpressionId>,
     pub(super) source: Option<SourceSpan>,
+}
+
+pub(super) struct RegisteredArgumentInference<'a> {
+    fact_builders: &'a mut Option<Vec<ArgumentFactBuilder>>,
+    substitutions: &'a mut TypeParameterSubstitutions,
+}
+
+impl<'a> RegisteredArgumentInference<'a> {
+    pub(super) fn new(
+        fact_builders: &'a mut Option<Vec<ArgumentFactBuilder>>,
+        substitutions: &'a mut TypeParameterSubstitutions,
+    ) -> Self {
+        Self {
+            fact_builders,
+            substitutions,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -246,7 +278,9 @@ impl TypeChecker<'_> {
                 .map(ArgumentFactBuilder::finish)
                 .collect::<Vec<_>>()
         });
-        RegisteredArgumentCheck::new(facts, mapping.poison).with_diagnostics(mapping.diagnostics)
+        RegisteredArgumentCheck::new(facts, mapping.poison)
+            .with_diagnostics(mapping.diagnostics)
+            .with_substitutions(mapping.substitutions)
     }
 
     pub(super) fn check_unmapped_registered_arguments(
@@ -317,7 +351,7 @@ impl TypeChecker<'_> {
                         None,
                         FixedLiteralSpreadSlot::Expr(value),
                         argument_index,
-                        &mut mapping.fact_builders,
+                        mapping,
                         CallPoison::Rejected,
                     ),
                 CallArg::Positional(value) => {
@@ -345,7 +379,7 @@ impl TypeChecker<'_> {
                                 None,
                                 FixedLiteralSpreadSlot::Expr(value),
                                 argument_index,
-                                &mut mapping.fact_builders,
+                                mapping,
                                 CallPoison::Rejected,
                             ),
                             shape_rejected: false,
@@ -411,7 +445,7 @@ impl TypeChecker<'_> {
                 None,
                 value,
                 argument_index,
-                &mut mapping.fact_builders,
+                mapping.inference(),
                 CallPoison::Rejected,
             );
             mapping.diagnostics.push(CallableDiagnosticDraft::error(
@@ -457,7 +491,7 @@ impl TypeChecker<'_> {
             Some(parameter),
             value,
             argument_index,
-            &mut mapping.fact_builders,
+            mapping.inference(),
             CallPoison::Clean,
         );
         for (coordinate, first_source) in skipped_bindings {
@@ -507,7 +541,7 @@ impl TypeChecker<'_> {
                 None,
                 FixedLiteralSpreadSlot::Expr(value),
                 argument_index,
-                &mut mapping.fact_builders,
+                mapping.inference(),
                 poison,
             );
             if poison == CallPoison::Rejected {
@@ -544,7 +578,7 @@ impl TypeChecker<'_> {
             Some(parameter),
             FixedLiteralSpreadSlot::Expr(value),
             argument_index,
-            &mut mapping.fact_builders,
+            mapping.inference(),
             poison,
         );
         let name_source = mapping
@@ -593,7 +627,7 @@ impl TypeChecker<'_> {
                     None,
                     FixedLiteralSpreadSlot::Expr(value),
                     argument_index,
-                    &mut mapping.fact_builders,
+                    mapping,
                     CallPoison::Clean,
                 ),
                 shape_rejected: false,
@@ -609,7 +643,7 @@ impl TypeChecker<'_> {
                         None,
                         FixedLiteralSpreadSlot::Expr(value),
                         argument_index,
-                        &mut mapping.fact_builders,
+                        mapping,
                         CallPoison::Rejected,
                     ),
                     shape_rejected: true,
@@ -627,7 +661,7 @@ impl TypeChecker<'_> {
                             None,
                             FixedLiteralSpreadSlot::Expr(value),
                             argument_index,
-                            &mut mapping.fact_builders,
+                            mapping,
                             CallPoison::Rejected,
                         ),
                         shape_rejected: true,
@@ -778,16 +812,18 @@ impl TypeChecker<'_> {
             };
         };
         let mut poison = CallPoison::Clean;
-        if let CallableParameterType::Exact(expected) = rest.ty()
-            && !self.types_compatible(expected, item)
-        {
-            self.errors.push(TypeCheckError::argument_type_mismatch(
-                context.label,
-                parameter_label(rest),
-                expected.clone(),
-                item.clone(),
-            ));
-            poison = CallPoison::Rejected;
+        if let CallableParameterType::Exact(expected) = rest.ty() {
+            let inferred = mapping.substitutions.observe(expected, item);
+            let specialized_expected = mapping.substitutions.apply(expected);
+            if !inferred || !self.types_compatible(&specialized_expected, item) {
+                self.errors.push(TypeCheckError::argument_type_mismatch(
+                    context.label,
+                    parameter_label(rest),
+                    specialized_expected,
+                    item.clone(),
+                ));
+                poison = CallPoison::Rejected;
+            }
         }
         Self::push_registered_argument_slot(
             RegisteredArgumentSlot {
@@ -822,7 +858,7 @@ impl TypeChecker<'_> {
                 None,
                 FixedLiteralSpreadSlot::Expr(value),
                 argument_index,
-                &mut mapping.fact_builders,
+                mapping,
                 CallPoison::Rejected,
             ),
             shape_rejected: true,
@@ -835,7 +871,7 @@ impl TypeChecker<'_> {
         parameter: Option<&CallableParameter>,
         value: FixedLiteralSpreadSlot<'_>,
         argument_index: usize,
-        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
+        mapping: &mut RegisteredArgumentMappingState,
         poison: CallPoison,
     ) -> CallPoison {
         self.check_registered_argument_slot_with_inferred(
@@ -843,7 +879,7 @@ impl TypeChecker<'_> {
             parameter,
             value,
             argument_index,
-            fact_builders,
+            mapping.inference(),
             poison,
         )
         .poison
@@ -855,7 +891,10 @@ impl TypeChecker<'_> {
         parameter: Option<&CallableParameter>,
         value: FixedLiteralSpreadSlot<'_>,
         argument_index: usize,
-        fact_builders: &mut Option<Vec<ArgumentFactBuilder>>,
+        RegisteredArgumentInference {
+            fact_builders,
+            substitutions,
+        }: RegisteredArgumentInference<'_>,
         mut poison: CallPoison,
     ) -> RegisteredSlotCheck {
         if self.signature_work_charge.candidate_work
@@ -896,17 +935,20 @@ impl TypeChecker<'_> {
                 source,
             };
         }
-        let actual = self.check_fixed_literal_spread_slot(value, expected);
-        if let (Some(expected), Some(actual)) = (expected, actual.as_ref())
-            && !self.types_compatible(expected, actual)
-        {
-            self.errors.push(TypeCheckError::argument_type_mismatch(
-                context.label,
-                parameter.map_or_else(|| "<unmapped>".to_owned(), parameter_label),
-                expected.clone(),
-                actual.clone(),
-            ));
-            poison = CallPoison::Rejected;
+        let expected_for_check = expected.map(|expected| substitutions.apply(expected));
+        let actual = self.check_fixed_literal_spread_slot(value, expected_for_check.as_ref());
+        if let (Some(expected), Some(actual)) = (expected, actual.as_ref()) {
+            let inferred = substitutions.observe(expected, actual);
+            let specialized_expected = substitutions.apply(expected);
+            if !inferred || !self.types_compatible(&specialized_expected, actual) {
+                self.errors.push(TypeCheckError::argument_type_mismatch(
+                    context.label,
+                    parameter.map_or_else(|| "<unmapped>".to_owned(), parameter_label),
+                    specialized_expected,
+                    actual.clone(),
+                ));
+                poison = CallPoison::Rejected;
+            }
         }
         Self::push_registered_argument_slot(
             RegisteredArgumentSlot {
