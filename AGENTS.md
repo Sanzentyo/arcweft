@@ -414,6 +414,12 @@ work. After adjudication, connect the selected contract to its implementation
 note, tests, dependency order, and current goal without waiting for a second
 instruction.
 
+Run this intake comparison explicitly when resuming a package-driven goal and
+at each reviewable push cut point. Compare every `docs/reviews/*.zip` SHA-256
+with package-specific intake/completion notes under `docs/implementation/` and
+classify every unrecorded or changed archive before selecting the next
+production slice.
+
 Before setting the goal:
 
 - Confirm the package path exists and inspect its README, request markdown,
