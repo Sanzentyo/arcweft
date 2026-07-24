@@ -15,7 +15,7 @@ use arcweft_lang_syntax::{
 impl TypeChecker<'_> {
     pub(super) fn check_yield_stmt(&mut self, expr: &AuthoredExpr) {
         self.record_static_effect("control.suspend", "yield");
-        self.reject_active_borrows(SuspensionBoundary::Yield);
+        self.reject_active_borrows(SuspensionBoundary::Yield, None);
         let actual = self.check_authored_expr(expr);
         let Some(context) = self.yield_stack.last_mut() else {
             self.errors.push(TypeCheckError::new(
@@ -68,7 +68,8 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_await_expr(&mut self, awaited: &AwaitExpr) -> Option<TypeKind> {
-        self.reject_active_borrows(SuspensionBoundary::Await);
+        let await_keyword = self.source_span_for_current_range(awaited.source().await_keyword());
+        self.reject_active_borrows(SuspensionBoundary::Await, await_keyword);
         match self.check_expr(awaited.operand()) {
             Some(TypeKind::Need { ready, error })
                 if awaited.propagation() == AwaitPropagation::PropagateError =>
@@ -80,10 +81,9 @@ impl TypeChecker<'_> {
             }
             Some(TypeKind::Need { ready, error }) => Some(TypeKind::Result { ok: ready, error }),
             Some(other) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "await expression must have Need<T, E> type, found {}",
-                    type_kind_label(&other)
-                )));
+                let operand = self.source_span_for_current_range(awaited.source().operand());
+                self.errors
+                    .push(TypeCheckError::await_operand_not_need(other, operand));
                 None
             }
             None => None,
@@ -131,12 +131,11 @@ impl TypeChecker<'_> {
         &mut self,
         await_with: &arcweft_lang_hir::model::HirAwait,
     ) -> Option<TypeKind> {
-        self.reject_active_borrows(SuspensionBoundary::Await);
-        let ty = self.check_authored_expr(await_with.expr_authored());
-        let Some(TypeKind::Need { ready, error }) = ty else {
-            self.errors.push(TypeCheckError::new(
-                "await expression must have Need<T, E> type".to_owned(),
-            ));
+        self.reject_active_borrows(SuspensionBoundary::Await, None);
+        let ty = self.check_authored_expr(await_with.expr_authored())?;
+        let TypeKind::Need { ready, error } = ty else {
+            self.errors
+                .push(TypeCheckError::await_operand_not_need(ty, None));
             return None;
         };
         if await_with.branches().is_empty() {
@@ -247,15 +246,24 @@ impl TypeChecker<'_> {
         self.restore_borrow_state(borrow_checkpoint);
     }
 
-    pub(super) fn reject_active_borrows(&mut self, boundary: SuspensionBoundary) {
+    pub(super) fn reject_active_borrows(
+        &mut self,
+        boundary: SuspensionBoundary,
+        primary: Option<arcweft_source::SourceSpan>,
+    ) {
         self.stats.borrow_boundary_checks += 1;
         self.record_closure_suspension_boundary(boundary);
         if self.active_borrow_total > 0 {
-            let labels = self.active_borrow_labels();
-            self.errors.push(TypeCheckError::new(format!(
-                "borrowed values with lifetimes {labels:?} cannot cross {}",
-                boundary.label()
-            )));
+            let lifetimes = self
+                .active_borrow_labels()
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
+            self.errors.push(TypeCheckError::borrow_across_suspension(
+                lifetimes,
+                boundary.label(),
+                primary,
+            ));
         }
     }
 

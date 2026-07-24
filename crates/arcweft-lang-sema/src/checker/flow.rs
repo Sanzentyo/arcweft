@@ -38,7 +38,7 @@ impl TypeChecker<'_> {
                 self.check_await_binding(pattern, await_with);
             }
             HirFlowItem::Thread(thread) => {
-                self.reject_active_borrows(SuspensionBoundary::ThreadSuspension);
+                self.reject_active_borrows(SuspensionBoundary::ThreadSuspension, None);
                 self.check_flow_items(thread.body());
             }
             HirFlowItem::If(block) => {

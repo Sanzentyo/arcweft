@@ -188,7 +188,7 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_thread_body(&mut self, statements: &[FlowItem]) -> Option<TypeKind> {
-        self.reject_active_borrows(SuspensionBoundary::Thread);
+        self.reject_active_borrows(SuspensionBoundary::Thread, None);
         self.with_child_task_scope(true, |checker| {
             for item in statements {
                 match item {

@@ -100,7 +100,7 @@ impl TypeChecker<'_> {
             Stmt::Thread(thread) => self.check_thread_stmt(thread),
             Stmt::DeferBlock { statements, .. } => self.check_defer_block_stmt(statements),
             Stmt::Defer { expr, .. } => {
-                self.reject_active_borrows(SuspensionBoundary::Defer);
+                self.reject_active_borrows(SuspensionBoundary::Defer, None);
                 self.check_authored_expr(expr);
             }
             Stmt::Yield(expr) => self.check_yield_stmt(expr),
@@ -161,7 +161,7 @@ impl TypeChecker<'_> {
     }
 
     fn check_defer_block_stmt(&mut self, statements: &[Stmt]) {
-        self.reject_active_borrows(SuspensionBoundary::DeferCleanup);
+        self.reject_active_borrows(SuspensionBoundary::DeferCleanup, None);
         for stmt in statements {
             self.check_stmt(stmt);
         }

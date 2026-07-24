@@ -38,7 +38,8 @@ the compact fiber retains the exact `Cancelled` terminal.
 | `NeedHandle` await verifier acceptance | `LANDED_VALIDATED` | the direct-suspension program verifies without a task-handle surrogate type |
 | authored ordinary `fn` to AWBC callable/frame lowering | `DESIGN_BLOCKED` | the final ordinary AWBC function-kind allocation belongs to pending codec-8 reconciliation |
 | Ready/Err `Need<T,E>` same-step materialization | `MISSING` | current Product `Await` still resolves task-plan events and does not own a typed in-memory Need value |
-| non-Need `await`, exact borrow range, and effect-trait diagnostics | `MISSING` | these semantic rows are outside this core runtime cut and remain implementation work |
+| non-Need `await`, exact borrow range, and `ThreadHandle` negative evidence | `LANDED_VALIDATED` | [the semantic suspension-diagnostic cut](2026-07-24-lang-01-1-1-suspension-diagnostics.md) |
+| effect-trait diagnostics | `MISSING` | the typed method-effect owner remains a separate semantic cut |
 | project/LSP callable execution publication | `MISSING` | tooling must consume canonical checked identities instead of synthesizing a hover-only callable identity |
 | StreamFactory/runtime/wire/save projection | `DESIGN_BLOCKED` | Lang-01.3.1.2.2.1 correction is pending |
 
@@ -53,8 +54,8 @@ function as `Synthetic`; doing so would create a temporary public authority.
 - No provisional ordinary-function lowerer and no reuse of `Synthetic` as its
   public kind.
 - No changes to the blocked Stream runtime/wire work.
-- No claim that Lang-01.1.1 Cut 3 is complete: typed Need behavior, semantic
-  negative rows, effect traits, tooling publication, and the final
+- No claim that Lang-01.1.1 Cut 3 is complete: typed Need behavior, effect
+  traits, tooling publication, and the final
   authored-function lowering remain open under their owners.
 
 ## Validation

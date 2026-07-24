@@ -1,4 +1,5 @@
 use super::support::*;
+use arcweft_source::DiagnosticLabelStyle;
 
 #[test]
 fn typechecks_ordinary_fn_try_await_without_wait_view() {
@@ -45,6 +46,107 @@ fn load_bg_result() -> Result<Image, AssetError> {
         },
     );
     typecheck_hir(&hir, &env).expect("plain await returns Result<T, E>");
+}
+
+#[test]
+fn await_non_need_reports_typed_code_and_exact_operand_range() {
+    let source = r"
+fn bad() -> Result<i64, ArcError> {
+    await 42
+}
+";
+    let hir = lower_bound_hir("await-non-need", source);
+    let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("non-Need await is rejected");
+    let error = errors
+        .iter()
+        .find(|error| error.stable_code() == "sema.await.operand_not_need")
+        .expect("typed await operand diagnostic");
+    let operand_start = source.find("42").expect("fixture await operand");
+
+    assert!(matches!(
+        error.kind(),
+        TypeCheckErrorKind::AwaitOperandNotNeed {
+            actual: TypeKind::I32,
+            ..
+        }
+    ));
+    let diagnostic = error.diagnostic();
+    let primary = diagnostic
+        .labels()
+        .iter()
+        .find(|label| label.style() == DiagnosticLabelStyle::Primary)
+        .expect("await diagnostic has primary source evidence");
+    assert_eq!(
+        primary.span().range().as_range(),
+        operand_start..operand_start + "42".len()
+    );
+}
+
+#[test]
+fn await_thread_handle_uses_the_non_need_type_rule() {
+    let source = r"
+fn route_score(state: i32) -> i32 {
+    state
+}
+
+fn bad(state: i32) -> Result<i64, ArcError> {
+    await thread compute { route_score(state) }
+}
+";
+    let hir = lower_bound_hir("await-thread-handle", source);
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("ThreadHandle await is rejected");
+    let error = errors
+        .iter()
+        .find(|error| error.stable_code() == "sema.await.operand_not_need")
+        .expect("typed await operand diagnostic");
+    let operand = "thread compute { route_score(state) }";
+    let operand_start = source.find(operand).expect("fixture thread operand");
+
+    assert!(matches!(
+        error.kind(),
+        TypeCheckErrorKind::AwaitOperandNotNeed {
+            actual: TypeKind::ThreadHandle(inner),
+            ..
+        } if inner.as_ref() == &TypeKind::Unit
+    ));
+    let diagnostic = error.diagnostic();
+    let primary = diagnostic
+        .labels()
+        .iter()
+        .find(|label| label.style() == DiagnosticLabelStyle::Primary)
+        .expect("ThreadHandle diagnostic has primary source evidence");
+    assert_eq!(
+        primary.span().range().as_range(),
+        operand_start..operand_start + operand.len()
+    );
+}
+
+#[test]
+fn await_with_non_need_uses_the_same_typed_diagnostic_without_fabricated_source() {
+    let tree = parse_ok(
+        r"
+flow @flow.loading loading {
+    await 42 with { pending p => p }
+}
+",
+    );
+    let hir = lower_to_hir(&tree).expect("await-with fixture lowers");
+    let errors =
+        typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("non-Need await-with is rejected");
+    let error = errors
+        .iter()
+        .find(|error| error.stable_code() == "sema.await.operand_not_need")
+        .expect("typed await operand diagnostic");
+
+    assert!(matches!(
+        error.kind(),
+        TypeCheckErrorKind::AwaitOperandNotNeed {
+            actual: TypeKind::I32,
+            operand: None,
+        }
+    ));
+    assert!(error.diagnostic().labels().is_empty());
 }
 
 #[test]
@@ -429,6 +531,63 @@ flow @flow.borrow borrow {
         errors
             .iter()
             .any(|error| error.message().contains("suspension boundary"))
+    );
+}
+
+#[test]
+fn borrow_across_direct_await_reports_typed_code_and_exact_keyword_range() {
+    let source = r"
+flow @flow.borrow borrow {
+    let pixels: &'asset [Rgba8] = bg.pixels()
+    let result = await load_avatar()
+}
+";
+    let hir = lower_bound_hir("borrow-across-direct-await", source);
+    let pixel_borrow = TypeKind::BorrowRef {
+        kind: BorrowKind::Shared,
+        lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
+        inner: Box::new(TypeKind::Slice(Box::new(TypeKind::Named(
+            "Rgba8".to_owned(),
+        )))),
+    };
+    let env = TypeCheckEnv::standard()
+        .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
+        .with_method(
+            TypeKind::Named("ImageHandle".to_owned()),
+            "pixels",
+            pixel_borrow,
+        )
+        .with_function(
+            "load_avatar",
+            TypeKind::Need {
+                ready: Box::new(TypeKind::Unit),
+                error: Box::new(TypeKind::Named("AssetError".to_owned())),
+            },
+        );
+    let errors = typecheck_hir(&hir, &env).expect_err("borrow cannot cross direct await");
+    let error = errors
+        .iter()
+        .find(|error| error.stable_code() == "sema.suspend.borrow_across")
+        .expect("typed borrow-across-suspension diagnostic");
+    let await_start = source.find("await").expect("fixture await keyword");
+
+    assert!(matches!(
+        error.kind(),
+        TypeCheckErrorKind::BorrowAcrossSuspension {
+            lifetimes,
+            boundary,
+            ..
+        } if lifetimes == &["asset".to_owned()] && boundary == "await suspension boundary"
+    ));
+    let diagnostic = error.diagnostic();
+    let primary = diagnostic
+        .labels()
+        .iter()
+        .find(|label| label.style() == DiagnosticLabelStyle::Primary)
+        .expect("borrow diagnostic has primary source evidence");
+    assert_eq!(
+        primary.span().range().as_range(),
+        await_start..await_start + "await".len()
     );
 }
 

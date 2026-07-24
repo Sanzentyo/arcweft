@@ -95,6 +95,12 @@ pub enum TypeCheckErrorKind {
         lifetimes: Vec<String>,
         boundary: String,
     },
+    /// Active borrowed values cross a suspension boundary.
+    BorrowAcrossSuspension {
+        lifetimes: Vec<String>,
+        boundary: String,
+        primary: Option<SourceSpan>,
+    },
     /// An `extern rust mod` declaration references a package without loaded ABI metadata.
     MissingRustPackageMetadata { package: String },
     /// An `extern rust mod` member is not present in loaded ABI metadata.
@@ -122,6 +128,11 @@ pub enum TypeCheckErrorKind {
     Nominal { diagnostic: NominalTypeDiagnostic },
     /// A terminal source-backed failure in the project value namespace.
     ProjectValueLookup { error: ProjectValueLookupError },
+    /// An Await operand is not the required `Need<T, E>` type.
+    AwaitOperandNotNeed {
+        actual: TypeKind,
+        operand: Option<SourceSpan>,
+    },
     /// A propagating Await has no compatible lexical Result boundary.
     AwaitPropagationTargetMissing {
         actual_error: TypeKind,
@@ -203,6 +214,16 @@ impl TypeCheckError {
         Self {
             message: error.to_string(),
             kind: TypeCheckErrorKind::ProjectValueLookup { error },
+        }
+    }
+
+    pub(crate) fn await_operand_not_need(actual: TypeKind, operand: Option<SourceSpan>) -> Self {
+        Self {
+            message: format!(
+                "await operand must have Need<T, E> type, found {}",
+                actual.source_label()
+            ),
+            kind: TypeCheckErrorKind::AwaitOperandNotNeed { actual, operand },
         }
     }
 
@@ -480,6 +501,24 @@ impl TypeCheckError {
         }
     }
 
+    pub(crate) fn borrow_across_suspension(
+        lifetimes: Vec<String>,
+        boundary: impl Into<String>,
+        primary: Option<SourceSpan>,
+    ) -> Self {
+        let boundary = boundary.into();
+        Self {
+            message: format!(
+                "borrowed values with lifetimes {lifetimes:?} cannot cross {boundary}"
+            ),
+            kind: TypeCheckErrorKind::BorrowAcrossSuspension {
+                lifetimes,
+                boundary,
+                primary,
+            },
+        }
+    }
+
     pub(crate) fn invalid_integer_literal(
         literal: impl Into<String>,
         reason: impl Into<String>,
@@ -651,6 +690,7 @@ impl TypeCheckError {
             | TypeCheckErrorKind::FloatLiteralOutOfRange { .. }
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
+            | TypeCheckErrorKind::BorrowAcrossSuspension { primary: None, .. }
             | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
             | TypeCheckErrorKind::MissingRustExport { .. }
             | TypeCheckErrorKind::RustExportSignatureMismatch { .. }
@@ -659,7 +699,22 @@ impl TypeCheckError {
             | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
             | TypeCheckErrorKind::Trait { .. }
             | TypeCheckErrorKind::Style { .. }
-            | TypeCheckErrorKind::ProjectValueLookup { .. } => diagnostic,
+            | TypeCheckErrorKind::ProjectValueLookup { .. }
+            | TypeCheckErrorKind::AwaitOperandNotNeed { operand: None, .. } => diagnostic,
+            TypeCheckErrorKind::AwaitOperandNotNeed {
+                operand: Some(operand),
+                ..
+            } => diagnostic.with_label(DiagnosticLabel::primary(
+                operand.clone(),
+                Some("this expression is not a Need<T, E>".to_owned()),
+            )),
+            TypeCheckErrorKind::BorrowAcrossSuspension {
+                primary: Some(primary),
+                ..
+            } => diagnostic.with_label(DiagnosticLabel::primary(
+                primary.clone(),
+                Some("borrow crosses this suspension boundary".to_owned()),
+            )),
             TypeCheckErrorKind::Nominal {
                 diagnostic: nominal,
             } => nominal.to_source_diagnostic().unwrap_or(diagnostic),
@@ -746,6 +801,9 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. } => {
             "sema.typecheck.borrowed_closure_capture_crosses_boundary".to_owned()
         }
+        TypeCheckErrorKind::BorrowAcrossSuspension { .. } => {
+            "sema.suspend.borrow_across".to_owned()
+        }
         TypeCheckErrorKind::MissingRustPackageMetadata { .. } => {
             "sema.extern_rust.missing_metadata".to_owned()
         }
@@ -778,6 +836,7 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
             }
             ProjectValueLookupError::Poisoned { .. } => "sema.project_value.poisoned".to_owned(),
         },
+        TypeCheckErrorKind::AwaitOperandNotNeed { .. } => "sema.await.operand_not_need".to_owned(),
         TypeCheckErrorKind::AwaitPropagationTargetMissing { .. } => {
             "sema.await.propagation_target_missing".to_owned()
         }
