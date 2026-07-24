@@ -1161,9 +1161,7 @@ entry agent @entry.agent.main {
         assert!(!contextual.iter().any(|item| item.label == "Other"));
     }
 
-    #[test]
-    fn accepted_rust_nominal_tooling_retains_identity_metadata_and_source() {
-        const SOURCE: &str = r"
+    const ACCEPTED_RUST_NOMINAL_SOURCE: &str = r"
 fn smoke() -> Result<Unit, AgentError>
 effects {}
 {
@@ -1178,6 +1176,15 @@ entry agent @entry.agent.main {
     controller = smoke
 }
 ";
+
+    struct AcceptedRustNominalToolingFixture {
+        _project: TestProject,
+        profile: LspProfile,
+        document: DocumentSnapshot,
+        offset: usize,
+    }
+
+    fn accepted_rust_nominal_tooling_fixture() -> AcceptedRustNominalToolingFixture {
         let project = TestProject::new("accepted-rust-nominal-tooling");
         let adapter = rust_nominal_adapter();
         project.write(
@@ -1195,7 +1202,7 @@ source = "src/main.arcw"
 adapter = "rust-nominal-tooling"
 "#,
         );
-        project.write("src/main.arcw", SOURCE);
+        project.write("src/main.arcw", ACCEPTED_RUST_NOMINAL_SOURCE);
         let manifest_path = project.path("arcw.toml");
         let owner = ProfileTopologyOwnerId::workspace(
             file_uri(&project.root).to_string(),
@@ -1220,8 +1227,27 @@ adapter = "rust-nominal-tooling"
             .expect("accepted custom adapter environment");
 
         let main_path = project.path("src/main.arcw");
-        let document = open(&main_path, SOURCE);
-        let offset = SOURCE.find("Envelope<Rank>").expect("generic Rust type") + 1;
+        let document = open(&main_path, ACCEPTED_RUST_NOMINAL_SOURCE);
+        let offset = ACCEPTED_RUST_NOMINAL_SOURCE
+            .find("Envelope<Rank>")
+            .expect("generic Rust type")
+            + 1;
+        AcceptedRustNominalToolingFixture {
+            _project: project,
+            profile,
+            document,
+            offset,
+        }
+    }
+
+    #[test]
+    fn accepted_rust_nominal_tooling_retains_identity_metadata_and_source() {
+        let AcceptedRustNominalToolingFixture {
+            _project,
+            profile,
+            document,
+            offset,
+        } = accepted_rust_nominal_tooling_fixture();
         let accepted = profile.accepted_environment().expect("accepted profile");
         let cursor = accepted_nominal_at(accepted.project(), &document, offset)
             .expect("typed accepted nominal cursor");
