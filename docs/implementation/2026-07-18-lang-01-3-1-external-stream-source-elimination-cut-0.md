@@ -41,6 +41,11 @@ The returned correction still loses values captured by earlier parameter
 groups for curried external operations. Its narrow remaining blocker is
 [Lang-01.3.1.2.2 curried external Stream runtime argument projection](../reviews/requests/2026-07-22-lang-01.3.1.2.2-curried-external-stream-runtime-argument-projection-correction.md).
 
+That correction has since returned and selects the required group-aware
+product. Its codec-8 opcode table does not allocate the retained parent
+`FinishStream`; the remaining wire-only reconciliation is
+[Lang-01.3.1.2.2.1](../reviews/requests/2026-07-24-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation.md).
+
 ## Package verification
 
 The package contains:
