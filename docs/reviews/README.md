@@ -4,6 +4,12 @@
 dropped directly into this directory; a ZIP at this level is therefore always
 unprocessed intake, not an implementation-ready package.
 
+A ZIP attached directly to the active Codex task is the same intake class. It
+must be inspected from the attachment, then retained under `packages/` when
+repository retention is intentional; its verified path/hash must otherwise be
+recorded in the package-specific implementation intake note. An attachment or
+filename is never implementation-readiness evidence by itself.
+
 ## Intake procedure
 
 At task start and at every reviewable push cut point:

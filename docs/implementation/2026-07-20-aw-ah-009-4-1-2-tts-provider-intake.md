@@ -105,3 +105,13 @@ summaries.
 This package is accepted and queued behind its explicit Lang-01.4 and
 Lang-01.5.1 entry gates. It remains incomplete until all eight cuts land in
 order and all 179 matrix rows and broad validation gates pass.
+
+The later AW-AH-009.4.1.2.1 runtime-envelope package has been received but is
+not implementation-ready. Its replay, restore, queued-reload, scheduler
+transaction, payload-limit, constructor-authority, and generic-verifier gaps
+are recorded in
+[`2026-07-24-aw-ah-009-4-1-2-1-tts-runtime-envelope-intake.md`](2026-07-24-aw-ah-009-4-1-2-1-tts-runtime-envelope-intake.md)
+and are blocked by the linked AW-AH-009.4.1.2.1.1 correction request. The
+implementation order above must be reconciled with that returned correction
+before production begins; in particular, `TaskKey::for_tts` is not authority
+to add a TTS-specific core dependency or provisional key path.

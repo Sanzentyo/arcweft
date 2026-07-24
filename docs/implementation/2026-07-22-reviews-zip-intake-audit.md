@@ -27,6 +27,7 @@ treated as implementation-ready merely because its filename said
 | [`arcweft-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation-final-contract-main-5821a3ca.zip`](../reviews/packages/arcweft-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation-final-contract-main-5821a3ca.zip) | `7DC625446304FE2FFA73027AA518853DF56982BD486347D6F81142D8EAF6ACC0` | Received; internally verified and implementation-ready | After Lang-01.1.1.2 and the existing resource registry/retained-identity substrate, implement the Sans-I/O strict manifest crate, single decoder/encoder, atomic registry publication, AWFB section 22, and runtime digest validation. Public `res` authority switching remains a later cohort. |
 | [`arcweft-lang-01.5.1.2-typed-content-root-admission-final-contract.zip`](../reviews/packages/arcweft-lang-01.5.1.2-typed-content-root-admission-final-contract.zip) | `CA72FD70C657A11B7BECDB331D131177B6DEFD6094D034BBECFC3AF1A232E1C0` | Safe binary-topology subset implemented; root-family wording superseded | Retain only the already verified substrate and use Lang-01.5.1.2.1 for the closed family switch. |
 | [`arcweft-lang-01.5.1.2.1-content-root-family-source-elimination-reconciliation-final-contract-main-5821a3ca.zip`](../reviews/packages/arcweft-lang-01.5.1.2.1-content-root-family-source-elimination-reconciliation-final-contract-main-5821a3ca.zip) | `C91C2C635C13EB68D46C5D0D4A6F3ECDE0192546BE32175EB2A24FAA54FDE699` | Received; internally verified and implementation-ready after dependency re-intake | Its 160-row matrix closes roots to Character, Flow, View, Action, Activity, Asset, Signal, Metric, Layer, and exact configured resources; `Source`, callable, Stream-return, and name heuristics remain excluded. |
+| [`arcweft-aw-ah-009.4.1.2.1-tts-runtime-intent-envelope-architecture-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.4.1.2.1-tts-runtime-intent-envelope-architecture-reconciliation-final-contract.zip) | `CCF4DA80B64D4C2246EF652C035A46E088505A4DFC1DE702CFD59BCF45A3BB30` | Received and internally verified; not implementation-ready | Retain its core-safe bridge direction, but do not implement until AW-AH-009.4.1.2.1.1 closes replay/save validation, queued old evidence, sequence-bearing admission atomicity, reachable cap rows, construction authority, and generic AWBC verification. The requested producer sidecars were absent. |
 
 ## Dependency order
 
@@ -45,14 +46,25 @@ treated as implementation-ready merely because its filename said
 4. Apply the repository-validated Lang-01.4.2.1 after Lang-01.1.1.2 and the
    resource registry/retained-identity substrate, before adding the public
    extension-manifest decoder, canonical encoder, or AWFB publication.
+5. Keep AW-AH-009.4.1.2.1 out of production until both the lower TTS package's
+   Lang-01.4/Lang-01.5.1 entry gates and the AW-AH-009.4.1.2.1.1 correction are
+   closed. The received runtime-envelope ZIP is evidence for the selected
+   direction, not permission to infer the missing public APIs.
 
-All named follow-up requests in this intake have returned. There is currently
-no design request to send. The implementation order is the active
-Lang-01.1.1.2.1 validation followed by Lang-01.1.1.2.2. The returned adapter
-publication, Stream, content-root, and resource-manifest packages are
-production work and must not be sent again. A new request may be named only
-after a concrete implementation ambiguity has been recorded in an independently
-throwable file under `docs/reviews/requests/`.
+## Current design dispatch
+
+Three independently throwable requests remain unreturned:
+
+1. [`Lang-01.5.1.3 generated artifact runtime-binding fail-closed contract`](../reviews/requests/2026-07-20-lang-01.5.1.3-generated-artifact-runtime-binding-contract.md);
+2. [`AW-AH-009.3.3.3 unchecked call-family migration evidence reconciliation`](../reviews/requests/2026-07-24-aw-ah-009.3.3.3-unchecked-call-family-migration-evidence-reconciliation.md); and
+3. [`AW-AH-009.4.1.2.1.1 TTS runtime envelope transaction and validation closure`](../reviews/requests/2026-07-24-aw-ah-009.4.1.2.1.1-tts-runtime-envelope-transaction-and-validation-closure.md).
+
+Each request contains its exact dispatch bundle and expected return shape.
+They are independent design tasks and may be sent to separate assignees in
+parallel. The returned adapter publication, curried Stream, content-root, and
+resource-manifest packages are production work and must not be sent again.
+Lang-01.5.1.1.1 was resolved by its corrected parent redelivery and likewise
+must not be dispatched again.
 
 ## Ongoing intake rule
 
