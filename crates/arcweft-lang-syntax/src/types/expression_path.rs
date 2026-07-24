@@ -5,7 +5,7 @@ use crate::{
         module_path::ModulePathRoot,
         symbol_path::{ProjectSymbolPath, ProjectSymbolPathError, ProjectSymbolSegment},
     },
-    expr::DottedPath,
+    expr::{DottedPath, Name},
     types::TypePath,
 };
 
@@ -32,6 +32,29 @@ impl TryFrom<&DottedPath> for TypePath {
             .map(|segment| ProjectSymbolSegment::try_new(segment.as_str().to_owned()))
             .collect::<Result<Vec<_>, _>>()?;
         ProjectSymbolPath::new(root, symbols).map(TypePath::from)
+    }
+}
+
+impl From<&TypePath> for DottedPath {
+    /// Projects a validated type path into the existing semantic expression
+    /// child without parsing or formatting a path label. Exact authored
+    /// punctuation remains owned by the type source map and call surface.
+    fn from(path: &TypePath) -> Self {
+        let mut segments = Vec::new();
+        match path.root() {
+            ModulePathRoot::ImplicitCrate => {}
+            ModulePathRoot::Crate => segments.push(Name::new("crate".to_owned())),
+            ModulePathRoot::SelfModule => segments.push(Name::new("self".to_owned())),
+            ModulePathRoot::Super(levels) => {
+                segments.extend((0..levels).map(|_| Name::new("super".to_owned())));
+            }
+        }
+        segments.extend(
+            path.segments()
+                .iter()
+                .map(|segment| Name::new(segment.as_str().to_owned())),
+        );
+        DottedPath::new(segments)
     }
 }
 

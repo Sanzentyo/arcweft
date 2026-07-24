@@ -3,17 +3,18 @@ use super::call_syntax::{
     CallbackBlockSyntaxInit, CallbackParameterHeaderSyntaxInit, CallbackParameterSyntaxInit,
 };
 use super::{
-    ArgumentListSyntax, ArgumentListTerminatorSyntax, CallArg, CallArgumentFormSyntax,
+    ArgumentListSyntax, ArgumentListTerminatorSyntax, BinaryOp, CallArg, CallArgumentFormSyntax,
     CallArgumentRecoverySyntax, CallExpr, CallRecoveryBoundarySyntax, CallRecoveryTokenKind,
     CallbackBlockCallSyntax, CallbackBlockSyntax, CallbackParameterTypeSyntax, ClosureExprSource,
-    ClosureParam, DottedPath, Expr, ExprParseScope, Lexer, MAX_CALL_ARGUMENTS,
-    MAX_CALLBACK_PARAMETERS, MAX_EXPR_DIAGNOSTICS, MAX_NESTED_CALLS, ParenthesizedCallSyntax,
-    ParsedExpr, Token, collect_expr_source_ranges, parse_expr, parse_expr_fragment_recovering_at,
+    ClosureParam, DottedPath, ExplicitCallTypeApplicationSyntax, Expr, ExprParseScope, Lexer,
+    MAX_CALL_ARGUMENTS, MAX_CALLBACK_PARAMETERS, MAX_EXPR_DIAGNOSTICS, MAX_NESTED_CALLS,
+    ParenthesizedCallSyntax, ParenthesizedCalleeSyntax, ParsedExpr, PathMemberCalleeSyntax, Token,
+    collect_expr_source_ranges, parse_expr, parse_expr_fragment_recovering_at,
     parse_expr_recovering_at,
 };
 use crate::ast::common::TextRange;
 use crate::pattern::parse_pattern;
-use crate::types::parse_type_ref;
+use crate::types::{TypeRef, TypeRefLexemeKind, TypeRefNodeStep, parse_type_ref};
 
 fn range(start: usize, end: usize) -> TextRange {
     TextRange::new(start, end)
@@ -54,13 +55,372 @@ fn parenthesized(
     init: ArgumentListSyntaxInit,
 ) -> Result<ParenthesizedCallSyntax, CallSyntaxInvariantError> {
     let arguments = ArgumentListSyntax::try_from_parser(source, 0, init)?;
-    ParenthesizedCallSyntax::try_from_parser(callee, arguments)
+    ParenthesizedCallSyntax::try_from_parser(ParenthesizedCalleeSyntax::ordinary(callee), arguments)
 }
 
 fn parsed_call(source: &str) -> CallExpr {
     match parse_expr(source).expect("fixture must parse") {
         Expr::Call(call) => call,
         other => panic!("expected call expression, found {other:?}"),
+    }
+}
+
+#[test]
+fn selected_generic_member_uses_typed_token_transaction() {
+    let call = parsed_call("visible_choices.collect<Vec<ChoiceView>>()");
+    let Expr::Select(selected) = call.callee() else {
+        panic!("expected selected generic member callee");
+    };
+    assert_eq!(selected.member().as_str(), "collect");
+    let application = call
+        .explicit_type_application()
+        .expect("generic member retains typed application syntax");
+    assert!(!application.is_turbofish());
+    assert!(matches!(
+        application.arguments(),
+        [TypeRef::Generic { base, args }]
+            if base.canonical_string() == "Vec"
+                && matches!(args.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "ChoiceView")
+    ));
+    assert_eq!(application.range(), range(16, 40));
+    assert_eq!(call.callee_range(), range(0, 40));
+
+    let comparison = parse_expr("visible_choices.collect < limit")
+        .expect("selector followed by comparison remains expression grammar");
+    assert!(matches!(comparison, Expr::Binary { .. }));
+
+    let chained = parse_expr("state.route_override.context(\"missing\")")
+        .expect("ordinary selected value chain remains expression grammar");
+    let Expr::Call(chained) = chained else {
+        panic!("expected selected value call");
+    };
+    assert!(matches!(
+        chained.callee(),
+        Expr::Select(selected) if selected.member().as_str() == "context"
+    ));
+
+    let fixture_chain = parsed_call("xs.map(|x| x + 1i64).collect<Vec<i64>>()");
+    assert!(matches!(
+        fixture_chain.callee(),
+        Expr::Select(selected) if selected.member().as_str() == "collect"
+    ));
+    assert!(matches!(
+        fixture_chain
+            .explicit_type_application()
+            .map(ExplicitCallTypeApplicationSyntax::arguments),
+        Some([TypeRef::Generic { base, args }])
+            if base.canonical_string() == "Vec"
+                && matches!(args.as_slice(), [TypeRef::Path(path)]
+                    if path.canonical_string() == "i64")
+    ));
+
+    let turbofish = parsed_call("items.map::<Result<T, E>>(value)");
+    assert!(matches!(
+        turbofish.callee(),
+        Expr::Select(selected) if selected.member().as_str() == "map"
+    ));
+    assert!(
+        turbofish
+            .explicit_type_application()
+            .is_some_and(ExplicitCallTypeApplicationSyntax::is_turbofish)
+    );
+}
+
+fn path_member(call: &CallExpr) -> &PathMemberCalleeSyntax {
+    call.path_member_callee_syntax()
+        .expect("fixture has a typed path-member callee")
+}
+
+fn assert_builtin_associated_dot_ranges(source: &str, receiver: &str, argument: TextRange) {
+    let call = parsed_call(source);
+    let callee = path_member(&call);
+    assert!(matches!(
+        callee.receiver().value(),
+        TypeRef::Path(path) if path.canonical_string() == receiver
+    ));
+    assert_eq!(
+        callee.receiver().root_source().whole(),
+        &range(0, receiver.len())
+    );
+    assert_eq!(
+        callee.separator().range(),
+        range(receiver.len(), receiver.len() + 1)
+    );
+    assert_eq!(callee.member().as_str(), "with_capacity");
+    assert_eq!(
+        callee.member_range(),
+        range(receiver.len() + 1, receiver.len() + 14)
+    );
+    assert_eq!(callee.range(), range(0, receiver.len() + 14));
+    let arguments = call
+        .parenthesized_syntax()
+        .expect("fixture is parenthesized")
+        .argument_list();
+    assert_eq!(
+        arguments.open_paren(),
+        range(receiver.len() + 14, receiver.len() + 15)
+    );
+    assert_eq!(
+        arguments.close_paren(),
+        Some(range(source.len() - 1, source.len()))
+    );
+    assert_eq!(arguments.range(), range(receiver.len() + 14, source.len()));
+    assert_eq!(arguments.arguments()[0].value_range(), argument);
+    assert_eq!(call.range(), range(0, source.len()));
+}
+
+fn assert_type_lexeme(
+    receiver: &crate::types::AuthoredTypeRef,
+    kind: TypeRefLexemeKind,
+    expected: TextRange,
+) {
+    assert!(
+        receiver
+            .source()
+            .lexemes()
+            .iter()
+            .any(|lexeme| { lexeme.kind() == &kind && lexeme.range() == &expected }),
+        "missing {kind:?} at {expected:?}"
+    );
+}
+
+fn assert_type_node(
+    receiver: &crate::types::AuthoredTypeRef,
+    owner: &[TypeRefNodeStep],
+    expected: TextRange,
+) {
+    let matches = receiver
+        .source()
+        .nodes()
+        .iter()
+        .filter(|(path, source)| path.steps() == owner && source.whole() == &expected)
+        .count();
+    assert_eq!(
+        matches, 1,
+        "expected exactly one type node {owner:?} at {expected:?}"
+    );
+}
+
+fn assert_owned_type_lexeme(
+    receiver: &crate::types::AuthoredTypeRef,
+    owner: &[TypeRefNodeStep],
+    kind: TypeRefLexemeKind,
+    expected: TextRange,
+) {
+    let matches = receiver
+        .source()
+        .lexemes()
+        .iter()
+        .filter(|lexeme| {
+            lexeme.owner().steps() == owner && lexeme.kind() == &kind && lexeme.range() == &expected
+        })
+        .count();
+    assert_eq!(
+        matches, 1,
+        "expected exactly one {kind:?} owned by {owner:?} at {expected:?}"
+    );
+}
+
+fn relative_range(source: TextRange, base: usize) -> (usize, usize) {
+    (
+        source
+            .start()
+            .checked_sub(base)
+            .expect("range starts at base"),
+        source
+            .end()
+            .checked_sub(base)
+            .expect("range ends after base"),
+    )
+}
+
+fn assert_relative_argument_form(
+    associated: &CallArgumentFormSyntax,
+    associated_base: usize,
+    ordinary: &CallArgumentFormSyntax,
+    ordinary_base: usize,
+) {
+    match (associated, ordinary) {
+        (CallArgumentFormSyntax::Positional, CallArgumentFormSyntax::Positional) => {}
+        (
+            CallArgumentFormSyntax::Named {
+                name: associated_name,
+                equals: associated_equals,
+            },
+            CallArgumentFormSyntax::Named {
+                name: ordinary_name,
+                equals: ordinary_equals,
+            },
+        ) => {
+            assert_eq!(
+                relative_range(*associated_name, associated_base),
+                relative_range(*ordinary_name, ordinary_base)
+            );
+            assert_eq!(
+                relative_range(*associated_equals, associated_base),
+                relative_range(*ordinary_equals, ordinary_base)
+            );
+        }
+        (
+            CallArgumentFormSyntax::Spread {
+                ellipsis: associated_ellipsis,
+            },
+            CallArgumentFormSyntax::Spread {
+                ellipsis: ordinary_ellipsis,
+            },
+        ) => assert_eq!(
+            relative_range(*associated_ellipsis, associated_base),
+            relative_range(*ordinary_ellipsis, ordinary_base)
+        ),
+        (associated, ordinary) => {
+            panic!("argument form changed: {associated:?} != {ordinary:?}")
+        }
+    }
+}
+
+fn assert_relative_recovery_boundary(
+    associated: CallRecoveryBoundarySyntax,
+    associated_base: usize,
+    ordinary: CallRecoveryBoundarySyntax,
+    ordinary_base: usize,
+) {
+    match (associated, ordinary) {
+        (
+            CallRecoveryBoundarySyntax::EndOfExpression,
+            CallRecoveryBoundarySyntax::EndOfExpression,
+        ) => {}
+        (
+            CallRecoveryBoundarySyntax::Token {
+                kind: associated_kind,
+                range: associated_range,
+            },
+            CallRecoveryBoundarySyntax::Token {
+                kind: ordinary_kind,
+                range: ordinary_range,
+            },
+        ) => {
+            assert_eq!(associated_kind, ordinary_kind);
+            assert_eq!(
+                relative_range(associated_range, associated_base),
+                relative_range(ordinary_range, ordinary_base)
+            );
+        }
+        (associated, ordinary) => {
+            panic!("recovery boundary changed: {associated:?} != {ordinary:?}")
+        }
+    }
+}
+
+fn assert_relative_terminator(
+    associated: &ArgumentListTerminatorSyntax,
+    associated_base: usize,
+    ordinary: &ArgumentListTerminatorSyntax,
+    ordinary_base: usize,
+) {
+    match (associated, ordinary) {
+        (
+            ArgumentListTerminatorSyntax::Closed {
+                close_paren: associated_close,
+            },
+            ArgumentListTerminatorSyntax::Closed {
+                close_paren: ordinary_close,
+            },
+        ) => assert_eq!(
+            relative_range(*associated_close, associated_base),
+            relative_range(*ordinary_close, ordinary_base)
+        ),
+        (
+            ArgumentListTerminatorSyntax::RecoveredMissing {
+                insertion: associated_insertion,
+                boundary: associated_boundary,
+            },
+            ArgumentListTerminatorSyntax::RecoveredMissing {
+                insertion: ordinary_insertion,
+                boundary: ordinary_boundary,
+            },
+        ) => {
+            assert_eq!(
+                associated_insertion - associated_base,
+                ordinary_insertion - ordinary_base
+            );
+            assert_relative_recovery_boundary(
+                *associated_boundary,
+                associated_base,
+                *ordinary_boundary,
+                ordinary_base,
+            );
+        }
+        (associated, ordinary) => {
+            panic!("argument terminator changed: {associated:?} != {ordinary:?}")
+        }
+    }
+}
+
+fn assert_relative_argument_surface(
+    associated: &ArgumentListSyntax,
+    associated_base: usize,
+    ordinary: &ArgumentListSyntax,
+    ordinary_base: usize,
+    surface_len: usize,
+) {
+    assert_eq!(
+        relative_range(associated.range(), associated_base),
+        relative_range(ordinary.range(), ordinary_base)
+    );
+    assert_eq!(
+        relative_range(associated.open_paren(), associated_base),
+        relative_range(ordinary.open_paren(), ordinary_base)
+    );
+    assert_eq!(associated.arguments().len(), ordinary.arguments().len());
+    for (associated, ordinary) in associated.arguments().iter().zip(ordinary.arguments()) {
+        assert_eq!(
+            relative_range(associated.range(), associated_base),
+            relative_range(ordinary.range(), ordinary_base)
+        );
+        assert_eq!(
+            relative_range(associated.value_range(), associated_base),
+            relative_range(ordinary.value_range(), ordinary_base)
+        );
+        assert_eq!(associated.recovery(), ordinary.recovery());
+        assert_relative_argument_form(
+            associated.form(),
+            associated_base,
+            ordinary.form(),
+            ordinary_base,
+        );
+    }
+    assert_eq!(
+        associated
+            .separators()
+            .iter()
+            .map(|range| relative_range(*range, associated_base))
+            .collect::<Vec<_>>(),
+        ordinary
+            .separators()
+            .iter()
+            .map(|range| relative_range(*range, ordinary_base))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        associated
+            .trailing_comma()
+            .map(|range| relative_range(range, associated_base)),
+        ordinary
+            .trailing_comma()
+            .map(|range| relative_range(range, ordinary_base))
+    );
+    assert_relative_terminator(
+        associated.terminator(),
+        associated_base,
+        ordinary.terminator(),
+        ordinary_base,
+    );
+    for offset in 0..=surface_len {
+        assert_eq!(
+            associated.active_argument_slot(associated_base + offset),
+            ordinary.active_argument_slot(ordinary_base + offset),
+            "active argument changed at relative offset {offset}"
+        );
     }
 }
 
@@ -818,6 +1178,450 @@ fn callback_rejects_malformed_headers_bodies_and_unclosed_braces() {
 }
 
 #[test]
+fn associated_string_dot_ranges() {
+    assert_builtin_associated_dot_ranges("String.with_capacity(64)", "String", range(21, 23));
+}
+
+#[test]
+fn associated_bytes_dot_ranges() {
+    assert_builtin_associated_dot_ranges("Bytes.with_capacity(4096)", "Bytes", range(20, 24));
+}
+
+#[test]
+fn associated_bare_vec_retains_typed_path_candidate() {
+    let call = parsed_call("Vec.with_capacity(8)");
+    let receiver = path_member(&call).receiver();
+    assert!(matches!(
+        receiver.value(),
+        TypeRef::Path(path) if path.canonical_string() == "Vec"
+    ));
+    assert!(receiver.source().nodes().iter().all(|(path, _)| {
+        !path
+            .steps()
+            .iter()
+            .any(|step| matches!(step, TypeRefNodeStep::GenericArgument(_)))
+    }));
+}
+
+#[test]
+fn associated_vec_generic_dot_ranges() {
+    let call = parsed_call("Vec<I32>.with_capacity(8)");
+    let callee = path_member(&call);
+    let receiver = callee.receiver();
+    assert!(matches!(
+        receiver.value(),
+        TypeRef::Generic { base, args }
+            if base.canonical_string() == "Vec"
+                && matches!(args.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "I32")
+    ));
+    assert_eq!(callee.receiver().root_source().whole(), &range(0, 8));
+    assert_type_node(receiver, &[], range(0, 8));
+    assert_type_node(
+        receiver,
+        &[TypeRefNodeStep::GenericArgument(0)],
+        range(4, 7),
+    );
+    assert_owned_type_lexeme(
+        receiver,
+        &[],
+        TypeRefLexemeKind::PathSegment { ordinal: 0 },
+        range(0, 3),
+    );
+    assert_owned_type_lexeme(receiver, &[], TypeRefLexemeKind::OpenAngle, range(3, 4));
+    assert_owned_type_lexeme(
+        receiver,
+        &[TypeRefNodeStep::GenericArgument(0)],
+        TypeRefLexemeKind::PathSegment { ordinal: 0 },
+        range(4, 7),
+    );
+    assert_owned_type_lexeme(receiver, &[], TypeRefLexemeKind::CloseAngle, range(7, 8));
+    assert_eq!(callee.separator().range(), range(8, 9));
+    assert_eq!(callee.member_range(), range(9, 22));
+    assert_eq!(callee.range(), range(0, 22));
+    let arguments = call
+        .parenthesized_syntax()
+        .expect("parenthesized call")
+        .argument_list();
+    assert_eq!(arguments.open_paren(), range(22, 23));
+    assert_eq!(arguments.arguments()[0].range(), range(23, 24));
+    assert_eq!(arguments.arguments()[0].value_range(), range(23, 24));
+    assert_eq!(arguments.close_paren(), Some(range(24, 25)));
+    assert_eq!(call.range(), range(0, 25));
+}
+
+#[test]
+fn associated_vec_generic_parameter_dot_ranges() {
+    let call = parsed_call("Vec<T>.with_capacity(8)");
+    let receiver = path_member(&call).receiver();
+    let (_, source) = receiver
+        .source()
+        .nodes()
+        .iter()
+        .find(|(path, _)| path.steps() == [TypeRefNodeStep::GenericArgument(0)])
+        .expect("generic parameter has one structural source node");
+    assert_eq!(source.whole(), &range(4, 5));
+}
+
+#[test]
+fn associated_qualified_receiver_lexemes() {
+    let call = parsed_call("pkg::types::Vec<I32>.with_capacity(8)");
+    let callee = path_member(&call);
+    let receiver = callee.receiver();
+    assert_eq!(receiver.root_source().whole(), &range(0, 20));
+    for (kind, expected) in [
+        (TypeRefLexemeKind::PathSegment { ordinal: 0 }, range(0, 3)),
+        (TypeRefLexemeKind::PathSeparator { before: 1 }, range(3, 5)),
+        (TypeRefLexemeKind::PathSegment { ordinal: 1 }, range(5, 10)),
+        (
+            TypeRefLexemeKind::PathSeparator { before: 2 },
+            range(10, 12),
+        ),
+        (TypeRefLexemeKind::PathSegment { ordinal: 2 }, range(12, 15)),
+        (TypeRefLexemeKind::OpenAngle, range(15, 16)),
+        (TypeRefLexemeKind::CloseAngle, range(19, 20)),
+    ] {
+        assert_type_lexeme(receiver, kind, expected);
+    }
+    assert_eq!(callee.separator().range(), range(20, 21));
+    assert_eq!(callee.member_range(), range(21, 34));
+}
+
+#[test]
+fn associated_alias_receiver_lexemes() {
+    let call = parsed_call("Alias<I32>.with_capacity(8)");
+    let callee = path_member(&call);
+    let receiver = callee.receiver();
+    assert!(matches!(
+        receiver.value(),
+        TypeRef::Generic { base, args }
+            if base.canonical_string() == "Alias"
+                && matches!(args.as_slice(), [TypeRef::Path(path)] if path.canonical_string() == "I32")
+    ));
+    assert_eq!(receiver.root_source().whole(), &range(0, 10));
+    assert_type_node(receiver, &[], range(0, 10));
+    assert_type_node(
+        receiver,
+        &[TypeRefNodeStep::GenericArgument(0)],
+        range(6, 9),
+    );
+    assert_owned_type_lexeme(
+        receiver,
+        &[],
+        TypeRefLexemeKind::PathSegment { ordinal: 0 },
+        range(0, 5),
+    );
+    assert_owned_type_lexeme(receiver, &[], TypeRefLexemeKind::OpenAngle, range(5, 6));
+    assert_owned_type_lexeme(
+        receiver,
+        &[TypeRefNodeStep::GenericArgument(0)],
+        TypeRefLexemeKind::PathSegment { ordinal: 0 },
+        range(6, 9),
+    );
+    assert_owned_type_lexeme(receiver, &[], TypeRefLexemeKind::CloseAngle, range(9, 10));
+    assert_eq!(callee.separator().range(), range(10, 11));
+    assert_eq!(callee.member_range(), range(11, 24));
+}
+
+#[test]
+fn associated_nested_generic_lexeme_tree() {
+    let source = "Vec<Option<Result<T,E>>>.with_capacity(8)";
+    let call = parsed_call(source);
+    let callee = path_member(&call);
+    let TypeRef::Generic { args, .. } = callee.receiver().value() else {
+        panic!("receiver must retain its generic type tree")
+    };
+    assert!(matches!(args.as_slice(), [TypeRef::Generic { .. }]));
+    assert_eq!(callee.receiver().root_source().whole(), &range(0, 24));
+    assert_eq!(callee.separator().range(), range(24, 25));
+    assert_eq!(callee.member_range(), range(25, 38));
+    assert_eq!(callee.range(), range(0, 38));
+
+    let receiver = callee.receiver();
+    let option = [TypeRefNodeStep::GenericArgument(0)];
+    let result = [
+        TypeRefNodeStep::GenericArgument(0),
+        TypeRefNodeStep::GenericArgument(0),
+    ];
+    let result_t = [
+        TypeRefNodeStep::GenericArgument(0),
+        TypeRefNodeStep::GenericArgument(0),
+        TypeRefNodeStep::GenericArgument(0),
+    ];
+    let result_e = [
+        TypeRefNodeStep::GenericArgument(0),
+        TypeRefNodeStep::GenericArgument(0),
+        TypeRefNodeStep::GenericArgument(1),
+    ];
+    for (owner, expected) in [
+        (&[][..], range(0, 24)),
+        (&option[..], range(4, 23)),
+        (&result[..], range(11, 22)),
+        (&result_t[..], range(18, 19)),
+        (&result_e[..], range(20, 21)),
+    ] {
+        assert_type_node(receiver, owner, expected);
+    }
+    for (owner, kind, expected) in [
+        (
+            &[][..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(0, 3),
+        ),
+        (&[][..], TypeRefLexemeKind::OpenAngle, range(3, 4)),
+        (
+            &option[..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(4, 10),
+        ),
+        (&option[..], TypeRefLexemeKind::OpenAngle, range(10, 11)),
+        (
+            &result[..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(11, 17),
+        ),
+        (&result[..], TypeRefLexemeKind::OpenAngle, range(17, 18)),
+        (
+            &result_t[..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(18, 19),
+        ),
+        (
+            &result[..],
+            TypeRefLexemeKind::ArgumentSeparator { before: 1 },
+            range(19, 20),
+        ),
+        (
+            &result_e[..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(20, 21),
+        ),
+        (&result[..], TypeRefLexemeKind::CloseAngle, range(21, 22)),
+        (&option[..], TypeRefLexemeKind::CloseAngle, range(22, 23)),
+        (&[][..], TypeRefLexemeKind::CloseAngle, range(23, 24)),
+    ] {
+        assert_owned_type_lexeme(receiver, owner, kind, expected);
+    }
+    assert_eq!(receiver.source().nodes().len(), 5);
+    assert_eq!(receiver.source().lexemes().len(), 12);
+}
+
+#[test]
+fn associated_existing_generic_path_ranges() {
+    let call = parsed_call("Vec<I32>::with_capacity(8)");
+    let callee = path_member(&call);
+    assert_eq!(callee.receiver().root_source().whole(), &range(0, 8));
+    assert!(matches!(
+        callee.separator(),
+        super::AssociatedMemberSeparatorSyntax::Path { range: separator }
+            if separator == range(8, 10)
+    ));
+    assert_eq!(callee.member_range(), range(10, 23));
+    assert_eq!(callee.range(), range(0, 23));
+    let arguments = call
+        .parenthesized_syntax()
+        .expect("parenthesized call")
+        .argument_list();
+    assert_eq!(arguments.open_paren(), range(23, 24));
+    assert_eq!(arguments.arguments()[0].range(), range(24, 25));
+    assert_eq!(arguments.arguments()[0].value_range(), range(24, 25));
+    assert_eq!(arguments.close_paren(), Some(range(25, 26)));
+    assert_eq!(call.range(), range(0, 26));
+}
+
+#[test]
+fn associated_generic_parameter_path_ranges() {
+    let call = parsed_call("Vec<T>::with_capacity(8)");
+    let callee = path_member(&call);
+    let (_, source) = callee
+        .receiver()
+        .source()
+        .nodes()
+        .iter()
+        .find(|(path, _)| path.steps() == [TypeRefNodeStep::GenericArgument(0)])
+        .expect("generic parameter source");
+    assert_eq!(source.whole(), &range(4, 5));
+    assert_eq!(callee.separator().range(), range(6, 8));
+    assert_eq!(callee.member_range(), range(8, 21));
+}
+
+#[test]
+fn associated_turbofish_dot_ranges() {
+    let call = parsed_call("Vec::<I32>.with_capacity(8)");
+    let callee = path_member(&call);
+    let receiver = callee.receiver();
+    assert_eq!(receiver.root_source().whole(), &range(0, 10));
+    assert_type_node(receiver, &[], range(0, 10));
+    assert_type_node(
+        receiver,
+        &[TypeRefNodeStep::GenericArgument(0)],
+        range(6, 9),
+    );
+    for (owner, kind, expected) in [
+        (
+            &[][..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(0, 3),
+        ),
+        (&[][..], TypeRefLexemeKind::TurbofishSeparator, range(3, 5)),
+        (&[][..], TypeRefLexemeKind::OpenAngle, range(5, 6)),
+        (
+            &[TypeRefNodeStep::GenericArgument(0)][..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(6, 9),
+        ),
+        (&[][..], TypeRefLexemeKind::CloseAngle, range(9, 10)),
+    ] {
+        assert_owned_type_lexeme(receiver, owner, kind, expected);
+    }
+    assert_eq!(
+        receiver
+            .source()
+            .lexemes()
+            .iter()
+            .filter(|lexeme| matches!(lexeme.kind(), TypeRefLexemeKind::TurbofishSeparator))
+            .count(),
+        1
+    );
+    assert_eq!(callee.separator().range(), range(10, 11));
+    assert_eq!(callee.member_range(), range(11, 24));
+    assert_eq!(callee.range(), range(0, 24));
+    assert_eq!(call.range(), range(0, 27));
+}
+
+#[test]
+fn associated_turbofish_path_ranges() {
+    let call = parsed_call("Vec::<I32>::with_capacity(8)");
+    let callee = path_member(&call);
+    let receiver = callee.receiver();
+    assert_eq!(receiver.root_source().whole(), &range(0, 10));
+    assert_type_node(receiver, &[], range(0, 10));
+    assert_type_node(
+        receiver,
+        &[TypeRefNodeStep::GenericArgument(0)],
+        range(6, 9),
+    );
+    for (owner, kind, expected) in [
+        (
+            &[][..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(0, 3),
+        ),
+        (&[][..], TypeRefLexemeKind::TurbofishSeparator, range(3, 5)),
+        (&[][..], TypeRefLexemeKind::OpenAngle, range(5, 6)),
+        (
+            &[TypeRefNodeStep::GenericArgument(0)][..],
+            TypeRefLexemeKind::PathSegment { ordinal: 0 },
+            range(6, 9),
+        ),
+        (&[][..], TypeRefLexemeKind::CloseAngle, range(9, 10)),
+    ] {
+        assert_owned_type_lexeme(receiver, owner, kind, expected);
+    }
+    assert_eq!(
+        receiver
+            .source()
+            .lexemes()
+            .iter()
+            .filter(|lexeme| matches!(lexeme.kind(), TypeRefLexemeKind::TurbofishSeparator))
+            .count(),
+        1
+    );
+    assert_eq!(callee.separator().range(), range(10, 12));
+    assert_eq!(callee.member_range(), range(12, 25));
+    assert_eq!(callee.range(), range(0, 25));
+    assert_eq!(call.range(), range(0, 28));
+}
+
+#[test]
+fn nongeneric_path_separator_aliases_not_introduced() {
+    for source in [
+        "String::with_capacity(64)",
+        "Bytes::with_capacity(8)",
+        "Vec::with_capacity(8)",
+    ] {
+        let call = parsed_call(source);
+        assert!(
+            call.parenthesized_syntax()
+                .expect("parenthesized call")
+                .callee()
+                .path_member()
+                .is_none(),
+            "{source} must remain an ordinary nongeneric path call"
+        );
+    }
+}
+
+#[test]
+fn ordinary_expression_receiver_remains_ordinary() {
+    let source = "factory().with_capacity(8)";
+    let call = parsed_call(source);
+    assert!(matches!(
+        call.parenthesized_syntax()
+            .expect("outer parenthesized call")
+            .callee(),
+        ParenthesizedCalleeSyntax::Ordinary { range: callee, .. }
+            if *callee == range(0, 23)
+    ));
+    assert_eq!(call.callee_range(), range(0, 23));
+    assert_eq!(call.range(), range(0, 26));
+    let call_ranges = collect_expr_source_ranges(&Expr::Call(call), source, range(0, source.len()))
+        .into_iter()
+        .filter_map(|entry| matches!(entry.expr(), Expr::Call(_)).then_some(entry.range()))
+        .collect::<Vec<_>>();
+    assert_eq!(call_ranges, [range(0, 26), range(0, 9)]);
+}
+
+#[test]
+fn call_argument_surface_unchanged_for_associated_callee() {
+    const ASSOCIATED: &str = "Vec<I32>.with_capacity";
+    const ORDINARY: &str = "ordinary";
+    for (surface, recovered) in [
+        ("(1)", false),
+        ("(capacity = n)", false),
+        ("(values...)", false),
+        ("(1,)", false),
+        ("(1, capacity = n, values...,)", false),
+        ("(1, capacity = n", true),
+    ] {
+        let associated_source = format!("{ASSOCIATED}{surface}");
+        let ordinary_source = format!("{ORDINARY}{surface}");
+        let associated = if recovered {
+            recovered_call(&associated_source).0
+        } else {
+            parsed_call(&associated_source)
+        };
+        let ordinary = if recovered {
+            recovered_call(&ordinary_source).0
+        } else {
+            parsed_call(&ordinary_source)
+        };
+        assert!(associated.path_member_callee_syntax().is_some());
+        assert!(matches!(
+            ordinary
+                .parenthesized_syntax()
+                .expect("ordinary parenthesized call")
+                .callee(),
+            ParenthesizedCalleeSyntax::Ordinary { .. }
+        ));
+        let associated_list = associated
+            .parenthesized_syntax()
+            .expect("associated parenthesized call")
+            .argument_list();
+        let ordinary_list = ordinary
+            .parenthesized_syntax()
+            .expect("ordinary parenthesized call")
+            .argument_list();
+        assert_relative_argument_surface(
+            associated_list,
+            ASSOCIATED.len(),
+            ordinary_list,
+            ORDINARY.len(),
+            surface.len(),
+        );
+    }
+}
+
+#[test]
 fn static_generic_calls_use_pratt_owned_argument_ranges() {
     let call = parsed_call("foo::<T>(value)");
     let list = call
@@ -830,8 +1634,16 @@ fn static_generic_calls_use_pratt_owned_argument_ranges() {
     assert_eq!(list.close_paren(), Some(range(14, 15)));
     assert_eq!(
         call.callee().dotted_selector_label().as_deref(),
-        Some("foo::<T>")
+        Some("foo")
     );
+    let application = call
+        .explicit_type_application()
+        .expect("static generic call retains typed application");
+    assert!(application.is_turbofish());
+    assert!(matches!(
+        application.arguments(),
+        [TypeRef::Path(path)] if path.canonical_string() == "T"
+    ));
 
     let nested_source = "registry::resolve::<Option<Result<T, E>>>(value)";
     let nested = parsed_call(nested_source);
@@ -845,49 +1657,216 @@ fn static_generic_calls_use_pratt_owned_argument_ranges() {
             .open_paren(),
         range(open, open + 1)
     );
+
+    let trailing = parsed_call("foo::<T,>()");
+    assert_eq!(trailing.callee_range(), range(0, 9));
+    assert_eq!(
+        trailing.callee().dotted_selector_label().as_deref(),
+        Some("foo")
+    );
+    assert!(
+        trailing
+            .explicit_type_application()
+            .is_some_and(ExplicitCallTypeApplicationSyntax::is_turbofish)
+    );
 }
 
 #[test]
-fn angle_lookahead_preserves_no_space_comparison_expressions() {
-    for source in ["a<b", "a<b+c", "a<b>c", "a < b > (c)"] {
-        let expr = parse_expr(source).expect("comparison must not be lexed as a generic path");
-        assert!(
-            matches!(expr, Expr::Binary { .. }),
-            "{source} must retain comparison operators"
-        );
-    }
+fn static_generic_current_fixture_parses_without_source_scan() {
+    let call = parsed_call("Vec<i32>::with_capacity(4usize)");
+    let callee = call
+        .path_member_callee_syntax()
+        .expect("current collection fixture has a typed path-member callee");
+    assert_eq!(callee.receiver().root_source().whole(), &range(0, 8));
+    assert!(callee.separator().is_explicit_path());
+    assert_eq!(callee.member().as_str(), "with_capacity");
+    assert_eq!(call.args().len(), 1);
 }
 
 #[test]
-fn invalid_static_generic_suffix_rolls_back_without_hiding_tokens_in_an_identifier() {
-    for source in [
-        "foo::<T::>()",
-        "foo::<,T>()",
-        "foo::<T,>()",
-        "foo::<T](value)",
+fn comparison_lookahead_unchanged_by_associated_receiver() {
+    let simple = parse_expr("a<b").expect("simple comparison");
+    assert!(matches!(
+        &simple,
+        Expr::Binary {
+            lhs,
+            op: BinaryOp::Lt,
+            rhs,
+        } if matches!(lhs.as_ref(), Expr::Path(_)) && matches!(rhs.as_ref(), Expr::Path(_))
+    ));
+    assert_eq!(
+        collect_expr_source_ranges(&simple, "a<b", range(0, 3))
+            .into_iter()
+            .map(|entry| entry.range())
+            .collect::<Vec<_>>(),
+        [range(0, 3), range(0, 1), range(2, 3)]
+    );
+
+    let additive = parse_expr("a<b+c").expect("comparison with additive rhs");
+    assert!(matches!(
+        &additive,
+        Expr::Binary {
+            lhs,
+            op: BinaryOp::Lt,
+            rhs,
+        } if matches!(lhs.as_ref(), Expr::Path(_))
+            && matches!(
+                rhs.as_ref(),
+                Expr::Binary {
+                    lhs,
+                    op: BinaryOp::Add,
+                    rhs,
+                } if matches!(lhs.as_ref(), Expr::Path(_))
+                    && matches!(rhs.as_ref(), Expr::Path(_))
+            )
+    ));
+    assert_eq!(
+        collect_expr_source_ranges(&additive, "a<b+c", range(0, 5))
+            .into_iter()
+            .map(|entry| entry.range())
+            .collect::<Vec<_>>(),
+        [
+            range(0, 5),
+            range(0, 1),
+            range(2, 5),
+            range(2, 3),
+            range(4, 5),
+        ]
+    );
+
+    let chained_source = "a < b > (c)";
+    let chained = parse_expr(chained_source).expect("spaced comparison chain");
+    assert!(matches!(
+        &chained,
+        Expr::Binary {
+            lhs,
+            op: BinaryOp::Gt,
+            rhs,
+        } if matches!(
+            lhs.as_ref(),
+            Expr::Binary {
+                lhs,
+                op: BinaryOp::Lt,
+                rhs,
+            } if matches!(lhs.as_ref(), Expr::Path(_))
+                && matches!(rhs.as_ref(), Expr::Path(_))
+        ) && matches!(rhs.as_ref(), Expr::Path(_))
+    ));
+    assert_eq!(
+        collect_expr_source_ranges(&chained, chained_source, range(0, chained_source.len()),)
+            .into_iter()
+            .map(|entry| entry.range())
+            .collect::<Vec<_>>(),
+        [
+            range(0, 11),
+            range(0, 5),
+            range(0, 1),
+            range(4, 5),
+            range(8, 11),
+        ]
+    );
+}
+
+#[test]
+fn malformed_static_generic_rolls_back_atomically() {
+    for (source, expected_identifiers) in [
+        (
+            "Vec::<T::>().with_capacity(8)",
+            &["Vec", "T", "with_capacity"][..],
+        ),
+        (
+            "Vec<,T>.with_capacity(8)",
+            &["Vec", "T", "with_capacity"][..],
+        ),
     ] {
         let tokens = Lexer::new(source).tokenize();
-        assert!(
-            matches!(tokens.first().map(|token| &token.token), Some(Token::Ident(name)) if name == "foo"),
-            "{source} must roll back to the ordinary path token"
-        );
+        let identifiers = tokens
+            .iter()
+            .filter_map(|token| match &token.token {
+                Token::Ident(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(identifiers, expected_identifiers);
         assert!(
             parse_expr(source).is_err(),
             "{source} must fail through ordinary expression grammar"
         );
+        let receiver_end = source.find(".with_capacity").expect("member separator");
+        assert!(
+            parse_type_ref(&source[..receiver_end]).is_err(),
+            "{source} must publish no partial AuthoredTypeRef"
+        );
+        let call_open = source.rfind('(').expect("terminal call open");
+        let (call, parsed) = recovered_call(source);
+        assert_eq!(parsed.diagnostics.len(), 1);
+        assert!(matches!(call.callee(), Expr::Raw(raw) if raw == &source[..call_open]));
+        let syntax = call
+            .parenthesized_syntax()
+            .expect("recovered parenthesized surface");
+        assert!(matches!(
+            syntax.callee(),
+            ParenthesizedCalleeSyntax::Ordinary { range: callee, .. }
+                if *callee == range(0, call_open)
+        ));
+        assert!(call.path_member_callee_syntax().is_none());
+        assert_eq!(
+            syntax.argument_list().open_paren(),
+            range(call_open, call_open + 1)
+        );
+        assert_eq!(call.args().len(), 1);
+        assert_eq!(
+            syntax.argument_list().arguments()[0].value_range(),
+            range(call_open + 1, call_open + 2)
+        );
+        assert_eq!(call.range(), range(0, source.len()));
     }
 }
 
 #[test]
-fn call_surface_exact_limit_arguments_succeeds() {
+fn missing_associated_member_recovers_ordinary_call() {
+    for source in ["Vec<i32>.(8)", "Vec<i32>::(8)"] {
+        let call_open = source.find('(').expect("call open");
+        let (call, parsed) = recovered_call(source);
+        assert_eq!(parsed.diagnostics.len(), 1);
+        let diagnostic_range = parsed.diagnostics[0].range();
+        assert!(diagnostic_range.start() < diagnostic_range.end());
+        assert!(matches!(call.callee(), Expr::Raw(raw) if raw == &source[..call_open]));
+        let syntax = call
+            .parenthesized_syntax()
+            .expect("recovered parenthesized surface");
+        assert!(matches!(
+            syntax.callee(),
+            ParenthesizedCalleeSyntax::Ordinary { range: callee, .. }
+                if *callee == range(0, call_open)
+        ));
+        assert!(call.path_member_callee_syntax().is_none());
+        assert_eq!(
+            syntax.argument_list().open_paren(),
+            range(call_open, call_open + 1)
+        );
+        assert_eq!(call.args().len(), 1);
+        assert_eq!(
+            syntax.argument_list().arguments()[0].value_range(),
+            range(call_open + 1, call_open + 2)
+        );
+        assert_eq!(call.range(), range(0, source.len()));
+    }
+}
+
+#[test]
+fn associated_call_exact_argument_limit() {
     let source = format!(
-        "f({})",
+        "Vec<I32>.with_capacity({})",
         (0..MAX_CALL_ARGUMENTS)
             .map(|index| format!("a{index}"))
             .collect::<Vec<_>>()
             .join(",")
     );
     let call = parsed_call(&source);
+    let callee = path_member(&call);
+    assert_eq!(callee.receiver().root_source().whole(), &range(0, 8));
+    assert_eq!(callee.member().as_str(), "with_capacity");
     let list = call
         .parenthesized_syntax()
         .expect("parenthesized surface")
@@ -898,9 +1877,138 @@ fn call_surface_exact_limit_arguments_succeeds() {
 }
 
 #[test]
-fn call_surface_one_over_argument_limit_fails_atomically() {
+fn associated_receiver_exact_generic_argument_limit() {
+    const MAX_GENERIC_ARGUMENTS: usize = 256;
+    let receiver = format!(
+        "Many<{}>",
+        std::iter::repeat_n("T", MAX_GENERIC_ARGUMENTS)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let source = format!("{receiver}.with_capacity(8)");
+    let call = parsed_call(&source);
+    let callee = path_member(&call);
+    assert_eq!(
+        callee.receiver().root_source().whole(),
+        &range(0, receiver.len())
+    );
+    assert_eq!(
+        callee.receiver().source().nodes().len(),
+        MAX_GENERIC_ARGUMENTS + 1
+    );
+    assert_eq!(
+        callee.receiver().source().lexemes().len(),
+        2 * MAX_GENERIC_ARGUMENTS + 2
+    );
+    for index in 0..MAX_GENERIC_ARGUMENTS {
+        let index = u16::try_from(index).expect("generic argument index");
+        assert!(
+            callee
+                .receiver()
+                .source()
+                .nodes()
+                .iter()
+                .any(|(path, _)| { path.steps() == [TypeRefNodeStep::GenericArgument(index)] })
+        );
+    }
+    assert_eq!(
+        callee.separator().range(),
+        range(receiver.len(), receiver.len() + 1)
+    );
+    assert_eq!(callee.member().as_str(), "with_capacity");
+    assert_eq!(callee.range(), range(0, receiver.len() + 14));
+    assert_eq!(call.args().len(), 1);
+    assert_eq!(call.range(), range(0, source.len()));
+}
+
+#[test]
+fn associated_receiver_one_over_generic_argument_limit() {
+    const ONE_OVER_GENERIC_ARGUMENTS: usize = 257;
+    let receiver = format!(
+        "Many<{}>",
+        std::iter::repeat_n("T", ONE_OVER_GENERIC_ARGUMENTS)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let source = format!("{receiver}.with_capacity(8)");
+    let error = parse_expr(&source).expect_err("one-over receiver must fail atomically");
+    assert_eq!(
+        error.to_string(),
+        "type constructor exceeds the 256 argument limit"
+    );
+    assert_eq!(error.code(), "syntax.type.generic_argument_limit");
+    assert!(
+        parse_expr_recovering_at(
+            &source,
+            ExprParseScope {
+                source_range: range(0, source.len()),
+                end_boundary: CallRecoveryBoundarySyntax::EndOfExpression,
+            },
+        )
+        .is_err(),
+        "one-over receiver must not publish a partial call or type map"
+    );
+}
+
+#[test]
+fn associated_receiver_exact_type_node_limit() {
+    const MAX_TYPE_NODES: usize = 4_096;
+    let tuple = format!(
+        "({})",
+        std::iter::repeat_n("T", MAX_TYPE_NODES - 2)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let receiver = format!("Many<{tuple}>");
+    let source = format!("{receiver}.with_capacity(8)");
+    let call = parsed_call(&source);
+    let callee = path_member(&call);
+    assert_eq!(callee.receiver().source().nodes().len(), MAX_TYPE_NODES);
+    assert_eq!(
+        callee.receiver().root_source().whole(),
+        &range(0, receiver.len())
+    );
+    assert_eq!(
+        callee.separator().range(),
+        range(receiver.len(), receiver.len() + 1)
+    );
+    assert_eq!(callee.member().as_str(), "with_capacity");
+    assert_eq!(callee.range(), range(0, receiver.len() + 14));
+    assert_eq!(call.args().len(), 1);
+    assert_eq!(call.range(), range(0, source.len()));
+}
+
+#[test]
+fn associated_receiver_one_over_type_node_limit() {
+    const ONE_OVER_TYPE_NODES: usize = 4_097;
+    let tuple = format!(
+        "({})",
+        std::iter::repeat_n("T", ONE_OVER_TYPE_NODES - 2)
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    let receiver = format!("Many<{tuple}>");
+    let source = format!("{receiver}.with_capacity(8)");
+    let error = parse_expr(&source).expect_err("one-over receiver must fail atomically");
+    assert_eq!(error.to_string(), "type exceeds the 4096 node limit");
+    assert_eq!(error.code(), "syntax.type.node_limit");
+    assert!(
+        parse_expr_recovering_at(
+            &source,
+            ExprParseScope {
+                source_range: range(0, source.len()),
+                end_boundary: CallRecoveryBoundarySyntax::EndOfExpression,
+            },
+        )
+        .is_err(),
+        "one-over receiver must not publish a partial call or type map"
+    );
+}
+
+#[test]
+fn associated_call_one_over_argument_limit() {
     let source = format!(
-        "f({})",
+        "Vec<I32>.with_capacity({})",
         (0..=MAX_CALL_ARGUMENTS)
             .map(|index| format!("a{index}"))
             .collect::<Vec<_>>()
@@ -1569,7 +2677,11 @@ fn invalid_callee_range_is_rejected() {
         },
     )
     .expect("valid arguments");
-    let error = ParenthesizedCallSyntax::try_from_parser(range(0, 2), arguments).unwrap_err();
+    let error = ParenthesizedCallSyntax::try_from_parser(
+        ParenthesizedCalleeSyntax::ordinary(range(0, 2)),
+        arguments,
+    )
+    .unwrap_err();
     assert_eq!(error, CallSyntaxInvariantError::InvalidCalleeRange);
 }
 

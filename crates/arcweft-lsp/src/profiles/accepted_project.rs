@@ -640,6 +640,26 @@ impl AcceptedSourceRegistryBuilder {
     }
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "the accepted-HIR invariant reports the exact module and source identity"
+)]
+fn validate_bound_hir_source(
+    module: &CanonicalModulePath,
+    expected_source: &SourceDocumentIdentity,
+    bound_source: &SourceDocumentIdentity,
+    bound_text: &str,
+    accepted_text: &str,
+) -> Result<(), AcceptedProjectSnapshotError> {
+    if bound_source != expected_source || bound_text != accepted_text {
+        return Err(AcceptedProjectSnapshotError::HirTextMismatch {
+            module: module.clone(),
+            source: expected_source.clone(),
+        });
+    }
+    Ok(())
+}
+
 impl AcceptedProjectSnapshot {
     #[allow(
         clippy::result_large_err,
@@ -688,14 +708,6 @@ impl AcceptedProjectSnapshot {
                 counter: AcceptedProjectLimitKind::Documents,
             }
         })?;
-        if module_count > document_count {
-            return Err(AcceptedProjectSnapshotError::Limit {
-                kind: AcceptedProjectLimitKind::Modules,
-                observed: module_count,
-                maximum: document_count,
-            });
-        }
-
         let mut module_by_source = BTreeMap::new();
         for module in hir_modules {
             let project_source = hir.source(&module).cloned().ok_or_else(|| {
@@ -736,14 +748,13 @@ impl AcceptedProjectSnapshot {
                     module: module.clone(),
                 }
             })?;
-            if bound_document.identity() != &project_source
-                || bound_document.text() != accepted.document.text()
-            {
-                return Err(AcceptedProjectSnapshotError::HirTextMismatch {
-                    module,
-                    source: project_source,
-                });
-            }
+            validate_bound_hir_source(
+                &module,
+                &project_source,
+                bound_document.identity(),
+                bound_document.text(),
+                accepted.document.text(),
+            )?;
             if let Some(first) = module_by_source.insert(project_source.clone(), module.clone()) {
                 return Err(AcceptedProjectSnapshotError::ConflictingModuleMapping {
                     source: project_source,
@@ -751,6 +762,13 @@ impl AcceptedProjectSnapshot {
                     conflicting: module,
                 });
             }
+        }
+        if module_count > document_count {
+            return Err(AcceptedProjectSnapshotError::Limit {
+                kind: AcceptedProjectLimitKind::Modules,
+                observed: module_count,
+                maximum: document_count,
+            });
         }
 
         let footprint = AcceptedProjectFootprint {
@@ -1148,5 +1166,7 @@ impl AcceptedSourceLocator {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod stamp_test_support;
 #[cfg(test)]
 mod tests;

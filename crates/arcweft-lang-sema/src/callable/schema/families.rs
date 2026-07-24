@@ -396,12 +396,11 @@ impl DomainMethodId {
 }
 
 impl CapacityMethodId {
-    pub(crate) fn signature_schema(&self, result: TypeKind) -> CallableSignatureSchema {
-        homogeneous(
-            self.arity(),
-            &named("_"),
-            result,
+    pub(crate) fn signature_schema(&self) -> CallableSignatureSchema {
+        variadic_unchecked(
+            self.result_type(),
             CallableValidator::Capacity(self.clone()),
+            &[],
         )
     }
 }

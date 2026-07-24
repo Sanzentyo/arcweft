@@ -1,5 +1,10 @@
 //! Immutable callable catalog records and read-only indexes.
-use std::{cmp::Ordering, collections::HashMap, num::NonZeroU32, sync::Arc};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    num::NonZeroU32,
+    sync::Arc,
+};
 
 use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
@@ -9,8 +14,9 @@ use super::digest::CanonicalEncoder;
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableCatalogError, CallableDocumentation,
     CallableLimits, CallableLookupKey, CallableProviderId, CallableSignatureSchema, CallableSource,
-    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallablePublicationDigest,
-    ProjectCallablePath, ProjectNameBinding, RustCallableProvenance, SignatureOrigin,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EnvironmentCallablePublicationDigest, ProjectCallablePath, ProjectNameBinding,
+    RustCallableProvenance, SignatureOrigin,
 };
 use crate::registration::AcceptedNominalWorldStamp;
 
@@ -443,6 +449,76 @@ impl EnvironmentCallableCatalog {
         self.by_id.get(id)
     }
 
+    fn validate_set(
+        &self,
+        expected_key: &CallableLookupKey,
+        set: &NonEmptyCallableSet,
+    ) -> Result<(), super::CorruptCallableCatalogReason> {
+        use super::CorruptCallableCatalogReason;
+
+        let entries = set.as_slice();
+        if entries.is_empty() {
+            return Err(CorruptCallableCatalogReason::EmptySet);
+        }
+
+        let mut ids = HashSet::new();
+        for entry in entries {
+            let primary = entry.primary();
+            let CallableCandidateId::Environment(primary_id) = primary.id() else {
+                return Err(CorruptCallableCatalogReason::WrongAuthority);
+            };
+            if primary.key() != expected_key || primary_id.key() != expected_key {
+                return Err(CorruptCallableCatalogReason::KeyMismatch);
+            }
+            if primary.authority() == CallableAuthorityRank::Project
+                || primary_id.owner().authority() != primary.authority()
+                || primary_id.owner().provider() != primary.provider().clone()
+            {
+                return Err(CorruptCallableCatalogReason::WrongAuthority);
+            }
+            if !ids.insert(primary.id().clone()) {
+                return Err(CorruptCallableCatalogReason::DuplicateId);
+            }
+            for equivalent in entry.equivalent_sources() {
+                if !ids.insert(equivalent.id().clone()) {
+                    return Err(CorruptCallableCatalogReason::DuplicateId);
+                }
+            }
+        }
+
+        for entry in entries {
+            let primary = entry.primary();
+            let CallableCandidateId::Environment(primary_id) = primary.id() else {
+                return Err(CorruptCallableCatalogReason::WrongAuthority);
+            };
+            if !self
+                .record(primary_id)
+                .is_some_and(|accepted| accepted.as_ref() == primary.as_ref())
+            {
+                return Err(CorruptCallableCatalogReason::MissingRecord);
+            }
+            for equivalent in entry.equivalent_sources() {
+                let CallableCandidateId::Environment(equivalent_id) = equivalent.id() else {
+                    return Err(CorruptCallableCatalogReason::InvalidEquivalent);
+                };
+                let Some(accepted) = self.record(equivalent_id) else {
+                    return Err(CorruptCallableCatalogReason::MissingRecord);
+                };
+                if !equivalent_matches(primary, equivalent, accepted, expected_key) {
+                    return Err(CorruptCallableCatalogReason::InvalidEquivalent);
+                }
+            }
+        }
+
+        if entries
+            .windows(2)
+            .any(|pair| record_order(pair[0].primary(), pair[1].primary()) == Ordering::Greater)
+        {
+            return Err(CorruptCallableCatalogReason::Unsorted);
+        }
+        Ok(())
+    }
+
     pub(crate) fn rust_exports<'a>(
         &'a self,
         package: &'a str,
@@ -537,6 +613,164 @@ impl RegisteredCallableCatalog {
     pub fn environment_record(&self, id: &EnvironmentCallableId) -> Option<&Arc<CallableRecord>> {
         self.environment.record(id)
     }
+
+    pub(crate) fn validated_free(
+        &self,
+        path: &super::CallablePath,
+    ) -> Result<Option<&NonEmptyCallableSet>, super::CorruptCallableCatalogReason> {
+        let Some(set) = self.environment.free(path) else {
+            return Ok(None);
+        };
+        self.environment
+            .validate_set(&CallableLookupKey::Free(path.clone()), set)?;
+        Ok(Some(set))
+    }
+
+    pub(crate) fn validated_method(
+        &self,
+        key: &super::ReceiverMethodKey,
+    ) -> Result<Option<&NonEmptyCallableSet>, super::CorruptCallableCatalogReason> {
+        let Some(set) = self.environment.method(key) else {
+            return Ok(None);
+        };
+        self.environment
+            .validate_set(&CallableLookupKey::Method(key.clone()), set)?;
+        Ok(Some(set))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_corrupt_free_set_for_test(
+        &self,
+        source_path: &super::CallablePath,
+        alternate_path: Option<&super::CallablePath>,
+        reason: super::CorruptCallableCatalogReason,
+    ) -> Self {
+        use super::CorruptCallableCatalogReason;
+
+        let mut corrupted = self.clone();
+        let source = corrupted
+            .environment
+            .free
+            .get(source_path)
+            .cloned()
+            .expect("corrupt fixture source path must exist");
+        let mut entries = source.entries.to_vec();
+        let lookup_path = match reason {
+            CorruptCallableCatalogReason::KeyMismatch => alternate_path
+                .cloned()
+                .expect("key-mismatch fixture requires an alternate lookup path"),
+            _ => source_path.clone(),
+        };
+
+        match reason {
+            CorruptCallableCatalogReason::EmptySet => entries.clear(),
+            CorruptCallableCatalogReason::KeyMismatch => {}
+            CorruptCallableCatalogReason::DuplicateId => {
+                entries.push(entries[0].clone());
+            }
+            CorruptCallableCatalogReason::WrongAuthority => {
+                let primary = Arc::make_mut(&mut entries[0].primary);
+                primary.authority = CallableAuthorityRank::Project;
+            }
+            CorruptCallableCatalogReason::MissingRecord => {
+                let CallableCandidateId::Environment(id) = entries[0].primary.id() else {
+                    panic!("environment fixture must own an environment ID")
+                };
+                corrupted.environment.by_id.remove(id);
+            }
+            CorruptCallableCatalogReason::InvalidEquivalent => {
+                let alternate_path = alternate_path
+                    .expect("invalid-equivalent fixture requires another accepted record");
+                let alternate = corrupted
+                    .environment
+                    .free
+                    .get(alternate_path)
+                    .expect("invalid-equivalent alternate path must exist")
+                    .first()
+                    .primary()
+                    .clone();
+                entries[0].equivalent_sources = vec![equivalent_source(&alternate)].into();
+            }
+            CorruptCallableCatalogReason::Unsorted => {
+                assert!(
+                    entries.len() > 1,
+                    "unsorted fixture requires at least two accepted entries"
+                );
+                entries.reverse();
+            }
+        }
+        corrupted.environment.free.insert(
+            lookup_path,
+            NonEmptyCallableSet {
+                entries: entries.into(),
+            },
+        );
+        corrupted
+    }
+}
+
+fn equivalent_matches(
+    primary: &CallableRecord,
+    equivalent: &EquivalentCallableSource,
+    accepted: &CallableRecord,
+    expected_key: &CallableLookupKey,
+) -> bool {
+    let CallableCandidateId::Environment(id) = accepted.id() else {
+        return false;
+    };
+    let origin_matches = match (id.owner(), equivalent.origin()) {
+        (
+            EnvironmentCallableOwner::Standard(owner),
+            SignatureOrigin::Standard {
+                owner: origin_owner,
+                id: origin_id,
+            },
+        ) => owner == origin_owner && id == origin_id,
+        (
+            EnvironmentCallableOwner::Adapter(package),
+            SignatureOrigin::Adapter {
+                package: origin_package,
+                id: origin_id,
+            },
+        ) => package == origin_package && id == origin_id,
+        _ => false,
+    };
+    primary.authority() == CallableAuthorityRank::Standard
+        && accepted.authority() == CallableAuthorityRank::Adapter
+        && accepted.key() == expected_key
+        && id.key() == expected_key
+        && id.owner().authority() == accepted.authority()
+        && id.owner().provider() == accepted.provider().clone()
+        && accepted.schema().semantic_eq(primary.schema())
+        && accepted.id() == equivalent.id()
+        && accepted.documentation() == equivalent.documentation()
+        && accepted.source() == equivalent.source()
+        && accepted.rust() == equivalent.rust()
+        && origin_matches
+}
+
+#[cfg(test)]
+fn equivalent_source(record: &CallableRecord) -> EquivalentCallableSource {
+    let CallableCandidateId::Environment(id) = record.id() else {
+        panic!("environment fixture must own an environment ID")
+    };
+    let origin = match id.owner() {
+        EnvironmentCallableOwner::Standard(owner) => SignatureOrigin::Standard {
+            owner: *owner,
+            id: id.clone(),
+        },
+        EnvironmentCallableOwner::Adapter(package) => SignatureOrigin::Adapter {
+            package: package.clone(),
+            id: id.clone(),
+        },
+    };
+    EquivalentCallableSource::new(
+        record.id().clone(),
+        origin,
+        record.documentation().clone(),
+        record.source().cloned(),
+        record.rust().cloned(),
+    )
 }
 
 fn registered_catalog_digest(
@@ -570,6 +804,13 @@ fn registered_catalog_digest(
             ProjectNameBinding::Callable(declaration) => {
                 encoder.tag(0);
                 encoder.project_declaration(declaration);
+            }
+            ProjectNameBinding::AmbiguousCallables { declarations } => {
+                encoder.tag(3);
+                encoder.usize(declarations.len());
+                for declaration in declarations.iter() {
+                    encoder.project_declaration(declaration);
+                }
             }
             ProjectNameBinding::Environment(id) => {
                 encoder.tag(1);

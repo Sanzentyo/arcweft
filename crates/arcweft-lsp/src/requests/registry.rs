@@ -221,13 +221,20 @@ impl RequestRegistry {
             .admission_open = false;
     }
 
+    /// Joins the deadline owner after every executor-held guard is gone.
+    ///
+    /// # Panics
+    ///
+    /// Panics when an `ActiveRequest` remains after executor shutdown. This is
+    /// a production invariant violation because the leaked guard still owns an
+    /// active-map entry and its exact deadline token.
     pub(crate) fn shutdown(&self) {
         if self.shutdown.swap(true, Ordering::AcqRel) {
             return;
         }
         self.close_admission();
         self.scheduler.shutdown();
-        debug_assert!(
+        assert!(
             self.state
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -266,27 +273,41 @@ impl RequestRegistry {
             state.active.remove(id);
         }
         drop(state);
-        self.scheduler.remove(control.deadline(), token);
+        self.scheduler.remove(control.scheduled_deadline(), token);
     }
 
     #[cfg(test)]
-    pub(crate) fn active_len(&self) -> usize {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .active
-            .len()
-    }
-
-    #[cfg(test)]
-    fn deadline_len(&self) -> usize {
-        self.scheduler
+    pub(crate) fn test_snapshot(&self) -> RequestRegistryTestSnapshot {
+        let active = self
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .deadlines
-            .len()
+            .active
+            .len();
+        let scheduler = self
+            .scheduler
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        RequestRegistryTestSnapshot {
+            active,
+            deadlines: scheduler.deadlines.len(),
+            fired: scheduler.fired.len(),
+        }
     }
+
+    #[cfg(test)]
+    pub(crate) fn fire_deadlines_at(&self, now: Instant) -> usize {
+        self.scheduler.fire_due_at(now)
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RequestRegistryTestSnapshot {
+    pub(crate) active: usize,
+    pub(crate) deadlines: usize,
+    pub(crate) fired: usize,
 }
 
 impl ActiveRequest {
@@ -343,7 +364,7 @@ impl DeadlineScheduler {
             if state.closed {
                 return;
             }
-            let Some((&(deadline, token), control)) = state
+            let Some((&(deadline, _), _)) = state
                 .deadlines
                 .iter()
                 .find(|(key, _)| !state.fired.contains(*key))
@@ -364,13 +385,32 @@ impl DeadlineScheduler {
                 drop(next);
                 continue;
             }
-            let control = control.clone();
-            state.fired.insert((deadline, token));
             drop(state);
+            self.fire_due_at(now);
+        }
+    }
+
+    fn fire_due_at(&self, now: Instant) -> usize {
+        let controls = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let due = state
+                .deadlines
+                .range(..=(now, u64::MAX))
+                .filter(|(key, _)| !state.fired.contains(*key))
+                .map(|(key, control)| (*key, control.clone()))
+                .collect::<Vec<_>>();
+            for (key, _) in &due {
+                state.fired.insert(*key);
+            }
+            due
+        };
+        let fired = controls.len();
+        for (_, control) in controls {
             if let Some(control) = control.upgrade() {
                 control.cancel(SignatureCancellationReason::DeadlineExceeded);
             }
         }
+        fired
     }
 
     fn shutdown(&self) {
@@ -431,9 +471,36 @@ mod tests {
         let active = registry
             .admit(RequestId::from(1), binding(&state, 1))
             .expect("admitted request");
-        assert_eq!(registry.active_len(), 1);
+        assert_eq!(
+            registry.test_snapshot(),
+            RequestRegistryTestSnapshot {
+                active: 1,
+                deadlines: 1,
+                fired: 0,
+            }
+        );
         drop(active);
-        assert_eq!(registry.active_len(), 0);
+        assert_eq!(
+            registry.test_snapshot(),
+            RequestRegistryTestSnapshot {
+                active: 0,
+                deadlines: 0,
+                fired: 0,
+            }
+        );
+        registry.shutdown();
+    }
+
+    #[test]
+    #[should_panic(expected = "request guards must be dropped before registry shutdown")]
+    fn shutdown_panics_when_an_active_guard_remains() {
+        let registry = RequestRegistry::try_new_with_deadline(Duration::from_mins(1))
+            .expect("request registry");
+        let state = Arc::new(LspProfileState::new());
+        let _active = registry
+            .admit(RequestId::from(99), binding(&state, 99))
+            .expect("admitted request");
+
         registry.shutdown();
     }
 
@@ -444,10 +511,20 @@ mod tests {
         let first = registry
             .admit(RequestId::from(1), binding(&state, 1))
             .expect("first request");
+        let first_control = Arc::clone(first.control());
         assert!(matches!(
             registry.admit(RequestId::from(1), binding(&state, 2)),
             Err(RequestAdmissionError::DuplicateRequestId { .. })
         ));
+        registry.cancel(
+            &RequestId::from(1),
+            SignatureCancellationReason::ClientCancelled,
+        );
+        assert_eq!(
+            *first_control.gate(),
+            RequestGateState::Cancelled(SignatureCancellationReason::ClientCancelled),
+            "duplicate admission must not replace the first control"
+        );
         let mut active = vec![first];
         for id in 2..=MAX_ACTIVE_SIGNATURE_REQUESTS {
             active.push(
@@ -466,7 +543,14 @@ mod tests {
                 maximum: MAX_ACTIVE_SIGNATURE_REQUESTS,
             })
         ));
-        assert_eq!(registry.active_len(), MAX_ACTIVE_SIGNATURE_REQUESTS);
+        assert_eq!(
+            registry.test_snapshot(),
+            RequestRegistryTestSnapshot {
+                active: MAX_ACTIVE_SIGNATURE_REQUESTS,
+                deadlines: MAX_ACTIVE_SIGNATURE_REQUESTS,
+                fired: 0,
+            }
+        );
         drop(active);
         registry.shutdown();
     }
@@ -478,7 +562,7 @@ mod tests {
             &RequestId::from(404),
             SignatureCancellationReason::ClientCancelled,
         );
-        assert_eq!(registry.active_len(), 0);
+        assert_eq!(registry.test_snapshot().active, 0);
 
         let state = Arc::new(LspProfileState::new());
         let active = registry
@@ -515,21 +599,31 @@ mod tests {
 
     #[test]
     fn deadline_token_is_removed_only_when_active_guard_drops() {
-        let registry = RequestRegistry::try_new().expect("request registry");
+        let registry = RequestRegistry::try_new_with_deadline(Duration::from_mins(1))
+            .expect("request registry");
         let state = Arc::new(LspProfileState::new());
         let active = registry
             .admit(RequestId::from(1), binding(&state, 1))
             .expect("admitted request");
-        let until = Instant::now() + Duration::from_secs(1);
-        while !active.control().cancellation_flag().load(Ordering::Acquire)
-            && Instant::now() < until
-        {
-            thread::sleep(Duration::from_millis(5));
-        }
+        assert_eq!(registry.fire_deadlines_at(active.control().deadline()), 1);
         assert!(active.control().cancellation_flag().load(Ordering::Acquire));
-        assert_eq!(registry.deadline_len(), 1);
+        assert_eq!(
+            registry.test_snapshot(),
+            RequestRegistryTestSnapshot {
+                active: 1,
+                deadlines: 1,
+                fired: 1,
+            }
+        );
         drop(active);
-        assert_eq!(registry.deadline_len(), 0);
+        assert_eq!(
+            registry.test_snapshot(),
+            RequestRegistryTestSnapshot {
+                active: 0,
+                deadlines: 0,
+                fired: 0,
+            }
+        );
         registry.shutdown();
     }
 }

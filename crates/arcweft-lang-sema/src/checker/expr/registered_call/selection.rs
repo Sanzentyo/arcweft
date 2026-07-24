@@ -7,11 +7,12 @@ use crate::{
         CallPoison, CallableAuthorityRank, CallableCandidateId, CallableDiagnosticCode,
         CallableDiagnosticSubject, CallableGroupIndex, CallableParameterPassing,
         CallableParameterPresence, CallableValidator, CheckedCallArgumentFact, CheckedCallTarget,
-        NonEmptyResolvedCandidates, ResolvedCallable, SignatureQueryStep, SignatureWorkKind,
+        NonEmptyResolvedCandidates, ResolveCallError, ResolvedCallable, SignatureQueryStep,
+        SignatureWorkKind,
     },
     checker::{
-        CallableDiagnosticDraft, ProjectCallableReference, TypeCheckError, TypeChecker,
-        call_target_facts::CallableWorkOperation,
+        CallableDiagnosticDraft, CandidateEvaluationPass, ProjectCallableReference, TypeCheckError,
+        TypeChecker, call_target_facts::CallableWorkOperation,
     },
     effect_model::EffectSite,
     types::TypeKind,
@@ -27,6 +28,8 @@ struct RegisteredCandidateProbe<'a> {
     specificity: RegisteredCandidateSpecificity,
     arguments: RegisteredArgumentCheck,
     focused_facts: crate::checker::call_target_facts::CallTargetFactRecorder,
+    #[cfg(test)]
+    migration: crate::checker::CallableMigrationCounters,
 }
 
 struct RegisteredCandidateSelection<'a> {
@@ -44,6 +47,15 @@ struct RejectedRegisteredCandidate {
 enum UnselectedRegisteredReason {
     Rejected,
     Ambiguous,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RegisteredValidatorDispatch<'a> {
+    CommonSchema,
+    Reduction(crate::callable::ReductionConstructorKind),
+    Result(crate::callable::ResultConstructorKind),
+    Option(crate::callable::OptionConstructorKind),
+    Unsupported(&'a CallableValidator),
 }
 
 struct UnselectedRegisteredCandidates<'a> {
@@ -84,6 +96,9 @@ impl TypeChecker<'_> {
         if !self.charge_registered_candidate_materialization(site, candidates, focused_work) {
             return TypeKind::Named("_".to_owned());
         }
+        if candidates.as_slice().len() == 1 {
+            return self.check_single_registered_candidate(site, candidates, focused_work);
+        }
         let Some(probes) = self.probe_registered_candidates(site, candidates, focused_work) else {
             return TypeKind::Named("_".to_owned());
         };
@@ -123,6 +138,9 @@ impl TypeChecker<'_> {
             .collect::<Vec<_>>();
         self.call_target_fact_recorder
             .restore_selected_nested_facts_from(&selection.selected.focused_facts);
+        #[cfg(test)]
+        self.stats
+            .retain_callable_migration(selection.selected.migration);
         self.finish_unselected_registered_candidates(
             site,
             UnselectedRegisteredCandidates {
@@ -135,6 +153,112 @@ impl TypeChecker<'_> {
                     "call `{}` is ambiguous between equally specific signatures",
                     site.label
                 )),
+            },
+        )
+    }
+
+    fn check_single_registered_candidate(
+        &mut self,
+        site: &RegisteredCallSite<'_>,
+        candidates: &NonEmptyResolvedCandidates,
+        focused_work: bool,
+    ) -> TypeKind {
+        // With no competing candidate, keep one transaction alive through the
+        // pre-commit control boundary. Re-probing the selected singleton would
+        // recursively evaluate every nested argument call twice.
+        if focused_work
+            && let Err(error) = self
+                .call_resolver_control
+                .check_signature_query_step(SignatureQueryStep::CandidateProbe)
+        {
+            self.errors.push(TypeCheckError::new(error.to_string()));
+            self.call_target_fact_recorder
+                .record_resolve_error(site.call_span.as_ref(), error);
+            return TypeKind::Named("_".to_owned());
+        }
+
+        let candidate = candidates.first();
+        let checkpoint = self.checkpoint_registered_candidate();
+        let error_start = self.errors.len();
+        let warning_start = self.warnings.len();
+        let judgment_start = self.judgments.len();
+        let previous_candidate_work = self.signature_work_charge.candidate_work;
+        self.signature_work_charge.candidate_work = focused_work;
+        let records_facts = self.records_call_target_facts(site.call_span.as_ref());
+        let physical_checkpoint = self.physical_candidate_evaluation_checkpoint();
+        let checked = self.evaluate_registered_candidate(
+            site,
+            candidate,
+            records_facts,
+            CandidateEvaluationPass::DirectCommitted,
+        );
+        self.signature_work_charge.candidate_work = previous_candidate_work;
+
+        if self
+            .call_target_fact_recorder
+            .terminal_query_error()
+            .is_some()
+        {
+            self.rollback_registered_candidate(checkpoint);
+            return TypeKind::Named("_".to_owned());
+        }
+
+        let viable = candidate.call_shape_is_viable(site.group, site.call.args())
+            && !matches!(checked.arguments.poison, CallPoison::Rejected);
+        if viable {
+            if focused_work
+                && let Err(error) = self
+                    .call_resolver_control
+                    .check_signature_query_step(SignatureQueryStep::SelectedReplay)
+            {
+                self.rollback_registered_candidate(checkpoint);
+                self.errors.push(TypeCheckError::new(error.to_string()));
+                self.call_target_fact_recorder
+                    .record_resolve_error(site.call_span.as_ref(), error);
+                return TypeKind::Named("_".to_owned());
+            }
+            let result = self.finish_checked_registered_candidate(
+                site,
+                candidate,
+                candidates.as_slice(),
+                checked,
+            );
+            if self
+                .call_target_fact_recorder
+                .terminal_query_error()
+                .is_some()
+            {
+                self.rollback_registered_candidate(checkpoint);
+                return TypeKind::Named("_".to_owned());
+            }
+            self.commit_registered_candidate(&checkpoint);
+            return result;
+        }
+
+        self.reclassify_physical_candidate_evaluations(
+            physical_checkpoint,
+            site.expression,
+            candidate.id(),
+            CandidateEvaluationPass::DirectCommitted,
+            CandidateEvaluationPass::Probe,
+        );
+        self.rollback_registered_candidate(checkpoint);
+        debug_assert_eq!(self.errors.len(), error_start);
+        debug_assert_eq!(self.warnings.len(), warning_start);
+        debug_assert_eq!(self.judgments.len(), judgment_start);
+        let Some(rejected) = self.replay_rejected_registered_candidate(site, candidate) else {
+            return TypeKind::Named("_".to_owned());
+        };
+        self.finish_unselected_registered_candidates(
+            site,
+            UnselectedRegisteredCandidates {
+                candidates: candidates.as_slice(),
+                arguments: rejected.arguments.facts,
+                argument_diagnostics: rejected.arguments.diagnostics,
+                fallback_result: rejected.result,
+                reason: UnselectedRegisteredReason::Rejected,
+                message: (!rejected.retained_specific_error)
+                    .then(|| format!("call `{}` has no viable signature", site.label)),
             },
         )
     }
@@ -194,6 +318,8 @@ impl TypeChecker<'_> {
             };
         self.call_target_fact_recorder
             .restore_selected_nested_facts_from(&probes[0].focused_facts);
+        #[cfg(test)]
+        self.stats.retain_callable_migration(probes[0].migration);
         self.finish_unselected_registered_candidates(
             site,
             UnselectedRegisteredCandidates {
@@ -227,9 +353,16 @@ impl TypeChecker<'_> {
                 return None;
             }
             let checkpoint = self.checkpoint_registered_candidate();
+            #[cfg(test)]
+            let migration_before = self.stats.callable_migration_counters();
             self.signature_work_charge.candidate_work = charges_candidate_work;
             let error_checkpoint = self.errors.len();
-            let checked = self.evaluate_registered_candidate(site, candidate, true);
+            let checked = self.evaluate_registered_candidate(
+                site,
+                candidate,
+                true,
+                CandidateEvaluationPass::Probe,
+            );
             let probe = RegisteredCandidateProbe {
                 candidate,
                 specificity: registered_candidate_specificity(
@@ -241,6 +374,11 @@ impl TypeChecker<'_> {
                 ),
                 arguments: checked.arguments,
                 focused_facts: self.call_target_fact_recorder.clone(),
+                #[cfg(test)]
+                migration: self
+                    .stats
+                    .callable_migration_counters()
+                    .delta_from(migration_before),
             };
             self.rollback_registered_candidate(checkpoint);
             if self
@@ -279,6 +417,7 @@ impl TypeChecker<'_> {
             candidate,
             considered,
             charges_candidate_work,
+            CandidateEvaluationPass::SelectedReplay,
         );
         if self
             .call_target_fact_recorder
@@ -313,7 +452,11 @@ impl TypeChecker<'_> {
                     .record_resolve_error(site.call_span.as_ref(), error);
                 return Err(());
             }
-            if !self.charge_callable_work(site.call, focused, CallableWorkOperation::Resolver) {
+            if !self.charge_callable_work_for_span(
+                site.call_span.as_ref(),
+                focused,
+                CallableWorkOperation::Resolver,
+            ) {
                 return Err(());
             }
             match compare_registered_candidate_probes(probe, selected) {
@@ -346,7 +489,8 @@ impl TypeChecker<'_> {
             self.errors.push(TypeCheckError::new(message));
         }
         let records_facts = self.records_call_target_facts(site.call_span.as_ref());
-        if records_facts && let Some(call_span) = &site.call_span {
+        if records_facts && let (Some(call_span), Some(document)) = (&site.call_span, site.document)
+        {
             if matches!(reason, UnselectedRegisteredReason::Ambiguous)
                 || argument_diagnostics.is_empty()
             {
@@ -374,7 +518,7 @@ impl TypeChecker<'_> {
             };
             self.record_call_target_facts(
                 site.expression,
-                site.document,
+                document,
                 call_span,
                 checked,
                 argument_diagnostics,
@@ -394,12 +538,19 @@ impl TypeChecker<'_> {
         let judgment_start = self.judgments.len();
         let previous_candidate_work = self.signature_work_charge.candidate_work;
         self.signature_work_charge.candidate_work = false;
-        let checked = self.evaluate_registered_candidate(site, candidate, true);
+        let checked = self.evaluate_registered_candidate(
+            site,
+            candidate,
+            true,
+            CandidateEvaluationPass::RejectedRecoveryReplay,
+        );
         self.signature_work_charge.candidate_work = previous_candidate_work;
         let errors = self.errors[error_start..].to_vec();
         let retained_specific_error = !errors.is_empty();
         let warnings = self.warnings[warning_start..].to_vec();
         let judgments = self.judgments[judgment_start..].to_vec();
+        let retained_stats = self.stats.clone();
+        let focused_facts = self.call_target_fact_recorder.clone();
         self.rollback_registered_candidate(checkpoint);
         if self
             .call_target_fact_recorder
@@ -408,9 +559,12 @@ impl TypeChecker<'_> {
         {
             return None;
         }
+        self.stats = retained_stats;
         self.errors.extend(errors);
         self.warnings.extend(warnings);
         self.judgments.extend(judgments);
+        self.call_target_fact_recorder
+            .restore_selected_nested_facts_from(&focused_facts);
         Some(RejectedRegisteredCandidate {
             arguments: checked.arguments,
             result: checked.result,
@@ -425,7 +579,13 @@ impl TypeChecker<'_> {
         considered: &[ResolvedCallable],
     ) -> TypeKind {
         let focused_work = self.uses_focused_callable_work(site.call_span.as_ref());
-        self.check_registered_candidate_with_work(site, candidate, considered, focused_work)
+        self.check_registered_candidate_with_work(
+            site,
+            candidate,
+            considered,
+            focused_work,
+            CandidateEvaluationPass::DirectCommitted,
+        )
     }
 
     fn check_registered_candidate_with_work(
@@ -434,12 +594,24 @@ impl TypeChecker<'_> {
         candidate: &ResolvedCallable,
         considered: &[ResolvedCallable],
         charges_candidate_work: bool,
+        pass: CandidateEvaluationPass,
     ) -> TypeKind {
         let records_facts = self.records_call_target_facts(site.call_span.as_ref());
         let previous_candidate_work = self.signature_work_charge.candidate_work;
         self.signature_work_charge.candidate_work = records_facts && charges_candidate_work;
-        let checked = self.evaluate_registered_candidate(site, candidate, records_facts);
+        let checked = self.evaluate_registered_candidate(site, candidate, records_facts, pass);
         self.signature_work_charge.candidate_work = previous_candidate_work;
+        self.finish_checked_registered_candidate(site, candidate, considered, checked)
+    }
+
+    fn finish_checked_registered_candidate(
+        &mut self,
+        site: &RegisteredCallSite<'_>,
+        candidate: &ResolvedCallable,
+        considered: &[ResolvedCallable],
+        checked: RegisteredCandidateCheck,
+    ) -> TypeKind {
+        let records_facts = self.records_call_target_facts(site.call_span.as_ref());
         let label = site.label;
         let schema = candidate.schema();
         let effect_site = EffectSite::new(format!("call `{label}`"));
@@ -477,7 +649,8 @@ impl TypeChecker<'_> {
                 });
         }
         let result = checked.result;
-        if records_facts && let Some(call_span) = &site.call_span {
+        if records_facts && let (Some(call_span), Some(document)) = (&site.call_span, site.document)
+        {
             let RegisteredArgumentCheck {
                 facts,
                 poison,
@@ -500,7 +673,7 @@ impl TypeChecker<'_> {
             };
             self.record_call_target_facts(
                 site.expression,
-                site.document,
+                document,
                 call_span,
                 checked_target,
                 diagnostics,
@@ -519,17 +692,31 @@ impl TypeChecker<'_> {
         site: &RegisteredCallSite<'_>,
         candidate: &ResolvedCallable,
         records_facts: bool,
+        pass: CandidateEvaluationPass,
     ) -> RegisteredCandidateCheck {
         let focused = self.uses_focused_callable_work(site.call_span.as_ref());
-        if focused {
-            self.focused_candidate_depth += 1;
+        if focused && let Err(error) = self.focused_candidate_depth.try_enter() {
+            let error = ResolveCallError::Work(error);
+            self.errors.push(TypeCheckError::new(error.to_string()));
+            self.call_target_fact_recorder
+                .record_terminal_resolve_error(error);
+            return RegisteredCandidateCheck {
+                arguments: RegisteredArgumentCheck::new(Vec::new(), CallPoison::Rejected),
+                result: schema_result_type(candidate.schema(), site.group),
+            };
         }
+        let records_physical = self.begins_physical_candidate_evaluation(site.call_span.as_ref());
+        let physical_scope = self.begin_physical_candidate_evaluation(
+            records_physical,
+            site.call,
+            site.expression,
+            candidate.id(),
+            pass,
+        );
         let checked = self.evaluate_registered_candidate_body(site, candidate, records_facts);
+        self.end_physical_candidate_evaluation(physical_scope);
         if focused {
-            self.focused_candidate_depth = self
-                .focused_candidate_depth
-                .checked_sub(1)
-                .expect("focused candidate depth exits exactly once");
+            self.focused_candidate_depth.leave();
         }
         checked
     }
@@ -546,7 +733,11 @@ impl TypeChecker<'_> {
     ) -> RegisteredCandidateCheck {
         let schema = candidate.schema();
         let focused = self.uses_focused_callable_work(site.call_span.as_ref());
-        if !self.charge_callable_work(site.call, focused, CallableWorkOperation::Resolver) {
+        if !self.charge_callable_work_for_span(
+            site.call_span.as_ref(),
+            focused,
+            CallableWorkOperation::Resolver,
+        ) {
             return RegisteredCandidateCheck {
                 arguments: RegisteredArgumentCheck::new(Vec::new(), CallPoison::Rejected),
                 result: schema_result_type(schema, site.group),
@@ -583,24 +774,8 @@ impl TypeChecker<'_> {
                 records_facts,
             );
         }
-        match schema.validator() {
-            CallableValidator::Ordinary
-            | CallableValidator::Untyped
-            | CallableValidator::Builtin(_)
-            | CallableValidator::Agent(_)
-            | CallableValidator::Fx(_)
-            | CallableValidator::EnumConstructor(_)
-            | CallableValidator::Presentation(_)
-            | CallableValidator::Collection(_)
-            | CallableValidator::PresentationHandle(_)
-            | CallableValidator::Integer(_)
-            | CallableValidator::Domain(_)
-            | CallableValidator::Capacity(_)
-            | CallableValidator::Stage(_)
-            | CallableValidator::Trait(_)
-            | CallableValidator::Drop
-            | CallableValidator::Promotion(_)
-            | CallableValidator::Speaker => {
+        match registered_validator_dispatch(schema.validator()) {
+            RegisteredValidatorDispatch::CommonSchema => {
                 let arguments = self.check_registered_schema_args(
                     site.label,
                     schema,
@@ -613,29 +788,29 @@ impl TypeChecker<'_> {
                     .apply(&schema_result_type(schema, site.group));
                 RegisteredCandidateCheck { arguments, result }
             }
-            CallableValidator::ReductionConstructor(kind) => self
+            RegisteredValidatorDispatch::Reduction(kind) => self
                 .check_registered_reduction_constructor(
-                    *kind,
+                    kind,
                     site.label,
                     schema,
                     site.call,
                     records_facts,
                 ),
-            CallableValidator::ResultConstructor(kind) => self.check_registered_sum_constructor(
-                RegisteredSumConstructor::Result(*kind),
+            RegisteredValidatorDispatch::Result(kind) => self.check_registered_sum_constructor(
+                RegisteredSumConstructor::Result(kind),
                 site.label,
                 schema,
                 site.call,
                 records_facts,
             ),
-            CallableValidator::OptionConstructor(kind) => self.check_registered_sum_constructor(
-                RegisteredSumConstructor::Option(*kind),
+            RegisteredValidatorDispatch::Option(kind) => self.check_registered_sum_constructor(
+                RegisteredSumConstructor::Option(kind),
                 site.label,
                 schema,
                 site.call,
                 records_facts,
             ),
-            validator => {
+            RegisteredValidatorDispatch::Unsupported(validator) => {
                 self.errors.push(TypeCheckError::new(format!(
                     "registered callable `{}` has unsupported validator {validator:?}",
                     site.label
@@ -652,6 +827,37 @@ impl TypeChecker<'_> {
                     result: schema_result_type(schema, site.group),
                 }
             }
+        }
+    }
+}
+
+fn registered_validator_dispatch(validator: &CallableValidator) -> RegisteredValidatorDispatch<'_> {
+    match validator {
+        CallableValidator::Ordinary
+        | CallableValidator::Untyped
+        | CallableValidator::Builtin(_)
+        | CallableValidator::Agent(_)
+        | CallableValidator::Fx(_)
+        | CallableValidator::EnumConstructor(_)
+        | CallableValidator::Presentation(_)
+        | CallableValidator::Collection(_)
+        | CallableValidator::PresentationHandle(_)
+        | CallableValidator::Integer(_)
+        | CallableValidator::Domain(_)
+        | CallableValidator::Capacity(_)
+        | CallableValidator::Stage(_)
+        | CallableValidator::Trait(_)
+        | CallableValidator::Drop
+        | CallableValidator::Promotion(_)
+        | CallableValidator::Speaker => RegisteredValidatorDispatch::CommonSchema,
+        CallableValidator::ReductionConstructor(kind) => {
+            RegisteredValidatorDispatch::Reduction(*kind)
+        }
+        CallableValidator::ResultConstructor(kind) => RegisteredValidatorDispatch::Result(*kind),
+        CallableValidator::OptionConstructor(kind) => RegisteredValidatorDispatch::Option(*kind),
+        validator
+        @ (CallableValidator::UnknownFxMember { .. } | CallableValidator::Dialogue(_)) => {
+            RegisteredValidatorDispatch::Unsupported(validator)
         }
     }
 }
@@ -933,5 +1139,26 @@ mod tests {
                 RegisteredSlotSpecificity::UncheckedOrOpen
             );
         }
+    }
+
+    #[test]
+    fn dialogue_validators_cannot_enter_ordinary_registered_argument_mapping() {
+        for id in [
+            crate::callable::DialogueCallableId::SpeakerLine,
+            crate::callable::DialogueCallableId::ContentCall,
+        ] {
+            let validator = CallableValidator::Dialogue(id);
+            assert!(matches!(
+                registered_validator_dispatch(&validator),
+                RegisteredValidatorDispatch::Unsupported(CallableValidator::Dialogue(
+                    actual
+                )) if *actual == id
+            ));
+        }
+        assert_eq!(
+            registered_validator_dispatch(&CallableValidator::Ordinary),
+            RegisteredValidatorDispatch::CommonSchema,
+            "ordinary expressions retain the shared schema mapper"
+        );
     }
 }

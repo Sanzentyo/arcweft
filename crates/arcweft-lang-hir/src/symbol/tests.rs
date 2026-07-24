@@ -25,7 +25,8 @@ use super::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectDirectBindingError,
     ProjectExternalDeclarations, ProjectSymbolDiagnosticCode, ProjectSymbolLinkError,
     ProjectSymbolResolutionError, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolTargetId,
-    ProjectSymbolWorldId, ProjectTypeLookupError, ProjectTypeTarget, ResolvedProjectSymbol,
+    ProjectSymbolWorldId, ProjectTypeLookupError, ProjectTypeTarget, ProjectValueLookup,
+    ProjectValueLookupError, ResolvedProjectSymbol,
     nominal::{
         ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
         ProjectNominalDeclarationKind,

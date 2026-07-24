@@ -160,6 +160,10 @@ pub struct SignatureQueryControl<'a> {
     remaining_steps: Option<&'a Cell<usize>>,
     #[cfg(test)]
     deadline_step: Option<SignatureQueryStep>,
+    #[cfg(test)]
+    cancellation_step: Option<SignatureQueryStep>,
+    #[cfg(test)]
+    cancellation_step_delay: Option<&'a Cell<usize>>,
 }
 
 impl<'a> SignatureQueryControl<'a> {
@@ -171,6 +175,10 @@ impl<'a> SignatureQueryControl<'a> {
             remaining_steps: None,
             #[cfg(test)]
             deadline_step: None,
+            #[cfg(test)]
+            cancellation_step: None,
+            #[cfg(test)]
+            cancellation_step_delay: None,
         }
     }
 
@@ -183,6 +191,17 @@ impl<'a> SignatureQueryControl<'a> {
     #[cfg(test)]
     fn with_deadline_step(mut self, deadline_step: SignatureQueryStep) -> Self {
         self.deadline_step = Some(deadline_step);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_cancellation_step_after(
+        mut self,
+        cancellation_step: SignatureQueryStep,
+        prior_occurrences: &'a Cell<usize>,
+    ) -> Self {
+        self.cancellation_step = Some(cancellation_step);
+        self.cancellation_step_delay = Some(prior_occurrences);
         self
     }
 
@@ -199,7 +218,7 @@ impl<'a> SignatureQueryControl<'a> {
             }
             remaining.set(current - 1);
         }
-        if self.cancelled.load(Ordering::Relaxed) {
+        if self.cancelled.load(Ordering::Acquire) {
             return Err(SignatureQueryError::Cancelled);
         }
         if self
@@ -218,6 +237,17 @@ impl SignatureQueryStepControl for SignatureQueryControl<'_> {
         if self.deadline_step == Some(step) {
             return Err(ResolveCallError::DeadlineExceeded);
         }
+        #[cfg(test)]
+        if self.cancellation_step == Some(step) {
+            let remaining = self
+                .cancellation_step_delay
+                .expect("cancellation-step fixture owns its delay");
+            if remaining.get() == 0 {
+                self.cancelled.store(true, Ordering::Release);
+                return Err(ResolveCallError::Cancelled);
+            }
+            remaining.set(remaining.get() - 1);
+        }
         #[cfg(not(test))]
         let _ = step;
         match (*self).check() {
@@ -231,65 +261,86 @@ impl SignatureQueryStepControl for SignatureQueryControl<'_> {
 
 /// Runs one native signature query without parsing, lowering, or name fallback.
 #[allow(
-    clippy::needless_pass_by_value,
     clippy::result_large_err,
-    reason = "the validated query is a one-shot request and the error preserves exact typed evidence"
+    reason = "the error preserves exact typed evidence"
 )]
 pub fn query_signature(
     request: SignatureQuery<'_>,
 ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
-    request.check_control()?;
     let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
-    let mut signature_work = SignatureQueryWorkMeter::new(request.limits);
-    let selection = surface::select_signature_surface(
-        request.hir,
-        request.document,
-        request.byte_offset,
-        request.control,
-        &mut signature_work,
-    )?;
-    let Some(site) = selection.site else {
-        return if selection.unsupported_surface {
-            Ok(SignatureQueryOutcome::NotApplicable(
-                SignatureNotApplicable::UnsupportedSurface,
-            ))
-        } else {
-            Ok(SignatureQueryOutcome::NotApplicable(
-                SignatureNotApplicable::CursorOutsideArgumentList,
-            ))
+    request.execute(&mut work)
+}
+
+impl SignatureQuery<'_> {
+    #[allow(
+        clippy::result_large_err,
+        reason = "the one-shot query retains exact typed error evidence"
+    )]
+    fn execute(
+        self,
+        work: &mut ResolverWork,
+    ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
+        self.check_control()?;
+        let mut signature_work = SignatureQueryWorkMeter::new(self.limits);
+        let selection = surface::select_signature_surface(
+            self.hir,
+            self.document,
+            self.byte_offset,
+            self.control,
+            &mut signature_work,
+        )?;
+        let Some(site) = selection.site else {
+            return if selection.unsupported_surface {
+                Ok(SignatureQueryOutcome::NotApplicable(
+                    SignatureNotApplicable::UnsupportedSurface,
+                ))
+            } else {
+                Ok(SignatureQueryOutcome::NotApplicable(
+                    SignatureNotApplicable::CursorOutsideArgumentList,
+                ))
+            };
         };
-    };
-    let checked = analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
-        module: request.hir,
-        registered: request.world,
-        site: site.clone(),
-        cancellation: request.control.cancelled,
-        work: &mut work,
-        signature_work: &mut signature_work,
-        signature_control: &request.control,
-    })
-    .map_err(map_focused_error)?;
-    request.check_control()?;
-    let facts = checked
-        .focused_call_target_facts()
-        .map_err(map_focused_error)?;
-    if facts.call_span() != site.call() {
-        return Err(SignatureSemanticUnavailable::MissingCallableFacts {
-            call: site.call().clone(),
+        let checked =
+            analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
+                module: self.hir,
+                registered: self.world,
+                site: site.clone(),
+                cancellation: self.control.cancelled,
+                work,
+                signature_work: &mut signature_work,
+                signature_control: &self.control,
+            })
+            .map_err(map_focused_error)?;
+        self.check_control()?;
+        let facts = checked
+            .focused_call_target_facts()
+            .map_err(map_focused_error)?;
+        if facts.call_span() != site.call() {
+            return Err(SignatureSemanticUnavailable::MissingCallableFacts {
+                call: site.call().clone(),
+            }
+            .into());
         }
-        .into());
+        project::project_signature_help(project::SignatureProjection {
+            world: self.world,
+            document: self.document,
+            control: self.control,
+            site: &site,
+            facts,
+            work,
+            callable_limits: &PRODUCTION_CALLABLE_LIMITS,
+            signature_limits: &self.limits,
+            signature_work: &mut signature_work,
+        })
     }
-    project::project_signature_help(project::SignatureProjection {
-        world: request.world,
-        document: request.document,
-        control: request.control,
-        site: &site,
-        facts,
-        work: &mut work,
-        callable_limits: &PRODUCTION_CALLABLE_LIMITS,
-        signature_limits: &request.limits,
-        signature_work: &mut signature_work,
-    })
+}
+
+#[cfg(test)]
+fn execute_signature_query(
+    request: SignatureQuery<'_>,
+    work: &mut ResolverWork,
+) -> Result<SignatureQueryOutcome, SignatureQueryError> {
+    request.execute(work)
 }
 
 fn map_focused_error(error: CallTargetFactError) -> SignatureQueryError {

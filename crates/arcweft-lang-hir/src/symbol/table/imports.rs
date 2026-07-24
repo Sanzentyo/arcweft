@@ -265,6 +265,27 @@ impl ProjectSymbolTable {
         }
     }
 
+    pub(super) fn inaccessible_bindings_for_symbol_path(
+        &self,
+        requester: &CanonicalModulePath,
+        path: &SymbolPath,
+    ) -> Vec<ScopeBinding> {
+        if matches!(path.root(), ModulePathRoot::ImplicitCrate) && path.qualifiers().is_empty() {
+            return Vec::new();
+        }
+        let Ok(module) = Self::qualifier_module(requester, path) else {
+            return Vec::new();
+        };
+        self.scopes
+            .get(&module)
+            .and_then(|scope| scope.get(path.leaf()))
+            .into_iter()
+            .flatten()
+            .filter(|binding| !Self::binding_visible_from(binding, requester))
+            .cloned()
+            .collect()
+    }
+
     pub(super) fn qualifier_module(
         requester: &CanonicalModulePath,
         path: &SymbolPath,

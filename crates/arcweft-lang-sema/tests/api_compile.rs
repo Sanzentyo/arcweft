@@ -23,3 +23,17 @@ fn capability_policy_has_no_mutable_semantic_record() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/capability_policy_absent.rs");
 }
+
+#[test]
+fn signature_query_identity_does_not_accept_incremental_snapshot_ids() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/signature_query_source_snapshot_id.rs");
+    cases.compile_fail("tests/ui/source_snapshot_document_identity_conversion.rs");
+}
+
+#[test]
+fn associated_capacity_no_runtime_receiver_injection() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/associated_type_receiver_requires_nominal_proof.rs");
+    cases.compile_fail("tests/ui/resolved_callable_constructor_is_internal.rs");
+}

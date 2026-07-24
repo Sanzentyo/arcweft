@@ -74,7 +74,10 @@ compression = "none"
     );
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()));
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let build = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("profile construction");
+    let profile = build.profile();
 
     assert!(
         profile.diagnostics().is_empty(),
@@ -83,11 +86,9 @@ compression = "none"
     );
     assert_eq!(profile.characters().len(), 1);
     let character = CharacterId::try_new("character.akane").expect("character");
-    let accepted = profile
-        .accepted_environment()
-        .expect("source-backed project registration must be accepted");
     assert_eq!(
-        accepted
+        build
+            .candidate()
             .world()
             .environment()
             .character_enum_variants(&CharacterNominalType::Look { character })

@@ -9,13 +9,14 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
+        common::TextRange,
         dialogue::{DialogueContent, DialogueToken},
         flow::{ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget},
         items::ImplMember,
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
         pattern::{Pattern, VariantPatternPayload},
     },
-    expr::{CallArgumentRecoverySyntax, CallExpr, Expr, MatchExprArm},
+    expr::{ArgumentListSyntax, CallArgumentRecoverySyntax, CallExpr, Expr, MatchExprArm},
 };
 use arcweft_source::SourceDocument;
 
@@ -284,17 +285,18 @@ impl SurfaceScanner<'_> {
         dialogue: &arcweft_lang_hir::model::HirDialogue,
     ) -> Result<(), SignatureQueryError> {
         self.visit_node()?;
-        for value in [
-            dialogue.look(),
-            dialogue.stage(),
-            dialogue.portrait(),
-            dialogue.focus(),
-            dialogue.cleanup(),
-        ]
-        .into_iter()
-        .flatten()
+        for value in dialogue
+            .checked_line_setup_expressions()
+            .chain(dialogue.focus())
+            .chain(dialogue.cleanup())
         {
             self.scan_expr(value)?;
+        }
+        for range in [dialogue.style_range(), dialogue.rich_text_range()]
+            .into_iter()
+            .flatten()
+        {
+            self.mark_unsupported_range(*range);
         }
         self.scan_dialogue_content(dialogue.content())?;
         if let Some(plan) = dialogue.plan() {
@@ -637,21 +639,44 @@ impl SurfaceScanner<'_> {
     }
 
     fn scan_call(&mut self, call: &CallExpr) -> Result<(), SignatureQueryError> {
+        let Some(parenthesized) = call.parenthesized_syntax() else {
+            self.charge_call_surface_work(call.args().len())?;
+            self.unsupported_surface |=
+                call.range().start() <= self.byte_offset && self.byte_offset <= call.range().end();
+            return Ok(());
+        };
+        self.scan_argument_list(
+            call.range(),
+            call.callee_range(),
+            parenthesized.argument_list(),
+            call.args().len(),
+        )
+    }
+
+    fn charge_call_surface_work(
+        &mut self,
+        argument_count: usize,
+    ) -> Result<(), SignatureQueryError> {
         self.work
             .charge(SignatureWorkKind::CandidateCalls, 1)
             .map_err(map_signature_accounting_error)?;
-        for _ in call.args() {
+        for _ in 0..argument_count {
             self.poll_operation()?;
             self.work
                 .charge(SignatureWorkKind::Arguments, 1)
                 .map_err(map_signature_accounting_error)?;
         }
-        let Some(parenthesized) = call.parenthesized_syntax() else {
-            self.unsupported_surface |=
-                call.range().start() <= self.byte_offset && self.byte_offset <= call.range().end();
-            return Ok(());
-        };
-        let arguments = parenthesized.argument_list();
+        Ok(())
+    }
+
+    fn scan_argument_list(
+        &mut self,
+        call: TextRange,
+        callee: TextRange,
+        arguments: &ArgumentListSyntax,
+        argument_count: usize,
+    ) -> Result<(), SignatureQueryError> {
+        self.charge_call_surface_work(argument_count)?;
         let recovery_nodes = arguments
             .arguments()
             .iter()
@@ -676,8 +701,13 @@ impl SurfaceScanner<'_> {
         self.work
             .charge(SignatureWorkKind::NestedCalls, 1)
             .map_err(map_signature_accounting_error)?;
-        let Some(candidate) = FocusedCallSite::from_call(call, self.document, self.byte_offset)
-        else {
+        let Some(candidate) = FocusedCallSite::from_argument_list(
+            call,
+            callee,
+            arguments,
+            self.document,
+            self.byte_offset,
+        ) else {
             return Ok(());
         };
         match self.selected.as_ref() {

@@ -1,0 +1,16 @@
+error[E0624]: associated function `try_new` is private
+ --> tests/ui/resolved_callable_constructor_is_internal.rs:4:42
+  |
+4 |       let _constructor = ResolvedCallable::try_new;
+  |                                            ^^^^^^^ private associated function
+  |
+ ::: src/callable/resolver.rs
+  |
+  | /     pub(crate) fn try_new(
+  | |         id: CallableCandidateId,
+  | |         origin: SignatureOrigin,
+  | |         schema: Arc<CallableSignatureSchema>,
+... |
+  | |         limits: &CallableLimits,
+  | |     ) -> Result<Self, ResolveCallError> {
+  | |_______________________________________- private associated function defined here

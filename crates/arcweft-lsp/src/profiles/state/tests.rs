@@ -24,11 +24,23 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_sema::{
+    callable::{
+        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableGroupIndex,
+        CallableGroupKind, CallableName, CallableOverloadIndex, CallableValidator,
+        EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentDeclarationOrdinal,
+        ProjectCallablePath, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    },
+    effect_row::EffectRow,
+    effects::EffectSet,
     env::{TypeCheckEnv, identity::EnvironmentBindingId},
     registration::{
         CharacterRegistrar, CharacterRegistrationDiagnosticKind, CharacterRegistrationRequest,
-        ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredExternalOwner,
-        RegisteredTypeCheckEnv,
+        EnvironmentCallableLookupInput, EnvironmentCallablePublicationMetadataInput,
+        EnvironmentCallablePublicationRecordInput, EnvironmentCallableSignatureInput,
+        EnvironmentManifestDigest, EnvironmentParameterGroupInput, EnvironmentPublicationItemId,
+        EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode, ExternalRegistrationFact,
+        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredTypeCheckEnv,
+        SourceBackedEnvironmentRegistrationInput,
     },
     signature::{
         SignatureQuery, SignatureQueryControl, SignatureQueryOutcome, SignatureRecovery,
@@ -287,7 +299,7 @@ fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidat
         .expect("source URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::new(compiled.hir_project().clone()),
+            Arc::clone(compiled.hir_project()),
             compiled.registered_world(),
             vec![AcceptedSourceDocumentSeed::new(
                 document,
@@ -330,7 +342,7 @@ fn accepted_character_candidate(
         .expect("manifest URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::new(compiled.hir_project().clone()),
+            Arc::clone(compiled.hir_project()),
             compiled.registered_world(),
             vec![
                 AcceptedSourceDocumentSeed::new(
@@ -546,6 +558,233 @@ fn colliding_typed_binding_registration()
     .expect_err("typed binding collision rejects the semantic candidate")
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CallableCatalogFailureFixture {
+    ProjectWorldPackageMismatch,
+    DuplicateTypedId,
+    SameRankCollision,
+    DuplicateProviderOverload,
+    NonContiguousOverloads,
+}
+
+#[derive(Clone, Debug)]
+struct EnvironmentCallableFailureRecord {
+    kind: EnvironmentCallableKind,
+    overload: usize,
+    result: EnvironmentTypeProjectionKind,
+    declaration_order: usize,
+}
+
+fn environment_callable_failure_input(
+    owner_id: &str,
+    records: &[EnvironmentCallableFailureRecord],
+) -> (
+    Arc<SourceDocument>,
+    SourceBackedEnvironmentRegistrationInput,
+) {
+    let owner = EnvironmentCallableOwner::Adapter(
+        AdapterPackageId::try_new(owner_id).expect("adapter package ID"),
+    );
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("arcweft-generated://cache-tests/{owner_id}"))
+                .expect("environment document ID"),
+            SourceName::Generated,
+            "callable-catalog-failure",
+        )
+        .expect("environment document"),
+    );
+    let span = document
+        .span(SourceRange::new(0, document.text().len()))
+        .expect("environment type span");
+    let package = match &owner {
+        EnvironmentCallableOwner::Adapter(package) => package,
+        EnvironmentCallableOwner::Standard(_) => unreachable!("fixture uses adapter owners"),
+    };
+    let path = ProjectCallablePath::new(
+        CallablePackageId::try_new(package.as_str()).expect("callable package ID"),
+        CanonicalModulePath::crate_root(),
+        arcweft_lang_sema::callable::CallablePath::try_new([CallableName::try_new(
+            "catalog_failure",
+        )
+        .expect("callable name")])
+        .expect("callable path"),
+    );
+    let records = records
+        .iter()
+        .map(|record| {
+            let overload = CallableOverloadIndex::try_from_usize(record.overload)
+                .expect("fixture overload index");
+            EnvironmentCallablePublicationRecordInput::new(
+                EnvironmentPublicationItemId::AdapterFunction {
+                    owner: owner.clone(),
+                    path: path.clone(),
+                    overload,
+                },
+                record.kind,
+                EnvironmentCallableLookupInput::Free(path.clone()),
+                overload,
+                EnvironmentCallableSignatureInput::new(
+                    [EnvironmentParameterGroupInput::new(
+                        CallableGroupIndex::try_from_usize(0).expect("initial group index"),
+                        CallableGroupKind::Initial,
+                        [],
+                    )],
+                    EnvironmentTypeProjectionNode::new(span.clone(), record.result.clone()),
+                    EffectRow::closed(EffectSet::default()),
+                    CallableArgumentPolicy::new(
+                        UnknownNamedArgumentPolicy::Reject,
+                        SpreadArgumentPolicy::Reject,
+                    ),
+                    CallableValidator::Ordinary,
+                ),
+                EnvironmentDeclarationOrdinal::try_from_usize(record.declaration_order)
+                    .expect("declaration order"),
+                EnvironmentCallablePublicationMetadataInput::new(
+                    CallableDocumentation::missing(),
+                    None,
+                    None,
+                ),
+            )
+        })
+        .collect::<Vec<_>>();
+    let manifest_digest = EnvironmentManifestDigest::from_bytes(
+        [u8::try_from(package.as_str().len()).expect("short test package ID"); 32],
+    );
+    let input = SourceBackedEnvironmentRegistrationInput::new(
+        owner,
+        document.identity().clone(),
+        manifest_digest,
+        [],
+        [],
+        [],
+        records,
+    );
+    (document, input)
+}
+
+fn callable_catalog_failure_registration(
+    fixture: CallableCatalogFailureFixture,
+    previous: &RegisteredTypeCheckEnv,
+) -> arcweft_lang_sema::registration::CharacterRegistrationReport {
+    let (root, project) = project_fixture();
+    let (world, documents, environment_inputs) =
+        callable_catalog_failure_inputs(&root, fixture, previous);
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        documents,
+        Vec::new(),
+        Vec::new(),
+        environment_inputs,
+    )
+    .expect("typed callable failure facts");
+
+    CharacterRegistrar::register(CharacterRegistrationRequest::new(
+        Arc::new(TypeCheckEnv::standard()),
+        project.as_ref(),
+        &facts,
+        Some(previous),
+    ))
+    .expect_err("callable catalog fixture must reject the candidate world")
+}
+
+fn callable_catalog_failure_inputs(
+    root: &Arc<SourceDocument>,
+    fixture: CallableCatalogFailureFixture,
+    previous: &RegisteredTypeCheckEnv,
+) -> (
+    ProjectSymbolWorldId,
+    Vec<Arc<SourceDocument>>,
+    Vec<SourceBackedEnvironmentRegistrationInput>,
+) {
+    match fixture {
+        CallableCatalogFailureFixture::ProjectWorldPackageMismatch => {
+            let world = ProjectSymbolWorldId::try_new(
+                CallablePackageId::try_new("cache.tests.other").expect("mismatched package"),
+                root.identity().id().clone(),
+                "test",
+            )
+            .expect("mismatched world");
+            (world, vec![Arc::clone(root)], Vec::new())
+        }
+        CallableCatalogFailureFixture::DuplicateTypedId => {
+            let record = EnvironmentCallableFailureRecord {
+                kind: EnvironmentCallableKind::Function,
+                overload: 0,
+                result: EnvironmentTypeProjectionKind::I32,
+                declaration_order: 0,
+            };
+            let duplicate = EnvironmentCallableFailureRecord {
+                declaration_order: 1,
+                ..record.clone()
+            };
+            let (document, input) =
+                environment_callable_failure_input("adapter-duplicate-id", &[record, duplicate]);
+            (
+                previous.world().clone(),
+                vec![Arc::clone(root), document],
+                vec![input],
+            )
+        }
+        CallableCatalogFailureFixture::SameRankCollision => {
+            let first = EnvironmentCallableFailureRecord {
+                kind: EnvironmentCallableKind::Function,
+                overload: 0,
+                result: EnvironmentTypeProjectionKind::I32,
+                declaration_order: 0,
+            };
+            let second = EnvironmentCallableFailureRecord {
+                result: EnvironmentTypeProjectionKind::I64,
+                ..first.clone()
+            };
+            let (first_document, first_input) =
+                environment_callable_failure_input("adapter-collision-a", &[first]);
+            let (second_document, second_input) =
+                environment_callable_failure_input("adapter-collision-b", &[second]);
+            (
+                previous.world().clone(),
+                vec![Arc::clone(root), first_document, second_document],
+                vec![first_input, second_input],
+            )
+        }
+        CallableCatalogFailureFixture::DuplicateProviderOverload => {
+            let first = EnvironmentCallableFailureRecord {
+                kind: EnvironmentCallableKind::Function,
+                overload: 0,
+                result: EnvironmentTypeProjectionKind::I32,
+                declaration_order: 0,
+            };
+            let second = EnvironmentCallableFailureRecord {
+                kind: EnvironmentCallableKind::Method,
+                declaration_order: 1,
+                ..first.clone()
+            };
+            let (document, input) =
+                environment_callable_failure_input("adapter-duplicate-overload", &[first, second]);
+            (
+                previous.world().clone(),
+                vec![Arc::clone(root), document],
+                vec![input],
+            )
+        }
+        CallableCatalogFailureFixture::NonContiguousOverloads => {
+            let record = EnvironmentCallableFailureRecord {
+                kind: EnvironmentCallableKind::Function,
+                overload: 1,
+                result: EnvironmentTypeProjectionKind::I32,
+                declaration_order: 0,
+            };
+            let (document, input) =
+                environment_callable_failure_input("adapter-overload-gap", &[record]);
+            (
+                previous.world().clone(),
+                vec![Arc::clone(root), document],
+                vec![input],
+            )
+        }
+    }
+}
+
 fn insert_signature_cache(environment: &AcceptedProfileEnvironment) {
     environment.seed_signature_cache_for_test(0);
 }
@@ -561,10 +800,18 @@ fn successful_identical_rebuild_increments_generation() {
     let first = state
         .replace_accepted(accepted_candidate(Arc::clone(&world)))
         .expect("first accepted environment");
+    assert!(Arc::ptr_eq(
+        first.compiled().hir_project(),
+        first.project().hir_project()
+    ));
     insert_signature_cache(&first);
     let second = state
         .replace_accepted(accepted_candidate(world))
         .expect("identical complete rebuild is still a new generation");
+    assert!(Arc::ptr_eq(
+        second.compiled().hir_project(),
+        second.project().hir_project()
+    ));
     assert_eq!(first.generation().get(), 1);
     assert_eq!(second.generation().get(), 2);
     assert_eq!(cache_snapshot(&first).entries, 1);
@@ -888,6 +1135,83 @@ fn failed_typed_binding_collision_preserves_accepted_pointer_and_caches() {
     assert_eq!(replacement.generation().get(), 2);
     assert!(!Arc::ptr_eq(&replacement, &accepted));
     assert_eq!(cache_snapshot(&replacement).entries, 0);
+}
+
+#[test]
+fn every_build_error_preserves_prior_arc() {
+    let state = LspProfileState::new();
+    let accepted = state
+        .replace_accepted(accepted_candidate(registered_world()))
+        .expect("baseline accepted environment");
+    insert_signature_cache(&accepted);
+    let accepted_cache = cache_snapshot(&accepted);
+    let accepted_compiled = Arc::clone(accepted.compiled());
+    let accepted_project = Arc::clone(accepted.project());
+    let accepted_world = Arc::clone(accepted.world());
+
+    for fixture in [
+        CallableCatalogFailureFixture::ProjectWorldPackageMismatch,
+        CallableCatalogFailureFixture::DuplicateTypedId,
+        CallableCatalogFailureFixture::SameRankCollision,
+        CallableCatalogFailureFixture::DuplicateProviderOverload,
+        CallableCatalogFailureFixture::NonContiguousOverloads,
+    ] {
+        let report = callable_catalog_failure_registration(fixture, accepted_world.environment());
+        assert!(
+            report.diagnostics().iter().any(|diagnostic| matches!(
+                diagnostic.kind(),
+                CharacterRegistrationDiagnosticKind::CallableCatalog {
+                    code:
+                        arcweft_lang_sema::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+                }
+            )),
+            "{fixture:?}: {:?}",
+            report.diagnostics(),
+        );
+
+        let retained = state.current().expect("baseline remains accepted");
+        assert!(Arc::ptr_eq(&retained, &accepted), "{fixture:?}");
+        assert!(
+            Arc::ptr_eq(retained.compiled(), &accepted_compiled),
+            "{fixture:?}"
+        );
+        assert!(
+            Arc::ptr_eq(retained.project(), &accepted_project),
+            "{fixture:?}"
+        );
+        assert!(
+            Arc::ptr_eq(retained.world(), &accepted_world),
+            "{fixture:?}"
+        );
+        assert!(
+            std::ptr::eq(retained.project().sources(), accepted_project.sources()),
+            "{fixture:?}"
+        );
+        assert!(
+            std::ptr::eq(retained.world().symbols(), accepted_world.symbols()),
+            "{fixture:?}"
+        );
+        assert!(
+            std::ptr::eq(retained.world().environment(), accepted_world.environment()),
+            "{fixture:?}"
+        );
+        assert!(
+            std::ptr::eq(
+                retained.world().environment().callable_catalog(),
+                accepted_world.environment().callable_catalog()
+            ),
+            "{fixture:?}"
+        );
+        assert!(
+            std::ptr::eq(
+                retained.world().character_definition_index(),
+                accepted_world.character_definition_index()
+            ),
+            "{fixture:?}"
+        );
+        assert_eq!(retained.generation().get(), 1, "{fixture:?}");
+        assert_eq!(cache_snapshot(&retained), accepted_cache, "{fixture:?}");
+    }
 }
 
 #[test]

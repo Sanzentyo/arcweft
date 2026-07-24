@@ -8,11 +8,10 @@ use std::{
 use crate::ast::{
     common::TextRange,
     module_path::ModulePathRoot,
-    symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SpannedProjectSymbolPath},
+    symbol_path::{ProjectSymbolPath, ProjectSymbolPathError, ProjectSymbolSegment},
 };
 
 use super::TypeRef;
-use super::{AssociatedTypeBinding, TypeParseError};
 
 /// A validated project-symbol path used in type position.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -80,10 +79,32 @@ pub struct TypeRefNodeSource<R> {
     head: Option<TypeRefHeadSource<R>>,
 }
 
+/// One typed lexical token owned by a structural type node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeRefLexemeKind {
+    PathRoot,
+    PathSegment { ordinal: u16 },
+    PathSeparator { before: u16 },
+    TurbofishSeparator,
+    OpenAngle,
+    ArgumentSeparator { before: u16 },
+    TrailingArgumentSeparator,
+    CloseAngle,
+}
+
+/// Exact source of one typed lexical token in a type reference.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeRefLexemeSource<R> {
+    owner: TypeRefNodePath,
+    kind: TypeRefLexemeKind,
+    range: R,
+}
+
 /// One-to-one source map for every structural node in a type reference.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeRefSourceMap<R> {
     nodes: Box<[(TypeRefNodePath, TypeRefNodeSource<R>)]>,
+    lexemes: Box<[TypeRefLexemeSource<R>]>,
 }
 
 /// Parsed type structure coupled to its exact syntax source map.
@@ -91,6 +112,21 @@ pub struct TypeRefSourceMap<R> {
 pub struct AuthoredTypeRef {
     value: TypeRef,
     source: TypeRefSourceMap<TextRange>,
+}
+
+/// One path parsed from the active type-grammar transaction together with its
+/// exact token evidence.
+pub(super) struct ParsedTypePath {
+    pub(super) value: TypePath,
+    pub(super) head: TypeRefHeadSource<TextRange>,
+    pub(super) lexemes: Vec<TypeRefLexemeSource<TextRange>>,
+}
+
+/// One identifier token admitted by the type-path grammar.
+#[derive(Clone, Copy)]
+pub(super) struct TypePathComponent<'a> {
+    pub(super) spelling: &'a str,
+    pub(super) range: TextRange,
 }
 
 /// Invalid relationship between a type tree and its source map.
@@ -103,13 +139,129 @@ pub enum TypeRefSourceMapError {
     HeadOutsideWhole(TypeRefNodePath),
     ChildOutsideParent(TypeRefNodePath),
     IndexOverflow(TypeRefNodePath),
+    MissingLexeme {
+        owner: TypeRefNodePath,
+        kind: TypeRefLexemeKind,
+    },
+    ExtraLexeme {
+        owner: TypeRefNodePath,
+        kind: TypeRefLexemeKind,
+    },
+    DuplicateLexeme {
+        owner: TypeRefNodePath,
+        kind: TypeRefLexemeKind,
+    },
+    LexemeOutsideOwner {
+        owner: TypeRefNodePath,
+        kind: TypeRefLexemeKind,
+    },
+    LexemeOutOfOrder {
+        owner: TypeRefNodePath,
+        kind: TypeRefLexemeKind,
+    },
+    LexemeOrdinalOverflow(TypeRefNodePath),
+    InvalidTurbofishLexeme(TypeRefNodePath),
 }
 
 impl TypePath {
-    pub(super) fn parse(
-        source: &str,
-    ) -> Result<Self, crate::ast::symbol_path::ProjectSymbolPathError> {
-        source.parse().map(Self)
+    /// Builds one type path from the identifier/separator tokens already
+    /// consumed by the authoritative type grammar transaction.
+    pub(super) fn from_token_parts(
+        components: &[TypePathComponent<'_>],
+        separators: &[TextRange],
+        owner: &TypeRefNodePath,
+        head_kind: TypeRefHeadKind,
+    ) -> Result<ParsedTypePath, ProjectSymbolPathError> {
+        let Some(first) = components.first() else {
+            return Err(ProjectSymbolPathError::Empty);
+        };
+        if separators.len() + 1 != components.len() {
+            return Err(ProjectSymbolPathError::EmptySegment);
+        }
+        let (root, first_segment) = match components {
+            [
+                TypePathComponent {
+                    spelling: "crate", ..
+                },
+                ..,
+            ] => (ModulePathRoot::Crate, 1),
+            [
+                TypePathComponent {
+                    spelling: "self", ..
+                },
+                ..,
+            ] => (ModulePathRoot::SelfModule, 1),
+            [
+                TypePathComponent {
+                    spelling: "parent", ..
+                },
+                ..,
+            ] => (ModulePathRoot::Super(1), 1),
+            [
+                TypePathComponent {
+                    spelling: "super", ..
+                },
+                ..,
+            ] => {
+                let levels = components
+                    .iter()
+                    .take_while(|component| component.spelling == "super")
+                    .count();
+                (ModulePathRoot::Super(levels), levels)
+            }
+            _ => (ModulePathRoot::ImplicitCrate, 0),
+        };
+        let segments = components[first_segment..]
+            .iter()
+            .map(|component| ProjectSymbolSegment::try_new(component.spelling.to_owned()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let path = Self(ProjectSymbolPath::new(root, segments)?);
+        let terminal = components
+            .last()
+            .map(|component| component.range)
+            .expect("non-empty paths retain a terminal component");
+        let head = TypeRefHeadSource::with_terminal(
+            head_kind,
+            TextRange::new(first.range.start(), terminal.end()),
+            terminal,
+        );
+
+        let mut lexemes = Vec::new();
+        if first_segment > 0 {
+            lexemes.push(TypeRefLexemeSource::new(
+                owner.clone(),
+                TypeRefLexemeKind::PathRoot,
+                TextRange::new(
+                    first.range.start(),
+                    components[first_segment - 1].range.end(),
+                ),
+            ));
+        }
+        for (ordinal, component) in components.iter().skip(first_segment).enumerate() {
+            let ordinal =
+                u16::try_from(ordinal).map_err(|_| ProjectSymbolPathError::InvalidSegment {
+                    segment: component.spelling.to_owned(),
+                })?;
+            lexemes.push(TypeRefLexemeSource::new(
+                owner.clone(),
+                TypeRefLexemeKind::PathSegment { ordinal },
+                component.range,
+            ));
+            if ordinal > 0 || first_segment > 0 {
+                let separator_index = first_segment + usize::from(ordinal) - 1;
+                lexemes.push(TypeRefLexemeSource::new(
+                    owner.clone(),
+                    TypeRefLexemeKind::PathSeparator { before: ordinal },
+                    separators[separator_index],
+                ));
+            }
+        }
+
+        Ok(ParsedTypePath {
+            value: path,
+            head,
+            lexemes,
+        })
     }
 
     /// Underlying validated project-symbol path.
@@ -221,10 +373,42 @@ impl<R> TypeRefNodeSource<R> {
     }
 }
 
+impl TypeRefNodeSource<TextRange> {
+    pub(super) fn replace_whole(&mut self, whole: TextRange) {
+        self.whole = whole;
+    }
+}
+
+impl<R> TypeRefLexemeSource<R> {
+    pub(super) const fn new(owner: TypeRefNodePath, kind: TypeRefLexemeKind, range: R) -> Self {
+        Self { owner, kind, range }
+    }
+
+    /// Structural type node that owns this token.
+    pub const fn owner(&self) -> &TypeRefNodePath {
+        &self.owner
+    }
+
+    /// Typed lexical role of this token.
+    pub const fn kind(&self) -> &TypeRefLexemeKind {
+        &self.kind
+    }
+
+    /// Exact token source.
+    pub const fn range(&self) -> &R {
+        &self.range
+    }
+}
+
 impl<R> TypeRefSourceMap<R> {
     /// Source entries in canonical structural-path order.
     pub fn nodes(&self) -> &[(TypeRefNodePath, TypeRefNodeSource<R>)] {
         &self.nodes
+    }
+
+    /// Typed lexical tokens in source order.
+    pub fn lexemes(&self) -> &[TypeRefLexemeSource<R>] {
+        &self.lexemes
     }
 
     /// Source for one structural node.
@@ -256,8 +440,17 @@ impl<R> TypeRefSourceMap<R> {
                 .transpose()?;
             nodes.push((path.clone(), TypeRefNodeSource { whole, head }));
         }
+        let mut lexemes = Vec::with_capacity(self.lexemes.len());
+        for lexeme in &self.lexemes {
+            lexemes.push(TypeRefLexemeSource {
+                owner: lexeme.owner.clone(),
+                kind: lexeme.kind,
+                range: map(&lexeme.range)?,
+            });
+        }
         Ok(TypeRefSourceMap {
             nodes: nodes.into_boxed_slice(),
+            lexemes: lexemes.into_boxed_slice(),
         })
     }
 }
@@ -266,63 +459,195 @@ impl TypeRefSourceMap<TextRange> {
     pub(super) fn try_new(
         value: &TypeRef,
         nodes: Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
+        lexemes: Vec<TypeRefLexemeSource<TextRange>>,
     ) -> Result<Self, TypeRefSourceMapError> {
-        let mut ordered = BTreeMap::new();
-        for (path, source) in nodes {
-            if ordered.insert(path.clone(), source).is_some() {
-                return Err(TypeRefSourceMapError::DuplicateNode(path));
-            }
-        }
-        let root = TypeRefNodePath::root();
-        if !ordered.contains_key(&root) {
-            return Err(TypeRefSourceMapError::MissingRoot);
-        }
-
-        let mut expected = BTreeSet::new();
-        collect_expected_paths(value, &root, &mut expected)?;
-        for path in &expected {
-            if !ordered.contains_key(path) {
-                return Err(TypeRefSourceMapError::MissingNode(path.clone()));
-            }
-        }
-        for path in ordered.keys() {
-            if !expected.contains(path) {
-                return Err(TypeRefSourceMapError::ExtraNode(path.clone()));
-            }
-        }
-        for (path, source) in &ordered {
-            if let Some(head) = &source.head
-                && !contains(source.whole, head.range)
-            {
-                return Err(TypeRefSourceMapError::HeadOutsideWhole(path.clone()));
-            }
-            if let Some(head) = &source.head
-                && let Some(terminal) = head.terminal
-                && !contains(head.range, terminal)
-            {
-                return Err(TypeRefSourceMapError::HeadOutsideWhole(path.clone()));
-            }
-            if let Some(parent) = path.parent() {
-                let parent_source = ordered
-                    .get(&parent)
-                    .expect("validated type path parents are present");
-                if !contains(parent_source.whole, source.whole) {
-                    return Err(TypeRefSourceMapError::ChildOutsideParent(path.clone()));
-                }
-            }
-        }
+        let ordered = validated_type_nodes(value, nodes)?;
+        validate_type_lexemes(value, &ordered, &lexemes)?;
         Ok(Self {
             nodes: ordered.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+            lexemes: lexemes.into_boxed_slice(),
         })
     }
+}
+
+fn validated_type_nodes(
+    value: &TypeRef,
+    nodes: Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
+) -> Result<BTreeMap<TypeRefNodePath, TypeRefNodeSource<TextRange>>, TypeRefSourceMapError> {
+    let mut ordered = BTreeMap::new();
+    for (path, source) in nodes {
+        if ordered.insert(path.clone(), source).is_some() {
+            return Err(TypeRefSourceMapError::DuplicateNode(path));
+        }
+    }
+    let root = TypeRefNodePath::root();
+    if !ordered.contains_key(&root) {
+        return Err(TypeRefSourceMapError::MissingRoot);
+    }
+    let mut expected = BTreeSet::new();
+    collect_expected_paths(value, &root, &mut expected)?;
+    for path in &expected {
+        if !ordered.contains_key(path) {
+            return Err(TypeRefSourceMapError::MissingNode(path.clone()));
+        }
+    }
+    for path in ordered.keys() {
+        if !expected.contains(path) {
+            return Err(TypeRefSourceMapError::ExtraNode(path.clone()));
+        }
+    }
+    validate_type_node_ranges(&ordered)?;
+    Ok(ordered)
+}
+
+fn validate_type_node_ranges(
+    nodes: &BTreeMap<TypeRefNodePath, TypeRefNodeSource<TextRange>>,
+) -> Result<(), TypeRefSourceMapError> {
+    for (path, source) in nodes {
+        if let Some(head) = &source.head
+            && (!contains(source.whole, head.range)
+                || head
+                    .terminal
+                    .is_some_and(|terminal| !contains(head.range, terminal)))
+        {
+            return Err(TypeRefSourceMapError::HeadOutsideWhole(path.clone()));
+        }
+        if let Some(parent) = path.parent() {
+            let parent_source = nodes
+                .get(&parent)
+                .expect("validated type path parents are present");
+            if !contains(parent_source.whole, source.whole) {
+                return Err(TypeRefSourceMapError::ChildOutsideParent(path.clone()));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_type_lexemes(
+    value: &TypeRef,
+    nodes: &BTreeMap<TypeRefNodePath, TypeRefNodeSource<TextRange>>,
+    lexemes: &[TypeRefLexemeSource<TextRange>],
+) -> Result<(), TypeRefSourceMapError> {
+    let expected_lexemes = expected_lexeme_keys(value)?;
+    let mut actual_lexemes = BTreeSet::new();
+    let mut previous_end = None;
+    let mut turbofish = BTreeMap::new();
+    let mut open_angles = BTreeMap::new();
+    for lexeme in lexemes {
+        let key = (lexeme.owner.clone(), lexeme.kind);
+        if !actual_lexemes.insert(key.clone()) {
+            return Err(TypeRefSourceMapError::DuplicateLexeme {
+                owner: key.0,
+                kind: key.1,
+            });
+        }
+        let Some(owner) = nodes.get(&lexeme.owner) else {
+            return Err(TypeRefSourceMapError::ExtraLexeme {
+                owner: lexeme.owner.clone(),
+                kind: lexeme.kind,
+            });
+        };
+        if !contains(owner.whole, lexeme.range) {
+            return Err(TypeRefSourceMapError::LexemeOutsideOwner {
+                owner: lexeme.owner.clone(),
+                kind: lexeme.kind,
+            });
+        }
+        if previous_end.is_some_and(|end| lexeme.range.start() < end) {
+            return Err(TypeRefSourceMapError::LexemeOutOfOrder {
+                owner: lexeme.owner.clone(),
+                kind: lexeme.kind,
+            });
+        }
+        previous_end = Some(lexeme.range.end());
+        match lexeme.kind {
+            TypeRefLexemeKind::TurbofishSeparator => {
+                turbofish.insert(lexeme.owner.clone(), lexeme.range);
+            }
+            TypeRefLexemeKind::OpenAngle => {
+                open_angles.insert(lexeme.owner.clone(), lexeme.range);
+            }
+            _ => {}
+        }
+    }
+    for (owner, kind) in &expected_lexemes {
+        if !actual_lexemes.contains(&(owner.clone(), *kind)) {
+            return Err(TypeRefSourceMapError::MissingLexeme {
+                owner: owner.clone(),
+                kind: *kind,
+            });
+        }
+    }
+    for (owner, kind) in &actual_lexemes {
+        if matches!(
+            kind,
+            TypeRefLexemeKind::TurbofishSeparator | TypeRefLexemeKind::TrailingArgumentSeparator
+        ) && matches!(
+            value_at_path(value, owner),
+            Some(TypeRef::Generic { .. } | TypeRef::TraitBound(_))
+        ) {
+            continue;
+        }
+        if !expected_lexemes.contains(&(owner.clone(), *kind)) {
+            return Err(TypeRefSourceMapError::ExtraLexeme {
+                owner: owner.clone(),
+                kind: *kind,
+            });
+        }
+    }
+    for (owner, range) in turbofish {
+        if !matches!(
+            value_at_path(value, &owner),
+            Some(TypeRef::Generic { .. } | TypeRef::TraitBound(_))
+        ) || open_angles
+            .get(&owner)
+            .is_none_or(|open| range.end() != open.start())
+        {
+            return Err(TypeRefSourceMapError::InvalidTurbofishLexeme(owner));
+        }
+    }
+
+    Ok(())
+}
+
+fn value_at_path<'a>(value: &'a TypeRef, path: &TypeRefNodePath) -> Option<&'a TypeRef> {
+    let mut value = value;
+    for step in path.steps() {
+        value = match (value, step) {
+            (TypeRef::Tuple(items), TypeRefNodeStep::TupleItem(index))
+            | (TypeRef::Choice(items), TypeRefNodeStep::ChoiceAlternative(index))
+            | (TypeRef::Generic { args: items, .. }, TypeRefNodeStep::GenericArgument(index)) => {
+                items.get(usize::from(*index))?
+            }
+            (TypeRef::Function { params, .. }, TypeRefNodeStep::FunctionParameter(index)) => {
+                params.get(usize::from(*index))?
+            }
+            (TypeRef::Function { return_type, .. }, TypeRefNodeStep::FunctionReturn) => return_type,
+            (TypeRef::TraitBound(bound), TypeRefNodeStep::TraitArgument(index)) => {
+                bound.args().get(usize::from(*index))?
+            }
+            (TypeRef::TraitBound(bound), TypeRefNodeStep::AssociatedBinding(index)) => {
+                bound.associated().get(usize::from(*index))?.value()
+            }
+            (TypeRef::Projection { subject, .. }, TypeRefNodeStep::ProjectionSubject) => subject,
+            (TypeRef::Reference(reference), TypeRefNodeStep::ReferenceReferent) => {
+                reference.referent()
+            }
+            (TypeRef::Slice(item), TypeRefNodeStep::SliceItem) => item,
+            _ => return None,
+        };
+    }
+    Some(value)
 }
 
 impl AuthoredTypeRef {
     pub(super) fn try_new(
         value: TypeRef,
         nodes: Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
+        lexemes: Vec<TypeRefLexemeSource<TextRange>>,
     ) -> Result<Self, TypeRefSourceMapError> {
-        let source = TypeRefSourceMap::try_new(&value, nodes)?;
+        let source = TypeRefSourceMap::try_new(&value, nodes, lexemes)?;
         Ok(Self { value, source })
     }
 
@@ -405,6 +730,7 @@ impl AuthoredTypeRef {
                     Some(TypeRefHeadSource::new(TypeRefHeadKind::Recovery, range)),
                 ),
             )],
+            Vec::new(),
         )
         .expect("one recovery root is a valid type source map")
     }
@@ -423,551 +749,14 @@ impl AuthoredTypeRef {
                 }
             }
         }
+        for lexeme in &mut self.source.lexemes {
+            lexeme.range = rebase_range(lexeme.range, base);
+        }
     }
 }
 
 fn rebase_range(range: TextRange, base: usize) -> TextRange {
     TextRange::new(range.start() + base, range.end() + base)
-}
-
-pub(super) fn build_type_source_map(
-    source: &str,
-    value: &TypeRef,
-) -> Result<Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>, TypeParseError> {
-    let mut nodes = Vec::new();
-    map_node(source, 0, value, &TypeRefNodePath::root(), &mut nodes)?;
-    Ok(nodes)
-}
-
-fn map_node(
-    source: &str,
-    base: usize,
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    let leading = source.len().saturating_sub(source.trim_start().len());
-    let source = source.trim();
-    let base = base + leading;
-    let whole = TextRange::new(base, base + source.len());
-
-    if map_single_argument_generic_chain(source, base, value, path, output)?
-        || map_function_syntax(source, base, whole, value, path, output)?
-        || map_choice_syntax(source, base, whole, value, path, output)?
-        || map_parenthesized_syntax(source, base, whole, value, path, output)?
-    {
-        return Ok(());
-    }
-    map_structural_node(source, base, whole, value, path, output)
-}
-
-/// Maps unary generic chains iteratively so the source-evidence pass supports
-/// every type depth accepted by the semantic resolver without depending on the
-/// host thread's call-stack size.
-fn map_single_argument_generic_chain(
-    source: &str,
-    base: usize,
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<bool, TypeParseError> {
-    let mut source = source;
-    let mut base = base;
-    let mut value = value;
-    let mut path = path.clone();
-    let mut mapped = false;
-
-    while let TypeRef::Generic { args, .. } = value {
-        if args.len() != 1 {
-            break;
-        }
-        let Some((head, arguments)) = super::split_generic_type(source) else {
-            break;
-        };
-        let fragments = super::split_type_args(arguments);
-        if fragments.len() != 1 {
-            break;
-        }
-        let fragment = fragments[0].trim();
-        if fragment.is_empty() || super::split_top_level_punctuation_once(fragment, '=').is_some() {
-            break;
-        }
-
-        let whole = TextRange::new(base, base + source.len());
-        output.push((
-            path.clone(),
-            TypeRefNodeSource::new(
-                whole,
-                Some(path_head_source(
-                    TypeRefHeadKind::Constructor,
-                    head,
-                    base + super::subslice_offset(source, head),
-                )?),
-            ),
-        ));
-        path = path.child(TypeRefNodeStep::GenericArgument(0));
-        base = base
-            .checked_add(super::subslice_offset(source, fragment))
-            .ok_or_else(|| TypeParseError::new("type source offset overflow"))?;
-        source = fragment;
-        value = &args[0];
-        mapped = true;
-    }
-
-    if mapped {
-        map_node(source, base, value, &path, output)?;
-    }
-    Ok(mapped)
-}
-
-fn map_function_syntax(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<bool, TypeParseError> {
-    let (function_source, effects) = super::split_type_effect_row_suffix(source)?;
-    if let Some((params_source, return_source)) = super::split_top_level_arrow(function_source)
-        && let TypeRef::Function {
-            params,
-            return_type,
-            ..
-        } = value
-    {
-        output.push((path.clone(), TypeRefNodeSource::new(whole, None)));
-        let params_source = params_source.trim();
-        map_function_parameters(
-            params_source,
-            base + super::subslice_offset(source, params_source),
-            params,
-            path,
-            output,
-        )?;
-        let return_source = return_source.trim();
-        map_node(
-            return_source,
-            base + super::subslice_offset(source, return_source),
-            return_type,
-            &path.child(TypeRefNodeStep::FunctionReturn),
-            output,
-        )?;
-        return Ok(true);
-    }
-    if effects.is_some()
-        && let Some(inner) = super::parenthesized_type(function_source)
-        && matches!(value, TypeRef::Function { .. })
-    {
-        map_node(
-            inner,
-            base + super::subslice_offset(source, inner),
-            value,
-            path,
-            output,
-        )?;
-        replace_whole(output, path, whole);
-        return Ok(true);
-    }
-    Ok(false)
-}
-
-fn map_choice_syntax(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<bool, TypeParseError> {
-    let alternatives = super::split_top_level_punctuation(source, '|');
-    if alternatives.len() > 1
-        && let TypeRef::Choice(values) = value
-    {
-        output.push((path.clone(), TypeRefNodeSource::new(whole, None)));
-        for (index, (fragment, value)) in alternatives.into_iter().zip(values).enumerate() {
-            let fragment = fragment.trim();
-            map_node(
-                fragment,
-                base + super::subslice_offset(source, fragment),
-                value,
-                &path.child(TypeRefNodeStep::ChoiceAlternative(index_u16(index, path)?)),
-                output,
-            )?;
-        }
-        return Ok(true);
-    }
-    Ok(false)
-}
-
-fn map_parenthesized_syntax(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<bool, TypeParseError> {
-    if let Some(inner) = super::parenthesized_type(source) {
-        let parts = super::split_top_level_punctuation(inner, ',');
-        if parts.len() > 1
-            && let TypeRef::Tuple(values) = value
-        {
-            output.push((path.clone(), TypeRefNodeSource::new(whole, None)));
-            for (index, (fragment, value)) in parts.into_iter().zip(values).enumerate() {
-                let fragment = fragment.trim();
-                map_node(
-                    fragment,
-                    base + super::subslice_offset(source, fragment),
-                    value,
-                    &path.child(TypeRefNodeStep::TupleItem(index_u16(index, path)?)),
-                    output,
-                )?;
-            }
-            return Ok(true);
-        }
-        map_node(
-            inner,
-            base + super::subslice_offset(source, inner),
-            value,
-            path,
-            output,
-        )?;
-        replace_whole(output, path, whole);
-        return Ok(true);
-    }
-    Ok(false)
-}
-
-fn map_structural_node(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    match value {
-        TypeRef::Never => output.push((
-            path.clone(),
-            TypeRefNodeSource::new(
-                whole,
-                Some(TypeRefHeadSource::new(TypeRefHeadKind::Never, whole)),
-            ),
-        )),
-        TypeRef::ConstInt(_) => output.push((
-            path.clone(),
-            TypeRefNodeSource::new(
-                whole,
-                Some(TypeRefHeadSource::new(TypeRefHeadKind::ConstInt, whole)),
-            ),
-        )),
-        TypeRef::Path(_) => output.push((
-            path.clone(),
-            TypeRefNodeSource::new(
-                whole,
-                Some(path_head_source(TypeRefHeadKind::Path, source, base)?),
-            ),
-        )),
-        TypeRef::Generic { args, .. } => {
-            map_generic_node(source, base, whole, args, path, output)?;
-        }
-        TypeRef::TraitBound(bound) => {
-            map_trait_node(source, base, whole, bound, path, output)?;
-        }
-        TypeRef::Projection { subject, .. } => {
-            map_projection_node(source, base, whole, subject, path, output)?;
-        }
-        TypeRef::Reference(reference) => {
-            map_reference_node(source, base, whole, reference, path, output)?;
-        }
-        TypeRef::Slice(item) => map_slice_node(source, base, whole, item, path, output)?,
-        TypeRef::Recovery(_) => output.push((
-            path.clone(),
-            TypeRefNodeSource::new(
-                whole,
-                Some(TypeRefHeadSource::new(TypeRefHeadKind::Recovery, whole)),
-            ),
-        )),
-        TypeRef::Tuple(_) | TypeRef::Function { .. } | TypeRef::Choice(_) => {
-            return Err(TypeParseError::new(
-                "type source no longer matches its parsed structural form",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn map_generic_node(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    args: &[TypeRef],
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    let (head, arguments) = super::split_generic_type(source).ok_or_else(|| {
-        TypeParseError::new("generic type source no longer matches its parsed structure")
-    })?;
-    output.push((
-        path.clone(),
-        TypeRefNodeSource::new(
-            whole,
-            Some(path_head_source(
-                TypeRefHeadKind::Constructor,
-                head,
-                base + super::subslice_offset(source, head),
-            )?),
-        ),
-    ));
-    for (index, (fragment, value)) in super::split_type_args(arguments)
-        .into_iter()
-        .zip(args)
-        .enumerate()
-    {
-        let fragment = fragment.trim();
-        map_node(
-            fragment,
-            base + super::subslice_offset(source, fragment),
-            value,
-            &path.child(TypeRefNodeStep::GenericArgument(index_u16(index, path)?)),
-            output,
-        )?;
-    }
-    Ok(())
-}
-
-fn map_trait_node(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    bound: &super::TraitBound,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    let (head, arguments) = super::split_generic_type(source).ok_or_else(|| {
-        TypeParseError::new("trait-bound source no longer matches its parsed structure")
-    })?;
-    output.push((
-        path.clone(),
-        TypeRefNodeSource::new(
-            whole,
-            Some(path_head_source(
-                TypeRefHeadKind::Trait,
-                head,
-                base + super::subslice_offset(source, head),
-            )?),
-        ),
-    ));
-    map_trait_arguments(
-        source,
-        base,
-        arguments,
-        bound.args(),
-        bound.associated(),
-        path,
-        output,
-    )
-}
-
-fn map_projection_node(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    subject: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    let (subject_source, member_source) =
-        super::split_type_projection(source).ok_or_else(|| {
-            TypeParseError::new("projection source no longer matches its parsed structure")
-        })?;
-    let member_source = member_source.trim();
-    output.push((
-        path.clone(),
-        TypeRefNodeSource::new(
-            whole,
-            Some(TypeRefHeadSource::with_terminal(
-                TypeRefHeadKind::ProjectionMember,
-                fragment_range(source, base, member_source),
-                fragment_range(source, base, member_source),
-            )),
-        ),
-    ));
-    let subject_source = subject_source.trim();
-    map_node(
-        subject_source,
-        base + super::subslice_offset(source, subject_source),
-        subject,
-        &path.child(TypeRefNodeStep::ProjectionSubject),
-        output,
-    )
-}
-
-fn map_reference_node(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    reference: &super::ReferenceType,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    output.push((path.clone(), TypeRefNodeSource::new(whole, None)));
-    let cursor = super::reference::reference_referent_start(source)?;
-    map_node(
-        &source[cursor..],
-        base + cursor,
-        reference.referent(),
-        &path.child(TypeRefNodeStep::ReferenceReferent),
-        output,
-    )
-}
-
-fn map_slice_node(
-    source: &str,
-    base: usize,
-    whole: TextRange,
-    item: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    output.push((path.clone(), TypeRefNodeSource::new(whole, None)));
-    let inner = source
-        .strip_prefix('[')
-        .and_then(|source| source.strip_suffix(']'))
-        .ok_or_else(|| {
-            TypeParseError::new("slice source no longer matches its parsed structure")
-        })?;
-    map_node(
-        inner,
-        base + 1,
-        item,
-        &path.child(TypeRefNodeStep::SliceItem),
-        output,
-    )
-}
-
-fn map_function_parameters(
-    source: &str,
-    base: usize,
-    values: &[TypeRef],
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    let (parameter_source, parameter_base, fragments) =
-        if let Some(inner) = super::parenthesized_type(source) {
-            let parts = super::split_top_level_punctuation(inner, ',');
-            (
-                inner,
-                base + super::subslice_offset(source, inner),
-                if parts.len() > 1 { parts } else { vec![inner] },
-            )
-        } else {
-            (source, base, vec![source])
-        };
-    for (index, (fragment, value)) in fragments.into_iter().zip(values).enumerate() {
-        let fragment = fragment.trim();
-        map_node(
-            fragment,
-            parameter_base + super::subslice_offset(parameter_source, fragment),
-            value,
-            &path.child(TypeRefNodeStep::FunctionParameter(index_u16(index, path)?)),
-            output,
-        )?;
-    }
-    Ok(())
-}
-
-fn map_trait_arguments(
-    source: &str,
-    base: usize,
-    arguments: &str,
-    type_arguments: &[TypeRef],
-    bindings: &[AssociatedTypeBinding],
-    path: &TypeRefNodePath,
-    output: &mut Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
-) -> Result<(), TypeParseError> {
-    let mut type_index = 0usize;
-    let mut binding_index = 0usize;
-    for fragment in super::split_type_args(arguments) {
-        if let Some((_, value_source)) = super::split_top_level_punctuation_once(fragment, '=') {
-            let value = bindings
-                .get(binding_index)
-                .ok_or_else(|| TypeParseError::new("missing parsed associated binding"))?;
-            let value_source = value_source.trim();
-            map_node(
-                value_source,
-                base + super::subslice_offset(source, value_source),
-                value.value(),
-                &path.child(TypeRefNodeStep::AssociatedBinding(index_u16(
-                    binding_index,
-                    path,
-                )?)),
-                output,
-            )?;
-            binding_index += 1;
-        } else {
-            let value = type_arguments
-                .get(type_index)
-                .ok_or_else(|| TypeParseError::new("missing parsed trait argument"))?;
-            let fragment = fragment.trim();
-            map_node(
-                fragment,
-                base + super::subslice_offset(source, fragment),
-                value,
-                &path.child(TypeRefNodeStep::TraitArgument(index_u16(type_index, path)?)),
-                output,
-            )?;
-            type_index += 1;
-        }
-    }
-    Ok(())
-}
-
-fn fragment_range(parent: &str, base: usize, fragment: &str) -> TextRange {
-    let start = base + super::subslice_offset(parent, fragment);
-    TextRange::new(start, start + fragment.len())
-}
-
-fn path_head_source(
-    kind: TypeRefHeadKind,
-    source: &str,
-    base: usize,
-) -> Result<TypeRefHeadSource<TextRange>, TypeParseError> {
-    let path = SpannedProjectSymbolPath::parse_at(source, base).map_err(|error| {
-        TypeParseError::new_owned(format!(
-            "type path source no longer matches its parsed structure: {error}"
-        ))
-    })?;
-    let terminal = path.segment_ranges().last().copied().ok_or_else(|| {
-        TypeParseError::new("type path source has no resolvable terminal segment")
-    })?;
-    Ok(TypeRefHeadSource::with_terminal(
-        kind,
-        path.range(),
-        terminal,
-    ))
-}
-
-fn replace_whole(
-    output: &mut [(TypeRefNodePath, TypeRefNodeSource<TextRange>)],
-    path: &TypeRefNodePath,
-    whole: TextRange,
-) {
-    let (_, source) = output
-        .iter_mut()
-        .find(|(candidate, _)| candidate == path)
-        .expect("mapped wrapper contains its structural root");
-    source.whole = whole;
-}
-
-fn index_u16(index: usize, path: &TypeRefNodePath) -> Result<u16, TypeParseError> {
-    u16::try_from(index).map_err(|_| {
-        TypeParseError::new_owned(format!(
-            "type node at {:?} has too many indexed children",
-            path.steps()
-        ))
-    })
 }
 
 fn contains(parent: TextRange, child: TextRange) -> bool {
@@ -1026,6 +815,160 @@ fn collect_expected_paths(
             collect_expected_paths(item, &path.child(TypeRefNodeStep::SliceItem), output)?;
         }
         TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) | TypeRef::Recovery(_) => {}
+    }
+    Ok(())
+}
+
+fn expected_lexeme_keys(
+    value: &TypeRef,
+) -> Result<BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>, TypeRefSourceMapError> {
+    let mut output = BTreeSet::new();
+    collect_expected_lexeme_keys(value, &TypeRefNodePath::root(), &mut output)?;
+    Ok(output)
+}
+
+fn collect_expected_lexeme_keys(
+    value: &TypeRef,
+    path: &TypeRefNodePath,
+    output: &mut BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>,
+) -> Result<(), TypeRefSourceMapError> {
+    match value {
+        TypeRef::Path(ty) => collect_expected_path_lexemes(ty, path, output)?,
+        TypeRef::Generic { base, args } => {
+            collect_expected_path_lexemes(base, path, output)?;
+            collect_expected_generic_lexemes(args.len(), path, output)?;
+            for (index, argument) in args.iter().enumerate() {
+                let index = u16::try_from(index)
+                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
+                collect_expected_lexeme_keys(
+                    argument,
+                    &path.child(TypeRefNodeStep::GenericArgument(index)),
+                    output,
+                )?;
+            }
+        }
+        TypeRef::TraitBound(bound) => {
+            collect_expected_path_lexemes(&bound.path, path, output)?;
+            let count = bound
+                .args()
+                .len()
+                .checked_add(bound.associated().len())
+                .ok_or_else(|| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
+            collect_expected_generic_lexemes(count, path, output)?;
+            for (index, argument) in bound.args().iter().enumerate() {
+                let index = u16::try_from(index)
+                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
+                collect_expected_lexeme_keys(
+                    argument,
+                    &path.child(TypeRefNodeStep::TraitArgument(index)),
+                    output,
+                )?;
+            }
+            for (index, binding) in bound.associated().iter().enumerate() {
+                let index = u16::try_from(index)
+                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
+                collect_expected_lexeme_keys(
+                    binding.value(),
+                    &path.child(TypeRefNodeStep::AssociatedBinding(index)),
+                    output,
+                )?;
+            }
+        }
+        TypeRef::Tuple(items) => {
+            collect_expected_indexed_lexemes(items, path, output, TypeRefNodeStep::TupleItem)?;
+        }
+        TypeRef::Function {
+            params,
+            return_type,
+            ..
+        } => {
+            collect_expected_indexed_lexemes(
+                params,
+                path,
+                output,
+                TypeRefNodeStep::FunctionParameter,
+            )?;
+            collect_expected_lexeme_keys(
+                return_type,
+                &path.child(TypeRefNodeStep::FunctionReturn),
+                output,
+            )?;
+        }
+        TypeRef::Choice(items) => collect_expected_indexed_lexemes(
+            items,
+            path,
+            output,
+            TypeRefNodeStep::ChoiceAlternative,
+        )?,
+        TypeRef::Projection { subject, .. } => collect_expected_lexeme_keys(
+            subject,
+            &path.child(TypeRefNodeStep::ProjectionSubject),
+            output,
+        )?,
+        TypeRef::Reference(reference) => collect_expected_lexeme_keys(
+            reference.referent(),
+            &path.child(TypeRefNodeStep::ReferenceReferent),
+            output,
+        )?,
+        TypeRef::Slice(item) => {
+            collect_expected_lexeme_keys(item, &path.child(TypeRefNodeStep::SliceItem), output)?;
+        }
+        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Recovery(_) => {}
+    }
+    Ok(())
+}
+
+fn collect_expected_path_lexemes(
+    ty: &TypePath,
+    owner: &TypeRefNodePath,
+    output: &mut BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>,
+) -> Result<(), TypeRefSourceMapError> {
+    if !matches!(ty.root(), ModulePathRoot::ImplicitCrate) {
+        output.insert((owner.clone(), TypeRefLexemeKind::PathRoot));
+    }
+    for ordinal in 0..ty.segments().len() {
+        let ordinal = u16::try_from(ordinal)
+            .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(owner.clone()))?;
+        output.insert((owner.clone(), TypeRefLexemeKind::PathSegment { ordinal }));
+        if ordinal > 0 || !matches!(ty.root(), ModulePathRoot::ImplicitCrate) {
+            output.insert((
+                owner.clone(),
+                TypeRefLexemeKind::PathSeparator { before: ordinal },
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn collect_expected_generic_lexemes(
+    argument_count: usize,
+    owner: &TypeRefNodePath,
+    output: &mut BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>,
+) -> Result<(), TypeRefSourceMapError> {
+    output.insert((owner.clone(), TypeRefLexemeKind::OpenAngle));
+    for before in 1..argument_count {
+        output.insert((
+            owner.clone(),
+            TypeRefLexemeKind::ArgumentSeparator {
+                before: u16::try_from(before)
+                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(owner.clone()))?,
+            },
+        ));
+    }
+    output.insert((owner.clone(), TypeRefLexemeKind::CloseAngle));
+    Ok(())
+}
+
+fn collect_expected_indexed_lexemes(
+    values: &[TypeRef],
+    path: &TypeRefNodePath,
+    output: &mut BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>,
+    step: impl Fn(u16) -> TypeRefNodeStep,
+) -> Result<(), TypeRefSourceMapError> {
+    for (index, value) in values.iter().enumerate() {
+        let index = u16::try_from(index)
+            .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
+        collect_expected_lexeme_keys(value, &path.child(step(index)), output)?;
     }
     Ok(())
 }

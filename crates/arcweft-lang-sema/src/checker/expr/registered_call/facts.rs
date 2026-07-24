@@ -6,8 +6,8 @@ use arcweft_source::SourceSpan;
 use crate::{
     callable::{
         CallPoison, CallableArgumentIndex, CallableArgumentSlotIndex, CallableGroupIndex,
-        CallableName, CallableParameter, CallableParameterCoordinate, CallableParameterType,
-        CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput,
+        CallableName, CallableParameter, CallableParameterCoordinate, CheckedCallArgumentFact,
+        CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput,
     },
     checker::{TypeCheckError, TypeChecker, TypeExpressionId},
 };
@@ -30,6 +30,7 @@ pub(super) struct RegisteredArgumentSlot<'a> {
     pub(super) group: CallableGroupIndex,
     pub(super) parameter: Option<&'a CallableParameter>,
     pub(super) inferred: Option<crate::checker::TypeKind>,
+    pub(super) expected: Option<crate::checker::TypeKind>,
     pub(super) poison: CallPoison,
 }
 
@@ -108,10 +109,6 @@ impl TypeChecker<'_> {
         let mapped = slot
             .parameter
             .map(|parameter| CallableParameterCoordinate::new(slot.group, parameter.index()));
-        let expected = slot.parameter.and_then(|parameter| match parameter.ty() {
-            CallableParameterType::Exact(expected) => Some(expected.clone()),
-            CallableParameterType::Unchecked => None,
-        });
         let slot_poison = builder.authored_poison.merge(slot.poison);
         builder.poison = builder.poison.merge(slot_poison);
         builder.slots.push(CheckedCallArgumentSlotFact::new(
@@ -121,7 +118,7 @@ impl TypeChecker<'_> {
                 source: slot.source,
                 mapped,
                 inferred: slot.inferred,
-                expected,
+                expected: slot.expected,
                 poison: slot_poison,
             },
         ));

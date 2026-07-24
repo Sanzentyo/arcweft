@@ -27,6 +27,12 @@ treated as implementation-ready merely because its filename said
 | [`arcweft-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation-final-contract-main-5821a3ca.zip`](../reviews/packages/arcweft-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation-final-contract-main-5821a3ca.zip) | `7DC625446304FE2FFA73027AA518853DF56982BD486347D6F81142D8EAF6ACC0` | Received; internally verified and implementation-ready | After Lang-01.1.1.2 and the existing resource registry/retained-identity substrate, implement the Sans-I/O strict manifest crate, single decoder/encoder, atomic registry publication, AWFB section 22, and runtime digest validation. Public `res` authority switching remains a later cohort. |
 | [`arcweft-lang-01.5.1.2-typed-content-root-admission-final-contract.zip`](../reviews/packages/arcweft-lang-01.5.1.2-typed-content-root-admission-final-contract.zip) | `CA72FD70C657A11B7BECDB331D131177B6DEFD6094D034BBECFC3AF1A232E1C0` | Safe binary-topology subset implemented; root-family wording superseded | Retain only the already verified substrate and use Lang-01.5.1.2.1 for the closed family switch. |
 | [`arcweft-lang-01.5.1.2.1-content-root-family-source-elimination-reconciliation-final-contract-main-5821a3ca.zip`](../reviews/packages/arcweft-lang-01.5.1.2.1-content-root-family-source-elimination-reconciliation-final-contract-main-5821a3ca.zip) | `C91C2C635C13EB68D46C5D0D4A6F3ECDE0192546BE32175EB2A24FAA54FDE699` | Received; internally verified and implementation-ready after dependency re-intake | Its 160-row matrix closes roots to Character, Flow, View, Action, Activity, Asset, Signal, Metric, Layer, and exact configured resources; `Source`, callable, Stream-return, and name heuristics remain excluded. |
+| [`arcweft-aw-ah-009.3.3.3-unchecked-call-family-migration-evidence-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.3.3.3-unchecked-call-family-migration-evidence-reconciliation-final-contract.zip) | `BAE928C475214AB141DF108B1B2C2A34D7E1AFCF61110145C7B59074D79AA76E` | Mechanically verified; semantically superseded in three areas | Retain its Drop/Promotion taxonomy and Speaker only as a current-phase observation with no final-completion credit. Do not implement its CapacityMethod spread rejection, frozen-carrier Dialogue fixture, 20/3/46 cardinality, or ambiguous physical-once wording. AW-AH-009.3.3.3.1 requests the narrow correction against the accepted .3.3.4 and AW-AH-009.4 chains. |
+| [`arcweft-aw-ah-009.3.3.3.1-capacity-dialogue-and-overload-accounting-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.3.3.3.1-capacity-dialogue-and-overload-accounting-reconciliation-final-contract.zip) | `060332BC62273C34F267F0F15767FE6BBD328BE177CB8035E83F210267AB0D41` | Received and internally verified; accepted with one explicit precedence adjudication | Implement its phase ledger, Speaker/Dialogue gate, and physical-versus-retained accounting. Its contradictory `CAP-005` is package-local drift: AW-AH-009.3.3.4 T08/C17 remain fully authoritative that bare `Vec` is a typed arity failure. No follow-up request is needed. |
+| [`arcweft-aw-ah-009.3.3.4-typed-associated-capacity-callee-authority-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.3.3.4-typed-associated-capacity-callee-authority-reconciliation-final-contract.zip) | `DD8096DEDEF9FE2446291B3849DCEABD8BB5192B88533AA12FEE2DFC3CCEC484` | Received, internally verified, and implementation-ready | Implement the typed parenthesized associated-callee/source-map/nominal-receiver route through the single shared resolver and delete the old string capacity dispatcher in the same compiling switch. |
+| [`arcweft-aw-ah-009.4-character-dialogue-first-class-runtime-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.4-character-dialogue-first-class-runtime-final-contract.zip) | `A86044FEA7AAFF3EC3829DFA0AD6552C88377CA61FA2911C3B96EA34CA0FFA5E` | Accepted final contract; all 19 members internally reverified | Use its runtime-value CharacterDialogue model and deletion boundary as the parent authority. Its implementation follows the required Proof typed-HIR substrate and the .4.2/.4.3 public switch rather than preserving `.say` or Speaker/SpeakerPreset. |
+| [`arcweft-aw-ah-009.4.2-dialogue-content-application-syntax-hir-ownership-production-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.4.2-dialogue-content-application-syntax-hir-ownership-production-reconciliation-final-contract.zip) | `05E825DDE033F308F24FC1F6E504B4C26BBA2D61FD33852CE880DC666BA8F2A8` | Accepted and implementation-ready; all 16 members internally reverified | After the required Proof typed syntax/HIR/project authority exists, publish the typed bracket/colon content application with ordinary CharacterFactory/Reconfigure calls and delete the frozen syntax/HIR readers in the same authority switch. |
+| [`arcweft-aw-ah-009.4.3-source-site-line-identity-project-diagnostics-production-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.4.3-source-site-line-identity-project-diagnostics-production-reconciliation-final-contract.zip) | `FD9F97D37B857991120DD5E5E5DB27953257121FC48C79BEEF4FA03DF1F23396` | Accepted and implementation-ready; all 17 members internally reverified | Land accepted source-site line identity, project collision transaction, diagnostics, and runtime-plan consumption with .4.2 as one public Dialogue authority switch; remove the Speaker family/ID rather than granting both old and final rows matrix credit. |
 | [`arcweft-aw-ah-009.4.1.2.1-tts-runtime-intent-envelope-architecture-reconciliation-final-contract.zip`](../reviews/packages/arcweft-aw-ah-009.4.1.2.1-tts-runtime-intent-envelope-architecture-reconciliation-final-contract.zip) | `CCF4DA80B64D4C2246EF652C035A46E088505A4DFC1DE702CFD59BCF45A3BB30` | Received and internally verified; not implementation-ready | Retain its core-safe bridge direction, but do not implement until AW-AH-009.4.1.2.1.1 closes replay/save validation, queued old evidence, sequence-bearing admission atomicity, reachable cap rows, construction authority, and generic AWBC verification. The requested producer sidecars were absent. |
 
 ## Dependency order
@@ -53,18 +59,28 @@ treated as implementation-ready merely because its filename said
 
 ## Current design dispatch
 
-Three independently throwable requests remain unreturned:
+No design request should be dispatched now. The returned `CAP-005` conflict is
+resolved by its own package precedence in favor of AW-AH-009.3.3.4 T08/C17;
+it does not justify another design round. The original requests and returns
+remain immutable audit inputs and must not be silently replaced or resent.
 
-1. [`Lang-01.5.1.3 generated artifact runtime-binding fail-closed contract`](../reviews/requests/2026-07-20-lang-01.5.1.3-generated-artifact-runtime-binding-contract.md);
-2. [`AW-AH-009.3.3.3 unchecked call-family migration evidence reconciliation`](../reviews/requests/2026-07-24-aw-ah-009.3.3.3-unchecked-call-family-migration-evidence-reconciliation.md); and
-3. [`AW-AH-009.4.1.2.1.1 TTS runtime envelope transaction and validation closure`](../reviews/requests/2026-07-24-aw-ah-009.4.1.2.1.1-tts-runtime-envelope-transaction-and-validation-closure.md).
+AW-AH-009.3.3.4 has returned and is accepted implementation-ready, so it must
+not be resent. Its static associated-capacity authority switch is production
+work now, and its bare-`Vec` arity decision remains authoritative. The
+package-local `CAP-005` row is closed by that precedence adjudication rather
+than tracked as a pending correction.
+The TTS
+[`AW-AH-009.4.1.2.1.1`](../reviews/requests/2026-07-24-aw-ah-009.4.1.2.1.1-tts-runtime-envelope-transaction-and-validation-closure.md)
+request exists and remains unreturned, but it is deliberately held under the
+current TTS skip decision rather than dispatched now.
 
-Each request contains its exact dispatch bundle and expected return shape.
-They are independent design tasks and may be sent to separate assignees in
-parallel. The returned adapter publication, curried Stream, content-root, and
-resource-manifest packages are production work and must not be sent again.
-Lang-01.5.1.1.1 was resolved by its corrected parent redelivery and likewise
-must not be dispatched again.
+Lang-01.5.1.3 has returned and is classified
+`ACCEPTED_IMPLEMENTATION_READY_DEFERRED` in its
+[package intake](2026-07-24-lang-01-5-1-3-generated-artifact-runtime-binding-intake.md).
+It must not be sent again. The returned adapter publication, curried Stream,
+content-root, and resource-manifest packages are likewise production work and
+must not be resent. Lang-01.5.1.1.1 was resolved by its corrected parent
+redelivery and also must not be dispatched again.
 
 ## Ongoing intake rule
 

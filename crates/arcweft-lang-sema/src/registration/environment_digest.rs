@@ -16,6 +16,9 @@ use super::{
 
 const ENVIRONMENT_DOMAIN: &[u8] = b"arcweft.registered-semantic-environment.v1\0";
 const VISIBILITY_DOMAIN: &[u8] = b"arcweft.accepted-nominal-visibility.v1\0";
+#[cfg(test)]
+const TEST_CALLABLE_REPLACEMENT_DOMAIN: &[u8] =
+    b"arcweft.registered-semantic-environment.test-callable-replacement.v1\0";
 
 pub(super) fn derive(
     world: &AcceptedNominalWorld,
@@ -52,6 +55,17 @@ pub(super) fn derive(
 
     encoder.bytes(character_digest.as_bytes());
     encoder.u64(character_revision.get());
+    RegisteredEnvironmentDigest::from_bytes(encoder.finish())
+}
+
+#[cfg(test)]
+pub(super) fn derive_test_callable_replacement(
+    previous: RegisteredEnvironmentDigest,
+    callable_catalog_digest: &[u8; 32],
+) -> RegisteredEnvironmentDigest {
+    let mut encoder = Encoder::new(TEST_CALLABLE_REPLACEMENT_DOMAIN);
+    encoder.bytes(previous.as_bytes());
+    encoder.bytes(callable_catalog_digest);
     RegisteredEnvironmentDigest::from_bytes(encoder.finish())
 }
 

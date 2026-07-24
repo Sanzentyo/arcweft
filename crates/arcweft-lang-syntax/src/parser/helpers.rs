@@ -265,10 +265,22 @@ pub(super) fn parse_line_options(
                 continue;
             }
             consumed_positional_look = true;
-            state.look = Some(parse_expr_lossy(arg.trim()));
+            let trimmed = arg.trim();
+            let leading = arg.len() - arg.trim_start().len();
+            state.look = Some(parse_line_option_expr(
+                trimmed,
+                arg_source_base + leading,
+                errors,
+            ));
             continue;
         };
-        parse_named_line_option(&mut state, name, value, arg_source_base, errors);
+        parse_named_line_option(
+            &mut state,
+            name,
+            value,
+            arg_source_base + subslice_offset(arg, value),
+            errors,
+        );
     }
     LineOptions::new(LineOptionsInit {
         id: state.id,
@@ -318,13 +330,11 @@ fn parse_named_line_option(
     state: &mut LineOptionsParseState,
     name_raw: &str,
     value_raw: &str,
-    arg_base: usize,
+    value_start: usize,
     errors: &mut Vec<ParseError>,
 ) {
     let name = name_raw.trim();
     let value = value_raw.trim();
-    let value_leading = value_raw.len() - value_raw.trim_start().len();
-    let value_start = arg_base + name_raw.len() + '='.len_utf8() + value_leading;
     let value_range = TextRange::new(value_start, value_start + value.len());
     match name {
         "id" => {
@@ -334,35 +344,42 @@ fn parse_named_line_option(
             state.text_key =
                 parse_required_id_ref(value, value_start, errors).map(|(entity, _)| entity);
         }
-        "voice" => state.voice = Some(parse_expr_lossy(value)),
-        "look" => state.look = Some(parse_expr_lossy(value)),
-        "stage" => state.stage = Some(parse_expr_lossy(value)),
-        "portrait" => state.portrait = Some(parse_expr_lossy(value)),
-        "focus" => state.focus = Some(parse_expr_lossy(value)),
-        "cleanup" => state.cleanup = Some(parse_expr_lossy(value)),
+        "voice" => state.voice = Some(parse_line_option_expr(value, value_start, errors)),
+        "look" => state.look = Some(parse_line_option_expr(value, value_start, errors)),
+        "stage" => state.stage = Some(parse_line_option_expr(value, value_start, errors)),
+        "portrait" => state.portrait = Some(parse_line_option_expr(value, value_start, errors)),
+        "focus" => state.focus = Some(parse_line_option_expr(value, value_start, errors)),
+        "cleanup" => state.cleanup = Some(parse_line_option_expr(value, value_start, errors)),
         "view" => {
             state.view = parse_required_entity_ref_syntax(value, value_start, errors)
                 .map(|(entity, _)| entity);
         }
         "source_locale" => state.source_locale = Some(value.to_owned()),
-        "hooks" => push_line_hooks(&mut state.hooks, parse_expr_lossy(value)),
+        "hooks" => push_line_hooks(
+            &mut state.hooks,
+            parse_line_option_expr(value, value_start, errors),
+        ),
         "style" => {
-            state.style = Some(parse_expr_lossy(value));
+            state.style = Some(parse_line_option_expr(value, value_start, errors));
             state.style_raw = Some(value.to_owned());
             state.style_range = Some(value_range);
         }
         "rich_text" => {
-            state.rich_text = Some(parse_expr_lossy(value));
+            state.rich_text = Some(parse_line_option_expr(value, value_start, errors));
             state.rich_text_raw = Some(value.to_owned());
             state.rich_text_range = Some(value_range);
         }
         name => state.line_args.push(LineArg::new(
             name.to_owned(),
-            parse_expr_lossy(value),
+            parse_line_option_expr(value, value_start, errors),
             value.to_owned(),
             value_range,
         )),
     }
+}
+
+fn parse_line_option_expr(source: &str, base: usize, errors: &mut Vec<ParseError>) -> Expr {
+    parse_owned_expr_recovering(source, base, None, errors)
 }
 
 fn push_line_hooks(hooks: &mut Vec<Expr>, expr: Expr) {
@@ -725,6 +742,16 @@ pub(super) fn retain_expr_recovery_diagnostic(
             diagnostic.to_string(),
             vec![RecoverySuggestion::new(
                 "replace the malformed argument with a valid expression",
+            )],
+        ),
+        ExprRecoveryDiagnostic::RecoveredTypeCallee => ParseError::new_with_kind(
+            ParseErrorKind::from_expression(diagnostic),
+            diagnostic.range(),
+            vec!["callee".to_owned()],
+            None,
+            diagnostic.to_string(),
+            vec![RecoverySuggestion::new(
+                "replace the malformed callee with a valid expression",
             )],
         ),
     };

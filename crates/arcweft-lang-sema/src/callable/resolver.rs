@@ -11,7 +11,7 @@ use std::{
 
 use arcweft_character::id::CharacterId;
 use arcweft_lang_hir::symbol::{CallableDeclarationId, ProjectSymbolTable};
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::ast::{common::TextRange, module_path::CanonicalModulePath};
 use arcweft_lang_syntax::expr::{CallArg, Expr};
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
@@ -19,21 +19,24 @@ use crate::{
     checker::TypeExpressionId,
     effect_model::CallableId,
     effect_row::EffectRow,
+    env::TypeCheckEnv,
+    nominal::ResolvedAssociatedTypeReceiver,
     registration::RegisteredSemanticWorld,
     traits::{TraitCatalog, TraitMethodResolution, TraitPredicate},
     types::TypeKind,
 };
 
 use super::{
-    AgentIntrinsicSignatureId, BuiltinCallableId, CallableAuthorityRank, CallableCandidateId,
-    CallableGroupIndex, CallableLimits, CallableLookupKey, CallableName, CallableParameterIndex,
-    CallablePath, CallableRecord, CallableSignatureSchema, CapacityMethodId, CollectionMethodId,
-    CurriedCallableId, DataLastCallableId, DomainMethodId, DropCallableId,
-    EnvironmentCallableOwner, EquivalentCallableSource, FunctionValueSignatureId,
-    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily, LocalCallableId,
-    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath,
-    ProjectNameBinding, PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolverWork,
-    ResultConstructorKind, SpeakerCallableId, StageMethodId, TraitCallableId, TraitCallableSource,
+    AgentIntrinsicSignatureId, AssociatedResolverStep, BuiltinCallableId, CallableAuthorityRank,
+    CallableCandidateId, CallableGroupIndex, CallableLimits, CallableLookupKey, CallableName,
+    CallableParameterIndex, CallablePath, CallableRecord, CallableSignatureSchema,
+    CapacityMethodId, CollectionMethodId, CurriedCallableId, DataLastCallableId, DomainMethodId,
+    DropCallableId, EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EquivalentCallableSource, FunctionValueSignatureId, FxCallableSignatureId, FxResolution,
+    IntegerMethodId, LanguageCallableFamily, LocalCallableId, OptionConstructorKind,
+    PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding,
+    PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolverWork, ResultConstructorKind,
+    SpeakerCallableId, StageMethodId, StandardEnvironmentId, TraitCallableId, TraitCallableSource,
     TraitImplementationIndex, call_shape_is_viable,
 };
 
@@ -49,12 +52,105 @@ pub(crate) enum CallCallee<'a> {
         method: &'a CallableName,
         arguments: &'a [CallArg],
     },
+    AssociatedType {
+        receiver: ResolvedAssociatedTypeReceiver<'a>,
+        member: &'a CallableName,
+        arguments: &'a [CallArg],
+    },
     Dialogue {
         id: super::DialogueCallableId,
         callee: &'a super::DialogueCalleeIdentity,
     },
     FunctionValue {
         value: &'a ResolvedFunctionValueSeed,
+    },
+}
+
+/// Proof that a method receiver was evaluated as a value expression.
+#[derive(Clone, Copy, Debug)]
+struct EvaluatedReceiver<'a> {
+    _expression: TypeExpressionId,
+    ty: &'a TypeKind,
+}
+
+impl<'a> EvaluatedReceiver<'a> {
+    const fn new(expression: TypeExpressionId, ty: &'a TypeKind) -> Self {
+        Self {
+            _expression: expression,
+            ty,
+        }
+    }
+
+    const fn ty(self) -> &'a TypeKind {
+        self.ty
+    }
+
+    fn value_instantiation(self) -> CallableInstantiation {
+        let Self { ty, .. } = self;
+        CallableInstantiation::Receiver {
+            receiver: ty.clone(),
+        }
+    }
+
+    fn data_last_instantiation(
+        self,
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+    ) -> CallableInstantiation {
+        let Self { ty, .. } = self;
+        CallableInstantiation::DataLast {
+            receiver: ty.clone(),
+            group,
+            parameter,
+        }
+    }
+}
+
+/// Receiver role admitted by trait-method resolution.
+#[derive(Clone, Copy, Debug)]
+enum MethodReceiver<'a> {
+    Value(EvaluatedReceiver<'a>),
+    Associated(ResolvedAssociatedTypeReceiver<'a>),
+}
+
+impl MethodReceiver<'_> {
+    const fn ty(&self) -> &TypeKind {
+        match self {
+            Self::Value(receiver) => receiver.ty,
+            Self::Associated(receiver) => receiver.ty(),
+        }
+    }
+
+    fn instantiation(self) -> CallableInstantiation {
+        match self {
+            Self::Value(receiver) => receiver.value_instantiation(),
+            Self::Associated(receiver) => CallableInstantiation::TypeReceiver {
+                receiver: TypeReceiverInstantiation::from_resolved(receiver),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CallResolverAuthority<'a> {
+    Accepted {
+        current_module: &'a CanonicalModulePath,
+        symbols: &'a ProjectSymbolTable,
+        world: &'a RegisteredSemanticWorld,
+    },
+    Detached {
+        environment: &'a TypeCheckEnv,
+    },
+}
+
+enum TypedEnvironmentMethodCandidate<'a> {
+    Accepted {
+        record: &'a CallableRecord,
+        equivalent_sources: Vec<EquivalentCallableSource>,
+    },
+    Detached {
+        id: EnvironmentCallableId,
+        schema: Arc<CallableSignatureSchema>,
     },
 }
 
@@ -85,19 +181,22 @@ pub(crate) struct ResolvedFunctionValueSeed {
     ty: TypeKind,
     schema: CallableSignatureSchema,
     effect_callable: Option<CallableId>,
-    source_candidate: Option<CallableCandidateId>,
+    continuation_base: Option<ResolvedCallable>,
     next_group: CallableGroupIndex,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(
-    dead_code,
-    reason = "call-source accessors are consumed when the typed call-surface cut supplies exact spans"
-)]
-pub(crate) struct CallSourceContext<'a> {
-    document: &'a SourceDocumentIdentity,
-    call_span: Option<&'a SourceSpan>,
-    callee_span: Option<&'a SourceSpan>,
+pub(crate) enum CallSourceContext<'a> {
+    Accepted {
+        document: &'a SourceDocumentIdentity,
+        call_span: Option<&'a SourceSpan>,
+        callee_span: Option<&'a SourceSpan>,
+    },
+    Detached {
+        source_len: usize,
+        call_range: Option<TextRange>,
+        callee_range: Option<TextRange>,
+    },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -132,11 +231,9 @@ pub(crate) enum LexicalCallBinding {
 )]
 pub(crate) struct CallResolverRequest<'a> {
     callee: CallCallee<'a>,
+    authority: CallResolverAuthority<'a>,
     lexical: &'a LexicalCallableScope,
     expected: Option<&'a TypeKind>,
-    current_module: &'a CanonicalModulePath,
-    symbols: &'a ProjectSymbolTable,
-    world: &'a RegisteredSemanticWorld,
     traits: &'a TraitCatalog,
     trait_predicates: &'a [TraitPredicate],
     source: CallSourceContext<'a>,
@@ -171,7 +268,7 @@ impl ResolvedFunctionValueSeed {
         ty: TypeKind,
         schema: CallableSignatureSchema,
         effect_callable: Option<CallableId>,
-        source_candidate: Option<CallableCandidateId>,
+        continuation_base: Option<ResolvedCallable>,
         next_group: CallableGroupIndex,
     ) -> Self {
         Self {
@@ -179,37 +276,82 @@ impl ResolvedFunctionValueSeed {
             ty,
             schema,
             effect_callable,
-            source_candidate,
+            continuation_base,
             next_group,
         }
     }
 }
 
-#[allow(
-    dead_code,
-    reason = "call-source accessors are consumed when the typed call-surface cut supplies exact spans"
-)]
 impl<'a> CallSourceContext<'a> {
-    pub(crate) const fn new(
+    pub(crate) const fn accepted(
         document: &'a SourceDocumentIdentity,
         call_span: Option<&'a SourceSpan>,
         callee_span: Option<&'a SourceSpan>,
     ) -> Self {
-        Self {
+        Self::Accepted {
             document,
             call_span,
             callee_span,
         }
     }
 
-    pub(crate) const fn document(&self) -> &SourceDocumentIdentity {
-        self.document
+    pub(crate) const fn detached(
+        source_len: usize,
+        call_range: Option<TextRange>,
+        callee_range: Option<TextRange>,
+    ) -> Self {
+        Self::Detached {
+            source_len,
+            call_range,
+            callee_range,
+        }
     }
-    pub(crate) const fn call_span(&self) -> Option<&SourceSpan> {
-        self.call_span
-    }
-    pub(crate) const fn callee_span(&self) -> Option<&SourceSpan> {
-        self.callee_span
+
+    fn validate(&self, limits: &CallableLimits) -> Result<(), ResolveCallError> {
+        let exceeds_source_limit = match self {
+            Self::Accepted { document, .. } => {
+                document.source_len() > u64::try_from(limits.max_source_bytes()).unwrap_or(u64::MAX)
+            }
+            Self::Detached { source_len, .. } => *source_len > limits.max_source_bytes(),
+        };
+        if exceeds_source_limit {
+            let actual = match self {
+                Self::Accepted { document, .. } => {
+                    usize::try_from(document.source_len()).unwrap_or(usize::MAX)
+                }
+                Self::Detached { source_len, .. } => *source_len,
+            };
+            return Err(ResolveCallError::Work(
+                super::CallableQueryLimitError::SourceBytes {
+                    actual,
+                    limit: limits.max_source_bytes(),
+                },
+            ));
+        }
+
+        let ranges_are_valid = match self {
+            Self::Accepted {
+                document,
+                call_span,
+                callee_span,
+            } => call_span
+                .iter()
+                .copied()
+                .chain(callee_span.iter().copied())
+                .all(|span| source_span_is_valid(document, span)),
+            Self::Detached {
+                source_len,
+                call_range,
+                callee_range,
+            } => call_range
+                .iter()
+                .chain(callee_range.iter())
+                .all(|range| range.start() <= range.end() && range.end() <= *source_len),
+        };
+        if !ranges_are_valid {
+            return Err(ResolveCallError::InvalidSourceSpan);
+        }
+        Ok(())
     }
 }
 
@@ -223,6 +365,211 @@ impl LexicalCallableScope {
     }
 }
 
+impl<'a> CallResolverAuthority<'a> {
+    pub(crate) const fn accepted(
+        current_module: &'a CanonicalModulePath,
+        symbols: &'a ProjectSymbolTable,
+        world: &'a RegisteredSemanticWorld,
+    ) -> Self {
+        Self::Accepted {
+            current_module,
+            symbols,
+            world,
+        }
+    }
+
+    pub(crate) const fn detached(environment: &'a TypeCheckEnv) -> Self {
+        Self::Detached { environment }
+    }
+
+    /// Reports whether a multi-segment path belongs to the ordinary free-call
+    /// namespace before an ambiguous dot receiver is tried as a nominal type.
+    ///
+    /// This lookup never materializes a candidate or schema. The subsequent
+    /// free-call resolver remains the sole candidate authority.
+    pub(crate) fn qualified_free_path_is_present(
+        self,
+        path: &CallablePath,
+        has_expected_enum_variant: bool,
+    ) -> Result<bool, ResolveCallError> {
+        if path.len() < 2 {
+            return Ok(false);
+        }
+        if matches!(FxCallableSignatureId::resolve(path), FxResolution::Known(_))
+            || has_expected_enum_variant
+            || ResultConstructorKind::resolve(path).is_some()
+            || OptionConstructorKind::resolve(path).is_some()
+            || BuiltinCallableId::resolve(path).is_some()
+            || AgentIntrinsicSignatureId::resolve(path).is_some()
+            || PresentationCallableId::resolve(path).is_some()
+            || PromotionCallableId::resolve(path).is_some()
+        {
+            return Ok(true);
+        }
+
+        match self {
+            Self::Accepted {
+                current_module,
+                symbols,
+                world,
+            } => {
+                let catalog = world.environment().callable_catalog();
+                let project_path = ProjectCallablePath::new(
+                    symbols.world().package().clone(),
+                    current_module.clone(),
+                    path.clone(),
+                );
+                if catalog.project_binding(&project_path).is_some() {
+                    return Ok(true);
+                }
+                catalog
+                    .validated_free(path)
+                    .map(|candidates| candidates.is_some())
+                    .map_err(|reason| corrupt(CallableLookupKey::Free(path.clone()), reason))
+            }
+            Self::Detached { environment } => {
+                Ok(environment.function_type(&path.dotted_name()).is_some())
+            }
+        }
+    }
+
+    fn validate(
+        self,
+        callee: &CallCallee<'_>,
+        source: &CallSourceContext<'_>,
+    ) -> Result<(), ResolveCallError> {
+        if let CallCallee::AssociatedType { receiver, .. } = callee
+            && (receiver.product().recovered() != receiver.ty()
+                || receiver.root().recovered() != Some(receiver.ty()))
+        {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        }
+        match (self, source) {
+            (
+                Self::Accepted {
+                    current_module,
+                    symbols,
+                    world,
+                },
+                CallSourceContext::Accepted { document, .. },
+            ) => {
+                if symbols.world() != world.symbols().world()
+                    || symbols.revision() != world.symbols().revision()
+                    || symbols.world() != world.environment().world()
+                    || symbols.revision() != world.environment().symbol_revision()
+                {
+                    return Err(ResolveCallError::WorldMismatch);
+                }
+                if symbols.source_identity(current_module) != Some(*document) {
+                    return Err(ResolveCallError::SourceIdentityMismatch);
+                }
+                Ok(())
+            }
+            (Self::Accepted { .. }, CallSourceContext::Detached { .. })
+            | (Self::Detached { .. }, CallSourceContext::Accepted { .. }) => {
+                Err(ResolveCallError::SourceIdentityMismatch)
+            }
+            (Self::Detached { .. }, CallSourceContext::Detached { .. })
+                if matches!(callee, CallCallee::AssociatedType { .. }) =>
+            {
+                Ok(())
+            }
+            (Self::Detached { .. }, CallSourceContext::Detached { .. }) => {
+                Err(ResolveCallError::InvalidResolvedCallable)
+            }
+        }
+    }
+
+    fn accepted_parts(
+        self,
+    ) -> Result<
+        (
+            &'a CanonicalModulePath,
+            &'a ProjectSymbolTable,
+            &'a RegisteredSemanticWorld,
+        ),
+        ResolveCallError,
+    > {
+        match self {
+            Self::Accepted {
+                current_module,
+                symbols,
+                world,
+            } => Ok((current_module, symbols, world)),
+            Self::Detached { .. } => Err(ResolveCallError::InvalidResolvedCallable),
+        }
+    }
+
+    fn typed_environment_method(
+        self,
+        receiver: &TypeKind,
+        member: &CallableName,
+    ) -> Result<Option<Vec<TypedEnvironmentMethodCandidate<'a>>>, ResolveCallError> {
+        let key = ReceiverMethodKey::new(receiver.clone(), member.clone());
+        match self {
+            Self::Accepted { world, .. } => {
+                let catalog = world.environment().callable_catalog();
+                let Some(candidates) = catalog
+                    .validated_method(&key)
+                    .map_err(|reason| corrupt(CallableLookupKey::Method(key.clone()), reason))?
+                else {
+                    return Ok(None);
+                };
+                let mut typed = Vec::new();
+                for entry in candidates.as_slice() {
+                    let CallableCandidateId::Environment(id) = entry.primary().id() else {
+                        continue;
+                    };
+                    if id.kind() != EnvironmentCallableKind::Method {
+                        continue;
+                    }
+                    if !matches!(
+                        entry.primary().schema().validator(),
+                        super::CallableValidator::Ordinary
+                    ) {
+                        return Err(ResolveCallError::InvalidResolvedCallable);
+                    }
+                    typed.push(TypedEnvironmentMethodCandidate::Accepted {
+                        record: entry.primary(),
+                        equivalent_sources: entry
+                            .equivalent_sources()
+                            .iter()
+                            .filter(|source| {
+                                matches!(
+                                    source.id(),
+                                    CallableCandidateId::Environment(id)
+                                        if id.kind() == EnvironmentCallableKind::Method
+                                )
+                            })
+                            .cloned()
+                            .collect(),
+                    });
+                }
+                Ok((!typed.is_empty()).then_some(typed))
+            }
+            Self::Detached { environment } => {
+                let Some(projection) = environment
+                    .standard_method_projection(
+                        receiver,
+                        member,
+                        &super::PRODUCTION_CALLABLE_LIMITS,
+                    )
+                    .map_err(|_| ResolveCallError::InvalidResolvedCallable)?
+                else {
+                    return Ok(None);
+                };
+                if projection.id().kind() != EnvironmentCallableKind::Method {
+                    return Ok(None);
+                }
+                Ok(Some(vec![TypedEnvironmentMethodCandidate::Detached {
+                    id: projection.id().clone(),
+                    schema: Arc::new(projection.schema().clone()),
+                }]))
+            }
+        }
+    }
+}
+
 #[allow(
     dead_code,
     reason = "some exact request accessors are consumed by subsequent family resolver cuts"
@@ -231,11 +578,9 @@ impl<'a> CallResolverRequest<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         callee: CallCallee<'a>,
+        authority: CallResolverAuthority<'a>,
         lexical: &'a LexicalCallableScope,
         expected: Option<&'a TypeKind>,
-        current_module: &'a CanonicalModulePath,
-        symbols: &'a ProjectSymbolTable,
-        world: &'a RegisteredSemanticWorld,
         traits: &'a TraitCatalog,
         trait_predicates: &'a [TraitPredicate],
         source: CallSourceContext<'a>,
@@ -245,44 +590,16 @@ impl<'a> CallResolverRequest<'a> {
         work: &'a mut ResolverWork,
         limits: &'a CallableLimits,
     ) -> Result<Self, ResolveCallError> {
-        if cancellation.load(Ordering::Relaxed) {
+        if cancellation.load(Ordering::Acquire) {
             return Err(ResolveCallError::Cancelled);
         }
-        if symbols.world() != world.symbols().world()
-            || symbols.revision() != world.symbols().revision()
-            || symbols.world() != world.environment().world()
-            || symbols.revision() != world.environment().symbol_revision()
-        {
-            return Err(ResolveCallError::WorldMismatch);
-        }
-        if symbols.source_identity(current_module) != Some(source.document) {
-            return Err(ResolveCallError::SourceIdentityMismatch);
-        }
-        if source.document.source_len()
-            > u64::try_from(limits.max_source_bytes()).unwrap_or(u64::MAX)
-        {
-            return Err(ResolveCallError::Work(
-                super::CallableQueryLimitError::SourceBytes {
-                    actual: usize::try_from(source.document.source_len()).unwrap_or(usize::MAX),
-                    limit: limits.max_source_bytes(),
-                },
-            ));
-        }
-        if source
-            .call_span
-            .into_iter()
-            .chain(source.callee_span)
-            .any(|span| !source_span_is_valid(source.document, span))
-        {
-            return Err(ResolveCallError::InvalidSourceSpan);
-        }
+        authority.validate(&callee, &source)?;
+        source.validate(limits)?;
         Ok(Self {
             callee,
+            authority,
             lexical,
             expected,
-            current_module,
-            symbols,
-            world,
             traits,
             trait_predicates,
             source,
@@ -315,20 +632,14 @@ impl<'a> CallResolverRequest<'a> {
     pub(crate) const fn callee(&self) -> &CallCallee<'a> {
         &self.callee
     }
+    pub(crate) const fn authority(&self) -> CallResolverAuthority<'a> {
+        self.authority
+    }
     pub(crate) const fn lexical(&self) -> &LexicalCallableScope {
         self.lexical
     }
     pub(crate) const fn expected(&self) -> Option<&TypeKind> {
         self.expected
-    }
-    pub(crate) const fn current_module(&self) -> &CanonicalModulePath {
-        self.current_module
-    }
-    pub(crate) const fn symbols(&self) -> &ProjectSymbolTable {
-        self.symbols
-    }
-    pub(crate) const fn world(&self) -> &RegisteredSemanticWorld {
-        self.world
     }
     pub(crate) const fn traits(&self) -> &TraitCatalog {
         self.traits
@@ -379,20 +690,39 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             }
         }
         CallCallee::Selected {
+            receiver_expression,
             receiver_type,
             method,
             arguments,
-            ..
         } => {
             let receiver_type = receiver_type.clone();
             let method = method.clone();
-            match resolve_selected_call(&mut request, &receiver_type, &method, arguments) {
+            let receiver = EvaluatedReceiver::new(receiver_expression, &receiver_type);
+            match resolve_selected_call(&mut request, receiver, &method, arguments) {
                 Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
                 Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
                     UnknownCallKind::Method,
                     None,
                     Some(receiver_type),
                     Some(method),
+                )),
+                Err(error) => ResolveCallOutcome::Rejected(error),
+            }
+        }
+        CallCallee::AssociatedType {
+            receiver,
+            member,
+            arguments,
+        } => {
+            let receiver_type = receiver.ty().clone();
+            let member = member.clone();
+            match resolve_associated_type_call(&mut request, receiver, &member, arguments) {
+                Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
+                Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
+                    UnknownCallKind::AssociatedType,
+                    None,
+                    Some(receiver_type),
+                    Some(member),
                 )),
                 Err(error) => ResolveCallOutcome::Rejected(error),
             }
@@ -410,6 +740,105 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
     }
 }
 
+fn resolve_associated_type_call(
+    request: &mut CallResolverRequest<'_>,
+    receiver: ResolvedAssociatedTypeReceiver<'_>,
+    member: &CallableName,
+    arguments: &[CallArg],
+) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    let receiver_type = receiver.ty();
+    if let Some(target) = resolve_associated_environment_method(request, receiver, member)? {
+        return Ok(Some(target));
+    }
+
+    check_query_step(request)?;
+    request
+        .work
+        .record_associated_step(AssociatedResolverStep::CapacitySelector)?;
+    if let Some(id) = CapacityMethodId::resolve_associated(receiver_type, member, arguments.len())
+        .map_err(|_| ResolveCallError::InvalidResolvedCallable)?
+    {
+        let schema = id.signature_schema();
+        let target = resolved_language_method(
+            request,
+            CallableCandidateId::CapacityMethod(id),
+            LanguageCallableFamily::CapacityMethod,
+            schema,
+            CallableInstantiation::TypeReceiver {
+                receiver: TypeReceiverInstantiation::from_resolved(receiver),
+            },
+        )?;
+        request
+            .work
+            .record_associated_step(AssociatedResolverStep::CapacityMaterialization)?;
+        return Ok(Some(target));
+    }
+
+    check_query_step(request)?;
+    request
+        .work
+        .record_associated_step(AssociatedResolverStep::TraitResolution)?;
+    resolve_trait_method(request, MethodReceiver::Associated(receiver), member)
+}
+
+fn resolve_associated_environment_method(
+    request: &mut CallResolverRequest<'_>,
+    receiver: ResolvedAssociatedTypeReceiver<'_>,
+    member: &CallableName,
+) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    let receiver_type = receiver.ty();
+    check_query_step(request)?;
+    request
+        .work
+        .record_associated_step(AssociatedResolverStep::TypedEnvironmentLookup)?;
+    let Some(seeds) = request
+        .authority
+        .typed_environment_method(receiver_type, member)?
+    else {
+        return Ok(None);
+    };
+    let mut candidates = Vec::with_capacity(seeds.len());
+    for seed in seeds {
+        candidates.push(materialize_typed_environment_method(
+            seed, receiver, request,
+        )?);
+    }
+    NonEmptyResolvedCandidates::try_new(candidates, request.limits)
+        .map(ResolvedCallTarget::Candidates)
+        .map(Some)
+}
+
+fn materialize_typed_environment_method(
+    seed: TypedEnvironmentMethodCandidate<'_>,
+    receiver: ResolvedAssociatedTypeReceiver<'_>,
+    request: &mut CallResolverRequest<'_>,
+) -> Result<ResolvedCallable, ResolveCallError> {
+    let instantiation = CallableInstantiation::TypeReceiver {
+        receiver: TypeReceiverInstantiation::from_resolved(receiver),
+    };
+    match seed {
+        TypedEnvironmentMethodCandidate::Accepted {
+            record,
+            equivalent_sources,
+        } => resolve_catalog_record(record, &equivalent_sources, None, instantiation, request),
+        TypedEnvironmentMethodCandidate::Detached { id, schema } => {
+            check_query_step(request)?;
+            ResolvedCallable::try_new(
+                CallableCandidateId::Environment(id.clone()),
+                SignatureOrigin::Standard {
+                    owner: StandardEnvironmentId::Core,
+                    id,
+                },
+                schema,
+                instantiation,
+                Vec::new(),
+                Some(CallableAuthorityRank::Standard),
+                request.limits,
+            )
+        }
+    }
+}
+
 fn resolve_dialogue_call(
     request: &mut CallResolverRequest<'_>,
     id: super::DialogueCallableId,
@@ -420,10 +849,11 @@ fn resolve_dialogue_call(
     if super::DialogueCallableId::resolve(callee) != id {
         return Err(ResolveCallError::InvalidResolvedCallable);
     }
+    let (_, _, world) = request.authority.accepted_parts()?;
     let schema = id
         .signature_schema(DialogueSchemaContext {
             callee,
-            environment: request.world.environment(),
+            environment: world.environment(),
         })
         .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
     let instantiation = match callee {
@@ -457,6 +887,11 @@ fn resolve_function_value(
     request: &mut CallResolverRequest<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     check_query_step(request)?;
+    if let Some(base) = &seed.continuation_base {
+        let candidate = base.try_curried(seed.next_group, request.limits)?;
+        return NonEmptyResolvedCandidates::try_new(vec![candidate], request.limits)
+            .map(ResolvedCallTarget::Candidates);
+    }
     let callable = ResolvedCallable::try_new(
         CallableCandidateId::FunctionValue(seed.id.clone()),
         SignatureOrigin::FunctionValue {
@@ -473,7 +908,7 @@ fn resolve_function_value(
         callable,
         seed.ty.clone(),
         seed.effect_callable.clone(),
-        seed.source_candidate.clone(),
+        None,
         seed.next_group,
     )
     .map(|value| ResolvedCallTarget::FunctionValue(Box::new(value)))
@@ -485,10 +920,11 @@ fn resolve_function_value(
 )]
 fn resolve_selected_call(
     request: &mut CallResolverRequest<'_>,
-    receiver_type: &TypeKind,
+    receiver: EvaluatedReceiver<'_>,
     method: &CallableName,
     arguments: &[CallArg],
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    let receiver_type = receiver.ty();
     check_query_step(request)?;
     if let Some(id) = DropCallableId::resolve(method) {
         return resolved_language_method(
@@ -511,9 +947,7 @@ fn resolve_selected_call(
             CallableCandidateId::DomainMethod(id),
             LanguageCallableFamily::DomainMethod,
             schema,
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
@@ -530,9 +964,7 @@ fn resolve_selected_call(
             CallableCandidateId::CollectionMethod(id),
             LanguageCallableFamily::CollectionMethod,
             schema,
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
@@ -544,9 +976,7 @@ fn resolve_selected_call(
             CallableCandidateId::PresentationHandleMethod(id),
             LanguageCallableFamily::PresentationHandleMethod,
             id.signature_schema(),
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
@@ -559,9 +989,7 @@ fn resolve_selected_call(
             CallableCandidateId::IntegerMethod(id),
             LanguageCallableFamily::IntegerMethod,
             schema,
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
@@ -574,9 +1002,7 @@ fn resolve_selected_call(
             CallableCandidateId::DomainMethod(id),
             LanguageCallableFamily::DomainMethod,
             schema,
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
@@ -588,35 +1014,31 @@ fn resolve_selected_call(
             CallableCandidateId::StageMethod(id),
             LanguageCallableFamily::StageMethod,
             id.signature_schema(),
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
 
     check_query_step(request)?;
-    if let Some((id, result)) = CapacityMethodId::resolve(receiver_type, method, arguments.len()) {
-        let schema = id.signature_schema(result);
+    if let Some(id) = CapacityMethodId::resolve(receiver_type, method, arguments.len()) {
+        let schema = id.signature_schema();
         return resolved_language_method(
             request,
             CallableCandidateId::CapacityMethod(id),
             LanguageCallableFamily::CapacityMethod,
             schema,
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
+            receiver.value_instantiation(),
         )
         .map(Some);
     }
 
     check_query_step(request)?;
-    if let Some(target) = resolve_trait_method(request, receiver_type, method)? {
+    if let Some(target) = resolve_trait_method(request, MethodReceiver::Value(receiver), method)? {
         return Ok(Some(target));
     }
 
     check_query_step(request)?;
-    if let Some(target) = resolve_data_last_method(request, receiver_type, method, arguments)? {
+    if let Some(target) = resolve_data_last_method(request, receiver, method, arguments)? {
         return Ok(Some(target));
     }
 
@@ -625,7 +1047,7 @@ fn resolve_selected_call(
 
 fn resolve_data_last_method(
     request: &mut CallResolverRequest<'_>,
-    receiver_type: &TypeKind,
+    receiver: EvaluatedReceiver<'_>,
     method: &CallableName,
     arguments: &[CallArg],
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
@@ -637,18 +1059,18 @@ fn resolve_data_last_method(
         {
             bases.extend(candidates.as_slice().iter().cloned());
         }
-        return finish_data_last_candidates(request, receiver_type, arguments, bases);
+        return finish_data_last_candidates(request, receiver, arguments, bases);
     }
 
     let path = CallablePath::try_new([method.clone()])
         .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+    let (current_module, symbols, world) = request.authority.accepted_parts()?;
     let project_path = ProjectCallablePath::new(
-        request.symbols.world().package().clone(),
-        request.current_module.clone(),
+        symbols.world().package().clone(),
+        current_module.clone(),
         path.clone(),
     );
-    if let Some(binding) = request
-        .world
+    if let Some(binding) = world
         .environment()
         .callable_catalog()
         .project_binding(&project_path)
@@ -665,28 +1087,34 @@ fn resolve_data_last_method(
         }
     }
 
-    if let Some(candidates) = request.world.environment().callable_catalog().free(&path) {
+    let catalog = world.environment().callable_catalog();
+    if let Some(candidates) = catalog
+        .validated_free(&path)
+        .map_err(|reason| corrupt(CallableLookupKey::Free(path.clone()), reason))?
+    {
         for entry in candidates.as_slice() {
             check_query_step(request)?;
             bases.push(resolve_catalog_record(
                 entry.primary(),
                 entry.equivalent_sources(),
                 None,
+                CallableInstantiation::None,
                 request,
             )?);
         }
     }
     let mut seen = std::collections::HashSet::new();
     bases.retain(|candidate| seen.insert(candidate.id().clone()));
-    finish_data_last_candidates(request, receiver_type, arguments, bases)
+    finish_data_last_candidates(request, receiver, arguments, bases)
 }
 
 fn finish_data_last_candidates(
     request: &mut CallResolverRequest<'_>,
-    receiver_type: &TypeKind,
+    receiver: EvaluatedReceiver<'_>,
     arguments: &[CallArg],
     bases: Vec<ResolvedCallable>,
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    let receiver_type = receiver.ty();
     let mut candidates = Vec::new();
     for base in bases {
         check_query_step(request)?;
@@ -709,11 +1137,7 @@ fn finish_data_last_candidates(
             CallableCandidateId::DataLast(id),
             origin,
             Arc::new(schema),
-            CallableInstantiation::DataLast {
-                receiver: receiver_type.clone(),
-                group,
-                parameter,
-            },
+            receiver.data_last_instantiation(group, parameter),
             equivalent_sources,
             authority,
             request.limits,
@@ -782,12 +1206,12 @@ fn authored_argument_slot_count(arguments: &[CallArg]) -> usize {
 
 fn resolve_trait_method(
     request: &mut CallResolverRequest<'_>,
-    receiver_type: &TypeKind,
+    receiver: MethodReceiver<'_>,
     method: &CallableName,
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
     match request
         .traits
-        .resolve_method(receiver_type, method.as_str(), request.trait_predicates)
+        .resolve_method(receiver.ty(), method.as_str(), request.trait_predicates)
     {
         TraitMethodResolution::Missing => Ok(None),
         TraitMethodResolution::Inherent {
@@ -801,7 +1225,7 @@ fn resolve_trait_method(
                 implementation.index(),
                 TraitCallableSource::Inherent,
             )?;
-            resolved_trait_method(request, receiver_type, id, &selected).map(Some)
+            resolved_trait_method(request, id, &selected, receiver).map(Some)
         }
         TraitMethodResolution::Unique {
             witness,
@@ -818,7 +1242,7 @@ fn resolve_trait_method(
                 implementation,
                 TraitCallableSource::Predicate,
             )?;
-            resolved_trait_method(request, receiver_type, id, &selected).map(Some)
+            resolved_trait_method(request, id, &selected, receiver).map(Some)
         }
         TraitMethodResolution::Ambiguous(candidates) => {
             let mut ids = Vec::with_capacity(candidates.len());
@@ -874,9 +1298,9 @@ fn trait_callable_id(
 
 fn resolved_trait_method(
     request: &mut CallResolverRequest<'_>,
-    receiver_type: &TypeKind,
     id: TraitCallableId,
     method: &crate::traits::TraitMethodImpl,
+    receiver: MethodReceiver<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     let result = request
         .traits
@@ -895,9 +1319,7 @@ fn resolved_trait_method(
         CallableCandidateId::TraitMethod(id.clone()),
         SignatureOrigin::Trait { id },
         Arc::new(schema),
-        CallableInstantiation::Receiver {
-            receiver: receiver_type.clone(),
-        },
+        receiver.instantiation(),
         Vec::new(),
         None,
         request.limits,
@@ -934,7 +1356,12 @@ fn resolve_selected_environment_method(
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
     check_query_step(request)?;
     let key = ReceiverMethodKey::new(receiver_type.clone(), method.clone());
-    let Some(candidates) = request.world.environment().callable_catalog().method(&key) else {
+    let (_, _, world) = request.authority.accepted_parts()?;
+    let catalog = world.environment().callable_catalog();
+    let Some(candidates) = catalog
+        .validated_method(&key)
+        .map_err(|reason| corrupt(CallableLookupKey::Method(key.clone()), reason))?
+    else {
         return Ok(None);
     };
     let mut resolved = Vec::with_capacity(candidates.len().get() as usize);
@@ -944,6 +1371,7 @@ fn resolve_selected_environment_method(
             entry.primary(),
             entry.equivalent_sources(),
             None,
+            CallableInstantiation::None,
             request,
         )?);
     }
@@ -1129,13 +1557,13 @@ fn resolve_free_call(
     }
 
     check_query_step(request)?;
+    let (current_module, symbols, world) = request.authority.accepted_parts()?;
     let project_path = ProjectCallablePath::new(
-        request.symbols.world().package().clone(),
-        request.current_module.clone(),
+        symbols.world().package().clone(),
+        current_module.clone(),
         path.clone(),
     );
-    if let Some(binding) = request
-        .world
+    if let Some(binding) = world
         .environment()
         .callable_catalog()
         .project_binding(&project_path)
@@ -1145,7 +1573,11 @@ fn resolve_free_call(
     }
 
     check_query_step(request)?;
-    if let Some(candidates) = request.world.environment().callable_catalog().free(path) {
+    let catalog = world.environment().callable_catalog();
+    if let Some(candidates) = catalog
+        .validated_free(path)
+        .map_err(|reason| corrupt(CallableLookupKey::Free(path.clone()), reason))?
+    {
         let mut resolved = Vec::with_capacity(candidates.len().get() as usize);
         for entry in candidates.as_slice() {
             check_query_step(request)?;
@@ -1153,6 +1585,7 @@ fn resolve_free_call(
                 entry.primary(),
                 entry.equivalent_sources(),
                 None,
+                CallableInstantiation::None,
                 request,
             )?);
         }
@@ -1244,10 +1677,10 @@ fn resolve_project_binding(
     path: &ProjectCallablePath,
     request: &mut CallResolverRequest<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
+    let (_, _, world) = request.authority.accepted_parts()?;
     match binding {
         ProjectNameBinding::Callable(declaration) => {
-            let record = request
-                .world
+            let record = world
                 .environment()
                 .callable_catalog()
                 .project_record(declaration)
@@ -1258,13 +1691,27 @@ fn resolve_project_binding(
                     )
                 })?
                 .clone();
-            let callable = resolve_catalog_record(&record, &[], Some(path), request)?;
+            let callable = resolve_catalog_record(
+                &record,
+                &[],
+                Some(path),
+                CallableInstantiation::None,
+                request,
+            )?;
             NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
                 .map(ResolvedCallTarget::Candidates)
         }
+        ProjectNameBinding::AmbiguousCallables { declarations } => {
+            Err(ResolveCallError::AmbiguousOverload {
+                candidates: declarations
+                    .iter()
+                    .cloned()
+                    .map(CallableCandidateId::Project)
+                    .collect(),
+            })
+        }
         ProjectNameBinding::Environment(id) => {
-            let record = request
-                .world
+            let record = world
                 .environment()
                 .callable_catalog()
                 .environment_record(id)
@@ -1275,7 +1722,13 @@ fn resolve_project_binding(
                     )
                 })?
                 .clone();
-            let callable = resolve_catalog_record(&record, &[], Some(path), request)?;
+            let callable = resolve_catalog_record(
+                &record,
+                &[],
+                Some(path),
+                CallableInstantiation::None,
+                request,
+            )?;
             NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
                 .map(ResolvedCallTarget::Candidates)
         }
@@ -1292,6 +1745,7 @@ fn resolve_catalog_record(
     record: &CallableRecord,
     equivalent_sources: &[EquivalentCallableSource],
     project_path: Option<&ProjectCallablePath>,
+    instantiation: CallableInstantiation,
     request: &mut CallResolverRequest<'_>,
 ) -> Result<ResolvedCallable, ResolveCallError> {
     check_query_step(request)?;
@@ -1314,15 +1768,14 @@ fn resolve_catalog_record(
         },
         _ => return Err(ResolveCallError::InvalidResolvedCallable),
     };
+    let (_, _, world) = request.authority.accepted_parts()?;
     let reachable = match record.id() {
-        CallableCandidateId::Project(id) => request
-            .world
+        CallableCandidateId::Project(id) => world
             .environment()
             .callable_catalog()
             .project_record(id)
             .is_some_and(|accepted| accepted.as_ref() == record),
-        CallableCandidateId::Environment(id) => request
-            .world
+        CallableCandidateId::Environment(id) => world
             .environment()
             .callable_catalog()
             .environment_record(id)
@@ -1339,7 +1792,7 @@ fn resolve_catalog_record(
         record.id().clone(),
         origin,
         Arc::new(record.schema().clone()),
-        CallableInstantiation::None,
+        instantiation,
         equivalent_sources.to_vec(),
         Some(record.authority()),
         request.limits,
@@ -1360,7 +1813,7 @@ fn corrupt(
 fn check_query_step(request: &mut CallResolverRequest<'_>) -> Result<(), ResolveCallError> {
     if let Some(control) = request.signature_control {
         control.check_signature_query_step(SignatureQueryStep::Resolver)?;
-    } else if request.cancellation.load(Ordering::Relaxed) {
+    } else if request.cancellation.load(Ordering::Acquire) {
         return Err(ResolveCallError::Cancelled);
     }
     if let Some(signature_work) = request.signature_work.as_deref_mut() {
@@ -1416,6 +1869,28 @@ pub struct ResolvedCallable {
     authority: Option<CallableAuthorityRank>,
 }
 
+/// Opaque proof that a callable receiver came from complete nominal type resolution.
+///
+/// The normalized type remains observable for semantic facts, but constructing
+/// this carrier is reserved for the associated-receiver projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeReceiverInstantiation {
+    receiver: TypeKind,
+}
+
+impl TypeReceiverInstantiation {
+    pub(crate) fn from_resolved(receiver: ResolvedAssociatedTypeReceiver<'_>) -> Self {
+        Self {
+            receiver: receiver.ty().clone(),
+        }
+    }
+
+    /// Returns the exact normalized receiver type.
+    pub const fn receiver(&self) -> &TypeKind {
+        &self.receiver
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableInstantiation {
     None,
@@ -1434,6 +1909,9 @@ pub enum CallableInstantiation {
     },
     Receiver {
         receiver: TypeKind,
+    },
+    TypeReceiver {
+        receiver: TypeReceiverInstantiation,
     },
     Curried {
         base: CallableCandidateId,
@@ -1468,7 +1946,7 @@ impl ResolvedCallable {
         )
     }
 
-    pub fn try_new(
+    pub(crate) fn try_new(
         id: CallableCandidateId,
         origin: SignatureOrigin,
         schema: Arc<CallableSignatureSchema>,
@@ -1533,24 +2011,39 @@ impl ResolvedCallable {
         self.authority
     }
 
+    pub const fn call_group(&self) -> CallableGroupIndex {
+        match &self.instantiation {
+            CallableInstantiation::Curried { group, .. }
+            | CallableInstantiation::DataLast { group, .. } => *group,
+            CallableInstantiation::None
+            | CallableInstantiation::ExpectedEnum { .. }
+            | CallableInstantiation::Result { .. }
+            | CallableInstantiation::Option { .. }
+            | CallableInstantiation::Character { .. }
+            | CallableInstantiation::Receiver { .. }
+            | CallableInstantiation::TypeReceiver { .. } => CallableGroupIndex::ZERO,
+        }
+    }
+
     pub(crate) fn try_curried(
         &self,
         group: CallableGroupIndex,
         limits: &CallableLimits,
     ) -> Result<Self, ResolveCallError> {
-        if self.schema.group(group).is_none() {
-            return Err(ResolveCallError::InvalidCallGroup {
-                candidate: Box::new(self.id.clone()),
-                group,
-            });
-        }
         let base = match &self.id {
             CallableCandidateId::Curried(id) => id.base().clone(),
             CallableCandidateId::DataLast(id) => id.callable().clone(),
             id => id.clone(),
         };
-        let id = CurriedCallableId::try_new(base.clone(), group)
-            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+        let id = CurriedCallableId::try_new(base.clone(), group).map_err(|error| match error {
+            super::CallableIdentityError::InvalidCurriedGroup { group, .. } => {
+                ResolveCallError::InvalidCallGroup {
+                    candidate: Box::new(base.clone()),
+                    group,
+                }
+            }
+            _ => ResolveCallError::InvalidResolvedCallable,
+        })?;
         Self::try_new(
             CallableCandidateId::Curried(id),
             self.origin.clone(),
@@ -1729,9 +2222,12 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::IntegerMethod(_)
             | CallableCandidateId::DomainMethod(_)
             | CallableCandidateId::TraitMethod(_)
-            | CallableCandidateId::CapacityMethod(_)
             | CallableCandidateId::StageMethod(_),
             CallableInstantiation::Receiver { .. },
+        )
+        | (
+            CallableCandidateId::Environment(_) | CallableCandidateId::TraitMethod(_),
+            CallableInstantiation::TypeReceiver { .. },
         )
         | (
             CallableCandidateId::Fx(_)
@@ -1746,6 +2242,13 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::Speaker(_),
             CallableInstantiation::None,
         ) => true,
+        (
+            CallableCandidateId::CapacityMethod(id),
+            CallableInstantiation::TypeReceiver { receiver },
+        ) => id.method().as_str() == "with_capacity" && id.receiver() == receiver.receiver(),
+        (CallableCandidateId::CapacityMethod(id), CallableInstantiation::Receiver { receiver }) => {
+            id.method().as_str() != "with_capacity" && id.receiver() == receiver
+        }
         _ => false,
     }
 }
@@ -1893,6 +2396,7 @@ pub struct UnknownCallTarget {
 pub enum UnknownCallKind {
     Free,
     Method,
+    AssociatedType,
     Dialogue,
 }
 impl UnknownCallTarget {

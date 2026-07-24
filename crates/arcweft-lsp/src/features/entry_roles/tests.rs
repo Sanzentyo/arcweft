@@ -15,7 +15,11 @@ use lsp_types::{
 };
 
 use super::*;
-use crate::{documents::DocumentStore, positions::PositionEncoding, profiles::LspProfileResolver};
+use crate::{
+    documents::DocumentStore,
+    positions::PositionEncoding,
+    profiles::{LspProfile, LspProfileResolver},
+};
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 
 const SOURCE: &str = r"
@@ -55,7 +59,9 @@ fn role_rhs_uses_the_ordinary_callable_for_definition_hover_and_rename() {
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
@@ -138,7 +144,9 @@ fn workspace_symbols_union_distinct_worlds_deduplicate_and_ignore_profile_order(
     let first_source = SOURCE.replace("smoke", "alpha_smoke");
     first_project.write("src/main.arcw", &first_source);
     let first = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&first_project.path("src/main.arcw"));
+        .resolve_for_document_path(&first_project.path("src/main.arcw"))
+        .expect("first profile construction")
+        .publish_for_test();
     assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
 
     let second_project = TestProject::new("workspace-symbol-second");
@@ -146,7 +154,9 @@ fn workspace_symbols_union_distinct_worlds_deduplicate_and_ignore_profile_order(
     let second_source = SOURCE.replace("smoke", "beta_smoke");
     second_project.write("src/main.arcw", &second_source);
     let second = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&second_project.path("src/main.arcw"));
+        .resolve_for_document_path(&second_project.path("src/main.arcw"))
+        .expect("second profile construction")
+        .publish_for_test();
     assert!(
         second.diagnostics().is_empty(),
         "{:?}",
@@ -182,7 +192,9 @@ fn stale_open_bytes_do_not_reuse_accepted_entry_role_spans() {
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     let stale = format!("// unsaved\n{SOURCE}");
     let document = open(&source_path, &stale);
     let offset = stale.rfind("smoke").expect("controller role");
@@ -228,8 +240,7 @@ goto @flow.opening
     let project = TestProject::new("ordinary-outline");
     let source_path = project.path("src/main.arcw");
     project.write("src/main.arcw", OUTLINE);
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, None)
-        .resolve_for_document_path(&source_path);
+    let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
     let document = open(&source_path, OUTLINE);
 
     let DocumentSymbolResponse::Nested(symbols) = document_symbols(&profile, &document) else {
@@ -257,7 +268,9 @@ fn rename_aborts_when_a_secondary_open_manifest_is_stale() {
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
@@ -355,7 +368,9 @@ source = "src/main.arcw"
     project.write("src/main.arcw", STATEFUL);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
@@ -491,7 +506,9 @@ Ok(())
     project.write("src/helpers.arcw", HELPERS);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
@@ -550,7 +567,9 @@ fn manifest_entry_token_defines_and_renames_the_source_entry() {
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     let manifest = TestProject::manifest();
     let document = open(&project.path("arcw.toml"), &manifest);
     let offset = manifest.find("entry.agent.main").expect("entry selection");
@@ -619,7 +638,9 @@ fn entry_reference_ranges_follow_utf8_utf16_and_utf32_encodings() {
     project.write("src/main.arcw", &source);
     let source_path = project.path("src/main.arcw");
     let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path);
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",

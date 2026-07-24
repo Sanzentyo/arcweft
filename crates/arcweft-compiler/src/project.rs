@@ -2,8 +2,8 @@
 //!
 //! Source loading stays in `arcweft-project-loader`. This module consumes a
 //! Sans I/O `ProjectSources` value, compiles SCC-based units independently
-//! through syntax/HIR, and retains a module-preserving `HirProject` alongside
-//! the transitional crate-global semantic-pass view.
+//! through syntax/HIR, and retains one shared module-preserving
+//! `Arc<HirProject>` alongside the transitional crate-global semantic-pass view.
 
 mod cache_batch;
 mod dialogue_profile;
@@ -141,7 +141,7 @@ pub struct ProjectCompileUnitSummary {
 pub struct CompiledProject {
     modules: Vec<CompiledProjectModule>,
     units: Vec<ProjectCompileUnitSummary>,
-    hir_project: HirProject,
+    hir_project: Arc<HirProject>,
     registered_world: Arc<RegisteredSemanticWorld>,
     linked_hir: HirModule,
     typecheck_report: TypeCheckReport,
@@ -321,7 +321,8 @@ impl CompiledProject {
         &self.units
     }
 
-    pub const fn hir_project(&self) -> &HirProject {
+    /// Returns the exact shared module-preserving HIR produced by this build.
+    pub const fn hir_project(&self) -> &Arc<HirProject> {
         &self.hir_project
     }
 
@@ -412,7 +413,8 @@ pub fn compile_project(
 /// Parsing, linting, and HIR lowering are split and cacheable per SCC unit.
 /// Current name resolution, type checking, and runtime-plan lowering remain
 /// crate-global and therefore run on `HirProject::linked_module`. The retained
-/// `HirProject` is the migration boundary for making those passes module-aware.
+/// `Arc<HirProject>` is the migration boundary for making those passes
+/// module-aware and is shared unchanged with downstream accepted snapshots.
 ///
 /// # Panics
 ///
@@ -454,7 +456,7 @@ where
             })?;
             project_modules.push(bound);
         }
-        let hir_project =
+        let hir_project = Arc::new(
             HirProject::new(project.package().id.as_str(), project_modules).map_err(|error| {
                 linked_error(
                     ProjectCompileStage::HirProject,
@@ -463,8 +465,9 @@ where
                             .with_code("hir.project"),
                     ],
                 )
-            })?;
-        let registered_world = registration::register(&hir_project, context)?;
+            })?,
+        );
+        let registered_world = registration::register(hir_project.as_ref(), context)?;
         let linked_hir = hir_project.linked_module();
         hir::resolve_registered_hir_references(&linked_hir, &registered_world).map_err(
             |errors| {

@@ -43,24 +43,31 @@ impl ArcweftLspSession {
     pub(crate) fn publish_accepted_candidate(
         &mut self,
         state: &Arc<LspProfileState>,
-        expected: &Arc<AcceptedProfileEnvironment>,
+        expected: Option<&Arc<AcceptedProfileEnvironment>>,
         candidate: AcceptedProfileCandidate,
-        requests: Option<&RequestRegistry>,
+        requests: &RequestRegistry,
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedPublicationError> {
         if !self.signature_admission_open {
             return Err(AcceptedPublicationError::SessionClosing);
         }
-        if !self
+        let mapped = self
             .profiles_by_uri
-            .values()
-            .any(|profile| Arc::ptr_eq(profile.state(), state))
-        {
+            .iter()
+            .filter(|(_, profile)| Arc::ptr_eq(profile.state(), state))
+            .collect::<Vec<_>>();
+        if mapped.is_empty() {
             return Err(AcceptedPublicationError::ProfileStateReplaced);
         }
         if state.lifecycle() != ProfileEnvironmentLifecycle::Active {
             return Err(AcceptedPublicationError::ProfileClosing);
         }
-        if candidate.profile() != expected.profile() {
+        if expected.is_some_and(|current| candidate.profile() != current.profile())
+            || mapped.iter().any(|(uri, _)| {
+                self.profile_keys_by_uri
+                    .get(*uri)
+                    .is_none_or(|profile| profile != candidate.profile())
+            })
+        {
             return Err(AcceptedPublicationError::ProfileKeyMismatch);
         }
 
@@ -98,14 +105,10 @@ impl ArcweftLspSession {
         }
 
         state
-            .replace_accepted_with(Some(expected), candidate, |current| {
+            .replace_accepted_with(expected, candidate, |current| {
                 if let Some(current) = current {
-                    if let Some(requests) = requests {
-                        requests.cancel_accepted(
-                            current,
-                            SignatureCancellationReason::AcceptedReplaced,
-                        );
-                    }
+                    requests
+                        .cancel_accepted(current, SignatureCancellationReason::AcceptedReplaced);
                     current.clear_caches();
                 }
             })
@@ -132,6 +135,10 @@ impl ArcweftLspSession {
             .collect::<Vec<_>>();
         let mut states = Vec::<Arc<LspProfileState>>::new();
         for uri in removed {
+            if let Some(profile) = self.profile_keys_by_uri.get(&uri) {
+                self.pending_signature_authority.remove_profile(profile);
+            }
+            self.pending_signature_authority.remove_document(&uri);
             if let Some(profile) = self.profiles_by_uri.remove(&uri) {
                 let state = Arc::clone(profile.state());
                 if states.iter().all(|current| !Arc::ptr_eq(current, &state)) {

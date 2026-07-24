@@ -1,4 +1,5 @@
 use super::support::*;
+use crate::callable::{CallPoison, CallTargetFact, CallableCandidateId, UnknownCallKind};
 use crate::check::{
     ForIterationEvidenceFamily, NumericFallbackKind, StandardIteratorFamily, TypeCheckReport,
 };
@@ -4002,6 +4003,178 @@ flow @flow.collections collections {
     );
     let hir = lower_to_hir(&tree).expect("collection fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("collection fixture typechecks");
+}
+
+#[test]
+fn associated_capacity_forms_share_one_registered_resolver_authority() {
+    let report = analyze_registered_source(
+        "associated-capacity-forms",
+        r"
+flow @flow.associated_capacity_forms associated_capacity_forms {
+    let _ = String.with_capacity(1usize)
+    let _ = Bytes.with_capacity(2usize)
+    let _ = Vec<i32>.with_capacity(3usize)
+    let _ = Vec<i32>::with_capacity(4usize)
+    let _ = Vec::<i32>.with_capacity(5usize)
+    let _ = Vec::<i32>::with_capacity(6usize)
+}
+",
+        TypeCheckEnv::standard(),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "unexpected diagnostics: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.registered_call_expressions, 6);
+    assert_eq!(report.stats.shared_resolver_invocations, 6);
+    assert_eq!(report.stats.old_dispatch_calls, 0);
+    assert_eq!(report.stats.registered_argument_expression_checks, 6);
+
+    let selected = report
+        .retained_call_target_facts()
+        .filter_map(|facts| match facts.target() {
+            CallTargetFact::Selected { selected, .. } => Some(selected.id()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(selected.len(), 6);
+    assert!(
+        selected
+            .iter()
+            .all(|candidate| matches!(candidate, CallableCandidateId::CapacityMethod(_))),
+        "every associated capacity spelling must select the capacity family: {selected:?}"
+    );
+}
+
+#[test]
+fn associated_dot_lexical_value_beats_builtin_type() {
+    let environment = TypeCheckEnv::standard().with_method_signature(
+        TypeKind::Bool,
+        "with_capacity",
+        FunctionSignature::new(
+            TypeKind::Bool,
+            [FunctionParam::required("capacity", TypeKind::USize)],
+        ),
+    );
+    let report = analyze_registered_source(
+        "associated-value-shadow",
+        r"
+flow @flow.associated_value_shadow associated_value_shadow {
+    let String: bool = true
+    let _ = String.with_capacity(1usize)
+}
+",
+        environment,
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "the same-spelling bool value must select its typed method: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.shared_resolver_invocations, 1);
+    assert_eq!(report.stats.old_dispatch_calls, 0);
+    assert_eq!(report.stats.associated_value_namespace_lookups, 1);
+    assert_eq!(report.stats.associated_nominal_receiver_resolutions, 0);
+    let selected = report
+        .retained_call_target_facts()
+        .filter_map(|facts| match facts.target() {
+            CallTargetFact::Selected { selected, .. } => Some(selected.id()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        selected
+            .iter()
+            .all(|candidate| !matches!(candidate, CallableCandidateId::CapacityMethod(_))),
+        "a bool value must not be reinterpreted as the builtin String type: {selected:?}"
+    );
+    assert!(matches!(
+        selected.as_slice(),
+        [CallableCandidateId::Environment(_)]
+    ));
+}
+
+#[test]
+fn associated_path_generic_bypasses_value_namespace() {
+    let report = analyze_registered_source(
+        "associated-explicit-generic-type",
+        r"
+flow @flow.associated_explicit_generic_type associated_explicit_generic_type {
+    let Vec: bool = true
+    let built: Vec<i32> = Vec<i32>::with_capacity(1usize)
+    let turbofish: Vec<i32> = Vec::<i32>::with_capacity(2usize)
+}
+",
+        TypeCheckEnv::standard(),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "explicit generic type paths must bypass value lookup: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.shared_resolver_invocations, 2);
+    assert_eq!(report.stats.old_dispatch_calls, 0);
+    assert_eq!(report.stats.associated_value_namespace_lookups, 0);
+    assert_eq!(report.stats.associated_nominal_receiver_resolutions, 2);
+}
+
+#[test]
+fn associated_bare_vec_is_typed_arity_failure() {
+    let report = analyze_registered_source(
+        "bare-vec-capacity",
+        r"
+flow @flow.bare_vec_capacity bare_vec_capacity {
+    let _ = Vec.with_capacity(1usize)
+}
+",
+        TypeCheckEnv::standard(),
+    );
+    assert!(
+        report.diagnostics.iter().any(|error| matches!(
+            error.kind(),
+            TypeCheckErrorKind::Nominal { diagnostic }
+                if matches!(
+                    diagnostic.kind(),
+                    crate::nominal::NominalTypeDiagnosticKind::WrongArity {
+                        target: crate::nominal::TypeArityTarget::Builtin(
+                            crate::nominal::BuiltinTypeConstructor::Vec
+                        ),
+                        expected: crate::nominal::TypeArityExpectation::Exact(1),
+                        actual: 0,
+                    }
+                )
+        )),
+        "bare Vec must retain its typed nominal arity diagnostic: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.shared_resolver_invocations, 0);
+    assert_eq!(report.stats.old_dispatch_calls, 0);
+    assert_eq!(report.stats.registered_argument_expression_checks, 1);
+    assert_eq!(report.stats.associated_value_namespace_lookups, 1);
+    assert_eq!(report.stats.associated_nominal_receiver_resolutions, 1);
+    assert_eq!(report.stats.associated_typed_environment_lookups, 0);
+    assert_eq!(report.stats.associated_capacity_selectors, 0);
+    assert_eq!(report.stats.associated_capacity_materializations, 0);
+    assert_eq!(report.stats.associated_trait_resolutions, 0);
+
+    let facts = report.retained_call_target_facts().collect::<Vec<_>>();
+    let [facts] = facts.as_slice() else {
+        panic!("bare Vec recovery must retain exactly one call fact: {facts:?}")
+    };
+    assert!(matches!(
+        facts.target(),
+        CallTargetFact::Missing {
+            kind: UnknownCallKind::AssociatedType
+        }
+    ));
+    assert_eq!(facts.arguments().len(), 1);
+    let [slot] = facts.arguments()[0].slots() else {
+        panic!("bare Vec recovery must retain one argument slot")
+    };
+    assert_eq!(slot.inferred(), Some(&TypeKind::USize));
+    assert_eq!(slot.expected(), None);
+    assert_eq!(slot.poison(), CallPoison::Rejected);
 }
 
 #[test]

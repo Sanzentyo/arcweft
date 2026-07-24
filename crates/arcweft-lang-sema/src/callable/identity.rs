@@ -8,6 +8,9 @@
 //! make the exact identity contract harder to audit without reducing a mixed
 //! responsibility.
 
+#[cfg(test)]
+pub(crate) mod migration_evidence;
+
 use std::sync::Arc;
 
 use arcweft_character::id::CharacterId;
@@ -355,6 +358,9 @@ impl ProjectCallablePath {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProjectNameBinding {
     Callable(CallableDeclarationId),
+    AmbiguousCallables {
+        declarations: Arc<[CallableDeclarationId]>,
+    },
     Environment(EnvironmentCallableId),
     NonCallable {
         path: ProjectCallablePath,
@@ -1227,41 +1233,65 @@ impl CapacityMethodId {
         self.arity as usize
     }
 
-    pub fn resolve(
+    pub(crate) fn resolve_associated(
         receiver: &TypeKind,
-        method: &CallableName,
-        arity: usize,
-    ) -> Option<(Self, TypeKind)> {
-        let result = if receiver == &TypeKind::String
+        member: &CallableName,
+        authored_arity: usize,
+    ) -> Result<Option<Self>, CallableIdentityError> {
+        if member.as_str() != "with_capacity"
+            || !matches!(
+                receiver,
+                TypeKind::String | TypeKind::Bytes | TypeKind::Vec(_)
+            )
+        {
+            return Ok(None);
+        }
+        Self::try_new(receiver.clone(), member.clone(), authored_arity).map(Some)
+    }
+
+    pub fn resolve(receiver: &TypeKind, method: &CallableName, arity: usize) -> Option<Self> {
+        if receiver == &TypeKind::String
             && matches!((method.as_str(), arity), ("trim" | "to_string", 0))
         {
-            TypeKind::String
+            // String-preserving instance method.
         } else if matches!(receiver, TypeKind::Named(name) if name == "LineContext")
             && matches!((method.as_str(), arity), ("voice_handle", 0))
         {
-            TypeKind::Named("VoiceHandle".to_owned())
-        } else if let TypeKind::Vec(item) = receiver
+        } else if let TypeKind::Vec(_) = receiver
             && matches!((method.as_str(), arity), ("pop" | "pop_front", 0))
         {
-            TypeKind::Option(item.clone())
-        } else if let TypeKind::Vec(item) = receiver
+        } else if let TypeKind::Vec(_) = receiver
             && matches!((method.as_str(), arity), ("collect", 0))
         {
-            TypeKind::Vec(item.clone())
         } else if matches!(
             receiver,
             TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes
         ) {
             match (method.as_str(), arity) {
-                ("push" | "reserve" | "shrink_to", 1) | ("shrink", 0) => TypeKind::Unit,
+                ("push" | "reserve" | "shrink_to", 1) | ("shrink", 0) => {}
                 _ => return None,
             }
         } else {
             return None;
-        };
-        Self::try_new(receiver.clone(), method.clone(), arity)
-            .ok()
-            .map(|id| (id, result))
+        }
+        Self::try_new(receiver.clone(), method.clone(), arity).ok()
+    }
+
+    pub(crate) fn result_type(&self) -> TypeKind {
+        match (self.receiver(), self.method().as_str()) {
+            (receiver, "with_capacity") => receiver.clone(),
+            (TypeKind::String, "trim" | "to_string") => TypeKind::String,
+            (TypeKind::Named(name), "voice_handle") if name == "LineContext" => {
+                TypeKind::Named("VoiceHandle".to_owned())
+            }
+            (TypeKind::Vec(item), "pop" | "pop_front") => TypeKind::Option(item.clone()),
+            (TypeKind::Vec(item), "collect") => TypeKind::Vec(item.clone()),
+            (
+                TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes,
+                "push" | "reserve" | "shrink_to" | "shrink",
+            ) => TypeKind::Unit,
+            _ => unreachable!("CapacityMethodId constructors retain a supported method identity"),
+        }
     }
 }
 

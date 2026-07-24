@@ -5,7 +5,8 @@ use crate::borrow::{
 use crate::callable::{
     CallTargetFactMode, CallTargetFacts, CallTargetFactsInput, CallableDiagnostic,
     CallableDiagnosticCode, CallableDiagnosticRelated, CallableDiagnosticSeverity,
-    CallableDiagnosticSubject, CheckedCallTarget, PRODUCTION_CALLABLE_LIMITS, ResolvedCallable,
+    CallableDiagnosticSubject, CallableQueryDepth, CheckedCallTarget, PRODUCTION_CALLABLE_LIMITS,
+    ResolvedCallable,
 };
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, CheckedSpeakerLine,
@@ -66,6 +67,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 mod assertion;
 pub mod borrow_state;
 mod call_target_facts;
+mod candidate_evaluation;
 mod canonicalization;
 pub mod choice;
 pub mod effects;
@@ -97,6 +99,11 @@ pub use module::{
 pub(crate) use call_target_facts::FocusedCallSite;
 use call_target_facts::{
     CallResolverControl, CallTargetFactRecorder, CallTargetFactReport, CallableWorkOperation,
+};
+#[cfg(test)]
+pub(crate) use candidate_evaluation::PhysicalCandidateArgumentEvaluation;
+pub(crate) use candidate_evaluation::{
+    CandidateEvaluationPass, CandidateExpectedType, PhysicalArgumentEvaluationKind,
 };
 use fx::FxCatalog;
 use helpers::{
@@ -149,6 +156,26 @@ pub fn validate_typecheck_ready(module: &HirModule) -> Result<(), Vec<TypeCheckR
 /// Deterministic counters collected while type checking lowered HIR.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeCheckStats {
+    #[cfg(test)]
+    pub registered_call_expressions: usize,
+    #[cfg(test)]
+    pub shared_resolver_invocations: usize,
+    #[cfg(test)]
+    pub old_dispatch_calls: usize,
+    #[cfg(test)]
+    pub registered_argument_expression_checks: usize,
+    #[cfg(test)]
+    pub associated_nominal_receiver_resolutions: u64,
+    #[cfg(test)]
+    pub associated_value_namespace_lookups: u64,
+    #[cfg(test)]
+    pub associated_typed_environment_lookups: u64,
+    #[cfg(test)]
+    pub associated_capacity_selectors: u64,
+    #[cfg(test)]
+    pub associated_capacity_materializations: u64,
+    #[cfg(test)]
+    pub associated_trait_resolutions: u64,
     pub flows: usize,
     pub functions: usize,
     pub declarations: usize,
@@ -175,6 +202,114 @@ pub struct TypeCheckStats {
     pub borrow_escape_checks: usize,
     pub active_borrow_removes: usize,
     pub max_active_borrows: usize,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CallableMigrationCounters {
+    registered_call_expressions: usize,
+    shared_resolver_invocations: usize,
+    old_dispatch_calls: usize,
+    registered_argument_expression_checks: usize,
+    associated_nominal_receiver_resolutions: u64,
+    associated_value_namespace_lookups: u64,
+    associated_typed_environment_lookups: u64,
+    associated_capacity_selectors: u64,
+    associated_capacity_materializations: u64,
+    associated_trait_resolutions: u64,
+}
+
+#[cfg(test)]
+impl CallableMigrationCounters {
+    pub(crate) fn delta_from(self, before: Self) -> Self {
+        Self {
+            registered_call_expressions: self
+                .registered_call_expressions
+                .checked_sub(before.registered_call_expressions)
+                .expect("registered call counter is monotonic inside a transaction"),
+            shared_resolver_invocations: self
+                .shared_resolver_invocations
+                .checked_sub(before.shared_resolver_invocations)
+                .expect("shared resolver counter is monotonic inside a transaction"),
+            old_dispatch_calls: self
+                .old_dispatch_calls
+                .checked_sub(before.old_dispatch_calls)
+                .expect("old dispatch counter is monotonic inside a transaction"),
+            registered_argument_expression_checks: self
+                .registered_argument_expression_checks
+                .checked_sub(before.registered_argument_expression_checks)
+                .expect("registered argument counter is monotonic inside a transaction"),
+            associated_nominal_receiver_resolutions: self
+                .associated_nominal_receiver_resolutions
+                .checked_sub(before.associated_nominal_receiver_resolutions)
+                .expect("associated nominal counter is monotonic inside a transaction"),
+            associated_value_namespace_lookups: self
+                .associated_value_namespace_lookups
+                .checked_sub(before.associated_value_namespace_lookups)
+                .expect("associated value lookup counter is monotonic inside a transaction"),
+            associated_typed_environment_lookups: self
+                .associated_typed_environment_lookups
+                .checked_sub(before.associated_typed_environment_lookups)
+                .expect("associated environment counter is monotonic inside a transaction"),
+            associated_capacity_selectors: self
+                .associated_capacity_selectors
+                .checked_sub(before.associated_capacity_selectors)
+                .expect("associated capacity selector counter is monotonic inside a transaction"),
+            associated_capacity_materializations: self
+                .associated_capacity_materializations
+                .checked_sub(before.associated_capacity_materializations)
+                .expect(
+                    "associated capacity materialization counter is monotonic inside a transaction",
+                ),
+            associated_trait_resolutions: self
+                .associated_trait_resolutions
+                .checked_sub(before.associated_trait_resolutions)
+                .expect("associated trait counter is monotonic inside a transaction"),
+        }
+    }
+}
+
+#[cfg(test)]
+impl TypeCheckStats {
+    pub(crate) const fn callable_migration_counters(&self) -> CallableMigrationCounters {
+        CallableMigrationCounters {
+            registered_call_expressions: self.registered_call_expressions,
+            shared_resolver_invocations: self.shared_resolver_invocations,
+            old_dispatch_calls: self.old_dispatch_calls,
+            registered_argument_expression_checks: self.registered_argument_expression_checks,
+            associated_nominal_receiver_resolutions: self.associated_nominal_receiver_resolutions,
+            associated_value_namespace_lookups: self.associated_value_namespace_lookups,
+            associated_typed_environment_lookups: self.associated_typed_environment_lookups,
+            associated_capacity_selectors: self.associated_capacity_selectors,
+            associated_capacity_materializations: self.associated_capacity_materializations,
+            associated_trait_resolutions: self.associated_trait_resolutions,
+        }
+    }
+
+    pub(crate) fn retain_callable_migration(&mut self, retained: CallableMigrationCounters) {
+        self.registered_call_expressions += retained.registered_call_expressions;
+        self.shared_resolver_invocations += retained.shared_resolver_invocations;
+        self.old_dispatch_calls += retained.old_dispatch_calls;
+        self.registered_argument_expression_checks +=
+            retained.registered_argument_expression_checks;
+        self.associated_nominal_receiver_resolutions +=
+            retained.associated_nominal_receiver_resolutions;
+        self.associated_value_namespace_lookups += retained.associated_value_namespace_lookups;
+        self.associated_typed_environment_lookups += retained.associated_typed_environment_lookups;
+        self.associated_capacity_selectors += retained.associated_capacity_selectors;
+        self.associated_capacity_materializations += retained.associated_capacity_materializations;
+        self.associated_trait_resolutions += retained.associated_trait_resolutions;
+    }
+
+    pub(crate) fn record_associated_resolver_work(
+        &mut self,
+        report: crate::callable::AssociatedResolverWorkReport,
+    ) {
+        self.associated_typed_environment_lookups += report.typed_environment_lookups();
+        self.associated_capacity_selectors += report.capacity_selectors();
+        self.associated_capacity_materializations += report.capacity_materializations();
+        self.associated_trait_resolutions += report.trait_resolutions();
+    }
 }
 
 /// Stable identifier for a recorded type-check judgment.
@@ -430,6 +565,10 @@ pub struct TypeCheckReport {
     /// Exact source ranges of authored absolute entity references.
     pub project_entity_references: Vec<ProjectEntityReference>,
     call_target_fact_report: CallTargetFactReport,
+    #[cfg(test)]
+    physical_candidate_argument_evaluations: Vec<PhysicalCandidateArgumentEvaluation>,
+    #[cfg(test)]
+    physical_candidate_argument_evaluations_overflowed: bool,
 }
 
 /// Checked invocation behavior for one canonical project callable declaration.
@@ -698,9 +837,11 @@ struct TypeChecker<'a> {
     project_callable_references: Vec<ProjectCallableReference>,
     project_entity_references: Vec<ProjectEntityReference>,
     call_target_fact_recorder: CallTargetFactRecorder,
+    physical_candidate_argument_evaluations:
+        candidate_evaluation::PhysicalCandidateEvaluationRecorder,
     call_resolver_control: CallResolverControl<'a>,
     signature_work_charge: SignatureWorkChargeState,
-    focused_candidate_depth: usize,
+    focused_candidate_depth: CallableQueryDepth,
     local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
     semantic_scope_stack: Vec<SemanticScopeId>,
     next_semantic_scope: u32,
@@ -887,7 +1028,7 @@ struct CurriedSignatureCallValue {
     group_arg_offset: usize,
     current_group_params: Option<Vec<FunctionParam>>,
     pending_higher_order_args: Vec<PendingCurriedHigherOrderArg>,
-    resolved: Option<ResolvedCallable>,
+    continuation_base: Option<ResolvedCallable>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1098,11 +1239,13 @@ impl<'a> TypeChecker<'a> {
             project_callable_references: Vec::new(),
             project_entity_references: Vec::new(),
             call_target_fact_recorder: CallTargetFactRecorder::new(call_target_fact_mode),
+            physical_candidate_argument_evaluations:
+                candidate_evaluation::PhysicalCandidateEvaluationRecorder::new(),
             call_resolver_control,
             signature_work_charge: SignatureWorkChargeState {
                 candidate_work: false,
             },
-            focused_candidate_depth: 0,
+            focused_candidate_depth: CallableQueryDepth::new(PRODUCTION_CALLABLE_LIMITS),
             local_symbol_identities: HashMap::new(),
             semantic_scope_stack: Vec::new(),
             next_semantic_scope: 0,
@@ -1154,7 +1297,8 @@ impl<'a> TypeChecker<'a> {
         &self,
         call_span: Option<&arcweft_source::SourceSpan>,
     ) -> bool {
-        self.focused_candidate_depth != 0 || self.call_target_fact_recorder.focuses(call_span)
+        self.focused_candidate_depth.is_active()
+            || self.call_target_fact_recorder.focuses(call_span)
     }
 
     pub(super) fn record_call_target_facts(
@@ -1707,7 +1851,7 @@ impl<'a> TypeChecker<'a> {
             group_arg_offset: 0,
             current_group_params: None,
             pending_higher_order_args,
-            resolved: None,
+            continuation_base: None,
         });
     }
 
@@ -1934,7 +2078,7 @@ impl<'a> TypeChecker<'a> {
                         group_arg_offset: 0,
                         current_group_params: None,
                         pending_higher_order_args: Vec::new(),
-                        resolved: None,
+                        continuation_base: None,
                     })
                 }),
             _ => None,
@@ -2078,12 +2222,13 @@ impl<'a> TypeChecker<'a> {
             .or_else(|| self.env.symbol_type(name))
     }
 
-    fn path_has_known_resolution(&self, path: &str) -> bool {
-        self.symbol_type(path).is_some()
-            || self.function_type(path).is_some()
-            || self.function_signature(path).is_some()
-            || self.check_dotted_path_target(path).is_some()
-            || builtin_path_type(path).is_some()
+    fn path_has_known_resolution(&self, path: &arcweft_lang_syntax::expr::DottedPath) -> bool {
+        let label = path.as_label();
+        self.symbol_type(label).is_some()
+            || self.function_type(label).is_some()
+            || self.function_signature(label).is_some()
+            || self.dotted_value_path_resolution(path).is_some()
+            || builtin_path_type(label).is_some()
     }
 
     fn function_type(&self, name: &str) -> Option<&TypeKind> {

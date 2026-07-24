@@ -806,9 +806,7 @@ mod tests {
     use crate::{
         diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis},
         positions::PositionEncoding,
-        profiles::{
-            LspProfile, LspProfileResolver, register_loaded_environment, state::AcceptedOverlaySet,
-        },
+        profiles::{LspProfile, LspProfileResolver, register_loaded_environment},
     };
 
     const MAIN: &str = r"
@@ -870,7 +868,9 @@ entry agent @entry.agent.main {
         let main_path = project.path("src/main.arcw");
         let profile =
             LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path);
+                .resolve_for_document_path(&main_path)
+                .expect("profile construction")
+                .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "{:?}",
@@ -971,7 +971,9 @@ entry agent @entry.agent.main {
         let main_path = project.path("src/main.arcw");
         let profile =
             LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path);
+                .resolve_for_document_path(&main_path)
+                .expect("profile construction")
+                .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "{TEST_ID}: accepted project diagnostics: {:?}",
@@ -1087,7 +1089,9 @@ entry agent @entry.agent.main {
         let main_path = project.path("src/main.arcw");
         let profile =
             LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path);
+                .resolve_for_document_path(&main_path)
+                .expect("profile construction")
+                .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "accepted project diagnostics: {:?}",
@@ -1217,9 +1221,8 @@ adapter = "rust-nominal-tooling"
             AdapterRegistry::from_manifests([adapter.clone()]),
         ))
         .expect("custom adapter topology");
-        let (candidate, _) =
-            register_loaded_environment(&topology, AcceptedOverlaySet::default(), None)
-                .expect("registered custom adapter environment");
+        let (candidate, _) = register_loaded_environment(&topology, &[], None)
+            .expect("registered custom adapter environment");
         let profile = LspProfile::new(adapter, RuntimeHostRunnerKind::Native);
         profile
             .state()
@@ -1322,7 +1325,9 @@ adapter = "rust-nominal-tooling"
         let main_path = project.path("src/main.arcw");
         let profile =
             LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path);
+                .resolve_for_document_path(&main_path)
+                .expect("profile construction")
+                .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "{TEST_ID}: accepted project diagnostics: {:?}",

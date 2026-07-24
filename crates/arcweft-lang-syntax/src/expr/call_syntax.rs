@@ -1,5 +1,6 @@
-use super::{CallArg, Expr};
+use super::{CallArg, Expr, Name};
 use crate::ast::common::TextRange;
+use crate::types::{AuthoredTypeRef, TypeRef, TypeRefLexemeKind};
 use thiserror::Error;
 
 /// One authored call expression with semantic children and exact surface syntax.
@@ -22,8 +23,47 @@ pub enum CallSurfaceSyntax {
 /// Exact syntax for a parenthesized call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ParenthesizedCallSyntax {
-    callee: TextRange,
+    callee: ParenthesizedCalleeSyntax,
     arguments: ArgumentListSyntax,
+}
+
+/// Exhaustive callee syntax for one parenthesized call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParenthesizedCalleeSyntax {
+    /// An ordinary value, path, selection, or other callee expression.
+    Ordinary {
+        range: TextRange,
+        explicit_type_application: Option<Box<ExplicitCallTypeApplicationSyntax>>,
+    },
+    /// A path-shaped receiver followed by one typed member separator.
+    PathMember(Box<PathMemberCalleeSyntax>),
+}
+
+/// Typed generic application authored on an ordinary call target.
+///
+/// The semantic callee keeps its bare path/member identity. This carrier owns
+/// the generic application tree and delimiter evidence without folding either
+/// into a display string.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplicitCallTypeApplicationSyntax {
+    application: AuthoredTypeRef,
+}
+
+/// Typed path-member callee candidate retained for value/type classification.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PathMemberCalleeSyntax {
+    receiver: AuthoredTypeRef,
+    separator: AssociatedMemberSeparatorSyntax,
+    member: Name,
+    member_range: TextRange,
+    whole: TextRange,
+}
+
+/// Authored separator between a path-shaped receiver and terminal member.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum AssociatedMemberSeparatorSyntax {
+    Dot { range: TextRange },
+    Path { range: TextRange },
 }
 
 /// Exact syntax for a postfix callback-block call.
@@ -215,6 +255,14 @@ pub(crate) enum CallSyntaxInvariantError {
     InvalidRecoveryBoundary,
     #[error("callee range is invalid")]
     InvalidCalleeRange,
+    #[error("path-member receiver source is invalid")]
+    InvalidPathMemberReceiver,
+    #[error("path-member separator is invalid")]
+    InvalidPathMemberSeparator,
+    #[error("path-member name is invalid")]
+    InvalidPathMemberName,
+    #[error("explicit call type application is invalid")]
+    InvalidExplicitTypeApplication,
     #[error("callback call does not carry exactly one matching closure argument")]
     InvalidCallbackArgument,
     #[error("callback parameter header is invalid")]
@@ -257,6 +305,22 @@ impl CallExpr {
         }
     }
 
+    /// Typed path-member callee syntax, when this is a parenthesized path-member call.
+    pub const fn path_member_callee_syntax(&self) -> Option<&PathMemberCalleeSyntax> {
+        match &self.syntax {
+            CallSurfaceSyntax::Parenthesized(syntax) => syntax.path_member_callee(),
+            CallSurfaceSyntax::CallbackBlock(_) => None,
+        }
+    }
+
+    /// Typed explicit type application on an ordinary parenthesized callee.
+    pub fn explicit_type_application(&self) -> Option<&ExplicitCallTypeApplicationSyntax> {
+        match &self.syntax {
+            CallSurfaceSyntax::Parenthesized(syntax) => syntax.explicit_type_application(),
+            CallSurfaceSyntax::CallbackBlock(_) => None,
+        }
+    }
+
     /// Exact authored callee range.
     pub const fn callee_range(&self) -> TextRange {
         self.syntax.callee_range()
@@ -272,7 +336,12 @@ impl CallExpr {
         args: Vec<CallArg>,
         syntax: ParenthesizedCallSyntax,
     ) -> Result<Self, CallSyntaxInvariantError> {
-        validate_callee_before_surface(syntax.callee, syntax.arguments.open_paren)?;
+        validate_callee_before_surface(syntax.callee.range(), syntax.arguments.open_paren)?;
+        if let Some(application) = syntax.explicit_type_application()
+            && !application.matches_semantic_callee(&callee)
+        {
+            return Err(CallSyntaxInvariantError::InvalidExplicitTypeApplication);
+        }
         validate_argument_shapes(&args, syntax.arguments.arguments())?;
         Ok(Self {
             callee: Box::new(callee),
@@ -328,9 +397,24 @@ impl CallSurfaceSyntax {
 }
 
 impl ParenthesizedCallSyntax {
+    /// Exhaustive typed callee syntax.
+    pub const fn callee(&self) -> &ParenthesizedCalleeSyntax {
+        &self.callee
+    }
+
     /// Exact authored callee range.
     pub const fn callee_range(&self) -> TextRange {
-        self.callee
+        self.callee.range()
+    }
+
+    /// Typed path-member candidate, when the authored callee has that shape.
+    pub const fn path_member_callee(&self) -> Option<&PathMemberCalleeSyntax> {
+        self.callee.path_member()
+    }
+
+    /// Typed explicit type application on an ordinary callee.
+    pub fn explicit_type_application(&self) -> Option<&ExplicitCallTypeApplicationSyntax> {
+        self.callee.explicit_type_application()
     }
 
     /// Exact authored argument-list syntax.
@@ -340,15 +424,238 @@ impl ParenthesizedCallSyntax {
 
     /// Exact authored range of the complete call.
     pub const fn range(&self) -> TextRange {
-        TextRange::new(self.callee.start(), self.arguments.end_offset())
+        TextRange::new(self.callee.range().start(), self.arguments.end_offset())
     }
 
     pub(crate) fn try_from_parser(
-        callee: TextRange,
+        callee: ParenthesizedCalleeSyntax,
         arguments: ArgumentListSyntax,
     ) -> Result<Self, CallSyntaxInvariantError> {
-        validate_callee_before_surface(callee, arguments.open_paren)?;
+        validate_callee_before_surface(callee.range(), arguments.open_paren)?;
         Ok(Self { callee, arguments })
+    }
+}
+
+impl ParenthesizedCalleeSyntax {
+    /// Exact authored callee range.
+    pub const fn range(&self) -> TextRange {
+        match self {
+            Self::Ordinary { range, .. } => *range,
+            Self::PathMember(callee) => callee.whole(),
+        }
+    }
+
+    /// Typed path-member candidate, when the source has that exhaustive form.
+    pub const fn path_member(&self) -> Option<&PathMemberCalleeSyntax> {
+        match self {
+            Self::Ordinary { .. } => None,
+            Self::PathMember(callee) => Some(&**callee),
+        }
+    }
+
+    /// Typed explicit type application on an ordinary callee.
+    pub fn explicit_type_application(&self) -> Option<&ExplicitCallTypeApplicationSyntax> {
+        match self {
+            Self::Ordinary {
+                explicit_type_application,
+                ..
+            } => explicit_type_application.as_deref(),
+            Self::PathMember(_) => None,
+        }
+    }
+
+    pub(crate) const fn ordinary(range: TextRange) -> Self {
+        Self::Ordinary {
+            range,
+            explicit_type_application: None,
+        }
+    }
+
+    pub(crate) fn try_with_type_application(
+        range: TextRange,
+        application: AuthoredTypeRef,
+    ) -> Result<Self, CallSyntaxInvariantError> {
+        let application = ExplicitCallTypeApplicationSyntax::try_from_parser(application)?;
+        let application_range = application.range();
+        if application_range.start() < range.start() || application_range.end() != range.end() {
+            return Err(CallSyntaxInvariantError::InvalidExplicitTypeApplication);
+        }
+        Ok(Self::Ordinary {
+            range,
+            explicit_type_application: Some(Box::new(application)),
+        })
+    }
+}
+
+impl ExplicitCallTypeApplicationSyntax {
+    /// Complete typed application, including the bare callee head and every
+    /// authored type argument.
+    pub const fn application(&self) -> &AuthoredTypeRef {
+        &self.application
+    }
+
+    /// Explicit type arguments in authored order.
+    pub fn arguments(&self) -> &[TypeRef] {
+        match self.application.value() {
+            TypeRef::Generic { args, .. } => args,
+            _ => unreachable!("constructor accepts only generic applications"),
+        }
+    }
+
+    /// Exact range of the terminal callee head and its generic arguments.
+    pub fn range(&self) -> TextRange {
+        *self.application.root_source().whole()
+    }
+
+    /// Whether the authored application used a turbofish separator.
+    pub fn is_turbofish(&self) -> bool {
+        self.application
+            .source()
+            .lexemes()
+            .iter()
+            .any(|lexeme| lexeme.kind() == &TypeRefLexemeKind::TurbofishSeparator)
+    }
+
+    fn try_from_parser(application: AuthoredTypeRef) -> Result<Self, CallSyntaxInvariantError> {
+        if !matches!(application.value(), TypeRef::Generic { .. }) {
+            return Err(CallSyntaxInvariantError::InvalidExplicitTypeApplication);
+        }
+        let root = crate::types::TypeRefNodePath::root();
+        let has_open = application.source().lexemes().iter().any(|lexeme| {
+            lexeme.owner() == &root && lexeme.kind() == &TypeRefLexemeKind::OpenAngle
+        });
+        let has_close = application.source().lexemes().iter().any(|lexeme| {
+            lexeme.owner() == &root && lexeme.kind() == &TypeRefLexemeKind::CloseAngle
+        });
+        if !has_open || !has_close {
+            return Err(CallSyntaxInvariantError::InvalidExplicitTypeApplication);
+        }
+        Ok(Self { application })
+    }
+
+    fn matches_semantic_callee(&self, callee: &Expr) -> bool {
+        let Some(path) = self.application.value().nominal_path() else {
+            return false;
+        };
+        let application_path = super::DottedPath::from(path);
+        match callee {
+            Expr::Path(callee_path) => &application_path == callee_path,
+            Expr::Select(select) => application_path.is_single(select.member().as_str()),
+            _ => false,
+        }
+    }
+}
+
+impl PathMemberCalleeSyntax {
+    /// Authored receiver type tree used only after value-first classification.
+    pub const fn receiver(&self) -> &AuthoredTypeRef {
+        &self.receiver
+    }
+
+    /// Exact member separator syntax.
+    pub const fn separator(&self) -> AssociatedMemberSeparatorSyntax {
+        self.separator
+    }
+
+    /// Terminal member name.
+    pub const fn member(&self) -> &Name {
+        &self.member
+    }
+
+    /// Exact terminal member token range.
+    pub const fn member_range(&self) -> TextRange {
+        self.member_range
+    }
+
+    /// Exact authored callee range.
+    pub const fn whole(&self) -> TextRange {
+        self.whole
+    }
+
+    /// Exact authored callee range.
+    pub const fn range(&self) -> TextRange {
+        self.whole
+    }
+
+    pub(crate) fn try_from_parser(
+        source: &str,
+        source_base: usize,
+        receiver: AuthoredTypeRef,
+        separator: AssociatedMemberSeparatorSyntax,
+        member: Name,
+        member_range: TextRange,
+        whole: TextRange,
+    ) -> Result<Self, CallSyntaxInvariantError> {
+        let validator = SourceValidator::new(source, source_base)?;
+        let receiver_range = *receiver.root_source().whole();
+        validator.nonempty_range(receiver_range)?;
+        validator.nonempty_range(member_range)?;
+        validator.nonempty_range(whole)?;
+        let separator_range = separator.range();
+        match separator {
+            AssociatedMemberSeparatorSyntax::Dot { .. } => {
+                validator.token(separator_range, ".")?;
+            }
+            AssociatedMemberSeparatorSyntax::Path { .. } => {
+                validator.token(separator_range, "::")?;
+                if !receiver
+                    .source()
+                    .lexemes()
+                    .iter()
+                    .any(|lexeme| matches!(lexeme.kind(), TypeRefLexemeKind::OpenAngle))
+                {
+                    return Err(CallSyntaxInvariantError::InvalidPathMemberReceiver);
+                }
+            }
+        }
+        let member_start = member_range
+            .start()
+            .checked_sub(source_base)
+            .ok_or(CallSyntaxInvariantError::OffsetOverflow)?;
+        let member_end = member_range
+            .end()
+            .checked_sub(source_base)
+            .ok_or(CallSyntaxInvariantError::OffsetOverflow)?;
+        if source.get(member_start..member_end) != Some(member.as_str())
+            || member.is_empty()
+            || !member.chars().enumerate().all(|(index, character)| {
+                if index == 0 {
+                    super::is_ident_start(character)
+                } else {
+                    super::is_ident_continue(character)
+                }
+            })
+        {
+            return Err(CallSyntaxInvariantError::InvalidPathMemberName);
+        }
+        if receiver_range.start() != whole.start()
+            || receiver_range.end() != separator_range.start()
+            || separator_range.end() != member_range.start()
+            || member_range.end() != whole.end()
+        {
+            return Err(CallSyntaxInvariantError::InvalidPathMemberSeparator);
+        }
+        Ok(Self {
+            receiver,
+            separator,
+            member,
+            member_range,
+            whole,
+        })
+    }
+}
+
+impl AssociatedMemberSeparatorSyntax {
+    /// Exact authored separator token range.
+    pub const fn range(self) -> TextRange {
+        match self {
+            Self::Dot { range } | Self::Path { range } => range,
+        }
+    }
+
+    /// Whether this separator is the explicit generic associated-path form.
+    pub const fn is_explicit_path(self) -> bool {
+        matches!(self, Self::Path { .. })
     }
 }
 

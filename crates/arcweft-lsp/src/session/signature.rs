@@ -6,12 +6,12 @@ use std::{
 };
 
 use arcweft_lang_sema::signature::{SignatureQuery, SignatureQueryControl, query_signature};
-use lsp_server::{Message, RequestId, Response};
+use lsp_server::{ErrorCode, Message, RequestId, Response};
 use lsp_types::SignatureHelpParams;
 
 use crate::{
     documents::rebind_overlay,
-    profiles::state::ProfileEnvironmentLifecycle,
+    profiles::state::{AcceptedProfileEnvironment, ProfileEnvironmentLifecycle},
     requests::{
         RequestGateState, RequestRegistry, SignatureRequestBinding,
         signature::{
@@ -65,6 +65,9 @@ impl ArcweftLspSession {
         if accepted.profile() != mapped_profile {
             return Err(SignatureAcquireError::ProfileKeyMismatch);
         }
+        if let Some(pending) = self.pending_signature_authority.profile(mapped_profile) {
+            return Err(Self::pending_profile_authority_error(&accepted, pending));
+        }
 
         let project = accepted.project();
         let accepted_identity = project
@@ -79,6 +82,16 @@ impl ArcweftLspSession {
             }
         })?;
         let accepted_document = Arc::clone(accepted_source.document());
+        let pending_document = self
+            .pending_signature_authority
+            .document(mapped_profile, &uri);
+        if let Some(pending) = pending_document.filter(|pending| pending.bytes_changed()) {
+            return Err(SignatureAcquireError::DocumentNotAccepted {
+                uri: pending.uri().clone(),
+                expected: pending.expected().clone(),
+                actual: pending.actual().clone(),
+            });
+        }
         let overlay = accepted
             .overlays()
             .get(&uri)
@@ -114,6 +127,13 @@ impl ArcweftLspSession {
         if rebound.text() != accepted_document.text() {
             return Err(SignatureAcquireError::SourceDigestCollision {
                 source: accepted_identity,
+            });
+        }
+        if let Some(pending) = pending_document {
+            return Err(SignatureAcquireError::DocumentNotAccepted {
+                uri: pending.uri().clone(),
+                expected: pending.expected().clone(),
+                actual: pending.actual().clone(),
             });
         }
         let module = project.module_key(&accepted_identity).ok_or_else(|| {
@@ -169,6 +189,43 @@ impl ArcweftLspSession {
             stamp,
             active,
         ))
+    }
+
+    fn pending_profile_authority_error(
+        accepted: &AcceptedProfileEnvironment,
+        pending: &super::overlay_authority::PendingOverlayRevision,
+    ) -> SignatureAcquireError {
+        if pending.bytes_changed() {
+            return SignatureAcquireError::DocumentNotAccepted {
+                uri: pending.uri().clone(),
+                expected: pending.expected().clone(),
+                actual: pending.actual().clone(),
+            };
+        }
+        let Some(overlay) = accepted.overlays().get(pending.uri()) else {
+            return SignatureAcquireError::OverlayNotAccepted {
+                uri: pending.uri().clone(),
+            };
+        };
+        if overlay.version() != pending.version() {
+            return SignatureAcquireError::OverlayVersionNotAccepted {
+                uri: pending.uri().clone(),
+                expected: overlay.version(),
+                actual: pending.version(),
+            };
+        }
+        if overlay.logical_identity() != pending.expected() {
+            return SignatureAcquireError::DocumentNotAccepted {
+                uri: pending.uri().clone(),
+                expected: pending.expected().clone(),
+                actual: overlay.logical_identity().clone(),
+            };
+        }
+        SignatureAcquireError::DocumentNotAccepted {
+            uri: pending.uri().clone(),
+            expected: pending.expected().clone(),
+            actual: pending.actual().clone(),
+        }
     }
 
     #[allow(
@@ -239,6 +296,39 @@ impl ArcweftLspSession {
         self.publish_signature_result_inner(prepared, result, responses, || {});
     }
 
+    /// Publishes an internal error only while the exact prepared authority is
+    /// current; otherwise the winning stale/deadline status is published.
+    pub(crate) fn publish_signature_worker_panic(
+        &self,
+        prepared: &PreparedSignatureRequest,
+        responses: &crossbeam_channel::Sender<Message>,
+    ) {
+        let accepted = prepared.stamp().profile_state().accepted_read();
+        let control = prepared.control();
+        let mut gate = control.gate();
+        if *gate == RequestGateState::Finished {
+            return;
+        }
+        let response = match self.validate_signature_stamp(
+            prepared.stamp(),
+            control,
+            *gate,
+            accepted.as_ref(),
+        ) {
+            Ok(()) => Response::new_err(
+                prepared.request_id().clone(),
+                ErrorCode::InternalError as i32,
+                "signature worker panicked".to_owned(),
+            ),
+            Err(error) => {
+                SignatureRequestError::from(error).into_response(prepared.request_id().clone())
+            }
+        };
+        if responses.send(Message::Response(response)).is_ok() {
+            *gate = RequestGateState::Finished;
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn publish_signature_result_after_projection(
         &self,
@@ -302,15 +392,17 @@ impl ArcweftLspSession {
             insertion = None;
         }
         if responses.send(Message::Response(response)).is_ok() {
+            *gate = RequestGateState::Finished;
+            #[cfg(test)]
+            prepared.trigger_executor_fault(
+                crate::requests::signature::SignatureExecutorFaultPoint::AfterResponseEnqueue,
+            );
             if let Some((key, outcome)) = insertion {
                 let _ = cache.insert(
                     key,
                     outcome,
                     prepared.stamp().project().footprint().source_bytes(),
                 );
-            }
-            if *gate == RequestGateState::Active {
-                *gate = RequestGateState::Finished;
             }
         }
     }
@@ -387,6 +479,20 @@ impl ArcweftLspSession {
             return Err(SignatureRequestStale::GenerationChanged {
                 expected: stamp.generation(),
                 actual: current.generation(),
+            });
+        }
+        let pending = self
+            .pending_signature_authority
+            .profile(stamp.profile())
+            .or_else(|| {
+                self.pending_signature_authority
+                    .document(stamp.profile(), stamp.uri())
+            })
+            .filter(|pending| pending.previous_generation() == stamp.generation());
+        if let Some(pending) = pending {
+            return Err(SignatureRequestStale::DocumentChanged {
+                expected: pending.expected().clone(),
+                actual: pending.actual().clone(),
             });
         }
         let world = current.world();

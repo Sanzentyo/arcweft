@@ -105,6 +105,7 @@ pub struct AgentActionEnvParam {
 pub struct TypeCheckEnv {
     pub(crate) nominal_catalog: AcceptedNominalCatalog,
     pub(crate) symbols: HashMap<String, TypeKind>,
+    function_namespaces: HashSet<String>,
     pub(crate) enum_variants: HashMap<TypeKind, HashSet<String>>,
     pub(crate) enum_variant_payloads: HashMap<TypeKind, HashMap<String, EnumVariantPayload>>,
     pub(crate) functions: HashMap<String, TypeKind>,
@@ -490,8 +491,8 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
-            .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
-            .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
+            .with_function_namespace("data", TypeKind::Named("DataNamespace".to_owned()))
+            .with_function_namespace("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_builtins()
             .with_content_functions()
             .with_function_signature(
@@ -964,6 +965,14 @@ impl TypeCheckEnv {
         self
     }
 
+    #[must_use]
+    fn with_function_namespace(mut self, name: impl Into<String>, ty: TypeKind) -> Self {
+        let name = name.into();
+        self.symbols.insert(name.clone(), normalize_type_kind(ty));
+        self.function_namespaces.insert(name);
+        self
+    }
+
     /// Registers a free function return type.
     #[must_use]
     pub fn with_function(mut self, name: impl Into<String>, return_type: TypeKind) -> Self {
@@ -1105,6 +1114,10 @@ impl TypeCheckEnv {
 
     pub(crate) fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
         self.symbols.get(name)
+    }
+
+    pub(crate) fn is_function_namespace(&self, name: &str) -> bool {
+        self.function_namespaces.contains(name)
     }
 
     pub(crate) fn enum_has_variant(&self, ty: &TypeKind, variant: &str) -> bool {

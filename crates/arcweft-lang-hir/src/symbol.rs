@@ -22,7 +22,8 @@ pub use identity::{
 pub use table::{
     ProjectSymbolBindingCollision, ProjectSymbolLimitKind, ProjectSymbolLimits,
     ProjectSymbolLinkOutput, ProjectSymbolTable, ProjectSymbolTargetId, ProjectTypeCandidate,
-    ProjectTypeLookupError, ProjectTypeTarget, ResolvedProjectSymbol, VisibleProjectTypeBinding,
+    ProjectTypeLookupError, ProjectTypeTarget, ProjectValueLookup, ProjectValueLookupError,
+    ResolvedProjectSymbol, VisibleProjectTypeBinding,
 };
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;

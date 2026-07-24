@@ -205,6 +205,28 @@ flow @flow.opening opening {
 }
 
 #[test]
+fn spaced_dialogue_line_option_call_keeps_document_coordinates() {
+    let source = r"
+flow opening {
+    alice(look = standard_value(1i32)): hello
+}
+";
+    let tree = parse_ok(source);
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
+        panic!("expected speaker line");
+    };
+    let Some(Expr::Call(call)) = line.options().look() else {
+        panic!("expected ordinary call in the look option");
+    };
+
+    assert_eq!(&source[call.range().as_range()], "standard_value(1i32)");
+    assert_eq!(&source[call.callee_range().as_range()], "standard_value");
+}
+
+#[test]
 fn flow_body_dialogue_ranges_use_document_offsets() {
     let source = r"
 pub character alice {}

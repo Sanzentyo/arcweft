@@ -71,6 +71,73 @@ struct RustExternAliasSeed {
     signature: FunctionSignature,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StandardEnvironmentMethodProjection {
+    id: EnvironmentCallableId,
+    schema: CallableSignatureSchema,
+}
+
+impl StandardEnvironmentMethodProjection {
+    fn try_from_signature(
+        receiver: &TypeKind,
+        member: &CallableName,
+        signature: &FunctionSignature,
+        limits: &CallableLimits,
+    ) -> Result<Self, super::CallablePublicationError> {
+        let kind = if signature.checks_args() {
+            EnvironmentCallableKind::Method
+        } else {
+            EnvironmentCallableKind::UntypedMethodFallback
+        };
+        let key = CallableLookupKey::Method(super::ReceiverMethodKey::new(
+            receiver.clone(),
+            member.clone(),
+        ));
+        let schema = signature.callable_schema(
+            EffectRow::closed(EffectSet::new()),
+            if signature.checks_args() {
+                CallableValidator::Ordinary
+            } else {
+                CallableValidator::Untyped
+            },
+            limits,
+        )?;
+        let id = EnvironmentCallableId::new(
+            EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core),
+            kind,
+            key,
+            CallableOverloadIndex::try_from_usize(0)
+                .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
+        );
+        Ok(Self { id, schema })
+    }
+
+    pub(crate) const fn id(&self) -> &EnvironmentCallableId {
+        &self.id
+    }
+
+    pub(crate) const fn schema(&self) -> &CallableSignatureSchema {
+        &self.schema
+    }
+
+    fn into_publication_record(
+        self,
+        ordinal: usize,
+    ) -> Result<EnvironmentCallablePublicationRecord, super::CallablePublicationError> {
+        EnvironmentCallablePublicationRecord::try_new(
+            self.id.kind(),
+            self.id.key().clone(),
+            self.id.overload(),
+            self.schema,
+            CallableDocumentation::missing(),
+            None,
+            None,
+            EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
+                .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
+        )
+    }
+}
+
 impl RegisteredCallableCatalogBuilder {
     pub(crate) fn for_nominal_world(world: &AcceptedNominalWorld, limits: CallableLimits) -> Self {
         Self {
@@ -669,17 +736,13 @@ fn finish_project(
             });
         }
     }
-    let mut by_path = HashMap::new();
+    let mut by_path: HashMap<ProjectCallablePath, ProjectNameBinding> = HashMap::new();
     for (path, binding) in bindings {
         work.charge(1)?;
-        if let Some(first) = by_path.insert(path.clone(), binding.clone())
-            && first != binding
-        {
-            return Err(CallableCatalogBuildError::ProjectBindingCollision {
-                path: Box::new(path),
-                first: Box::new(first),
-                second: Box::new(binding),
-            });
+        if let Some(first) = by_path.get_mut(&path) {
+            *first = merge_project_value_binding(&path, first.clone(), binding)?;
+        } else {
+            by_path.insert(path, binding);
         }
     }
     Ok(ProjectCallableCatalog::new(
@@ -687,6 +750,72 @@ fn finish_project(
         by_declaration,
         by_path,
     ))
+}
+
+fn merge_project_value_binding(
+    path: &ProjectCallablePath,
+    first: ProjectNameBinding,
+    second: ProjectNameBinding,
+) -> Result<ProjectNameBinding, CallableCatalogBuildError> {
+    if first == second {
+        return Ok(first);
+    }
+    match (first, second) {
+        (ProjectNameBinding::Callable(left), ProjectNameBinding::Callable(right)) => {
+            Ok(ambiguous_project_callables([left, right]))
+        }
+        (
+            ProjectNameBinding::AmbiguousCallables { declarations },
+            ProjectNameBinding::Callable(declaration),
+        )
+        | (
+            ProjectNameBinding::Callable(declaration),
+            ProjectNameBinding::AmbiguousCallables { declarations },
+        ) => Ok(ambiguous_project_callables(
+            declarations.iter().cloned().chain([declaration]),
+        )),
+        (
+            ProjectNameBinding::AmbiguousCallables { declarations: left },
+            ProjectNameBinding::AmbiguousCallables {
+                declarations: right,
+            },
+        ) => Ok(ambiguous_project_callables(
+            left.iter().cloned().chain(right.iter().cloned()),
+        )),
+        (value @ ProjectNameBinding::Callable(_), ProjectNameBinding::NonCallable { .. })
+        | (
+            value @ ProjectNameBinding::AmbiguousCallables { .. },
+            ProjectNameBinding::NonCallable { .. },
+        )
+        | (value @ ProjectNameBinding::Environment(_), ProjectNameBinding::NonCallable { .. })
+        | (ProjectNameBinding::NonCallable { .. }, value @ ProjectNameBinding::Callable(_))
+        | (
+            ProjectNameBinding::NonCallable { .. },
+            value @ ProjectNameBinding::AmbiguousCallables { .. },
+        )
+        | (ProjectNameBinding::NonCallable { .. }, value @ ProjectNameBinding::Environment(_)) => {
+            Ok(value)
+        }
+        (first, second) => Err(CallableCatalogBuildError::ProjectBindingCollision {
+            path: Box::new(path.clone()),
+            first: Box::new(first),
+            second: Box::new(second),
+        }),
+    }
+}
+
+fn ambiguous_project_callables(
+    declarations: impl IntoIterator<Item = arcweft_lang_hir::symbol::CallableDeclarationId>,
+) -> ProjectNameBinding {
+    let mut declarations = declarations.into_iter().collect::<Vec<_>>();
+    declarations.sort();
+    declarations.dedup();
+    match declarations.as_slice() {
+        [declaration] => ProjectNameBinding::Callable(declaration.clone()),
+        _ => ProjectNameBinding::AmbiguousCallables {
+            declarations: declarations.into(),
+        },
+    }
 }
 
 fn finish_environment(
@@ -906,6 +1035,21 @@ fn environment_origin(record: &CallableRecord) -> SignatureOrigin {
 }
 
 impl TypeCheckEnv {
+    pub(crate) fn standard_method_projection(
+        &self,
+        receiver: &TypeKind,
+        member: &CallableName,
+        limits: &CallableLimits,
+    ) -> Result<Option<StandardEnvironmentMethodProjection>, super::CallablePublicationError> {
+        self.method_signature(receiver, member.as_str())
+            .map(|signature| {
+                StandardEnvironmentMethodProjection::try_from_signature(
+                    receiver, member, signature, limits,
+                )
+            })
+            .transpose()
+    }
+
     pub(crate) fn standard_callable_publication(
         &self,
         nominal_world: AcceptedNominalWorldStamp,
@@ -951,23 +1095,15 @@ impl TypeCheckEnv {
                 .then_with(|| left_ty.stable_ordering(right_ty))
         });
         for (ordinal, ((receiver, name), method)) in methods.into_iter().enumerate() {
-            let key = CallableLookupKey::Method(super::ReceiverMethodKey::new(
-                receiver.clone(),
-                CallableName::try_new(name.as_str())
-                    .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
-            ));
-            records.push(environment_record_from_signature(
-                if method.signature.checks_args() {
-                    EnvironmentCallableKind::Method
-                } else {
-                    EnvironmentCallableKind::UntypedMethodFallback
-                },
-                key,
+            let member = CallableName::try_new(name.as_str())
+                .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
+            let projection = StandardEnvironmentMethodProjection::try_from_signature(
+                receiver,
+                &member,
                 &method.signature,
-                None,
-                offset + ordinal,
                 limits,
-            )?);
+            )?;
+            records.push(projection.into_publication_record(offset + ordinal)?);
         }
         let manifest_digest = standard_manifest_digest(&records);
         EnvironmentCallablePublication::try_new_projected(

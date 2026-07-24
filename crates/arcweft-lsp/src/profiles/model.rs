@@ -146,6 +146,11 @@ impl LspProfile {
     pub fn typecheck_env(&self) -> TypeCheckEnv {
         self.adapter.declare_effects(TypeCheckEnv::standard())
     }
+
+    pub(crate) fn replace_diagnostics(&mut self, diagnostic: LspProfileDiagnostic) {
+        self.diagnostics.clear();
+        self.diagnostics.push(diagnostic);
+    }
 }
 
 impl ProfileSourceSelection {

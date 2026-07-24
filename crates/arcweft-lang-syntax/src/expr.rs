@@ -26,11 +26,12 @@ mod source_ranges;
 mod string_literal;
 
 pub use call_syntax::{
-    ArgumentListSyntax, ArgumentListTerminatorSyntax, CallArgumentFormSyntax,
-    CallArgumentRecoverySyntax, CallArgumentSyntax, CallExpr, CallRecoveryBoundarySyntax,
-    CallRecoveryTokenKind, CallSurfaceSyntax, CallbackBlockCallSyntax, CallbackBlockSyntax,
-    CallbackParameterHeaderSyntax, CallbackParameterSyntax, CallbackParameterTypeSyntax,
-    ParenthesizedCallSyntax,
+    ArgumentListSyntax, ArgumentListTerminatorSyntax, AssociatedMemberSeparatorSyntax,
+    CallArgumentFormSyntax, CallArgumentRecoverySyntax, CallArgumentSyntax, CallExpr,
+    CallRecoveryBoundarySyntax, CallRecoveryTokenKind, CallSurfaceSyntax, CallbackBlockCallSyntax,
+    CallbackBlockSyntax, CallbackParameterHeaderSyntax, CallbackParameterSyntax,
+    CallbackParameterTypeSyntax, ExplicitCallTypeApplicationSyntax, ParenthesizedCallSyntax,
+    ParenthesizedCalleeSyntax, PathMemberCalleeSyntax,
 };
 use closure_parse::parse_closure_params;
 use closure_source::ClosureBodySource;
@@ -174,6 +175,12 @@ impl DottedPath {
     /// Returns the path segments in source order.
     pub fn segments(&self) -> &[Name] {
         &self.segments
+    }
+
+    /// Returns the first `segment_count` structured segments.
+    pub fn prefix(&self, segment_count: usize) -> Option<Self> {
+        (segment_count != 0 && segment_count <= self.segments.len())
+            .then(|| Self::new(self.segments[..segment_count].to_vec()))
     }
 
     /// Returns true when the path contains exactly one segment with this name.
@@ -609,14 +616,20 @@ impl Expr {
 
     /// Returns a dotted syntax label when this expression is only path/select nodes.
     pub fn dotted_selector_label(&self) -> Option<String> {
+        self.dotted_path().map(|path| path.as_label().to_owned())
+    }
+
+    /// Returns the structured dotted path when this expression contains only
+    /// path/select nodes.
+    pub fn dotted_path(&self) -> Option<DottedPath> {
         match self {
-            Self::Path(path) => Some(path.as_label().to_owned()),
-            Self::Select(select) => {
-                let mut label = select.target().dotted_selector_label()?;
-                label.push('.');
-                label.push_str(select.member().as_str());
-                Some(label)
-            }
+            Self::Path(path) => Some(path.clone()),
+            Self::Select(select) => Some(
+                select
+                    .target()
+                    .dotted_path()?
+                    .with_member(select.member().as_str()),
+            ),
             _ => None,
         }
     }
@@ -1048,6 +1061,7 @@ pub enum ExprParseErrorKind {
 pub(crate) enum ExprRecoveryDiagnostic {
     MissingCallClose { open_paren: TextRange },
     RecoveredCallArgument,
+    RecoveredTypeCallee,
 }
 
 /// Path-free counters collected while parsing one expression.
@@ -1458,6 +1472,7 @@ enum Token {
     RBrace,
     Comma,
     Dot,
+    DoubleColon,
     Colon,
     Semicolon,
     Question,
@@ -1591,6 +1606,7 @@ fn token_source(token: &Token) -> String {
         Token::RBrace => "}".to_owned(),
         Token::Comma => ",".to_owned(),
         Token::Dot => ".".to_owned(),
+        Token::DoubleColon => "::".to_owned(),
         Token::Colon => ":".to_owned(),
         Token::Semicolon => ";".to_owned(),
         Token::Question => "?".to_owned(),
@@ -1742,6 +1758,12 @@ impl ExprParseError {
         }
     }
 
+    pub(crate) fn recovered_type_callee(error: &Self) -> Self {
+        let mut recovered = error.clone();
+        recovered.recovery = Some(ExprRecoveryDiagnostic::RecoveredTypeCallee);
+        recovered
+    }
+
     /// Stable typed discriminator for this expression parse failure.
     pub const fn kind(&self) -> ExprParseErrorKind {
         self.kind
@@ -1788,6 +1810,13 @@ impl ExprParseError {
                     | "syntax.expr.missing_call_argument_separator"
                     | "syntax.expr.unbalanced_call_argument"
             )
+    }
+
+    pub(crate) fn permits_type_callee_recovery(&self) -> bool {
+        matches!(
+            self.code,
+            "syntax.type.invalid" | "syntax.type.receiver_boundary"
+        )
     }
 }
 

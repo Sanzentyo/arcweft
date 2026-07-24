@@ -254,6 +254,22 @@ fn context(base: TypeCheckEnv, facts: Arc<ProjectRegistrationFacts>) -> ProjectC
 }
 
 #[test]
+fn compiled_project_exposes_the_exact_shared_hir_project() {
+    let (project, facts) = fixture("fn main() -> Unit { () }\n", "shared-hir");
+    let mut cache = RecordingCache::default();
+    let compiled = compile_project_with_cache(
+        &project,
+        &context(TypeCheckEnv::standard(), facts),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect("compiled project");
+
+    let retained = Arc::clone(compiled.hir_project());
+    assert!(Arc::ptr_eq(compiled.hir_project(), &retained));
+}
+
+#[test]
 fn lowered_hir_cache_hit_remains_read_only() {
     let (project, facts) = fixture("fn main() -> Unit { () }\n", "read-only-hit");
     let mut cache = RecordingCache::default();

@@ -589,11 +589,35 @@ impl<'a> Parser<'a> {
         match fence.kind {
             "line" => Some(self.parse_flat_dialogue_line(line, fence.head, fence.head_start)),
             "scope" => {
-                let body = self.take_flat_block_body("scope", line.start);
+                let body_start = self
+                    .events
+                    .get(self.index + 1)
+                    .map_or(line.end, |event| event.start);
+                let recovered_body = self.take_flat_block_body("scope", line.start);
+                let body_end = self
+                    .events
+                    .get(self.index.saturating_sub(1))
+                    .and_then(|event| {
+                        parse_flat_fence(event.text.trim())
+                            .is_some_and(|close| close.close)
+                            .then_some(event.start)
+                    })
+                    .or_else(|| {
+                        self.events
+                            .get(self.events.len().saturating_sub(1))
+                            .map(|event| event.end)
+                    });
+                let (body, body_base) = body_end
+                    .filter(|end| *end >= body_start)
+                    .and_then(|end| self.source.get(body_start..end))
+                    .map_or_else(
+                        || (recovered_body, body_start),
+                        |source| (source.to_owned(), body_start),
+                    );
                 let name = (!fence.head.is_empty()).then(|| fence.head.to_owned());
                 Some(FlowItem::Scope(ScopeBlock::new(
                     name,
-                    self.parse_flow_body(&body, line.start + fence.head_start),
+                    self.parse_flow_body(&body, body_base),
                     TextRange::new(line.start, self.previous_end()),
                 )))
             }

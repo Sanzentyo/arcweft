@@ -761,6 +761,28 @@ impl HirDialogue {
         &self.args
     }
 
+    /// Ordinary expression-valued line setup options checked before runtime
+    /// cleanup.
+    ///
+    /// This includes reserved singleton options with an existing semantic
+    /// owner, repeated hooks, and custom named options. Legacy presentation
+    /// `style` and `rich_text` expressions are excluded until the typed
+    /// `RichText` authority replaces their provisional raw runtime-plan
+    /// interpretation. Focus and cleanup remain separate because semantic
+    /// checking establishes the focus lifetime before cleanup.
+    pub fn checked_line_setup_expressions(&self) -> impl Iterator<Item = &Expr> {
+        [
+            self.voice.as_ref(),
+            self.look.as_ref(),
+            self.stage.as_ref(),
+            self.portrait.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(self.hooks.iter())
+        .chain(self.args.iter().map(LineArg::value))
+    }
+
     pub const fn content(&self) -> &DialogueContent {
         &self.content
     }

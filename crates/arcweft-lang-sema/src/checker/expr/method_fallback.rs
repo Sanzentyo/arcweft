@@ -100,7 +100,7 @@ impl TypeChecker<'_> {
                 group_arg_offset: stage.group_arg_offset,
                 current_group_params: None,
                 pending_higher_order_args,
-                resolved: None,
+                continuation_base: None,
             });
         }
         if final_group_timing && shape.applies_returned_function {

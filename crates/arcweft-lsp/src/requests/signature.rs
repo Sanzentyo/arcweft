@@ -77,6 +77,69 @@ pub(crate) struct PreparedSignatureRequest {
     lease: AcceptedDocumentHirLease,
     stamp: SignatureRequestStamp,
     active: ActiveRequest,
+    #[cfg(test)]
+    executor_test_control: Option<SignatureExecutorTestControl>,
+}
+
+/// Typed fault locations used to exercise the real prepared-request worker path.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SignatureExecutorFaultPoint {
+    BeforeWork,
+    AfterResponseEnqueue,
+}
+
+/// Whether a panic publisher could acquire session authority without waiting.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SignatureSessionAuthorityObservation {
+    Available,
+    Blocked,
+}
+
+/// Deterministic channels for one injected prepared-request panic.
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct SignatureExecutorTestControl {
+    fault: SignatureExecutorFaultPoint,
+    caught: crossbeam_channel::Sender<()>,
+    resume: crossbeam_channel::Receiver<()>,
+    session_authority: Option<crossbeam_channel::Sender<SignatureSessionAuthorityObservation>>,
+    completed: crossbeam_channel::Sender<()>,
+}
+
+#[cfg(test)]
+impl SignatureExecutorTestControl {
+    pub(crate) fn new(
+        fault: SignatureExecutorFaultPoint,
+        caught: crossbeam_channel::Sender<()>,
+        resume: crossbeam_channel::Receiver<()>,
+        completed: crossbeam_channel::Sender<()>,
+    ) -> Self {
+        Self {
+            fault,
+            caught,
+            resume,
+            session_authority: None,
+            completed,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_session_authority_observer(
+        mut self,
+        observer: crossbeam_channel::Sender<SignatureSessionAuthorityObservation>,
+    ) -> Self {
+        self.session_authority = Some(observer);
+        self
+    }
+}
+
+#[cfg(test)]
+impl Drop for SignatureExecutorTestControl {
+    fn drop(&mut self) {
+        let _ = self.completed.try_send(());
+    }
 }
 
 /// Semantic result retained until the final stamp gate decides cache publication.
@@ -513,6 +576,54 @@ impl PreparedSignatureRequest {
             lease,
             stamp,
             active,
+            #[cfg(test)]
+            executor_test_control: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn install_executor_test_control(&mut self, control: SignatureExecutorTestControl) {
+        self.executor_test_control = Some(control);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trigger_executor_fault(&self, point: SignatureExecutorFaultPoint) {
+        if self
+            .executor_test_control
+            .as_ref()
+            .is_some_and(|control| control.fault == point)
+        {
+            panic!("injected signature executor fault at {point:?}");
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wait_at_executor_panic_checkpoint(&self) {
+        let Some(control) = &self.executor_test_control else {
+            return;
+        };
+        let _ = control.caught.send(());
+        let _ = control.resume.recv();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn observes_session_authority(&self) -> bool {
+        self.executor_test_control
+            .as_ref()
+            .is_some_and(|control| control.session_authority.is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn record_session_authority(
+        &self,
+        observation: SignatureSessionAuthorityObservation,
+    ) {
+        if let Some(observer) = self
+            .executor_test_control
+            .as_ref()
+            .and_then(|control| control.session_authority.as_ref())
+        {
+            let _ = observer.send(observation);
         }
     }
 
@@ -540,6 +651,7 @@ impl PreparedSignatureRequest {
         self.active.control().as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn control_arc(&self) -> Arc<RequestControl> {
         Arc::clone(self.active.control())
     }
@@ -817,6 +929,8 @@ fn error_response(
 }
 
 #[cfg(test)]
+pub(crate) mod stamp_test_support;
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -867,6 +981,58 @@ mod tests {
             assert_eq!(
                 error.data,
                 Some(serde_json::json!({ "code": expected_stable_code }))
+            );
+        }
+    }
+
+    #[test]
+    fn every_cancellation_reason_has_the_contract_protocol_mapping() {
+        for (reason, expected_lsp_code) in [
+            (
+                SignatureCancellationReason::ClientCancelled,
+                ErrorCode::RequestCanceled as i32,
+            ),
+            (
+                SignatureCancellationReason::DeadlineExceeded,
+                ErrorCode::ServerCancelled as i32,
+            ),
+            (
+                SignatureCancellationReason::DocumentChanged,
+                ErrorCode::ContentModified as i32,
+            ),
+            (
+                SignatureCancellationReason::DocumentClosed,
+                ErrorCode::ContentModified as i32,
+            ),
+            (
+                SignatureCancellationReason::ProfileRemapped,
+                ErrorCode::ContentModified as i32,
+            ),
+            (
+                SignatureCancellationReason::ProfileClosing,
+                ErrorCode::ServerCancelled as i32,
+            ),
+            (
+                SignatureCancellationReason::WorkspaceRemoved,
+                ErrorCode::ServerCancelled as i32,
+            ),
+            (
+                SignatureCancellationReason::AcceptedReplaced,
+                ErrorCode::ContentModified as i32,
+            ),
+            (
+                SignatureCancellationReason::SessionShutdown,
+                ErrorCode::ServerCancelled as i32,
+            ),
+        ] {
+            let response = SignatureRequestError::from(SignatureRequestStale::Cancelled { reason })
+                .into_response(RequestId::from(81));
+            let error = response.error.expect("typed cancellation response");
+            assert_eq!(error.code, expected_lsp_code, "reason: {reason:?}");
+            assert_eq!(
+                error.data,
+                Some(serde_json::json!({ "code": "aw.signature.stale.cancelled" })),
+                "reason: {reason:?}"
             );
         }
     }

@@ -46,14 +46,17 @@ compression = "none"
     project.write_manifest("aoi");
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()));
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let build = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("profile construction");
+    let profile = build.profile();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
         profile.diagnostics()
     );
 
-    let ambiguous = character_hover_markdown(&profile, ".smile", None).expect("ambiguous hover");
+    let ambiguous = character_hover_markdown(profile, ".smile", None).expect("ambiguous hover");
     assert!(ambiguous.contains("ambiguous character member"));
     assert!(ambiguous.contains("CharacterLook<character.akane>.smile"));
     assert!(ambiguous.contains("CharacterLook<character.aoi>.smile"));
@@ -61,11 +64,11 @@ compression = "none"
     let expected =
         TypeKind::character_look(CharacterId::try_new("character.aoi").expect("character"));
     let scoped_hover =
-        character_hover_markdown(&profile, ".smile", Some(&expected)).expect("expected-type hover");
+        character_hover_markdown(profile, ".smile", Some(&expected)).expect("expected-type hover");
     assert!(scoped_hover.contains("for `character.aoi`"));
     assert!(!scoped_hover.contains("for `character.akane`"));
 
-    let smile_items = completions(&profile, None)
+    let smile_items = completions(profile, None)
         .into_iter()
         .filter(|item| item.label == ".smile")
         .collect::<Vec<_>>();

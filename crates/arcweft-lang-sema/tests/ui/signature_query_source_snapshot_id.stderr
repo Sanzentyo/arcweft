@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/signature_query_source_snapshot_id.rs:14:47
+   |
+14 |     let _ = SignatureQuery::production(world, snapshot, hir, 0, control);
+   |             --------------------------        ^^^^^^^^ expected `&SourceDocument`, found `&SourceSnapshotId`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&SourceDocument`
+              found reference `&'a SourceSnapshotId`
+note: associated function defined here
+  --> src/signature.rs
+   |
+   |     pub fn production(
+   |            ^^^^^^^^^^

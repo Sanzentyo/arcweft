@@ -4,16 +4,16 @@ Date: 2026-07-21
 
 ## Status
 
-Implementation and focused validation are complete in isolated Jujutsu change
-`puyrtmyz` at:
+Implementation and focused validation were completed first in isolated
+Jujutsu change `puyrtmyz` at:
 
 ```text
 D:\git\arcweft-ws-aw-ah-009-3-gap1
 ```
 
-The change is rebased without conflicts onto current main commit `110253cc`
-(`Stage private bound expression fragments`) and is not integrated. It closes
-the separate bounded-cache cut from
+That workspace path and integration state are historical provenance. The cache
+implementation is integrated on current `main`. It closes the separate
+bounded-cache cut from
 `arcweft-aw-ah-009.3-character-nominal-signature-help-final-contract.zip` while
 preserving the accepted-HIR lifecycle and publication rules from
 `arcweft-aw-ah-009.3.2-accepted-hir-request-lifecycle-production-reconciliation-final-contract.zip`.
@@ -22,12 +22,14 @@ preserving the accepted-HIR lifecycle and publication rules from
 
 - Each accepted environment owns one typed signature cache. The removed
   placeholder string cache has no compatibility carrier.
-- `SignatureCacheKey` contains exactly the original result identity:
+- `SignatureCacheKey` contains the original AW-AH-009.3 result identity:
   accepted generation, symbol world, symbol revision, character revision,
   character digest, accepted source identity, optional LSP version, and checked
-  byte offset. Profile, module, position encoding, and presentation label are
-  deliberately absent; accepted/profile/project/module pointer validation
-  remains in the later lifecycle stamp gate.
+  byte offset. Current production also includes `RegisteredEnvironmentDigest`,
+  as required by the later accepted Lang-01.1.1.2.2 adapter/Rust nominal
+  publication contract. Profile, module, position encoding, and presentation
+  label remain deliberately absent; accepted/profile/project/module pointer
+  validation remains in the lifecycle stamp gate.
 - Cache values retain only final native `Help` or stable `NotApplicable`
   outcomes. Query errors, invalid positions, projection failures, cancellation,
   deadline expiry, stale stamps, and failed response enqueue never insert.
@@ -314,7 +316,10 @@ active-signature, diagnostics-truncation, or production resource-accounting
 cut. It does not alter CharacterDialogue surfaces, restore removed syntax,
 change result ordering, or add compatibility/source gates.
 
-There are no cache-contract design deviations. The later accepted-HIR
-lifecycle contract refines where the original key is validated and when
-publication linearizes; it does not add profile/module fields to the original
-cache key.
+There are no cache-contract compatibility deviations. The accepted-HIR
+lifecycle contract refines where the base key is validated and when
+publication linearizes without adding profile/module fields. The still-later
+Lang-01.1.1.2.2 contract deliberately extends semantic cache identity with the
+registered-environment digest so accepted nominal/callable publication changes
+cannot reuse stale signature help. Production follows that later contract
+directly; no legacy key, alias, or dual lookup remains.

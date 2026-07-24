@@ -1,7 +1,6 @@
 use super::support::*;
 
-#[test]
-fn parses_expression_shapes_needed_by_hir_lowering() {
+fn assert_call_and_access_expression_shapes() {
     let pipe = parse_expr("state |> has_affection_at_least(@character.alice, 3)")
         .expect("pipe expr parses");
     assert!(matches!(pipe, Expr::Pipe { .. }));
@@ -36,7 +35,9 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     let grouped_partial =
         parse_expr("(_ > 80i64)").expect("parenthesized partial comparison expression parses");
     assert!(matches!(grouped_partial, Expr::Binary { .. }));
+}
 
+fn assert_collection_expression_shapes() {
     let list = parse_expr("[normal, smile, worried]").expect("bracket sequence parses");
     assert!(matches!(list, Expr::BracketSeq(items) if items.len() == 3));
     let empty_list = parse_expr("[]").expect("empty bracket sequence parses");
@@ -49,13 +50,24 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     assert!(matches!(record_literal, Expr::RecordLiteral(fields) if fields.len() == 1));
     let empty_record = parse_expr("{}").expect("empty record literal parses");
     assert!(matches!(empty_record, Expr::RecordLiteral(fields) if fields.is_empty()));
+}
 
+fn assert_generic_call_and_reference_expression_shapes() {
     let generic_collect = parse_expr("visible_choices.collect<Vec<ChoiceView>>()")
         .expect("generic method call parses");
-    assert_eq!(
-        selected_call_member(&generic_collect),
-        Some("collect<Vec<ChoiceView>>")
-    );
+    assert_eq!(selected_call_member(&generic_collect), Some("collect"));
+    let Expr::Call(generic_collect) = generic_collect else {
+        panic!("generic method is a call");
+    };
+    assert!(matches!(
+        generic_collect
+            .explicit_type_application()
+            .map(arcweft_lang_syntax::expr::ExplicitCallTypeApplicationSyntax::arguments),
+        Some([TypeRef::Generic { base, args }])
+            if crate::types::direct_type_name(base) == Some("Vec")
+                && matches!(args.as_slice(), [TypeRef::Path(path)]
+                    if path.canonical_string() == "ChoiceView")
+    ));
 
     let context_closure =
         parse_expr(r#"load_bg(id).with_context(|| "failed")?"#).expect("closure argument parses");
@@ -64,7 +76,9 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
     let delimited =
         parse_expr("@<say.opening.dream_hint@sem:b3_9f2a1c>").expect("delimited ref expr parses");
     assert!(matches!(delimited, Expr::EntityRef(entity) if entity.is_delimited()));
+}
 
+fn assert_operator_expression_shapes() {
     let range = parse_expr("0.0..=1.0").expect("inclusive float range parses");
     assert!(matches!(
         range,
@@ -100,7 +114,9 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
             optional: true
         } if key.scope() == &LifetimeScopeKind::Line && key.path() == ["focus"]
     ));
+}
 
+fn assert_patch_and_thread_expression_shapes() {
     let merged = parse_expr(".smile & .casual & .motion.nod").expect("patch merge parses");
     assert!(matches!(
         merged,
@@ -112,6 +128,15 @@ fn parses_expression_shapes_needed_by_hir_lowering() {
 
     let thread = parse_expr("thread compute { route_score(state) }").expect("thread expr parses");
     assert!(matches!(thread, Expr::Thread { block } if block.name() == Some("compute")));
+}
+
+#[test]
+fn parses_expression_shapes_needed_by_hir_lowering() {
+    assert_call_and_access_expression_shapes();
+    assert_collection_expression_shapes();
+    assert_generic_call_and_reference_expression_shapes();
+    assert_operator_expression_shapes();
+    assert_patch_and_thread_expression_shapes();
 }
 
 #[test]

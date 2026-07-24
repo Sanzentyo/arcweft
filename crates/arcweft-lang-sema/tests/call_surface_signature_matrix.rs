@@ -182,8 +182,9 @@ impl SignatureFixture {
     }
 
     fn help(&self, call: &str, cursor: &str) -> SemanticSignatureHelp {
-        let SignatureQueryOutcome::Help(help) = self.outcome(call, cursor) else {
-            panic!("{call:?} must produce semantic signature help")
+        let outcome = self.outcome(call, cursor);
+        let SignatureQueryOutcome::Help(help) = outcome else {
+            panic!("{call:?} must produce semantic signature help, got {outcome:?}")
         };
         let expected = SourceRange::new(
             unique_offset(self.document.text(), call),

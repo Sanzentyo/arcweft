@@ -36,7 +36,8 @@ use arcweft_source::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    fs::{self, File},
+    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -900,7 +901,8 @@ impl<'a> TopologyBuilder<'a> {
         self.budget.charge_work(1)?;
         self.budget.charge_work(1)?;
         if let Some(source) = self.overlays.get(&claim.path).cloned() {
-            let bytes = self.budget.check_source_bytes(source.len())?;
+            let bytes = self.budget.check_single_resource_bytes(source.len())?;
+            self.budget.charge_source_bytes(source.len())?;
             self.budget.charge_overlay_bytes(bytes)?;
             return Ok(BoundText {
                 source,
@@ -948,7 +950,8 @@ impl<'a> TopologyBuilder<'a> {
         self.budget.charge_work(1)?;
         self.budget.charge_work(1)?;
         let bound = if let Some(source) = self.overlays.get(path).cloned() {
-            let bytes = self.budget.check_source_bytes(source.len())?;
+            let bytes = self.budget.check_single_resource_bytes(source.len())?;
+            self.budget.charge_source_bytes(source.len())?;
             self.budget.charge_overlay_bytes(bytes)?;
             Some(BoundText {
                 source,
@@ -987,7 +990,8 @@ impl<'a> TopologyBuilder<'a> {
         self.budget.charge_work(1)?;
         self.budget.charge_work(1)?;
         if let Some(source) = self.overlays.get(&claim.path).cloned() {
-            let bytes = self.budget.check_source_bytes(source.len())?;
+            let bytes = self.budget.check_single_resource_bytes(source.len())?;
+            self.budget.charge_source_bytes(source.len())?;
             self.budget.charge_overlay_bytes(bytes)?;
             return Ok(BoundText {
                 source,
@@ -998,15 +1002,24 @@ impl<'a> TopologyBuilder<'a> {
         self.read_disk(claim)
     }
 
-    fn read_disk(&self, claim: &ResourceClaim) -> Result<BoundText, ProfileTopologyLoadError> {
-        let bytes =
-            fs::read(&claim.path).map_err(|source| ProfileTopologyLoadError::ResourceRead {
+    fn read_disk(&mut self, claim: &ResourceClaim) -> Result<BoundText, ProfileTopologyLoadError> {
+        let file =
+            File::open(&claim.path).map_err(|source| ProfileTopologyLoadError::ResourceRead {
                 id: Box::new(claim.id.clone()),
                 kind: claim.kind.clone(),
                 path: claim.path.clone(),
                 source,
             })?;
-        self.budget.check_source_bytes(bytes.len())?;
+        let bytes =
+            read_bytes_bounded(file, self.budget.remaining_source_bytes()).map_err(|source| {
+                ProfileTopologyLoadError::ResourceRead {
+                    id: Box::new(claim.id.clone()),
+                    kind: claim.kind.clone(),
+                    path: claim.path.clone(),
+                    source,
+                }
+            })?;
+        self.budget.charge_source_bytes(bytes.len())?;
         let source =
             String::from_utf8(bytes).map_err(|_| ProfileTopologyLoadError::ResourceUtf8 {
                 id: Box::new(claim.id.clone()),
@@ -1070,7 +1083,7 @@ impl<'a> TopologyBuilder<'a> {
         self.budget.charge_resource()?;
         self.budget.charge_work(2)?;
         let bound = if let Some(bytes) = self.binary_overlays.get(&claim.path).cloned() {
-            let observed = self.budget.check_source_bytes(bytes.len())?;
+            let observed = self.budget.check_single_resource_bytes(bytes.len())?;
             self.budget.charge_overlay_bytes(observed)?;
             self.consumed_binary_overlay_paths
                 .insert(claim.path.clone());
@@ -1087,7 +1100,7 @@ impl<'a> TopologyBuilder<'a> {
                     path: claim.path.clone(),
                     source,
                 })?;
-            self.budget.check_source_bytes(bytes.len())?;
+            self.budget.check_single_resource_bytes(bytes.len())?;
             BoundBinary {
                 bytes: Arc::from(bytes),
                 origin: ProfileTopologyResourceOrigin::Disk,
@@ -1232,6 +1245,16 @@ impl<'a> TopologyBuilder<'a> {
         }
         Ok(())
     }
+}
+
+pub(super) fn read_bytes_bounded(
+    reader: impl Read,
+    remaining: u64,
+) -> Result<Vec<u8>, std::io::Error> {
+    let evidence_limit = remaining.saturating_add(1);
+    let mut bytes = Vec::new();
+    reader.take(evidence_limit).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn require_external_metadata_field<T>(

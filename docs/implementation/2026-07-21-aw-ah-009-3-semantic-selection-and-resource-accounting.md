@@ -203,8 +203,13 @@ Those comparisons do not consume outer `SpecificityChecks`. The outer counter
 is charged once for each candidate/authored-argument probe; selected replay
 does not charge it a second time.
 
-Every candidate, including a singleton, is transactionally probed. Ranking is
-applied in this exact order:
+Every candidate is transactionally evaluated. Multi-candidate sets probe each
+candidate under checkpoint/rollback before deterministic ranking. A singleton
+keeps its sole checkpoint alive through viability selection and commit, so its
+nested argument calls are evaluated once instead of once during probing and
+again during replay. The `CandidateProbe` and pre-commit `SelectedReplay`
+control boundaries are both retained, and candidate work is charged exactly
+once. Ranking for multi-candidate sets is applied in this exact order:
 
 1. clean over recovered; rejected is non-viable;
 2. fewer hard type-check errors;
@@ -220,8 +225,10 @@ ambiguous. An ambiguity publishes only tied viable candidates; a rejected
 candidate cannot survive beside a better viable tie. With no viable overload,
 `CallTargetFact::Rejected` retains the rejected candidates and candidate zero
 owns the deterministic checked argument mapping/UI focus. A rejected singleton
-is replayed only to retain its specific diagnostic instead of replacing it
-with a duplicate generic error.
+retains its specific diagnostics, warnings, judgments, and focused nested facts
+from that one transaction, rolls back semantic mutations, then publishes the
+retained rejection evidence. It is not re-evaluated and does not replace a
+specific diagnostic with a duplicate generic error.
 
 `TypeKind::has_open_components` is an inherent recursive rule owned by the
 semantic type. A typed entity reference is open only when it has a payload and
@@ -237,11 +244,14 @@ and borrow state, closure captures, higher-order invocation inventories,
 focused facts, and effect-collector mutations. Terminal cancellation,
 deadline, resolver-work, and signature-accounting errors survive rollback.
 
-A unique viable winner is replayed through the ordinary registered-candidate
-checker. Replay commits only after the terminal-error check; a terminal error
-rolls the complete replay back. Direct tests cover rejected closure/effect
-state, block-local/presentation/borrow state, nested transactions, and the
-positive `EffectCollector` commit path.
+A unique viable winner from a multi-candidate set is replayed through the
+ordinary registered-candidate checker. A viable singleton instead commits the
+already-checked transaction after the same terminal-error and pre-commit
+control checks. Either path rolls the complete candidate transaction back on a
+terminal error. Direct tests cover rejected closure/effect state,
+block-local/presentation/borrow state, nested transactions, nested focused
+facts, single-candidate deadline boundaries, and the positive
+`EffectCollector` commit path.
 
 `SemanticSignature` contains no active coordinate. `SemanticSignatureHelp`
 owns one required active signature and one optional active parameter. Its
@@ -302,10 +312,11 @@ and it leaves signature lookup role-neutral.
 
 The ordinary-call fact, diagnostic, public read, Character-family parity, and
 compact numeric-coordinate gaps described by the earlier draft are closed in
-the current implementation. Nested speculative evaluation remains governed by
-the transaction/work-accounting contract: only one focused result is
-published, and no acceptance requirement is inferred from the number of
-internal expected-type probes.
+the current implementation. Production evidence now exercises the accepted
+32-deep registered-call boundary under the fixed 4,096 callable-work budget.
+The one-over depth transition fails before mutation, and singleton evaluation
+does not grow exponentially through speculative selected replay. Only one
+focused result is published.
 
 The remaining surface boundary is **CharacterDialogue application syntax**.
 The superseded speaker/content-call carriers are not repaired or accepted as

@@ -61,11 +61,6 @@ pub(super) enum LspProfileLoadError {
         #[source]
         source: Box<super::environment::RegisterProfileEnvironmentError>,
     },
-    #[error("profile candidate could not be published: {source}")]
-    ProfilePublication {
-        #[source]
-        source: super::state::AcceptedEnvironmentReplaceError,
-    },
 }
 
 impl LspProfileDiagnostic {
@@ -159,7 +154,6 @@ impl LspProfileLoadError {
             Self::Environment { profile_id, source } => {
                 return environment_diagnostic(*source, profile_id);
             }
-            Self::ProfilePublication { .. } => LspProfileDiagnosticKind::ProfilePublication,
         };
         LspProfileDiagnostic::new(kind, self.to_string())
     }

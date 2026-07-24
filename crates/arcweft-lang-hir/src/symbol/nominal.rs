@@ -485,7 +485,10 @@ impl ProjectNominalDeclaration {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_lang_syntax::types::{TypeRefNodeStep, parse_type_ref};
+    use arcweft_lang_syntax::{
+        expr::{CallExpr, Expr, parse_expr},
+        types::{TypeRefNodeStep, parse_type_ref},
+    };
     use arcweft_source::{SourceDocumentId, SourceName};
 
     use super::*;
@@ -497,6 +500,18 @@ mod tests {
             text,
         )
         .expect("test source document")
+    }
+
+    fn associated_call(source: &str) -> CallExpr {
+        match parse_expr(source).expect("associated call parses") {
+            Expr::Call(call) => call,
+            other => panic!("expected associated call, found {other:?}"),
+        }
+    }
+
+    fn assert_bound_span(span: &SourceSpan, local: TextRange, identity: &SourceDocumentIdentity) {
+        assert_eq!(span.source(), identity);
+        assert_eq!(span.range(), SourceRange::new(local.start(), local.end()));
     }
 
     #[test]
@@ -537,6 +552,71 @@ mod tests {
     }
 
     #[test]
+    fn associated_receiver_binds_to_exact_document() {
+        let text = "pkg::types::Vec<I32>.with_capacity(8)";
+        let call = associated_call(text);
+        let callee = call
+            .path_member_callee_syntax()
+            .expect("typed path-member callee");
+        let document = document("arcw:/nominal/associated", text);
+        let identity = document.identity().clone();
+        let bound = SourceBackedTypeRef::try_bind(
+            callee.receiver().clone(),
+            &document,
+            document.identity(),
+        )
+        .expect("associated receiver binds");
+
+        let local_nodes = callee.receiver().source().nodes();
+        let bound_nodes = bound.spans().nodes();
+        assert_eq!(local_nodes.len(), bound_nodes.len());
+        for ((local_path, local), (bound_path, spans)) in local_nodes.iter().zip(bound_nodes.iter())
+        {
+            assert_eq!(local_path, bound_path);
+            assert_bound_span(spans.whole(), *local.whole(), &identity);
+            match (local.head(), spans.head()) {
+                (Some(local), Some(spans)) => {
+                    assert_eq!(local.kind(), spans.kind());
+                    assert_bound_span(spans.range(), *local.range(), &identity);
+                    match (local.terminal(), spans.terminal()) {
+                        (Some(local), Some(spans)) => {
+                            assert_bound_span(spans, *local, &identity);
+                        }
+                        (None, None) => {}
+                        _ => panic!("bound terminal shape must match local source"),
+                    }
+                }
+                (None, None) => {}
+                _ => panic!("bound head shape must match local source"),
+            }
+        }
+
+        let local_lexemes = callee.receiver().source().lexemes();
+        let bound_lexemes = bound.spans().lexemes();
+        assert_eq!(local_lexemes.len(), bound_lexemes.len());
+        for (local, spans) in local_lexemes.iter().zip(bound_lexemes.iter()) {
+            assert_eq!(local.owner(), spans.owner());
+            assert_eq!(local.kind(), spans.kind());
+            assert_bound_span(spans.range(), *local.range(), &identity);
+        }
+
+        let member = document
+            .span(SourceRange::new(
+                callee.member_range().start(),
+                callee.member_range().end(),
+            ))
+            .expect("member range binds");
+        assert_bound_span(&member, callee.member_range(), &identity);
+        let whole = document
+            .span(SourceRange::new(
+                callee.whole().start(),
+                callee.whole().end(),
+            ))
+            .expect("callee range binds");
+        assert_bound_span(&whole, callee.whole(), &identity);
+    }
+
+    #[test]
     fn source_binding_rejects_out_of_bounds_ranges_without_clamping() {
         let authored = parse_type_ref("Missing").expect("type parses");
         let document = document("arcw:/nominal/short", "T");
@@ -573,6 +653,126 @@ mod tests {
                 expected: expected.identity().clone(),
                 actual: actual.identity().clone(),
             })
+        );
+    }
+
+    #[test]
+    fn associated_receiver_rejects_foreign_document() {
+        let text = "Vec<I32>.with_capacity(8)";
+        let call = associated_call(text);
+        let authored = call
+            .path_member_callee_syntax()
+            .expect("typed path-member callee")
+            .receiver()
+            .clone();
+        let actual = document("arcw:/nominal/associated-actual", text);
+        let expected = document("arcw:/nominal/associated-expected", text);
+
+        assert_eq!(
+            SourceBackedTypeRef::try_bind(authored, &actual, expected.identity()),
+            Err(ProjectNominalSourceError::WrongDocument {
+                expected: expected.identity().clone(),
+                actual: actual.identity().clone(),
+            })
+        );
+    }
+
+    #[test]
+    fn associated_receiver_rejects_out_of_bounds_and_utf8_split() {
+        let out_of_bounds = associated_call("Vec<I32>.with_capacity(8)");
+        let authored = out_of_bounds
+            .path_member_callee_syntax()
+            .expect("typed generic receiver")
+            .receiver()
+            .clone();
+        let short = document("arcw:/nominal/associated-short", "T");
+        assert_eq!(
+            SourceBackedTypeRef::try_bind(authored, &short, short.identity()),
+            Err(ProjectNominalSourceError::OutOfBounds {
+                range: TextRange::new(0, "Vec<I32>".len()),
+                source_len: 1,
+            })
+        );
+
+        let utf8 = associated_call("T.with_capacity(8)");
+        let authored = utf8
+            .path_member_callee_syntax()
+            .expect("typed path receiver")
+            .receiver()
+            .clone();
+        let split = document("arcw:/nominal/associated-utf8", "é");
+        assert_eq!(
+            SourceBackedTypeRef::try_bind(authored, &split, split.identity()),
+            Err(ProjectNominalSourceError::NotUtf8Boundary { byte: 1 })
+        );
+    }
+
+    #[test]
+    fn associated_receiver_reparse_uses_new_identity() {
+        let original_text = "Vec<I32>.with_capacity(8)";
+        let replacement_text = "Vec<I64>.with_capacity(8)";
+        let original_document = document("arcw:/nominal/replaced", original_text);
+        let replacement_document = document("arcw:/nominal/replaced", replacement_text);
+        assert_ne!(
+            original_document.identity(),
+            replacement_document.identity()
+        );
+
+        let original_call = associated_call(original_text);
+        let original_authored = original_call
+            .path_member_callee_syntax()
+            .expect("original typed receiver")
+            .receiver()
+            .clone();
+        let original_bound = SourceBackedTypeRef::try_bind(
+            original_authored.clone(),
+            &original_document,
+            original_document.identity(),
+        )
+        .expect("original receiver binds to original revision");
+        assert!(
+            original_bound
+                .spans()
+                .nodes()
+                .iter()
+                .all(|(_, source)| source.whole().source() == original_document.identity())
+        );
+        assert!(
+            original_bound
+                .spans()
+                .lexemes()
+                .iter()
+                .all(|lexeme| lexeme.range().source() == original_document.identity())
+        );
+        assert_eq!(
+            SourceBackedTypeRef::try_bind(
+                original_authored,
+                &replacement_document,
+                original_document.identity(),
+            ),
+            Err(ProjectNominalSourceError::WrongDocument {
+                expected: original_document.identity().clone(),
+                actual: replacement_document.identity().clone(),
+            })
+        );
+
+        let replacement_call = associated_call(replacement_text);
+        let replacement_bound = SourceBackedTypeRef::try_bind(
+            replacement_call
+                .path_member_callee_syntax()
+                .expect("replacement typed receiver")
+                .receiver()
+                .clone(),
+            &replacement_document,
+            replacement_document.identity(),
+        )
+        .expect("replacement receiver binds to replacement revision");
+        assert!(
+            replacement_bound
+                .spans()
+                .lexemes()
+                .iter()
+                .all(|lexeme| lexeme.range().source() == replacement_document.identity())
         );
     }
 

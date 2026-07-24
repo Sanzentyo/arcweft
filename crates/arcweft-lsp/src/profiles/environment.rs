@@ -22,14 +22,81 @@ use super::{
         AcceptedProjectSnapshot, AcceptedSourceAccess, AcceptedSourceDocumentSeed,
         AcceptedSourceLocator, AcceptedSourceOwnership,
     },
-    state::{AcceptedOverlaySet, AcceptedProfileCandidate, AcceptedProfileKey},
+    state::{
+        AcceptedOverlayEntry, AcceptedOverlaySet, AcceptedOverlaySetError,
+        AcceptedProfileCandidate, AcceptedProfileCandidateError, AcceptedProfileKey,
+    },
     uri::file_uri_from_path,
 };
+use crate::uri_key::LspUriKey;
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct AcceptedBuildWorkSnapshot {
+    pub(crate) topology_loads: u64,
+    pub(crate) compiler_builds: u64,
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ACCEPTED_BUILD_WORK: std::cell::Cell<AcceptedBuildWorkSnapshot> =
+        const { std::cell::Cell::new(AcceptedBuildWorkSnapshot {
+            topology_loads: 0,
+            compiler_builds: 0,
+        }) };
+}
+
+#[cfg(test)]
+pub(crate) fn accepted_build_work_snapshot_for_test() -> AcceptedBuildWorkSnapshot {
+    ACCEPTED_BUILD_WORK.get()
+}
+
+#[cfg(test)]
+fn record_topology_load() {
+    ACCEPTED_BUILD_WORK.with(|recorded| {
+        let mut work = recorded.get();
+        work.topology_loads = work
+            .topology_loads
+            .checked_add(1)
+            .expect("test topology-load counter remains bounded");
+        recorded.set(work);
+    });
+}
+
+#[cfg(not(test))]
+const fn record_topology_load() {}
+
+#[cfg(test)]
+fn record_compiler_build() {
+    ACCEPTED_BUILD_WORK.with(|recorded| {
+        let mut work = recorded.get();
+        work.compiler_builds = work
+            .compiler_builds
+            .checked_add(1)
+            .expect("test compiler-build counter remains bounded");
+        recorded.set(work);
+    });
+}
+
+#[cfg(not(test))]
+const fn record_compiler_build() {}
 
 pub(crate) struct RegisteredProfileCandidate {
     candidate: AcceptedProfileCandidate,
     characters: CharacterCatalog,
     topology: LoadedProfileTopology,
+}
+
+/// One live editor overlay supplied to a complete profile build.
+///
+/// The loader seed owns the bytes/path used by topology construction, while
+/// the protocol URI/version are rebound to the resulting accepted project
+/// before the publication candidate is constructed.
+#[derive(Clone, Debug)]
+pub(crate) struct ProfileRegistrationOverlay {
+    seed: ProfileTopologyOverlaySeed,
+    uri: LspUriKey,
+    version: i32,
 }
 
 #[derive(Debug, Error)]
@@ -50,11 +117,21 @@ pub(crate) enum RegisterProfileEnvironmentError {
     Catalog(String),
     #[error("accepted profile candidate was rejected: {0}")]
     Candidate(#[source] Box<super::state::AcceptedProfileCandidateError>),
+    #[error("accepted profile overlays were rejected: {0}")]
+    Overlay(#[source] AcceptedOverlaySetError),
     #[error("accepted project snapshot was rejected: {0}")]
     AcceptedProject(#[source] Box<super::accepted_project::AcceptedProjectSnapshotError>),
 }
 
 impl RegisteredProfileCandidate {
+    pub(crate) const fn candidate(&self) -> &AcceptedProfileCandidate {
+        &self.candidate
+    }
+
+    pub(crate) const fn metadata(&self) -> (&CharacterCatalog, &LoadedProfileTopology) {
+        (&self.characters, &self.topology)
+    }
+
     pub(crate) fn into_parts(
         self,
     ) -> (
@@ -66,17 +143,33 @@ impl RegisteredProfileCandidate {
     }
 }
 
+impl ProfileRegistrationOverlay {
+    pub(crate) fn new(seed: ProfileTopologyOverlaySeed, uri: LspUriKey, version: i32) -> Self {
+        Self { seed, uri, version }
+    }
+
+    const fn seed(&self) -> &ProfileTopologyOverlaySeed {
+        &self.seed
+    }
+
+    const fn uri(&self) -> &LspUriKey {
+        &self.uri
+    }
+
+    const fn version(&self) -> i32 {
+        self.version
+    }
+}
+
 pub(crate) fn register_profile_environment_with_overlays(
     manifest_path: &Path,
     profile_id: &ProfileId,
-    overlay_seeds: &[ProfileTopologyOverlaySeed],
-    overlays: AcceptedOverlaySet,
+    overlays: &[ProfileRegistrationOverlay],
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<RegisteredProfileCandidate, RegisterProfileEnvironmentError> {
     register_profile_environment(
         manifest_path,
         LaunchProfileSelection::Explicit(profile_id.as_str()),
-        overlay_seeds,
         overlays,
         previous,
     )
@@ -85,16 +178,21 @@ pub(crate) fn register_profile_environment_with_overlays(
 pub(crate) fn register_profile_environment(
     manifest_path: &Path,
     selection: LaunchProfileSelection<'_>,
-    overlay_seeds: &[ProfileTopologyOverlaySeed],
-    overlays: AcceptedOverlaySet,
+    overlays: &[ProfileRegistrationOverlay],
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<RegisteredProfileCandidate, RegisterProfileEnvironmentError> {
+    record_topology_load();
     let workspace_owner = workspace_owner(manifest_path)?;
+    let overlay_seeds = overlays
+        .iter()
+        .map(ProfileRegistrationOverlay::seed)
+        .cloned()
+        .collect::<Vec<_>>();
     let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
         manifest_path,
         workspace_owner,
         selection,
-        overlay_seeds,
+        &overlay_seeds,
         arcweft_adapter_context::standard::standard_registry(),
     ))
     .map_err(|error| RegisterProfileEnvironmentError::Topology(Box::new(error)))?;
@@ -108,7 +206,7 @@ pub(crate) fn register_profile_environment(
 
 pub(crate) fn register_loaded_environment(
     topology: &LoadedProfileTopology,
-    overlays: AcceptedOverlaySet,
+    overlays: &[ProfileRegistrationOverlay],
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<(AcceptedProfileCandidate, CharacterCatalog), RegisterProfileEnvironmentError> {
     let registration = load_profile_registration(&ProfileRegistrationLoadRequest::new(topology))
@@ -134,6 +232,7 @@ pub(crate) fn register_loaded_environment(
         None,
     )
     .with_accepted_launch_profile(accepted_launch);
+    record_compiler_build();
     let compiled = Arc::new(
         compile_project(
             topology.loaded_project().sources(),
@@ -160,12 +259,28 @@ pub(crate) fn register_loaded_environment(
     let world = compiled.registered_world_arc();
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::new(compiled.hir_project().clone()),
+            Arc::clone(compiled.hir_project()),
             world.as_ref(),
             source_seeds,
         )
         .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
     );
+    let mut overlay_entries = Vec::with_capacity(overlays.len());
+    for overlay in overlays {
+        let Some(identity) = project.source_identity_by_uri(overlay.uri()) else {
+            return Err(RegisterProfileEnvironmentError::Candidate(Box::new(
+                AcceptedProfileCandidateError::UnknownOverlayUri {
+                    uri: overlay.uri().clone(),
+                },
+            )));
+        };
+        overlay_entries.push((
+            overlay.uri().clone(),
+            AcceptedOverlayEntry::new(overlay.version(), identity.clone()),
+        ));
+    }
+    let overlays = AcceptedOverlaySet::try_new(overlay_entries)
+        .map_err(RegisterProfileEnvironmentError::Overlay)?;
     let candidate = AcceptedProfileCandidate::try_new(
         accepted_profile_key(topology)?,
         compiled,

@@ -1,6 +1,6 @@
 use super::support::{FixedLiteralSpreadSlot, fixed_literal_spread_slots};
 use super::{
-    CallArg, CallExpr, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
+    CallArg, EntityKind, Expr, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use crate::checker::helpers::first_arg_type;
@@ -17,6 +17,7 @@ impl TypeChecker<'_> {
         args: &[CallArg],
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
+        registered_arguments_checked: bool,
     ) -> Option<TypeKind> {
         if self.registered_world.is_none() && matches!(name, "promote" | "promote_unchecked") {
             for arg in args.iter().filter_map(|arg| match arg {
@@ -70,12 +71,14 @@ impl TypeChecker<'_> {
                 Some(name),
                 None,
                 curried_signature_call.as_ref(),
-                None,
                 args,
                 callee_ty,
             ));
         }
         if self.registered_world.is_some() {
+            if !registered_arguments_checked {
+                self.check_untyped_function_args(args);
+            }
             self.errors
                 .push(TypeCheckError::new(format!("unknown function `{name}`")));
             return None;
@@ -97,15 +100,9 @@ impl TypeChecker<'_> {
         callee: Option<&str>,
         effect_callable: Option<CallableId>,
         curried_signature_call: Option<&CurriedSignatureCallValue>,
-        call: Option<&CallExpr>,
         args: &[CallArg],
         callee_ty: TypeKind,
     ) -> TypeKind {
-        if let (Some(call), Some(curried)) = (call, curried_signature_call)
-            && curried.resolved.is_some()
-        {
-            return self.check_registered_curried_candidate(call, expression_id, curried);
-        }
         let TypeKind::Function {
             params,
             return_type,
@@ -243,7 +240,7 @@ impl TypeChecker<'_> {
                 group_arg_offset: value.group_arg_offset + supplied_arg_count,
                 current_group_params: value.current_group_params.clone(),
                 pending_higher_order_args: pending,
-                resolved: value.resolved.clone(),
+                continuation_base: value.continuation_base.clone(),
             });
         } else {
             self.last_checked_curried_signature_call = None;

@@ -1,6 +1,7 @@
 mod support;
 
 mod arcw_contract_fixtures;
+mod associated_capacity;
 mod await_;
 mod choice;
 mod compile_gap_regressions;

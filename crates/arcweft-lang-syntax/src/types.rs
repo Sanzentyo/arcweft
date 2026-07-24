@@ -6,10 +6,8 @@ use crate::ast::{
     module_path::ModuleSegment,
 };
 use crate::cst::{
-    ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation,
-    find_top_level_matching_punctuation, find_top_level_punctuation, split_leading_ident,
-    split_top_level_arcweft_punctuation_once, split_top_level_keyword_once,
-    split_top_level_punctuation, split_top_level_punctuation_once,
+    ArcweftPunctuation, find_matching_angle_group, find_matching_punctuation, split_leading_ident,
+    split_top_level_keyword_once, split_top_level_punctuation, split_top_level_punctuation_once,
     strip_prefix_arcweft_punctuation, take_doc_comment_prefix,
 };
 use crate::expr::{Expr, parse_expr_at};
@@ -17,13 +15,16 @@ use crate::pattern::parse_pattern_at;
 use crate::reference::{BorrowKind, ReferenceType};
 
 mod expression_path;
-mod reference;
 mod source;
+mod token;
 
-use self::reference::parse_reference_type;
 pub use self::source::{
-    AuthoredTypeRef, TypePath, TypeRecoveryId, TypeRefHeadKind, TypeRefHeadSource, TypeRefNodePath,
-    TypeRefNodeSource, TypeRefNodeStep, TypeRefSourceMap, TypeRefSourceMapError,
+    AuthoredTypeRef, TypePath, TypeRecoveryId, TypeRefHeadKind, TypeRefHeadSource,
+    TypeRefLexemeKind, TypeRefLexemeSource, TypeRefNodePath, TypeRefNodeSource, TypeRefNodeStep,
+    TypeRefSourceMap, TypeRefSourceMapError,
+};
+pub(crate) use self::token::{
+    ParsedGenericCallee, ParsedTypeReceiver, TypeToken, TypeTokenCursor, TypeTokenKind,
 };
 
 /// Lifetime name used in Arcweft type syntax.
@@ -169,69 +170,47 @@ pub struct TypeParseError {
     message: String,
 }
 
+struct ParsedTypeRef {
+    value: TypeRef,
+    nodes: Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
+    lexemes: Vec<TypeRefLexemeSource<TextRange>>,
+}
+
+impl ParsedTypeRef {
+    fn node(
+        value: TypeRef,
+        path: &TypeRefNodePath,
+        whole: TextRange,
+        head: Option<TypeRefHeadSource<TextRange>>,
+        lexemes: Vec<TypeRefLexemeSource<TextRange>>,
+    ) -> Self {
+        Self {
+            value,
+            nodes: vec![(path.clone(), TypeRefNodeSource::new(whole, head))],
+            lexemes,
+        }
+    }
+
+    fn replace_node_whole(&mut self, path: &TypeRefNodePath, whole: TextRange) {
+        let (_, source) = self
+            .nodes
+            .iter_mut()
+            .find(|(candidate, _)| candidate == path)
+            .expect("parsed wrapper retains its structural root");
+        source.replace_whole(whole);
+    }
+}
+
 /// Parses an Arcweft type expression together with exact source evidence.
 pub fn parse_type_ref(source: &str) -> Result<AuthoredTypeRef, TypeParseError> {
-    let parsed = parse_type_ref_value(source)?;
-    validate_type_ref_limits(&parsed)?;
-    let source_map = source::build_type_source_map(source, &parsed)?;
-    AuthoredTypeRef::try_new(parsed, source_map).map_err(|error| {
-        TypeParseError::new_owned(format!("invalid parser-owned type source map: {error:?}"))
-    })
+    parse_authored_type_ref_at(source, 0)
 }
 
-fn parse_type_ref_value(source: &str) -> Result<TypeRef, TypeParseError> {
-    let trimmed = source.trim();
-    if trimmed.is_empty() {
-        return Err(TypeParseError::new("expected type"));
-    }
-    let mut parsed = match parse_single_argument_generic_chain(trimmed)? {
-        Some(parsed) => parsed,
-        None => parse_function_type(trimmed)?,
-    };
-    parsed.rebase_reference_ranges(subslice_offset(source, trimmed));
-    Ok(parsed)
-}
-
-/// Parses the common unary-constructor chain without one Rust stack frame per
-/// type layer. The production nominal resolver accepts a recursive type depth
-/// of 256, so syntax parsing must be able to construct at least that depth
-/// before the semantic limit can make the acceptance decision.
-fn parse_single_argument_generic_chain(source: &str) -> Result<Option<TypeRef>, TypeParseError> {
-    let mut fragment = source;
-    let mut fragment_base = 0usize;
-    let mut layers = Vec::new();
-
-    while let Some((base, arguments)) = split_generic_type(fragment) {
-        let parts = split_type_args(arguments);
-        if parts.len() != 1 {
-            break;
-        }
-        let argument = parts[0].trim();
-        if argument.is_empty() || split_top_level_punctuation_once(argument, '=').is_some() {
-            break;
-        }
-        layers.push(base);
-        fragment_base = fragment_base
-            .checked_add(subslice_offset(fragment, argument))
-            .ok_or_else(|| TypeParseError::new("type source offset overflow"))?;
-        fragment = argument;
-    }
-
-    if layers.is_empty() {
-        return Ok(None);
-    }
-
-    let mut parsed = parse_function_type(fragment)?;
-    parsed.rebase_reference_ranges(fragment_base);
-    for base in layers.into_iter().rev() {
-        parsed = TypeRef::Generic {
-            base: TypePath::parse(base).map_err(|error| {
-                TypeParseError::new_owned(format!("invalid type constructor `{base}`: {error}"))
-            })?,
-            args: vec![parsed],
-        };
-    }
-    Ok(Some(parsed))
+fn parse_authored_type_ref_at(
+    source: &str,
+    base: usize,
+) -> Result<AuthoredTypeRef, TypeParseError> {
+    token::parse_source_at(source, base)
 }
 
 const MAX_TYPE_GENERIC_ARGUMENTS: usize = 256;
@@ -243,9 +222,11 @@ fn validate_type_ref_limits(root: &TypeRef) -> Result<(), TypeParseError> {
     while let Some(ty) = pending.pop() {
         nodes = nodes
             .checked_add(1)
-            .ok_or_else(|| TypeParseError::new("type node count overflow"))?;
+            .ok_or_else(|| TypeParseError::resource_limit("type node count overflow"))?;
         if nodes > MAX_TYPE_NODES {
-            return Err(TypeParseError::new("type exceeds the 4096 node limit"));
+            return Err(TypeParseError::node_limit(
+                "type exceeds the 4096 node limit",
+            ));
         }
         match ty {
             TypeRef::Tuple(items) | TypeRef::Choice(items) => pending.extend(items.iter().rev()),
@@ -259,7 +240,7 @@ fn validate_type_ref_limits(root: &TypeRef) -> Result<(), TypeParseError> {
             }
             TypeRef::Generic { args, .. } => {
                 if args.len() > MAX_TYPE_GENERIC_ARGUMENTS {
-                    return Err(TypeParseError::new(
+                    return Err(TypeParseError::generic_argument_limit(
                         "type constructor exceeds the 256 argument limit",
                     ));
                 }
@@ -270,9 +251,11 @@ fn validate_type_ref_limits(root: &TypeRef) -> Result<(), TypeParseError> {
                     .args
                     .len()
                     .checked_add(bound.associated.len())
-                    .ok_or_else(|| TypeParseError::new("trait argument count overflow"))?;
+                    .ok_or_else(|| {
+                        TypeParseError::resource_limit("trait argument count overflow")
+                    })?;
                 if argument_count > MAX_TYPE_GENERIC_ARGUMENTS {
-                    return Err(TypeParseError::new(
+                    return Err(TypeParseError::generic_argument_limit(
                         "trait bound exceeds the 256 argument limit",
                     ));
                 }
@@ -293,6 +276,26 @@ impl TypeRef {
     /// Deterministic Arcweft spelling used by typed semantic identities.
     pub fn canonical_label(&self) -> String {
         type_ref_parse_label(self)
+    }
+
+    /// Nominal path authored at this type's head, when this node has one.
+    ///
+    /// This is the structural resolver input for path, generic-constructor,
+    /// and trait-bound nodes. It never reconstructs a display label.
+    pub const fn nominal_path(&self) -> Option<&TypePath> {
+        match self {
+            Self::Path(path) | Self::Generic { base: path, .. } => Some(path),
+            Self::TraitBound(bound) => Some(&bound.path),
+            Self::Never
+            | Self::ConstInt(_)
+            | Self::Tuple(_)
+            | Self::Function { .. }
+            | Self::Choice(_)
+            | Self::Projection { .. }
+            | Self::Reference(_)
+            | Self::Slice(_)
+            | Self::Recovery(_) => None,
+        }
     }
 
     pub(crate) fn rebase_reference_ranges(&mut self, base: usize) {
@@ -542,334 +545,6 @@ fn take_param_doc(source: &str) -> (Option<DocBlock>, &str) {
         )),
         rest,
     )
-}
-
-fn parse_function_type(source: &str) -> Result<TypeRef, TypeParseError> {
-    let (function_source, effects) = split_type_effect_row_suffix(source)?;
-    if let Some((params, return_type)) = split_top_level_arrow(function_source) {
-        let params_source = params.trim();
-        let mut params = parse_function_type_params(params_source)?;
-        let params_base = subslice_offset(source, params_source);
-        for param in &mut params {
-            param.rebase_reference_ranges(params_base);
-        }
-        let return_source = return_type.trim();
-        if return_source.is_empty() {
-            return Err(TypeParseError::new("expected return type after `->`"));
-        }
-        let mut return_type = parse_function_type(return_source)?;
-        return_type.rebase_reference_ranges(subslice_offset(source, return_source));
-        return Ok(TypeRef::Function {
-            params,
-            return_type: Box::new(return_type),
-            effects,
-        });
-    }
-    if let Some(effects) = effects {
-        let Some(inner) = parenthesized_type(function_source) else {
-            return Err(TypeParseError::new(
-                "effect row can only annotate a function type",
-            ));
-        };
-        let mut inner_ty = parse_function_type(inner)?;
-        inner_ty.rebase_reference_ranges(subslice_offset(source, inner));
-        let TypeRef::Function {
-            params,
-            return_type,
-            effects: inner_effects,
-        } = inner_ty
-        else {
-            return Err(TypeParseError::new(
-                "effect row can only annotate a function type",
-            ));
-        };
-        if inner_effects.is_some() {
-            return Err(TypeParseError::new(
-                "function type cannot declare multiple effect rows",
-            ));
-        }
-        return Ok(TypeRef::Function {
-            params,
-            return_type,
-            effects: Some(effects),
-        });
-    }
-    parse_type_choice(source)
-}
-
-fn parse_function_type_params(source: &str) -> Result<Vec<TypeRef>, TypeParseError> {
-    let mut params = if let Some(inner) = parenthesized_type(source) {
-        let parts = split_top_level_punctuation(inner, ',');
-        if parts.len() > 1 {
-            parts
-                .into_iter()
-                .map(|part| parse_nested_type(inner, part))
-                .collect::<Result<Vec<_>, _>>()?
-        } else {
-            vec![parse_nested_type(inner, inner)?]
-        }
-    } else {
-        vec![parse_type_choice(source)?]
-    };
-    if let Some(inner) = parenthesized_type(source) {
-        let inner_base = subslice_offset(source, inner);
-        for param in &mut params {
-            param.rebase_reference_ranges(inner_base);
-        }
-    }
-    if params
-        .iter()
-        .any(|param| matches!(param, TypeRef::Tuple(_)))
-    {
-        return Err(TypeParseError::new(
-            "function parameter group cannot contain an anonymous tuple type; use `(A, B) -> C` for one call group",
-        ));
-    }
-    Ok(params)
-}
-
-fn parse_type_choice(source: &str) -> Result<TypeRef, TypeParseError> {
-    let alternatives = split_top_level_punctuation(source, '|');
-    if alternatives.len() <= 1 {
-        return parse_type_atom(source);
-    }
-    let mut parsed = Vec::new();
-    for alternative in alternatives {
-        let alternative = alternative.trim();
-        if alternative.is_empty() {
-            return Err(TypeParseError::new(
-                "anonymous sum alternative cannot be empty",
-            ));
-        }
-        reject_variant_row_type(alternative)?;
-        let mut ty = parse_type_atom(alternative)?;
-        ty.rebase_reference_ranges(subslice_offset(source, alternative));
-        parsed.push(ty);
-    }
-    Ok(TypeRef::Choice(parsed))
-}
-
-fn parse_type_atom(source: &str) -> Result<TypeRef, TypeParseError> {
-    if let Some(inner) = parenthesized_type(source) {
-        let parts = split_top_level_punctuation(inner, ',');
-        if parts.len() > 1 {
-            let mut tuple = parts
-                .into_iter()
-                .map(|part| parse_nested_type(inner, part))
-                .collect::<Result<Vec<_>, _>>()
-                .map(TypeRef::Tuple)?;
-            tuple.rebase_reference_ranges(subslice_offset(source, inner));
-            return Ok(tuple);
-        }
-        return parse_nested_type(source, inner);
-    }
-    if let Ok(value) = source.parse::<usize>() {
-        return Ok(TypeRef::ConstInt(value));
-    }
-    if matches!(source, "!" | "Never") {
-        return Ok(TypeRef::Never);
-    }
-    if source.starts_with('&') {
-        return parse_reference_type(source).map(TypeRef::Reference);
-    }
-    if let Some(inner) = source
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-    {
-        return Ok(TypeRef::Slice(Box::new(parse_nested_type(source, inner)?)));
-    }
-    if let Some((base, args)) = split_generic_type(source) {
-        let parsed_args = split_type_args(args)
-            .into_iter()
-            .map(|arg| {
-                let mut parsed = parse_type_arg(arg)?;
-                parsed.rebase_reference_ranges(subslice_offset(args, arg));
-                Ok(parsed)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut type_args = Vec::new();
-        let mut associated = Vec::new();
-        for arg in parsed_args {
-            match arg {
-                TypeArg::Type(ty) => type_args.push(ty),
-                TypeArg::Assoc(binding) => associated.push(binding),
-            }
-        }
-        if !associated.is_empty() {
-            let mut result = TypeRef::TraitBound(TraitBound {
-                path: TypePath::parse(base).map_err(|error| {
-                    TypeParseError::new_owned(format!("invalid trait path `{base}`: {error}"))
-                })?,
-                args: type_args,
-                associated,
-            });
-            result.rebase_reference_ranges(subslice_offset(source, args));
-            return Ok(result);
-        }
-        let mut result = TypeRef::Generic {
-            base: TypePath::parse(base).map_err(|error| {
-                TypeParseError::new_owned(format!("invalid type constructor `{base}`: {error}"))
-            })?,
-            args: type_args,
-        };
-        result.rebase_reference_ranges(subslice_offset(source, args));
-        return Ok(result);
-    }
-    if let Some((subject, assoc)) = split_type_projection(source) {
-        let assoc = assoc.trim();
-        if !assoc.is_empty() && assoc.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
-            return Ok(TypeRef::Projection {
-                subject: Box::new(parse_nested_type(source, subject)?),
-                assoc: ModuleSegment::new(assoc.to_owned()).map_err(|error| {
-                    TypeParseError::new_owned(format!(
-                        "invalid associated type name `{assoc}`: {error}"
-                    ))
-                })?,
-            });
-        }
-    }
-    TypePath::parse(source).map(TypeRef::Path).map_err(|error| {
-        TypeParseError::new_owned(format!("invalid type path `{source}`: {error}"))
-    })
-}
-
-fn split_type_effect_row_suffix(
-    source: &str,
-) -> Result<(&str, Option<TypeEffectRow>), TypeParseError> {
-    let (before_effects, effects) = split_top_level_keyword_once(source, "effects");
-    let Some(effects) = effects else {
-        return Ok((source, None));
-    };
-    let effects = effects.trim();
-    if before_effects.trim().is_empty() && !effects.starts_with('{') {
-        return Ok((source, None));
-    }
-    let Some(close) = effects
-        .starts_with('{')
-        .then(|| find_matching_punctuation(effects, 0, '{', '}'))
-        .flatten()
-    else {
-        return Err(TypeParseError::new(
-            "expected `{ ... }` after function type `effects`",
-        ));
-    };
-    if !effects[close + 1..].trim().is_empty() {
-        return Err(TypeParseError::new(
-            "unexpected tokens after function type effect row",
-        ));
-    }
-    let labels = split_top_level_punctuation(&effects[1..close], ',')
-        .into_iter()
-        .map(str::trim)
-        .filter(|label| !label.is_empty())
-        .map(ToOwned::to_owned)
-        .collect();
-    Ok((before_effects.trim_end(), Some(TypeEffectRow::new(labels))))
-}
-
-enum TypeArg {
-    Type(TypeRef),
-    Assoc(AssociatedTypeBinding),
-}
-
-impl TypeArg {
-    fn rebase_reference_ranges(&mut self, base: usize) {
-        match self {
-            Self::Type(ty) => ty.rebase_reference_ranges(base),
-            Self::Assoc(binding) => binding.value.rebase_reference_ranges(base),
-        }
-    }
-}
-
-fn parenthesized_type(source: &str) -> Option<&str> {
-    source.strip_prefix('(')?;
-    let close = find_matching_punctuation(source, 0, '(', ')')?;
-    (close == source.len().saturating_sub(1)).then(|| source[1..close].trim())
-}
-
-fn reject_variant_row_type(source: &str) -> Result<(), TypeParseError> {
-    let Some((open, close)) = find_top_level_matching_punctuation(source, '(', ')') else {
-        return Ok(());
-    };
-    if close != source.len().saturating_sub(1) {
-        return Ok(());
-    }
-    let head = source[..open].trim();
-    if head.chars().next().is_some_and(char::is_uppercase)
-        && head.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
-    {
-        return Err(TypeParseError::new(
-            "anonymous sum alternatives are types, not variant rows; use `A | B` or a nominal enum",
-        ));
-    }
-    Ok(())
-}
-
-fn split_generic_type(source: &str) -> Option<(&str, &str)> {
-    let open = find_top_level_punctuation(source, '<')?;
-    let close = find_matching_angle_group(source, open)?;
-    (close == source.len().saturating_sub(1))
-        .then_some((source[..open].trim(), &source[open + 1..close]))
-}
-
-fn split_type_args(source: &str) -> Vec<&str> {
-    split_top_level_punctuation(source, ',')
-}
-
-fn parse_type_arg(source: &str) -> Result<TypeArg, TypeParseError> {
-    if let Some((name, value)) = split_top_level_punctuation_once(source, '=') {
-        let name = name.trim();
-        if name.is_empty() || !name.chars().all(|ch| ch.is_alphanumeric() || ch == '_') {
-            return Err(TypeParseError::new(
-                "expected associated type name before `=`",
-            ));
-        }
-        return Ok(TypeArg::Assoc(AssociatedTypeBinding {
-            name: ModuleSegment::new(name.to_owned()).map_err(|error| {
-                TypeParseError::new_owned(format!("invalid associated type name `{name}`: {error}"))
-            })?,
-            value: parse_nested_type(source, value)?,
-        }));
-    }
-    Ok(TypeArg::Type(parse_nested_type(source, source)?))
-}
-
-fn parse_nested_type(parent: &str, fragment: &str) -> Result<TypeRef, TypeParseError> {
-    let fragment = fragment.trim();
-    let mut parsed = parse_type_ref_value(fragment)?;
-    parsed.rebase_reference_ranges(subslice_offset(parent, fragment));
-    Ok(parsed)
-}
-
-fn split_type_projection(source: &str) -> Option<(&str, &str)> {
-    let bytes = source.as_bytes();
-    let mut angle = 0usize;
-    let mut paren = 0usize;
-    let mut bracket = 0usize;
-    let mut split = None;
-    let mut index = 0usize;
-    while index + 1 < bytes.len() {
-        match bytes[index] as char {
-            '<' if paren == 0 && bracket == 0 => angle += 1,
-            '>' if angle > 0 && paren == 0 && bracket == 0 => angle -= 1,
-            '(' if angle == 0 && bracket == 0 => paren += 1,
-            ')' if paren > 0 && angle == 0 && bracket == 0 => paren -= 1,
-            '[' if angle == 0 && paren == 0 => bracket += 1,
-            ']' if bracket > 0 && angle == 0 && paren == 0 => bracket -= 1,
-            ':' if bytes[index + 1] == b':' && angle == 0 && paren == 0 && bracket == 0 => {
-                split = Some(index);
-                index += 1;
-            }
-            _ => {}
-        }
-        index += 1;
-    }
-    let split = split?;
-    Some((&source[..split], &source[split + 2..]))
-}
-
-fn split_top_level_arrow(source: &str) -> Option<(&str, &str)> {
-    split_top_level_arcweft_punctuation_once(source, ArcweftPunctuation::ThinArrow)
 }
 
 fn take_angle_group(source: &str) -> Option<(&str, &str)> {
@@ -1372,19 +1047,32 @@ impl TypeParseError {
         }
     }
 
+    fn resource_limit(message: &str) -> Self {
+        Self::without_range("syntax.type.resource_limit", message)
+    }
+
+    fn node_limit(message: &str) -> Self {
+        Self::without_range("syntax.type.node_limit", message)
+    }
+
+    fn generic_argument_limit(message: &str) -> Self {
+        Self::without_range("syntax.type.generic_argument_limit", message)
+    }
+
+    fn without_range(code: &'static str, message: &str) -> Self {
+        Self {
+            code,
+            range: None,
+            message: message.to_owned(),
+        }
+    }
+
     pub(super) fn at(code: &'static str, message: &str, range: TextRange) -> Self {
         Self {
             code,
             range: Some(range),
             message: message.to_owned(),
         }
-    }
-
-    pub(super) fn rebased(mut self, base: usize) -> Self {
-        if let Some(range) = self.range {
-            self.range = Some(TextRange::new(range.start() + base, range.end() + base));
-        }
-        self
     }
 
     /// Stable parser diagnostic code.

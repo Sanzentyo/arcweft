@@ -316,9 +316,132 @@ mod tests {
     use super::lower_to_hir;
     use arcweft_lang_syntax::{
         ast::flow::Stmt,
-        expr::{CallArg, Expr},
+        expr::{CallArg, CallExpr, Expr, ParenthesizedCalleeSyntax},
         parser::parse_source,
     };
+
+    fn first_function_statement_call(hir: &crate::model::HirModule) -> &CallExpr {
+        let statement = hir
+            .functions()
+            .first()
+            .expect("fixture lowers one function")
+            .statements()
+            .first()
+            .expect("fixture lowers one statement");
+        match statement {
+            Stmt::Expr {
+                expr: Expr::Call(call),
+                ..
+            } => call,
+            other => panic!("expected associated call statement, found {other:?}"),
+        }
+    }
+
+    #[test]
+    fn associated_callee_survives_module_clone() {
+        let fixtures = [
+            "String.with_capacity(64)",
+            "Bytes.with_capacity(4096)",
+            "Vec.with_capacity(8)",
+            "Vec<I32>.with_capacity(8)",
+            "Vec<T>.with_capacity(8)",
+            "pkg::types::Buffer<I32>.with_capacity(8)",
+            "Alias<I32>.with_capacity(8)",
+            "Vec<I32>::with_capacity(8)",
+            "Vec<T>::with_capacity(8)",
+            "Vec::<I32>.with_capacity(8)",
+            "Vec::<I32>::with_capacity(8)",
+            "Vec<Option<Result<T,E>>>.with_capacity(8)",
+        ];
+
+        for fixture in fixtures {
+            let source = format!("fn main() -> Unit {{\n    {fixture}\n    ()\n}}\n");
+            let parsed = parse_source(source);
+            assert_eq!(parsed.errors(), &[], "{fixture}");
+            let hir = lower_to_hir(parsed.typed_tree()).expect("associated source lowers");
+            let cloned = hir.clone();
+            let original_call = first_function_statement_call(&hir);
+            let cloned_call = first_function_statement_call(&cloned);
+            assert_eq!(original_call, cloned_call, "{fixture}");
+
+            let original_surface = original_call
+                .parenthesized_syntax()
+                .expect("associated call remains parenthesized");
+            let cloned_surface = cloned_call
+                .parenthesized_syntax()
+                .expect("cloned associated call remains parenthesized");
+            assert!(matches!(
+                original_surface.callee(),
+                ParenthesizedCalleeSyntax::PathMember(_)
+            ));
+            assert_eq!(original_surface.callee(), cloned_surface.callee());
+
+            let original = original_call
+                .path_member_callee_syntax()
+                .expect("original typed callee");
+            let cloned = cloned_call
+                .path_member_callee_syntax()
+                .expect("cloned typed callee");
+            assert_eq!(original.receiver().value(), cloned.receiver().value());
+            assert_eq!(
+                original.receiver().source().nodes(),
+                cloned.receiver().source().nodes()
+            );
+            assert_eq!(
+                original.receiver().source().lexemes(),
+                cloned.receiver().source().lexemes()
+            );
+            assert_eq!(original.separator(), cloned.separator());
+            assert_eq!(original.member(), cloned.member());
+            assert_eq!(original.member_range(), cloned.member_range());
+            assert_eq!(original.whole(), cloned.whole());
+            assert_eq!(original_call.callee_range(), cloned_call.callee_range());
+            assert_eq!(original_call.range(), cloned_call.range());
+        }
+    }
+
+    #[test]
+    fn associated_call_has_no_parallel_hir_call_enum() {
+        let source = "fn main() -> Unit {\n    Vec<I32>.with_capacity(8)\n    ()\n}\n";
+        let parsed = parse_source(source);
+        assert_eq!(parsed.errors(), &[]);
+        let hir = lower_to_hir(parsed.typed_tree()).expect("associated source lowers");
+        let function = hir.functions().first().expect("function lowers");
+        let calls = function
+            .statements()
+            .iter()
+            .filter_map(|statement| match statement {
+                Stmt::Expr {
+                    expr: Expr::Call(call),
+                    ..
+                } => Some(call),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.parenthesized_syntax().is_some())
+                .count(),
+            1
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.path_member_callee_syntax().is_some())
+                .count(),
+            1
+        );
+        assert!(matches!(
+            calls[0]
+                .parenthesized_syntax()
+                .expect("one parenthesized carrier")
+                .callee(),
+            ParenthesizedCalleeSyntax::PathMember(_)
+        ));
+        assert!(!matches!(calls[0].callee(), Expr::Call(_)));
+    }
 
     #[test]
     fn lowering_preserves_flow_attributes() {

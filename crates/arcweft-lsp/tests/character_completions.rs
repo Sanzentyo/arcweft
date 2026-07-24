@@ -19,14 +19,17 @@ fn completions_include_loaded_character_manifest_data() {
     write_character_fixture(&project);
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let build = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("profile construction");
+    let profile = build.profile();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
         profile.diagnostics()
     );
 
-    let labels = completions(&profile, None)
+    let labels = completions(profile, None)
         .into_iter()
         .map(|item| item.label)
         .collect::<Vec<_>>();
@@ -47,10 +50,13 @@ fn hover_includes_psd_source_layer_names() {
     write_character_fixture(&project);
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let build = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("profile construction");
+    let profile = build.profile();
     let expected =
         TypeKind::character_look(CharacterId::try_new("character.zundamon").expect("character id"));
-    let hover = character_hover_markdown(&profile, ".smile", Some(&expected)).expect("typed hover");
+    let hover = character_hover_markdown(profile, ".smile", Some(&expected)).expect("typed hover");
 
     assert!(hover.contains("character look") || hover.contains("character variant"));
     assert!(hover.contains("source PSD layer") || hover.contains("mouth = smile"));
@@ -66,13 +72,13 @@ fn missing_character_manifest_uses_typed_profile_diagnostic() {
     project.write("src/main.arcw", "flow @flow.main main {}\n");
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let diagnostic = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("missing character manifest rejects construction");
 
-    assert!(
-        profile
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::CharacterManifestRead)
+    assert_eq!(
+        diagnostic.kind(),
+        LspProfileDiagnosticKind::CharacterManifestRead
     );
 }
 

@@ -3,8 +3,6 @@ use super::{
     LifetimeScopeKind, Literal, Token, UnitNumberSuffix, char_literal, digit_matches_radix,
     is_ident_continue, is_ident_start, parse_duration, parse_entity_expr, split_number_suffix,
 };
-use crate::cst::split_top_level_punctuation;
-use crate::types::parse_type_ref;
 
 pub(super) struct Lexer<'a> {
     source: &'a str,
@@ -45,65 +43,7 @@ impl<'a> Lexer<'a> {
                 break;
             }
             let start = self.cursor;
-            let token = match ch {
-                '"' => self.lex_string_or_char(),
-                'r' if self.raw_string_prefix().is_some() => self.lex_raw_string(),
-                '@' => self.lex_entity(),
-                '\'' => self.lex_lifetime_path(),
-                '0'..='9' => self.lex_number_or_duration(),
-                '_' => {
-                    self.bump_char();
-                    Token::Underscore
-                }
-                '^' => {
-                    self.bump_char();
-                    Token::Caret
-                }
-                '(' => self.single(Token::LParen),
-                ')' => self.single(Token::RParen),
-                '[' => self.single(Token::LBracket),
-                ']' => self.single(Token::RBracket),
-                '{' => self.single(Token::LBrace),
-                '}' => self.single(Token::RBrace),
-                ',' => self.single(Token::Comma),
-                ':' => self.single(Token::Colon),
-                ';' => self.single(Token::Semicolon),
-                '?' => self.single(Token::Question),
-                '!' if self.starts_with_op(ExprOp::NotEq) => self.fixed_op(ExprOp::NotEq),
-                '!' => self.single(Token::Bang),
-                '-' if self.starts_with_op(ExprOp::ThinArrow) => self.fixed_op(ExprOp::ThinArrow),
-                '-' => self.fixed_op(ExprOp::NegOrSub),
-                '.' if self.starts_with_op(ExprOp::Spread) => self.fixed_op(ExprOp::Spread),
-                '.' if self.starts_with_op(ExprOp::RangeInclusive) => {
-                    self.fixed_op(ExprOp::RangeInclusive)
-                }
-                '.' if self.starts_with_op(ExprOp::Range) => self.fixed_op(ExprOp::Range),
-                '.' if self.dot_starts_relative_path(tokens.last().map(|token| &token.token)) => {
-                    self.lex_relative_path()
-                }
-                '.' => self.single(Token::Dot),
-                '=' if self.starts_with_op(ExprOp::FatArrow) => self.fixed_op(ExprOp::FatArrow),
-                '=' if self.starts_with_op(ExprOp::Eq) => self.fixed_op(ExprOp::Eq),
-                '=' => self.fixed_op(ExprOp::Assign),
-                '>' if self.starts_with_op(ExprOp::Gte) => self.fixed_op(ExprOp::Gte),
-                '<' if self.starts_with_op(ExprOp::Lte) => self.fixed_op(ExprOp::Lte),
-                '|' if self.starts_with_op(ExprOp::Pipe) => self.fixed_op(ExprOp::Pipe),
-                '|' if self.starts_with_op(ExprOp::Or) => self.fixed_op(ExprOp::Or),
-                '|' => self.fixed_op(ExprOp::ClosurePipe),
-                '&' if self.starts_with_op(ExprOp::And) => self.fixed_op(ExprOp::And),
-                '&' => self.single(Token::Amp),
-                '+' => self.fixed_op(ExprOp::Add),
-                '*' => self.single(Token::Star),
-                '/' => self.fixed_op(ExprOp::Div),
-                '%' => self.fixed_op(ExprOp::Rem),
-                '>' => self.fixed_op(ExprOp::Gt),
-                '<' => self.fixed_op(ExprOp::Lt),
-                _ if is_ident_start(ch) => self.lex_ident(),
-                _ => {
-                    self.bump_char();
-                    Token::Invalid(format!("invalid expression token `{ch}`"))
-                }
-            };
+            let token = self.lex_token(ch, tokens.last().map(|token| &token.token));
             tokens.push(LexedToken {
                 token,
                 start,
@@ -116,6 +56,70 @@ impl<'a> Lexer<'a> {
             end: self.cursor,
         });
         tokens
+    }
+
+    fn lex_token(&mut self, ch: char, previous: Option<&Token>) -> Token {
+        match ch {
+            '"' => self.lex_string_or_char(),
+            'r' if self.raw_string_prefix().is_some() => self.lex_raw_string(),
+            '@' => self.lex_entity(),
+            '\'' => self.lex_lifetime_path(),
+            '0'..='9' => self.lex_number_or_duration(),
+            '_' => {
+                self.bump_char();
+                Token::Underscore
+            }
+            '^' => {
+                self.bump_char();
+                Token::Caret
+            }
+            '(' => self.single(Token::LParen),
+            ')' => self.single(Token::RParen),
+            '[' => self.single(Token::LBracket),
+            ']' => self.single(Token::RBracket),
+            '{' => self.single(Token::LBrace),
+            '}' => self.single(Token::RBrace),
+            ',' => self.single(Token::Comma),
+            ':' if self.starts_with("::") => {
+                self.cursor += 2;
+                Token::DoubleColon
+            }
+            ':' => self.single(Token::Colon),
+            ';' => self.single(Token::Semicolon),
+            '?' => self.single(Token::Question),
+            '!' if self.starts_with_op(ExprOp::NotEq) => self.fixed_op(ExprOp::NotEq),
+            '!' => self.single(Token::Bang),
+            '-' if self.starts_with_op(ExprOp::ThinArrow) => self.fixed_op(ExprOp::ThinArrow),
+            '-' => self.fixed_op(ExprOp::NegOrSub),
+            '.' if self.starts_with_op(ExprOp::Spread) => self.fixed_op(ExprOp::Spread),
+            '.' if self.starts_with_op(ExprOp::RangeInclusive) => {
+                self.fixed_op(ExprOp::RangeInclusive)
+            }
+            '.' if self.starts_with_op(ExprOp::Range) => self.fixed_op(ExprOp::Range),
+            '.' if self.dot_starts_relative_path(previous) => self.lex_relative_path(),
+            '.' => self.single(Token::Dot),
+            '=' if self.starts_with_op(ExprOp::FatArrow) => self.fixed_op(ExprOp::FatArrow),
+            '=' if self.starts_with_op(ExprOp::Eq) => self.fixed_op(ExprOp::Eq),
+            '=' => self.fixed_op(ExprOp::Assign),
+            '>' if self.starts_with_op(ExprOp::Gte) => self.fixed_op(ExprOp::Gte),
+            '<' if self.starts_with_op(ExprOp::Lte) => self.fixed_op(ExprOp::Lte),
+            '|' if self.starts_with_op(ExprOp::Pipe) => self.fixed_op(ExprOp::Pipe),
+            '|' if self.starts_with_op(ExprOp::Or) => self.fixed_op(ExprOp::Or),
+            '|' => self.fixed_op(ExprOp::ClosurePipe),
+            '&' if self.starts_with_op(ExprOp::And) => self.fixed_op(ExprOp::And),
+            '&' => self.single(Token::Amp),
+            '+' => self.fixed_op(ExprOp::Add),
+            '*' => self.single(Token::Star),
+            '/' => self.fixed_op(ExprOp::Div),
+            '%' => self.fixed_op(ExprOp::Rem),
+            '>' => self.fixed_op(ExprOp::Gt),
+            '<' => self.fixed_op(ExprOp::Lt),
+            _ if is_ident_start(ch) => self.lex_ident(),
+            _ => {
+                self.bump_char();
+                Token::Invalid(format!("invalid expression token `{ch}`"))
+            }
+        }
     }
 
     fn single(&mut self, token: Token) -> Token {
@@ -410,36 +414,6 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        if self.peek_char() == Some('<') {
-            self.try_consume_angle_suffix();
-        }
-        while self.starts_with("::") {
-            let segment_start = self.cursor;
-            self.bump_char();
-            self.bump_char();
-            if self.peek_char() == Some('<') {
-                if self.try_consume_angle_suffix() {
-                    continue;
-                }
-                self.cursor = segment_start;
-                break;
-            }
-            let Some(next) = self.peek_char() else {
-                self.cursor = segment_start;
-                break;
-            };
-            if !is_ident_start(next) {
-                self.cursor = segment_start;
-                break;
-            }
-            self.bump_char();
-            while self.peek_char().is_some_and(is_ident_continue) {
-                self.bump_char();
-            }
-            if self.peek_char() == Some('<') {
-                self.try_consume_angle_suffix();
-            }
-        }
         let value = &self.source[start..self.cursor];
         match value {
             "true" => Token::Literal(Literal::Bool(true)),
@@ -468,20 +442,22 @@ impl<'a> Lexer<'a> {
     }
 
     fn dot_starts_relative_path(&self, previous: Option<&Token>) -> bool {
-        let at_expr_start = previous.is_none_or(|token| {
-            matches!(
-                token,
-                Token::LParen
-                    | Token::LBracket
-                    | Token::LBrace
-                    | Token::Comma
-                    | Token::Colon
-                    | Token::Semicolon
-                    | Token::Amp
-                    | Token::Star
-                    | Token::Bang
-                    | Token::Op(_)
-            )
+        let at_expr_start = previous.is_none_or(|token| match token {
+            // `>` is also the closing token of an authored generic receiver.
+            // Keeping the following dot separate lets the speculative type
+            // transaction decide that case without stealing comparison tokens.
+            Token::Op(ExprOp::Gt) => false,
+            Token::LParen
+            | Token::LBracket
+            | Token::LBrace
+            | Token::Comma
+            | Token::Colon
+            | Token::Semicolon
+            | Token::Amp
+            | Token::Star
+            | Token::Bang
+            | Token::Op(_) => true,
+            _ => false,
         });
         at_expr_start
             && self
@@ -489,131 +465,5 @@ impl<'a> Lexer<'a> {
                 .get(self.cursor + 1..)
                 .and_then(|tail| tail.chars().next())
                 .is_some_and(is_ident_start)
-    }
-
-    fn try_consume_angle_suffix(&mut self) -> bool {
-        let start = self.cursor;
-        let mut depth = 0_u32;
-        let mut paren = 0_u32;
-        let mut bracket = 0_u32;
-        let mut has_content = false;
-        while let Some(ch) = self.peek_char() {
-            match ch {
-                '<' => {
-                    let Some(next_depth) = depth.checked_add(1) else {
-                        self.cursor = start;
-                        return false;
-                    };
-                    depth = next_depth;
-                }
-                '>' => {
-                    let Some(next_depth) = depth.checked_sub(1) else {
-                        self.cursor = start;
-                        return false;
-                    };
-                    depth = next_depth;
-                    self.bump_char();
-                    if depth == 0 {
-                        if paren != 0 || bracket != 0 {
-                            self.cursor = start;
-                            return false;
-                        }
-                        if !self.static_generic_arguments_are_valid(start) {
-                            self.cursor = start;
-                            return false;
-                        }
-                        let continuation = self.source[self.cursor..].trim_start();
-                        if has_content
-                            && (continuation.starts_with('(')
-                                || continuation.starts_with("::")
-                                || continuation.starts_with('.'))
-                        {
-                            return true;
-                        }
-                        self.cursor = start;
-                        return false;
-                    }
-                    continue;
-                }
-                '(' => {
-                    let Some(next_depth) = paren.checked_add(1) else {
-                        self.cursor = start;
-                        return false;
-                    };
-                    paren = next_depth;
-                    has_content = true;
-                }
-                ')' => {
-                    let Some(next_depth) = paren.checked_sub(1) else {
-                        self.cursor = start;
-                        return false;
-                    };
-                    paren = next_depth;
-                }
-                '[' => {
-                    let Some(next_depth) = bracket.checked_add(1) else {
-                        self.cursor = start;
-                        return false;
-                    };
-                    bracket = next_depth;
-                    has_content = true;
-                }
-                ']' => {
-                    let Some(next_depth) = bracket.checked_sub(1) else {
-                        self.cursor = start;
-                        return false;
-                    };
-                    bracket = next_depth;
-                }
-                _ if ch.is_whitespace()
-                    || ch == ','
-                    || ch == ':'
-                    || ch == '&'
-                    || ch == '\''
-                    || ch == '*'
-                    || ch == '?'
-                    || ch == ';'
-                    || ch == '.'
-                    || is_ident_continue(ch) =>
-                {
-                    if !ch.is_whitespace() && ch != ',' {
-                        has_content = true;
-                    }
-                }
-                _ => {
-                    self.cursor = start;
-                    return false;
-                }
-            }
-            self.bump_char();
-        }
-        self.cursor = start;
-        false
-    }
-
-    fn static_generic_arguments_are_valid(&self, open: usize) -> bool {
-        let Some(inner_start) = open.checked_add('<'.len_utf8()) else {
-            return false;
-        };
-        let Some(inner_end) = self.cursor.checked_sub('>'.len_utf8()) else {
-            return false;
-        };
-        let Some(inner) = self.source.get(inner_start..inner_end) else {
-            return false;
-        };
-        let inner = inner.trim();
-        if inner.is_empty() || inner.starts_with(',') || inner.ends_with(',') {
-            return false;
-        }
-        split_top_level_punctuation(inner, ',')
-            .into_iter()
-            .all(|argument| {
-                let argument = argument.trim();
-                !argument.is_empty()
-                    && !argument.starts_with("::")
-                    && !argument.ends_with("::")
-                    && !argument.contains(":::")
-                    && parse_type_ref(argument).is_ok()
-            })
     }
 }

@@ -414,7 +414,7 @@ flow @flow.bad bad {
 }
 
 #[test]
-fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
+fn parses_anonymous_sum_type_refs_and_rejects_non_type_alternatives() {
     let choice = parse_type_ref("Result<Payload, FsError | ParseError>")
         .expect("anonymous sum in generic argument parses");
     assert!(matches!(
@@ -443,8 +443,10 @@ fn parses_anonymous_sum_type_refs_and_rejects_variant_rows() {
     ));
 
     let rows = parse_type_ref("Text(String) | Binary(Bytes)")
-        .expect_err("variant rows are not anonymous sums");
-    assert!(rows.to_string().contains("not variant rows"));
+        .expect_err("call-shaped alternatives are not types");
+    assert_eq!(rows.code(), "syntax.type.invalid");
+    let range = rows.range().expect("invalid token has an exact range");
+    assert_eq!((range.start(), range.end()), (4, 5));
 }
 
 #[test]

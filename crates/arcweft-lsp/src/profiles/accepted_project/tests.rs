@@ -11,6 +11,8 @@ use arcweft_lang_sema::{
 use arcweft_lang_syntax::{ast::module_path::ModuleSegment, parser::parse_source};
 use arcweft_source::SourceName;
 
+mod production_limits;
+
 fn document(id: &str, text: &str) -> Arc<SourceDocument> {
     Arc::new(
         SourceDocument::try_new(
@@ -29,15 +31,8 @@ fn module(path: CanonicalModulePath, document: &Arc<SourceDocument>) -> HirProje
     HirProjectModule::try_new(path, document.identity().clone(), hir).expect("source-bound module")
 }
 
-fn project_and_world(
-    modules: &[(CanonicalModulePath, Arc<SourceDocument>)],
-) -> (Arc<HirProject>, Arc<RegisteredSemanticWorld>) {
-    let root = Arc::clone(&modules[0].1);
-    let documents = modules
-        .iter()
-        .map(|(_, document)| Arc::clone(document))
-        .collect::<Vec<_>>();
-    let project = Arc::new(
+fn hir_project(modules: &[(CanonicalModulePath, Arc<SourceDocument>)]) -> Arc<HirProject> {
+    Arc::new(
         HirProject::new(
             "accepted-project-tests",
             modules
@@ -45,7 +40,14 @@ fn project_and_world(
                 .map(|(path, document)| module(path.clone(), document)),
         )
         .expect("HIR project"),
-    );
+    )
+}
+
+fn registered_world(
+    project: &HirProject,
+    root: &SourceDocument,
+    documents: Vec<Arc<SourceDocument>>,
+) -> Arc<RegisteredSemanticWorld> {
     let world = ProjectSymbolWorldId::try_new(
         CallablePackageId::try_new("accepted-project-tests").expect("package"),
         root.identity().id().clone(),
@@ -55,15 +57,27 @@ fn project_and_world(
     let facts =
         ProjectRegistrationFacts::try_new(world, documents, Vec::new(), Vec::new(), Vec::new())
             .expect("registration facts");
-    let registered = Arc::new(
+    Arc::new(
         CharacterRegistrar::register(CharacterRegistrationRequest::new(
             Arc::new(TypeCheckEnv::standard()),
-            project.as_ref(),
+            project,
             &facts,
             None,
         ))
         .expect("registered world"),
-    );
+    )
+}
+
+fn project_and_world(
+    modules: &[(CanonicalModulePath, Arc<SourceDocument>)],
+) -> (Arc<HirProject>, Arc<RegisteredSemanticWorld>) {
+    let root = Arc::clone(&modules[0].1);
+    let documents = modules
+        .iter()
+        .map(|(_, document)| Arc::clone(document))
+        .collect::<Vec<_>>();
+    let project = hir_project(modules);
+    let registered = registered_world(project.as_ref(), root.as_ref(), documents);
     (project, registered)
 }
 
@@ -186,6 +200,187 @@ fn duplicate_identity_and_uri_are_rejected_without_overwrite() {
         duplicate_uri,
         Err(AcceptedProjectSnapshotError::DuplicateUri { .. })
     ));
+}
+
+#[test]
+fn conflicting_source_id_reports_both_exact_revisions() {
+    let first = document("arcweft-project://accepted/conflicting.arcw", "\n");
+    let conflicting = document(
+        "arcweft-project://accepted/conflicting.arcw",
+        "// another revision\n",
+    );
+    assert_ne!(first.identity(), conflicting.identity());
+    assert_ne!(
+        first.identity().source_len(),
+        conflicting.identity().source_len()
+    );
+    let (hir, world) =
+        project_and_world(&[(CanonicalModulePath::crate_root(), Arc::clone(&first))]);
+
+    let result = AcceptedProjectSnapshot::try_new(
+        hir,
+        world.as_ref(),
+        vec![
+            seed(Arc::clone(&first), "file:///accepted/conflicting.arcw"),
+            seed(
+                Arc::clone(&conflicting),
+                "file:///accepted/conflicting-again.arcw",
+            ),
+        ],
+    );
+
+    let Err(AcceptedProjectSnapshotError::ConflictingSourceId {
+        id,
+        first: actual_first,
+        conflicting: actual_conflicting,
+    }) = result
+    else {
+        panic!("expected a typed conflicting-source-ID rejection");
+    };
+    assert_eq!(&id, first.identity().id());
+    assert_eq!(&actual_first, first.identity());
+    assert_eq!(&actual_conflicting, conflicting.identity());
+}
+
+#[test]
+fn one_source_bound_to_two_modules_reports_conflicting_mapping() {
+    let shared = document("arcweft-project://accepted/shared.arcw", "\n");
+    let child = CanonicalModulePath::from_segments([
+        ModuleSegment::new("child").expect("child module segment")
+    ]);
+    let project = hir_project(&[
+        (CanonicalModulePath::crate_root(), Arc::clone(&shared)),
+        (child.clone(), Arc::clone(&shared)),
+    ]);
+    let world = registered_world(project.as_ref(), shared.as_ref(), vec![Arc::clone(&shared)]);
+
+    let result = AcceptedProjectSnapshot::try_new(
+        project,
+        world.as_ref(),
+        vec![seed(Arc::clone(&shared), "file:///accepted/shared.arcw")],
+    );
+
+    let Err(AcceptedProjectSnapshotError::ConflictingModuleMapping {
+        source,
+        first,
+        conflicting,
+    }) = result
+    else {
+        panic!("expected a typed conflicting-module-mapping rejection");
+    };
+    assert_eq!(&source, shared.identity());
+    assert_eq!(first, CanonicalModulePath::crate_root());
+    assert_eq!(conflicting, child);
+}
+
+#[test]
+fn hir_and_symbol_module_inventory_difference_is_exact() {
+    let root = document("arcweft-project://accepted/inventory-root.arcw", "\n");
+    let child_document = document("arcweft-project://accepted/inventory-child.arcw", "\n");
+    let child = CanonicalModulePath::from_segments([
+        ModuleSegment::new("child").expect("child module segment")
+    ]);
+    let hir = hir_project(&[
+        (CanonicalModulePath::crate_root(), Arc::clone(&root)),
+        (child.clone(), Arc::clone(&child_document)),
+    ]);
+    let symbol_project = hir_project(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
+    let world = registered_world(
+        symbol_project.as_ref(),
+        root.as_ref(),
+        vec![Arc::clone(&root)],
+    );
+
+    let result = AcceptedProjectSnapshot::try_new(
+        hir,
+        world.as_ref(),
+        vec![
+            seed(Arc::clone(&root), "file:///accepted/inventory-root.arcw"),
+            seed(child_document, "file:///accepted/inventory-child.arcw"),
+        ],
+    );
+
+    let Err(AcceptedProjectSnapshotError::ModuleInventoryMismatch {
+        hir_only,
+        symbol_only,
+    }) = result
+    else {
+        panic!("expected a typed module-inventory rejection");
+    };
+    assert_eq!(&*hir_only, &[child]);
+    assert!(symbol_only.is_empty());
+}
+
+#[test]
+fn project_hir_and_symbol_source_identity_difference_is_exact() {
+    let project_document = document("arcweft-project://accepted/source-mismatch.arcw", "\n");
+    let symbol_document = document(
+        "arcweft-project://accepted/source-mismatch.arcw",
+        "// symbol revision\n",
+    );
+    let hir = hir_project(&[(
+        CanonicalModulePath::crate_root(),
+        Arc::clone(&project_document),
+    )]);
+    let symbol_project = hir_project(&[(
+        CanonicalModulePath::crate_root(),
+        Arc::clone(&symbol_document),
+    )]);
+    let world = registered_world(
+        symbol_project.as_ref(),
+        symbol_document.as_ref(),
+        vec![Arc::clone(&symbol_document)],
+    );
+
+    let result = AcceptedProjectSnapshot::try_new(
+        hir,
+        world.as_ref(),
+        vec![seed(
+            Arc::clone(&project_document),
+            "file:///accepted/source-mismatch.arcw",
+        )],
+    );
+
+    let Err(AcceptedProjectSnapshotError::ModuleSourceMismatch {
+        module,
+        project,
+        hir,
+        symbols,
+    }) = result
+    else {
+        panic!("expected a typed module-source rejection");
+    };
+    assert_eq!(module, CanonicalModulePath::crate_root());
+    assert_eq!(&project, project_document.identity());
+    assert_eq!(&hir, project_document.identity());
+    assert_eq!(&symbols, symbol_document.identity());
+}
+
+#[test]
+fn equal_identity_with_unequal_hir_text_is_rejected_explicitly() {
+    let source = document(
+        "arcweft-project://accepted/text-collision.arcw",
+        "accepted\n",
+    );
+    let module = CanonicalModulePath::crate_root();
+
+    let result = validate_bound_hir_source(
+        &module,
+        source.identity(),
+        source.identity(),
+        "different\n",
+        source.text(),
+    );
+
+    let Err(AcceptedProjectSnapshotError::HirTextMismatch {
+        module: actual_module,
+        source: actual_source,
+    }) = result
+    else {
+        panic!("expected a typed HIR-text rejection");
+    };
+    assert_eq!(actual_module, module);
+    assert_eq!(&actual_source, source.identity());
 }
 
 #[test]

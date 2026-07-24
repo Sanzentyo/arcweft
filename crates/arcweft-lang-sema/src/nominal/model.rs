@@ -8,6 +8,7 @@ use arcweft_lang_syntax::{
     types::{TypePath, TypeRefNodePath},
 };
 use arcweft_source::SourceSpan;
+use thiserror::Error;
 
 use crate::{
     env::nominal::{AcceptedNominalId, OpenNominalRuleId},
@@ -200,6 +201,34 @@ pub struct TypeResolutionReport {
     poisons: Box<[TypePoisonRecord]>,
     omitted_diagnostics: u64,
     work_charged: u64,
+}
+
+/// Borrowed, validated type receiver for one associated callable lookup.
+///
+/// This projection retains the complete nominal product so aliases, generic
+/// identities, and declaration evidence remain available to later tooling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ResolvedAssociatedTypeReceiver<'a> {
+    product: &'a ResolvedTypeProduct,
+    root: &'a ResolvedTypeNode,
+    ty: &'a TypeKind,
+}
+
+/// Typed reason a nominal product cannot act as an associated-call receiver.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum AssociatedReceiverFailure {
+    #[error("poisoned nominal resolution cannot produce an associated type receiver")]
+    PoisonedOutcome,
+    #[error("detached nominal resolution lacks authoritative receiver evidence")]
+    DetachedOutcome,
+    #[error("resolved type product is missing its root node")]
+    MissingRoot,
+    #[error("resolved type node {node:?} is incomplete")]
+    IncompleteNode { node: TypeRefNodePath },
+    #[error("resolved type root does not contain a type value")]
+    MissingRootType,
+    #[error("resolved type root disagrees with the product's normalized type")]
+    RootTypeMismatch,
 }
 
 /// Type constructor whose authored argument count is checked.
@@ -736,6 +765,62 @@ impl ResolvedTypeProduct {
 
     pub fn aliases(&self) -> &[AliasExpansionFact] {
         &self.aliases
+    }
+}
+
+impl<'a> ResolvedAssociatedTypeReceiver<'a> {
+    pub(crate) fn try_from_report(
+        report: &'a TypeResolutionReport,
+    ) -> Result<Self, AssociatedReceiverFailure> {
+        match report.outcome() {
+            ResolvedTypeRefOutcome::Complete(product) => Self::try_from_product(product),
+            ResolvedTypeRefOutcome::Poisoned(_) => Err(AssociatedReceiverFailure::PoisonedOutcome),
+            ResolvedTypeRefOutcome::Detached(_) => Err(AssociatedReceiverFailure::DetachedOutcome),
+        }
+    }
+
+    pub(crate) fn try_from_product(
+        product: &'a ResolvedTypeProduct,
+    ) -> Result<Self, AssociatedReceiverFailure> {
+        let root = product
+            .nodes()
+            .iter()
+            .find(|node| node.node() == &TypeRefNodePath::root())
+            .ok_or(AssociatedReceiverFailure::MissingRoot)?;
+
+        if let Some(node) = product.nodes().iter().find(|node| {
+            matches!(
+                node.outcome(),
+                TypeNameResolution::Failed(_)
+                    | TypeNameResolution::Poisoned(_)
+                    | TypeNameResolution::DetachedUnavailable(_)
+            )
+        }) {
+            return Err(AssociatedReceiverFailure::IncompleteNode {
+                node: node.node().clone(),
+            });
+        }
+
+        let ty = root
+            .recovered()
+            .ok_or(AssociatedReceiverFailure::MissingRootType)?;
+        if ty != product.recovered() {
+            return Err(AssociatedReceiverFailure::RootTypeMismatch);
+        }
+
+        Ok(Self { product, root, ty })
+    }
+
+    pub(crate) const fn product(&self) -> &'a ResolvedTypeProduct {
+        self.product
+    }
+
+    pub(crate) const fn root(&self) -> &'a ResolvedTypeNode {
+        self.root
+    }
+
+    pub(crate) const fn ty(&self) -> &'a TypeKind {
+        self.ty
     }
 }
 

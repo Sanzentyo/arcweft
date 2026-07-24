@@ -571,21 +571,6 @@ pub(super) fn is_drop_name(name: &str) -> bool {
     matches!(name, "drop" | "drop_optional" | "on_drop")
 }
 
-pub(super) fn well_known_static_capacity_method_type(name: &str) -> Option<TypeKind> {
-    if let Some(item) = name
-        .strip_prefix("Vec<")
-        .and_then(|tail| tail.strip_suffix(">::with_capacity"))
-    {
-        return Some(TypeKind::Vec(Box::new(named_type_label(item.trim()))));
-    }
-    match name {
-        "Vec.with_capacity" => Some(TypeKind::Vec(Box::new(TypeKind::Named("_".to_owned())))),
-        "String.with_capacity" => Some(TypeKind::String),
-        "Bytes.with_capacity" => Some(TypeKind::Bytes),
-        _ => None,
-    }
-}
-
 pub(super) fn well_known_capacity_method_type(
     receiver: &TypeKind,
     method: &str,

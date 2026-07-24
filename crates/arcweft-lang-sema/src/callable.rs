@@ -53,6 +53,10 @@ pub use facts::{
 pub(crate) use facts::{
     CallTargetFactMode, CallTargetFactsInput, CheckedCallArgumentSlotInput, CheckedCallTarget,
 };
+#[cfg(test)]
+pub(crate) use identity::migration_evidence::{
+    MigrationAuthorityClass, MigrationCompletionDisposition,
+};
 pub use identity::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentIndex,
     CallableArgumentSlotIndex, CallableAuthorityRank, CallableCandidateId, CallableFamily,
@@ -69,13 +73,17 @@ pub use identity::{
     StageMethodId, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitCallableId,
     TraitCallableSource, TraitImplementationIndex, VectorDimensions,
 };
+#[cfg(test)]
+pub(crate) use limits::AssociatedResolverWorkReport;
+pub(crate) use limits::{
+    AssociatedResolverStep, CallableQueryDepth, ResolverWork, SignatureQueryWorkMeter,
+};
 pub use limits::{
     CallableLimits, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
     SignatureAccountingError, SignatureQueryLimits, SignatureQueryProjectionWork,
     SignatureQueryResolutionWork, SignatureQuerySearchWork, SignatureQueryWorkReport,
     SignatureWorkReport,
 };
-pub(crate) use limits::{ResolverWork, SignatureQueryWorkMeter};
 pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamedArgument};
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use projection::{
@@ -85,15 +93,15 @@ pub use projection::{
 };
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
-    CallCallee, CallResolverRequest, CallSourceContext, LexicalCallBinding, LexicalCallableScope,
-    ResolvedEnumSeed, ResolvedFunctionValueSeed, SignatureQueryStep, SignatureQueryStepControl,
-    resolve_call_target,
+    CallCallee, CallResolverAuthority, CallResolverRequest, CallSourceContext, LexicalCallBinding,
+    LexicalCallableScope, ResolvedEnumSeed, ResolvedFunctionValueSeed, SignatureQueryStep,
+    SignatureQueryStepControl, resolve_call_target,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerSource, NonCallableSource, NonEmptyResolvedCandidates,
     ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable, ResolvedCharacterOwner,
-    ResolvedFunctionValue, ResolvedNonCallableTarget, SignatureOrigin, UnknownCallKind,
-    UnknownCallTarget,
+    ResolvedFunctionValue, ResolvedNonCallableTarget, SignatureOrigin, TypeReceiverInstantiation,
+    UnknownCallKind, UnknownCallTarget,
 };
 pub use schema::{
     CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableGroupKind,

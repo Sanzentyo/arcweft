@@ -30,20 +30,7 @@ impl ExprParser {
                 self.parse_try_await_expr(prefix_range)
             }
             Token::Ident(keyword) if keyword == "await" => self.parse_await_expr(prefix_range),
-            Token::Ident(keyword) if keyword == "try" => {
-                let operand = self.parse_prefixed_operand(prefix_range)?;
-                let whole = TextRange::new(prefix_range.start(), operand.range.end());
-                Ok(Expr::Try(TryExpr::new(
-                    Box::new(operand.expr),
-                    TryExprSource::new(
-                        whole,
-                        operand.range,
-                        TryOperatorSource::PrefixTry {
-                            try_keyword: prefix_range,
-                        },
-                    ),
-                )))
-            }
+            Token::Ident(keyword) if keyword == "try" => self.parse_try_chain(prefix_range),
             Token::Ident(keyword) if keyword == "thread" => self.parse_thread_expr(),
             Token::Ident(keyword) if keyword == "if" => self.parse_if_expr_after_keyword(),
             Token::Ident(keyword) if keyword == "match" => self.parse_match_expr_after_keyword(),
@@ -73,15 +60,30 @@ impl ExprParser {
             )),
             Token::Entity(entity) => Ok(Expr::EntityRef(entity.with_authored_range(prefix_range))),
             Token::LifetimePath { key, optional } => Ok(Expr::LifetimePath { key, optional }),
-            Token::Ident(path) => {
+            Token::Ident(first) => {
+                let mut segments = vec![Name::new(first)];
+                while self.peek() == &Token::DoubleColon
+                    && matches!(
+                        self.tokens.get(self.cursor + 1).map(|token| &token.token),
+                        Some(Token::Ident(_))
+                    )
+                {
+                    self.bump();
+                    let segment = self.bump_lexed();
+                    let Token::Ident(segment) = segment.token else {
+                        unreachable!("qualified path lookahead admitted an identifier")
+                    };
+                    segments.push(Name::new(segment));
+                }
+                let path = DottedPath::new(segments);
                 if self.peek() == &Token::LBrace && !self.control_body_brace_is_boundary {
                     self.bump();
                     return Ok(Expr::Record {
-                        path: DottedPath::parse_dotted(path),
+                        path,
                         fields: self.parse_record_fields()?,
                     });
                 }
-                Ok(Expr::Path(DottedPath::parse_dotted(path)))
+                Ok(Expr::Path(path))
             }
             Token::RelativePath(path) => Ok(Expr::ShortVariant(Name::new(
                 path.trim_start_matches('.').to_owned(),
@@ -177,6 +179,51 @@ impl ExprParser {
                 propagation_source,
             ),
         )))
+    }
+
+    fn parse_try_chain(&mut self, first: TextRange) -> Result<Expr, ExprParseError> {
+        let mut operators = vec![first];
+        loop {
+            let operator_range = *operators
+                .last()
+                .expect("a try chain always retains its first operator");
+            let Some(depth) = self.prefix_depth.checked_add(operators.len()) else {
+                return Err(ExprParseError::prefix_depth_limit(operator_range));
+            };
+            if depth > 64 {
+                return Err(ExprParseError::prefix_depth_limit(operator_range));
+            }
+            if !self.peek_ident("try")
+                || matches!(
+                    self.tokens.get(self.cursor + 1).map(|token| &token.token),
+                    Some(Token::Ident(keyword)) if keyword == "await"
+                )
+            {
+                break;
+            }
+            let operator = self.bump_lexed();
+            operators.push(self.absolute_range(&operator)?);
+        }
+
+        let prior_depth = self.prefix_depth;
+        self.prefix_depth = self
+            .prefix_depth
+            .checked_add(operators.len())
+            .expect("the checked try-chain depth remains representable");
+        let operand = self.parse_expr_bp_spanned(90);
+        self.prefix_depth = prior_depth;
+        let operand = operand?;
+        let mut range = operand.range;
+        let mut expr = operand.expr;
+        for try_keyword in operators.into_iter().rev() {
+            let whole = TextRange::new(try_keyword.start(), range.end());
+            expr = Expr::Try(TryExpr::new(
+                Box::new(expr),
+                TryExprSource::new(whole, range, TryOperatorSource::PrefixTry { try_keyword }),
+            ));
+            range = whole;
+        }
+        Ok(expr)
     }
 
     fn parse_prefixed_operand(

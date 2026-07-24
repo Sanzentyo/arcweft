@@ -220,6 +220,147 @@ fn type_lookup_reports_wrong_kind_inaccessible_and_ambiguous_candidates() {
 }
 
 #[test]
+fn value_lookup_selects_callable_before_same_spelling_type() {
+    let (documents, project) = project_modules(&[
+        (
+            "",
+            concat!(
+                "use crate.values.Item as Shared\n",
+                "use crate.types.Item as Shared\n",
+            ),
+        ),
+        ("values", "pub fn Item() -> Unit { () }\n"),
+        ("types", "pub struct Item {\n    value: i32,\n}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "value-type-namespace-collision"),
+    )
+    .expect("cross-namespace collision remains a lookup decision")
+    .into_table();
+    let reference = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "Shared")
+        .expect("structured reference");
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("reference source");
+
+    assert!(matches!(
+        table.resolve_value_target(&CanonicalModulePath::crate_root(), &reference, source),
+        Ok(ProjectValueLookup::Present(callable))
+            if callable.declaration().name() == "Item"
+                && callable.declaration().module() == &module_path("values")
+    ));
+}
+
+#[test]
+fn value_lookup_retains_inaccessible_callable_before_same_spelling_type() {
+    let (documents, project) = project_modules(&[
+        ("", "fn main() -> Unit { () }\n"),
+        (
+            "values",
+            "fn Item() -> Unit { () }\npub use crate.types.Item\n",
+        ),
+        ("types", "pub struct Item {\n    value: i32,\n}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "inaccessible-value-type-collision"),
+    )
+    .expect("cross-namespace collision remains a lookup decision")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let reference = SymbolPath::try_from(type_path("crate.values.Item").path())
+        .expect("qualified project reference");
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("reference source");
+
+    assert!(matches!(
+        table.resolve_value_target(&root, &reference, source),
+        Err(ProjectValueLookupError::Inaccessible { candidates, .. })
+            if matches!(candidates.as_ref(), [ProjectSymbolTargetId::Callable(_)])
+    ));
+}
+
+#[test]
+fn value_lookup_retains_ambiguous_and_inaccessible_callable_failures() {
+    let (documents, project) = project_modules(&[
+        (
+            "",
+            concat!(
+                "use crate.left.run as selected\n",
+                "use crate.right.run as selected\n",
+            ),
+        ),
+        (
+            "left",
+            "pub fn run() -> Unit { () }\nfn hidden() -> Unit { () }\n",
+        ),
+        ("right", "pub fn run() -> Unit { () }\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "typed-value-lookup-errors"),
+    )
+    .expect("value ambiguity remains a lookup result")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("reference source");
+    let ambiguous = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "selected")
+        .expect("ambiguous reference");
+    let inaccessible = SymbolPath::try_from(type_path("crate.left.hidden").path())
+        .expect("qualified private reference");
+
+    assert!(matches!(
+        table.resolve_value_target(&root, &ambiguous, source.clone()),
+        Err(ProjectValueLookupError::Ambiguous { candidates, .. })
+            if candidates.len() == 2
+                && candidates.windows(2).all(|pair| pair[0] < pair[1])
+                && candidates
+                    .iter()
+                    .all(|candidate| matches!(candidate, ProjectSymbolTargetId::Callable(_)))
+    ));
+    assert!(matches!(
+        table.resolve_value_target(&root, &inaccessible, source),
+        Err(ProjectValueLookupError::Inaccessible { candidates, .. })
+            if matches!(candidates.as_ref(), [ProjectSymbolTargetId::Callable(_)])
+    ));
+}
+
+#[test]
+fn value_lookup_reports_nominal_and_unknown_paths_as_absent() {
+    let (documents, project) = project_modules(&[
+        ("", "fn anchor() -> Unit { () }\n"),
+        ("types", "pub struct Item {\n    value: i32,\n}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        &project,
+        &empty_declarations(&documents, "absent-value-lookup"),
+    )
+    .expect("ordinary project")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let source = documents[0]
+        .span(SourceRange::new(0, 2))
+        .expect("reference source");
+    let nominal =
+        SymbolPath::try_from(type_path("crate.types.Item").path()).expect("nominal reference");
+    let unknown = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "Missing")
+        .expect("unknown reference");
+
+    assert!(matches!(
+        table.resolve_value_target(&root, &nominal, source.clone()),
+        Ok(ProjectValueLookup::Absent)
+    ));
+    assert!(matches!(
+        table.resolve_value_target(&root, &unknown, source),
+        Ok(ProjectValueLookup::Absent)
+    ));
+}
+
+#[test]
 fn table_retains_source_identity_for_every_module() {
     let (documents, project) = project_modules(&[("", ""), ("empty", "")]);
     let table = ProjectSymbolTable::link(

@@ -93,7 +93,7 @@ pub(crate) enum AcceptedProfileCandidateError {
         expected: SourceSetRevision,
         actual: SourceSetRevision,
     },
-    #[error("candidate compiled HIR differs from the accepted project snapshot")]
+    #[error("candidate compiled HIR does not share the accepted project snapshot Arc")]
     CompiledHirMismatch,
     #[error("candidate overlay URI is absent from accepted sources")]
     UnknownOverlayUri { uri: LspUriKey },
@@ -179,7 +179,7 @@ impl AcceptedProfileCandidate {
         project: Arc<AcceptedProjectSnapshot>,
         overlays: AcceptedOverlaySet,
     ) -> Result<Self, AcceptedProfileCandidateError> {
-        if compiled.hir_project() != project.hir_project().as_ref() {
+        if !Arc::ptr_eq(compiled.hir_project(), project.hir_project()) {
             return Err(AcceptedProfileCandidateError::CompiledHirMismatch);
         }
         let world = compiled.registered_world_arc();
@@ -445,6 +445,7 @@ pub struct LspProfileState {
 
 #[derive(Clone, Copy)]
 enum AcceptedEnvironmentExpectation<'a> {
+    #[cfg(test)]
     Any,
     Exact(Option<&'a Arc<AcceptedProfileEnvironment>>),
 }
@@ -484,7 +485,8 @@ impl LspProfileState {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub fn replace_accepted(
+    #[cfg(test)]
+    pub(crate) fn replace_accepted(
         &self,
         candidate: AcceptedProfileCandidate,
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
@@ -517,14 +519,18 @@ impl LspProfileState {
         if self.lifecycle() != ProfileEnvironmentLifecycle::Active {
             return Err(AcceptedEnvironmentReplaceError::ShuttingDown);
         }
-        if let AcceptedEnvironmentExpectation::Exact(expected) = expected {
-            let current_matches = match (expected, accepted.as_ref()) {
-                (None, None) => true,
-                (Some(expected), Some(current)) => Arc::ptr_eq(current, expected),
-                (None | Some(_), _) => false,
-            };
-            if !current_matches {
-                return Err(AcceptedEnvironmentReplaceError::CurrentChanged);
+        match expected {
+            #[cfg(test)]
+            AcceptedEnvironmentExpectation::Any => {}
+            AcceptedEnvironmentExpectation::Exact(expected) => {
+                let current_matches = match (expected, accepted.as_ref()) {
+                    (None, None) => true,
+                    (Some(expected), Some(current)) => Arc::ptr_eq(current, expected),
+                    (None | Some(_), _) => false,
+                };
+                if !current_matches {
+                    return Err(AcceptedEnvironmentReplaceError::CurrentChanged);
+                }
             }
         }
         let generation = accepted.as_ref().map_or(Ok(1), |current| {
@@ -582,5 +588,7 @@ impl Default for LspProfileState {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod stamp_test_support;
 #[cfg(test)]
 mod tests;

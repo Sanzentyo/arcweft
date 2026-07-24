@@ -1,9 +1,16 @@
 //! Module, top-level declaration, and dialogue entry checks.
 
 mod dialogue_policy;
+mod focused;
 mod view;
 
 use dialogue_policy::dialogue_has_default_inline_failure_policy;
+pub use focused::analyze_registered_project_types_for_focused_call;
+pub(crate) use focused::analyze_registered_project_types_for_signature_call;
+#[cfg(test)]
+pub(crate) use focused::{
+    analyze_detached_types_for_call_facts, analyze_registered_project_types_for_call_facts,
+};
 
 pub(crate) use super::call_target_facts::SignatureFocusedAnalysis;
 use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, CallTargetFactReport};
@@ -16,9 +23,7 @@ use super::{
     TypedLoweringEvidenceKind, YieldContext, choice_output_type, entity_kind_for_decl,
     function_callable_id, ident_pattern_name, validate_typecheck_ready,
 };
-#[cfg(test)]
-use crate::callable::ResolverWork;
-use crate::callable::{CallTargetFactError, CallTargetFactMode, CallTargetFacts};
+use crate::callable::CallTargetFactMode;
 use crate::canonicalization::{
     CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
 };
@@ -54,8 +59,6 @@ use arcweft_lang_syntax::types::{FnParam, FnSignature, TypeRef};
 use arcweft_source::SourceDocumentId;
 use arcweft_source::SourceDocumentIdentity;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-#[cfg(test)]
-use std::sync::atomic::AtomicBool;
 
 impl TypeCheckReport {
     pub fn into_result(self) -> Result<(), Vec<TypeCheckError>> {
@@ -119,68 +122,12 @@ impl TypeCheckReport {
             .iter()
             .find(|inventory| inventory.module() == module && inventory.source() == source)
     }
-
-    /// Returns committed facts for one checker expression identity.
-    ///
-    /// Accepted registered-project analysis records ordinary call surfaces. A
-    /// report produced with fact recording disabled returns `Ok(None)`.
-    pub fn call_target_facts(
-        &self,
-        expression: TypeExpressionId,
-    ) -> Result<Option<&CallTargetFacts>, CallTargetFactError> {
-        if let Some(error) = &self.call_target_fact_report.error {
-            return Err(error.clone());
-        }
-        Ok(self.call_target_fact_report.facts.get(&expression))
-    }
-
-    /// Returns the sole committed call fact from focused semantic analysis.
-    pub fn focused_call_target_facts(&self) -> Result<&CallTargetFacts, CallTargetFactError> {
-        let CallTargetFactMode::Focused { call, .. } = &self.call_target_fact_report.mode else {
-            return Err(CallTargetFactError::FocusedModeRequired);
-        };
-        if let Some(error) = &self.call_target_fact_report.error {
-            return Err(error.clone());
-        }
-        self.call_target_fact_report
-            .facts
-            .values()
-            .next()
-            .ok_or_else(|| CallTargetFactError::FocusedTargetMissing { call: call.clone() })
-    }
-
-    pub(crate) fn retained_call_target_facts(&self) -> impl Iterator<Item = &CallTargetFacts> {
-        self.call_target_fact_report.facts.values()
-    }
 }
 
 pub(crate) struct FocusedCallTypeCheckReport {
     #[cfg(test)]
     report: TypeCheckReport,
     call_targets: CallTargetFactReport,
-}
-
-impl FocusedCallTypeCheckReport {
-    #[cfg(test)]
-    pub(crate) const fn report(&self) -> &TypeCheckReport {
-        &self.report
-    }
-
-    pub(crate) fn focused_call_target_facts(
-        &self,
-    ) -> Result<&CallTargetFacts, CallTargetFactError> {
-        let CallTargetFactMode::Focused { call, .. } = &self.call_targets.mode else {
-            return Err(CallTargetFactError::FocusedModeRequired);
-        };
-        if let Some(error) = &self.call_targets.error {
-            return Err(error.clone());
-        }
-        self.call_targets
-            .facts
-            .values()
-            .next()
-            .ok_or_else(|| CallTargetFactError::FocusedTargetMissing { call: call.clone() })
-    }
 }
 
 /// Analyzes lowered HIR with an explicit symbol/method environment.
@@ -222,156 +169,6 @@ pub fn analyze_registered_project_types(
         view_part_diagnostics,
         &mut checker,
     )
-}
-
-/// Analyzes one exact accepted call span and retains only its checked call facts.
-///
-/// This bounded public entry uses the production callable-work limit and a
-/// non-cancelled checker control. Interactive signature queries retain their
-/// separate caller-owned cancellation and accounting path.
-pub fn analyze_registered_project_types_for_focused_call(
-    module: &HirModule,
-    registered: &crate::registration::RegisteredSemanticWorld,
-    call: arcweft_source::SourceSpan,
-) -> Result<TypeCheckReport, CallTargetFactError> {
-    if !registered
-        .symbols()
-        .modules()
-        .any(|module| registered.symbols().source_identity(module) == Some(call.source()))
-    {
-        return Err(CallTargetFactError::FocusedSourceUnavailable {
-            document: call.source().clone(),
-        });
-    }
-    let (style_catalog, style_diagnostics) = check_view_styles(module);
-    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
-    let mut checker = TypeChecker::new_with_project(
-        registered.environment().typecheck_env(),
-        module,
-        None,
-        Some(registered.symbols()),
-        Some(registered),
-        CallTargetFactMode::Focused {
-            call,
-            active_argument: None,
-            byte_offset: None,
-        },
-        CallResolverControl::ordinary(),
-    );
-    let report = finish_type_check(
-        module,
-        style_catalog,
-        style_diagnostics,
-        view_part_catalog,
-        view_part_diagnostics,
-        &mut checker,
-    );
-    report.focused_call_target_facts()?;
-    Ok(report)
-}
-
-#[cfg(test)]
-pub(crate) fn analyze_registered_project_types_for_call_facts(
-    module: &HirModule,
-    registered: &crate::registration::RegisteredSemanticWorld,
-    call: arcweft_source::SourceSpan,
-    cancellation: &AtomicBool,
-    work: &mut ResolverWork,
-) -> Result<FocusedCallTypeCheckReport, CallTargetFactError> {
-    if !registered
-        .symbols()
-        .modules()
-        .any(|module| registered.symbols().source_identity(module) == Some(call.source()))
-    {
-        return Err(CallTargetFactError::FocusedSourceUnavailable {
-            document: call.source().clone(),
-        });
-    }
-    let (style_catalog, style_diagnostics) = check_view_styles(module);
-    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
-    let mut checker = TypeChecker::new_with_project(
-        registered.environment().typecheck_env(),
-        module,
-        None,
-        Some(registered.symbols()),
-        Some(registered),
-        CallTargetFactMode::Focused {
-            call,
-            active_argument: None,
-            byte_offset: None,
-        },
-        CallResolverControl::caller_owned(cancellation, work, None, None),
-    );
-    let (report, call_targets) = finish_type_check_with_call_facts(
-        module,
-        style_catalog,
-        style_diagnostics,
-        view_part_catalog,
-        view_part_diagnostics,
-        &mut checker,
-    );
-    Ok(FocusedCallTypeCheckReport {
-        report,
-        call_targets,
-    })
-}
-
-pub(crate) fn analyze_registered_project_types_for_signature_call(
-    analysis: SignatureFocusedAnalysis<'_>,
-) -> Result<FocusedCallTypeCheckReport, CallTargetFactError> {
-    let SignatureFocusedAnalysis {
-        module,
-        registered,
-        site,
-        cancellation,
-        work,
-        signature_work,
-        signature_control,
-    } = analysis;
-    if !registered
-        .symbols()
-        .modules()
-        .any(|module| registered.symbols().source_identity(module) == Some(site.call().source()))
-    {
-        return Err(CallTargetFactError::FocusedSourceUnavailable {
-            document: site.call().source().clone(),
-        });
-    }
-    let (style_catalog, style_diagnostics) = check_view_styles(module);
-    let (view_part_catalog, view_part_diagnostics) = check_view_parts(module);
-    let mut checker = TypeChecker::new_with_project(
-        registered.environment().typecheck_env(),
-        module,
-        None,
-        Some(registered.symbols()),
-        Some(registered),
-        CallTargetFactMode::Focused {
-            call: site.call().clone(),
-            active_argument: site.active_argument(),
-            byte_offset: site.byte_offset(),
-        },
-        CallResolverControl::caller_owned(
-            cancellation,
-            work,
-            Some(signature_work),
-            Some(signature_control),
-        ),
-    );
-    let (report, call_targets) = finish_type_check_with_call_facts(
-        module,
-        style_catalog,
-        style_diagnostics,
-        view_part_catalog,
-        view_part_diagnostics,
-        &mut checker,
-    );
-    #[cfg(not(test))]
-    drop(report);
-    Ok(FocusedCallTypeCheckReport {
-        #[cfg(test)]
-        report,
-        call_targets,
-    })
 }
 
 /// Analyzes a registered project while retaining exact-source speaker-line evidence.
@@ -573,6 +370,13 @@ fn finish_type_check_with_call_facts(
         CallTargetFactRecorder::new(CallTargetFactMode::Disabled),
     );
     let call_target_fact_report = call_target_fact_recorder.finish();
+    #[cfg(test)]
+    let (
+        physical_candidate_argument_evaluations,
+        physical_candidate_argument_evaluations_overflowed,
+    ) = checker.physical_candidate_argument_evaluations.finish();
+    #[cfg(not(test))]
+    let _ = checker.physical_candidate_argument_evaluations.finish();
     let report = TypeCheckReport {
         diagnostics: std::mem::take(&mut checker.errors),
         warnings: std::mem::take(&mut checker.warnings),
@@ -594,6 +398,10 @@ fn finish_type_check_with_call_facts(
         project_callable_references: std::mem::take(&mut checker.project_callable_references),
         project_entity_references: std::mem::take(&mut checker.project_entity_references),
         call_target_fact_report: call_target_fact_report.clone(),
+        #[cfg(test)]
+        physical_candidate_argument_evaluations,
+        #[cfg(test)]
+        physical_candidate_argument_evaluations_overflowed,
     };
     (report, call_target_fact_report)
 }
@@ -2165,14 +1973,8 @@ impl TypeChecker<'_> {
         if let Some(view) = dialogue.view() {
             self.expect_entity_kind(view, &EntityKind::View, "dialogue View");
         }
-        if let Some(look) = dialogue.look() {
-            self.check_expr(look);
-        }
-        if let Some(stage) = dialogue.stage() {
-            self.check_expr(stage);
-        }
-        if let Some(portrait) = dialogue.portrait() {
-            self.check_expr(portrait);
+        for expression in dialogue.checked_line_setup_expressions() {
+            self.check_expr(expression);
         }
         self.check_dialogue_default_inline_failure_policy(dialogue);
         let marks = self.check_dialogue_content(

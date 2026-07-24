@@ -1,6 +1,8 @@
 //! Authoritative argument mapping and checking for registered calls.
 
-use arcweft_lang_syntax::expr::{ArgumentListSyntax, CallArg, CallExpr, Expr};
+use arcweft_lang_syntax::expr::{
+    ArgumentListSyntax, CallArg, CallArgumentRecoverySyntax, CallExpr, Expr,
+};
 use arcweft_source::SourceSpan;
 
 use super::super::support::{FixedLiteralSpreadSlot, fixed_literal_spread_slots, spread_item_type};
@@ -13,7 +15,10 @@ use crate::{
         CheckedCallArgumentFact, CheckedCallArgumentSlotFact, SignatureQueryStep,
         SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
-    checker::{CallableDiagnosticDraft, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind},
+    checker::{
+        CallableDiagnosticDraft, CandidateExpectedType, PhysicalArgumentEvaluationKind,
+        TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
+    },
     types::TypeParameterSubstitutions,
 };
 
@@ -105,6 +110,18 @@ pub(super) struct RegisteredSlotCheck {
     pub(super) source: Option<SourceSpan>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct RegisteredArgumentEvaluation {
+    kind: PhysicalArgumentEvaluationKind,
+    poison: CallPoison,
+}
+
+impl RegisteredArgumentEvaluation {
+    pub(super) const fn new(kind: PhysicalArgumentEvaluationKind, poison: CallPoison) -> Self {
+        Self { kind, poison }
+    }
+}
+
 pub(super) struct RegisteredArgumentInference<'a> {
     fact_builders: &'a mut Option<Vec<ArgumentFactBuilder>>,
     substitutions: &'a mut TypeParameterSubstitutions,
@@ -137,6 +154,7 @@ struct RegisteredPositionalCheck<'a> {
     value: FixedLiteralSpreadSlot<'a>,
     mapping: &'a mut RegisteredArgumentMappingState,
     argument_index: usize,
+    evaluation_kind: PhysicalArgumentEvaluationKind,
 }
 
 struct RegisteredNamedCheck<'a> {
@@ -283,7 +301,7 @@ impl TypeChecker<'_> {
             .with_substitutions(mapping.substitutions)
     }
 
-    pub(super) fn check_unmapped_registered_arguments(
+    pub(in crate::checker::expr) fn check_unmapped_registered_arguments(
         &mut self,
         call: &CallExpr,
         poison: CallPoison,
@@ -311,6 +329,16 @@ impl TypeChecker<'_> {
             ) {
                 break;
             }
+            self.record_physical_candidate_argument_evaluation(
+                call,
+                argument_index,
+                PhysicalArgumentEvaluationKind::Unmapped,
+                CandidateExpectedType::Unmapped,
+            );
+            #[cfg(test)]
+            {
+                self.stats.registered_argument_expression_checks += 1;
+            }
             let inferred = self.check_expr(argument.value());
             Self::push_registered_argument_slot(
                 RegisteredArgumentSlot {
@@ -320,6 +348,7 @@ impl TypeChecker<'_> {
                     group: CallableGroupIndex::ZERO,
                     parameter: None,
                     inferred,
+                    expected: None,
                     poison,
                 },
                 &mut builders,
@@ -352,7 +381,10 @@ impl TypeChecker<'_> {
                         FixedLiteralSpreadSlot::Expr(value),
                         argument_index,
                         mapping,
-                        CallPoison::Rejected,
+                        RegisteredArgumentEvaluation::new(
+                            authored_argument_evaluation_kind(context.call, argument_index),
+                            CallPoison::Rejected,
+                        ),
                     ),
                 CallArg::Positional(value) => {
                     self.check_registered_positional(RegisteredPositionalCheck {
@@ -360,6 +392,10 @@ impl TypeChecker<'_> {
                         value: FixedLiteralSpreadSlot::Expr(value),
                         mapping,
                         argument_index,
+                        evaluation_kind: authored_argument_evaluation_kind(
+                            context.call,
+                            argument_index,
+                        ),
                     })
                 }
                 CallArg::Named { name, value } => {
@@ -380,7 +416,10 @@ impl TypeChecker<'_> {
                                 FixedLiteralSpreadSlot::Expr(value),
                                 argument_index,
                                 mapping,
-                                CallPoison::Rejected,
+                                RegisteredArgumentEvaluation::new(
+                                    authored_argument_evaluation_kind(context.call, argument_index),
+                                    CallPoison::Rejected,
+                                ),
                             ),
                             shape_rejected: false,
                         }
@@ -429,6 +468,7 @@ impl TypeChecker<'_> {
             value,
             mapping,
             argument_index,
+            evaluation_kind,
         } = input;
         let prior_positional = mapping.positional;
         let Some(parameter) = next_registered_positional_parameter(
@@ -446,7 +486,7 @@ impl TypeChecker<'_> {
                 value,
                 argument_index,
                 mapping.inference(),
-                CallPoison::Rejected,
+                RegisteredArgumentEvaluation::new(evaluation_kind, CallPoison::Rejected),
             );
             mapping.diagnostics.push(CallableDiagnosticDraft::error(
                 CallableDiagnosticCode::TooManyPositionalArguments,
@@ -492,7 +532,7 @@ impl TypeChecker<'_> {
             value,
             argument_index,
             mapping.inference(),
-            CallPoison::Clean,
+            RegisteredArgumentEvaluation::new(evaluation_kind, CallPoison::Clean),
         );
         for (coordinate, first_source) in skipped_bindings {
             mapping.diagnostics.push(
@@ -542,7 +582,10 @@ impl TypeChecker<'_> {
                 FixedLiteralSpreadSlot::Expr(value),
                 argument_index,
                 mapping.inference(),
-                poison,
+                RegisteredArgumentEvaluation::new(
+                    authored_argument_evaluation_kind(context.call, argument_index),
+                    poison,
+                ),
             );
             if poison == CallPoison::Rejected {
                 let name_source = mapping
@@ -579,7 +622,10 @@ impl TypeChecker<'_> {
             FixedLiteralSpreadSlot::Expr(value),
             argument_index,
             mapping.inference(),
-            poison,
+            RegisteredArgumentEvaluation::new(
+                authored_argument_evaluation_kind(context.call, argument_index),
+                poison,
+            ),
         );
         let name_source = mapping
             .fact_builders
@@ -628,7 +674,10 @@ impl TypeChecker<'_> {
                     FixedLiteralSpreadSlot::Expr(value),
                     argument_index,
                     mapping,
-                    CallPoison::Clean,
+                    RegisteredArgumentEvaluation::new(
+                        authored_argument_evaluation_kind(context.call, argument_index),
+                        CallPoison::Clean,
+                    ),
                 ),
                 shape_rejected: false,
             },
@@ -644,7 +693,10 @@ impl TypeChecker<'_> {
                         FixedLiteralSpreadSlot::Expr(value),
                         argument_index,
                         mapping,
-                        CallPoison::Rejected,
+                        RegisteredArgumentEvaluation::new(
+                            authored_argument_evaluation_kind(context.call, argument_index),
+                            CallPoison::Rejected,
+                        ),
                     ),
                     shape_rejected: true,
                 }
@@ -662,7 +714,10 @@ impl TypeChecker<'_> {
                             FixedLiteralSpreadSlot::Expr(value),
                             argument_index,
                             mapping,
-                            CallPoison::Rejected,
+                            RegisteredArgumentEvaluation::new(
+                                authored_argument_evaluation_kind(context.call, argument_index),
+                                CallPoison::Rejected,
+                            ),
                         ),
                         shape_rejected: true,
                     };
@@ -714,12 +769,19 @@ impl TypeChecker<'_> {
         } = input;
         self.reserve_fixed_literal_spread_container_expr(value);
         let mut poison = CallPoison::Clean;
-        for slot in slots {
+        for (slot_index, slot) in slots.into_iter().enumerate() {
+            if slot_index != 0
+                && !self.begin_registered_candidate_argument_probe(context.call, context.focused)
+            {
+                poison = CallPoison::Rejected;
+                break;
+            }
             poison = poison.merge(self.check_registered_positional(RegisteredPositionalCheck {
                 context,
                 value: slot,
                 mapping,
                 argument_index,
+                evaluation_kind: PhysicalArgumentEvaluationKind::FixedLiteralSpread,
             }));
         }
         poison
@@ -788,6 +850,16 @@ impl TypeChecker<'_> {
                 shape_rejected: false,
             };
         }
+        self.record_physical_candidate_argument_evaluation(
+            context.call,
+            argument_index,
+            PhysicalArgumentEvaluationKind::TypedRestSpread,
+            CandidateExpectedType::Unchecked,
+        );
+        #[cfg(test)]
+        {
+            self.stats.registered_argument_expression_checks += 1;
+        }
         let actual = self.check_expr(value);
         let Some(item) = actual.as_ref().and_then(spread_item_type) else {
             self.errors.push(TypeCheckError::new(format!(
@@ -802,6 +874,12 @@ impl TypeChecker<'_> {
                     group: context.group,
                     parameter: Some(rest),
                     inferred: actual,
+                    expected: match rest.ty() {
+                        CallableParameterType::Exact(expected) => {
+                            Some(mapping.substitutions.apply(expected))
+                        }
+                        CallableParameterType::Unchecked => None,
+                    },
                     poison: CallPoison::Rejected,
                 },
                 &mut mapping.fact_builders,
@@ -812,9 +890,11 @@ impl TypeChecker<'_> {
             };
         };
         let mut poison = CallPoison::Clean;
+        let mut retained_expected = None;
         if let CallableParameterType::Exact(expected) = rest.ty() {
             let inferred = mapping.substitutions.observe(expected, item);
             let specialized_expected = mapping.substitutions.apply(expected);
+            retained_expected = Some(specialized_expected.clone());
             if !inferred || !self.types_compatible(&specialized_expected, item) {
                 self.errors.push(TypeCheckError::argument_type_mismatch(
                     context.label,
@@ -833,6 +913,7 @@ impl TypeChecker<'_> {
                 group: context.group,
                 parameter: Some(rest),
                 inferred: actual,
+                expected: retained_expected,
                 poison,
             },
             &mut mapping.fact_builders,
@@ -859,7 +940,10 @@ impl TypeChecker<'_> {
                 FixedLiteralSpreadSlot::Expr(value),
                 argument_index,
                 mapping,
-                CallPoison::Rejected,
+                RegisteredArgumentEvaluation::new(
+                    authored_argument_evaluation_kind(context.call, argument_index),
+                    CallPoison::Rejected,
+                ),
             ),
             shape_rejected: true,
         }
@@ -872,7 +956,7 @@ impl TypeChecker<'_> {
         value: FixedLiteralSpreadSlot<'_>,
         argument_index: usize,
         mapping: &mut RegisteredArgumentMappingState,
-        poison: CallPoison,
+        evaluation: RegisteredArgumentEvaluation,
     ) -> CallPoison {
         self.check_registered_argument_slot_with_inferred(
             context,
@@ -880,7 +964,7 @@ impl TypeChecker<'_> {
             value,
             argument_index,
             mapping.inference(),
-            poison,
+            evaluation,
         )
         .poison
     }
@@ -895,7 +979,10 @@ impl TypeChecker<'_> {
             fact_builders,
             substitutions,
         }: RegisteredArgumentInference<'_>,
-        mut poison: CallPoison,
+        RegisteredArgumentEvaluation {
+            kind: evaluation_kind,
+            mut poison,
+        }: RegisteredArgumentEvaluation,
     ) -> RegisteredSlotCheck {
         if self.signature_work_charge.candidate_work
             && !self.charge_signature_work(crate::callable::SignatureWorkKind::ArgumentBindings, 1)
@@ -936,6 +1023,23 @@ impl TypeChecker<'_> {
             };
         }
         let expected_for_check = expected.map(|expected| substitutions.apply(expected));
+        let expected_evidence = match parameter.map(CallableParameter::ty) {
+            Some(CallableParameterType::Exact(expected)) => {
+                CandidateExpectedType::Exact(substitutions.apply(expected))
+            }
+            Some(CallableParameterType::Unchecked) => CandidateExpectedType::Unchecked,
+            None => CandidateExpectedType::Unmapped,
+        };
+        self.record_physical_candidate_argument_evaluation(
+            context.call,
+            argument_index,
+            evaluation_kind,
+            expected_evidence,
+        );
+        #[cfg(test)]
+        {
+            self.stats.registered_argument_expression_checks += 1;
+        }
         let actual = self.check_fixed_literal_spread_slot(value, expected_for_check.as_ref());
         if let (Some(expected), Some(actual)) = (expected, actual.as_ref()) {
             let inferred = substitutions.observe(expected, actual);
@@ -958,6 +1062,7 @@ impl TypeChecker<'_> {
                 group: context.group,
                 parameter,
                 inferred: actual.clone(),
+                expected: expected_for_check,
                 poison,
             },
             fact_builders,
@@ -968,6 +1073,28 @@ impl TypeChecker<'_> {
             expression: Some(expression),
             source,
         }
+    }
+}
+
+pub(super) fn authored_argument_evaluation_kind(
+    call: &CallExpr,
+    argument_index: usize,
+) -> PhysicalArgumentEvaluationKind {
+    let recovered = call
+        .syntax()
+        .argument_list()
+        .map(ArgumentListSyntax::arguments)
+        .and_then(|arguments| arguments.get(argument_index))
+        .is_some_and(|argument| {
+            matches!(
+                argument.recovery(),
+                CallArgumentRecoverySyntax::Recovered { .. }
+            )
+        });
+    if recovered {
+        PhysicalArgumentEvaluationKind::Recovered
+    } else {
+        PhysicalArgumentEvaluationKind::Authored
     }
 }
 

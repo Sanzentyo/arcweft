@@ -785,6 +785,27 @@ impl RegisteredSemanticWorld {
     ) {
         (self.symbols, self.environment, self.character_definitions)
     }
+
+    #[cfg(test)]
+    pub(crate) fn with_callable_catalog_for_test(
+        mut self,
+        callables: Arc<RegisteredCallableCatalog>,
+    ) -> Self {
+        assert_eq!(
+            callables.nominal_world(),
+            &self.environment.nominal_world.stamp(),
+            "test callable replacement must preserve the accepted nominal world",
+        );
+        let mut environment = (*self.environment).clone();
+        environment.environment_digest =
+            super::environment_digest::derive_test_callable_replacement(
+                environment.environment_digest,
+                callables.digest().as_bytes(),
+            );
+        environment.callables = callables;
+        self.environment = Arc::new(environment);
+        self
+    }
 }
 
 impl CharacterInventoryDigest {

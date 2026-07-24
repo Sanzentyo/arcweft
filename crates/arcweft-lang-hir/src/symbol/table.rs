@@ -142,6 +142,47 @@ pub enum ProjectTypeTarget<'a> {
     External(&'a ExternalSymbol),
 }
 
+/// Typed result of looking up one project path in value position.
+///
+/// Nominals, modules, externals, and an unknown path are deliberately
+/// represented by `Absent`: they do not occupy the callable value namespace.
+/// Ambiguous or inaccessible callable bindings are returned as terminal typed
+/// errors so a later type-position lookup cannot silently override them.
+#[derive(Clone, Copy, Debug)]
+pub enum ProjectValueLookup<'a> {
+    Present(&'a CallableSymbol),
+    Absent,
+}
+
+/// Authoritative project value-namespace lookup failure.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ProjectValueLookupError {
+    #[error("project value reference is ambiguous")]
+    Ambiguous {
+        module: CanonicalModulePath,
+        reference: SymbolPath,
+        reference_source: SourceSpan,
+        candidates: Box<[ProjectSymbolTargetId]>,
+    },
+    #[error("project value reference is inaccessible")]
+    Inaccessible {
+        module: CanonicalModulePath,
+        reference: SymbolPath,
+        reference_source: SourceSpan,
+        candidates: Box<[ProjectSymbolTargetId]>,
+    },
+    #[error("project value reference path is invalid")]
+    InvalidPath {
+        reference_source: SourceSpan,
+        reason: ModulePathError,
+    },
+    #[error("project value lookup reached a missing accepted callable")]
+    Poisoned {
+        reference_source: SourceSpan,
+        target: ProjectSymbolTargetId,
+    },
+}
+
 /// Authoritative project type-target lookup failure.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectTypeLookupError {
@@ -740,6 +781,132 @@ impl ProjectSymbolTable {
             })
             .collect::<Vec<_>>()
             .into_boxed_slice()
+    }
+
+    /// Resolves a structured project path in the callable value namespace.
+    ///
+    /// This lookup intentionally filters nominal/module/external targets before
+    /// deciding ambiguity. A callable and a same-spelling type therefore select
+    /// the callable in value position, while two callable targets remain a
+    /// terminal ambiguity. No source label is parsed or reconstructed here.
+    #[allow(
+        clippy::result_large_err,
+        reason = "value lookup errors retain typed module, path, source, and target evidence"
+    )]
+    pub fn resolve_value_target(
+        &self,
+        module: &CanonicalModulePath,
+        reference: &SymbolPath,
+        source: SourceSpan,
+    ) -> Result<ProjectValueLookup<'_>, ProjectValueLookupError> {
+        let bindings = match self.targets_for_symbol_path(module, reference) {
+            Ok(bindings) => bindings,
+            Err(ImportResolutionError::Unknown) => return Ok(ProjectValueLookup::Absent),
+            Err(ImportResolutionError::InvalidPath(reason)) => {
+                return Err(ProjectValueLookupError::InvalidPath {
+                    reference_source: source,
+                    reason,
+                });
+            }
+            Err(ImportResolutionError::VisibilityEscalation) => {
+                return Err(ProjectValueLookupError::Inaccessible {
+                    module: module.clone(),
+                    reference: reference.clone(),
+                    reference_source: source,
+                    candidates: Box::new([]),
+                });
+            }
+            Err(ImportResolutionError::Inaccessible(bindings)) => {
+                let targets = bindings
+                    .into_iter()
+                    .map(|binding| binding.target)
+                    .collect::<Vec<_>>();
+                let callables = Self::callable_value_targets(targets);
+                if callables.is_empty() {
+                    return Ok(ProjectValueLookup::Absent);
+                }
+                return Err(ProjectValueLookupError::Inaccessible {
+                    module: module.clone(),
+                    reference: reference.clone(),
+                    reference_source: source,
+                    candidates: callables.into_boxed_slice(),
+                });
+            }
+            Err(ImportResolutionError::Ambiguous(targets)) => {
+                let callables = Self::callable_value_targets(targets);
+                match callables.as_slice() {
+                    [] => return Ok(ProjectValueLookup::Absent),
+                    [ProjectSymbolTargetId::Callable(id)] => {
+                        return self.callable(id.clone()).map_or_else(
+                            || {
+                                Err(ProjectValueLookupError::Poisoned {
+                                    reference_source: source,
+                                    target: ProjectSymbolTargetId::Callable(id.clone()),
+                                })
+                            },
+                            |callable| Ok(ProjectValueLookup::Present(callable)),
+                        );
+                    }
+                    _ => {
+                        return Err(ProjectValueLookupError::Ambiguous {
+                            module: module.clone(),
+                            reference: reference.clone(),
+                            reference_source: source,
+                            candidates: callables.into_boxed_slice(),
+                        });
+                    }
+                }
+            }
+        };
+
+        let callables = Self::callable_value_targets(
+            bindings.into_iter().map(|binding| binding.target).collect(),
+        );
+        match callables.as_slice() {
+            [] => {
+                let inaccessible = Self::callable_value_targets(
+                    self.inaccessible_bindings_for_symbol_path(module, reference)
+                        .into_iter()
+                        .map(|binding| binding.target)
+                        .collect(),
+                );
+                if inaccessible.is_empty() {
+                    Ok(ProjectValueLookup::Absent)
+                } else {
+                    Err(ProjectValueLookupError::Inaccessible {
+                        module: module.clone(),
+                        reference: reference.clone(),
+                        reference_source: source,
+                        candidates: inaccessible.into_boxed_slice(),
+                    })
+                }
+            }
+            [ProjectSymbolTargetId::Callable(id)] => self.callable(id.clone()).map_or_else(
+                || {
+                    Err(ProjectValueLookupError::Poisoned {
+                        reference_source: source,
+                        target: ProjectSymbolTargetId::Callable(id.clone()),
+                    })
+                },
+                |callable| Ok(ProjectValueLookup::Present(callable)),
+            ),
+            _ => Err(ProjectValueLookupError::Ambiguous {
+                module: module.clone(),
+                reference: reference.clone(),
+                reference_source: source,
+                candidates: callables.into_boxed_slice(),
+            }),
+        }
+    }
+
+    fn callable_value_targets(targets: Vec<ProjectSymbolTargetId>) -> Vec<ProjectSymbolTargetId> {
+        let mut targets = targets
+            .into_iter()
+            .filter(|target| matches!(target, ProjectSymbolTargetId::Callable(_)))
+            .collect::<Vec<_>>();
+        targets.sort();
+        targets.dedup();
+        targets
     }
 
     #[allow(

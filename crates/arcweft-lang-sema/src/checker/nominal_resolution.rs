@@ -189,7 +189,18 @@ impl TypeChecker<'_> {
             .and_then(|resolved| resolved.recovered().cloned())
     }
 
-    fn resolve_authored_type_report(
+    pub(super) fn resolve_authored_type_report(
+        &mut self,
+        authored: &AuthoredTypeRef,
+        generics: &GenericTypeScope,
+        self_scope: SelfTypeScope,
+    ) -> TypeResolutionReport {
+        let report = self.resolve_authored_type_report_unpublished(authored, generics, self_scope);
+        self.publish_authored_type_report(authored, &report);
+        report
+    }
+
+    pub(super) fn resolve_authored_type_report_unpublished(
         &mut self,
         authored: &AuthoredTypeRef,
         generics: &GenericTypeScope,
@@ -206,19 +217,12 @@ impl TypeChecker<'_> {
                     .map(|document| (module, symbols, environment, document))
             });
 
-        let report = if let Some((module, symbols, environment, document)) = accepted {
+        if let Some((module, symbols, environment, document)) = accepted {
             let source_backed =
                 SourceBackedTypeRef::try_bind(authored.clone(), document, document.identity())
                     .expect(
                         "source-bound HIR type ranges remain valid for their accepted document",
                     );
-            let root = source_backed
-                .spans()
-                .source_at(&TypeRefNodePath::root())
-                .expect("accepted type source maps contain their root")
-                .whole()
-                .clone();
-            let already_recorded = self.nominal_resolutions.report(&root).is_some();
             let input = TypeResolutionInput::accepted(
                 &source_backed,
                 module,
@@ -233,6 +237,43 @@ impl TypeChecker<'_> {
                 .nominal_resolution_cache
                 .resolve(&input)
                 .expect("validated production nominal limits and registered owner integrity");
+            return report.as_ref().clone();
+        }
+
+        resolve_type_ref(&TypeResolutionInput::detached(
+            authored,
+            self.current_module.as_ref(),
+            self.env,
+            generics,
+            self_scope,
+            NominalResolutionLimits::PRODUCTION,
+        ))
+        .expect("compiled detached nominal limits are valid")
+    }
+
+    pub(super) fn publish_authored_type_report(
+        &mut self,
+        authored: &AuthoredTypeRef,
+        report: &TypeResolutionReport,
+    ) {
+        let accepted_document = self.current_module.as_ref().and_then(|module| {
+            self.project_symbols?;
+            self.registered_environment?;
+            self.checked_module.project_source_document(module)
+        });
+        if let Some(document) = accepted_document {
+            let source_backed =
+                SourceBackedTypeRef::try_bind(authored.clone(), document, document.identity())
+                    .expect(
+                        "source-bound HIR type ranges remain valid for their accepted document",
+                    );
+            let root = source_backed
+                .spans()
+                .source_at(&TypeRefNodePath::root())
+                .expect("accepted type source maps contain their root")
+                .whole()
+                .clone();
+            let already_recorded = self.nominal_resolutions.report(&root).is_some();
             if !already_recorded {
                 self.errors.extend(
                     report
@@ -243,7 +284,7 @@ impl TypeChecker<'_> {
                 );
                 if let Err(error) = self
                     .nominal_resolutions
-                    .record(root.clone(), report.as_ref().clone())
+                    .record(root.clone(), report.clone())
                 {
                     self.errors.push(TypeCheckError::new(format!(
                         "nominal resolution index rejected an accepted fact: {error:?}"
@@ -256,18 +297,8 @@ impl TypeChecker<'_> {
                     report.outcome().product(),
                 );
             }
-            return report.as_ref().clone();
-        } else {
-            resolve_type_ref(&TypeResolutionInput::detached(
-                authored,
-                self.current_module.as_ref(),
-                self.env,
-                generics,
-                self_scope,
-                NominalResolutionLimits::PRODUCTION,
-            ))
-            .expect("compiled detached nominal limits are valid")
-        };
+            return;
+        }
 
         self.errors.extend(
             report
@@ -277,7 +308,6 @@ impl TypeChecker<'_> {
                 .map(TypeCheckError::nominal),
         );
         self.record_anonymous_choice_duplicates(authored.value(), report.outcome().product());
-        report
     }
 
     fn record_anonymous_choice_duplicates(

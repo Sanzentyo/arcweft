@@ -103,7 +103,7 @@ pub fn run_connection(connection: &Connection, config: &LspConfig) -> Result<(),
                     let response = session
                         .write()
                         .unwrap_or_else(PoisonError::into_inner)
-                        .handle_request(request);
+                        .handle_request_with_requests(request, runtime.registry());
                     connection.sender.send(Message::Response(response))?;
                 }
                 Message::Notification(notification) => {

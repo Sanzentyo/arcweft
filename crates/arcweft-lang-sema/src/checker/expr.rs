@@ -1,9 +1,9 @@
 //! Expression type-checking entry points and expression-kind dispatch.
 
 use super::helpers::{
-    array_repeat_length, expr_path_label, first_arg_type, is_drop_name, let_else_bindings,
+    array_repeat_length, expr_path_label, first_arg_type, let_else_bindings,
     numeric_literal_suffix_type, optional_type_kind_label, stmts_diverge, type_kind_label,
-    well_known_capacity_method_type, well_known_field_type, well_known_static_capacity_method_type,
+    well_known_capacity_method_type,
 };
 use super::{
     ArrayLength, BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr,
@@ -14,12 +14,13 @@ use super::{
 use crate::diagnostics::TraitDiagnostic;
 use crate::propagation::{CheckedReturnType, ReturnPropagationFrame, TryPropagationOperand};
 use crate::traits::TraitMethodResolution;
+use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_syntax::ast::dialogue::DialogueContent;
 use arcweft_lang_syntax::ast::flow::{AuthoredExpr, ThreadBlock};
 use arcweft_lang_syntax::ast::line_plan::LinePlan;
 use arcweft_lang_syntax::expr::{
     AwaitExpr, BinaryOp, CallArg, CallExpr, ComputationBlockKind, DottedPath, Literal,
-    MatchExprArm, Placeholder, SelectExpr, TryExpr, UnaryOp,
+    MatchExprArm, Placeholder, TryExpr, UnaryOp,
 };
 
 mod access;
@@ -29,6 +30,7 @@ mod callable;
 mod closure;
 mod enum_variant;
 mod fx;
+mod member;
 mod method_fallback;
 mod partial;
 mod path;
@@ -40,16 +42,14 @@ mod signature_call;
 mod support;
 
 use super::line_plan::DialogueContentRangeMode;
+use member::{PathMemberCallOutcome, PathMemberValueBinding};
 use partial::expr_contains_partial_placeholder;
 use support::{
     BuiltinCollectionMethodCallOutcome, ChoicePatternCoverage, TraitMethodCallOutcome,
-    agent_action_result_field_type, agent_action_target_field_type, agent_bbox_field_type,
-    agent_capture_ref_field_type, agent_entity_ref_field_type, agent_observation_field_type,
-    agent_observed_object_field_type, agent_resource_body_field_type, agent_resource_field_type,
     agent_result, choice_pattern_coverage, expr_kind_name,
-    has_multiple_numeric_choice_alternatives, inline_failure_builtin_variant_type,
-    is_character_speaker_type, is_unit_number_type, join_branch_types, looks_like_os_absolute_path,
-    spread_item_type, std_float_constant_type, unique_numeric_choice_alternative,
+    has_multiple_numeric_choice_alternatives, is_character_speaker_type, is_unit_number_type,
+    join_branch_types, looks_like_os_absolute_path, spread_item_type,
+    unique_numeric_choice_alternative,
 };
 
 enum InherentMethodCallOutcome {
@@ -87,9 +87,34 @@ impl TypeChecker<'_> {
         expr: &Expr,
         expected: Option<&TypeKind>,
     ) -> Option<TypeKind> {
+        self.check_expr_with_expected_and_path_binding(expr, expected, None)
+    }
+
+    fn check_expr_with_project_callable(
+        &mut self,
+        expr: &Expr,
+        declaration: &CallableDeclarationId,
+    ) -> Option<TypeKind> {
+        self.check_expr_with_expected_and_path_binding(expr, None, Some(declaration))
+    }
+
+    fn check_expr_with_expected_and_path_binding(
+        &mut self,
+        expr: &Expr,
+        expected: Option<&TypeKind>,
+        project_callable: Option<&CallableDeclarationId>,
+    ) -> Option<TypeKind> {
         let expression_id = TypeExpressionId::from_index(self.stats.expressions);
         self.stats.expressions += 1;
-        let ty = if let Some(expected @ TypeKind::Function { .. }) = expected
+        let ty = if let Some(declaration) = project_callable {
+            let Expr::Path(path) = expr else {
+                self.errors.push(TypeCheckError::new(
+                    "typed project callable binding reached a non-path receiver".to_owned(),
+                ));
+                return None;
+            };
+            self.check_project_callable_path_expr(path.as_label(), declaration, expression_id)
+        } else if let Some(expected @ TypeKind::Function { .. }) = expected
             && !matches!(expr, Expr::Closure { .. })
             && expr_contains_partial_placeholder(expr)
         {
@@ -178,9 +203,7 @@ impl TypeChecker<'_> {
                 self.check_entity_ref_expr(entity, expected, self.source_range_for_expr(expr))
             }
             Expr::LifetimePath { key, optional } => self.check_lifetime_path_expr(key, *optional),
-            Expr::Path(path) => {
-                self.check_path_expr_with_expected(path.as_label(), expected, expression_id)
-            }
+            Expr::Path(path) => self.check_path_expr_with_expected(path, expected, expression_id),
             Expr::ShortVariant(name) => {
                 Some(self.check_short_variant_expr(name.as_str(), expected))
             }
@@ -843,11 +866,25 @@ impl TypeChecker<'_> {
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
+        #[cfg(test)]
+        if self.registered_world.is_some() {
+            self.stats.registered_call_expressions += 1;
+        }
         if let Some(document) = self.source_document_for_current_module().cloned() {
             self.call_target_fact_recorder.observe_call(call, &document);
         }
         let callee = call.callee();
         let args = call.args();
+        if let Expr::Raw(raw) = callee {
+            self.reject_raw_expr(raw);
+            self.recover_missing_call(
+                call,
+                expression_id,
+                crate::callable::UnknownCallKind::Free,
+                crate::callable::CallPoison::Recovered,
+            );
+            return None;
+        }
         if let Some(name) = expr_path_label(callee)
             && self.fx.is_definition(&name)
         {
@@ -910,11 +947,11 @@ impl TypeChecker<'_> {
         {
             return Some(ty);
         }
-        if let Some(name) = expr_path_label(callee)
-            && let Some(ty) = well_known_static_capacity_method_type(&name)
-        {
-            self.check_untyped_function_args(args);
-            return Some(ty);
+        if let Some(syntax) = call.path_member_callee_syntax() {
+            match self.check_path_member_callee_call(call, syntax, expected, expression_id) {
+                PathMemberCallOutcome::NotHandled => {}
+                PathMemberCallOutcome::Checked(result) => return result,
+            }
         }
         let registered_arguments_checked =
             match self.check_registered_catalog_free_call(call, expected, expression_id) {
@@ -945,10 +982,21 @@ impl TypeChecker<'_> {
             return Some(ty);
         }
         if let Expr::Path(name) = callee {
-            return self.check_path_call_expr(name, args, expected, expression_id);
+            return self.check_path_call_expr(
+                name,
+                args,
+                expected,
+                expression_id,
+                registered_arguments_checked,
+            );
         }
         if let Expr::Select(select) = callee
-            && let Some(ty) = self.check_selected_callee_call(call, select, expression_id)
+            && let Some(ty) = self.check_selected_callee_call(
+                call,
+                select,
+                expression_id,
+                PathMemberValueBinding::Expression,
+            )
         {
             return Some(ty);
         }
@@ -961,6 +1009,10 @@ impl TypeChecker<'_> {
         self.last_checked_curried_signature_call = previous_curried_signature_call;
         match callee_ty {
             Some(TypeKind::Speaker(entity) | TypeKind::SpeakerPreset(entity)) => {
+                #[cfg(test)]
+                if self.registered_world.is_some() {
+                    self.stats.old_dispatch_calls += 1;
+                }
                 for arg in args {
                     self.check_expr(arg.value());
                 }
@@ -979,12 +1031,15 @@ impl TypeChecker<'_> {
                     registered_call::RegisteredFreeCallOutcome::Checked(result) => result,
                     registered_call::RegisteredFreeCallOutcome::NotHandled
                     | registered_call::RegisteredFreeCallOutcome::MissingFactsRetained => {
+                        #[cfg(test)]
+                        if self.registered_world.is_some() {
+                            self.stats.old_dispatch_calls += 1;
+                        }
                         Some(self.check_known_function_value_call(
                             expression_id,
                             callee_label.as_deref(),
                             callee_effect_callable,
                             callee_curried_signature_call.as_ref(),
-                            Some(call),
                             args,
                             callee_ty,
                         ))
@@ -1102,86 +1157,6 @@ impl TypeChecker<'_> {
                 }
             }
         }
-    }
-
-    fn check_selected_callee_call(
-        &mut self,
-        call: &CallExpr,
-        select: &SelectExpr,
-        expression_id: TypeExpressionId,
-    ) -> Option<TypeKind> {
-        let args = call.args();
-        let method = select.member().as_str();
-        let method_name = method.split_once('<').map_or(method, |(name, _)| name);
-        let receiver_expression = TypeExpressionId::from_index(self.stats.expressions);
-        let receiver_type = self.check_expr(select.target());
-        if self.registered_world.is_none() && is_drop_name(method_name) {
-            for arg in args {
-                self.check_expr(arg.value());
-            }
-            return Some(TypeKind::Unit);
-        }
-        receiver_type.and_then(|receiver_type| {
-            self.check_typed_method_call(
-                select.target(),
-                &receiver_type,
-                method_name,
-                call,
-                receiver_expression,
-                expression_id,
-            )
-        })
-    }
-
-    fn check_typed_method_call(
-        &mut self,
-        receiver: &Expr,
-        receiver_type: &TypeKind,
-        method_name: &str,
-        call: &CallExpr,
-        receiver_expression: TypeExpressionId,
-        expression_id: TypeExpressionId,
-    ) -> Option<TypeKind> {
-        let args = call.args();
-        match self.check_inherent_method_call(
-            receiver,
-            receiver_type,
-            method_name,
-            args,
-            call,
-            receiver_expression,
-            expression_id,
-        ) {
-            InherentMethodCallOutcome::Missing => {}
-            InherentMethodCallOutcome::Checked(return_type) => return return_type,
-        }
-        if self.registered_world.is_none() {
-            match self.check_trait_method_call(receiver_type, method_name, args) {
-                TraitMethodCallOutcome::Missing => {}
-                TraitMethodCallOutcome::Typed(return_type) => return Some(return_type),
-                TraitMethodCallOutcome::Rejected => return None,
-            }
-            if let Some(return_type) = self.check_data_last_method_fallback(
-                receiver,
-                receiver_type,
-                method_name,
-                args,
-                expression_id,
-            ) {
-                return Some(return_type);
-            }
-        }
-        self.check_untyped_method_args(args);
-        if self.registered_world.is_none()
-            && let Some(return_type) = self.env.method_type(receiver_type, method_name).cloned()
-        {
-            return Some(return_type);
-        }
-        self.errors.push(TypeCheckError::new(format!(
-            "unknown method `{method_name}` on {}",
-            type_kind_label(receiver_type)
-        )));
-        None
     }
 
     /// Resolves method families that are owned directly by the receiver type.
@@ -1898,128 +1873,6 @@ impl TypeChecker<'_> {
                 self.errors.push(TypeCheckError::new(format!(
                     "filesystem capability `{callee}` requires a VirtualPath, not an OS absolute path `{path}`"
                 )));
-            }
-        }
-    }
-
-    pub(super) fn check_dotted_path_target(&self, path: &str) -> Option<TypeKind> {
-        let (target, field) = path.rsplit_once('.')?;
-        if let Some(field_type) = well_known_field_type(field) {
-            return Some(field_type);
-        }
-        self.symbol_type(target).cloned()
-    }
-
-    fn check_select_expr(&mut self, expr: &Expr, select: &SelectExpr) -> Option<TypeKind> {
-        let target = select.target();
-        let field = select.member().as_str();
-        if let Some(path) = expr_path_label(expr) {
-            if let Some(ty) = self.locals.get(&path).cloned() {
-                return Some(ty);
-            }
-            if let Some(ty) = self.env.symbol_type(&path).cloned() {
-                return Some(ty);
-            }
-            if let Some(ty) = std_float_constant_type(&path) {
-                return Some(ty);
-            }
-            if let Some(ty) = inline_failure_builtin_variant_type(&path) {
-                return Some(ty);
-            }
-        }
-        let receiver_type = self.check_expr(target);
-        if let Some(field_type) = receiver_type
-            .as_ref()
-            .and_then(|ty| self.nominal_field_type(ty, field))
-        {
-            return Some(field_type);
-        }
-        let field_type = match receiver_type.as_ref() {
-            Some(TypeKind::Observation) => agent_observation_field_type(field),
-            Some(TypeKind::ObservedObject) => agent_observed_object_field_type(field),
-            Some(TypeKind::AgentBBox) => agent_bbox_field_type(field),
-            Some(TypeKind::ActionTarget) => agent_action_target_field_type(field),
-            Some(TypeKind::ActionResult) => agent_action_result_field_type(field),
-            Some(TypeKind::CaptureRef) => agent_capture_ref_field_type(field),
-            Some(TypeKind::AgentEntityMetadata) => Self::agent_entity_metadata_field_type(field),
-            Some(TypeKind::AgentSourceAnchor) => Self::agent_source_anchor_field_type(field),
-            Some(TypeKind::AgentProjectGraphNeighborhood) => {
-                Self::agent_project_graph_neighborhood_field_type(field)
-            }
-            Some(TypeKind::AgentProjectGraphSymbol) => {
-                Self::agent_project_graph_symbol_field_type(field)
-            }
-            Some(TypeKind::AgentProjectGraphEdge) => {
-                Self::agent_project_graph_edge_field_type(field)
-            }
-            Some(TypeKind::AgentResource) => agent_resource_field_type(field),
-            Some(TypeKind::AgentResourceBody) => agent_resource_body_field_type(field),
-            Some(TypeKind::Ref(_)) => {
-                agent_entity_ref_field_type(field).or_else(|| well_known_field_type(field))
-            }
-            Some(TypeKind::Map { value, .. }) => Some(value.as_ref().clone()),
-            Some(TypeKind::Named(name)) if name == "HttpRequestContext" => match field {
-                "method" | "path" | "body" => Some(TypeKind::String),
-                _ => None,
-            },
-            _ => well_known_field_type(field),
-        };
-        if field_type.is_some() {
-            return field_type;
-        }
-        let method_name = field.split_once('<').map_or(field, |(name, _)| name);
-        if let Some(receiver_type) = receiver_type.as_ref()
-            && self.reject_method_value_reference(receiver_type, method_name)
-        {
-            return Some(TypeKind::Named("_".to_owned()));
-        }
-        None
-    }
-
-    fn reject_method_value_reference(
-        &mut self,
-        receiver_type: &TypeKind,
-        method_name: &str,
-    ) -> bool {
-        if self
-            .env
-            .method_signature(receiver_type, method_name)
-            .is_some()
-        {
-            self.errors
-                .push(TypeCheckError::unsupported_method_value_reference(
-                    receiver_type.clone(),
-                    method_name,
-                    "environment method values need an explicit receiver-binding contract; call the method directly or wrap it in an explicit closure",
-                ));
-            return true;
-        }
-        match self.trait_catalog.resolve_method(
-            receiver_type,
-            method_name,
-            &self.active_trait_predicates(),
-        ) {
-            TraitMethodResolution::Missing => false,
-            TraitMethodResolution::Inherent { .. } | TraitMethodResolution::Unique { .. } => {
-                self.errors
-                    .push(TypeCheckError::unsupported_method_value_reference(
-                        receiver_type.clone(),
-                        method_name,
-                        "trait/impl method values need an explicit receiver-binding contract; call the method directly or wrap it in an explicit closure",
-                    ));
-                true
-            }
-            TraitMethodResolution::Ambiguous(candidates) => {
-                self.errors.push(TypeCheckError::trait_diagnostic(
-                    TraitDiagnostic::ambiguous_method(
-                        method_name,
-                        candidates
-                            .iter()
-                            .map(|candidate| candidate.trait_name.as_str())
-                            .collect::<Vec<_>>(),
-                    ),
-                ));
-                true
             }
         }
     }

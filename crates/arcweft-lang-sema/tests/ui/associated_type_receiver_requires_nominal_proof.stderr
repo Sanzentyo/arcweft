@@ -1,0 +1,7 @@
+error[E0277]: the trait bound `TypeReceiverInstantiation: From<arcweft_lang_sema::types::TypeKind>` is not satisfied
+ --> tests/ui/associated_type_receiver_requires_nominal_proof.rs:7:64
+  |
+7 |     let receiver: TypeReceiverInstantiation = TypeKind::String.into();
+  |                                                                ^^^^ the trait `From<arcweft_lang_sema::types::TypeKind>` is not implemented for `TypeReceiverInstantiation`
+  |
+  = note: required for `arcweft_lang_sema::types::TypeKind` to implement `Into<TypeReceiverInstantiation>`

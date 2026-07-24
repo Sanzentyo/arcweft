@@ -33,7 +33,7 @@ use crate::{
     types::TypeKind,
 };
 
-use super::limits::{CatalogBuildWork, ResolverWork, SignatureQueryWorkMeter};
+use super::limits::{CallableQueryDepth, CatalogBuildWork, ResolverWork, SignatureQueryWorkMeter};
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallPoison,
     CallableArgumentIndex, CallableArgumentPolicy, CallableArgumentSlotIndex,
@@ -45,21 +45,25 @@ use super::{
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
     CallableParameterType, CallablePath, CallablePathError, CallableQueryLimitError,
     CallableScalarError, CallableScalarKind, CallableSchemaError, CallableSignatureSchema,
-    CallableSource, CallableValidator, CharacterOwnerSource, CurriedCallableId, DataLastCallableId,
-    DialogueCallableId, DialogueCalleeIdentity, DocumentationProvenance, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
-    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, FloatWidth,
-    FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, FxResolution,
-    LanguageCallableFamily, LexicalBindingIndex, LocalCallableId, NonEmptyCallableSet,
-    NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
-    PresentationCallableId, ProjectCallablePath, ReceiverMethodKey, ReductionConstructorKind,
-    RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable, ResolvedCharacterOwner,
-    ResolvedFunctionValue, RustItemPath, SemanticParameter, SemanticParameterGroup,
-    SemanticSignature, SemanticSignatureError, SemanticSignatureHelp, SemanticSignatureIndex,
-    SemanticSignatureRecovery, SignatureOrigin, SignatureQueryLimits, SignatureWorkKind,
-    SignatureWorkReport, SpreadArgumentPolicy, StandardEnvironmentId, StdFloatCallableId,
-    StdFloatOperation, TraitImplementationIndex, UnknownNamedArgumentPolicy,
+    CallableSource, CallableValidator, CapacityMethodId, CharacterOwnerSource, CurriedCallableId,
+    DataLastCallableId, DialogueCallableId, DialogueCalleeIdentity, DocumentationProvenance,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
+    EnvironmentDeclarationOrdinal, FloatWidth, FunctionValueOrdinal, FunctionValueSignatureId,
+    FxCallableSignatureId, FxResolution, LanguageCallableFamily, LexicalBindingIndex,
+    LocalCallableId, NonEmptyCallableSet, NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS,
+    PRODUCTION_SIGNATURE_LIMITS, PresentationCallableId, ProjectCallablePath, ReceiverMethodKey,
+    ReductionConstructorKind, RegisteredCallableCatalogBuilder, ResolveCallError, ResolvedCallable,
+    ResolvedCharacterOwner, ResolvedFunctionValue, RustItemPath, SemanticParameter,
+    SemanticParameterGroup, SemanticSignature, SemanticSignatureError, SemanticSignatureHelp,
+    SemanticSignatureIndex, SemanticSignatureRecovery, SignatureOrigin, SignatureQueryLimits,
+    SignatureWorkKind, SignatureWorkReport, SpreadArgumentPolicy, StandardEnvironmentId,
+    StdFloatCallableId, StdFloatOperation, TraitImplementationIndex, UnknownNamedArgumentPolicy,
 };
+
+mod production_catalog_limits;
+mod production_determinism;
+mod production_limits;
 
 fn name(value: &str) -> CallableName {
     CallableName::try_new(value).expect("valid callable name")
@@ -1921,11 +1925,13 @@ fn inclusive_work_limits_do_not_mutate_on_failure() {
     assert_eq!(build.limit(), 3);
     assert_eq!(
         build.charge(1),
-        Err(CallableBuildLimitError::Work {
-            requested: 1,
-            consumed: 3,
-            limit: 3,
-        })
+        Err(CallableCatalogBuildError::Limit(
+            CallableBuildLimitError::Work {
+                requested: 1,
+                consumed: 3,
+                limit: 3,
+            }
+        ))
     );
     assert_eq!(build.consumed(), 3);
 
@@ -2367,5 +2373,166 @@ fn semantic_signature_help_enforces_active_indices_and_source_identity() {
     assert_eq!(
         help.active_parameter(),
         Some(CallableParameterCoordinate::new(group(0), index(0)))
+    );
+}
+
+#[test]
+fn capacity_schema_is_variadic_unchecked_without_placeholder() {
+    for receiver in [
+        TypeKind::String,
+        TypeKind::Bytes,
+        TypeKind::Vec(Box::new(TypeKind::I32)),
+    ] {
+        for arity in [0, 1, 3, 128] {
+            let id = CapacityMethodId::resolve_associated(&receiver, &name("with_capacity"), arity)
+                .expect("production arity fits identity")
+                .expect("supported associated capacity receiver");
+            assert_eq!(id.receiver(), &receiver);
+            assert_eq!(id.arity(), arity);
+            assert_eq!(id.result_type(), receiver);
+
+            let schema = id.signature_schema();
+            assert_eq!(schema.result(), id.receiver());
+            assert_eq!(schema.groups().len(), 1);
+            assert_eq!(schema.groups()[0].parameters().len(), 1);
+            let parameter = &schema.groups()[0].parameters()[0];
+            assert_eq!(parameter.ty(), &CallableParameterType::Unchecked);
+            assert_eq!(
+                parameter.passing(),
+                CallableParameterPassing::RestPositional
+            );
+            assert_eq!(parameter.presence(), CallableParameterPresence::Optional);
+            assert_eq!(
+                schema.argument_policy(),
+                CallableArgumentPolicy::new(
+                    UnknownNamedArgumentPolicy::OpenUnchecked,
+                    SpreadArgumentPolicy::Unchecked,
+                )
+            );
+        }
+    }
+}
+
+#[test]
+fn associated_capacity_schema_has_no_placeholder() {
+    for receiver in [
+        TypeKind::String,
+        TypeKind::Bytes,
+        TypeKind::Vec(Box::new(TypeKind::I32)),
+    ] {
+        let id = CapacityMethodId::resolve_associated(&receiver, &name("with_capacity"), 1)
+            .expect("small arity fits the typed identity")
+            .expect("supported Capacity receiver");
+        let schema = id.signature_schema();
+        assert!(!matches!(schema.result(), TypeKind::Named(name) if name == "_"));
+        assert!(schema.groups().iter().all(|group| {
+            group.parameters().iter().all(|parameter| {
+                !matches!(
+                    parameter.ty(),
+                    CallableParameterType::Exact(TypeKind::Named(name)) if name == "_"
+                )
+            })
+        }));
+    }
+}
+
+#[test]
+fn associated_capacity_arity_conversion_boundary() {
+    let maximum = u16::MAX as usize;
+    let exact =
+        CapacityMethodId::resolve_associated(&TypeKind::String, &name("with_capacity"), maximum)
+            .expect("the maximum representable authored arity")
+            .expect("String owns associated capacity construction");
+    assert_eq!(exact.arity(), maximum);
+    assert_eq!(
+        CapacityMethodId::resolve_associated(
+            &TypeKind::String,
+            &name("with_capacity"),
+            maximum + 1,
+        ),
+        Err(CallableIdentityError::Scalar(
+            CallableScalarError::IndexOverflow {
+                kind: CallableIndexKind::Parameter,
+                value: maximum + 1,
+            }
+        ))
+    );
+}
+
+#[test]
+fn associated_capacity_rejects_near_misses_without_placeholder_types() {
+    for (receiver, member) in [
+        (TypeKind::I32, "with_capacity"),
+        (TypeKind::Named("Vec".to_owned()), "with_capacity"),
+        (TypeKind::String, "reserve"),
+    ] {
+        assert!(
+            CapacityMethodId::resolve_associated(&receiver, &name(member), 1)
+                .expect("small arity fits identity")
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn capacity_near_miss_identity_not_selected() {
+    for (receiver, member) in [
+        (TypeKind::String, "reserve"),
+        (TypeKind::Bytes, "allocate"),
+        (TypeKind::Vec(Box::new(TypeKind::I32)), "withCapacity"),
+    ] {
+        assert_eq!(
+            CapacityMethodId::resolve_associated(&receiver, &name(member), 1)
+                .expect("near-miss arity fits the identity boundary"),
+            None
+        );
+    }
+}
+
+#[test]
+fn associated_capacity_family_inventory_remains_23() {
+    assert_eq!(super::CallableFamily::ALL.len(), 23);
+    assert_eq!(
+        super::CallableFamily::ALL
+            .iter()
+            .filter(|family| **family == super::CallableFamily::CapacityMethod)
+            .count(),
+        1
+    );
+    assert_eq!(
+        CallableCandidateId::CapacityMethod(
+            CapacityMethodId::resolve_associated(&TypeKind::String, &name("with_capacity"), 1,)
+                .expect("small arity")
+                .expect("String Capacity identity"),
+        )
+        .family(),
+        super::CallableFamily::CapacityMethod
+    );
+}
+
+#[test]
+fn nonreservable_type_not_capacity() {
+    let receiver = TypeKind::Map {
+        kind: crate::types::MapKind::Ordered,
+        key: Box::new(TypeKind::I32),
+        value: Box::new(TypeKind::I32),
+    };
+    assert!(
+        CapacityMethodId::resolve_associated(&receiver, &name("with_capacity"), 1)
+            .expect("small arity fits identity")
+            .is_none()
+    );
+}
+
+#[test]
+fn bare_vec_never_constructs_placeholder_receiver() {
+    assert!(
+        CapacityMethodId::resolve_associated(
+            &TypeKind::Named("Vec".to_owned()),
+            &name("with_capacity"),
+            1,
+        )
+        .expect("small arity fits identity")
+        .is_none()
     );
 }

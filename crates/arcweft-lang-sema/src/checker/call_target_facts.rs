@@ -9,7 +9,9 @@ use std::{
 
 use arcweft_lang_syntax::{
     ast::common::TextRange,
-    expr::{ArgumentListTerminatorSyntax, CallArgumentRecoverySyntax, CallExpr},
+    expr::{
+        ArgumentListSyntax, ArgumentListTerminatorSyntax, CallArgumentRecoverySyntax, CallExpr,
+    },
 };
 use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
@@ -65,12 +67,14 @@ pub(crate) struct FocusedCallSite {
 }
 
 impl FocusedCallSite {
-    pub(crate) fn from_call(
-        call: &CallExpr,
+    pub(crate) fn from_argument_list(
+        call: TextRange,
+        callee: TextRange,
+        arguments: &ArgumentListSyntax,
         document: &SourceDocument,
         byte_offset: usize,
     ) -> Option<Self> {
-        focused_site(call, document, Some(byte_offset))
+        focused_argument_list_site(call, callee, arguments, document, Some(byte_offset))
     }
 
     pub(crate) fn compare_focus(&self, current: &Self) -> std::cmp::Ordering {
@@ -232,6 +236,19 @@ impl CallTargetFactRecorder {
                 reason: Box::new(reason),
             });
         }
+    }
+
+    pub(super) fn record_terminal_resolve_error(&mut self, reason: ResolveCallError) {
+        if self.error.is_some() {
+            return;
+        }
+        let CallTargetFactMode::Focused { call, .. } = &self.mode else {
+            return;
+        };
+        self.error = Some(CallTargetFactError::Resolve {
+            call: call.clone(),
+            reason: Box::new(reason),
+        });
     }
 
     pub(super) fn record_signature_accounting_error(&mut self, reason: SignatureAccountingError) {
@@ -429,7 +446,7 @@ impl<'a> CallResolverControl<'a> {
     ) -> Result<(), ResolveCallError> {
         match self.signature_control {
             Some(control) => control.check_signature_query_step(step),
-            None if self.cancellation.load(std::sync::atomic::Ordering::Relaxed) => {
+            None if self.cancellation.load(std::sync::atomic::Ordering::Acquire) => {
                 Err(ResolveCallError::Cancelled)
             }
             None => Ok(()),
@@ -466,14 +483,27 @@ fn focused_site(
 ) -> Option<FocusedCallSite> {
     let syntax = call.parenthesized_syntax()?;
     let arguments = syntax.argument_list();
+    focused_argument_list_site(
+        call.range(),
+        call.callee_range(),
+        arguments,
+        document,
+        byte_offset,
+    )
+}
+
+fn focused_argument_list_site(
+    call: TextRange,
+    callee: TextRange,
+    arguments: &ArgumentListSyntax,
+    document: &SourceDocument,
+    byte_offset: Option<usize>,
+) -> Option<FocusedCallSite> {
     let call_span = document
-        .span(SourceRange::new(call.range().start(), call.range().end()))
+        .span(SourceRange::new(call.start(), call.end()))
         .ok()?;
     let callee = document
-        .span(SourceRange::new(
-            call.callee_range().start(),
-            call.callee_range().end(),
-        ))
+        .span(SourceRange::new(callee.start(), callee.end()))
         .ok()?;
     let arguments_span = document
         .span(SourceRange::new(

@@ -24,4 +24,6 @@ pub use model::{
 };
 
 #[cfg(test)]
+mod loader_limits_tests;
+#[cfg(test)]
 mod tests;

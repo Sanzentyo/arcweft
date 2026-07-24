@@ -6,6 +6,7 @@ use crate::{
     effect_diagnostics::EffectDiagnostic, nominal::NominalTypeDiagnostic, style::StyleDiagnostic,
     types::TypeKind,
 };
+use arcweft_lang_hir::symbol::ProjectValueLookupError;
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use thiserror::Error;
 
@@ -119,6 +120,8 @@ pub enum TypeCheckErrorKind {
     Style { diagnostic: StyleDiagnostic },
     /// A source-backed nominal resolution diagnostic.
     Nominal { diagnostic: NominalTypeDiagnostic },
+    /// A terminal source-backed failure in the project value namespace.
+    ProjectValueLookup { error: ProjectValueLookupError },
     /// A propagating Await has no compatible lexical Result boundary.
     AwaitPropagationTargetMissing {
         actual_error: TypeKind,
@@ -193,6 +196,13 @@ impl TypeCheckError {
         Self {
             message,
             kind: TypeCheckErrorKind::Nominal { diagnostic },
+        }
+    }
+
+    pub(crate) fn project_value_lookup(error: ProjectValueLookupError) -> Self {
+        Self {
+            message: error.to_string(),
+            kind: TypeCheckErrorKind::ProjectValueLookup { error },
         }
     }
 
@@ -648,7 +658,8 @@ impl TypeCheckError {
             | TypeCheckErrorKind::InlineFailurePolicyConflict { .. }
             | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
             | TypeCheckErrorKind::Trait { .. }
-            | TypeCheckErrorKind::Style { .. } => diagnostic,
+            | TypeCheckErrorKind::Style { .. }
+            | TypeCheckErrorKind::ProjectValueLookup { .. } => diagnostic,
             TypeCheckErrorKind::Nominal {
                 diagnostic: nominal,
             } => nominal.to_source_diagnostic().unwrap_or(diagnostic),
@@ -757,6 +768,16 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         TypeCheckErrorKind::Trait { diagnostic } => diagnostic.code().to_owned(),
         TypeCheckErrorKind::Style { diagnostic } => diagnostic.code().as_str().to_owned(),
         TypeCheckErrorKind::Nominal { diagnostic } => diagnostic.kind().code().as_str().to_owned(),
+        TypeCheckErrorKind::ProjectValueLookup { error } => match error {
+            ProjectValueLookupError::Ambiguous { .. } => "sema.project_value.ambiguous".to_owned(),
+            ProjectValueLookupError::Inaccessible { .. } => {
+                "sema.project_value.inaccessible".to_owned()
+            }
+            ProjectValueLookupError::InvalidPath { .. } => {
+                "sema.project_value.invalid_path".to_owned()
+            }
+            ProjectValueLookupError::Poisoned { .. } => "sema.project_value.poisoned".to_owned(),
+        },
         TypeCheckErrorKind::AwaitPropagationTargetMissing { .. } => {
             "sema.await.propagation_target_missing".to_owned()
         }

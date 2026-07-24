@@ -92,7 +92,6 @@ impl TypeChecker<'_> {
             None,
             rhs_effect_callable,
             rhs_curried_signature_call.as_ref(),
-            None,
             &[CallArg::Positional(Box::new(lhs.clone()))],
             rhs_ty,
         ))

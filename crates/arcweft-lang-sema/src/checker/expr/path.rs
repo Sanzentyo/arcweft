@@ -2,16 +2,52 @@
 
 use super::super::helpers::{builtin_path_type, numeric_literal_suffix_type};
 use super::support::{
-    has_multiple_numeric_choice_alternatives, is_unit_number_type,
-    unique_numeric_choice_alternative,
+    has_multiple_numeric_choice_alternatives, inline_failure_builtin_variant_type,
+    is_unit_number_type, std_float_constant_type, unique_numeric_choice_alternative,
 };
 use super::{
-    BorrowLocalState, TypeCheckError, TypeChecker, TypeExpressionId, TypeKind,
-    TypedLoweringEvidence, TypedLoweringEvidenceKind,
+    BorrowLocalState, CallableDeclarationId, TypeCheckError, TypeChecker, TypeExpressionId,
+    TypeKind, TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
-use arcweft_lang_syntax::expr::{FloatSuffix, IntLiteral, Literal};
+use arcweft_lang_syntax::expr::{DottedPath, FloatSuffix, IntLiteral, Literal};
 
 impl TypeChecker<'_> {
+    pub(super) fn check_project_callable_path_expr(
+        &mut self,
+        path: &str,
+        declaration: &CallableDeclarationId,
+        expression_id: TypeExpressionId,
+    ) -> Option<TypeKind> {
+        let Some(signature) = self.project_function_signatures.get(declaration).cloned() else {
+            self.errors.push(TypeCheckError::new(format!(
+                "accepted project callable `{}` has no semantic signature",
+                declaration.qualified_name()
+            )));
+            return None;
+        };
+        let callable = crate::effect_model::CallableId::project_function(declaration);
+        let effects = self
+            .effect_collector
+            .inferred_effect_row(&callable)
+            .unwrap_or_else(crate::effect_row::EffectRow::unknown);
+        let Some(ty) = signature.function_value_type_with_effects(effects) else {
+            self.errors.push(TypeCheckError::new(format!(
+                "accepted project callable `{}` has no function value type",
+                declaration.qualified_name()
+            )));
+            return None;
+        };
+        self.last_checked_closure_effect_callable = Some(callable);
+        self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
+            expression_id,
+            TypedLoweringEvidenceKind::FunctionValueReference {
+                callee: path.to_owned(),
+                ty: ty.clone(),
+            },
+        ));
+        Some(ty)
+    }
+
     pub(super) fn check_literal_expr(
         &mut self,
         literal: &Literal,
@@ -148,14 +184,15 @@ impl TypeChecker<'_> {
 
     pub(super) fn check_path_expr_with_expected(
         &mut self,
-        path: &str,
+        path: &DottedPath,
         expected: Option<&TypeKind>,
         expression_id: TypeExpressionId,
     ) -> Option<TypeKind> {
-        if let Some(ty) = self.expected_short_variant_type(path, expected) {
+        let label = path.as_label();
+        if let Some(ty) = self.expected_short_variant_type(label, expected) {
             return Some(ty);
         }
-        if path == "None"
+        if path.is_single("None")
             && let Some(expected @ TypeKind::Option(_)) = expected
         {
             return Some(expected.clone());
@@ -200,41 +237,75 @@ impl TypeChecker<'_> {
         }
     }
 
-    fn check_path_expr(&mut self, path: &str, expression_id: TypeExpressionId) -> Option<TypeKind> {
-        if let Some(state) = self.borrow_local_lifetimes.get(path) {
+    fn check_path_expr(
+        &mut self,
+        path: &DottedPath,
+        expression_id: TypeExpressionId,
+    ) -> Option<TypeKind> {
+        let label = path.as_label();
+        if let Some(state) = self.borrow_local_lifetimes.get(label) {
             match state {
                 BorrowLocalState::Dropped => self.errors.push(TypeCheckError::new(format!(
-                    "borrowed local `{path}` was used after it was dropped"
+                    "borrowed local `{label}` was used after it was dropped"
                 ))),
                 BorrowLocalState::MaybeDropped(_) => {
                     self.errors.push(TypeCheckError::new(format!(
-                        "borrowed local `{path}` may have been dropped on another control-flow path"
+                        "borrowed local `{label}` may have been dropped on another control-flow path"
                     )));
                 }
                 BorrowLocalState::Live(_) => {}
             }
         }
-        if let Some(ty) = self.symbol_type_with_capture(path) {
+        if let Some(ty) = self.symbol_type_with_capture(label) {
             return Some(ty);
         }
-        if let Some(ty) = self.function_value_type(path) {
+        if let Some(ty) = self.function_value_type(label) {
             self.record_typed_lowering_evidence(TypedLoweringEvidence::new(
                 expression_id,
                 TypedLoweringEvidenceKind::FunctionValueReference {
-                    callee: path.to_owned(),
+                    callee: label.to_owned(),
                     ty: ty.clone(),
                 },
             ));
             return Some(ty);
         }
-        if let Some(ty) = self.check_dotted_path_target(path) {
+        if let Some((prefix, ty)) = self.dotted_value_path_resolution(path) {
+            if self.locals.contains_key(prefix.as_label()) {
+                let _ = self.local_symbol_type_with_capture(prefix.as_label());
+            }
             return Some(ty);
         }
-        if let Some(ty) = builtin_path_type(path) {
+        if let Some(ty) = builtin_path_type(label) {
             return Some(ty);
         }
         self.errors
-            .push(TypeCheckError::new(format!("unknown symbol `{path}`")));
+            .push(TypeCheckError::new(format!("unknown symbol `{label}`")));
+        None
+    }
+
+    pub(in crate::checker) fn dotted_value_path_resolution(
+        &self,
+        path: &DottedPath,
+    ) -> Option<(DottedPath, TypeKind)> {
+        if let Some(ty) = std_float_constant_type(path.as_label())
+            .or_else(|| inline_failure_builtin_variant_type(path.as_label()))
+        {
+            return Some((path.clone(), ty));
+        }
+        for prefix_len in (1..path.segments().len()).rev() {
+            let prefix = path.prefix(prefix_len)?;
+            let Some(mut ty) = self
+                .symbol_type(prefix.as_label())
+                .cloned()
+                .or_else(|| builtin_path_type(prefix.as_label()))
+            else {
+                continue;
+            };
+            for field in &path.segments()[prefix_len..] {
+                ty = self.value_field_type(&ty, field.as_str())?;
+            }
+            return Some((prefix, ty));
+        }
         None
     }
 }

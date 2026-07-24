@@ -25,6 +25,7 @@ impl From<ProfileTopologyLimits> for BudgetLimits {
 pub(super) struct ProfileTopologyBudget {
     limits: BudgetLimits,
     resources: u64,
+    source_bytes: u64,
     overlay_bytes: u64,
     diagnostics: u64,
     work: u64,
@@ -35,6 +36,7 @@ impl ProfileTopologyBudget {
         Self {
             limits: ProfileTopologyLimits::PRODUCTION.into(),
             resources: 0,
+            source_bytes: 0,
             overlay_bytes: 0,
             diagnostics: 0,
             work: 0,
@@ -50,7 +52,7 @@ impl ProfileTopologyBudget {
         )
     }
 
-    pub(super) fn check_source_bytes(
+    pub(super) fn check_single_resource_bytes(
         &self,
         observed: usize,
     ) -> Result<u64, ProfileTopologyLoadError> {
@@ -66,6 +68,26 @@ impl ProfileTopologyBudget {
             });
         }
         Ok(observed)
+    }
+
+    pub(super) fn charge_source_bytes(
+        &mut self,
+        amount: usize,
+    ) -> Result<(), ProfileTopologyLoadError> {
+        let amount =
+            u64::try_from(amount).map_err(|_| ProfileTopologyLoadError::ArithmeticOverflow {
+                kind: ProfileTopologyLimitKind::SourceBytes,
+            })?;
+        charge(
+            &mut self.source_bytes,
+            amount,
+            self.limits.source_bytes,
+            ProfileTopologyLimitKind::SourceBytes,
+        )
+    }
+
+    pub(super) fn remaining_source_bytes(&self) -> u64 {
+        self.limits.source_bytes.saturating_sub(self.source_bytes)
     }
 
     pub(super) fn charge_overlay_bytes(
@@ -122,6 +144,7 @@ impl ProfileTopologyBudget {
                 work,
             },
             resources: 0,
+            source_bytes: 0,
             overlay_bytes: 0,
             diagnostics: 0,
             work: 0,
@@ -157,7 +180,9 @@ mod tests {
     fn inclusive_budget_accepts_exact_maximum_and_rejects_one_over() {
         let mut budget = ProfileTopologyBudget::for_test(1, 3, 3, 1, 1);
         budget.charge_resource().expect("resource maximum");
-        budget.check_source_bytes(3).expect("source maximum");
+        budget
+            .charge_source_bytes(3)
+            .expect("aggregate source maximum");
         budget.charge_overlay_bytes(3).expect("overlay maximum");
         budget.charge_diagnostics(1).expect("diagnostic maximum");
         budget.charge_work(1).expect("work maximum");
@@ -171,11 +196,30 @@ mod tests {
             })
         ));
         assert!(matches!(
-            budget.check_source_bytes(4),
+            budget.charge_source_bytes(1),
             Err(ProfileTopologyLoadError::Limit {
                 kind: ProfileTopologyLimitKind::SourceBytes,
                 observed: 4,
                 maximum: 3,
+            })
+        ));
+    }
+
+    #[test]
+    fn multiple_small_text_resources_share_one_aggregate_source_budget() {
+        let mut budget = ProfileTopologyBudget::for_test(4, 8, 8, 1, 1);
+        for bytes in [2, 3, 3] {
+            budget
+                .charge_source_bytes(bytes)
+                .expect("small resource stays within aggregate");
+        }
+        assert_eq!(budget.remaining_source_bytes(), 0);
+        assert!(matches!(
+            budget.charge_source_bytes(1),
+            Err(ProfileTopologyLoadError::Limit {
+                kind: ProfileTopologyLimitKind::SourceBytes,
+                observed: 9,
+                maximum: 8,
             })
         ));
     }
@@ -188,6 +232,16 @@ mod tests {
             budget.charge_overlay_bytes(1),
             Err(ProfileTopologyLoadError::ArithmeticOverflow {
                 kind: ProfileTopologyLimitKind::OverlayBytes,
+            })
+        ));
+
+        let mut budget =
+            ProfileTopologyBudget::for_test(u64::MAX, u64::MAX, u64::MAX, u64::MAX, u64::MAX);
+        budget.source_bytes = u64::MAX;
+        assert!(matches!(
+            budget.charge_source_bytes(1),
+            Err(ProfileTopologyLoadError::ArithmeticOverflow {
+                kind: ProfileTopologyLimitKind::SourceBytes,
             })
         ));
     }
@@ -209,10 +263,10 @@ mod tests {
             budget.charge_resource().expect("resource within maximum");
         }
         budget
-            .check_source_bytes(
+            .charge_source_bytes(
                 usize::try_from(limits.source_bytes()).expect("source limit fits usize"),
             )
-            .expect("source exact maximum");
+            .expect("aggregate source exact maximum");
 
         assert!(matches!(
             budget.charge_resource(),
@@ -247,9 +301,7 @@ mod tests {
             }) if observed == limits.work() + 1 && maximum == limits.work()
         ));
         assert!(matches!(
-            budget.check_source_bytes(
-                usize::try_from(limits.source_bytes() + 1).expect("source limit fits usize")
-            ),
+            budget.charge_source_bytes(1),
             Err(ProfileTopologyLoadError::Limit {
                 kind: ProfileTopologyLimitKind::SourceBytes,
                 observed,

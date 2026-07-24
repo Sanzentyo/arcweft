@@ -1034,18 +1034,24 @@ fn topology_diagnostics_are_bounded() {
 }
 
 #[test]
-fn topology_single_resource_byte_limit_is_inclusive() {
+fn topology_aggregate_source_byte_limit_is_inclusive() {
     let project = TestProject::new("topology-source-byte-limit");
     project.write("src/main.arcw", ROOT_SOURCE);
     let maximum = usize::try_from(ProfileTopologyLimits::PRODUCTION.source_bytes())
         .expect("source limit fits usize");
-    let exact = padded_toml(&manifest("dev", "src/main.arcw", ""), maximum);
-    let exact_overlays = vec![project.overlay("arcw.toml", &exact)];
+    let exact_manifest = padded_toml(
+        &manifest("dev", "src/main.arcw", ""),
+        maximum - ROOT_SOURCE.len(),
+    );
+    let exact_overlays = vec![project.overlay("arcw.toml", &exact_manifest)];
 
     project.load(LaunchProfileSelection::Explicit("dev"), &exact_overlays);
 
-    let one_over = format!("{exact}x");
-    let one_overlays = vec![project.overlay("arcw.toml", &one_over)];
+    project.write(
+        "src/main.arcw",
+        &format!("{ROOT_SOURCE}{}", "x".repeat(1_024)),
+    );
+    let one_overlays = vec![project.overlay("arcw.toml", &exact_manifest)];
     let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &one_overlays);
     assert!(matches!(
         error,
@@ -1074,7 +1080,11 @@ fn topology_resource_limit_is_inclusive() {
 
     let one_over_project = TestProject::new("topology-resource-limit-one-over");
     one_over_project.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
-    let one_overlays = module_overlays(&one_over_project, exact_module_count + 1);
+    let mut one_overlays = module_overlays(&one_over_project, exact_module_count + 1);
+    one_overlays[exact_module_count] = one_over_project.overlay(
+        &format!("src/m{exact_module_count:04}.arcw"),
+        "this over-limit module must never reach the parser",
+    );
     let error = one_over_project.load_error(LaunchProfileSelection::Explicit("dev"), &one_overlays);
     assert!(matches!(
         error,

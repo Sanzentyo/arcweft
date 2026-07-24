@@ -16,6 +16,71 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
     parsed.into_typed_tree()
 }
 
+#[test]
+fn flat_scope_body_retains_document_coordinates_for_ordinary_calls() {
+    let source = "flow @flow.main main {\n=== scope rain ===\nlet value = standard_value(1i32)\n=== /scope ===\n}\n";
+    let tree = parse_ok(source);
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::Scope(scope) = &flow.body()[0] else {
+        panic!("expected flat scope");
+    };
+    let FlowItem::Stmt(Stmt::Let {
+        expr: Expr::Call(call),
+        expr_range: Some(expr_range),
+        ..
+    }) = &scope.body()[0]
+    else {
+        panic!("expected ordinary call binding inside flat scope");
+    };
+
+    assert_eq!(&source[expr_range.as_range()], "standard_value(1i32)");
+    assert_eq!(&source[call.range().as_range()], "standard_value(1i32)");
+    assert_eq!(&source[call.callee_range().as_range()], "standard_value");
+}
+
+fn assert_recovered_flat_scope_call_coordinates(source: &str) {
+    let parsed = arcweft_lang_syntax::parser::parse_source(source.to_owned());
+    assert!(
+        !parsed.errors().is_empty(),
+        "the malformed flat fence must retain a recovery diagnostic"
+    );
+    let tree = parsed.into_typed_tree();
+    let Item::Flow(flow) = &tree.items()[0] else {
+        panic!("expected flow");
+    };
+    let FlowItem::Scope(scope) = &flow.body()[0] else {
+        panic!("expected recovered flat scope");
+    };
+    let FlowItem::Stmt(Stmt::Let {
+        expr: Expr::Call(call),
+        expr_range: Some(expr_range),
+        ..
+    }) = &scope.body()[0]
+    else {
+        panic!("expected ordinary call binding inside recovered flat scope");
+    };
+
+    assert_eq!(&source[expr_range.as_range()], "standard_value(1i32)");
+    assert_eq!(&source[call.range().as_range()], "standard_value(1i32)");
+    assert_eq!(&source[call.callee_range().as_range()], "standard_value");
+}
+
+#[test]
+fn mismatched_flat_scope_close_retains_document_coordinates() {
+    assert_recovered_flat_scope_call_coordinates(
+        "flow main {\n=== scope rain ===\nlet value = standard_value(1i32)\n=== /thread ===\n}\n",
+    );
+}
+
+#[test]
+fn missing_flat_scope_close_retains_document_coordinates() {
+    assert_recovered_flat_scope_call_coordinates(
+        "flow main {\n=== scope rain ===\nlet value = standard_value(1i32)\n}\n",
+    );
+}
+
 fn select_path(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Path(path) => Some(path.as_label().to_owned()),

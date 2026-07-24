@@ -722,24 +722,58 @@ mod tests {
     }
 
     #[test]
-    fn generated_fact_projection_reports_the_production_depth_limit() {
+    fn generated_fact_projection_accepts_exact_and_rejects_one_over_production_depth() {
+        const EXACT_WRAPPERS: usize = 63;
+        const ONE_OVER_WRAPPERS: usize = 64;
+
         let mount = ModuleMountPath::new("truck").expect("mount");
         let import = ExternalModuleImportId::new("truck").expect("import");
         let local_types = local_types(&mount, &["TruckResult"]);
-        let nested = (0..TypeReferenceLimits::PRODUCTION.nesting_depth())
-            .fold("TruckResult".to_owned(), |inner, _| format!("Vec<{inner}>"));
-        let reference = TypeReference::new(nested).expect("visible type reference");
+        let limits = TypeReferenceLimits::PRODUCTION;
+        assert_eq!(limits.nesting_depth(), EXACT_WRAPPERS + 1);
 
-        let error = mounted_type(&reference, &local_types, &import, "drive_truck")
-            .expect_err("the production projector must reject excessive nesting");
-        assert!(matches!(
-            error,
-            ExternalModuleFactsError::TypeReferenceLimit {
-                kind: TypeReferenceLimitKind::NestingDepth,
-                observed: 65,
-                maximum: 64,
-                ..
-            }
-        ));
+        let exact =
+            (0..EXACT_WRAPPERS).fold("TruckResult".to_owned(), |inner, _| format!("Vec<{inner}>"));
+        assert!(exact.len() <= limits.bytes());
+        assert!(EXACT_WRAPPERS < limits.work());
+        let exact_reference = TypeReference::new(exact).expect("visible exact type reference");
+        let expected = (0..EXACT_WRAPPERS).fold(
+            AdapterTypeKind::Nominal {
+                nominal: local_types["TruckResult"].clone(),
+            },
+            |item, _| AdapterTypeKind::Vec {
+                item: Box::new(item),
+            },
+        );
+        assert_eq!(
+            mounted_type(&exact_reference, &local_types, &import, "drive_truck")
+                .expect("leaf depth 64 must be accepted by the production projector"),
+            expected
+        );
+
+        let one_over = (0..ONE_OVER_WRAPPERS)
+            .fold("TruckResult".to_owned(), |inner, _| format!("Vec<{inner}>"));
+        assert!(one_over.len() <= limits.bytes());
+        assert!(ONE_OVER_WRAPPERS < limits.work());
+        let one_over_reference =
+            TypeReference::new(one_over).expect("visible one-over type reference");
+
+        let error = mounted_type(&one_over_reference, &local_types, &import, "drive_truck")
+            .expect_err("leaf depth 65 must be rejected by the production projector");
+        let ExternalModuleFactsError::TypeReferenceLimit {
+            import: actual_import,
+            export,
+            kind,
+            observed,
+            maximum,
+        } = error
+        else {
+            panic!("expected the typed production nesting-depth limit, got {error:?}");
+        };
+        assert_eq!(actual_import, import);
+        assert_eq!(export, "drive_truck");
+        assert_eq!(kind, TypeReferenceLimitKind::NestingDepth);
+        assert_eq!(observed, ONE_OVER_WRAPPERS + 1);
+        assert_eq!(maximum, limits.nesting_depth());
     }
 }

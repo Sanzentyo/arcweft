@@ -1,4 +1,3 @@
-use super::state::LspProfileState;
 use super::*;
 use arcweft_manifest_model::RawDigest;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
@@ -23,7 +22,10 @@ fn resolves_project_profile_and_external_module_metadata() {
     project.write("generated/truck.adapter.json", TRUCK_METADATA);
 
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let profile = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("profile construction")
+        .publish_for_test();
 
     assert!(
         profile.diagnostics().is_empty(),
@@ -50,56 +52,47 @@ fn failed_rebuild_preserves_generation_and_cache() {
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let state = Arc::new(LspProfileState::new());
     let first = resolver
-        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("first profile construction")
+        .publish_for_test();
     assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
-    let accepted = state.current().expect("first accepted environment");
+    let accepted = first.state().current().expect("first accepted environment");
     accepted.seed_signature_cache_for_test(0);
     let generation = accepted.generation();
     let cache = accepted.signature_cache_snapshot_for_test();
 
     project.write("src/main.arcw", "fn main( {\n");
     let failed = resolver
-        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("invalid source rejects construction");
 
-    assert!(
-        failed.diagnostics().iter().any(|diagnostic| {
-            diagnostic.kind() == LspProfileDiagnosticKind::ProjectSourceParse
-        }),
-        "{:?}",
-        failed.diagnostics()
-    );
-    let retained = state.current().expect("accepted environment is retained");
+    assert_eq!(failed.kind(), LspProfileDiagnosticKind::ProjectSourceParse);
+    let retained = first
+        .state()
+        .current()
+        .expect("accepted environment is retained");
     assert!(Arc::ptr_eq(&retained, &accepted));
     assert_eq!(retained.generation(), generation);
     assert_eq!(retained.signature_cache_snapshot_for_test(), cache);
 }
 
 #[test]
-fn closed_profile_state_reports_typed_publication_failure_without_mutation() {
-    let project = TestProject::new("lsp-profile-closed-publication");
+fn profile_construction_does_not_publish_accepted_state() {
+    let project = TestProject::new("lsp-profile-construction-only");
     project.write(
         "arcw.toml",
-        &minimal_manifest("lsp-profile-closed-publication", "server", ""),
+        &minimal_manifest("lsp-profile-construction-only", "server", ""),
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let state = Arc::new(LspProfileState::new());
-    state.shutdown();
 
-    let profile = resolver
-        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+    let build = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("profile construction");
 
-    assert!(state.current().is_none());
-    assert!(
-        profile
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::ProfilePublication),
-        "{:?}",
-        profile.diagnostics(),
-    );
+    assert!(build.profile().state().current().is_none());
+    assert_eq!(build.candidate().overlays().iter().count(), 0);
 }
 
 #[test]
@@ -112,27 +105,29 @@ fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
     project.write("generated/truck.adapter.json", TRUCK_METADATA);
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
-    let state = Arc::new(LspProfileState::new());
     let first = resolver
-        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect("first profile construction")
+        .publish_for_test();
     assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
-    let accepted = state.current().expect("first accepted environment");
+    let accepted = first.state().current().expect("first accepted environment");
     accepted.seed_signature_cache_for_test(0);
     let generation = accepted.generation();
     let cache = accepted.signature_cache_snapshot_for_test();
 
     project.write("generated/truck.adapter.json", "{ not valid metadata");
     let failed = resolver
-        .resolve_for_document_path_with_state(&project.path("src/main.arcw"), Arc::clone(&state));
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("invalid adapter metadata rejects construction");
 
-    assert!(
-        failed.diagnostics().iter().any(|diagnostic| {
-            diagnostic.kind() == LspProfileDiagnosticKind::ExternalModuleMetadataParse
-        }),
-        "{:?}",
-        failed.diagnostics()
+    assert_eq!(
+        failed.kind(),
+        LspProfileDiagnosticKind::ExternalModuleMetadataParse
     );
-    let retained = state.current().expect("accepted environment is retained");
+    let retained = first
+        .state()
+        .current()
+        .expect("accepted environment is retained");
     assert!(Arc::ptr_eq(&retained, &accepted));
     assert!(Arc::ptr_eq(retained.world(), accepted.world()));
     assert_eq!(retained.generation(), generation);
@@ -145,14 +140,16 @@ fn missing_manifest_is_reported_without_absolute_path() {
     project.write("src/main.arcw", "flow @.main main {}\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, None);
 
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
+    let diagnostic = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("missing manifest rejects construction");
 
     assert_eq!(
-        profile.diagnostics()[0].kind(),
+        diagnostic.kind(),
         LspProfileDiagnosticKind::WorkspaceManifestNotFound
     );
-    assert!(!profile.diagnostics()[0].message().contains(":/"));
-    assert!(!profile.diagnostics()[0].message().contains(":\\"));
+    assert!(!diagnostic.message().contains(":/"));
+    assert!(!diagnostic.message().contains(":\\"));
 }
 
 #[test]
@@ -193,12 +190,13 @@ compression = "none"
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
 
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let diagnostic = profile
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.kind() == LspProfileDiagnosticKind::CharacterManifestRead)
-        .expect("missing character manifest diagnostic");
+    let diagnostic = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("missing character manifest rejects construction");
+    assert_eq!(
+        diagnostic.kind(),
+        LspProfileDiagnosticKind::CharacterManifestRead
+    );
     assert_eq!(diagnostic.profile_id(), Some("dev"));
     assert_eq!(
         diagnostic.resource(),
@@ -217,14 +215,13 @@ fn missing_external_module_metadata_diagnostic_keeps_profile_relative_resource()
     project.write("src/main.arcw", "flow @.main main {}\n");
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
 
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let diagnostic = profile
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| {
-            diagnostic.kind() == LspProfileDiagnosticKind::ExternalModuleMetadataRead
-        })
-        .expect("external module metadata read diagnostic");
+    let diagnostic = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("missing adapter metadata rejects construction");
+    assert_eq!(
+        diagnostic.kind(),
+        LspProfileDiagnosticKind::ExternalModuleMetadataRead
+    );
 
     assert_eq!(diagnostic.profile_id(), Some("dev"));
     assert_eq!(
@@ -247,14 +244,13 @@ fn invalid_external_module_metadata_diagnostic_keeps_profile_relative_resource()
     project.write("generated/bad.adapter.json", invalid);
     let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
 
-    let profile = resolver.resolve_for_document_path(&project.path("src/main.arcw"));
-    let diagnostic = profile
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| {
-            diagnostic.kind() == LspProfileDiagnosticKind::ExternalModuleMetadataParse
-        })
-        .expect("external module metadata parse diagnostic");
+    let diagnostic = resolver
+        .resolve_for_document_path(&project.path("src/main.arcw"))
+        .expect_err("invalid adapter metadata rejects construction");
+    assert_eq!(
+        diagnostic.kind(),
+        LspProfileDiagnosticKind::ExternalModuleMetadataParse
+    );
 
     assert_eq!(diagnostic.profile_id(), Some("dev"));
     assert_eq!(diagnostic.resource(), Some("generated/bad.adapter.json"));

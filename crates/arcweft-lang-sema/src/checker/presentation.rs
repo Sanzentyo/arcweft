@@ -243,7 +243,7 @@ impl TypeChecker<'_> {
             // normal path resolution. Resolved locals, project functions,
             // builtins, and dotted targets must keep their actual type and pass
             // through normal expected-type checking.
-            Expr::Path(path) => !self.path_has_known_resolution(path.as_label()),
+            Expr::Path(path) => !self.path_has_known_resolution(path),
             _ => false,
         }
     }

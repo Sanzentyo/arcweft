@@ -27,6 +27,9 @@ pub use limits::{
     NominalAggregationLimitsError, NominalResolutionLimitKind, NominalResolutionLimits,
     NominalResolutionLimitsError,
 };
+#[cfg(test)]
+pub(crate) use model::AssociatedReceiverFailure;
+pub(crate) use model::ResolvedAssociatedTypeReceiver;
 pub use model::{
     AliasExpansionFact, BuiltinTypeConstructor, DetachedNominalEvidence, DetachedNominalReason,
     DetachedTypeRef, ExternalNominalResolution, PoisonedTypeRef, ResolvedAliasReference,

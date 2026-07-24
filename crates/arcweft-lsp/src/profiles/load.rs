@@ -1,8 +1,10 @@
 use super::{
     diagnostic::{LspProfileDiagnostic, LspProfileDiagnosticKind, LspProfileLoadError},
-    environment::register_profile_environment,
+    environment::{
+        ProfileRegistrationOverlay, RegisteredProfileCandidate, register_profile_environment,
+    },
     model::{LspProfile, ProfileSourceSelection},
-    state::LspProfileState,
+    state::{AcceptedProfileCandidate, AcceptedProfileEnvironment, LspProfileState},
     uri::file_path_from_uri,
 };
 use arcweft_launch::{LaunchProfileSelection, accepted::SourceBackedManifest};
@@ -23,6 +25,14 @@ pub struct LspProfileResolver {
     manifest_name: String,
     profile_id: Option<String>,
     arbitrary_expression_type_inlays: bool,
+}
+
+/// A fully validated profile construction that has not been published into a
+/// live LSP session.
+#[derive(Debug)]
+pub struct LspProfileBuild {
+    profile: LspProfile,
+    candidate: AcceptedProfileCandidate,
 }
 
 pub(crate) fn apply_registered_topology(
@@ -58,6 +68,11 @@ impl LspProfileResolver {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn select_profile_for_test(&mut self, profile_id: impl Into<String>) {
+        self.profile_id = Some(profile_id.into());
+    }
+
     /// Carries editor-selected inlay policy into every resolved profile.
     #[must_use]
     pub const fn with_arbitrary_expression_type_inlays(mut self, enabled: bool) -> Self {
@@ -71,77 +86,70 @@ impl LspProfileResolver {
             .with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
     }
 
-    /// Resolves a profile for one LSP document URI.
-    pub fn resolve_for_uri(&self, uri: &lsp_types::Uri) -> LspProfile {
-        self.resolve_for_uri_with_state(uri, Arc::new(LspProfileState::new()))
-    }
-
-    pub(crate) fn resolve_for_uri_with_state(
+    /// Constructs a validated profile for one LSP document URI without
+    /// publishing accepted session state.
+    pub fn resolve_for_uri(
         &self,
         uri: &lsp_types::Uri,
-        state: Arc<LspProfileState>,
-    ) -> LspProfile {
+    ) -> Result<LspProfileBuild, LspProfileDiagnostic> {
+        let state = Arc::new(LspProfileState::new());
+        let registered = self.resolve_candidate_for_uri(uri, &[], None)?;
+        Ok(self.profile_build_from_registered(registered, state))
+    }
+
+    pub(crate) fn resolve_candidate_for_uri(
+        &self,
+        uri: &lsp_types::Uri,
+        overlays: &[ProfileRegistrationOverlay],
+        previous: Option<&Arc<AcceptedProfileEnvironment>>,
+    ) -> Result<RegisteredProfileCandidate, LspProfileDiagnostic> {
         match file_path_from_uri(uri) {
-            Some(path) => self.resolve_for_document_path_with_state(&path, state),
-            None => self.default_with_diagnostic_and_state(
-                LspProfileDiagnostic::new(
-                    LspProfileDiagnosticKind::NonFileDocumentUri,
-                    LspProfileLoadError::NonFileDocumentUri.to_string(),
-                ),
-                state,
-            ),
+            Some(path) => self
+                .try_resolve_for_document_path(&path, overlays, previous)
+                .map_err(LspProfileLoadError::into_diagnostic),
+            None => Err(LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::NonFileDocumentUri,
+                LspProfileLoadError::NonFileDocumentUri.to_string(),
+            )),
         }
     }
 
-    /// Resolves a profile for one local document path.
-    pub fn resolve_for_document_path(&self, document_path: &Path) -> LspProfile {
-        self.resolve_for_document_path_with_state(document_path, Arc::new(LspProfileState::new()))
-    }
-
-    pub(super) fn resolve_for_document_path_with_state(
+    /// Constructs a validated profile for one local document path without
+    /// publishing accepted session state.
+    pub fn resolve_for_document_path(
         &self,
         document_path: &Path,
-        state: Arc<LspProfileState>,
-    ) -> LspProfile {
-        self.try_resolve_for_document_path(document_path, Arc::clone(&state))
-            .unwrap_or_else(|error| {
-                self.default_with_diagnostic_and_state(error.into_diagnostic(), state)
-            })
+    ) -> Result<LspProfileBuild, LspProfileDiagnostic> {
+        let state = Arc::new(LspProfileState::new());
+        let registered = self
+            .try_resolve_for_document_path(document_path, &[], None)
+            .map_err(LspProfileLoadError::into_diagnostic)?;
+        Ok(self.profile_build_from_registered(registered, state))
     }
 
     fn try_resolve_for_document_path(
         &self,
         document_path: &Path,
-        state: Arc<LspProfileState>,
-    ) -> Result<LspProfile, LspProfileLoadError> {
+        overlays: &[ProfileRegistrationOverlay],
+        previous: Option<&Arc<AcceptedProfileEnvironment>>,
+    ) -> Result<RegisteredProfileCandidate, LspProfileLoadError> {
         let manifest_path = self
             .find_manifest(document_path)
             .ok_or(LspProfileLoadError::WorkspaceManifestNotFound)?;
-        let accepted = state.current();
-        let previous_profile = accepted
-            .as_ref()
-            .map(|environment| environment.profile().profile_id().as_str().to_owned());
+        let previous_profile =
+            previous.map(|environment| environment.profile().profile_id().as_str().to_owned());
         let selection = self.profile_id.as_deref().map_or(
             LaunchProfileSelection::Automatic {
                 previous: previous_profile.as_deref(),
             },
             LaunchProfileSelection::Explicit,
         );
-        let previous = accepted
-            .as_ref()
-            .map(|environment| environment.world().environment());
-        let registered = register_profile_environment(
-            &manifest_path,
-            selection,
-            &[],
-            super::state::AcceptedOverlaySet::default(),
-            previous,
-        )
-        .map_err(|error| LspProfileLoadError::Environment {
-            profile_id: self.profile_id.clone(),
-            source: Box::new(error),
-        })?;
-        self.profile_from_registered(registered, state, accepted.as_ref())
+        let previous_environment = previous.map(|environment| environment.world().environment());
+        register_profile_environment(&manifest_path, selection, overlays, previous_environment)
+            .map_err(|error| LspProfileLoadError::Environment {
+                profile_id: self.profile_id.clone(),
+                source: Box::new(error),
+            })
     }
 
     fn find_manifest(&self, document_path: &Path) -> Option<PathBuf> {
@@ -152,19 +160,58 @@ impl LspProfileResolver {
             .find(|candidate| candidate.is_file())
     }
 
-    fn profile_from_registered(
+    fn profile_build_from_registered(
         &self,
-        registered: super::environment::RegisteredProfileCandidate,
+        registered: RegisteredProfileCandidate,
         state: Arc<LspProfileState>,
-        expected: Option<&Arc<super::state::AcceptedProfileEnvironment>>,
-    ) -> Result<LspProfile, LspProfileLoadError> {
+    ) -> LspProfileBuild {
         let (candidate, characters, topology) = registered.into_parts();
-        state
-            .replace_accepted_with(expected, candidate, |_| {})
-            .map_err(|source| LspProfileLoadError::ProfilePublication { source })?;
         let profile = topology.selected_profile();
         let manifest = topology.loaded_project().manifest();
-        Ok(LspProfile {
+        LspProfileBuild {
+            profile: LspProfile {
+                adapter: topology.adapter().clone(),
+                declared_manifests: topology.registration_adapter_manifests().to_vec(),
+                runner: self.runner,
+                entry_selection: entry_selection(
+                    topology.loaded_project().sources().manifest_path(),
+                    manifest,
+                    profile.id(),
+                ),
+                entry_selections: entry_selections(
+                    topology.loaded_project().sources().manifest_path(),
+                    manifest,
+                ),
+                characters,
+                resolved_profile: Some(profile.clone()),
+                state,
+                diagnostics: Vec::new(),
+                arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
+            },
+            candidate,
+        }
+    }
+
+    pub(crate) fn default_with_diagnostic_and_state(
+        &self,
+        diagnostic: LspProfileDiagnostic,
+        state: Arc<LspProfileState>,
+    ) -> LspProfile {
+        let mut profile = LspProfile::default_for_runner(self.runner);
+        profile.state = state;
+        profile.diagnostics.push(diagnostic);
+        profile.with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
+    }
+
+    pub(crate) fn profile_from_registered_metadata(
+        &self,
+        registered: &RegisteredProfileCandidate,
+        state: Arc<LspProfileState>,
+    ) -> LspProfile {
+        let (characters, topology) = registered.metadata();
+        let profile = topology.selected_profile();
+        let manifest = topology.loaded_project().manifest();
+        LspProfile {
             adapter: topology.adapter().clone(),
             declared_manifests: topology.registration_adapter_manifests().to_vec(),
             runner: self.runner,
@@ -177,23 +224,34 @@ impl LspProfileResolver {
                 topology.loaded_project().sources().manifest_path(),
                 manifest,
             ),
-            characters,
+            characters: characters.clone(),
             resolved_profile: Some(profile.clone()),
             state,
             diagnostics: Vec::new(),
             arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
-        })
+        }
+    }
+}
+
+impl LspProfileBuild {
+    /// Resolved profile metadata. Its state has no accepted environment until
+    /// a session consumes the construction through its publication gate.
+    pub const fn profile(&self) -> &LspProfile {
+        &self.profile
     }
 
-    fn default_with_diagnostic_and_state(
-        &self,
-        diagnostic: LspProfileDiagnostic,
-        state: Arc<LspProfileState>,
-    ) -> LspProfile {
-        let mut profile = LspProfile::default_for_runner(self.runner);
-        profile.state = state;
-        profile.diagnostics.push(diagnostic);
-        profile.with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
+    /// Complete validated candidate awaiting session publication.
+    pub const fn candidate(&self) -> &AcceptedProfileCandidate {
+        &self.candidate
+    }
+
+    #[cfg(test)]
+    pub(crate) fn publish_for_test(self) -> LspProfile {
+        self.profile
+            .state()
+            .replace_accepted(self.candidate)
+            .expect("test profile construction publishes into its fresh state");
+        self.profile
     }
 }
 

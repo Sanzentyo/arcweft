@@ -1,18 +1,32 @@
 use super::call_syntax::CallSyntaxInvariantError;
 use super::{
-    BinaryOp, CallExpr, CallRecoveryBoundarySyntax, CallbackBlockCallSyntax, DialogueContent,
-    DottedPath, Expr, ExprOp, ExprParseError, ExprParseStats, FlowItem, LexedToken, Lexer,
-    LinePlan, Literal, MAX_EXPR_DIAGNOSTICS, MAX_EXPR_RECOVERY_NODES, ParenthesizedCallSyntax,
-    ParsedExpr, Stmt, ThreadBlock, ThreadModifier, Token, flat_literal_bracket_seq_expr,
-    literal_exprs_from_tokens, nonempty_joined_name, parse_expr, token_source,
+    AssociatedMemberSeparatorSyntax, BinaryOp, CallExpr, CallRecoveryBoundarySyntax,
+    CallbackBlockCallSyntax, DialogueContent, DottedPath, Expr, ExprOp, ExprParseError,
+    ExprParseStats, FlowItem, LexedToken, Lexer, LinePlan, Literal, MAX_EXPR_DIAGNOSTICS,
+    MAX_EXPR_RECOVERY_NODES, Name, ParenthesizedCallSyntax, ParenthesizedCalleeSyntax, ParsedExpr,
+    PathMemberCalleeSyntax, Stmt, ThreadBlock, ThreadModifier, Token,
+    flat_literal_bracket_seq_expr, literal_exprs_from_tokens, nonempty_joined_name, parse_expr,
+    token_source,
 };
 use crate::ast::common::TextRange;
+use crate::types::{
+    AuthoredTypeRef, ParsedGenericCallee, ParsedTypeReceiver, TypeToken, TypeTokenCursor,
+    TypeTokenKind,
+};
 
 mod call;
 
 pub(super) struct SpannedExpr {
     pub(super) expr: Expr,
     pub(super) range: TextRange,
+    type_receiver: Option<AuthoredTypeRef>,
+    path_member: Option<PathMemberCalleeSyntax>,
+    explicit_type_application: Option<Box<AuthoredTypeRef>>,
+}
+
+enum ParsedTypePrefix {
+    Receiver(ParsedTypeReceiver),
+    GenericCallee(ParsedGenericCallee),
 }
 
 pub(super) struct DialoguePrimary {
@@ -111,11 +125,72 @@ impl ExprParser {
         &mut self,
         min_bp: u8,
     ) -> Result<SpannedExpr, ExprParseError> {
+        let expression_token_start = self.cursor;
         let expression_start = self.peek_lexed().start;
-        let prefix = self.parse_prefix()?;
-        let mut lhs = SpannedExpr {
-            expr: prefix,
-            range: self.consumed_range(expression_start)?,
+        let (type_prefix, recovered_callee) = if self.dialogue_primary.is_some() {
+            (None, None)
+        } else {
+            match self.try_parse_type_prefix() {
+                Ok(type_prefix) => (type_prefix, None),
+                Err(diagnostic) => (
+                    None,
+                    Some(self.recover_type_callee(expression_token_start, diagnostic)?),
+                ),
+            }
+        };
+        let mut lhs = if let Some(recovered_callee) = recovered_callee {
+            recovered_callee
+        } else {
+            match type_prefix {
+                Some(ParsedTypePrefix::Receiver(receiver)) => {
+                    let range = *receiver.authored().root_source().whole();
+                    let path = receiver.authored().value().nominal_path().ok_or_else(|| {
+                        ExprParseError::at(
+                            "syntax.type.invalid_receiver",
+                            "path-member receiver must have a nominal type head",
+                            range,
+                        )
+                    })?;
+                    let expression_path = DottedPath::from(path);
+                    self.cursor = receiver.next_index();
+                    SpannedExpr {
+                        expr: Expr::Path(expression_path),
+                        range,
+                        type_receiver: Some(receiver.into_authored()),
+                        path_member: None,
+                        explicit_type_application: None,
+                    }
+                }
+                Some(ParsedTypePrefix::GenericCallee(generic)) => {
+                    let range = *generic.authored().root_source().whole();
+                    let path = generic.authored().value().nominal_path().ok_or_else(|| {
+                        ExprParseError::at(
+                            "syntax.type.invalid_receiver",
+                            "generic call target must have a nominal path head",
+                            range,
+                        )
+                    })?;
+                    let expression_path = DottedPath::from(path);
+                    self.cursor = generic.next_index();
+                    SpannedExpr {
+                        expr: Expr::Path(expression_path),
+                        range,
+                        type_receiver: None,
+                        path_member: None,
+                        explicit_type_application: Some(Box::new(generic.into_authored())),
+                    }
+                }
+                None => {
+                    let prefix = self.parse_prefix()?;
+                    SpannedExpr {
+                        expr: prefix,
+                        range: self.consumed_range(expression_start)?,
+                        type_receiver: None,
+                        path_member: None,
+                        explicit_type_application: None,
+                    }
+                }
+            }
         };
         loop {
             lhs = match self.peek() {
@@ -123,6 +198,7 @@ impl ExprParser {
                 Token::LParen if min_bp <= 100 => self.parse_call_postfix(lhs)?,
                 Token::LBracket if min_bp <= 100 => self.parse_index_postfix(lhs)?,
                 Token::Dot if min_bp <= 100 => self.parse_select_postfix(lhs)?,
+                Token::DoubleColon if min_bp <= 100 => self.parse_associated_select_postfix(lhs)?,
                 Token::Op(ExprOp::Range | ExprOp::RangeInclusive) if min_bp <= 5 => {
                     self.parse_range_postfix(lhs)?
                 }
@@ -136,6 +212,168 @@ impl ExprParser {
             };
         }
         Ok(lhs)
+    }
+
+    fn try_parse_type_prefix(&self) -> Result<Option<ParsedTypePrefix>, ExprParseError> {
+        let tokens = self.type_token_view()?;
+        let cursor = TypeTokenCursor::try_new(&tokens, self.cursor)
+            .map_err(|error| self.type_lookahead_error(&error))?;
+        if let Some(receiver) = cursor
+            .parse_receiver()
+            .map_err(|error| self.type_lookahead_error(&error))?
+        {
+            return Ok(Some(ParsedTypePrefix::Receiver(receiver)));
+        }
+        cursor
+            .parse_generic_callee()
+            .map(|generic| generic.map(ParsedTypePrefix::GenericCallee))
+            .map_err(|error| self.type_lookahead_error(&error))
+    }
+
+    fn recover_type_callee(
+        &mut self,
+        expression_token_start: usize,
+        diagnostic: ExprParseError,
+    ) -> Result<SpannedExpr, ExprParseError> {
+        if !diagnostic.permits_type_callee_recovery() {
+            return Err(diagnostic);
+        }
+        let Some(call_open) = self.terminal_malformed_type_call_open(expression_token_start) else {
+            return Err(diagnostic);
+        };
+        let range = self.token_index_range(expression_token_start, call_open)?;
+        let raw = self
+            .source_for_token_range(expression_token_start, call_open)
+            .ok_or_else(|| {
+                ExprParseError::at(
+                    "syntax.expr.invalid_scope",
+                    "recovered callee tokens are outside the parser source",
+                    range,
+                )
+            })?
+            .to_owned();
+        self.retain_recovery_diagnostic(ExprParseError::recovered_type_callee(&diagnostic))?;
+        self.cursor = call_open;
+        Ok(SpannedExpr {
+            expr: Expr::Raw(raw),
+            range,
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
+        })
+    }
+
+    fn terminal_malformed_type_call_open(&self, start: usize) -> Option<usize> {
+        for separator in start..self.tokens.len() {
+            if !matches!(
+                self.tokens.get(separator)?.token,
+                Token::Dot | Token::DoubleColon
+            ) {
+                continue;
+            }
+            let next = self.tokens.get(separator.checked_add(1)?)?;
+            let call_open = match next.token {
+                Token::LParen => separator.checked_add(1)?,
+                Token::Ident(_) => {
+                    let call_open = separator.checked_add(2)?;
+                    matches!(self.tokens.get(call_open)?.token, Token::LParen)
+                        .then_some(call_open)?
+                }
+                _ => continue,
+            };
+            if self.call_open_terminates_expression(call_open) {
+                return Some(call_open);
+            }
+        }
+        None
+    }
+
+    fn call_open_terminates_expression(&self, call_open: usize) -> bool {
+        let mut depth = 0usize;
+        for (index, token) in self.tokens.iter().enumerate().skip(call_open) {
+            match token.token {
+                Token::LParen => {
+                    let Some(next_depth) = depth.checked_add(1) else {
+                        return false;
+                    };
+                    depth = next_depth;
+                }
+                Token::RParen => {
+                    let Some(next_depth) = depth.checked_sub(1) else {
+                        return false;
+                    };
+                    depth = next_depth;
+                    if depth == 0 {
+                        return self
+                            .tokens
+                            .get(index.saturating_add(1))
+                            .is_some_and(|next| matches!(next.token, Token::Eof));
+                    }
+                }
+                Token::Eof => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn type_lookahead_error(&self, error: &crate::types::TypeParseError) -> ExprParseError {
+        let fallback = self
+            .absolute_range(self.peek_lexed())
+            .unwrap_or(TextRange::new(self.base, self.base));
+        ExprParseError::at(
+            error.code(),
+            &error.to_string(),
+            error.range().unwrap_or(fallback),
+        )
+    }
+
+    fn type_token_view(&self) -> Result<Vec<TypeToken<'_>>, ExprParseError> {
+        let mut output = Vec::with_capacity(self.tokens.len().saturating_sub(1));
+        for token in self.tokens.iter().take(self.tokens.len().saturating_sub(1)) {
+            let source = self.source.get(token.start..token.end).ok_or_else(|| {
+                ExprParseError::at(
+                    "syntax.expr.invalid_scope",
+                    "expression token is outside the parser source",
+                    TextRange::new(self.base, self.base),
+                )
+            })?;
+            let kind = match &token.token {
+                Token::Ident(value) => TypeTokenKind::Identifier(value),
+                Token::LifetimePath { .. } => TypeTokenKind::Lifetime(source),
+                Token::Literal(Literal::Int(_)) => TypeTokenKind::Integer(source),
+                Token::Bang => TypeTokenKind::Bang,
+                Token::Amp => TypeTokenKind::Ampersand,
+                Token::LParen => TypeTokenKind::OpenParen,
+                Token::RParen => TypeTokenKind::CloseParen,
+                Token::LBracket => TypeTokenKind::OpenBracket,
+                Token::RBracket => TypeTokenKind::CloseBracket,
+                Token::LBrace => TypeTokenKind::OpenBrace,
+                Token::RBrace => TypeTokenKind::CloseBrace,
+                Token::Comma => TypeTokenKind::Comma,
+                Token::Dot => TypeTokenKind::Dot,
+                Token::DoubleColon => TypeTokenKind::PathSeparator,
+                Token::Colon => TypeTokenKind::Colon,
+                Token::Op(ExprOp::Assign) => TypeTokenKind::Equals,
+                Token::Op(ExprOp::ClosurePipe) => TypeTokenKind::Pipe,
+                Token::Op(ExprOp::ThinArrow) => TypeTokenKind::ThinArrow,
+                Token::Op(ExprOp::Lt) => TypeTokenKind::OpenAngle,
+                Token::Op(ExprOp::Gt) => TypeTokenKind::CloseAngle,
+                Token::Entity(_)
+                | Token::RelativePath(_)
+                | Token::Literal(_)
+                | Token::Invalid(_)
+                | Token::Underscore
+                | Token::Caret
+                | Token::Semicolon
+                | Token::Question
+                | Token::Star
+                | Token::Op(_)
+                | Token::Eof => TypeTokenKind::Other,
+            };
+            output.push(TypeToken::from_parser(kind, self.absolute_range(token)?));
+        }
+        Ok(output)
     }
 
     fn parse_try_postfix(&mut self, lhs: SpannedExpr) -> Result<SpannedExpr, ExprParseError> {
@@ -152,18 +390,39 @@ impl ExprParser {
                 ),
             )),
             range,
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
         })
     }
 
     fn parse_call_postfix(&mut self, lhs: SpannedExpr) -> Result<SpannedExpr, ExprParseError> {
         let arguments = self.parse_call_args()?;
-        let syntax = ParenthesizedCallSyntax::try_from_parser(lhs.range, arguments.syntax)
+        let callee = match (lhs.path_member, lhs.explicit_type_application) {
+            (Some(callee), None) => ParenthesizedCalleeSyntax::PathMember(Box::new(callee)),
+            (None, Some(application)) => {
+                ParenthesizedCalleeSyntax::try_with_type_application(lhs.range, *application)
+                    .map_err(|error| Self::call_invariant_error(error, lhs.range))?
+            }
+            (None, None) => ParenthesizedCalleeSyntax::ordinary(lhs.range),
+            (Some(_), Some(_)) => {
+                return Err(ExprParseError::at(
+                    "syntax.expr.call_invariant",
+                    "path-member and ordinary generic call syntax cannot overlap",
+                    lhs.range,
+                ));
+            }
+        };
+        let syntax = ParenthesizedCallSyntax::try_from_parser(callee, arguments.syntax)
             .map_err(|error| Self::call_invariant_error(error, lhs.range))?;
         let call = CallExpr::try_parenthesized(lhs.expr, arguments.args, syntax)
             .map_err(|error| Self::call_invariant_error(error, lhs.range))?;
         Ok(SpannedExpr {
             range: call.range(),
             expr: Expr::Call(call),
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
         })
     }
 
@@ -184,18 +443,73 @@ impl ExprParser {
                 lhs.range.start(),
                 self.absolute_offset(self.previous_lexed_end())?,
             ),
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
         })
     }
 
     fn parse_select_postfix(&mut self, lhs: SpannedExpr) -> Result<SpannedExpr, ExprParseError> {
-        self.bump();
-        let member = self.take_ident("expected selector name after `.`")?;
+        let separator = self.bump_lexed();
+        let separator = AssociatedMemberSeparatorSyntax::Dot {
+            range: self.absolute_range(&separator)?,
+        };
+        let member_start = self.cursor;
+        let member_token = self.bump_lexed();
+        let identifier_range = self.absolute_range(&member_token)?;
+        let Token::Ident(member) = member_token.token else {
+            return Err(ExprParseError::at(
+                "syntax.expr.parse",
+                "expected selector name after `.`",
+                identifier_range,
+            ));
+        };
+        let generic_member = TypeTokenCursor::try_new(&self.type_token_view()?, member_start)
+            .map_err(|error| self.type_lookahead_error(&error))?
+            .parse_generic_member()
+            .map_err(|error| self.type_lookahead_error(&error))?;
+        let member = Name::new(member);
+        let explicit_type_application = if let Some(generic_member) = generic_member {
+            debug_assert_eq!(
+                generic_member.authored().root_source().whole().start(),
+                identifier_range.start()
+            );
+            let next_index = generic_member.next_index();
+            self.cursor = next_index;
+            Some(Box::new(generic_member.into_authored()))
+        } else {
+            None
+        };
+        let selected_end = explicit_type_application
+            .as_ref()
+            .map_or(identifier_range.end(), |application| {
+                application.root_source().whole().end()
+            });
+        let selected_range = TextRange::new(lhs.range.start(), selected_end);
+        let path_member = lhs.type_receiver.and_then(|receiver| {
+            (receiver.root_source().whole().end() == separator.range().start()
+                && separator.range().end() == identifier_range.start()
+                && explicit_type_application.is_none())
+            .then(|| {
+                PathMemberCalleeSyntax::try_from_parser(
+                    &self.source,
+                    self.base,
+                    receiver,
+                    separator,
+                    member.clone(),
+                    identifier_range,
+                    selected_range,
+                )
+                .ok()
+            })
+            .flatten()
+        });
         let selected = SpannedExpr {
-            expr: Expr::select(lhs.expr, member),
-            range: TextRange::new(
-                lhs.range.start(),
-                self.absolute_offset(self.previous_lexed_end())?,
-            ),
+            expr: Expr::select(lhs.expr, member.as_str().to_owned()),
+            range: selected_range,
+            type_receiver: None,
+            path_member,
+            explicit_type_application,
         };
         if self.peek() != &Token::LBrace || self.control_body_brace_is_boundary {
             return Ok(selected);
@@ -208,6 +522,54 @@ impl ExprParser {
         Ok(SpannedExpr {
             range: call.range(),
             expr: Expr::Call(call),
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
+        })
+    }
+
+    fn parse_associated_select_postfix(
+        &mut self,
+        lhs: SpannedExpr,
+    ) -> Result<SpannedExpr, ExprParseError> {
+        let Some(receiver) = lhs.type_receiver else {
+            return Err(ExprParseError::at(
+                "syntax.expr.parse",
+                "explicit associated member requires an authored generic type receiver",
+                lhs.range,
+            ));
+        };
+        let separator = self.bump_lexed();
+        let separator = AssociatedMemberSeparatorSyntax::Path {
+            range: self.absolute_range(&separator)?,
+        };
+        let member_token = self.bump_lexed();
+        let member_range = self.absolute_range(&member_token)?;
+        let Token::Ident(member) = member_token.token else {
+            return Err(ExprParseError::at(
+                "syntax.expr.parse",
+                "expected associated member name after `::`",
+                member_range,
+            ));
+        };
+        let member = Name::new(member);
+        let range = TextRange::new(lhs.range.start(), member_range.end());
+        let path_member = PathMemberCalleeSyntax::try_from_parser(
+            &self.source,
+            self.base,
+            receiver,
+            separator,
+            member.clone(),
+            member_range,
+            range,
+        )
+        .map_err(|error| Self::call_invariant_error(error, range))?;
+        Ok(SpannedExpr {
+            expr: Expr::select(lhs.expr, member.as_str().to_owned()),
+            range,
+            type_receiver: None,
+            path_member: Some(path_member),
+            explicit_type_application: None,
         })
     }
 
@@ -232,6 +594,9 @@ impl ExprParser {
                 inclusive,
             },
             range: TextRange::new(lhs.range.start(), range_end),
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
         })
     }
 
@@ -268,7 +633,13 @@ impl ExprParser {
                 rhs: Box::new(rhs.expr),
             }
         };
-        Ok(SpannedExpr { expr, range })
+        Ok(SpannedExpr {
+            expr,
+            range,
+            type_receiver: None,
+            path_member: None,
+            explicit_type_application: None,
+        })
     }
 
     pub(super) fn parse_control_head_expr(&mut self) -> Result<Expr, ExprParseError> {

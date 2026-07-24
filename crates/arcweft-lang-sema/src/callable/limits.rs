@@ -248,21 +248,18 @@ impl CatalogBuildWork {
         Self { consumed: 0, limit }
     }
 
-    pub(crate) fn charge(&mut self, units: u64) -> Result<(), CallableBuildLimitError> {
+    pub(crate) fn charge(&mut self, units: u64) -> Result<(), super::CallableCatalogBuildError> {
         let next = self
             .consumed
             .checked_add(units)
-            .ok_or(CallableBuildLimitError::Work {
-                requested: units,
-                consumed: self.consumed,
-                limit: self.limit,
-            })?;
+            .ok_or(super::CallableCatalogBuildError::WorkOverflow)?;
         if next > self.limit {
             return Err(CallableBuildLimitError::Work {
                 requested: units,
                 consumed: self.consumed,
                 limit: self.limit,
-            });
+            }
+            .into());
         }
         self.consumed = next;
         Ok(())
@@ -286,6 +283,79 @@ pub(crate) struct ResolverWork {
     resolver: u64,
     argument_mapping: u64,
     type_checks: u64,
+    associated: AssociatedResolverWorkReport,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct AssociatedResolverWorkReport {
+    typed_environment_lookups: u64,
+    capacity_selectors: u64,
+    capacity_materializations: u64,
+    trait_resolutions: u64,
+}
+
+impl AssociatedResolverWorkReport {
+    const ZERO: Self = Self {
+        typed_environment_lookups: 0,
+        capacity_selectors: 0,
+        capacity_materializations: 0,
+        trait_resolutions: 0,
+    };
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AssociatedResolverStep {
+    TypedEnvironmentLookup,
+    CapacitySelector,
+    CapacityMaterialization,
+    TraitResolution,
+}
+
+/// Current registered-candidate recursion owned by one focused callable query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CallableQueryDepth {
+    current: usize,
+    limit: usize,
+}
+
+impl CallableQueryDepth {
+    pub(crate) const fn new(limits: CallableLimits) -> Self {
+        Self {
+            current: 0,
+            limit: limits.max_nested_calls(),
+        }
+    }
+
+    pub(crate) fn try_enter(&mut self) -> Result<(), CallableQueryLimitError> {
+        let actual = self
+            .current
+            .checked_add(1)
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        if actual > self.limit {
+            return Err(CallableQueryLimitError::NestedCalls {
+                actual,
+                limit: self.limit,
+            });
+        }
+        self.current = actual;
+        Ok(())
+    }
+
+    pub(crate) fn leave(&mut self) {
+        self.current = self
+            .current
+            .checked_sub(1)
+            .expect("focused callable depth exits exactly once");
+    }
+
+    pub(crate) const fn is_active(self) -> bool {
+        self.current != 0
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn current(self) -> usize {
+        self.current
+    }
 }
 
 #[allow(
@@ -300,6 +370,7 @@ impl ResolverWork {
             resolver: 0,
             argument_mapping: 0,
             type_checks: 0,
+            associated: AssociatedResolverWorkReport::ZERO,
         }
     }
 
@@ -308,6 +379,7 @@ impl ResolverWork {
         self.resolver = 0;
         self.argument_mapping = 0;
         self.type_checks = 0;
+        self.associated = AssociatedResolverWorkReport::ZERO;
     }
 
     pub(crate) fn charge(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
@@ -323,6 +395,30 @@ impl ResolverWork {
 
     pub(crate) fn charge_type_check(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
         self.charge_component(units, ResolverWorkComponent::TypeCheck)
+    }
+
+    pub(crate) fn record_associated_step(
+        &mut self,
+        step: AssociatedResolverStep,
+    ) -> Result<(), CallableQueryLimitError> {
+        let counter = match step {
+            AssociatedResolverStep::TypedEnvironmentLookup => {
+                &mut self.associated.typed_environment_lookups
+            }
+            AssociatedResolverStep::CapacitySelector => &mut self.associated.capacity_selectors,
+            AssociatedResolverStep::CapacityMaterialization => {
+                &mut self.associated.capacity_materializations
+            }
+            AssociatedResolverStep::TraitResolution => &mut self.associated.trait_resolutions,
+        };
+        *counter = counter
+            .checked_add(1)
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        Ok(())
+    }
+
+    pub(crate) const fn associated_report(&self) -> AssociatedResolverWorkReport {
+        self.associated
     }
 
     fn charge_component(
@@ -380,6 +476,49 @@ impl ResolverWork {
             diagnostics,
             limits,
         )
+    }
+}
+
+impl AssociatedResolverWorkReport {
+    pub(crate) fn delta_from(self, before: Self) -> Result<Self, CallableQueryLimitError> {
+        Ok(Self {
+            typed_environment_lookups: self
+                .typed_environment_lookups
+                .checked_sub(before.typed_environment_lookups)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            capacity_selectors: self
+                .capacity_selectors
+                .checked_sub(before.capacity_selectors)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            capacity_materializations: self
+                .capacity_materializations
+                .checked_sub(before.capacity_materializations)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            trait_resolutions: self
+                .trait_resolutions
+                .checked_sub(before.trait_resolutions)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn typed_environment_lookups(self) -> u64 {
+        self.typed_environment_lookups
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn capacity_selectors(self) -> u64 {
+        self.capacity_selectors
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn capacity_materializations(self) -> u64 {
+        self.capacity_materializations
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn trait_resolutions(self) -> u64 {
+        self.trait_resolutions
     }
 }
 

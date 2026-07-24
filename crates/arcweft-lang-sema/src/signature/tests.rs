@@ -3,32 +3,47 @@
     reason = "test helpers assert the complete public typed query error without erasing evidence"
 )]
 
+mod cancellation;
+mod migration_counters;
+mod production_limits;
+
 use std::{cell::Cell, sync::Arc, sync::atomic::AtomicBool, time::Instant};
 
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
+    model::HirModule,
     project::{HirProject, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
 use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
-use arcweft_source::SourceDocument;
+use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
 use crate::{
     callable::{
-        AdapterPackageId, CallableArgumentPolicy, CallableCandidateId, CallableDiagnostic,
+        AdapterPackageId, AssociatedResolverWorkReport, CallPoison, CallTargetFact,
+        CallTargetFacts, CallableArgumentPolicy, CallableCandidateId, CallableDiagnostic,
         CallableDiagnosticCode, CallableDiagnosticSubject, CallableDocumentation,
         CallableEffectSchema, CallableFamily, CallableGroupIndex, CallableGroupKind,
         CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
         CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
-        CallableParameterPresence, CallableParameterType, CallablePath, CallableSignatureSchema,
-        CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
-        EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal,
-        PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS, ResolverWork,
-        SemanticSignatureIndex, SignatureOrigin, SignatureQueryLimits, SignatureQueryStep,
-        SignatureQueryWorkMeter, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        CallableParameterPresence, CallableParameterType, CallablePath, CallableQueryLimitError,
+        CallableSignatureSchema, CallableValidator, EnvironmentCallableKind,
+        EnvironmentCallableOwner, EnvironmentCallablePublicationRecord,
+        EnvironmentDeclarationOrdinal, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
+        ResolvedCallable, ResolverWork, SemanticSignature, SemanticSignatureIndex, SignatureOrigin,
+        SignatureQueryLimits, SignatureQueryStep, SignatureQueryWorkMeter, SpreadArgumentPolicy,
+        UnknownNamedArgumentPolicy,
     },
-    checker::module::{
-        SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
+    check::TypeCheckReport,
+    checker::{
+        CandidateEvaluationPass, PhysicalArgumentEvaluationKind,
+        PhysicalCandidateArgumentEvaluation,
+        module::{
+            SignatureFocusedAnalysis, analyze_detached_types_for_call_facts,
+            analyze_registered_project_types, analyze_registered_project_types_for_call_facts,
+            analyze_registered_project_types_for_focused_call,
+            analyze_registered_project_types_for_signature_call,
+        },
     },
     effect_row::EffectRow,
     effects::EffectSet,
@@ -45,7 +60,7 @@ use crate::{
 use super::{
     SemanticSignatureHelp, SignatureFamilySupport, SignaturePositionError, SignatureQuery,
     SignatureQueryControl, SignatureQueryError, SignatureQueryOutcome, SignatureRecovery,
-    SignatureSemanticStale, query_signature, signature_family_support,
+    SignatureSemanticStale, execute_signature_query, query_signature, signature_family_support,
 };
 
 const SOURCE: &str = r#"
@@ -273,6 +288,226 @@ fn native_query_projects_project_and_environment_signatures() {
 }
 
 #[test]
+fn native_query_traverses_every_ordinary_expression_valued_dialogue_option() {
+    let source = r"
+flow main {
+    akane(voice=standard_value(0i32), look=standard_value(1i32), stage=standard_value(2i32), portrait=standard_value(3i32), focus=standard_value(4i32), cleanup=standard_value(5i32), hooks=[standard_value(6i32), standard_value(7i32)], custom=standard_value(8i32), style=standard_value(9i32), rich_text=standard_value(10i32)): hello
+}
+";
+    let fixture = SignatureFixture::new(source);
+
+    for index in 0..=8 {
+        let call = format!("standard_value({index}i32)");
+        let cursor = format!("{index}i32");
+        let SignatureQueryOutcome::Help(help) = fixture
+            .query_in(&call, &cursor)
+            .expect("nested dialogue option query")
+        else {
+            panic!("{call} must produce signature help")
+        };
+        assert!(matches!(
+            help.signatures()[help.active_signature().get()].candidate(),
+            CallableCandidateId::Environment(_)
+        ));
+    }
+}
+
+#[test]
+fn focused_nested_call_survives_an_unknown_ordinary_dialogue_wrapper() {
+    let fixture = SignatureFixture::new(
+        r"
+flow main {
+    akane(look=unknown_wrapper(standard_value(11i32))): hello
+}
+",
+    );
+
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query_in("standard_value(11i32)", "11i32")
+        .expect("nested ordinary dialogue call query")
+    else {
+        panic!("the focused nested call must retain its semantic facts")
+    };
+    assert!(matches!(
+        help.signatures()[help.active_signature().get()].candidate(),
+        CallableCandidateId::Environment(_)
+    ));
+    assert_eq!(help.query_work().search().candidate_calls(), 2);
+    assert_eq!(help.query_work().search().nested_calls(), 2);
+    assert_eq!(help.query_work().search().arguments(), 2);
+}
+
+#[test]
+fn public_focused_analysis_does_not_reinterpret_provisional_dialogue_fields() {
+    let source = r"
+flow main {
+    akane(look=standard_value(0i32), style=unknown_style(standard_value(1i32)), rich_text=unknown_rich_text(standard_value(2i32))): hello
+}
+";
+    let fixture = SignatureFixture::new(source);
+    let module = fixture.project.linked_module();
+    let ordinary = analyze_registered_project_types(&module, &fixture.world);
+    let target = "standard_value(0i32)";
+    let target_start = unique_offset(source, target);
+    let target_span = fixture
+        .document
+        .span(SourceRange::new(target_start, target_start + target.len()))
+        .expect("focused call span belongs to the accepted document");
+    let focused =
+        analyze_registered_project_types_for_focused_call(&module, &fixture.world, target_span)
+            .expect("ordinary focused semantic analysis succeeds");
+
+    assert_eq!(focused.diagnostics, ordinary.diagnostics);
+    assert_eq!(focused.warnings, ordinary.warnings);
+    assert!(focused.diagnostics.iter().all(|diagnostic| {
+        !diagnostic.message().contains("unknown_style")
+            && !diagnostic.message().contains("unknown_rich_text")
+    }));
+}
+
+#[test]
+fn raw_dialogue_presentation_fields_are_typed_unsupported_surfaces() {
+    let source = r"
+flow main {
+    akane(style=unknown_style(standard_value(8i32)), rich_text=unknown_rich_text(standard_value(9i32))): hello
+    akane(style=unrelated_style(standard_value(10i32))): world
+}
+";
+    let fixture = SignatureFixture::new(source);
+    for (call, cursor) in [
+        ("standard_value(8i32)", "8i32"),
+        ("standard_value(9i32)", "9i32"),
+        ("standard_value(10i32)", "10i32"),
+    ] {
+        assert_eq!(
+            fixture
+                .query_in(call, cursor)
+                .expect("raw presentation field has a typed query outcome"),
+            SignatureQueryOutcome::NotApplicable(super::SignatureNotApplicable::UnsupportedSurface)
+        );
+    }
+
+    let cancelled = AtomicBool::new(false);
+    let mut work = SignatureQueryWorkMeter::new(PRODUCTION_SIGNATURE_LIMITS);
+    let hir = fixture.project.linked_module();
+    let cursor = unique_offset(source, "8i32");
+    let selection = super::surface::select_signature_surface(
+        &hir,
+        &fixture.document,
+        cursor,
+        SignatureQueryControl::new(&cancelled, None),
+        &mut work,
+    )
+    .expect("raw presentation range selection");
+    assert!(selection.site.is_none());
+    assert!(selection.unsupported_surface);
+    let search = work.report().search();
+    assert_eq!(search.candidate_calls(), 0);
+    assert_eq!(search.nested_calls(), 0);
+    assert_eq!(search.arguments(), 0);
+    assert_eq!(search.recovery_nodes(), 0);
+
+    let style = "unknown_style(standard_value(8i32))";
+    let style_start = unique_offset(source, style);
+    let style_end = style_start + style.len();
+    for offset in [style_start, style_start + 1, style_end] {
+        assert_eq!(
+            fixture.query(offset).expect("raw style boundary query"),
+            SignatureQueryOutcome::NotApplicable(super::SignatureNotApplicable::UnsupportedSurface)
+        );
+    }
+    for offset in [style_start - 1, style_end + 1] {
+        assert_eq!(
+            fixture
+                .query(offset)
+                .expect("outside raw style boundary query"),
+            SignatureQueryOutcome::NotApplicable(
+                super::SignatureNotApplicable::CursorOutsideArgumentList
+            )
+        );
+    }
+}
+
+#[test]
+fn recovered_ordinary_call_in_dialogue_option_keeps_absolute_identity_and_single_work() {
+    let recovered_argument = format!("{}1i32", "& ".repeat(65));
+    let call = format!("project_int({recovered_argument})");
+    let source = format!(
+        r"
+fn project_int(value: i32) -> i32 {{
+    value
+}}
+
+flow main {{
+    akane(look={call}): hello
+}}
+"
+    );
+    let fixture = SignatureFixture::recovered(&source);
+    let call_start = unique_offset(&source, &call);
+    let cursor = call_start + "project_int(".len();
+
+    let outcome = fixture
+        .query(cursor)
+        .expect("recovered nested dialogue option query");
+    let SignatureQueryOutcome::Help(help) = outcome else {
+        panic!("recovered ordinary call must retain signature help, got {outcome:?}")
+    };
+
+    assert_eq!(
+        help.call_span().range(),
+        SourceRange::new(call_start, call_start + call.len())
+    );
+    assert_eq!(
+        help.recovery(),
+        SignatureRecovery::Recovered {
+            missing_close_delimiter: false,
+            nodes: 1,
+        }
+    );
+    assert_eq!(help.query_work().search().candidate_calls(), 1);
+    assert_eq!(help.query_work().search().nested_calls(), 1);
+    assert_eq!(help.query_work().search().recovery_nodes(), 1);
+    assert_eq!(help.work().argument_mapping(), 1);
+    assert_eq!(help.work().type_checks(), 1);
+
+    let cancellation = AtomicBool::new(false);
+    let control = SignatureQueryControl::new(&cancellation, None);
+    let linked = fixture.project.linked_module();
+    let mut signature_work = SignatureQueryWorkMeter::new(PRODUCTION_SIGNATURE_LIMITS);
+    let site = super::surface::select_signature_surface(
+        &linked,
+        &fixture.document,
+        cursor,
+        control,
+        &mut signature_work,
+    )
+    .expect("recovered surface selection")
+    .site
+    .expect("recovered focused call");
+    let mut resolver_work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let report = analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
+        module: &linked,
+        registered: &fixture.world,
+        site,
+        cancellation: &cancellation,
+        work: &mut resolver_work,
+        signature_work: &mut signature_work,
+        signature_control: &control,
+    })
+    .expect("recovered focused semantic report");
+    let [evaluation] = report.report().physical_candidate_argument_evaluations() else {
+        panic!("recovered singleton argument must be evaluated once")
+    };
+    assert_eq!(evaluation.pass, CandidateEvaluationPass::DirectCommitted);
+    assert_eq!(evaluation.kind, PhysicalArgumentEvaluationKind::Recovered);
+    assert_eq!(
+        report.report().retained_argument_inference_facts().count(),
+        1
+    );
+}
+
+#[test]
 fn native_query_uses_the_shared_builtin_candidate() {
     let fixture = SignatureFixture::new(
         r"
@@ -299,6 +534,403 @@ fn main() -> Unit {
             .parameter(),
         CallableParameterIndex::try_from_usize(0).expect("parameter zero")
     );
+}
+
+struct AssociatedCapacityPublicObservation {
+    selected: ResolvedCallable,
+    signature: SemanticSignature,
+}
+
+struct CheckedCapacityObservation {
+    selected: ResolvedCallable,
+    facts: CallTargetFacts,
+    evaluation: PhysicalCandidateArgumentEvaluation,
+    work: AssociatedResolverWorkReport,
+}
+
+fn assert_capacity_analysis_accounting(
+    report: &TypeCheckReport,
+) -> PhysicalCandidateArgumentEvaluation {
+    assert_eq!(report.stats.registered_call_expressions, 1);
+    assert_eq!(report.stats.associated_nominal_receiver_resolutions, 1);
+    assert_eq!(report.stats.shared_resolver_invocations, 1);
+    assert_eq!(report.stats.associated_typed_environment_lookups, 1);
+    assert_eq!(report.stats.associated_capacity_selectors, 1);
+    assert_eq!(report.stats.associated_capacity_materializations, 1);
+    assert_eq!(report.stats.associated_trait_resolutions, 0);
+    assert_eq!(report.stats.old_dispatch_calls, 0);
+    assert_eq!(report.stats.registered_argument_expression_checks, 1);
+    let [evaluation] = report.physical_candidate_argument_evaluations() else {
+        panic!("one Capacity candidate must evaluate one argument exactly once")
+    };
+    assert_eq!(evaluation.pass, CandidateEvaluationPass::DirectCommitted);
+    evaluation.clone()
+}
+
+fn assert_capacity_resolver_work(work: AssociatedResolverWorkReport) {
+    assert_eq!(work.typed_environment_lookups(), 1);
+    assert_eq!(work.capacity_selectors(), 1);
+    assert_eq!(work.capacity_materializations(), 1);
+    assert_eq!(work.trait_resolutions(), 0);
+}
+
+fn observe_registered_capacity(
+    fixture: &SignatureFixture,
+    linked: &HirModule,
+    call_span: &SourceSpan,
+    cancellation: &AtomicBool,
+) -> CheckedCapacityObservation {
+    let mut checker_work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let checker = analyze_registered_project_types_for_call_facts(
+        linked,
+        &fixture.world,
+        call_span.clone(),
+        cancellation,
+        &mut checker_work,
+    )
+    .expect("registered associated Capacity analysis succeeds");
+    let facts = checker
+        .focused_call_target_facts()
+        .expect("registered analysis retains the exact associated call")
+        .clone();
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = facts.target()
+    else {
+        panic!(
+            "associated Capacity checker must select one candidate: {:?}",
+            facts.target()
+        )
+    };
+    assert_eq!(considered.as_ref(), std::slice::from_ref(selected.as_ref()));
+    assert_eq!(facts.poison(), CallPoison::Clean);
+    assert!(facts.diagnostics().is_empty());
+    let selected = selected.as_ref().clone();
+    let evaluation = assert_capacity_analysis_accounting(checker.report());
+    let work = checker_work.associated_report();
+    assert_capacity_resolver_work(work);
+    CheckedCapacityObservation {
+        selected,
+        facts,
+        evaluation,
+        work,
+    }
+}
+
+fn assert_capacity_facts_match(actual: &CallTargetFacts, expected: &CheckedCapacityObservation) {
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = actual.target()
+    else {
+        panic!(
+            "Capacity parity analysis must select one candidate: {:?}",
+            actual.target()
+        )
+    };
+    assert_eq!(selected.as_ref(), &expected.selected);
+    assert_eq!(
+        considered.as_ref(),
+        std::slice::from_ref(&expected.selected)
+    );
+    assert_eq!(actual.arguments(), expected.facts.arguments());
+    assert_eq!(actual.result(), expected.facts.result());
+    assert_eq!(actual.effects(), expected.facts.effects());
+    assert_eq!(actual.poison(), expected.facts.poison());
+}
+
+fn assert_detached_capacity_parity(
+    linked: &HirModule,
+    call_span: &SourceSpan,
+    cancellation: &AtomicBool,
+    expected: &CheckedCapacityObservation,
+) {
+    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let detached = analyze_detached_types_for_call_facts(
+        linked,
+        &TypeCheckEnv::standard(),
+        call_span.clone(),
+        cancellation,
+        &mut work,
+    )
+    .expect("detached associated Capacity analysis succeeds");
+    assert_capacity_facts_match(
+        detached
+            .focused_call_target_facts()
+            .expect("detached analysis retains the exact associated call"),
+        expected,
+    );
+    assert_eq!(detached.report().stats.old_dispatch_calls, 0);
+    assert_eq!(work.associated_report(), expected.work);
+}
+
+fn assert_signature_capacity_parity(
+    fixture: &SignatureFixture,
+    linked: &HirModule,
+    cursor: usize,
+    cancellation: &AtomicBool,
+    expected: &CheckedCapacityObservation,
+) {
+    let control = SignatureQueryControl::new(cancellation, None);
+    let mut signature_work = SignatureQueryWorkMeter::new(PRODUCTION_SIGNATURE_LIMITS);
+    let site = super::surface::select_signature_surface(
+        linked,
+        &fixture.document,
+        cursor,
+        control,
+        &mut signature_work,
+    )
+    .expect("associated Capacity surface selection succeeds")
+    .site
+    .expect("cursor selects the associated Capacity call");
+    let mut resolver_work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+    let signature_checker =
+        analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
+            module: linked,
+            registered: &fixture.world,
+            site,
+            cancellation,
+            work: &mut resolver_work,
+            signature_work: &mut signature_work,
+            signature_control: &control,
+        })
+        .expect("native associated Capacity signature analysis succeeds");
+    assert_capacity_facts_match(
+        signature_checker
+            .focused_call_target_facts()
+            .expect("native signature analysis retains the exact associated call"),
+        expected,
+    );
+    let evaluation = assert_capacity_analysis_accounting(signature_checker.report());
+    assert_eq!(evaluation, expected.evaluation);
+    assert_eq!(resolver_work.associated_report(), expected.work);
+}
+
+fn assert_capacity_signature_projection(
+    signature: &SemanticSignature,
+    expected: &CheckedCapacityObservation,
+) {
+    let selected = &expected.selected;
+    assert_eq!(signature.candidate(), selected.id());
+    assert_eq!(signature.origin(), selected.origin());
+    assert_eq!(
+        signature.result(),
+        expected.facts.result().expect("typed result")
+    );
+    assert_eq!(signature.effects(), expected.facts.effects());
+    assert_eq!(signature.current_group(), expected.facts.current_group());
+    assert_eq!(signature.poison(), expected.facts.poison());
+    assert_eq!(
+        signature.equivalent().len(),
+        selected.equivalent_sources().len()
+    );
+    assert!(
+        signature
+            .equivalent()
+            .iter()
+            .zip(selected.equivalent_sources())
+            .all(|(projected, source)| projected == source.id())
+    );
+    assert_eq!(signature.groups().len(), selected.schema().groups().len());
+    for (projected, schema) in signature.groups().iter().zip(selected.schema().groups()) {
+        assert_eq!(projected.index(), schema.index());
+        assert_eq!(projected.kind(), schema.kind());
+        assert_eq!(projected.parameters().len(), schema.parameters().len());
+        for (projected, schema) in projected.parameters().iter().zip(schema.parameters()) {
+            assert_eq!(projected.coordinate().group(), selected.call_group());
+            assert_eq!(projected.coordinate().parameter(), schema.index());
+            assert_eq!(projected.name(), schema.name());
+            assert_eq!(projected.ty(), schema.ty());
+            assert_eq!(projected.passing(), schema.passing());
+            assert_eq!(projected.presence(), schema.presence());
+        }
+    }
+}
+
+fn assert_capacity_schema(selected: &ResolvedCallable) {
+    assert_eq!(
+        selected.schema().argument_policy(),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::OpenUnchecked,
+            SpreadArgumentPolicy::Unchecked,
+        )
+    );
+    assert!(matches!(
+        selected.schema().validator(),
+        CallableValidator::Capacity(_)
+    ));
+    let [group] = selected.schema().groups() else {
+        panic!("Capacity schema must have one parameter group")
+    };
+    let [parameter] = group.parameters() else {
+        panic!("Capacity schema must have one rest parameter")
+    };
+    assert_eq!(parameter.ty(), &CallableParameterType::Unchecked);
+    assert_eq!(
+        parameter.passing(),
+        CallableParameterPassing::RestPositional
+    );
+    assert_eq!(parameter.presence(), CallableParameterPresence::Optional);
+}
+
+fn assert_capacity_public_work(help: &SemanticSignatureHelp) {
+    assert_eq!(help.work().argument_mapping(), 1);
+    assert_eq!(help.work().type_checks(), 1);
+    assert_eq!(help.query_work().search().candidate_calls(), 1);
+    assert_eq!(help.query_work().search().nested_calls(), 1);
+    assert_eq!(help.query_work().search().arguments(), 1);
+    assert_eq!(help.query_work().search().recovery_nodes(), 0);
+    assert_eq!(help.query_work().resolution().resolver(), 4);
+    assert_eq!(help.query_work().resolution().argument_bindings(), 1);
+    assert_eq!(help.query_work().resolution().specificity_checks(), 1);
+    assert_eq!(help.query_work().projection().overloads(), 1);
+    assert_eq!(help.query_work().projection().parameters(), 1);
+    assert_eq!(
+        help.query_work().projection().diagnostic_considerations(),
+        0
+    );
+}
+
+fn observe_public_capacity_signature(
+    fixture: &SignatureFixture,
+    cursor: usize,
+    expected: &CheckedCapacityObservation,
+) -> SemanticSignature {
+    let SignatureQueryOutcome::Help(help) = fixture
+        .query(cursor)
+        .expect("native associated Capacity signature query succeeds")
+    else {
+        panic!("associated Capacity call must publish native signature help")
+    };
+    let signature = help
+        .signatures()
+        .get(help.active_signature().get())
+        .expect("active associated Capacity signature exists")
+        .clone();
+    assert_capacity_signature_projection(&signature, expected);
+    assert_capacity_schema(&expected.selected);
+    assert_capacity_public_work(&help);
+    signature
+}
+
+fn observe_associated_capacity_public_parity(call: &str) -> AssociatedCapacityPublicObservation {
+    let source = format!("fn main() -> Unit {{\n    let _ = {call}\n    ()\n}}\n");
+    let fixture = SignatureFixture::new(&source);
+    let call_start = unique_offset(&source, call);
+    let call_span = fixture
+        .document
+        .span(SourceRange::new(call_start, call_start + call.len()))
+        .expect("associated Capacity call has an exact accepted source span");
+    let cursor = call_start
+        + call
+            .find("8usize")
+            .expect("associated Capacity fixture has one cursor argument");
+    let cancellation = AtomicBool::new(false);
+    let linked = fixture.project.linked_module();
+    let checked = observe_registered_capacity(&fixture, &linked, &call_span, &cancellation);
+    assert_detached_capacity_parity(&linked, &call_span, &cancellation, &checked);
+    assert_signature_capacity_parity(&fixture, &linked, cursor, &cancellation, &checked);
+    let signature = observe_public_capacity_signature(&fixture, cursor, &checked);
+    AssociatedCapacityPublicObservation {
+        selected: checked.selected,
+        signature,
+    }
+}
+
+#[test]
+fn associated_capacity_checker_signature_primary_equal() {
+    let observed = observe_associated_capacity_public_parity("Vec<i32>.with_capacity(8usize)");
+    assert_eq!(observed.signature.candidate(), observed.selected.id());
+}
+
+#[test]
+fn associated_capacity_checker_signature_schema_equal() {
+    let observed = observe_associated_capacity_public_parity("Vec<i32>.with_capacity(8usize)");
+    assert_eq!(
+        observed.signature.result(),
+        observed.selected.schema().result()
+    );
+    assert_eq!(
+        observed.signature.effects(),
+        observed.selected.schema().effects().declared()
+    );
+}
+
+#[test]
+fn associated_capacity_all_spelling_forms_public_parity() {
+    let mut baseline: Option<AssociatedCapacityPublicObservation> = None;
+    for call in [
+        "String.with_capacity(8usize)",
+        "Bytes.with_capacity(8usize)",
+        "Vec<i32>.with_capacity(8usize)",
+        "Vec<i32>::with_capacity(8usize)",
+        "Vec::<i32>.with_capacity(8usize)",
+        "Vec::<i32>::with_capacity(8usize)",
+    ] {
+        let observed = observe_associated_capacity_public_parity(call);
+        if !call.starts_with("Vec") {
+            assert!(matches!(
+                observed.selected.id(),
+                CallableCandidateId::CapacityMethod(_)
+            ));
+            continue;
+        }
+        if let Some(baseline) = &baseline {
+            assert_eq!(observed.selected, baseline.selected);
+            assert_eq!(
+                observed.signature.candidate(),
+                baseline.signature.candidate()
+            );
+            assert_eq!(observed.signature.origin(), baseline.signature.origin());
+            assert_eq!(observed.signature.groups(), baseline.signature.groups());
+            assert_eq!(observed.signature.result(), baseline.signature.result());
+            assert_eq!(observed.signature.effects(), baseline.signature.effects());
+            assert_eq!(observed.signature.poison(), baseline.signature.poison());
+        } else {
+            baseline = Some(observed);
+        }
+    }
+}
+
+#[test]
+fn associated_signature_query_exact_counters() {
+    let observed = observe_associated_capacity_public_parity("Vec<i32>.with_capacity(8usize)");
+    assert_eq!(observed.signature.candidate(), observed.selected.id());
+}
+
+#[test]
+fn associated_capacity_signature_work_exhaustion_publishes_no_help() {
+    const ONE_UNDER_REQUIRED: u64 = 3;
+    const CALL: &str = "String.with_capacity(8usize)";
+    let source = format!("fn main() -> Unit {{\n    let _ = {CALL}\n    ()\n}}\n");
+    let fixture = SignatureFixture::new(&source);
+    let call_start = unique_offset(&source, CALL);
+    let cursor = call_start + CALL.find("8usize").expect("Capacity argument");
+    let cancellation = AtomicBool::new(false);
+    let linked = fixture.project.linked_module();
+    let request = SignatureQuery::production(
+        &fixture.world,
+        &fixture.document,
+        &linked,
+        cursor,
+        SignatureQueryControl::new(&cancellation, None),
+    )
+    .expect("work-exhaustion fixture keeps one accepted lease");
+    let mut work = ResolverWork::new(ONE_UNDER_REQUIRED);
+
+    let error = execute_signature_query(request, &mut work)
+        .expect_err("one-under resolver work must publish no signature help");
+    assert_eq!(
+        error,
+        SignatureQueryError::CallableLimitExceeded(CallableQueryLimitError::Work {
+            requested: 1,
+            consumed: ONE_UNDER_REQUIRED,
+            limit: ONE_UNDER_REQUIRED,
+        })
+    );
+    assert_eq!(work.consumed(), ONE_UNDER_REQUIRED);
+    assert_eq!(work.remaining(), 0);
 }
 
 #[test]
@@ -612,6 +1244,36 @@ fn main() -> Unit {
         selected.query_with_control(unique_offset(selected.document.text(), "1i32"), control,),
         Err(SignatureQueryError::DeadlineExceeded)
     );
+}
+
+#[test]
+fn deadline_during_single_candidate_transaction_returns_no_partial_help() {
+    let singleton = SignatureFixture::with_publication(
+        r"
+fn main() -> Unit {
+    let value = singleton_value(1i32)
+    ()
+}
+",
+        publication(
+            "adapter.signature-singleton-deadline",
+            "singleton_value",
+            [single_parameter_schema(TypeKind::Bool)],
+        ),
+    );
+    let cancelled = AtomicBool::new(false);
+    for step in [
+        SignatureQueryStep::CandidateProbe,
+        SignatureQueryStep::SelectedReplay,
+    ] {
+        let control = SignatureQueryControl::new(&cancelled, None).with_deadline_step(step);
+        assert_eq!(
+            singleton
+                .query_with_control(unique_offset(singleton.document.text(), "1i32"), control,),
+            Err(SignatureQueryError::DeadlineExceeded),
+            "single-candidate transaction must stop without publishing partial help at {step:?}",
+        );
+    }
 }
 
 #[test]
