@@ -874,9 +874,9 @@ fn parses_self_receiver_and_function_type_parameters() {
 }
 
 #[test]
-fn parses_task_fn_as_structured_function_item() {
+fn parses_suspending_fn_as_structured_function_item() {
     let source = r"
-task fn load_opening_assets() -> ArcResult<OpeningAssets> {
+fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let bg = try await load_bg()
     Ok(OpeningAssets { bg })
 }
@@ -884,9 +884,8 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let tree = parse_ok(source);
 
     let Item::Function(function) = &tree.items()[0] else {
-        panic!("expected task function item");
+        panic!("expected function item");
     };
-    assert_eq!(function.kind(), FunctionKind::Task);
     assert_eq!(function.signature().name(), "load_opening_assets");
     assert_eq!(
         function.signature_text(),
@@ -904,10 +903,9 @@ task fn load_opening_assets() -> ArcResult<OpeningAssets> {
         Some(Expr::Call(call)) if matches!(call.callee(), Expr::Path(path) if path == "Ok")
     ));
 
-    let hir = lower_bound_hir("structured-task-function", source);
+    let hir = lower_bound_hir("structured-suspending-function", source);
     assert_eq!(hir.functions().len(), 1);
-    assert_eq!(hir.functions()[0].kind(), FunctionKind::Task);
-    validate_typecheck_ready(&hir).expect("task function body has structured expressions");
+    validate_typecheck_ready(&hir).expect("suspending function body has structured expressions");
 }
 
 #[test]
@@ -1285,23 +1283,19 @@ pub source @source.direct: Source<Frame, CaptureError> {
 }
 
 #[test]
-fn typecheck_rejects_stream_fn_returning_source() {
+fn typecheck_rejects_yield_in_function_returning_source() {
     let tree = parse_ok(
         r"
-stream fn camera_frames() -> Source<Frame, CaptureError> {
+fn camera_frames() -> Source<Frame, CaptureError> {
     yield next_frame()
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("stream function lowers to HIR");
+    let hir = lower_to_hir(&tree).expect("ordinary function lowers to HIR");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
-        .expect_err("stream fn returning source is rejected");
+        .expect_err("yield in a non-generator function is rejected");
 
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("`stream fn camera_frames` must declare `-> Stream<T, E>`")
-    }));
+    assert!(errors.iter().any(|error| error.message().contains("yield")));
 }
 
 #[test]

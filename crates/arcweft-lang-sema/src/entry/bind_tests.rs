@@ -531,18 +531,7 @@ fn bind_023_initial_flow_requires_one_fixed_owned_selected_state_parameter() {
 }
 
 #[test]
-fn bind_024_initializer_accepts_only_ordinary_function_declarations() {
-    for kind in ["task fn", "dialogue fn", "stream fn"] {
-        let source = SOURCE.replace(
-            "fn initial_game_state",
-            &format!("{kind} initial_game_state"),
-        );
-        assert_code(
-            &diagnostics(&source),
-            "sema.entry.invalid_initializer_contract",
-        );
-    }
-
+fn bind_024_initializer_value_must_be_a_declaration_path() {
     for rhs in ["1", "|value: i32| value", "initial_game_state()"] {
         let source = SOURCE.replace(
             "initializer = initial_game_state",

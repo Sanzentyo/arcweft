@@ -17,11 +17,11 @@ use super::call_target_facts::{CallResolverControl, CallTargetFactRecorder, Call
 use super::line_plan::DialogueContentRangeMode;
 use super::{
     CallableExecutionMode, CheckedCallableExecution, EffectScope, EntityKind, EnumVariantPayload,
-    FunctionKind, FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind,
-    NominalTypeContext, Pattern, Stmt, StreamGeneratorFacts, TypeCheckEnv, TypeCheckError,
-    TypeCheckReport, TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind,
-    TypedLoweringEvidenceKind, YieldContext, choice_output_type, entity_kind_for_decl,
-    function_callable_id, ident_pattern_name, validate_typecheck_ready,
+    FxCatalog, HirModule, HirTopLevelDecl, LifetimeKey, LifetimeScopeKind, NominalTypeContext,
+    Pattern, Stmt, StreamGeneratorFacts, TypeCheckEnv, TypeCheckError, TypeCheckReport,
+    TypeCheckWarning, TypeChecker, TypeExpressionId, TypeKind, TypedLoweringEvidenceKind,
+    YieldContext, choice_output_type, entity_kind_for_decl, function_callable_id,
+    ident_pattern_name, validate_typecheck_ready,
 };
 use crate::callable::CallTargetFactMode;
 use crate::canonicalization::{
@@ -622,8 +622,7 @@ impl TypeChecker<'_> {
             &SelfTypeScope::Absent,
         );
         self.trait_predicate_stack.push(predicates);
-        let generator = function.kind() == FunctionKind::Stream
-            || matches!(execution, CallableExecutionMode::StreamFactory { .. });
+        let generator = matches!(execution, CallableExecutionMode::StreamFactory { .. });
         let actual = self.check_function_body_in_propagation_frame(
             function,
             expected_return.as_ref(),
@@ -670,7 +669,7 @@ impl TypeChecker<'_> {
         };
         self.with_return_propagation_frame(frame, |this| {
             if generator {
-                this.check_stream_function(function, expected_return);
+                this.check_stream_generator(function, expected_return);
                 None
             } else {
                 let actual = this.check_function_body_expr(
@@ -1328,15 +1327,11 @@ impl TypeChecker<'_> {
                 &generics,
                 SelfTypeScope::Absent,
             );
-            let signature_type = if function.kind() == FunctionKind::Function {
-                let body_effects = self
-                    .effect_collector
-                    .inferred_effect_row(&self.effect_callable_id_for_function(function))
-                    .unwrap_or_else(|| self.function_effect_row(function.name()));
-                signature_type.with_body_effects(&body_effects)
-            } else {
-                signature_type
-            };
+            let body_effects = self
+                .effect_collector
+                .inferred_effect_row(&self.effect_callable_id_for_function(function))
+                .unwrap_or_else(|| self.function_effect_row(function.name()));
+            let signature_type = signature_type.with_body_effects(&body_effects);
             if let Some(declaration) = declaration {
                 self.project_functions
                     .insert(declaration.clone(), signature_type.return_type().clone());
@@ -1347,12 +1342,10 @@ impl TypeChecker<'_> {
                 function.name().to_owned(),
                 signature_type.return_type().clone(),
             );
-            if function.kind() == FunctionKind::Function {
-                self.register_function_return_effect_callable(
-                    function.name(),
-                    signature_type.body_return_type(),
-                );
-            }
+            self.register_function_return_effect_callable(
+                function.name(),
+                signature_type.body_return_type(),
+            );
             self.global_function_signatures
                 .insert(function.name().to_owned(), signature_type);
         }
@@ -1399,7 +1392,7 @@ impl TypeChecker<'_> {
                 effect_visibility_from_syntax(function.visibility()),
                 contract,
             );
-            if registered && function.kind() == FunctionKind::Function {
+            if registered {
                 self.ordinary_source_functions
                     .insert(function.name().to_owned());
                 self.effect_collector.ensure_inferred_effect_row(&callable);
@@ -1878,7 +1871,7 @@ impl TypeChecker<'_> {
         }
     }
 
-    pub(super) fn check_stream_function(
+    pub(super) fn check_stream_generator(
         &mut self,
         function: &arcweft_lang_hir::model::HirFunction,
         declared_return: Option<&TypeKind>,
@@ -1888,7 +1881,7 @@ impl TypeChecker<'_> {
             _ => None,
         }) else {
             self.errors.push(TypeCheckError::new(format!(
-                "`stream fn {}` must declare `-> Stream<T, E>`",
+                "generator function `{}` must declare `-> Stream<T, E>`",
                 function.name()
             )));
             self.check_authored_block_expr(function.statements(), function.value());
@@ -1915,7 +1908,7 @@ impl TypeChecker<'_> {
         };
         if yield_count == 0 && !value_is_stream_block {
             self.errors.push(TypeCheckError::new(format!(
-                "`stream fn {}` does not yield any item",
+                "generator function `{}` does not yield any item",
                 function.name()
             )));
         }

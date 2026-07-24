@@ -15,6 +15,5 @@ pub mod pattern;
 pub mod pure;
 pub mod render_text;
 pub mod source;
-pub mod stream;
 pub mod trait_methods;
 pub mod typed_evidence;

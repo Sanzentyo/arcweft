@@ -1417,7 +1417,7 @@ flow @flow.for_pure for_pure() -> String {
 fn typecheck_for_loop_binds_stream_item_type() {
     let tree = parse_ok(
         r"
-stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
+fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
     for frame in frames {
         yield frame
     }
@@ -2203,7 +2203,7 @@ flow @flow.control_source_ranges control_source_ranges() -> Ref<Flow> {
     }
 }
 
-stream fn sample_stream(frames: Stream<i64, String>) -> Stream<i64, String> {
+fn sample_stream(frames: Stream<i64, String>) -> Stream<i64, String> {
     yield 1i64 + 2i64
 }
 ";

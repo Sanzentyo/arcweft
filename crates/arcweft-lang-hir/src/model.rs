@@ -11,8 +11,7 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax},
         items::{
             Attribute, EntityDeclItem, EntityDeclKind, EnumItem, ExternCapabilityItem,
-            ExternModItem, FunctionKind, FunctionSignatureSource, ImplItem, StructItem, TraitItem,
-            TypeAliasItem,
+            ExternModItem, FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -81,7 +80,6 @@ pub struct HirFunction {
     pub(crate) attributes: Vec<Attribute>,
     pub(crate) documentation: Option<DocBlock>,
     pub(crate) module_path: Option<CanonicalModulePath>,
-    pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
     pub(crate) signature_source: FunctionSignatureSource,
@@ -591,10 +589,6 @@ impl HirFunction {
         self.attributes
             .iter()
             .any(|attribute| attribute.name() == name)
-    }
-
-    pub const fn kind(&self) -> FunctionKind {
-        self.kind
     }
 
     pub const fn visibility(&self) -> Option<Visibility> {

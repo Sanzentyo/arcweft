@@ -1,7 +1,4 @@
-use crate::{
-    ast::{flow::AwaitBranchKind, items::FunctionKind},
-    cst::SyntaxKind,
-};
+use crate::{ast::flow::AwaitBranchKind, cst::SyntaxKind};
 
 impl SyntaxKind {
     /// Stable compiler-cache spelling used by parse-fact evidence.
@@ -20,18 +17,6 @@ impl SyntaxKind {
             Self::EntityRef => "entity_ref",
             Self::Punctuation => "punctuation",
             Self::Text => "text",
-        }
-    }
-}
-
-impl FunctionKind {
-    /// Stable compiler-cache spelling used by HIR body fact evidence.
-    pub const fn cache_fact_tag(self) -> &'static str {
-        match self {
-            Self::Function => "function",
-            Self::Task => "task",
-            Self::Dialogue => "dialogue",
-            Self::Stream => "stream",
         }
     }
 }

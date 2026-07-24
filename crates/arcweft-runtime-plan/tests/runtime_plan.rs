@@ -7,7 +7,6 @@ use arcweft_core::{
     pattern::RuntimePattern,
     plan::{FlowOp, FlowRuntimeId, RuntimeEntryTarget, RuntimeIteratorEvidence},
     source::{SourceHandlerPlan, SourceOp},
-    stream::StreamOp,
     time::LogicalDuration,
     value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue},
 };
@@ -750,18 +749,12 @@ flow @flow.line_handles line_handles {
 }
 
 #[test]
-fn runtime_plan_lowers_stream_and_source_plans_separately_from_flow_ops() {
+fn runtime_plan_lowers_source_plans_separately_from_flow_ops() {
     let tree = parse_ok(
         r"
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
     return base + bonus
-}
-
-stream fn rms_level(frames: Stream<i64, String>) -> Stream<i64, String> {
-    for frame in frames {
-        yield score(frame, 2i64)
-    }
 }
 
 pub source @source.player_mic_frames: Source<i64, String> {
@@ -778,18 +771,11 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("stream/source fixture lowers to HIR");
+    let hir = lower_to_hir(&tree).expect("source fixture lowers to HIR");
 
-    let plan = lower_runtime_plan(&hir).expect("stream/source runtime plan lowers");
+    let plan = lower_runtime_plan(&hir).expect("source runtime plan lowers");
 
-    assert_eq!(plan.stream_plans.len(), 1);
-    assert_eq!(plan.stream_plans[0].id.canonical_label(), "rms_level");
-    assert!(matches!(
-        plan.stream_plans[0].ops.as_slice(),
-        [StreamOp::ForNext { body, .. }]
-            if matches!(body.as_slice(), [StreamOp::Yield { expr }]
-                if matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
-    ));
+    assert!(plan.stream_plans.is_empty());
     assert_eq!(plan.source_plans.len(), 1);
     assert_eq!(plan.source_plans[0].id.0, "source.player_mic_frames");
     assert!(matches!(
@@ -802,71 +788,6 @@ flow @flow.opening opening {
                 && matches!(ops.as_slice(), [SourceOp::Yield(expr)]
                     if matches!(expr, RuntimeExpr::PureCall { helper, .. } if helper.0 == 0))
     ));
-}
-
-#[test]
-fn runtime_plan_rejects_unsupported_stream_statement_instead_of_noop() {
-    let tree = parse_ok(
-        r#"
-stream fn invalid(values: Stream<i64, String>) -> Stream<i64, String> {
-    log.info("not executable here")
-    yield 1i64
-}
-
-flow @flow.main main {
-    return "done"
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("unsupported stream fixture lowers to HIR");
-
-    let errors = lower_runtime_plan(&hir).expect_err("unsupported stream statement is rejected");
-    assert!(errors.iter().any(|error| {
-        matches!(
-            error.context(),
-            Some(RuntimePlanLowerContext::Statement {
-                owner, path, kind, ..
-            })
-                if owner == "stream function `invalid`"
-                    && path == &["0".to_owned()]
-                    && kind == "expression"
-        )
-    }));
-}
-
-#[test]
-fn runtime_plan_rejects_discarded_stream_final_value() {
-    let tree = parse_ok(
-        r#"
-stream fn invalid(values: Stream<i64, String>) -> Stream<i64, String> {
-    log.info("must not disappear")
-}
-
-flow @flow.main main {
-    return "done"
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("stream final-value fixture lowers to HIR");
-
-    let errors = lower_runtime_plan(&hir).expect_err("stream final value is rejected");
-    assert!(errors.iter().any(|error| {
-        matches!(
-            error.context(),
-            Some(RuntimePlanLowerContext::Expression {
-                owner,
-                path,
-                statement_kind,
-                role,
-                ..
-            }) if owner == "stream function `invalid`"
-                && path == &["body.value".to_owned()]
-                && statement_kind == "body"
-                && role == "final value"
-        ) && error
-            .reason()
-            .contains("cannot end with a value expression")
-    }));
 }
 
 #[test]
@@ -901,47 +822,6 @@ flow @flow.main main {
                     && kind == "let"
         )
     }));
-}
-
-#[test]
-fn stream_expression_failure_preserves_role_and_authored_range() {
-    let source = r#"
-stream fn invalid(values: Stream<i64, String>) -> Stream<i64, String> {
-    yield await next
-}
-
-flow @flow.main main {
-    return "done"
-}
-"#;
-    let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("stream expression fixture lowers to HIR");
-
-    let errors = lower_runtime_plan(&hir).expect_err("stream await expression is rejected");
-    let error = errors
-        .iter()
-        .find(|error| {
-            matches!(
-                error.context(),
-                Some(RuntimePlanLowerContext::Expression {
-                    owner,
-                    path,
-                    statement_kind,
-                    role,
-                    ..
-                }) if owner == "stream function `invalid`"
-                    && path == &["0".to_owned()]
-                    && statement_kind == "yield"
-                    && role == "value"
-            )
-        })
-        .expect("yield expression error retains structured context");
-    let range = error
-        .context()
-        .and_then(RuntimePlanLowerContext::source_range)
-        .expect("yield expression retains authored range");
-    assert_eq!(&source[range.as_range()], "await next");
-    assert!(error.reason().contains("suspension-aware"));
 }
 
 #[test]
@@ -1169,28 +1049,6 @@ flow @flow.main main { return "done" }
         .and_then(RuntimePlanLowerContext::source_range)
         .expect("incompatibility anchors to the privacy policy");
     assert_eq!(&source[range.as_range()], "private");
-}
-
-#[test]
-fn stream_unit_return_remains_executable() {
-    let tree = parse_ok(
-        r#"
-stream fn finite(values: Stream<i64, String>) -> Stream<i64, String> {
-    return ()
-}
-
-flow @flow.main main {
-    return "done"
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("stream return fixture lowers to HIR");
-
-    let plan = lower_runtime_plan(&hir).expect("unit stream return lowers");
-    assert!(matches!(
-        plan.stream_plans[0].ops.as_slice(),
-        [StreamOp::Return]
-    ));
 }
 
 #[test]

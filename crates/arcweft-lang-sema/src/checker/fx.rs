@@ -7,10 +7,7 @@ use arcweft_lang_hir::{
     model::{HirFunction, HirModule, HirTopLevelDecl},
 };
 use arcweft_lang_syntax::{
-    ast::{
-        dialogue::DialogueTag, flow::Stmt, items::FunctionKind, pattern::Pattern,
-        view::ViewFxApplication,
-    },
+    ast::{dialogue::DialogueTag, flow::Stmt, pattern::Pattern, view::ViewFxApplication},
     cst::is_identifier,
     expr::{CallArg, Expr, parse_expr},
     types::FnParamKind,
@@ -438,12 +435,6 @@ fn validate_fx_declaration(
         errors.push(TypeCheckError::new(format!(
             "Fx function `{}` must use `#[fx]` alone; Fx already implies purity",
             function.name()
-        )));
-    }
-    if function.kind() != FunctionKind::Function {
-        errors.push(TypeCheckError::new(format!(
-            "`#[fx]` may annotate only an ordinary `fn`, not {:?}",
-            function.kind()
         )));
     }
     let signature = function.signature();

@@ -3,7 +3,7 @@ use crate::ast::flow::ContractClause;
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling,
 };
-use crate::ast::items::{EntityDeclKind, ExternModSource, FunctionKind};
+use crate::ast::items::{EntityDeclKind, ExternModSource};
 use crate::ast::symbol_path::ProjectSymbolPath;
 use crate::cst::{
     split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
@@ -29,21 +29,6 @@ struct EntitySurfaceAliasSplit {
     signature_tail: String,
     alias: Option<String>,
     unexpected_tail: Option<String>,
-}
-
-pub(super) fn parse_function_kind_and_signature(source: &str) -> (FunctionKind, &str) {
-    [
-        ("task ", FunctionKind::Task),
-        ("dialogue ", FunctionKind::Dialogue),
-        ("stream ", FunctionKind::Stream),
-    ]
-    .into_iter()
-    .find_map(|(prefix, kind)| {
-        source
-            .strip_prefix(prefix)
-            .map(|signature| (kind, signature.trim_start()))
-    })
-    .unwrap_or((FunctionKind::Function, source))
 }
 
 pub(super) fn split_function_header_lines<'a>(

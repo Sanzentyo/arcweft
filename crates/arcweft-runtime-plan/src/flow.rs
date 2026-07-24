@@ -38,7 +38,6 @@ use crate::render_text::{
     lower_dialogue_display_with_speaker_presets_and_fx, speaker_preset_from_let,
 };
 use crate::source::lower_source_plan;
-use crate::stream::lower_stream_function;
 use crate::typed_evidence::RuntimeTypedLoweringEvidence;
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeCommandPolicy};
@@ -69,7 +68,7 @@ use arcweft_lang_hir::syntax::ast::{
         AuthoredExpr, AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock,
     },
     ids::EntityRefSyntax,
-    items::{EntryKind, FunctionKind},
+    items::EntryKind,
     pattern::Pattern,
 };
 use arcweft_lang_hir::syntax::expr::Expr;
@@ -469,7 +468,7 @@ pub fn lower_runtime_plan_with_stats(
     let function_value_candidates = lower_runtime_function_value_candidates(module, pure_lookup);
     let function_values = runtime_function_value_map(&function_value_candidates);
     let entries = lower_runtime_entries(module, options);
-    let (flows, line_task_groups, line_display_catalog, stream_plans, source_plans) = {
+    let (flows, line_task_groups, line_display_catalog, source_plans) = {
         let typed_expression_cursor = Cell::new(0);
         let pure_lookup = pure_lookup
             .with_runtime_function_values(&function_values)
@@ -489,12 +488,6 @@ pub fn lower_runtime_plan_with_stats(
             pure_lookup,
             options,
         )?);
-        let stream_plans = module
-            .functions()
-            .iter()
-            .filter(|function| function.kind() == FunctionKind::Stream)
-            .map(|function| lower_stream_function(module, function, pure_lookup))
-            .collect::<Result<Vec<_>, _>>()?;
         let source_plans = module
             .declarations()
             .iter()
@@ -505,20 +498,14 @@ pub fn lower_runtime_plan_with_stats(
                 _ => None,
             })
             .collect::<Result<Vec<_>, _>>()?;
-        (
-            flows,
-            line_task_groups,
-            line_display_catalog,
-            stream_plans,
-            source_plans,
-        )
+        (flows, line_task_groups, line_display_catalog, source_plans)
     };
     stats.pure_helpers = pure_helpers.len();
     RuntimePlan::new(flows, line_task_groups)
         .map(|plan| {
             let plan = optimizer::finalize_runtime_plan(
                 plan.with_entries(entries)
-                    .with_generation_plans(stream_plans, source_plans)
+                    .with_generation_plans(Vec::new(), source_plans)
                     .with_pure_helpers(pure_helpers)
                     .with_trait_methods(options.trait_methods.clone()),
                 &mut stats,

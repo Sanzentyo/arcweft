@@ -720,40 +720,34 @@ fn reports_unclosed_dialogue_content_block() {
 }
 
 #[test]
-fn parses_dialogue_and_stream_function_kinds() {
+fn parses_ordinary_and_stream_generator_function_bodies() {
     let tree = parse_ok(
         r"
-pub dialogue fn flash(color: Color) -> Content {
+pub fn flash(color: Color) -> Content {
     Content.empty()
 }
 
-stream fn camera_frames() -> Stream<VideoFrame, CameraError> {
+fn camera_frames() -> Stream<VideoFrame, CameraError> {
     yield next_frame()
 }
 ",
     );
 
-    let Item::Function(dialogue) = &tree.items()[0] else {
-        panic!("expected dialogue function");
+    let Item::Function(flash) = &tree.items()[0] else {
+        panic!("expected ordinary function");
     };
-    assert_eq!(dialogue.kind(), FunctionKind::Dialogue);
-    assert_eq!(
-        dialogue.signature_text(),
-        "fn flash(color: Color) -> Content"
-    );
+    assert_eq!(flash.signature_text(), "fn flash(color: Color) -> Content");
 
     let Item::Function(stream) = &tree.items()[1] else {
-        panic!("expected stream function");
+        panic!("expected generator function");
     };
-    assert_eq!(stream.kind(), FunctionKind::Stream);
     assert_eq!(
         stream.signature_text(),
         "fn camera_frames() -> Stream<VideoFrame, CameraError>"
     );
     assert!(matches!(stream.body_statements()[0], Stmt::Yield(_)));
 
-    let hir = lower_to_hir(&tree).expect("dialogue and stream functions lower");
-    assert_eq!(hir.functions()[0].kind(), FunctionKind::Dialogue);
-    assert_eq!(hir.functions()[1].kind(), FunctionKind::Stream);
-    validate_typecheck_ready(&hir).expect("function-kind bodies are structured");
+    let hir = lower_to_hir(&tree).expect("ordinary function bodies lower");
+    assert_eq!(hir.functions().len(), 2);
+    validate_typecheck_ready(&hir).expect("function bodies are structured");
 }

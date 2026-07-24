@@ -159,9 +159,6 @@ fn looks_like_flow(trimmed: &str) -> bool {
 pub(super) fn looks_like_function_item(trimmed: &str) -> bool {
     let rest = visible_head(trimmed);
     rest.starts_with("fn ")
-        || rest.starts_with("task fn ")
-        || rest.starts_with("dialogue fn ")
-        || rest.starts_with("stream fn ")
 }
 
 fn looks_like_trait_item(trimmed: &str) -> bool {

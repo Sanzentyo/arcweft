@@ -2145,16 +2145,10 @@ effects { signal.write, metric.write }
 }
 
 #[test]
-fn plan_json_lists_generation_plans() {
+fn plan_json_lists_source_generation_plans() {
     let path = temp_arcw(
         "generation-plan",
         r#"
-stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
-    for frame in frames {
-        yield frame
-    }
-}
-
 pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     from "fixture"
     backpressure = latest
@@ -2164,7 +2158,7 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.generation generation {
+flow @flow.generation generation() -> String {
     return "done"
 }
 "#,
@@ -2185,25 +2179,18 @@ flow @flow.generation generation {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("\"streams\"")
-            && stdout.contains("passthrough")
             && stdout.contains("\"sources\"")
             && stdout.contains("source.fixture_frames")
             && stdout.contains("HashOnly"),
-        "plan JSON should include stream/source metadata: {stdout}"
+        "plan JSON should include source metadata: {stdout}"
     );
 }
 
 #[test]
-fn run_json_lists_source_and_stream_runtime_state() {
+fn run_json_lists_source_runtime_state() {
     let path = temp_arcw(
         "generation-run",
         r#"
-stream fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {
-    for frame in frames {
-        yield frame
-    }
-}
-
 pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     from "fixture"
     backpressure = latest
@@ -2213,7 +2200,9 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.generation generation {
+entry cli @entry.generation { goto @flow.generation }
+
+flow @flow.generation generation() -> String {
     return "done"
 }
 "#,
@@ -2222,6 +2211,8 @@ flow @flow.generation generation {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.generation")
         .arg("--steps")
         .arg("1")
         .arg("--json")
@@ -2237,9 +2228,8 @@ flow @flow.generation generation {
     assert!(
         stdout.contains("\"source_states\"")
             && stdout.contains("source.fixture_frames")
-            && stdout.contains("\"stream_states\"")
-            && stdout.contains("passthrough"),
-        "run JSON should include source/stream runtime state: {stdout}"
+            && stdout.contains("\"stream_states\""),
+        "run JSON should include source runtime state: {stdout}"
     );
 }
 

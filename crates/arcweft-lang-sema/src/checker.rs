@@ -49,7 +49,7 @@ use arcweft_lang_syntax::{
         dialogue::{DialogueContent, DialogueToken},
         flow::{AwaitBranchKind, ContractClause, SelectBranchHead, Stmt},
         ids::{EntityRef, EntityRefSyntax, IdRef},
-        items::{EntityDeclKind, FunctionKind},
+        items::EntityDeclKind,
         line_plan::{CancelRuleSyntax, LinePlanItem, TriggerPattern},
         module_path::CanonicalModulePath,
         pattern::{Pattern, RecordPatternField, VariantPatternPayload},

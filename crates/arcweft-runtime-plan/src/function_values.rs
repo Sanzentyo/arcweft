@@ -9,7 +9,6 @@ use arcweft_lang_hir::{
     syntax::{
         ast::{
             flow::Stmt,
-            items::FunctionKind,
             pattern::{Pattern, VariantPatternPayload},
         },
         expr::{CallArg, CallExpr, ClosureParam, Expr, MatchExprArm},
@@ -142,9 +141,6 @@ fn lower_runtime_function_value_candidate(
     function: &HirFunction,
     pure_helpers: RuntimePureHelperLookup<'_, '_, 'static>,
 ) -> Option<RuntimeFunctionValueCandidate> {
-    if function.kind() != FunctionKind::Function {
-        return None;
-    }
     let param_groups = runtime_function_value_param_groups(function)?;
     let context = runtime_function_value_context(function, pure_helpers);
     let input_names = param_groups.first()?.clone();

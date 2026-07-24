@@ -300,7 +300,6 @@ fn lower_function(
         attributes: function.attrs().to_vec(),
         documentation: function.doc().cloned(),
         module_path,
-        kind: function.kind(),
         visibility: function.visibility(),
         signature: function.signature().clone(),
         signature_source: function.signature_source().clone(),

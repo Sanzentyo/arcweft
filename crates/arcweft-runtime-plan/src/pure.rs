@@ -13,7 +13,7 @@ use arcweft_lang_hir::{
     model::{HirFunction, HirModule},
     symbol::CallableDeclarationId,
     syntax::{
-        ast::{flow::Stmt, items::FunctionKind, pattern::Pattern},
+        ast::{flow::Stmt, pattern::Pattern},
         expr::Expr,
         types::{FnParam, TypeRef},
     },
@@ -62,8 +62,6 @@ pub struct PureHelperShape {
 /// Error produced while selecting or lowering a pure helper function.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum PureHelperLowerError {
-    #[error("pure helper `{name}` uses unsupported function kind `{kind:?}`")]
-    UnsupportedFunctionKind { name: String, kind: FunctionKind },
     #[error("pure helper `{name}` must have a final value expression")]
     UnsupportedBody { name: String },
     #[error("pure helper `{name}` has unsupported statement `{statement}`")]
@@ -270,12 +268,6 @@ fn lower_pure_helper_candidate_with_input_policy(
     origin: RuntimePureHelperOrigin,
     input_policy: PureHelperInputPolicy,
 ) -> Result<PureHelperCandidate, PureHelperLowerError> {
-    if function.kind() != FunctionKind::Function {
-        return Err(PureHelperLowerError::UnsupportedFunctionKind {
-            name: function.name().to_owned(),
-            kind: function.kind(),
-        });
-    }
     let inputs = pure_helper_inputs(function, input_policy)?;
     let (input_names, input_types): (Vec<_>, Vec<_>) = inputs.into_iter().unzip();
     let expr = lower_pure_helper_body(function)?;

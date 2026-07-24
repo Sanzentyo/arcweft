@@ -247,7 +247,6 @@ impl core::fmt::Display for RawSyntax {
 pub struct FunctionItem {
     attrs: Vec<Attribute>,
     doc: Option<DocBlock>,
-    kind: FunctionKind,
     visibility: Option<Visibility>,
     signature: FnSignature,
     signature_text: String,
@@ -277,19 +276,6 @@ pub struct FunctionParameterSource {
     name: Option<TextRange>,
     ty: Option<TextRange>,
     default: Option<TextRange>,
-}
-
-/// Top-level function category.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FunctionKind {
-    /// Ordinary synchronous function.
-    Function,
-    /// Background task function that may await non-visible work.
-    Task,
-    /// Dialogue-safe function callable from dialogue content tags.
-    Dialogue,
-    /// Generator-like function that yields a stream/source of values.
-    Stream,
 }
 
 /// Top-level entity declaration family with runtime-specific body preserved.
@@ -573,7 +559,6 @@ pub struct CapabilityFn {
 pub(crate) struct FunctionInit {
     pub(crate) attrs: Vec<Attribute>,
     pub(crate) doc: Option<DocBlock>,
-    pub(crate) kind: FunctionKind,
     pub(crate) visibility: Option<Visibility>,
     pub(crate) signature: FnSignature,
     pub(crate) signature_text: String,
@@ -779,7 +764,6 @@ impl FunctionItem {
         Self {
             attrs: init.attrs,
             doc: init.doc,
-            kind: init.kind,
             visibility: init.visibility,
             signature: init.signature,
             signature_text: init.signature_text,
@@ -790,10 +774,6 @@ impl FunctionItem {
             body_value: init.body_value,
             range: init.range,
         }
-    }
-
-    pub const fn kind(&self) -> FunctionKind {
-        self.kind
     }
 
     pub const fn doc(&self) -> Option<&DocBlock> {

@@ -160,3 +160,23 @@ fn function_header_without_parameters_gets_typed_missing_group_recovery() {
     );
     assert_eq!(built.green().to_string(), source);
 }
+
+#[test]
+fn removed_function_role_spellings_do_not_form_function_items() {
+    for role in ["task", "dialogue", "stream"] {
+        let source = format!("{role} fn removed() -> Unit {{}}\n");
+        let built = parse_shadow_document(&document(&source)).unwrap();
+        let parsed_kinds = built
+            .index()
+            .entries()
+            .iter()
+            .map(UnattachedGrammarEntry::kind)
+            .collect::<Vec<_>>();
+
+        assert!(
+            !parsed_kinds.contains(&SyntaxKind::FunctionItem),
+            "removed `{role} fn` reached the function grammar: {parsed_kinds:?}"
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
+}

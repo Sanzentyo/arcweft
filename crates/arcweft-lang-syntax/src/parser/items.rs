@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 
 use super::headers::{
     parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
-    parse_extern_mod_head, parse_function_kind_and_signature, parse_optional_angle_head,
+    parse_extern_mod_head, parse_optional_angle_head,
     parse_required_decl_entity_ref_without_name_marker, parse_required_entity_ref,
     parse_required_entity_ref_syntax, parse_visibility_prefix, simple_error,
     split_function_header_lines,
@@ -61,8 +61,7 @@ impl Parser<'_> {
             .collect::<Vec<_>>();
         let (signature_head, contract_lines) = split_function_header_lines(&header_lines)?;
         let (visibility, signature_text) = parse_visibility_prefix(&signature_head);
-        let (kind, signature_text) = parse_function_kind_and_signature(signature_text.trim());
-        let signature_text = signature_text.to_owned();
+        let signature_text = signature_text.trim().to_owned();
         let head_range = block.head_range.as_ref()?;
         let head_source = self.source.get(head_range.clone())?;
         let signature_base = head_range.start + find_fn_token(head_source)?;
@@ -98,7 +97,6 @@ impl Parser<'_> {
         Some(FunctionItem::new(FunctionInit {
             attrs,
             doc,
-            kind,
             visibility,
             signature,
             signature_text,

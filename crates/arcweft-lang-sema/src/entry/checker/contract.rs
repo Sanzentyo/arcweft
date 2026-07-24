@@ -3,7 +3,7 @@ use arcweft_lang_hir::{
     symbol::{CallableDeclarationId, CallablePackageId},
 };
 use arcweft_lang_syntax::{
-    ast::{flow::ContractClause, items::FunctionKind},
+    ast::flow::ContractClause,
     reference::BorrowKind,
     types::{AuthoredTypeRef, FnReceiverKind, GenericParam},
 };
@@ -58,7 +58,6 @@ impl<'a> EntryContractBuilder<'a> {
         state: &BoundNominalTypeKey,
     ) -> Result<CanonicalCallableContract, String> {
         let (contract, effects_explicit) = self.callable(module, function, record)?;
-        require_ordinary_function(function, "initializer")?;
         require_no_generics(&contract.signature, "initializer")?;
         require_empty_parameter_group(&contract.signature, "initializer")?;
         require_result(
@@ -80,7 +79,6 @@ impl<'a> EntryContractBuilder<'a> {
         nominals: ReducerContractNominals<'_>,
     ) -> Result<CanonicalCallableContract, String> {
         let (contract, effects_explicit) = self.callable(module, function, record)?;
-        require_ordinary_function(function, "reducer")?;
         require_no_generics(&contract.signature, "reducer")?;
         let [group] = contract.signature.groups.as_slice() else {
             return Err("reducer must declare exactly one parameter group".to_owned());
@@ -137,7 +135,6 @@ impl<'a> EntryContractBuilder<'a> {
         declaration: &CallableDeclarationId,
     ) -> Result<(CanonicalCallableContract, EffectSet, EffectSet), String> {
         let (contract, effects_explicit) = self.callable(module, function, record)?;
-        require_ordinary_function(function, "Agent controller")?;
         require_no_generics(&contract.signature, "Agent controller")?;
         require_empty_parameter_group(&contract.signature, "Agent controller")?;
         require_result(
@@ -340,7 +337,6 @@ impl<'a> EntryContractBuilder<'a> {
         }
         Ok((
             CanonicalCallableContract {
-                kind: function.kind(),
                 signature: CanonicalSignature {
                     generics,
                     groups,
@@ -668,16 +664,6 @@ impl<'a> EntryContractBuilder<'a> {
                 .map(|argument| self.canonical_type_kind(argument))
                 .collect::<Result<Vec<_>, _>>()?,
         })
-    }
-}
-
-fn require_ordinary_function(function: &HirFunction, role: &str) -> Result<(), String> {
-    if function.kind() == FunctionKind::Function {
-        Ok(())
-    } else {
-        Err(format!(
-            "{role} must resolve to an ordinary `fn` declaration"
-        ))
     }
 }
 

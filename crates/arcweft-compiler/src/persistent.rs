@@ -640,7 +640,6 @@ fn hir_body_facts(
 
     for function in hir.functions() {
         put_str(&mut symbols, "function")?;
-        put_str(&mut symbols, function.kind().cache_fact_tag())?;
         put_str(&mut symbols, function.name())?;
         put_len(
             &mut shape,

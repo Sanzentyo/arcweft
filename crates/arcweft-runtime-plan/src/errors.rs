@@ -298,7 +298,7 @@ impl RuntimePlanLowerContext {
         }
     }
 
-    /// Runtime-plan owner label, such as a stream function or source handler.
+    /// Runtime-plan owner label, such as a Stream plan or source handler.
     pub fn owner(&self) -> &str {
         match self {
             Self::Statement { owner, .. }

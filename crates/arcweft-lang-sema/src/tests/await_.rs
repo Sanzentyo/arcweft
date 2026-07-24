@@ -1,14 +1,14 @@
 use super::support::*;
 
 #[test]
-fn typechecks_task_fn_try_await_without_wait_view() {
+fn typechecks_ordinary_fn_try_await_without_wait_view() {
     let source = r"
-task fn load_bg_task() -> Result<Image, AssetError> {
+fn load_bg_task() -> Result<Image, AssetError> {
     let bg = try await load_bg()
     Ok(bg)
 }
 ";
-    let hir = lower_bound_hir("task-fn-try-await", source);
+    let hir = lower_bound_hir("ordinary-fn-try-await", source);
     validate_typecheck_ready(&hir).expect("try await expression is structured");
 
     let env = TypeCheckEnv::new().with_function(
@@ -22,15 +22,15 @@ task fn load_bg_task() -> Result<Image, AssetError> {
 }
 
 #[test]
-fn plain_await_expression_returns_result_in_task_fn() {
+fn plain_await_expression_returns_result_in_ordinary_fn() {
     let tree = parse_ok(
         r"
-task fn load_bg_result() -> Result<Image, AssetError> {
+fn load_bg_result() -> Result<Image, AssetError> {
     await load_bg()
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("task function lowers");
+    let hir = lower_to_hir(&tree).expect("ordinary function lowers");
     assert!(matches!(
         hir.functions()[0].value().map(AuthoredExpr::expr),
         Some(Expr::Await(awaited))

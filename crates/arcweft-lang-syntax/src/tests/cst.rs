@@ -515,10 +515,10 @@ effects { }
 
 #[test]
 fn cst_depth_zero_open_finds_function_body_not_nested_scope() {
-    let source = "task fn load() -> Result<T, E> { with { nested() } }";
+    let source = "fn load() -> Result<T, E> { with { nested() } }";
     let open = find_last_depth_zero_open_punctuation(source, '{', '}').expect("function body open");
 
-    assert_eq!(source[..open].trim_end(), "task fn load() -> Result<T, E>");
+    assert_eq!(source[..open].trim_end(), "fn load() -> Result<T, E>");
 }
 
 #[test]

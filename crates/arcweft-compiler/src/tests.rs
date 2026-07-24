@@ -9,7 +9,6 @@ use arcweft_core::{
     },
     source::{SourceHandlerPlan, SourceOp},
     step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
-    stream::StreamOp,
     value::{DenseSeq, RuntimeExpr, RuntimeSeq, RuntimeValue},
 };
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
@@ -3170,131 +3169,6 @@ flow @flow.main main() -> String {
 }
 
 #[test]
-fn checked_runtime_plan_rejects_bare_task_function_value() {
-    let parsed = parse_source_text(
-        r#"
-task fn load_label(name: String) -> String {
-    return name
-}
-
-flow @flow.main main() -> String {
-    let loader = load_label
-    return "done"
-}
-"#,
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect_err("checked runtime plan rejects unsupported bare task function values");
-
-    assert!(
-        errors.iter().any(|error| {
-            error.message().contains(
-                "unsupported callable family `source_function_value_without_runtime_candidate`",
-            ) && error
-                .message()
-                .contains("function `load_label` cannot be referenced as a runtime function value")
-        }),
-        "expected unsupported bare task function value diagnostic, got {errors:#?}"
-    );
-}
-
-#[test]
-fn checked_runtime_plan_rejects_bare_dialogue_function_value() {
-    let parsed = parse_source_text(
-        r#"
-dialogue fn format_line(name: String) -> String {
-    return name
-}
-
-flow @flow.main main() -> String {
-    let formatter = format_line
-    return "done"
-}
-"#,
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect_err("checked runtime plan rejects unsupported bare dialogue function values");
-
-    assert!(
-        errors.iter().any(|error| {
-            error.message().contains(
-                "unsupported callable family `source_function_value_without_runtime_candidate`",
-            ) && error
-                .message()
-                .contains("function `format_line` cannot be referenced as a runtime function value")
-        }),
-        "expected unsupported bare dialogue function value diagnostic, got {errors:#?}"
-    );
-}
-
-#[test]
-fn checked_runtime_plan_rejects_bare_stream_function_value() {
-    let parsed = parse_source_text(
-        r#"
-stream fn passthrough(frames: Stream<i64, String>) -> Stream<i64, String> {
-    for frame in frames {
-        yield frame
-    }
-}
-
-flow @flow.main main() -> String {
-    let transform = passthrough
-    return "done"
-}
-"#,
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect_err("checked runtime plan rejects unsupported bare stream function values");
-
-    assert!(
-        errors.iter().any(|error| {
-            error.message().contains(
-                "unsupported callable family `source_function_value_without_runtime_candidate`",
-            ) && error
-                .message()
-                .contains("function `passthrough` cannot be referenced as a runtime function value")
-        }),
-        "expected unsupported bare stream function value diagnostic, got {errors:#?}"
-    );
-}
-
-#[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls() {
     let parsed = parse_source_text(
         r#"
@@ -3382,135 +3256,6 @@ flow @flow.main main() -> String {
                 )
         }),
         "expected chained source data-last partial diagnostic, got {errors:#?}"
-    );
-}
-
-#[test]
-fn checked_runtime_plan_rejects_data_last_task_function_partial() {
-    let parsed = parse_source_text(
-        r#"
-task fn load_label(prefix: String, name: String) -> String {
-    return name
-}
-
-flow @flow.main main() -> String {
-    let load_named: String -> String = "Ada" |> load_label
-    let value: String = load_named("prefix")
-    return "done"
-}
-"#,
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect_err("checked runtime plan rejects unsupported data-last task partials");
-
-    assert!(
-        errors.iter().any(|error| {
-            error
-                .message()
-                .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
-                    "function `load_label` partial application requires executable helper lowering",
-                )
-        }),
-        "expected non-helper task data-last partial diagnostic, got {errors:#?}"
-    );
-}
-
-#[test]
-fn checked_runtime_plan_rejects_data_last_dialogue_function_partial() {
-    let parsed = parse_source_text(
-        r#"
-dialogue fn format_line(prefix: String, name: String) -> String {
-    return name
-}
-
-flow @flow.main main() -> String {
-    let format_named: String -> String = "Ada" |> format_line
-    let value: String = format_named("prefix")
-    return "done"
-}
-"#,
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect_err("checked runtime plan rejects unsupported data-last dialogue partials");
-
-    assert!(
-        errors.iter().any(|error| {
-            error
-                .message()
-                .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
-                    "function `format_line` partial application requires executable helper lowering",
-                )
-        }),
-        "expected non-helper dialogue data-last partial diagnostic, got {errors:#?}"
-    );
-}
-
-#[test]
-fn checked_runtime_plan_rejects_data_last_stream_function_partial() {
-    let parsed = parse_source_text(
-        r#"
-stream fn tag_frame(prefix: String, name: String) -> Stream<String, String> {
-    yield name
-}
-
-flow @flow.main main() -> String {
-    let tag_named: String -> Stream<String, String> = "Ada" |> tag_frame
-    let values: Stream<String, String> = tag_named("prefix")
-    return "done"
-}
-"#,
-    );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect_err("checked runtime plan rejects unsupported data-last stream partials");
-
-    assert!(
-        errors.iter().any(|error| {
-            error
-                .message()
-                .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
-                    "function `tag_frame` partial application requires executable helper lowering",
-                )
-        }),
-        "expected non-helper stream data-last partial diagnostic, got {errors:#?}"
     );
 }
 
@@ -3676,18 +3421,12 @@ flow @flow.main main() -> String {
 }
 
 #[test]
-fn runtime_plan_uses_typecheck_evidence_across_stream_and_source_exprs() {
+fn runtime_plan_uses_typecheck_evidence_across_source_exprs() {
     let parsed = parse_source_text(
         r"
 flow @flow.main main() -> i64 {
     let warmup = 1i64
     return warmup
-}
-
-stream fn relay(values: Stream<i64, String>) -> Stream<i64, String> {
-    for value in values {
-        yield f(value)
-    }
 }
 
 pub source @source.values: Source<i64, String> {
@@ -3725,17 +3464,7 @@ pub source @source.values: Source<i64, String> {
     )
     .expect("runtime plan lowers with shared typed evidence cursor");
 
-    assert!(matches!(
-        report.plan.stream_plans[0].ops.as_slice(),
-        [StreamOp::ForNext { body, .. }]
-            if matches!(body.as_slice(), [StreamOp::Yield { expr }]
-                if matches!(
-                    expr,
-                    RuntimeExpr::Apply { callee, args }
-                        if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
-                            && args.len() == 1
-                ))
-    ));
+    assert!(report.plan.stream_plans.is_empty());
     assert!(matches!(
         report.plan.source_plans[0].handlers.as_slice(),
         [SourceHandlerPlan::Item { ops, .. }]

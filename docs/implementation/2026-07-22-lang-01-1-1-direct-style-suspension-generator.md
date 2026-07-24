@@ -28,24 +28,98 @@ Maintained design chapters, examples, and positive fixtures now use ordinary
 `fn`. Historical design packages, implementation records, and negative
 removed-syntax fixtures remain historical evidence and were not rewritten.
 
-## Completion boundary
+## Deletion-driven public switch
 
-This cut establishes the semantic authority required by the later parser/HIR
-and runtime switches. It does not yet:
+The 2026-07-24 follow-up removed the provisional authored-role authority
+instead of repairing it:
 
-- delete the provisional `FunctionKind` variants and their parser branches;
-- connect the checked execution fact to runtime-plan/AWBC lowering; or
+- `FunctionKind`, its syntax/HIR fields, parser prefix stripper, cache tag, and
+  callable-contract digest byte were deleted;
+- only ordinary `fn` enters the function grammar. `task fn`, `dialogue fn`,
+  and `stream fn` now use ordinary top-level recovery and cannot produce a
+  `FunctionItem` or `HirFunction`; no spelling-specific compatibility
+  diagnostic or AST kind remains;
+- generator body checking consumes only
+  `CallableExecutionMode::StreamFactory`, derived from a checked
+  `Stream<T, E>` result and final own-scope `yield` classification;
+- effect rows, Fx validation, entry-role contracts, runtime function values,
+  pure-helper lowering, SMT contract lowering, and persistent HIR facts no
+  longer branch on an authored function role; and
+- the provisional runtime-plan `stream fn` lowerer was deleted together with
+  its tests. The existing runtime-internal Stream/Source and AWBC categories
+  are not aliases for the removed syntax and remain until their separately
+  specified atomic runtime/wire replacement.
+
+This switch deliberately does not connect `StreamFactory` to a provisional
+Stream ABI. That final consumer remains behind the accepted
+Lang-01.3.1.2.1/.2 contracts and the unresolved codec-8 allocation recorded in
+[the curried Stream intake](2026-07-24-lang-01-3-1-2-2-curried-stream-intake.md).
+
+## Remaining completion boundary
+
+The ordinary-function semantic and parser/HIR authority switches are now
+complete. The sequence does not yet:
+
+- connect the checked execution fact to the final runtime-plan/AWBC Stream
+  lowering; or
 - publish Stream ABI/codec wire changes.
 
-Those changes remain ordered behind the corrected project nominal resolver and
-the pending Stream runtime-wire correction. No provisional
+Those remaining changes stay ordered behind the pending Stream runtime-wire
+correction. No provisional
 `CheckedReturnTarget`, compatibility alias, dual reader, or source gate was
 introduced.
 
+## Baseline validation boundary
+
+The normal workspace recipe still stops in
+`arcweft-cli --test arcw_fixtures_check_run` on the two existing
+`spec_should_pass` capability fixtures that declare `type FsError` inside an
+`extern capability` block. The detached public `ExternCapabilityItem` retains
+capability functions plus a raw body, but does not publish the capability
+`type` members to HIR/sema. The CLI therefore reports
+`sema.nominal.unknown_type` for `FsError`.
+
+This is not a regression from the authored-role deletion. Running the exact
+test on the unchanged parent `22a3c9e8` produced the same two failures:
+
+- `spec_should_pass_check_fixtures_pass_after_refactor` at
+  `010_capability_fs_read.arcw`; and
+- `spec_should_pass_run_fixtures_pass_after_refactor` at
+  `002_file_read_task.arcw`.
+
+This cut does not repair that detached carrier by reparsing its raw body and
+does not hard-code `FsError` into the standard nominal environment. The
+one-pass grammar already owns typed capability type/function members, as
+recorded in
+[Proof Stage 1 external capability grammar](2026-07-17-proof-concurrency-v6-1-1-stage-1-extern-capability.md).
+Those members reach HIR/sema when the old public syntax reader is deleted by
+the Proof public authority switch.
+
 ## Verification
 
-- focused execution-mode tests: 5 passed;
-- `cargo test -p arcweft-lang-sema --lib --quiet`: 861 passed;
-- `cargo check -p arcweft-lang-sema --all-targets`: passed;
-- `cargo clippy -p arcweft-lang-sema --lib --no-deps -- -D warnings`: passed;
+- `cargo check -p arcweft-lang-syntax -p arcweft-lang-hir`: passed;
+- `cargo check -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-verify`:
+  passed;
+- `cargo test -p arcweft-lang-syntax --lib`: 486 passed;
+- `cargo test -p arcweft-lang-sema --lib`: 1,115 passed;
+- `cargo test -p arcweft-runtime-plan --tests`: 226 passed across the library
+  and integration targets;
+- `cargo test -p arcweft-compiler --lib`: 92 passed;
+- `cargo test -p arcweft-verify --lib`: 40 passed;
+- focused CLI source-plan/runtime-state tests: 2 passed;
+- `cargo check --workspace --all-targets --all-features`: passed;
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
+  passed;
+- `just test-workspace`: the workspace and preceding CLI targets passed, then
+  the recipe stopped on the two parent-reproducible capability fixture
+  failures documented above. The remaining persistent-cache golden target was
+  run separately and passed 2 tests;
+- the first default-parallel workspace attempt exhausted the Windows paging
+  file (`OS error 1455`). A one-job retry ran for 904 seconds without a test
+  failure before its command timeout; a two-build-job/four-test-thread retry
+  avoided the resource failure and exposed only the baseline fixture boundary;
+- `just test-tier2`: 46 passed;
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .` on Jujutsu
+  change `sptysupxpsulrksyqzzrpwuxyxlpluly`: 3,654 files, 1,936 Rust files,
+  907,967 physical Rust LOC, 94 manifests, 0 errors, and 146 warnings; and
 - format check and diff check: passed.

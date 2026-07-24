@@ -332,12 +332,12 @@ fn wrong() -> Result<i64, String> {
 #[test]
 fn propagating_await_uses_result_boundary_and_preserving_await_does_not() {
     let accepted = r"
-task fn accepted() -> Result<i64, String> {
+fn accepted() -> Result<i64, String> {
     let value = try await load()
     Ok(value)
 }
 
-task fn preserved() -> Result<i64, String> {
+fn preserved() -> Result<i64, String> {
     await load()
 }
 ";
@@ -358,7 +358,7 @@ task fn preserved() -> Result<i64, String> {
     ] {
         let source = format!(
             r"
-task fn mismatch() -> Result<i64, i64> {{
+fn mismatch() -> Result<i64, i64> {{
     let value = {expression}
     Ok(value)
 }}
@@ -405,7 +405,7 @@ fn propagating_await_reports_exact_target_missing_evidence_for_both_spellings() 
     ] {
         let source = format!(
             r"
-task fn wrong() -> Unit {{
+fn wrong() -> Unit {{
     let value = {expression}
 }}
 "
@@ -505,42 +505,34 @@ fn wrong(value: i64 = {expression}) -> Unit {{}}
 }
 
 #[test]
-fn function_roles_share_one_declared_boundary_model() {
-    for (label, declaration) in [
-        ("ordinary", "fn"),
-        ("task", "task fn"),
-        ("dialogue", "dialogue fn"),
-    ] {
-        let source = format!(
-            r"
-{declaration} wrong(value: Result<i64, String>) -> Result<i64, i64> {{
+fn ordinary_function_uses_the_declared_boundary_model() {
+    let source = r"
+fn wrong(value: Result<i64, String>) -> Result<i64, i64> {
     let inner = value?
     Ok(inner)
-}}
-"
-        );
-        let errors = typecheck_registered_source(
-            &format!("{label}-function-propagation-boundary"),
-            &source,
-            TypeCheckEnv::new(),
-        )
-        .expect_err("mismatched error types must reject");
-        let error = errors
-            .iter()
-            .find(|error| error.stable_code() == "sema.try.error_mismatch")
-            .expect("typed mismatch is retained");
-        assert!(matches!(
-            error.kind(),
-            TypeCheckErrorKind::TryErrorMismatch { boundary, .. }
-                if boundary.kind() == PropagationBoundaryKind::Function
-                    && boundary.declaration().is_some()
-        ));
-        assert_diagnostic_ranges(
-            error,
-            source_range(&source, "?"),
-            Some(source_range(&source, "Result<i64, i64>")),
-        );
-    }
+}
+";
+    let errors = typecheck_registered_source(
+        "ordinary-function-propagation-boundary",
+        source,
+        TypeCheckEnv::new(),
+    )
+    .expect_err("mismatched error types must reject");
+    let error = errors
+        .iter()
+        .find(|error| error.stable_code() == "sema.try.error_mismatch")
+        .expect("typed mismatch is retained");
+    assert!(matches!(
+        error.kind(),
+        TypeCheckErrorKind::TryErrorMismatch { boundary, .. }
+            if boundary.kind() == PropagationBoundaryKind::Function
+                && boundary.declaration().is_some()
+    ));
+    assert_diagnostic_ranges(
+        error,
+        source_range(source, "?"),
+        Some(source_range(source, "Result<i64, i64>")),
+    );
 }
 
 #[test]
@@ -669,9 +661,9 @@ flow @flow.loop_nested nested(value: Result<i64, String>) -> Result<i64, i64> {
 fn generator_owners_stop_propagation_without_routing_to_their_error_type() {
     let cases = [
         (
-            "stream-function",
+            "generator-function",
             r"
-stream fn values() -> Stream<i64, String> {
+fn values() -> Stream<i64, String> {
     let inner = input?
     yield inner
 }

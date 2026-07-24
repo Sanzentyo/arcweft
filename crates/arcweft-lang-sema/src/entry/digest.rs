@@ -2,7 +2,6 @@ use arcweft_data::{BytesFormat, EnumRepr, EnumTagStyle, FieldShape, TypeShape, V
 use arcweft_lang_hir::symbol::{
     CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
 };
-use arcweft_lang_syntax::ast::items::FunctionKind;
 
 use crate::{
     callable::{CallableGroupKind, CallableParameterPassing, CallableParameterPresence},
@@ -273,7 +272,6 @@ pub(super) struct CanonicalSignature {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CanonicalCallableContract {
-    pub(super) kind: FunctionKind,
     pub(super) signature: CanonicalSignature,
     pub(super) contract_effects: EffectSet,
 }
@@ -301,7 +299,6 @@ pub(super) fn callable_contract(contract: &CanonicalCallableContract) -> Callabl
 
 fn callable_contract_bytes(contract: &CanonicalCallableContract) -> Vec<u8> {
     let mut bytes = CanonicalBytes::domain(b"arcweft.callable-contract\0");
-    bytes.u8(function_kind_tag(contract.kind));
     bytes.signature(&contract.signature);
     bytes.effect_set(&contract.contract_effects);
     bytes.finish()
@@ -752,15 +749,6 @@ impl CanonicalBytes {
     }
 }
 
-const fn function_kind_tag(kind: FunctionKind) -> u8 {
-    match kind {
-        FunctionKind::Function => 1,
-        FunctionKind::Task => 2,
-        FunctionKind::Dialogue => 3,
-        FunctionKind::Stream => 4,
-    }
-}
-
 const fn canonical_atomic_tag(atomic: CanonicalAtomic) -> u8 {
     match atomic {
         CanonicalAtomic::Bool => 1,
@@ -851,10 +839,7 @@ mod tests {
     use arcweft_lang_hir::symbol::{
         CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
     };
-    use arcweft_lang_syntax::ast::{
-        items::FunctionKind,
-        module_path::{CanonicalModulePath, ModuleSegment},
-    };
+    use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 
     use super::*;
 
@@ -929,12 +914,10 @@ mod tests {
         assert_eq!(nominal_schema_bytes(&TypeShape::Bool), expected_nominal);
 
         let callable = CanonicalCallableContract {
-            kind: FunctionKind::Function,
             signature: empty_signature(),
             contract_effects: EffectSet::new(),
         };
         let mut expected_callable = domain(b"arcweft.callable-contract\0");
-        expected_callable.push(1);
         push_u32(&mut expected_callable, 0);
         push_u32(&mut expected_callable, 1);
         expected_callable.push(1);

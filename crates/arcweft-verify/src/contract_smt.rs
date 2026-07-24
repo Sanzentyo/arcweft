@@ -12,7 +12,7 @@ use crate::{
 };
 use arcweft_lang_hir::model::{HirFunction, HirModule};
 use arcweft_lang_hir::syntax::{
-    ast::{flow::ContractClause, items::FunctionKind, module_path::ModulePathRoot},
+    ast::{flow::ContractClause, module_path::ModulePathRoot},
     expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp},
     types::{FnParamGroup, TypeRef},
 };
@@ -149,12 +149,6 @@ struct FunctionContractLowerer {
 
 impl FunctionContractLowerer {
     fn new(function: &HirFunction) -> Result<Self, ContractLoweringError> {
-        if function.kind() != FunctionKind::Function {
-            return Err(ContractLoweringError::UnsupportedFunctionKind {
-                function: function.name().to_owned(),
-                kind: format!("{:?}", function.kind()),
-            });
-        }
         if function
             .contracts()
             .iter()
@@ -573,10 +567,6 @@ fn require_sort(
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 enum ContractLoweringError {
-    #[error(
-        "function `{function}` has unsupported kind `{kind}`; only pure `fn` is solver-lowered"
-    )]
-    UnsupportedFunctionKind { function: String, kind: String },
     #[error(
         "function `{function}` uses a proof-mode invariant; scalar lowering currently supports `requires` and `ensures prove`, and will not assume an unproven invariant"
     )]
