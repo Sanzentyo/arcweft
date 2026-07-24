@@ -5,6 +5,12 @@ use crate::value::{RuntimeExpr, RuntimeValue, runtime_value_label};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod assertion_identity;
+
+pub use assertion_identity::{
+    RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
+};
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum LineEffectRequest {
     RegisterHandle {
